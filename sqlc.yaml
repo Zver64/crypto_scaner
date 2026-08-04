@@ -1,0 +1,13 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations/000001_initial.up.sql
+    queries: internal/storage/postgres/queries
+    gen:
+      go:
+        package: sqlc
+        out: internal/storage/postgres/sqlc
+        sql_package: pgx/v5
+        overrides:
+          - db_type: pg_catalog.numeric
+            go_type: string

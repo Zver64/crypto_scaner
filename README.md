@@ -74,6 +74,18 @@ CRYPTO_SCANNER_TEST_DATABASE_RESET_OK=1 go test ./internal/migrate
 The named database must be empty and disposable. Without both variables the
 integration test is skipped.
 
+The PostgreSQL store contracts use the same reset guard and additionally cover
+user lookup, transactional instrument snapshots, idempotent candle upserts,
+checked numeric conversion, and synchronization state:
+
+```sh
+CRYPTO_SCANNER_TEST_DATABASE_URL=postgres://scanner@127.0.0.1:5432/scanner_test \
+CRYPTO_SCANNER_TEST_DATABASE_RESET_OK=1 go test ./internal/storage/postgres -run TestPostgresStoreContracts
+```
+
+Run PostgreSQL integration packages serially (`go test -p 1 ./...`) when both
+use the same disposable database.
+
 The server validates all settings, connects to PostgreSQL, and requires the
 exact current migration version before listening. It never applies migrations
 during normal startup. It then emits structured JSON logs and serves

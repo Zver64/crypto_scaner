@@ -2,6 +2,7 @@ package httpapi_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,9 +14,97 @@ import (
 	"crypto-scanner/internal/platform/logging"
 )
 
+func TestReadinessReportsMissingSuccessfulMarketSync(t *testing.T) {
+	handler := httpapi.New(
+		logging.New(io.Discard, "error"),
+		readinessStub{database: true, migrations: true},
+	)
+	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	var body struct {
+		Status string            `json:"status"`
+		Checks map[string]string `json:"checks"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode readiness response: %v", err)
+	}
+
+	if response.Code != http.StatusServiceUnavailable {
+		t.Errorf("status = %d, want 503", response.Code)
+	}
+	if body.Status != "not_ready" || body.Checks["database"] != "ok" || body.Checks["migrations"] != "ok" || body.Checks["market_sync"] != "missing" {
+		t.Fatalf("readiness body = %#v, want missing successful market sync", body)
+	}
+}
+
+func TestReadinessSucceedsWithDatabaseMigrationsAndSuccessfulMarketSync(t *testing.T) {
+	handler := httpapi.New(
+		logging.New(io.Discard, "error"),
+		readinessStub{database: true, migrations: true, marketSync: true},
+	)
+	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", response.Code)
+	}
+}
+
+func TestReadinessRejectsUnavailableDatabaseOrMigrations(t *testing.T) {
+	tests := []struct {
+		name       string
+		readiness  readinessStub
+		wantChecks map[string]string
+	}{
+		{
+			name:       "database unavailable",
+			readiness:  readinessStub{},
+			wantChecks: map[string]string{"database": "unavailable", "migrations": "unavailable", "market_sync": "unavailable"},
+		},
+		{
+			name:       "migrations unavailable",
+			readiness:  readinessStub{database: true},
+			wantChecks: map[string]string{"database": "ok", "migrations": "unavailable", "market_sync": "unavailable"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := httpapi.New(logging.New(io.Discard, "error"), test.readiness)
+			request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			var body struct {
+				Checks map[string]string `json:"checks"`
+			}
+			if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+				t.Fatalf("decode readiness response: %v", err)
+			}
+			if response.Code != http.StatusServiceUnavailable {
+				t.Errorf("status = %d, want 503", response.Code)
+			}
+			for name, want := range test.wantChecks {
+				if body.Checks[name] != want {
+					t.Errorf("check %s = %q, want %q", name, body.Checks[name], want)
+				}
+			}
+		})
+	}
+}
+
+type readinessStub struct {
+	database   bool
+	migrations bool
+	marketSync bool
+}
+
+func (stub readinessStub) DatabaseReady(context.Context) bool              { return stub.database }
+func (stub readinessStub) MigrationsReady(context.Context) bool            { return stub.migrations }
+func (stub readinessStub) SuccessfulMarketSyncExists(context.Context) bool { return stub.marketSync }
+
 func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing.T) {
 	var logOutput bytes.Buffer
-	server := httptest.NewServer(httpapi.New(logging.New(&logOutput, "info")))
+	server := httptest.NewServer(httpapi.New(logging.New(&logOutput, "info"), readinessStub{}))
 	t.Cleanup(server.Close)
 
 	request, err := http.NewRequest(http.MethodGet, server.URL+"/health/live", nil)
@@ -59,7 +148,7 @@ func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing
 }
 
 func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *testing.T) {
-	server := httptest.NewServer(httpapi.New(logging.New(io.Discard, "error")))
+	server := httptest.NewServer(httpapi.New(logging.New(io.Discard, "error"), readinessStub{}))
 	t.Cleanup(server.Close)
 
 	request, err := http.NewRequest(http.MethodGet, server.URL+"/does-not-exist", nil)

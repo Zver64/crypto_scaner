@@ -45,6 +45,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		return fmt.Errorf("initialize PostgreSQL: %w", err)
 	}
 	defer database.Close()
+	store := postgres.NewStore(database)
 
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
@@ -56,7 +57,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := httpapi.Serve(ctx, listener, httpapi.New(logger), logger, cfg.ShutdownTimeout); err != nil {
+	if err := httpapi.Serve(ctx, listener, httpapi.New(logger, store), logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

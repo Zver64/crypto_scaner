@@ -3,8 +3,11 @@ package binance
 import (
 	"context"
 	"fmt"
+	"math"
 	"net/http"
+	"strconv"
 	"strings"
+	"time"
 
 	"crypto-scanner/internal/market"
 
@@ -12,6 +15,8 @@ import (
 )
 
 const spotPermission = "SPOT"
+
+const dailyInterval = "1d"
 
 // Exchange adapts the official Binance connector to market domain values.
 // Connector request and response types do not leave this package.
@@ -77,6 +82,67 @@ func (exchange *Exchange) ListInstruments(ctx context.Context) ([]market.Instrum
 	}
 	if len(items) == 0 {
 		return nil, fmt.Errorf("Binance Spot exchange information contains no USDT instruments")
+	}
+	return items, nil
+}
+
+// ListClosedCandles returns Binance klines that are complete at the request's
+// exclusive cutoff. Connector response types remain confined to this adapter.
+func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.CandleRequest) ([]market.Candle, error) {
+	symbol := strings.ToUpper(strings.TrimSpace(request.Symbol))
+	if symbol == "" {
+		return nil, fmt.Errorf("list Binance candles: symbol is required")
+	}
+	if request.Interval != dailyInterval {
+		return nil, fmt.Errorf("list Binance candles for %s: unsupported interval %q", symbol, request.Interval)
+	}
+	if request.Limit <= 0 || request.Limit > 1000 {
+		return nil, fmt.Errorf("list Binance candles for %s: limit must be between 1 and 1000", symbol)
+	}
+	if request.ClosedBefore.IsZero() || request.ClosedBefore.UnixMilli() <= 0 {
+		return nil, fmt.Errorf("list Binance candles for %s: closed-before cutoff is required", symbol)
+	}
+	cutoffUTC := request.ClosedBefore.UTC()
+	currentDayStartedAt := time.Date(cutoffUTC.Year(), cutoffUTC.Month(), cutoffUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if currentDayStartedAt.UnixMilli() <= 0 {
+		return nil, fmt.Errorf("list Binance candles for %s: closed-before cutoff must follow the Unix epoch day", symbol)
+	}
+
+	response, err := exchange.client.NewKlinesService().
+		Symbol(symbol).
+		Interval(request.Interval).
+		Limit(request.Limit).
+		EndTime(uint64(currentDayStartedAt.UnixMilli() - 1)).
+		Do(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list Binance candles for %s: %w", symbol, err)
+	}
+
+	items := make([]market.Candle, 0, len(response))
+	for index, kline := range response {
+		if kline == nil {
+			return nil, fmt.Errorf("list Binance candles for %s: empty kline at index %d", symbol, index)
+		}
+		closeTime := time.UnixMilli(int64(kline.CloseTime)).UTC()
+		if !closeTime.Before(request.ClosedBefore) {
+			continue
+		}
+		values := []string{kline.Open, kline.High, kline.Low, kline.Close, kline.Volume, kline.QuoteAssetVolume}
+		converted := make([]float64, len(values))
+		for valueIndex, value := range values {
+			converted[valueIndex], err = strconv.ParseFloat(value, 64)
+			if err != nil || math.IsNaN(converted[valueIndex]) || math.IsInf(converted[valueIndex], 0) {
+				return nil, fmt.Errorf("list Binance candles for %s: invalid numeric value %q at kline %d", symbol, value, index)
+			}
+		}
+		if kline.NumberOfTrades > math.MaxInt64 {
+			return nil, fmt.Errorf("list Binance candles for %s: trade count at kline %d exceeds int64", symbol, index)
+		}
+		items = append(items, market.Candle{
+			Interval: request.Interval, OpenTime: time.UnixMilli(int64(kline.OpenTime)).UTC(), CloseTime: closeTime,
+			Open: converted[0], High: converted[1], Low: converted[2], Close: converted[3], Volume: converted[4],
+			QuoteAssetVolume: converted[5], TradeCount: int64(kline.NumberOfTrades),
+		})
 	}
 	return items, nil
 }

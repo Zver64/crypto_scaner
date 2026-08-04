@@ -98,6 +98,12 @@ func Load() (Config, error) {
 	return cfg, nil
 }
 
+// LoadDatabaseURL loads the only setting required by database-only commands.
+// Keeping this in config preserves one source of truth for environment access.
+func LoadDatabaseURL() (string, error) {
+	return required("DATABASE_URL")
+}
+
 func required(name string) (string, error) {
 	value := os.Getenv(name)
 	if strings.TrimSpace(value) == "" {

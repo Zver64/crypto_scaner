@@ -12,6 +12,7 @@ path until one is chosen.
 ## Prerequisites
 
 - Go 1.26 or newer
+- PostgreSQL 18 (PostgreSQL 15 or newer is also supported by the schema)
 
 ## Development commands
 
@@ -26,6 +27,8 @@ make generate     # run registered go:generate directives
 make sqlc-version # run the pinned sqlc tool and print its version
 make tidy         # normalize go.mod and go.sum
 make check        # test, vet, and build
+make migrate-up   # migrate DATABASE_URL to the current schema version
+make migrate-down # roll the current schema back to zero
 make clean        # remove Go build state and the local binary
 ```
 
@@ -48,7 +51,32 @@ set +a
 go run ./cmd/crypto-scanner
 ```
 
-The process validates all settings before listening, emits structured JSON logs,
-and serves `GET /health/live` on `HTTP_ADDRESS`. `SIGINT` and `SIGTERM` initiate
-graceful shutdown bounded by `SHUTDOWN_TIMEOUT`. Storage, synchronization, and
-business endpoints are added by their respective implementation slices.
+Provision or update the database explicitly before starting the service:
+
+```sh
+make migrate-up
+```
+
+`make migrate-up` is safe to repeat. To roll version 1 back to an unmigrated
+database, run `make migrate-down`. The rollback drops only the tables and index
+owned by this migration. A migration-owned schema is removed when it is empty;
+if another operator-created object remains in that schema, the schema and that
+object are preserved.
+
+The PostgreSQL integration test is destructive by design and only runs with an
+explicit disposable-database contract:
+
+```sh
+CRYPTO_SCANNER_TEST_DATABASE_URL=postgres://scanner@127.0.0.1:5432/scanner_test \
+CRYPTO_SCANNER_TEST_DATABASE_RESET_OK=1 go test ./internal/migrate
+```
+
+The named database must be empty and disposable. Without both variables the
+integration test is skipped.
+
+The server validates all settings, connects to PostgreSQL, and requires the
+exact current migration version before listening. It never applies migrations
+during normal startup. It then emits structured JSON logs and serves
+`GET /health/live` on `HTTP_ADDRESS`. `SIGINT` and `SIGTERM` initiate graceful
+shutdown bounded by `SHUTDOWN_TIMEOUT`. Synchronization and business endpoints
+are added by their respective implementation slices.

@@ -13,6 +13,7 @@ import (
 	"crypto-scanner/internal/httpapi"
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/platform/logging"
+	"crypto-scanner/internal/storage/postgres"
 )
 
 func main() {
@@ -39,6 +40,12 @@ func main() {
 }
 
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+	database, err := postgres.OpenVerified(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("initialize PostgreSQL: %w", err)
+	}
+	defer database.Close()
+
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
 		return fmt.Errorf("listen for HTTP: %w", err)

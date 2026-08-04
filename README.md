@@ -34,7 +34,21 @@ point. Packages that own generated code add their directives alongside the
 source inputs. The `sqlc` executable is pinned with Go's native tool directive
 and is available reproducibly as `go tool sqlc`.
 
-The initial command is an intentionally empty entry point and exits successfully.
-Runtime configuration, server lifecycle, storage, synchronization, and analysis
-are added by their respective implementation slices; no placeholder business
-behavior is started by this foundation.
+## Running the service
+
+Copy `.env.example` to `.env`, replace every placeholder, and inject the values
+into the process environment. The application intentionally does not load
+`.env` files itself. `PUBLIC_BASE_URL` is optional for the server and is used by
+the standalone webhook registration command added in a later slice.
+
+```sh
+set -a
+. ./.env
+set +a
+go run ./cmd/crypto-scanner
+```
+
+The process validates all settings before listening, emits structured JSON logs,
+and serves `GET /health/live` on `HTTP_ADDRESS`. `SIGINT` and `SIGTERM` initiate
+graceful shutdown bounded by `SHUTDOWN_TIMEOUT`. Storage, synchronization, and
+business endpoints are added by their respective implementation slices.

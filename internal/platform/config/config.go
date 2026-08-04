@@ -38,6 +38,13 @@ type Config struct {
 	ShutdownTimeout        time.Duration
 }
 
+// AdminBootstrapConfig contains the only settings used by the standalone
+// administrator bootstrap command.
+type AdminBootstrapConfig struct {
+	DatabaseURL     string
+	AdminTelegramID int64
+}
+
 // Load reads and validates process configuration from the environment.
 func Load() (Config, error) {
 	var cfg Config
@@ -55,13 +62,8 @@ func Load() (Config, error) {
 	if cfg.TelegramWebhookSecret, err = required("TELEGRAM_WEBHOOK_SECRET"); err != nil {
 		return Config{}, err
 	}
-	adminID, err := required("ADMIN_TELEGRAM_ID")
-	if err != nil {
+	if cfg.AdminTelegramID, err = loadAdminTelegramID(); err != nil {
 		return Config{}, err
-	}
-	cfg.AdminTelegramID, err = strconv.ParseInt(adminID, 10, 64)
-	if err != nil || cfg.AdminTelegramID <= 0 {
-		return Config{}, fmt.Errorf("ADMIN_TELEGRAM_ID must be a positive base-10 integer")
 	}
 	if cfg.MiniAppURL, err = required("MINI_APP_URL"); err != nil {
 		return Config{}, err
@@ -102,6 +104,32 @@ func Load() (Config, error) {
 // Keeping this in config preserves one source of truth for environment access.
 func LoadDatabaseURL() (string, error) {
 	return required("DATABASE_URL")
+}
+
+// LoadAdminBootstrap reads and validates the settings required by the
+// standalone administrator bootstrap command.
+func LoadAdminBootstrap() (AdminBootstrapConfig, error) {
+	databaseURL, err := LoadDatabaseURL()
+	if err != nil {
+		return AdminBootstrapConfig{}, err
+	}
+	adminTelegramID, err := loadAdminTelegramID()
+	if err != nil {
+		return AdminBootstrapConfig{}, err
+	}
+	return AdminBootstrapConfig{DatabaseURL: databaseURL, AdminTelegramID: adminTelegramID}, nil
+}
+
+func loadAdminTelegramID() (int64, error) {
+	value, err := required("ADMIN_TELEGRAM_ID")
+	if err != nil {
+		return 0, err
+	}
+	telegramID, err := strconv.ParseInt(value, 10, 64)
+	if err != nil || telegramID <= 0 {
+		return 0, fmt.Errorf("ADMIN_TELEGRAM_ID must be a positive base-10 integer")
+	}
+	return telegramID, nil
 }
 
 func required(name string) (string, error) {

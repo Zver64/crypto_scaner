@@ -29,6 +29,7 @@ make tidy         # normalize go.mod and go.sum
 make check        # test, vet, and build
 make migrate-up   # migrate DATABASE_URL to the current schema version
 make migrate-down # roll the current schema back to zero
+make bootstrap-admin # explicitly create or re-enable ADMIN_TELEGRAM_ID
 make clean        # remove Go build state and the local binary
 ```
 
@@ -62,6 +63,16 @@ database, run `make migrate-down`. The rollback drops only the tables and index
 owned by this migration. A migration-owned schema is removed when it is empty;
 if another operator-created object remains in that schema, the schema and that
 object are preserved.
+
+After migrating, bootstrap the initial Telegram administrator explicitly:
+
+```sh
+make bootstrap-admin
+```
+
+The command reads `DATABASE_URL` and `ADMIN_TELEGRAM_ID`, requires the current
+database migration version, and creates or re-enables only that Telegram user.
+It is safe to repeat. Normal server startup never creates or enables users.
 
 The PostgreSQL integration test is destructive by design and only runs with an
 explicit disposable-database contract:

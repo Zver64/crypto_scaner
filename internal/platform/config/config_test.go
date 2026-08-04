@@ -119,6 +119,46 @@ func TestLoadParsesOptionalSettings(t *testing.T) {
 	}
 }
 
+func TestLoadAdminBootstrapReadsOnlyItsRequiredSettings(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://scanner:secret@localhost/scanner")
+	t.Setenv("ADMIN_TELEGRAM_ID", "987654321")
+	for _, name := range []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "MINI_APP_URL"} {
+		t.Setenv(name, "")
+	}
+
+	cfg, err := config.LoadAdminBootstrap()
+	if err != nil {
+		t.Fatalf("LoadAdminBootstrap() error = %v", err)
+	}
+	if cfg.DatabaseURL != "postgres://scanner:secret@localhost/scanner" || cfg.AdminTelegramID != 987654321 {
+		t.Fatalf("LoadAdminBootstrap() = %#v", cfg)
+	}
+}
+
+func TestLoadAdminBootstrapRejectsInvalidAdministratorID(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://scanner:secret@localhost/scanner")
+	tests := []struct {
+		name      string
+		value     string
+		wantError string
+	}{
+		{name: "missing", value: "", wantError: "ADMIN_TELEGRAM_ID is required"},
+		{name: "not an integer", value: "not-an-id", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
+		{name: "zero", value: "0", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
+		{name: "negative", value: "-42", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Setenv("ADMIN_TELEGRAM_ID", tt.value)
+			_, err := config.LoadAdminBootstrap()
+			if err == nil || err.Error() != tt.wantError {
+				t.Fatalf("LoadAdminBootstrap() error = %v, want %q", err, tt.wantError)
+			}
+		})
+	}
+}
+
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	values := map[string]string{

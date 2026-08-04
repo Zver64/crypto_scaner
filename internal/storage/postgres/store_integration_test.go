@@ -76,6 +76,24 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if err != nil || len(active) != 2 {
 			t.Fatalf("failed snapshot changed the previous active set: instruments = %#v, error = %v", active, err)
 		}
+		originalIDs := map[string]int64{active[0].Symbol: active[0].ID, active[1].Symbol: active[1].ID}
+		btc.Status = "BREAK"
+		btc.Active = false
+		if err := store.ApplyInstrumentSnapshot(ctx, []market.Instrument{btc, eth}); err != nil {
+			t.Fatalf("apply status change snapshot: %v", err)
+		}
+		active, err = store.ListActiveInstruments(ctx)
+		if err != nil || len(active) != 1 || active[0].Symbol != "ETHUSDT" {
+			t.Fatalf("active instruments after status change = %#v, error = %v", active, err)
+		}
+		var btcStatus string
+		var btcActive bool
+		if err := db.QueryRow(ctx, `SELECT exchange_status, is_active FROM binance_spot.instruments WHERE symbol = 'BTCUSDT'`).Scan(&btcStatus, &btcActive); err != nil {
+			t.Fatalf("inspect inactive status change: %v", err)
+		}
+		if btcStatus != "BREAK" || btcActive {
+			t.Fatalf("persisted BTC status = %q, active = %t", btcStatus, btcActive)
+		}
 		if err := store.ApplyInstrumentSnapshot(ctx, []market.Instrument{eth}); err != nil {
 			t.Fatalf("apply reduced snapshot: %v", err)
 		}
@@ -86,11 +104,13 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if len(active) != 1 || active[0].Symbol != "ETHUSDT" {
 			t.Fatalf("active instruments = %#v, want only ETHUSDT", active)
 		}
+		btc.Status = "TRADING"
+		btc.Active = true
 		if err := store.ApplyInstrumentSnapshot(ctx, []market.Instrument{btc, eth}); err != nil {
 			t.Fatalf("reactivate instrument: %v", err)
 		}
 		active, err = store.ListActiveInstruments(ctx)
-		if err != nil || len(active) != 2 || active[0].ID == 0 || active[1].ID == 0 {
+		if err != nil || len(active) != 2 || active[0].ID != originalIDs[active[0].Symbol] || active[1].ID != originalIDs[active[1].Symbol] {
 			t.Fatalf("reactivated instruments = %#v, error = %v", active, err)
 		}
 	})

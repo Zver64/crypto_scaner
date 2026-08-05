@@ -3,10 +3,6 @@
 .env.*
 !.env.example
 
-# Build and test output
-/backend/bin/
-coverage.out
-*.coverprofile
 
 # Editors and operating systems
 .DS_Store

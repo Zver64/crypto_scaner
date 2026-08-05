@@ -20,7 +20,6 @@ func TestReadinessReportsMissingSuccessfulMarketSync(t *testing.T) {
 	handler := newTestHTTPHandler(
 		logging.New(io.Discard, "error"),
 		readinessStub{database: true, migrations: true},
-		http.NotFoundHandler(),
 	)
 	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 	response := httptest.NewRecorder()
@@ -45,7 +44,6 @@ func TestReadinessSucceedsWithDatabaseMigrationsAndSuccessfulMarketSync(t *testi
 	handler := newTestHTTPHandler(
 		logging.New(io.Discard, "error"),
 		readinessStub{database: true, migrations: true, marketSync: true},
-		http.NotFoundHandler(),
 	)
 	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 	response := httptest.NewRecorder()
@@ -74,7 +72,7 @@ func TestReadinessRejectsUnavailableDatabaseOrMigrations(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler := newTestHTTPHandler(logging.New(io.Discard, "error"), test.readiness, http.NotFoundHandler())
+			handler := newTestHTTPHandler(logging.New(io.Discard, "error"), test.readiness)
 			request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
@@ -108,7 +106,7 @@ func (stub readinessStub) SuccessfulMarketSyncExists(context.Context) bool { ret
 
 func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing.T) {
 	var logOutput bytes.Buffer
-	server := httptest.NewServer(newTestHTTPHandler(logging.New(&logOutput, "info"), readinessStub{}, http.NotFoundHandler()))
+	server := httptest.NewServer(newTestHTTPHandler(logging.New(&logOutput, "info"), readinessStub{}))
 	t.Cleanup(server.Close)
 
 	request, err := http.NewRequest(http.MethodGet, server.URL+"/health/live", nil)
@@ -152,7 +150,7 @@ func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing
 }
 
 func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *testing.T) {
-	server := httptest.NewServer(newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{}, http.NotFoundHandler()))
+	server := httptest.NewServer(newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{}))
 	t.Cleanup(server.Close)
 
 	request, err := http.NewRequest(http.MethodGet, server.URL+"/does-not-exist", nil)
@@ -175,34 +173,21 @@ func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *tes
 	}
 }
 
-func TestRouterExposesOnlyTelegramWebhookAtTheBotBoundary(t *testing.T) {
-	webhookCalls := 0
-	handler := newTestHTTPHandler(
-		logging.New(io.Discard, "error"),
-		readinessStub{},
-		http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
-			webhookCalls++
-			response.WriteHeader(http.StatusOK)
-		}),
-	)
+func TestRouterDoesNotExposeTelegramBotEndpoints(t *testing.T) {
+	handler := newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{})
 
-	webhookRequest := httptest.NewRequest(http.MethodPost, "/telegram/webhook", strings.NewReader(`{"update_id":1}`))
-	webhookResponse := httptest.NewRecorder()
-	handler.ServeHTTP(webhookResponse, webhookRequest)
-	analysisRequest := httptest.NewRequest(http.MethodPost, "/telegram/analysis", nil)
-	analysisResponse := httptest.NewRecorder()
-	handler.ServeHTTP(analysisResponse, analysisRequest)
-
-	if webhookResponse.Code != http.StatusOK || webhookCalls != 1 {
-		t.Fatalf("webhook status=%d calls=%d", webhookResponse.Code, webhookCalls)
-	}
-	if analysisResponse.Code != http.StatusNotFound {
-		t.Fatalf("Telegram analysis status = %d, want 404", analysisResponse.Code)
+	for _, path := range []string{"/telegram/webhook", "/telegram/analysis"} {
+		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"update_id":1}`))
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Errorf("POST %s status = %d, want 404", path, response.Code)
+		}
 	}
 }
 
-func newTestHTTPHandler(logger *slog.Logger, readiness httpapi.Readiness, webhook http.Handler) http.Handler {
-	return httpapi.New(logger, readiness, webhook, unavailableAnalysis{}, passThroughAuthenticator{})
+func newTestHTTPHandler(logger *slog.Logger, readiness httpapi.Readiness) http.Handler {
+	return httpapi.New(logger, readiness, unavailableAnalysis{}, passThroughAuthenticator{})
 }
 
 type unavailableAnalysis struct{}

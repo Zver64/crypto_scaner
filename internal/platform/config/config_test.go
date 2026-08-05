@@ -40,9 +40,7 @@ func TestLoadRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing.T) {
 	required := []string{
 		"DATABASE_URL",
 		"TELEGRAM_BOT_TOKEN",
-		"TELEGRAM_WEBHOOK_SECRET",
 		"ADMIN_TELEGRAM_ID",
-		"MINI_APP_URL",
 	}
 
 	for _, name := range required {
@@ -67,8 +65,6 @@ func TestLoadRejectsInvalidSettingsPreciselyAndSafely(t *testing.T) {
 	}{
 		{name: "database URL", variable: "DATABASE_URL", value: "not a connection string", wantError: "DATABASE_URL must be a valid PostgreSQL connection string"},
 		{name: "administrator ID", variable: "ADMIN_TELEGRAM_ID", value: "not-an-id", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
-		{name: "Mini App URL", variable: "MINI_APP_URL", value: "http://scanner.example/app", wantError: "MINI_APP_URL must be an absolute HTTPS URL"},
-		{name: "public origin", variable: "PUBLIC_BASE_URL", value: "https://scanner.example/path", wantError: "PUBLIC_BASE_URL must be an HTTPS origin without a path, query, or fragment"},
 		{name: "HTTP address", variable: "HTTP_ADDRESS", value: "localhost", wantError: "HTTP_ADDRESS must be a valid host:port address"},
 		{name: "log level", variable: "LOG_LEVEL", value: "trace", wantError: "LOG_LEVEL must be one of debug, info, warn, error"},
 		{name: "init data age", variable: "TELEGRAM_INIT_DATA_MAX_AGE", value: "0s", wantError: "TELEGRAM_INIT_DATA_MAX_AGE must be a positive duration"},
@@ -95,7 +91,6 @@ func TestLoadRejectsInvalidSettingsPreciselyAndSafely(t *testing.T) {
 
 func TestLoadParsesOptionalSettings(t *testing.T) {
 	setRequiredEnvironment(t)
-	t.Setenv("PUBLIC_BASE_URL", "https://scanner.example")
 	t.Setenv("HTTP_ADDRESS", "0.0.0.0:9090")
 	t.Setenv("LOG_LEVEL", "debug")
 	t.Setenv("TELEGRAM_INIT_DATA_MAX_AGE", "30m")
@@ -108,8 +103,7 @@ func TestLoadParsesOptionalSettings(t *testing.T) {
 		t.Fatalf("Load() error = %v", err)
 	}
 
-	if cfg.PublicBaseURL != "https://scanner.example" ||
-		cfg.HTTPAddress != "0.0.0.0:9090" ||
+	if cfg.HTTPAddress != "0.0.0.0:9090" ||
 		cfg.LogLevel != "debug" ||
 		cfg.TelegramInitDataMaxAge != 30*time.Minute ||
 		cfg.SyncWorkers != 8 ||
@@ -122,7 +116,7 @@ func TestLoadParsesOptionalSettings(t *testing.T) {
 func TestLoadAdminBootstrapReadsOnlyItsRequiredSettings(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://scanner:secret@localhost/scanner")
 	t.Setenv("ADMIN_TELEGRAM_ID", "987654321")
-	for _, name := range []string{"TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "MINI_APP_URL"} {
+	for _, name := range []string{"TELEGRAM_BOT_TOKEN"} {
 		t.Setenv(name, "")
 	}
 
@@ -159,48 +153,17 @@ func TestLoadAdminBootstrapRejectsInvalidAdministratorID(t *testing.T) {
 	}
 }
 
-func TestLoadTelegramWebhookReadsOnlyRegistrationSettings(t *testing.T) {
-	t.Setenv("TELEGRAM_BOT_TOKEN", "123456:token")
-	t.Setenv("TELEGRAM_WEBHOOK_SECRET", "webhook-secret")
-	t.Setenv("PUBLIC_BASE_URL", "https://scanner.example")
-	for _, name := range []string{"DATABASE_URL", "ADMIN_TELEGRAM_ID", "MINI_APP_URL"} {
-		t.Setenv(name, "")
-	}
-
-	cfg, err := config.LoadTelegramWebhook()
-	if err != nil {
-		t.Fatalf("LoadTelegramWebhook() error = %v", err)
-	}
-	if cfg.BotToken != "123456:token" || cfg.Secret != "webhook-secret" || cfg.PublicBaseURL != "https://scanner.example" {
-		t.Fatalf("LoadTelegramWebhook() = %#v", cfg)
-	}
-}
-
-func TestLoadTelegramWebhookRequiresHTTPSPublicOrigin(t *testing.T) {
-	t.Setenv("TELEGRAM_BOT_TOKEN", "123456:token")
-	t.Setenv("TELEGRAM_WEBHOOK_SECRET", "webhook-secret")
-	t.Setenv("PUBLIC_BASE_URL", "http://scanner.example/path")
-
-	_, err := config.LoadTelegramWebhook()
-	if err == nil || err.Error() != "PUBLIC_BASE_URL must be an HTTPS origin without a path, query, or fragment" {
-		t.Fatalf("LoadTelegramWebhook() error = %v", err)
-	}
-}
-
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	values := map[string]string{
-		"DATABASE_URL":            "postgres://scanner:secret@localhost/scanner",
-		"TELEGRAM_BOT_TOKEN":      "123456:token",
-		"TELEGRAM_WEBHOOK_SECRET": "webhook-secret",
-		"ADMIN_TELEGRAM_ID":       "123456789",
-		"MINI_APP_URL":            "https://scanner.example/app",
+		"DATABASE_URL":       "postgres://scanner:secret@localhost/scanner",
+		"TELEGRAM_BOT_TOKEN": "123456:token",
+		"ADMIN_TELEGRAM_ID":  "123456789",
 	}
 	for key, value := range values {
 		t.Setenv(key, value)
 	}
 	for _, key := range []string{
-		"PUBLIC_BASE_URL",
 		"HTTP_ADDRESS",
 		"LOG_LEVEL",
 		"TELEGRAM_INIT_DATA_MAX_AGE",

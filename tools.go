@@ -5,6 +5,5 @@ package tools
 
 import (
 	_ "github.com/binance/binance-connector-go"
-	_ "github.com/go-telegram/bot"
 	_ "github.com/jackc/pgx/v5"
 )

@@ -18,5 +18,6 @@ available when every entry in its **Blocked by** column is resolved.
 | [11 — Telegram Mini App authentication](issues/11-telegram-mini-app-auth.md) | resolved | 05 (resolved) |
 | [12 — Analysis HTTP API](issues/12-analysis-http-api.md) | resolved | 09, 10, 11 |
 | [13 — Telegram webhook launch](issues/13-telegram-webhook-launch.md) | resolved | 08 (resolved) |
+| [14 — Remove Telegram bot transport](issues/14-remove-telegram-bot-transport.md) | resolved | 11, 12, 13 (resolved) |
 
 Issue 12 is resolved.

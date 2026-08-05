@@ -40,7 +40,7 @@ func TestEnabledTelegramUserCanRequestOneSymbolPercentile(t *testing.T) {
 		Now: func() time.Time { return time.Date(2026, time.August, 5, 4, 10, 0, 0, time.UTC) },
 	})
 	handler := httpapi.New(
-		logging.New(io.Discard, "error"), readinessStub{marketSync: true}, http.NotFoundHandler(),
+		logging.New(io.Discard, "error"), readinessStub{marketSync: true},
 		service, authenticator,
 	)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?period_days=2&percentile=50", nil)
@@ -210,7 +210,7 @@ func newAnalysisHTTPHandler(store httpAnalysisStore) http.Handler {
 	authenticator := authtelegram.NewWithOptions(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{
 		Now: func() time.Time { return time.Date(2026, time.August, 5, 4, 10, 0, 0, time.UTC) },
 	})
-	return httpapi.New(logging.New(io.Discard, "error"), readinessStub{marketSync: true}, http.NotFoundHandler(), service, authenticator)
+	return httpapi.New(logging.New(io.Discard, "error"), readinessStub{marketSync: true}, service, authenticator)
 }
 
 func assertAnalysisError(t *testing.T, response *httptest.ResponseRecorder, wantStatus int, wantCode string) {

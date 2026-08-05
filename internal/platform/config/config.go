@@ -3,7 +3,6 @@ package config
 import (
 	"fmt"
 	"net"
-	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -26,10 +25,7 @@ const (
 type Config struct {
 	DatabaseURL            string
 	TelegramBotToken       string
-	TelegramWebhookSecret  string
 	AdminTelegramID        int64
-	MiniAppURL             string
-	PublicBaseURL          string
 	HTTPAddress            string
 	LogLevel               string
 	TelegramInitDataMaxAge time.Duration
@@ -43,14 +39,6 @@ type Config struct {
 type AdminBootstrapConfig struct {
 	DatabaseURL     string
 	AdminTelegramID int64
-}
-
-// TelegramWebhookConfig contains only settings used by the standalone webhook
-// registration command.
-type TelegramWebhookConfig struct {
-	BotToken      string
-	Secret        string
-	PublicBaseURL string
 }
 
 // Load reads and validates process configuration from the environment.
@@ -67,22 +55,8 @@ func Load() (Config, error) {
 	if cfg.TelegramBotToken, err = required("TELEGRAM_BOT_TOKEN"); err != nil {
 		return Config{}, err
 	}
-	if cfg.TelegramWebhookSecret, err = required("TELEGRAM_WEBHOOK_SECRET"); err != nil {
-		return Config{}, err
-	}
 	if cfg.AdminTelegramID, err = loadAdminTelegramID(); err != nil {
 		return Config{}, err
-	}
-	if cfg.MiniAppURL, err = required("MINI_APP_URL"); err != nil {
-		return Config{}, err
-	}
-	if !isAbsoluteHTTPSURL(cfg.MiniAppURL) {
-		return Config{}, fmt.Errorf("MINI_APP_URL must be an absolute HTTPS URL")
-	}
-
-	cfg.PublicBaseURL = os.Getenv("PUBLIC_BASE_URL")
-	if cfg.PublicBaseURL != "" && !isHTTPSOrigin(cfg.PublicBaseURL) {
-		return Config{}, fmt.Errorf("PUBLIC_BASE_URL must be an HTTPS origin without a path, query, or fragment")
 	}
 	cfg.HTTPAddress = valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress)
 	if !isHostPort(cfg.HTTPAddress) {
@@ -128,27 +102,6 @@ func LoadAdminBootstrap() (AdminBootstrapConfig, error) {
 	return AdminBootstrapConfig{DatabaseURL: databaseURL, AdminTelegramID: adminTelegramID}, nil
 }
 
-// LoadTelegramWebhook reads and validates the settings required to register
-// the public Telegram webhook.
-func LoadTelegramWebhook() (TelegramWebhookConfig, error) {
-	botToken, err := required("TELEGRAM_BOT_TOKEN")
-	if err != nil {
-		return TelegramWebhookConfig{}, err
-	}
-	secret, err := required("TELEGRAM_WEBHOOK_SECRET")
-	if err != nil {
-		return TelegramWebhookConfig{}, err
-	}
-	publicBaseURL, err := required("PUBLIC_BASE_URL")
-	if err != nil {
-		return TelegramWebhookConfig{}, err
-	}
-	if !isHTTPSOrigin(publicBaseURL) {
-		return TelegramWebhookConfig{}, fmt.Errorf("PUBLIC_BASE_URL must be an HTTPS origin without a path, query, or fragment")
-	}
-	return TelegramWebhookConfig{BotToken: botToken, Secret: secret, PublicBaseURL: publicBaseURL}, nil
-}
-
 func loadAdminTelegramID() (int64, error) {
 	value, err := required("ADMIN_TELEGRAM_ID")
 	if err != nil {
@@ -191,17 +144,6 @@ func positiveInt(name string, fallback int) (int, error) {
 		return 0, fmt.Errorf("%s must be a positive integer", name)
 	}
 	return number, nil
-}
-
-func isAbsoluteHTTPSURL(value string) bool {
-	parsed, err := url.Parse(value)
-	return err == nil && parsed.Scheme == "https" && parsed.Host != ""
-}
-
-func isHTTPSOrigin(value string) bool {
-	parsed, err := url.Parse(value)
-	return err == nil && parsed.Scheme == "https" && parsed.Host != "" && parsed.User == nil &&
-		parsed.Path == "" && parsed.RawQuery == "" && parsed.Fragment == ""
 }
 
 func isHostPort(value string) bool {

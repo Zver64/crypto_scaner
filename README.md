@@ -50,9 +50,9 @@ needed. `.env` is ignored by Git.
 cp .env.example .env
 ```
 
-Set the Telegram bot token, webhook secret, Mini App HTTPS URL, and public HTTPS
-service origin before exercising the bot. `PUBLIC_BASE_URL` is supplied by the
-operator; Compose does not create a public tunnel or address.
+Set the Telegram bot token used to validate signed Mini App `initData` and the
+administrator Telegram ID before starting the service. The service does not
+receive Telegram Bot API updates or register a webhook.
 
 ### Complete stack in Docker Compose
 
@@ -93,23 +93,6 @@ port and serves <http://127.0.0.1:8080/health/live>. Stop the Go process with
 Ctrl-C. Use `docker compose logs -f postgres` and `docker compose down` to
 inspect and stop PostgreSQL. `make migrate-up`, `make migrate-down`, and
 `make bootstrap-admin` also load `.env` automatically and target this database.
-
-Register the webhook explicitly after the service is reachable at its public
-HTTPS origin:
-
-```sh
-make set-webhook
-```
-
-The same command can run from the Compose image while reading the same `.env`:
-
-```sh
-docker compose run --rm app /usr/local/bin/crypto-scanner telegram set-webhook
-```
-
-Both forms append `/telegram/webhook`, submit `TELEGRAM_WEBHOOK_SECRET`, and
-fail unless Telegram confirms registration. Registration is never a server
-startup side effect.
 
 To intentionally delete all local PostgreSQL data and return to a clean state:
 

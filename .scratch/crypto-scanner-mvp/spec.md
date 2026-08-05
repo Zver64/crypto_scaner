@@ -24,7 +24,6 @@ Binance access is centralized in background synchronization. User requests never
 - Expose versioned JSON HTTP endpoints.
 - Authenticate Telegram Mini App users using signed `initData`.
 - Allow only explicitly enabled Telegram users.
-- Receive Telegram Bot API updates by webhook.
 - Source market data from Binance Spot.
 - Track active `USDT` quote pairs only.
 - Store closed `1d` candles using Binance's default UTC candle boundaries.
@@ -38,7 +37,7 @@ Binance access is centralized in background synchronization. User requests never
 
 ### 2.2 Explicit exclusions
 
-The MVP does not place orders, access Binance accounts, process balances, use futures, ingest live/incomplete candles, expose user-triggered synchronization, use WebSockets/SSE, cache analysis results, or run multiple application instances against the same scheduler.
+The MVP does not place orders, access Binance accounts, process balances, use futures, ingest live/incomplete candles, expose user-triggered synchronization, use WebSockets/SSE, cache analysis results, run multiple application instances against the same scheduler, or implement Telegram Bot API update delivery and launch UX.
 
 ## 3. Fixed decisions and authoring resolutions
 
@@ -50,7 +49,6 @@ The following decisions came directly from the requirements discussion:
 - Migrations run as a separate command before the server starts.
 - Standard `log/slog`.
 - Official Binance Go connector, hidden inside the Binance adapter.
-- `github.com/go-telegram/bot` and Telegram webhook delivery.
 - `NUMERIC` in PostgreSQL for exchange values; `float64` inside statistical calculations.
 - Only closed candles.
 - No analysis-result cache.
@@ -71,8 +69,7 @@ The discussion left four implementation details undecided. This specification re
 
 ```mermaid
 flowchart LR
-    TG["Telegram"] -->|"bot webhook"| NG["Nginx"]
-    UI["Telegram Mini App"] -->|"HTTPS + signed initData"| NG
+    UI["Telegram Mini App"] -->|"HTTPS + signed initData"| NG["Nginx"]
     NG --> APP["Crypto Scanner"]
     APP --> PG[("PostgreSQL")]
     APP -->|"scheduled public market requests"| BN["Binance Spot API"]
@@ -464,7 +461,7 @@ Insufficient symbols do not fail the market-wide request. Their count is returne
 - Percentages are numbers, not strings and not fractions.
 - Unknown JSON fields are rejected where request bodies exist.
 - All business endpoints require Telegram Mini App authentication.
-- `GET /health/live`, `GET /health/ready`, and the Telegram webhook are outside Mini App authentication.
+- `GET /health/live` and `GET /health/ready` are outside Mini App authentication.
 - Request bodies are size-limited.
 - Every response includes `X-Request-ID`; an incoming valid value may be reused.
 
@@ -549,21 +546,7 @@ Successful response:
 
 It returns `503` until all checks pass. A failed latest sync does not make readiness fail if a previous successful dataset remains available.
 
-### 9.6 Telegram webhook
-
-```http
-POST /telegram/webhook
-X-Telegram-Bot-Api-Secret-Token: <secret>
-```
-
-- Reject a missing or incorrect secret with `401` before decoding the body.
-- Limit and decode one Telegram update.
-- Return `200` after a recognized update is handled.
-- `/start` sends a message containing the configured Mini App URL.
-- Unknown updates are acknowledged without side effects.
-- The webhook does not expose market-analysis operations.
-
-### 9.7 Error envelope
+### 9.6 Error envelope
 
 ```json
 {
@@ -596,21 +579,12 @@ Do not expose internal errors, SQL, Binance payloads, secrets, or stack traces i
 
 ## 10. Telegram integration
 
-The bot is transport and launch UX, not the source of authentication state.
-
 - Telegram authenticates Mini App requests through signed `initData`.
 - PostgreSQL controls authorization through `app.users.is_enabled`.
 - `ADMIN_TELEGRAM_ID` is inserted or enabled by an explicit bootstrap command; startup does not silently rewrite users.
 - Usernames and display names are metadata and may change; `telegram_id` is the stable identity.
 - No login/password, access token, refresh token, or custom session is introduced for the MVP.
-
-Webhook registration is an explicit administrative command, not a server-start side effect:
-
-```text
-crypto-scanner telegram set-webhook
-```
-
-The command uses `PUBLIC_BASE_URL`, appends `/telegram/webhook`, supplies `TELEGRAM_WEBHOOK_SECRET`, and fails if Telegram does not confirm registration.
+- The backend does not receive Bot API updates, send bot messages, register a webhook, or provide `/start` launch behavior. Mini App hosting and launch UX are outside its scope.
 
 ## 11. Configuration
 
@@ -619,11 +593,8 @@ Configuration has one source of truth: `internal/platform/config`. No other pack
 | Variable | Required | Default | Meaning |
 |---|---:|---|---|
 | `DATABASE_URL` | yes | — | PostgreSQL connection string |
-| `TELEGRAM_BOT_TOKEN` | yes | — | Bot token and Mini App signature secret source |
-| `TELEGRAM_WEBHOOK_SECRET` | yes | — | Telegram webhook header secret |
+| `TELEGRAM_BOT_TOKEN` | yes | — | Mini App signature secret source |
 | `ADMIN_TELEGRAM_ID` | yes | — | Initial administrator ID for bootstrap command |
-| `MINI_APP_URL` | yes | — | URL used by the bot launch button |
-| `PUBLIC_BASE_URL` | yes for webhook command | — | Public HTTPS service origin |
 | `HTTP_ADDRESS` | no | `127.0.0.1:8080` | Listen address behind Nginx |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, or `error` |
 | `TELEGRAM_INIT_DATA_MAX_AGE` | no | `15m` | Maximum accepted Mini App auth age |
@@ -665,10 +636,6 @@ crypto_go/
 │   │   └── telegram/
 │   │       ├── validator.go
 │   │       └── middleware.go
-│   ├── bot/
-│   │   └── telegram/
-│   │       ├── webhook.go
-│   │       └── handlers.go
 │   ├── httpapi/
 │   │   ├── router.go
 │   │   ├── middleware.go
@@ -726,7 +693,7 @@ No package may call `os.Exit` except `main` after returning an error from the co
 
 ## 14. Logging
 
-Use structured JSON `log/slog`. Include `request_id`, module, operation, duration, outcome, and stable identifiers such as `symbol` or `telegram_id` where relevant. Synchronization logs include profile, instrument totals, succeeded/failed counts, candle rows written, and retry count. Never log bot tokens, webhook secrets, raw `initData`, authorization headers, database URLs, or full Telegram updates.
+Use structured JSON `log/slog`. Include `request_id`, module, operation, duration, outcome, and stable identifiers such as `symbol` or `telegram_id` where relevant. Synchronization logs include profile, instrument totals, succeeded/failed counts, candle rows written, and retry count. Never log bot tokens, raw `initData`, authorization headers, or database URLs.
 
 ## 15. Acceptance criteria
 
@@ -737,7 +704,7 @@ The MVP is complete when all statements below are true:
 3. An explicit bootstrap command creates/enables the administrator Telegram user.
 4. A valid enabled Telegram Mini App user can call both analysis endpoints.
 5. Invalid, expired, absent, or disabled Telegram identity is rejected as specified.
-6. Telegram webhook requests require the configured secret and `/start` returns a Mini App launch button.
+6. The service exposes no Telegram Bot API webhook or outbound bot launch behavior.
 7. The first successful synchronization discovers current Binance Spot/USDT instruments and stores up to 30 closed daily UTC candles per symbol.
 8. The incomplete current daily candle is never stored or analyzed.
 9. Restart synchronization loads only missing candles and does not create duplicates.
@@ -749,7 +716,7 @@ The MVP is complete when all statements below are true:
 15. Market search includes exactly symbols meeting the unrounded threshold and sorts them deterministically.
 16. Concurrent users can run analysis independently without application-wide locks.
 17. Analysis results are neither cached nor written to PostgreSQL.
-18. Binance SDK types, SQLC types, and Telegram types do not leak into the domain or analysis interfaces.
+18. Binance SDK types and SQLC types do not leak into the domain or analysis interfaces.
 
 ## 16. Implementation order
 
@@ -760,16 +727,12 @@ The MVP is complete when all statements below are true:
 5. Implement percentile analyzer and analysis module.
 6. Implement Telegram `initData` validation and user authorization.
 7. Implement the two analysis endpoints and health endpoints.
-8. Implement Telegram webhook and administrative commands.
-9. Verify all acceptance criteria against real PostgreSQL and Binance public endpoints.
+8. Verify all acceptance criteria against real PostgreSQL and Binance public endpoints.
 
 ## 17. External references
 
 - Binance Spot API: <https://github.com/binance/binance-spot-api-docs>
 - Binance Go connector: <https://github.com/binance/binance-connector-go>
 - Telegram Mini Apps validation: <https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app>
-- Telegram Bot API webhooks: <https://core.telegram.org/bots/api#setwebhook>
-- `go-telegram/bot`: <https://github.com/go-telegram/bot>
 - `pgx/v5`: <https://github.com/jackc/pgx>
 - `sqlc`: <https://docs.sqlc.dev/>
-

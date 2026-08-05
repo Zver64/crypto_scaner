@@ -17,6 +17,13 @@ import (
 	"crypto-scanner/internal/storage/postgres"
 )
 
+func TestValidateArgsRejectsRemovedTelegramWebhookCommand(t *testing.T) {
+	err := validateArgs([]string{"telegram", "set-webhook"})
+	if err == nil || err.Error() != "usage: crypto-scanner" {
+		t.Fatalf("validateArgs() error = %v, want usage error", err)
+	}
+}
+
 func TestRunServicesMakesHTTPAvailableBeforeSchedulerStartup(t *testing.T) {
 	listener := &acceptProbeListener{accepted: make(chan struct{}), closed: make(chan struct{})}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -115,13 +122,11 @@ func TestNormalServerStartupDoesNotMutateUsers(t *testing.T) {
 	serverCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cfg := config.Config{
-		DatabaseURL:           databaseURL,
-		TelegramBotToken:      "123456:test-token",
-		TelegramWebhookSecret: "test-webhook-secret",
-		AdminTelegramID:       222,
-		MiniAppURL:            "https://scanner.example/app",
-		HTTPAddress:           address,
-		ShutdownTimeout:       time.Second,
+		DatabaseURL:      databaseURL,
+		TelegramBotToken: "123456:test-token",
+		AdminTelegramID:  222,
+		HTTPAddress:      address,
+		ShutdownTimeout:  time.Second,
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result := make(chan error, 1)

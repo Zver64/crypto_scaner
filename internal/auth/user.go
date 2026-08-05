@@ -1,7 +1,13 @@
 // Package auth contains application-facing authentication domain values.
 package auth
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrUserNotFound means that no enabled application user matches an identity.
+var ErrUserNotFound = errors.New("enabled user not found")
 
 // User is an application user independent of its persistence representation.
 type User struct {

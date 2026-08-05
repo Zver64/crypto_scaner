@@ -4,13 +4,21 @@
 
 **Blocked by:** 05 — Bootstrap the administrator user
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] The middleware accepts only the exact `tma` authorization scheme with raw Telegram Mini App init data.
-- [ ] Telegram signature verification uses the configured bot token and rejects tampering.
-- [ ] Missing or malformed user data and expired authentication dates return `401 unauthenticated`.
-- [ ] Unknown or disabled Telegram users return `403 access_denied`.
-- [ ] An enabled user is attached to request context for downstream handlers.
-- [ ] The maximum init-data age follows configuration.
-- [ ] Raw init data, authorization headers, and bot secrets never appear in logs or error responses.
-- [ ] Authentication behavior is verified using deterministic signed fixtures and store-backed authorization cases.
+- [x] The middleware accepts only the exact `tma` authorization scheme with raw Telegram Mini App init data.
+- [x] Telegram signature verification uses the configured bot token and rejects tampering.
+- [x] Missing or malformed user data and expired authentication dates return `401 unauthenticated`.
+- [x] Unknown or disabled Telegram users return `403 access_denied`.
+- [x] An enabled user is attached to request context for downstream handlers.
+- [x] The maximum init-data age follows configuration.
+- [x] Raw init data, authorization headers, and bot secrets never appear in logs or error responses.
+- [x] Authentication behavior is verified using deterministic signed fixtures and store-backed authorization cases.
+
+## Answer
+
+Implemented Telegram Mini App HTTP authentication middleware with exact-scheme
+parsing, bot-token HMAC verification, configurable freshness validation,
+enabled-user authorization, authenticated-user context propagation, and safe
+canonical error responses. Added deterministic signed-fixture coverage and a
+store-level not-found contract for unknown and disabled users.

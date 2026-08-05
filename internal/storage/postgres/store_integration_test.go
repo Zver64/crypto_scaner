@@ -2,10 +2,12 @@ package postgres_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"testing"
 	"time"
 
+	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/migrate"
 	"crypto-scanner/internal/storage/postgres"
@@ -58,8 +60,11 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if user.TelegramID != 101 || user.Username != "alice" || user.DisplayName != "Alice" || !user.Enabled {
 			t.Fatalf("user = %#v", user)
 		}
-		if _, err := store.FindEnabledByTelegramID(ctx, 102); err == nil {
-			t.Fatal("FindEnabledByTelegramID() returned a disabled user")
+		if _, err := store.FindEnabledByTelegramID(ctx, 102); !errors.Is(err, auth.ErrUserNotFound) {
+			t.Fatalf("disabled user error = %v, want ErrUserNotFound", err)
+		}
+		if _, err := store.FindEnabledByTelegramID(ctx, 999); !errors.Is(err, auth.ErrUserNotFound) {
+			t.Fatalf("unknown user error = %v, want ErrUserNotFound", err)
 		}
 	})
 

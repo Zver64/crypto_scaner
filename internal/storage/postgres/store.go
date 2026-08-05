@@ -33,6 +33,9 @@ var (
 
 func (store *Store) FindEnabledByTelegramID(ctx context.Context, telegramID int64) (auth.User, error) {
 	row, err := store.queries.FindEnabledUserByTelegramID(ctx, telegramID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return auth.User{}, auth.ErrUserNotFound
+	}
 	if err != nil {
 		return auth.User{}, fmt.Errorf("find enabled user by Telegram ID: %w", err)
 	}

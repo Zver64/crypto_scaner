@@ -12,7 +12,9 @@ path until one is chosen.
 ## Prerequisites
 
 - Go 1.26 or newer
-- PostgreSQL 18 (PostgreSQL 15 or newer is also supported by the schema)
+- Docker with Docker Compose
+- PostgreSQL 18 is supplied by Compose (PostgreSQL 15 or newer is also
+  supported by the schema)
 
 ## Development commands
 
@@ -30,6 +32,13 @@ make check        # test, vet, and build
 make migrate-up   # migrate DATABASE_URL to the current schema version
 make migrate-down # roll the current schema back to zero
 make bootstrap-admin # explicitly create or re-enable ADMIN_TELEGRAM_ID
+make dev-up       # build and run the complete Compose stack
+make dev-db       # run only PostgreSQL for host development
+make dev-run      # migrate, bootstrap, and run the Go service on the host
+make dev-stop     # stop the Compose services without deleting data
+make dev-down     # stop and remove containers without deleting data
+make dev-logs     # follow logs from the Compose services
+make dev-reset    # remove containers and permanently delete local DB data
 make clean        # remove Go build state and the local binary
 ```
 
@@ -38,21 +47,68 @@ point. Packages that own generated code add their directives alongside the
 source inputs. The `sqlc` executable is pinned with Go's native tool directive
 and is available reproducibly as `go tool sqlc`.
 
-## Running the service
+## Local development
 
-Copy `.env.example` to `.env`, replace every placeholder, and inject the values
-into the process environment. The application intentionally does not load
-`.env` files itself. `PUBLIC_BASE_URL` is optional for the server and is used by
-the standalone webhook registration command added in a later slice.
+Create the single local environment file once and replace its placeholder
+credentials. Keep `POSTGRES_PASSWORD` URL-safe because the local tooling builds
+a PostgreSQL URL from it. Compose reads `.env` automatically, and the Makefile
+includes it for host commands; no shell exports or second environment file are
+needed. `.env` is ignored by Git.
 
 ```sh
-set -a
-. ./.env
-set +a
-go run ./cmd/crypto-scanner
+cp .env.example .env
 ```
 
-Provision or update the database explicitly before starting the service:
+`PUBLIC_BASE_URL` and the Telegram values are configuration placeholders for
+later features. They must be syntactically valid locally, but live Telegram
+credentials are not required for the current liveness-only server.
+
+### Complete stack in Docker Compose
+
+Run PostgreSQL, migrations, administrator bootstrap, and the application:
+
+```sh
+make dev-up
+```
+
+Plain `docker compose up` also starts the stack and builds the image when it is
+absent; the Make target adds `--build` so source changes are picked up.
+PostgreSQL becomes healthy before migrations run; the application starts only
+after migration and bootstrap complete. Check the service at
+<http://127.0.0.1:8080/health/live>.
+
+Use `make dev-up-detached` for background containers, `make dev-logs` to follow
+their logs, `make dev-stop` to stop them, and `make dev-down` to remove the
+containers. The named PostgreSQL volume survives all of these normal restarts.
+
+### PostgreSQL in Compose, Go on the host
+
+Start only PostgreSQL, then run the host service. `dev-run` applies migrations
+and bootstraps the configured administrator before it starts the server:
+
+```sh
+make dev-db
+make dev-run
+```
+
+The host service uses the same Compose-managed database through its loopback
+port and serves <http://127.0.0.1:8080/health/live>. Stop the Go process with
+Ctrl-C. The same `make dev-logs`, `make dev-stop`, and `make dev-down` commands
+manage PostgreSQL. `make migrate-up`, `make migrate-down`, and
+`make bootstrap-admin` also load `.env` automatically and target this database.
+
+To intentionally delete all local PostgreSQL data and return to a clean state:
+
+```sh
+make dev-reset
+```
+
+This removes the named database volume; the data cannot be recovered through
+the project tooling.
+
+## Database commands
+
+Provision or update the database explicitly when needed:
 
 ```sh
 make migrate-up

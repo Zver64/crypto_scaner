@@ -12,11 +12,11 @@ available when every entry in its **Blocked by** column is resolved.
 | [05 — Bootstrap administrator](issues/05-bootstrap-admin.md) | resolved | 04 (resolved) |
 | [06 — Synchronize Binance instruments](issues/06-sync-binance-instruments.md) | resolved | 04 (resolved) |
 | [07 — Backfill closed candles](issues/07-backfill-closed-candles.md) | resolved | 06 (resolved) |
-| [08 — Local development](issues/08-local-development.md) | ready-for-agent | 07 (resolved) |
-| [09 — Incremental synchronization](issues/09-incremental-sync-scheduler.md) | ready-for-agent | 08 |
+| [08 — Local development](issues/08-local-development.md) | resolved | 07 (resolved) |
+| [09 — Incremental synchronization](issues/09-incremental-sync-scheduler.md) | ready-for-agent | 08 (resolved) |
 | [10 — Percentile analyzer](issues/10-percentile-analyzer.md) | ready-for-agent | 01 (resolved) |
 | [11 — Telegram Mini App authentication](issues/11-telegram-mini-app-auth.md) | ready-for-agent | 05 (resolved) |
 | [12 — Analysis HTTP API](issues/12-analysis-http-api.md) | ready-for-agent | 09, 10, 11 |
-| [13 — Telegram webhook launch](issues/13-telegram-webhook-launch.md) | ready-for-agent | 08 |
+| [13 — Telegram webhook launch](issues/13-telegram-webhook-launch.md) | ready-for-agent | 08 (resolved) |
 
-Issues 08, 10, and 11 are currently unblocked.
+Issues 09, 10, 11, and 13 are currently unblocked.

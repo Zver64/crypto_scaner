@@ -1,4 +1,4 @@
-# 09 — Calculate candle-range percentiles
+# 10 — Calculate candle-range percentiles
 
 **What to build:** Provide a deterministic, exchange-independent analyzer for candle-range percentiles that later HTTP slices can use without duplicating statistical behavior.
 

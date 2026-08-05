@@ -1,8 +1,8 @@
-# 11 — Expose authenticated percentile analysis
+# 12 — Expose authenticated percentile analysis
 
 **What to build:** Deliver both user-facing screening operations through the versioned authenticated HTTP API using only synchronized PostgreSQL data.
 
-**Blocked by:** 07 — Backfill closed daily candles; 09 — Calculate candle-range percentiles; 10 — Authenticate Telegram Mini App users
+**Blocked by:** 09 — Run incremental synchronization; 10 — Calculate candle-range percentiles; 11 — Authenticate Telegram Mini App users
 
 **Status:** ready-for-agent
 

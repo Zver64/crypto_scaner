@@ -1,8 +1,8 @@
-# 08 — Run incremental synchronization on the daily boundary
+# 09 — Run incremental synchronization on the daily boundary
 
 **What to build:** Keep the stored market dataset current across restarts and UTC day boundaries without overlapping jobs or discarding previously valid data.
 
-**Blocked by:** 07 — Backfill closed daily candles
+**Blocked by:** 08 — Configure local development
 
 **Status:** ready-for-agent
 
@@ -16,3 +16,4 @@
 - [ ] A partial failure marks the run failed but preserves all previously valid data and successful writes.
 - [ ] `GET /health/ready` returns HTTP 200 after at least one successful sync and remains ready when a later sync fails but usable data remains.
 - [ ] Graceful shutdown cancels scheduled and active Binance work.
+- [ ] Synchronization behaves identically when the application runs in Compose or on the host and does not depend on Docker-specific APIs.

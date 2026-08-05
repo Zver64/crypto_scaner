@@ -1,4 +1,4 @@
-# 10 — Authenticate Telegram Mini App users
+# 11 — Authenticate Telegram Mini App users
 
 **What to build:** Protect business HTTP handlers with Telegram Mini App identity verification and the repository's enabled-user allowlist.
 

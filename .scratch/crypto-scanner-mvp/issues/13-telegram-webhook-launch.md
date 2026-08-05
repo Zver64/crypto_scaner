@@ -1,8 +1,8 @@
-# 12 — Launch the Mini App through the Telegram bot
+# 13 — Launch the Mini App through the Telegram bot
 
 **What to build:** Complete the Telegram launch path so the bot can receive secure webhooks, answer `/start`, and direct users to the configured Mini App.
 
-**Blocked by:** 02 — Add configuration, logging, and process lifecycle
+**Blocked by:** 08 — Configure local development
 
 **Status:** ready-for-agent
 
@@ -14,3 +14,4 @@
 - [ ] A standalone command registers the public HTTPS webhook URL and configured secret with Telegram.
 - [ ] The registration command fails clearly when Telegram does not confirm the operation.
 - [ ] Bot tokens, webhook secrets, and full Telegram updates are not logged.
+- [ ] The webhook and registration command use the shared `.env` in both development modes; a public HTTPS address remains operator-provided and is not created by Compose.

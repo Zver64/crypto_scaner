@@ -11,3 +11,8 @@ The canonical triage labels are `needs-triage`, `needs-info`, `ready-for-agent`,
 ### Domain docs
 
 This repository uses a single-context domain documentation layout. See `docs/agents/domain.md`.
+
+### Build artifacts
+
+Never emit Go binaries into the repository root. Use `bin/` for project build
+artifacts or `/tmp` for temporary binaries.

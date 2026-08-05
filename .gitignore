@@ -5,7 +5,6 @@
 
 # Build and test output
 /bin/
-/crypto-scanner
 coverage.out
 *.coverprofile
 

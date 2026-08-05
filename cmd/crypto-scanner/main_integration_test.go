@@ -115,10 +115,13 @@ func TestNormalServerStartupDoesNotMutateUsers(t *testing.T) {
 	serverCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	cfg := config.Config{
-		DatabaseURL:     databaseURL,
-		AdminTelegramID: 222,
-		HTTPAddress:     address,
-		ShutdownTimeout: time.Second,
+		DatabaseURL:           databaseURL,
+		TelegramBotToken:      "123456:test-token",
+		TelegramWebhookSecret: "test-webhook-secret",
+		AdminTelegramID:       222,
+		MiniAppURL:            "https://scanner.example/app",
+		HTTPAddress:           address,
+		ShutdownTimeout:       time.Second,
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	result := make(chan error, 1)

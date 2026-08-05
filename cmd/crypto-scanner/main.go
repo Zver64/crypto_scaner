@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	telegrambot "crypto-scanner/internal/bot/telegram"
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/httpapi"
 	marketsync "crypto-scanner/internal/market/sync"
@@ -24,6 +25,16 @@ import (
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 {
+		newRegistrar := func(token string) (telegrambot.WebhookRegistrar, error) {
+			return telegrambot.NewClient(token)
+		}
+		if err := runCommand(ctx, os.Args[1:], config.LoadTelegramWebhook, newRegistrar); err != nil {
+			logFailure(logging.New(os.Stderr, "info"), "telegram_set_webhook", err)
+			os.Exit(1)
+		}
+		return
+	}
 
 	cfg, err := config.Load()
 	if err != nil {
@@ -44,6 +55,26 @@ func main() {
 	}
 }
 
+func runCommand(
+	ctx context.Context,
+	args []string,
+	loadConfig func() (config.TelegramWebhookConfig, error),
+	newRegistrar func(string) (telegrambot.WebhookRegistrar, error),
+) error {
+	if len(args) != 2 || args[0] != "telegram" || args[1] != "set-webhook" {
+		return fmt.Errorf("usage: crypto-scanner telegram set-webhook")
+	}
+	cfg, err := loadConfig()
+	if err != nil {
+		return fmt.Errorf("load Telegram webhook configuration: %w", err)
+	}
+	registrar, err := newRegistrar(cfg.BotToken)
+	if err != nil {
+		return err
+	}
+	return telegrambot.RegisterWebhook(ctx, registrar, cfg.PublicBaseURL, cfg.Secret)
+}
+
 func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	database, err := postgres.OpenVerified(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -51,6 +82,12 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer database.Close()
 	store := postgres.NewStore(database)
+	botClient, err := telegrambot.NewClient(cfg.TelegramBotToken)
+	if err != nil {
+		return err
+	}
+	botHandler := telegrambot.NewUpdateHandler(cfg.MiniAppURL, botClient)
+	webhook := telegrambot.NewWebhookHandler(cfg.TelegramWebhookSecret, botHandler)
 	exchange := binance.NewWithOptions(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
 	synchronizer := marketsync.NewWithOptions(exchange, store, logger, cfg.SyncWorkers)
 	scheduler := marketsync.NewScheduler(synchronizer, logger)
@@ -65,7 +102,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.New(logger, store), scheduler, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.New(logger, store, webhook), scheduler, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

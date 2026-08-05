@@ -17,6 +17,6 @@ available when every entry in its **Blocked by** column is resolved.
 | [10 — Percentile analyzer](issues/10-percentile-analyzer.md) | resolved | 01 (resolved) |
 | [11 — Telegram Mini App authentication](issues/11-telegram-mini-app-auth.md) | resolved | 05 (resolved) |
 | [12 — Analysis HTTP API](issues/12-analysis-http-api.md) | ready-for-agent | 09, 10, 11 |
-| [13 — Telegram webhook launch](issues/13-telegram-webhook-launch.md) | ready-for-agent | 08 (resolved) |
+| [13 — Telegram webhook launch](issues/13-telegram-webhook-launch.md) | resolved | 08 (resolved) |
 
-Issues 09, 10, 11, and 13 are currently unblocked.
+Issue 12 is currently unblocked.

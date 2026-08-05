@@ -45,6 +45,14 @@ type AdminBootstrapConfig struct {
 	AdminTelegramID int64
 }
 
+// TelegramWebhookConfig contains only settings used by the standalone webhook
+// registration command.
+type TelegramWebhookConfig struct {
+	BotToken      string
+	Secret        string
+	PublicBaseURL string
+}
+
 // Load reads and validates process configuration from the environment.
 func Load() (Config, error) {
 	var cfg Config
@@ -118,6 +126,27 @@ func LoadAdminBootstrap() (AdminBootstrapConfig, error) {
 		return AdminBootstrapConfig{}, err
 	}
 	return AdminBootstrapConfig{DatabaseURL: databaseURL, AdminTelegramID: adminTelegramID}, nil
+}
+
+// LoadTelegramWebhook reads and validates the settings required to register
+// the public Telegram webhook.
+func LoadTelegramWebhook() (TelegramWebhookConfig, error) {
+	botToken, err := required("TELEGRAM_BOT_TOKEN")
+	if err != nil {
+		return TelegramWebhookConfig{}, err
+	}
+	secret, err := required("TELEGRAM_WEBHOOK_SECRET")
+	if err != nil {
+		return TelegramWebhookConfig{}, err
+	}
+	publicBaseURL, err := required("PUBLIC_BASE_URL")
+	if err != nil {
+		return TelegramWebhookConfig{}, err
+	}
+	if !isHTTPSOrigin(publicBaseURL) {
+		return TelegramWebhookConfig{}, fmt.Errorf("PUBLIC_BASE_URL must be an HTTPS origin without a path, query, or fragment")
+	}
+	return TelegramWebhookConfig{BotToken: botToken, Secret: secret, PublicBaseURL: publicBaseURL}, nil
 }
 
 func loadAdminTelegramID() (int64, error) {

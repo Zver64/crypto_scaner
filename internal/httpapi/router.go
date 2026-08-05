@@ -15,10 +15,11 @@ type Readiness interface {
 }
 
 // New returns the service HTTP handler with process-wide middleware applied.
-func New(logger *slog.Logger, readiness Readiness) http.Handler {
+func New(logger *slog.Logger, readiness Readiness, telegramWebhook http.Handler) http.Handler {
 	router := http.NewServeMux()
 	router.HandleFunc("GET /health/live", live)
 	router.HandleFunc("GET /health/ready", ready(readiness))
+	router.Handle("POST /telegram/webhook", telegramWebhook)
 	return requestMiddleware(logger, router)
 }
 

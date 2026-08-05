@@ -159,6 +159,34 @@ func TestLoadAdminBootstrapRejectsInvalidAdministratorID(t *testing.T) {
 	}
 }
 
+func TestLoadTelegramWebhookReadsOnlyRegistrationSettings(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123456:token")
+	t.Setenv("TELEGRAM_WEBHOOK_SECRET", "webhook-secret")
+	t.Setenv("PUBLIC_BASE_URL", "https://scanner.example")
+	for _, name := range []string{"DATABASE_URL", "ADMIN_TELEGRAM_ID", "MINI_APP_URL"} {
+		t.Setenv(name, "")
+	}
+
+	cfg, err := config.LoadTelegramWebhook()
+	if err != nil {
+		t.Fatalf("LoadTelegramWebhook() error = %v", err)
+	}
+	if cfg.BotToken != "123456:token" || cfg.Secret != "webhook-secret" || cfg.PublicBaseURL != "https://scanner.example" {
+		t.Fatalf("LoadTelegramWebhook() = %#v", cfg)
+	}
+}
+
+func TestLoadTelegramWebhookRequiresHTTPSPublicOrigin(t *testing.T) {
+	t.Setenv("TELEGRAM_BOT_TOKEN", "123456:token")
+	t.Setenv("TELEGRAM_WEBHOOK_SECRET", "webhook-secret")
+	t.Setenv("PUBLIC_BASE_URL", "http://scanner.example/path")
+
+	_, err := config.LoadTelegramWebhook()
+	if err == nil || err.Error() != "PUBLIC_BASE_URL must be an HTTPS origin without a path, query, or fragment" {
+		t.Fatalf("LoadTelegramWebhook() error = %v", err)
+	}
+}
+
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	values := map[string]string{

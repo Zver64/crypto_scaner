@@ -1,17 +1,5 @@
 name: crypto-scanner
 
-x-app-environment: &app-environment
-  DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
-
-x-app-image: &app-image
-  build:
-    context: .
-  image: crypto-scanner:local
-  env_file:
-    - .env
-  environment:
-    <<: *app-environment
-
 services:
   postgres:
     image: postgres:18-alpine
@@ -30,27 +18,17 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql
 
-  migrate:
-    <<: *app-image
-    command: ["/usr/local/bin/migrate", "up"]
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: "no"
-
-  bootstrap-admin:
-    <<: *app-image
-    command: ["/usr/local/bin/bootstrap-admin"]
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-    restart: "no"
-
   app:
-    <<: *app-image
+    build: .
+    image: crypto-scanner:local
+    env_file: .env
     environment:
-      <<: *app-environment
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       HTTP_ADDRESS: 0.0.0.0:8080
+    command:
+      - /bin/sh
+      - -c
+      - /usr/local/bin/migrate up && /usr/local/bin/bootstrap-admin && exec /usr/local/bin/crypto-scanner
     ports:
       - "127.0.0.1:${HTTP_PORT}:8080"
     healthcheck:
@@ -62,10 +40,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      migrate:
-        condition: service_completed_successfully
-      bootstrap-admin:
-        condition: service_completed_successfully
 
 volumes:
   postgres-data:

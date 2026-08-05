@@ -17,11 +17,12 @@
 
 ## Answer
 
-Added a non-root multi-stage Go image and a Compose stack that sequences a
-healthy PostgreSQL service, migrations, administrator bootstrap, and the HTTP
-application. `.env.example`, the Makefile, and the README now define one local
-configuration source and document complete-stack and host-run workflows,
-including lifecycle, log, migration, bootstrap, and destructive reset commands.
+Added a non-root multi-stage Go image and a two-service Compose stack. The
+application's local container command initializes the healthy PostgreSQL
+database before replacing itself with the HTTP server. `.env.example`, the
+Makefile, and the README define one local configuration source and document
+complete-stack and host-run workflows, including lifecycle, log, migration,
+bootstrap, and destructive reset commands.
 
 Verified both modes against `GET /health/live`, verified the administrator row
 survives container recreation through the named volume, and ran the full Go

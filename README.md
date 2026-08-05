@@ -21,31 +21,22 @@ path until one is chosen.
 Run these commands from the repository root:
 
 ```sh
-make dependencies # download the versions recorded in go.mod and go.sum
 make build        # build bin/crypto-scanner
 make test         # run all tests
 make vet          # run Go's static checks
 make generate     # run registered go:generate directives
-make sqlc-version # run the pinned sqlc tool and print its version
 make tidy         # normalize go.mod and go.sum
 make check        # test, vet, and build
 make migrate-up   # migrate DATABASE_URL to the current schema version
 make migrate-down # roll the current schema back to zero
 make bootstrap-admin # explicitly create or re-enable ADMIN_TELEGRAM_ID
-make dev-up       # build and run the complete Compose stack
-make dev-db       # run only PostgreSQL for host development
-make dev-run      # migrate, bootstrap, and run the Go service on the host
-make dev-stop     # stop the Compose services without deleting data
-make dev-down     # stop and remove containers without deleting data
-make dev-logs     # follow logs from the Compose services
-make dev-reset    # remove containers and permanently delete local DB data
+make run          # migrate, bootstrap, and run the Go service on the host
 make clean        # remove Go build state and the local binary
 ```
 
-The `generate` target is intentionally the standard `go generate ./...` entry
-point. Packages that own generated code add their directives alongside the
-source inputs. The `sqlc` executable is pinned with Go's native tool directive
-and is available reproducibly as `go tool sqlc`.
+The `generate` target is the standard `go generate ./...` entry point. Packages
+that own generated code add their directives alongside the source inputs. The
+`sqlc` executable remains reproducibly available as `go tool sqlc`.
 
 ## Local development
 
@@ -68,39 +59,45 @@ credentials are not required for the current liveness-only server.
 Run PostgreSQL, migrations, administrator bootstrap, and the application:
 
 ```sh
-make dev-up
+docker compose up --build
 ```
 
-Plain `docker compose up` also starts the stack and builds the image when it is
-absent; the Make target adds `--build` so source changes are picked up.
-PostgreSQL becomes healthy before migrations run; the application starts only
-after migration and bootstrap complete. Check the service at
+Compose starts PostgreSQL and waits for its healthcheck. The application
+container then applies migrations, bootstraps the local administrator, and
+replaces that setup shell with the Go server. Check the service at
 <http://127.0.0.1:8080/health/live>.
 
-Use `make dev-up-detached` for background containers, `make dev-logs` to follow
-their logs, `make dev-stop` to stop them, and `make dev-down` to remove the
-containers. The named PostgreSQL volume survives all of these normal restarts.
+Use the ordinary Compose interface to manage the stack:
+
+```sh
+docker compose up --build -d --wait
+docker compose logs -f
+docker compose down
+```
+
+The named PostgreSQL volume survives normal container restarts and
+`docker compose down`.
 
 ### PostgreSQL in Compose, Go on the host
 
-Start only PostgreSQL, then run the host service. `dev-run` applies migrations
+Start only PostgreSQL, then run the host service. `make run` applies migrations
 and bootstraps the configured administrator before it starts the server:
 
 ```sh
-make dev-db
-make dev-run
+docker compose up -d postgres
+make run
 ```
 
 The host service uses the same Compose-managed database through its loopback
 port and serves <http://127.0.0.1:8080/health/live>. Stop the Go process with
-Ctrl-C. The same `make dev-logs`, `make dev-stop`, and `make dev-down` commands
-manage PostgreSQL. `make migrate-up`, `make migrate-down`, and
+Ctrl-C. Use `docker compose logs -f postgres` and `docker compose down` to
+inspect and stop PostgreSQL. `make migrate-up`, `make migrate-down`, and
 `make bootstrap-admin` also load `.env` automatically and target this database.
 
 To intentionally delete all local PostgreSQL data and return to a clean state:
 
 ```sh
-make dev-reset
+docker compose down -v
 ```
 
 This removes the named database volume; the data cannot be recovered through

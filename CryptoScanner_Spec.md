@@ -588,7 +588,7 @@ Do not expose internal errors, SQL, Binance payloads, secrets, or stack traces i
 
 ## 11. Configuration
 
-Configuration has one source of truth: `internal/platform/config`. No other package reads environment variables directly.
+Configuration has one source of truth: `backend/internal/platform/config`. No other package reads environment variables directly.
 
 | Variable | Required | Default | Meaning |
 |---|---:|---|---|
@@ -610,64 +610,27 @@ The process fails before listening when required configuration is absent or inva
 
 ```text
 crypto_go/
-├── cmd/
-│   └── crypto-scanner/
-│       └── main.go
-├── internal/
-│   ├── analysis/
-│   │   ├── module.go
-│   │   ├── registry.go
-│   │   └── percentile/
-│   │       ├── analyzer.go
-│   │       └── percentile.go
-│   ├── market/
-│   │   ├── instrument.go
-│   │   ├── candle.go
-│   │   └── sync/
-│   │       ├── module.go
-│   │       └── scheduler.go
-│   ├── exchange/
-│   │   └── binance/
-│   │       ├── adapter.go
-│   │       ├── instruments.go
-│   │       ├── candles.go
-│   │       └── mapper.go
-│   ├── auth/
-│   │   └── telegram/
-│   │       ├── validator.go
-│   │       └── middleware.go
-│   ├── httpapi/
-│   │   ├── router.go
-│   │   ├── middleware.go
-│   │   ├── errors.go
-│   │   └── analysis.go
-│   ├── storage/
-│   │   └── postgres/
-│   │       ├── db.go
-│   │       ├── market_store.go
-│   │       ├── user_store.go
-│   │       ├── queries/
-│   │       │   ├── instruments.sql
-│   │       │   ├── candles.sql
-│   │       │   ├── sync_state.sql
-│   │       │   └── users.sql
-│   │       └── sqlc/
-│   └── platform/
-│       ├── config/
-│       │   └── config.go
-│       └── logging/
-│           └── logging.go
-├── migrations/
-│   ├── 000001_initial.up.sql
-│   └── 000001_initial.down.sql
-├── sqlc.yaml
-├── go.mod
-├── go.sum
-├── Makefile
+├── backend/
+│   ├── cmd/
+│   │   └── crypto-scanner/
+│   ├── internal/
+│   │   ├── analysis/
+│   │   ├── auth/
+│   │   ├── exchange/
+│   │   ├── httpapi/
+│   │   ├── market/
+│   │   ├── platform/
+│   │   └── storage/
+│   ├── migrations/
+│   ├── Dockerfile
+│   ├── Makefile
+│   ├── go.mod
+│   └── sqlc.yaml
+├── compose.yaml
 └── README.md
 ```
 
-Composition occurs in `cmd/crypto-scanner/main.go`: load config, build logger, connect PostgreSQL, construct adapters and modules, register analyzers, then start scheduler and HTTP server.
+Composition occurs in `backend/cmd/crypto-scanner/main.go`: load config, build logger, connect PostgreSQL, construct adapters and modules, register analyzers, then start scheduler and HTTP server.
 
 ## 13. Startup and shutdown
 

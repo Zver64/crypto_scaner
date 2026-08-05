@@ -1,7 +1,7 @@
 BINARY := bin/crypto-scanner
 BOOTSTRAP_BINARY := bin/bootstrap-admin
 
--include .env
+-include ../.env
 
 POSTGRES_USER ?= scanner
 POSTGRES_PASSWORD ?= scanner

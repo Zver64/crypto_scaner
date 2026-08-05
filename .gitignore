@@ -4,7 +4,7 @@
 !.env.example
 
 # Build and test output
-/bin/
+/backend/bin/
 coverage.out
 *.coverprofile
 

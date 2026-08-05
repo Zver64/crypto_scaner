@@ -18,7 +18,8 @@ If these files do not exist, proceed silently. Domain-modeling workflows create 
 ├── CONTEXT.md
 ├── docs/
 │   └── adr/
-└── internal/
+└── backend/
+    └── internal/
 ```
 
 ## Vocabulary

@@ -19,7 +19,7 @@ services:
       - postgres-data:/var/lib/postgresql
 
   app:
-    build: .
+    build: ./backend
     image: crypto-scanner:local
     env_file: .env
     environment:

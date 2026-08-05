@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -34,12 +35,19 @@ func MVPProfile() market.SyncProfile {
 	}
 }
 
-// Synchronizer coordinates instrument discovery and initial candle backfill.
+// Synchronizer coordinates instrument discovery, backfill, and incremental loading.
 type Synchronizer struct {
 	exchange Exchange
 	store    Store
 	logger   *slog.Logger
+	workers  int
+	runLock  sync.Mutex
 }
+
+const defaultWorkerCount = 4
+
+// ErrSyncInProgress reports that another process-local synchronization owns the run lock.
+var ErrSyncInProgress = errors.New("market synchronization already in progress")
 
 // New creates a market synchronizer that discards structured run logs.
 func New(exchange Exchange, store Store) *Synchronizer {
@@ -48,18 +56,34 @@ func New(exchange Exchange, store Store) *Synchronizer {
 
 // NewWithLogger creates a market synchronizer that emits per-run totals.
 func NewWithLogger(exchange Exchange, store Store, logger *slog.Logger) *Synchronizer {
+	return NewWithOptions(exchange, store, logger, defaultWorkerCount)
+}
+
+// NewWithOptions creates a synchronizer with explicit per-instance instrument concurrency.
+func NewWithOptions(exchange Exchange, store Store, logger *slog.Logger, workers int) *Synchronizer {
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
-	return &Synchronizer{exchange: exchange, store: store, logger: logger}
+	if workers < 1 {
+		workers = 1
+	}
+	return &Synchronizer{exchange: exchange, store: store, logger: logger, workers: workers}
 }
 
-// Sync applies the catalog and backfills active instruments without history.
+// Sync applies the catalog, backfills new instruments, and incrementally loads
+// missing closed candles for instruments with history.
 func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
+	if !synchronizer.runLock.TryLock() {
+		return ErrSyncInProgress
+	}
+	defer synchronizer.runLock.Unlock()
+
 	profile := MVPProfile()
 	operationStartedAt := time.Now()
 	stats := runStats{}
+	retriesBefore := synchronizer.retryCount()
 	defer func() {
+		stats.retryCount = synchronizer.retryCount() - retriesBefore
 		outcome := "succeeded"
 		if syncErr != nil {
 			outcome = "failed"
@@ -69,6 +93,7 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 			"duration", time.Since(operationStartedAt), "outcome", outcome,
 			"instruments_total", stats.instrumentsTotal, "instruments_succeeded", stats.instrumentsSucceeded,
 			"instruments_failed", stats.instrumentsFailed, "candle_rows_written", stats.candleRowsWritten,
+			"retry_count", stats.retryCount,
 		)
 	}()
 	state, err := synchronizer.store.GetSyncState(ctx, profile)
@@ -99,47 +124,18 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 		return synchronizer.recordFailure(ctx, &state, fmt.Errorf("list active instruments: %w", err))
 	}
 	stats.instrumentsTotal = len(active)
+	results := synchronizer.syncInstruments(ctx, active, profile, startedAt)
 	var instrumentFailures []error
-	for _, instrument := range active {
-		existing, err := synchronizer.store.ListLatestCandles(ctx, instrument.ID, 1)
-		if err != nil {
+	for result := range results {
+		if result.err != nil {
 			stats.instrumentsFailed++
-			instrumentFailures = append(instrumentFailures, fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err))
-			continue
-		}
-		if len(existing) > 0 {
-			stats.instrumentsSucceeded++
-			continue
-		}
-		candles, err := synchronizer.exchange.ListClosedCandles(ctx, market.CandleRequest{
-			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: 30, ClosedBefore: startedAt,
-		})
-		if err != nil {
-			stats.instrumentsFailed++
-			instrumentFailures = append(instrumentFailures, fmt.Errorf("backfill candles for %s: %w", instrument.Symbol, err))
-			continue
-		}
-		closed := make([]market.Candle, 0, len(candles))
-		for _, candle := range candles {
-			if !candle.CloseTime.Before(startedAt) {
-				continue
-			}
-			candle.InstrumentID = instrument.ID
-			candle.Interval = profile.Interval
-			closed = append(closed, candle)
-		}
-		if err := synchronizer.store.UpsertCandles(ctx, closed); err != nil {
-			stats.instrumentsFailed++
-			instrumentFailures = append(instrumentFailures, fmt.Errorf("store candles for %s: %w", instrument.Symbol, err))
+			instrumentFailures = append(instrumentFailures, result.err)
 			continue
 		}
 		stats.instrumentsSucceeded++
-		stats.candleRowsWritten += len(closed)
-		for _, candle := range closed {
-			if state.LastClosedOpenTime == nil || candle.OpenTime.After(*state.LastClosedOpenTime) {
-				openTime := candle.OpenTime
-				state.LastClosedOpenTime = &openTime
-			}
+		stats.candleRowsWritten += result.rowsWritten
+		if result.latestOpenTime != nil && (state.LastClosedOpenTime == nil || result.latestOpenTime.After(*state.LastClosedOpenTime)) {
+			state.LastClosedOpenTime = result.latestOpenTime
 		}
 	}
 	if len(instrumentFailures) > 0 {
@@ -157,11 +153,103 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	return nil
 }
 
+type instrumentResult struct {
+	err            error
+	rowsWritten    int
+	latestOpenTime *time.Time
+}
+
+func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instruments []market.Instrument, profile market.SyncProfile, startedAt time.Time) <-chan instrumentResult {
+	jobs := make(chan market.Instrument)
+	results := make(chan instrumentResult)
+	var workers sync.WaitGroup
+	workerCount := min(synchronizer.workers, len(instruments))
+	workers.Add(workerCount)
+	for range workerCount {
+		go func() {
+			defer workers.Done()
+			for instrument := range jobs {
+				results <- synchronizer.syncInstrument(ctx, instrument, profile, startedAt)
+			}
+		}()
+	}
+	go func() {
+		defer close(jobs)
+		for _, instrument := range instruments {
+			select {
+			case jobs <- instrument:
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	go func() {
+		workers.Wait()
+		close(results)
+	}()
+	return results
+}
+
+func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument market.Instrument, profile market.SyncProfile, startedAt time.Time) instrumentResult {
+	existing, err := synchronizer.store.ListLatestCandles(ctx, instrument.ID, 1)
+	if err != nil {
+		return instrumentResult{err: fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)}
+	}
+	request := market.CandleRequest{Symbol: instrument.Symbol, Interval: profile.Interval, Limit: 30, ClosedBefore: startedAt}
+	if len(existing) > 0 {
+		latest := existing[0].OpenTime
+		request.AfterOpenTime = &latest
+		request.Limit = 1000
+	}
+	result := instrumentResult{}
+	for {
+		candles, err := synchronizer.exchange.ListClosedCandles(ctx, request)
+		if err != nil {
+			return instrumentResult{err: fmt.Errorf("load candles for %s: %w", instrument.Symbol, err)}
+		}
+		closed := make([]market.Candle, 0, len(candles))
+		for _, candle := range candles {
+			if !candle.CloseTime.Before(startedAt) || request.AfterOpenTime != nil && !candle.OpenTime.After(*request.AfterOpenTime) {
+				continue
+			}
+			candle.InstrumentID = instrument.ID
+			candle.Interval = profile.Interval
+			closed = append(closed, candle)
+		}
+		if err := synchronizer.store.UpsertCandles(ctx, closed); err != nil {
+			return instrumentResult{err: fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)}
+		}
+		result.rowsWritten += len(closed)
+		for _, candle := range closed {
+			if result.latestOpenTime == nil || candle.OpenTime.After(*result.latestOpenTime) {
+				openTime := candle.OpenTime
+				result.latestOpenTime = &openTime
+			}
+		}
+		if request.AfterOpenTime == nil || len(candles) < request.Limit || result.latestOpenTime == nil {
+			return result
+		}
+		request.AfterOpenTime = result.latestOpenTime
+	}
+}
+
 type runStats struct {
 	instrumentsTotal     int
 	instrumentsSucceeded int
 	instrumentsFailed    int
 	candleRowsWritten    int
+	retryCount           uint64
+}
+
+type retryCounter interface {
+	RetryCount() uint64
+}
+
+func (synchronizer *Synchronizer) retryCount() uint64 {
+	if counter, ok := synchronizer.exchange.(retryCounter); ok {
+		return counter.RetryCount()
+	}
+	return 0
 }
 
 func (synchronizer *Synchronizer) recordFailure(ctx context.Context, state *market.SyncState, failure error) error {

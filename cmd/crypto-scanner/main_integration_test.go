@@ -2,10 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
+	"sync"
 	"testing"
 	"time"
 
@@ -13,6 +16,71 @@ import (
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/storage/postgres"
 )
+
+func TestRunServicesMakesHTTPAvailableBeforeSchedulerStartup(t *testing.T) {
+	listener := &acceptProbeListener{accepted: make(chan struct{}), closed: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	probe := &startupProbeScheduler{listener: listener, started: make(chan struct{})}
+	result := make(chan error, 1)
+	go func() {
+		result <- runServices(ctx, listener, http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+			response.WriteHeader(http.StatusOK)
+		}), probe, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Second)
+	}()
+	select {
+	case <-probe.started:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not observe the HTTP accept loop")
+	}
+	cancel()
+	if err := <-result; err != nil {
+		t.Fatalf("runServices() error = %v", err)
+	}
+}
+
+type startupProbeScheduler struct {
+	listener *acceptProbeListener
+	started  chan struct{}
+}
+
+func (scheduler *startupProbeScheduler) Run(ctx context.Context) error {
+	select {
+	case <-scheduler.listener.accepted:
+	default:
+		return errors.New("scheduler started before HTTP accept loop")
+	}
+	close(scheduler.started)
+	<-ctx.Done()
+	return nil
+}
+
+type acceptProbeListener struct {
+	once     sync.Once
+	accepted chan struct{}
+	closed   chan struct{}
+}
+
+func (listener *acceptProbeListener) Accept() (net.Conn, error) {
+	listener.once.Do(func() { close(listener.accepted) })
+	<-listener.closed
+	return nil, net.ErrClosed
+}
+
+func (listener *acceptProbeListener) Close() error {
+	select {
+	case <-listener.closed:
+	default:
+		close(listener.closed)
+	}
+	return nil
+}
+
+func (*acceptProbeListener) Addr() net.Addr { return dummyAddress("probe") }
+
+type dummyAddress string
+
+func (address dummyAddress) Network() string { return string(address) }
+func (address dummyAddress) String() string  { return string(address) }
 
 func TestNormalServerStartupDoesNotMutateUsers(t *testing.T) {
 	databaseURL := os.Getenv("CRYPTO_SCANNER_TEST_DATABASE_URL")

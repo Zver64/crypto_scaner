@@ -2,6 +2,7 @@ package binance_test
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"reflect"
@@ -12,6 +13,8 @@ import (
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/market"
 	marketsync "crypto-scanner/internal/market/sync"
+
+	"golang.org/x/time/rate"
 )
 
 var _ marketsync.Exchange = (*binance.Exchange)(nil)
@@ -190,6 +193,108 @@ func TestExchangeListClosedCandlesExcludesFormingCandleAndAcceptsShortHistory(t 
 	}
 }
 
+func TestExchangeListClosedCandlesStartsAfterLatestStoredOpenTime(t *testing.T) {
+	latest := time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)
+	httpClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if got := request.URL.Query().Get("startTime"); got != "1785628800001" {
+			t.Errorf("startTime = %q, want one millisecond after latest open time", got)
+		}
+		return jsonResponse(`[]`), nil
+	})}
+
+	_, err := binance.NewWithHTTPClient("https://fixture.invalid", httpClient).ListClosedCandles(context.Background(), market.CandleRequest{
+		Symbol: "BTCUSDT", Interval: "1d", Limit: 1000,
+		ClosedBefore: time.Date(2026, time.August, 5, 0, 0, 30, 0, time.UTC), AfterOpenTime: &latest,
+	})
+	if err != nil {
+		t.Fatalf("ListClosedCandles() error = %v", err)
+	}
+}
+
+func TestExchangeRetriesServerFailuresButNotPermanentClientFailures(t *testing.T) {
+	t.Run("server failure", func(t *testing.T) {
+		calls := 0
+		exchange := binance.NewWithOptions(binance.Options{
+			BaseURL: "https://fixture.invalid", RetryAttempts: 3, RetryBaseDelay: time.Millisecond,
+			Limiter: rate.NewLimiter(rate.Inf, 1), HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				if calls < 3 {
+					return statusResponse(http.StatusInternalServerError, `{"code":-1,"msg":"temporary"}`), nil
+				}
+				return jsonResponse(`{"symbols":[{"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT","permissions":["SPOT"]}]}`), nil
+			})},
+		})
+		if _, err := exchange.ListInstruments(context.Background()); err != nil {
+			t.Fatalf("ListInstruments() error = %v", err)
+		}
+		if calls != 3 {
+			t.Fatalf("calls = %d, want 3", calls)
+		}
+		if exchange.RetryCount() != 2 {
+			t.Fatalf("retry count = %d, want 2", exchange.RetryCount())
+		}
+	})
+
+	t.Run("permanent client failure", func(t *testing.T) {
+		calls := 0
+		exchange := binance.NewWithOptions(binance.Options{
+			BaseURL: "https://fixture.invalid", RetryAttempts: 5, RetryBaseDelay: time.Millisecond,
+			Limiter: rate.NewLimiter(rate.Inf, 1), HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				calls++
+				return statusResponse(http.StatusBadRequest, `{"code":-1100,"msg":"bad request"}`), nil
+			})},
+		})
+		if _, err := exchange.ListInstruments(context.Background()); err == nil {
+			t.Fatal("ListInstruments() accepted permanent client failure")
+		}
+		if calls != 1 {
+			t.Fatalf("calls = %d, want no retry", calls)
+		}
+	})
+}
+
+func TestExchangeUsesDiscoveryRequestWeightMetadata(t *testing.T) {
+	limiter := rate.NewLimiter(rate.Inf, 4)
+	httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(`{"rateLimits":[{"rateLimitType":"REQUEST_WEIGHT","interval":"MINUTE","limit":1200}],"symbols":[{"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT","permissions":["SPOT"]}]}`), nil
+	})}
+	exchange := binance.NewWithOptions(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient, Limiter: limiter})
+
+	if _, err := exchange.ListInstruments(context.Background()); err != nil {
+		t.Fatalf("ListInstruments() error = %v", err)
+	}
+	if got := limiter.Limit(); got != rate.Limit(18) {
+		t.Fatalf("shared limiter rate = %v, want 18 requests/second with headroom", got)
+	}
+}
+
+func TestExchangeRetryBackoffHonorsCancellation(t *testing.T) {
+	called := make(chan struct{}, 1)
+	exchange := binance.NewWithOptions(binance.Options{
+		BaseURL: "https://fixture.invalid", RetryAttempts: 5, RetryBaseDelay: time.Hour,
+		Limiter: rate.NewLimiter(rate.Inf, 1), HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			called <- struct{}{}
+			return nil, errors.New("temporary transport failure")
+		})},
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := exchange.ListInstruments(ctx)
+		result <- err
+	}()
+	<-called
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("ListInstruments() error = %v, want context cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("retry backoff ignored cancellation")
+	}
+}
+
 type roundTripFunc func(*http.Request) (*http.Response, error)
 
 func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -197,8 +302,12 @@ func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, 
 }
 
 func jsonResponse(body string) *http.Response {
+	return statusResponse(http.StatusOK, body)
+}
+
+func statusResponse(status int, body string) *http.Response {
 	return &http.Response{
-		StatusCode: http.StatusOK,
+		StatusCode: status,
 		Header:     http.Header{"Content-Type": []string{"application/json"}},
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}

@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -85,10 +86,85 @@ func TestSynchronizerBackfillsLatestClosedCandlesForInstrumentWithoutHistory(t *
 	if len(store.saved) != 2 || store.saved[1].Status != market.SyncStatusSucceeded || store.saved[1].LastClosedOpenTime == nil || !store.saved[1].LastClosedOpenTime.Equal(closed.OpenTime) {
 		t.Fatalf("saved states = %#v, want successful candle progress", store.saved)
 	}
-	for _, field := range []string{`"outcome":"succeeded"`, `"instruments_total":1`, `"instruments_succeeded":1`, `"instruments_failed":0`, `"candle_rows_written":1`} {
+	for _, field := range []string{`"outcome":"succeeded"`, `"instruments_total":1`, `"instruments_succeeded":1`, `"instruments_failed":0`, `"candle_rows_written":1`, `"retry_count":0`} {
 		if !strings.Contains(logs.String(), field) {
 			t.Fatalf("structured log %s missing %s", logs.String(), field)
 		}
+	}
+}
+
+func TestSynchronizerRequestsOnlyCandlesAfterLatestStoredOpenTime(t *testing.T) {
+	instrument := market.Instrument{ID: 41, Symbol: "BTCUSDT", QuoteAsset: "USDT", Status: "TRADING", Active: true}
+	latest := market.Candle{InstrumentID: instrument.ID, Interval: "1d", OpenTime: time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)}
+	missing := market.Candle{
+		OpenTime:  time.Date(2026, time.August, 3, 0, 0, 0, 0, time.UTC),
+		CloseTime: time.Date(2026, time.August, 3, 23, 59, 59, 999000000, time.UTC),
+		Open:      100, High: 110, Low: 90, Close: 105,
+	}
+	exchange := &fakeExchange{items: []market.Instrument{instrument}, candles: map[string][]market.Candle{instrument.Symbol: {missing}}}
+	store := &fakeMarketStore{
+		state:  market.SyncState{Profile: marketsync.MVPProfile(), Status: market.SyncStatusSucceeded},
+		active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{instrument.ID: {latest}},
+	}
+
+	if err := marketsync.New(exchange, store).Sync(context.Background()); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if len(exchange.candleRequests) != 1 {
+		t.Fatalf("candle requests = %#v, want one incremental request", exchange.candleRequests)
+	}
+	request := exchange.candleRequests[0]
+	if request.AfterOpenTime == nil || !request.AfterOpenTime.Equal(latest.OpenTime) || request.Limit != 1000 {
+		t.Fatalf("incremental request = %#v, want candles after %s with page limit 1000", request, latest.OpenTime)
+	}
+	if len(store.upserted) != 1 || len(store.upserted[0]) != 1 || store.upserted[0][0].OpenTime != missing.OpenTime {
+		t.Fatalf("upserted = %#v, want missing candle only", store.upserted)
+	}
+}
+
+func TestSynchronizerRejectsOverlappingRunWithoutWaiting(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	exchange := &fakeExchange{items: []market.Instrument{{Symbol: "BTCUSDT", QuoteAsset: "USDT", Status: "TRADING", Active: true}}, started: started, release: release}
+	synchronizer := marketsync.New(exchange, &fakeMarketStore{state: market.SyncState{Profile: marketsync.MVPProfile()}})
+	firstResult := make(chan error, 1)
+	go func() { firstResult <- synchronizer.Sync(context.Background()) }()
+	<-started
+
+	if err := synchronizer.Sync(context.Background()); !errors.Is(err, marketsync.ErrSyncInProgress) {
+		t.Fatalf("overlapping Sync() error = %v, want ErrSyncInProgress", err)
+	}
+	close(release)
+	if err := <-firstResult; err != nil {
+		t.Fatalf("first Sync() error = %v", err)
+	}
+}
+
+func TestSynchronizerBoundsInstrumentConcurrency(t *testing.T) {
+	instruments := make([]market.Instrument, 5)
+	for index := range instruments {
+		instruments[index] = market.Instrument{ID: int64(index + 1), Symbol: string(rune('A'+index)) + "USDT", QuoteAsset: "USDT", Status: "TRADING", Active: true}
+	}
+	started := make(chan struct{}, len(instruments))
+	release := make(chan struct{})
+	exchange := &fakeExchange{items: instruments, candles: map[string][]market.Candle{}, workerStarted: started, workerRelease: release}
+	store := &fakeMarketStore{state: market.SyncState{Profile: marketsync.MVPProfile()}, active: instruments, latest: map[int64][]market.Candle{}}
+	result := make(chan error, 1)
+	go func() { result <- marketsync.NewWithOptions(exchange, store, nil, 2).Sync(context.Background()) }()
+
+	<-started
+	<-started
+	select {
+	case <-started:
+		t.Fatal("more than two instrument requests ran concurrently")
+	case <-time.After(30 * time.Millisecond):
+	}
+	close(release)
+	if err := <-result; err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if exchange.maxActive != 2 {
+		t.Fatalf("maximum active requests = %d, want 2", exchange.maxActive)
 	}
 }
 
@@ -115,7 +191,11 @@ func TestSynchronizerContinuesAfterInstrumentFailureAndReportsRunTotals(t *testi
 	if !errors.Is(err, permanentErr) {
 		t.Fatalf("Sync() error = %v, want permanent instrument failure", err)
 	}
-	if len(exchange.candleRequests) != 2 || exchange.candleRequests[0].Symbol != "BTCUSDT" || exchange.candleRequests[1].Symbol != "ETHUSDT" {
+	requested := map[string]bool{}
+	for _, request := range exchange.candleRequests {
+		requested[request.Symbol] = true
+	}
+	if len(exchange.candleRequests) != 2 || !requested["BTCUSDT"] || !requested["ETHUSDT"] {
 		t.Fatalf("candle requests = %#v, want both instruments attempted", exchange.candleRequests)
 	}
 	if len(store.upserted) != 1 || len(store.upserted[0]) != 1 || store.upserted[0][0].InstrumentID != eth.ID {
@@ -233,23 +313,53 @@ func TestSynchronizerReturnsBothOutcomePersistenceFailures(t *testing.T) {
 }
 
 type fakeExchange struct {
+	mu             sync.Mutex
 	items          []market.Instrument
 	err            error
 	candles        map[string][]market.Candle
 	candleErrors   map[string]error
 	candleRequests []market.CandleRequest
+	started        chan struct{}
+	release        chan struct{}
+	workerStarted  chan struct{}
+	workerRelease  chan struct{}
+	active         int
+	maxActive      int
 }
 
-func (exchange *fakeExchange) ListInstruments(context.Context) ([]market.Instrument, error) {
+func (exchange *fakeExchange) ListInstruments(ctx context.Context) ([]market.Instrument, error) {
+	if exchange.started != nil {
+		close(exchange.started)
+		select {
+		case <-exchange.release:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	return exchange.items, exchange.err
 }
 
 func (exchange *fakeExchange) ListClosedCandles(_ context.Context, request market.CandleRequest) ([]market.Candle, error) {
+	exchange.mu.Lock()
 	exchange.candleRequests = append(exchange.candleRequests, request)
-	return exchange.candles[request.Symbol], exchange.candleErrors[request.Symbol]
+	if exchange.workerStarted != nil {
+		exchange.active++
+		exchange.maxActive = max(exchange.maxActive, exchange.active)
+		exchange.workerStarted <- struct{}{}
+	}
+	candles, err := exchange.candles[request.Symbol], exchange.candleErrors[request.Symbol]
+	exchange.mu.Unlock()
+	if exchange.workerRelease != nil {
+		<-exchange.workerRelease
+		exchange.mu.Lock()
+		exchange.active--
+		exchange.mu.Unlock()
+	}
+	return candles, err
 }
 
 type fakeMarketStore struct {
+	mu         sync.Mutex
 	state      market.SyncState
 	saved      []market.SyncState
 	applied    []market.Instrument
@@ -276,6 +386,8 @@ func (store *fakeMarketStore) ListLatestCandles(_ context.Context, instrumentID 
 }
 
 func (store *fakeMarketStore) UpsertCandles(_ context.Context, items []market.Candle) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	store.upserted = append(store.upserted, append([]market.Candle(nil), items...))
 	if len(items) == 0 {
 		return nil

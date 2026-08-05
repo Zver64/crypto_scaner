@@ -12,6 +12,7 @@ import (
 	"crypto-scanner/internal/market"
 
 	connector "github.com/binance/binance-connector-go"
+	"golang.org/x/time/rate"
 )
 
 const spotPermission = "SPOT"
@@ -21,21 +22,65 @@ const dailyInterval = "1d"
 // Exchange adapts the official Binance connector to market domain values.
 // Connector request and response types do not leave this package.
 type Exchange struct {
-	client *connector.Client
+	client    *connector.Client
+	limiter   *rate.Limiter
+	transport *retryTransport
+}
+
+// Options configures the shared public Binance HTTP policy.
+type Options struct {
+	BaseURL        string
+	HTTPClient     *http.Client
+	RetryAttempts  int
+	RetryBaseDelay time.Duration
+	Limiter        *rate.Limiter
 }
 
 // New creates a public Binance Spot exchange adapter for the official endpoint.
 func New() *Exchange {
-	return &Exchange{client: connector.NewClient("", "")}
+	return NewWithOptions(Options{})
 }
 
 // NewWithHTTPClient creates an adapter with an explicit HTTP boundary. It is
 // useful for deterministic fixtures without exposing official connector types.
 func NewWithHTTPClient(baseURL string, httpClient *http.Client) *Exchange {
-	client := connector.NewClient("", "", baseURL)
-	client.HTTPClient = httpClient
-	return &Exchange{client: client}
+	return NewWithOptions(Options{BaseURL: baseURL, HTTPClient: httpClient})
 }
+
+// NewWithOptions creates an adapter whose discovery and candle calls share one
+// limiter and retry policy.
+func NewWithOptions(options Options) *Exchange {
+	if options.BaseURL == "" {
+		options.BaseURL = "https://api.binance.com"
+	}
+	if options.HTTPClient == nil {
+		options.HTTPClient = http.DefaultClient
+	}
+	if options.RetryAttempts < 1 {
+		options.RetryAttempts = 5
+	}
+	if options.RetryBaseDelay <= 0 {
+		options.RetryBaseDelay = 200 * time.Millisecond
+	}
+	if options.Limiter == nil {
+		options.Limiter = rate.NewLimiter(rate.Limit(10), 4)
+	}
+	client := connector.NewClient("", "", options.BaseURL)
+	httpClient := *options.HTTPClient
+	baseTransport := options.HTTPClient.Transport
+	if baseTransport == nil {
+		baseTransport = http.DefaultTransport
+	}
+	transport := &retryTransport{
+		base: baseTransport, limiter: options.Limiter, attempts: options.RetryAttempts, baseDelay: options.RetryBaseDelay,
+	}
+	httpClient.Transport = transport
+	client.HTTPClient = &httpClient
+	return &Exchange{client: client, limiter: options.Limiter, transport: transport}
+}
+
+// RetryCount returns the cumulative number of retry attempts made by this adapter.
+func (exchange *Exchange) RetryCount() uint64 { return exchange.transport.retryCount.Load() }
 
 // ListInstruments returns a complete Binance Spot/USDT discovery snapshot.
 func (exchange *Exchange) ListInstruments(ctx context.Context) ([]market.Instrument, error) {
@@ -43,6 +88,7 @@ func (exchange *Exchange) ListInstruments(ctx context.Context) ([]market.Instrum
 	if err != nil {
 		return nil, fmt.Errorf("list Binance Spot exchange information: %w", err)
 	}
+	exchange.applyRateLimits(response.RateLimits)
 
 	items := make([]market.Instrument, 0, len(response.Symbols))
 	seen := make(map[string]struct{}, len(response.Symbols))
@@ -86,6 +132,17 @@ func (exchange *Exchange) ListInstruments(ctx context.Context) ([]market.Instrum
 	return items, nil
 }
 
+func (exchange *Exchange) applyRateLimits(limits []*connector.RateLimit) {
+	for _, limit := range limits {
+		if limit == nil || limit.RateLimitType != "REQUEST_WEIGHT" || limit.Interval != "MINUTE" || limit.Limit <= 0 {
+			continue
+		}
+		// Keep ten percent headroom for other users of the public IP.
+		exchange.limiter.SetLimit(rate.Limit(float64(limit.Limit) * 0.9 / 60))
+		return
+	}
+}
+
 // ListClosedCandles returns Binance klines that are complete at the request's
 // exclusive cutoff. Connector response types remain confined to this adapter.
 func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.CandleRequest) ([]market.Candle, error) {
@@ -108,12 +165,19 @@ func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.
 		return nil, fmt.Errorf("list Binance candles for %s: closed-before cutoff must follow the Unix epoch day", symbol)
 	}
 
-	response, err := exchange.client.NewKlinesService().
+	service := exchange.client.NewKlinesService().
 		Symbol(symbol).
 		Interval(request.Interval).
 		Limit(request.Limit).
-		EndTime(uint64(currentDayStartedAt.UnixMilli() - 1)).
-		Do(ctx)
+		EndTime(uint64(currentDayStartedAt.UnixMilli() - 1))
+	if request.AfterOpenTime != nil {
+		start := request.AfterOpenTime.UTC().UnixMilli() + 1
+		if start <= 0 || start >= currentDayStartedAt.UnixMilli() {
+			return nil, fmt.Errorf("list Binance candles for %s: after-open-time must precede the current UTC day", symbol)
+		}
+		service.StartTime(uint64(start))
+	}
+	response, err := service.Do(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list Binance candles for %s: %w", symbol, err)
 	}

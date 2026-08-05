@@ -30,10 +30,11 @@ type Candle struct {
 // CandleRequest describes one bounded closed-candle query at the exchange
 // boundary. ClosedBefore is the synchronization start and is exclusive.
 type CandleRequest struct {
-	Symbol       string
-	Interval     string
-	Limit        int
-	ClosedBefore time.Time
+	Symbol        string
+	Interval      string
+	Limit         int
+	ClosedBefore  time.Time
+	AfterOpenTime *time.Time
 }
 
 // SyncProfile identifies one independently synchronized market dataset.

@@ -6,11 +6,16 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
+	"time"
 
+	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/httpapi"
+	marketsync "crypto-scanner/internal/market/sync"
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/storage/postgres"
@@ -46,6 +51,9 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	}
 	defer database.Close()
 	store := postgres.NewStore(database)
+	exchange := binance.NewWithOptions(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
+	synchronizer := marketsync.NewWithOptions(exchange, store, logger, cfg.SyncWorkers)
+	scheduler := marketsync.NewScheduler(synchronizer, logger)
 
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
@@ -57,7 +65,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := httpapi.Serve(ctx, listener, httpapi.New(logger, store), logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.New(logger, store), scheduler, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",
@@ -66,6 +74,74 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		"outcome", "success",
 	)
 	return nil
+}
+
+type scheduledService interface {
+	Run(context.Context) error
+}
+
+func runServices(
+	ctx context.Context,
+	listener net.Listener,
+	handler http.Handler,
+	scheduler scheduledService,
+	logger *slog.Logger,
+	shutdownTimeout time.Duration,
+) error {
+	httpCtx, stopHTTP := context.WithCancel(context.Background())
+	defer stopHTTP()
+	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
+	defer stopScheduler()
+
+	httpReady := make(chan struct{})
+	listener = &acceptSignalingListener{Listener: listener, ready: httpReady}
+	httpResult := make(chan error, 1)
+	go func() { httpResult <- httpapi.Serve(httpCtx, listener, handler, logger, shutdownTimeout) }()
+	select {
+	case <-httpReady:
+	case err := <-httpResult:
+		return err
+	case <-ctx.Done():
+		stopHTTP()
+		return <-httpResult
+	}
+
+	schedulerResult := make(chan error, 1)
+	go func() { schedulerResult <- scheduler.Run(schedulerCtx) }()
+
+	select {
+	case <-ctx.Done():
+		stopScheduler()
+		stopHTTP()
+		schedulerErr := <-schedulerResult
+		httpErr := <-httpResult
+		if schedulerErr != nil {
+			return fmt.Errorf("stop market scheduler: %w", schedulerErr)
+		}
+		return httpErr
+	case err := <-httpResult:
+		stopScheduler()
+		<-schedulerResult
+		return err
+	case err := <-schedulerResult:
+		stopHTTP()
+		<-httpResult
+		if err != nil {
+			return fmt.Errorf("run market scheduler: %w", err)
+		}
+		return fmt.Errorf("market scheduler stopped unexpectedly")
+	}
+}
+
+type acceptSignalingListener struct {
+	net.Listener
+	once  sync.Once
+	ready chan<- struct{}
+}
+
+func (listener *acceptSignalingListener) Accept() (net.Conn, error) {
+	listener.once.Do(func() { close(listener.ready) })
+	return listener.Listener.Accept()
 }
 
 func logFailure(logger *slog.Logger, operation string, err error) {

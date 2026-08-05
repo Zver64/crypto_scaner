@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+
+	"crypto-scanner/internal/analysis"
 )
 
 // Readiness exposes only the operational checks required by the health route.
@@ -14,12 +16,25 @@ type Readiness interface {
 	SuccessfulMarketSyncExists(context.Context) bool
 }
 
+// Authenticator protects business endpoints with an authenticated user.
+type Authenticator interface {
+	Authenticate(http.Handler) http.Handler
+}
+
+// Analysis exposes the application use cases served by the HTTP API.
+type Analysis interface {
+	AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error)
+	Search(context.Context, analysis.SearchRequest) (analysis.SearchResult, error)
+}
+
 // New returns the service HTTP handler with process-wide middleware applied.
-func New(logger *slog.Logger, readiness Readiness, telegramWebhook http.Handler) http.Handler {
+func New(logger *slog.Logger, readiness Readiness, telegramWebhook http.Handler, service Analysis, authenticator Authenticator) http.Handler {
 	router := http.NewServeMux()
 	router.HandleFunc("GET /health/live", live)
 	router.HandleFunc("GET /health/ready", ready(readiness))
 	router.Handle("POST /telegram/webhook", telegramWebhook)
+	router.Handle("GET /api/v1/analysis/percentile/{symbol}", authenticator.Authenticate(analyzeSymbol(service)))
+	router.Handle("GET /api/v1/analysis/percentile", authenticator.Authenticate(searchMarket(service)))
 	return requestMiddleware(logger, router)
 }
 

@@ -5,17 +5,19 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/httpapi"
 	"crypto-scanner/internal/platform/logging"
 )
 
 func TestReadinessReportsMissingSuccessfulMarketSync(t *testing.T) {
-	handler := httpapi.New(
+	handler := newTestHTTPHandler(
 		logging.New(io.Discard, "error"),
 		readinessStub{database: true, migrations: true},
 		http.NotFoundHandler(),
@@ -40,7 +42,7 @@ func TestReadinessReportsMissingSuccessfulMarketSync(t *testing.T) {
 }
 
 func TestReadinessSucceedsWithDatabaseMigrationsAndSuccessfulMarketSync(t *testing.T) {
-	handler := httpapi.New(
+	handler := newTestHTTPHandler(
 		logging.New(io.Discard, "error"),
 		readinessStub{database: true, migrations: true, marketSync: true},
 		http.NotFoundHandler(),
@@ -72,7 +74,7 @@ func TestReadinessRejectsUnavailableDatabaseOrMigrations(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler := httpapi.New(logging.New(io.Discard, "error"), test.readiness, http.NotFoundHandler())
+			handler := newTestHTTPHandler(logging.New(io.Discard, "error"), test.readiness, http.NotFoundHandler())
 			request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
@@ -106,7 +108,7 @@ func (stub readinessStub) SuccessfulMarketSyncExists(context.Context) bool { ret
 
 func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing.T) {
 	var logOutput bytes.Buffer
-	server := httptest.NewServer(httpapi.New(logging.New(&logOutput, "info"), readinessStub{}, http.NotFoundHandler()))
+	server := httptest.NewServer(newTestHTTPHandler(logging.New(&logOutput, "info"), readinessStub{}, http.NotFoundHandler()))
 	t.Cleanup(server.Close)
 
 	request, err := http.NewRequest(http.MethodGet, server.URL+"/health/live", nil)
@@ -150,7 +152,7 @@ func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing
 }
 
 func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *testing.T) {
-	server := httptest.NewServer(httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, http.NotFoundHandler()))
+	server := httptest.NewServer(newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{}, http.NotFoundHandler()))
 	t.Cleanup(server.Close)
 
 	request, err := http.NewRequest(http.MethodGet, server.URL+"/does-not-exist", nil)
@@ -175,7 +177,7 @@ func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *tes
 
 func TestRouterExposesOnlyTelegramWebhookAtTheBotBoundary(t *testing.T) {
 	webhookCalls := 0
-	handler := httpapi.New(
+	handler := newTestHTTPHandler(
 		logging.New(io.Discard, "error"),
 		readinessStub{},
 		http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
@@ -198,3 +200,20 @@ func TestRouterExposesOnlyTelegramWebhookAtTheBotBoundary(t *testing.T) {
 		t.Fatalf("Telegram analysis status = %d, want 404", analysisResponse.Code)
 	}
 }
+
+func newTestHTTPHandler(logger *slog.Logger, readiness httpapi.Readiness, webhook http.Handler) http.Handler {
+	return httpapi.New(logger, readiness, webhook, unavailableAnalysis{}, passThroughAuthenticator{})
+}
+
+type unavailableAnalysis struct{}
+
+func (unavailableAnalysis) AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error) {
+	return analysis.SymbolResult{}, analysis.ErrMarketDataUnavailable
+}
+func (unavailableAnalysis) Search(context.Context, analysis.SearchRequest) (analysis.SearchResult, error) {
+	return analysis.SearchResult{}, analysis.ErrMarketDataUnavailable
+}
+
+type passThroughAuthenticator struct{}
+
+func (passThroughAuthenticator) Authenticate(next http.Handler) http.Handler { return next }

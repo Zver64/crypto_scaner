@@ -13,6 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"crypto-scanner/internal/analysis"
+	"crypto-scanner/internal/analysis/percentile"
+	authtelegram "crypto-scanner/internal/auth/telegram"
 	telegrambot "crypto-scanner/internal/bot/telegram"
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/httpapi"
@@ -91,6 +94,8 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 	exchange := binance.NewWithOptions(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
 	synchronizer := marketsync.NewWithOptions(exchange, store, logger, cfg.SyncWorkers)
 	scheduler := marketsync.NewScheduler(synchronizer, logger)
+	analysisService := analysis.NewService(store, percentile.New())
+	authenticator := authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge)
 
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
@@ -102,7 +107,7 @@ func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.New(logger, store, webhook), scheduler, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.New(logger, store, webhook, analysisService, authenticator), scheduler, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

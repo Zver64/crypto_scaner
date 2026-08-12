@@ -1,0 +1,60 @@
+# Crypto Scanner percentile analysis endpoints
+#
+# Both endpoints require fresh Telegram Mini App initData from an enabled user:
+#   Authorization: tma <window.Telegram.WebApp.initData>
+#
+# Copy http-client.private.env.json.example to http-client.private.env.json and
+# replace TELEGRAM_INIT_DATA there. The private file is ignored by Git.
+# initData expires according to TELEGRAM_INIT_DATA_MAX_AGE (15 minutes by
+# default), so refresh it from the Mini App when the API returns 401.
+#
+# Query rules:
+# - Every documented query parameter is required exactly once.
+# - Extra query parameters are rejected.
+# - period_days: integer from 1 through 3650.
+# - percentile: number from 0 through 100.
+# - minimum_range_percent: non-negative number.
+
+@symbol = BTCUSDT
+@periodDays = 30
+@percentile = 75
+@minimumRangePercent = 4
+
+### Analyze one active symbol
+# Returns its percentile range, candle count, and UTC time coverage.
+# Expected: 200. The symbol must match an active symbol exactly, for example
+# BTCUSDT. Unknown or inactive symbols return 404 symbol_not_found; incomplete
+# history returns 409 insufficient_data.
+# @name analyzeSymbolPercentile
+GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?period_days={{periodDays}}&percentile={{percentile}} HTTP/1.1
+Accept: application/json
+Authorization: tma {{TELEGRAM_INIT_DATA}}
+X-Request-ID: kulala-analysis-symbol
+
+### Search all active symbols
+# Analyzes every active instrument and returns only items whose unrounded range
+# is at least minimum_range_percent. Items are ordered by range descending, then
+# symbol ascending. The response also reports matched, analyzed, and
+# insufficient-data counts.
+# Expected: 200.
+# @name searchMarketPercentile
+GET {{BASE_URL}}/api/v1/analysis/percentile?period_days={{periodDays}}&percentile={{percentile}}&minimum_range_percent={{minimumRangePercent}} HTTP/1.1
+Accept: application/json
+Authorization: tma {{TELEGRAM_INIT_DATA}}
+X-Request-ID: kulala-analysis-search
+
+### Authentication failure example
+# Omitting Authorization demonstrates the canonical 401 unauthenticated error.
+# A valid Telegram identity that is not enabled returns 403 access_denied.
+# @name analyzeWithoutAuthentication
+GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?period_days={{periodDays}}&percentile={{percentile}} HTTP/1.1
+Accept: application/json
+X-Request-ID: kulala-analysis-unauthenticated
+
+### Validation failure example
+# period_days=0 demonstrates the canonical 400 invalid_argument error.
+# @name analyzeWithInvalidArguments
+GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?period_days=0&percentile={{percentile}} HTTP/1.1
+Accept: application/json
+Authorization: tma {{TELEGRAM_INIT_DATA}}
+X-Request-ID: kulala-analysis-invalid

@@ -1,0 +1,23 @@
+# Crypto Scanner operational endpoints
+#
+# These endpoints are public and do not require Telegram authentication.
+# Run the service first, then place the cursor inside a request and invoke
+# Kulala's "Send request" action.
+
+### Liveness
+# Confirms that the HTTP process is serving requests.
+# Expected: 200 with {"status":"ok"}.
+# @name healthLive
+GET {{BASE_URL}}/health/live HTTP/1.1
+Accept: application/json
+X-Request-ID: kulala-health-live
+
+### Readiness
+# Confirms that PostgreSQL is reachable, migrations are current, and at least
+# one market synchronization has completed successfully.
+# Expected: 200 when ready, otherwise 503. The response contains checks for
+# database, migrations, and market_sync.
+# @name healthReady
+GET {{BASE_URL}}/health/ready HTTP/1.1
+Accept: application/json
+X-Request-ID: kulala-health-ready

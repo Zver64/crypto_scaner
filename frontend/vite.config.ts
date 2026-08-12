@@ -10,6 +10,9 @@ const config = defineConfig({
 		tanstackRouter({ target: "react", autoCodeSplitting: true }),
 		viteReact(),
 	],
+  server: {
+    allowedHosts: true,
+  }
 });
 
 export default config;

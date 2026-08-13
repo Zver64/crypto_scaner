@@ -32,3 +32,23 @@ export function upsertEnvironmentValue(contents, name, value) {
 
 	return `${lines.join("\n")}\n`;
 }
+
+export function createDevelopmentInitData({
+	botToken,
+	now,
+	signInitData,
+	telegramID,
+}) {
+	return signInitData(
+		{
+			user: {
+				id: telegramID,
+				first_name: "Development",
+				last_name: "User",
+				language_code: "en",
+			},
+		},
+		botToken,
+		now(),
+	);
+}

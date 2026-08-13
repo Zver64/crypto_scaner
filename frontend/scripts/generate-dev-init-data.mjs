@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { sign } from "@tma.js/init-data-node";
 import { loadEnv } from "vite";
 import {
+	createDevelopmentInitData,
 	parsePositiveInteger,
 	requireEnvironmentValue,
 	upsertEnvironmentValue,
@@ -18,24 +19,17 @@ const telegramID = parsePositiveInteger(
 	requireEnvironmentValue(env, "ADMIN_TELEGRAM_ID"),
 	"ADMIN_TELEGRAM_ID",
 );
-const authDate = new Date();
-const initData = sign(
-	{
-		user: {
-			id: telegramID,
-			first_name: "Development",
-			last_name: "User",
-			language_code: "en",
-		},
-	},
+const initData = createDevelopmentInitData({
 	botToken,
-	authDate,
-);
+	now: () => new Date(),
+	signInitData: sign,
+	telegramID,
+});
 
 await upsertEnvValue(privateEnvPath, "TELEGRAM_DEV_INIT_DATA", initData);
 
 console.log(
-	`Development init data generated with configured lifetime ${maxAge}.`,
+	`Development init data generated with configured lifetime ${maxAge}. Restart Vite to use it.`,
 );
 
 async function upsertEnvValue(path, name, value) {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+	createDevelopmentInitData,
 	parsePositiveInteger,
 	requireEnvironmentValue,
 	upsertEnvironmentValue,
@@ -25,6 +26,38 @@ describe("development init-data environment", () => {
 				"ADMIN_TELEGRAM_ID must be a positive",
 			);
 		}
+	});
+});
+
+describe("createDevelopmentInitData", () => {
+	it("signs with the current authentication date supplied by the clock", () => {
+		const currentDate = new Date("2026-08-14T01:00:00Z");
+		const calls = [];
+		const value = createDevelopmentInitData({
+			botToken: "fake-token",
+			now: () => currentDate,
+			signInitData: (...args) => {
+				calls.push(args);
+				return "fake-signed-value";
+			},
+			telegramID: 424242,
+		});
+
+		expect(value).toBe("fake-signed-value");
+		expect(calls).toEqual([
+			[
+				{
+					user: {
+						first_name: "Development",
+						id: 424242,
+						language_code: "en",
+						last_name: "User",
+					},
+				},
+				"fake-token",
+				currentDate,
+			],
+		]);
 	});
 });
 

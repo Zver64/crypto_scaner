@@ -19,6 +19,9 @@ The init data can still be refreshed without starting Vite:
 npm run generate:dev-init-data
 ```
 
+Restart Vite after manually refreshing the init data so its proxy loads the new
+private credential.
+
 The backend accepts the generated value for the duration configured by the
 required root `TELEGRAM_INIT_DATA_MAX_AGE` environment variable. The local
 example config sets it to 24 hours (`24h`).

@@ -6,7 +6,6 @@ import {
 	Group,
 	Loader,
 	LoadingOverlay,
-	NumberInput,
 	Paper,
 	SimpleGrid,
 	Stack,
@@ -14,13 +13,13 @@ import {
 	Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { ApiError, fetchInstrumentAnalysis } from "../../api/client";
+import { fetchInstrumentAnalysis } from "../../api/client";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
 import { getTelegramInitData, useTelegramBackButton } from "../../app/telegram";
-import { marketScanCriteriaConstraints } from "../market-scan/criteria";
+import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
+import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
 import { formatRangePercent } from "../market-scan/results";
 import {
 	type InstrumentAnalysisCriteria,
@@ -72,21 +71,7 @@ export function InstrumentAnalysisPage({
 		});
 	}, [committedPeriodDays, committedPercentile, setFormValues]);
 
-	useEffect(() => {
-		if (!query.error) {
-			return;
-		}
-
-		notifications.show({
-			autoClose: 5000,
-			color: "red",
-			message:
-				query.error instanceof ApiError
-					? query.error.message
-					: "An unexpected error occurred. Please try again.",
-			title: "Instrument Analysis failed",
-		});
-	}, [query.error]);
+	useAnalysisErrorNotification(query.error, "Instrument Analysis failed");
 
 	const handleSubmit = form.onSubmit(async (values) => {
 		if (
@@ -132,22 +117,11 @@ export function InstrumentAnalysisPage({
 
 				<Paper component="form" onSubmit={handleSubmit} p="md" withBorder>
 					<Stack gap="sm">
-						<NumberInput
-							allowDecimal={false}
-							key={form.key("periodDays")}
-							label="Analysis Period"
-							max={marketScanCriteriaConstraints.periodDays.maximum}
-							min={marketScanCriteriaConstraints.periodDays.minimum}
-							suffix=" days"
-							{...form.getInputProps("periodDays")}
-						/>
-						<NumberInput
-							allowDecimal={false}
-							key={form.key("percentile")}
-							label="Range Percentile"
-							max={marketScanCriteriaConstraints.percentile.maximum}
-							min={marketScanCriteriaConstraints.percentile.minimum}
-							{...form.getInputProps("percentile")}
+						<AnalysisCriteriaFields
+							percentileInputProps={form.getInputProps("percentile")}
+							percentileKey={form.key("percentile")}
+							periodInputProps={form.getInputProps("periodDays")}
+							periodKey={form.key("periodDays")}
 						/>
 						<Button
 							disabled={submissionDisabled}

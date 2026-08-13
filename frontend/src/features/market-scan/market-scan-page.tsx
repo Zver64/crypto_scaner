@@ -15,12 +15,13 @@ import {
 	Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { notifications } from "@mantine/notifications";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ApiError, fetchMarketScan } from "../../api/client";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
 import { getTelegramInitData } from "../../app/telegram";
+import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
+import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
 import {
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
@@ -70,24 +71,10 @@ export function MarketScanPage({
 			? marketScanQueryKey(committedCriteria)
 			: (["market-scan", "uncommitted"] as const),
 		retry: false,
+		gcTime: Number.POSITIVE_INFINITY,
 		staleTime: Number.POSITIVE_INFINITY,
 	});
-
-	useEffect(() => {
-		if (!query.error) {
-			return;
-		}
-
-		notifications.show({
-			autoClose: 5000,
-			color: "red",
-			message:
-				query.error instanceof ApiError
-					? query.error.message
-					: "An unexpected error occurred. Please try again.",
-			title: "Market Scan failed",
-		});
-	}, [query.error]);
+	useAnalysisErrorNotification(query.error, "Market Scan failed");
 
 	const handleSubmit = form.onSubmit(async (values) => {
 		const criteria = criteriaFromValidDraft(values);
@@ -123,22 +110,11 @@ export function MarketScanPage({
 
 				<Paper component="form" onSubmit={handleSubmit} p="md" withBorder>
 					<Stack gap="sm">
-						<NumberInput
-							allowDecimal={false}
-							key={form.key("periodDays")}
-							label="Analysis Period"
-							max={marketScanCriteriaConstraints.periodDays.maximum}
-							min={marketScanCriteriaConstraints.periodDays.minimum}
-							suffix=" days"
-							{...form.getInputProps("periodDays")}
-						/>
-						<NumberInput
-							allowDecimal={false}
-							key={form.key("percentile")}
-							label="Range Percentile"
-							max={marketScanCriteriaConstraints.percentile.maximum}
-							min={marketScanCriteriaConstraints.percentile.minimum}
-							{...form.getInputProps("percentile")}
+						<AnalysisCriteriaFields
+							percentileInputProps={form.getInputProps("percentile")}
+							percentileKey={form.key("percentile")}
+							periodInputProps={form.getInputProps("periodDays")}
+							periodKey={form.key("periodDays")}
 						/>
 						<NumberInput
 							decimalScale={10}

@@ -19,6 +19,9 @@ const config = defineConfig(({ mode }) => {
 	);
 
 	return {
+		optimizeDeps: {
+			include: ["@mantine/form"],
+		},
 		resolve: { tsconfigPaths: true },
 		plugins: [
 			devtools(),

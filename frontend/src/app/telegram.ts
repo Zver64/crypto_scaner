@@ -80,3 +80,7 @@ export function useTelegramMiniApp() {
 
 	return { safeAreaInsets, webApp };
 }
+
+export function getTelegramInitData() {
+	return window.Telegram?.WebApp?.initData;
+}

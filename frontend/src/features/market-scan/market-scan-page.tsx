@@ -1,0 +1,209 @@
+import {
+	Box,
+	Button,
+	Center,
+	Container,
+	Loader,
+	NumberInput,
+	Paper,
+	Stack,
+	Table,
+	Text,
+	Title,
+} from "@mantine/core";
+import { useForm } from "@mantine/form";
+import { notifications } from "@mantine/notifications";
+import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
+import { ApiError, fetchMarketScan } from "../../api/client";
+import { useBusinessRequestPermission } from "../../app/business-request-context";
+import { getTelegramInitData } from "../../app/telegram";
+import {
+	defaultMarketScanCriteria,
+	type MarketScanCriteria,
+	type MarketScanDraft,
+	marketScanCriteriaConstraints,
+	validateMarketScanCriteria,
+} from "./criteria";
+
+export function marketScanQueryKey(criteria: MarketScanCriteria) {
+	return [
+		"market-scan",
+		criteria.periodDays,
+		criteria.percentile,
+		criteria.minimumRangePercent,
+	] as const;
+}
+
+interface MarketScanPageProps {
+	committedCriteria: MarketScanCriteria | undefined;
+	onCommit(criteria: MarketScanCriteria): Promise<void>;
+}
+
+export function MarketScanPage({
+	committedCriteria,
+	onCommit,
+}: MarketScanPageProps) {
+	const permission = useBusinessRequestPermission();
+	const form = useForm<MarketScanDraft>({
+		initialValues: committedCriteria ?? defaultMarketScanCriteria,
+		mode: "controlled",
+		validate: validateMarketScanCriteria,
+		validateInputOnChange: true,
+	});
+	const query = useQuery({
+		enabled: committedCriteria !== undefined && permission.allowed,
+		queryFn: async () => {
+			if (!committedCriteria) {
+				throw new ApiError("unexpected_error");
+			}
+			return fetchMarketScan(committedCriteria, {
+				initData: getTelegramInitData(),
+			});
+		},
+		queryKey: committedCriteria
+			? marketScanQueryKey(committedCriteria)
+			: (["market-scan", "uncommitted"] as const),
+		retry: false,
+		staleTime: Number.POSITIVE_INFINITY,
+	});
+
+	useEffect(() => {
+		if (!query.error) {
+			return;
+		}
+
+		notifications.show({
+			autoClose: 5000,
+			color: "red",
+			message:
+				query.error instanceof ApiError
+					? query.error.message
+					: "An unexpected error occurred. Please try again.",
+			title: "Market Scan failed",
+		});
+	}, [query.error]);
+
+	const handleSubmit = form.onSubmit(async (values) => {
+		const criteria = criteriaFromValidDraft(values);
+		if (criteria) {
+			await onCommit(criteria);
+		}
+	});
+	const submissionDisabled =
+		!form.isValid() || !permission.allowed || query.isFetching;
+
+	return (
+		<Container maw={880} px={0} size="md">
+			<Stack gap="md">
+				<Stack gap={2}>
+					<Title order={1} size="h2">
+						Market Scan
+					</Title>
+					<Text c="dimmed" size="sm">
+						Find instruments by their daily range over a selected analysis
+						period.
+					</Text>
+				</Stack>
+
+				<Paper component="form" onSubmit={handleSubmit} p="md" withBorder>
+					<Stack gap="sm">
+						<NumberInput
+							allowDecimal={false}
+							key={form.key("periodDays")}
+							label="Analysis Period"
+							max={marketScanCriteriaConstraints.periodDays.maximum}
+							min={marketScanCriteriaConstraints.periodDays.minimum}
+							suffix=" days"
+							{...form.getInputProps("periodDays")}
+						/>
+						<NumberInput
+							allowDecimal={false}
+							key={form.key("percentile")}
+							label="Range Percentile"
+							max={marketScanCriteriaConstraints.percentile.maximum}
+							min={marketScanCriteriaConstraints.percentile.minimum}
+							{...form.getInputProps("percentile")}
+						/>
+						<NumberInput
+							decimalScale={10}
+							key={form.key("minimumRangePercent")}
+							label="Minimum Range"
+							min={marketScanCriteriaConstraints.minimumRangePercent.minimum}
+							step={0.1}
+							suffix="%"
+							{...form.getInputProps("minimumRangePercent")}
+						/>
+						<Button
+							disabled={submissionDisabled}
+							loading={query.isFetching}
+							type="submit"
+						>
+							Run Market Scan
+						</Button>
+					</Stack>
+				</Paper>
+
+				{committedCriteria && query.isFetching && !query.data ? (
+					<Center mih={180}>
+						<Loader aria-label="Loading Market Scan" />
+					</Center>
+				) : null}
+
+				{query.data ? (
+					<Box pos="relative">
+						{query.data.items.length === 0 ? (
+							<Paper p="xl" ta="center" withBorder>
+								<Text fw={600}>No instruments matched these criteria.</Text>
+								<Text c="dimmed" mt={4} size="sm">
+									Adjust the criteria and run another Market Scan.
+								</Text>
+							</Paper>
+						) : (
+							<Paper p="xs" withBorder>
+								<Table.ScrollContainer minWidth={420}>
+									<Table highlightOnHover verticalSpacing="xs">
+										<Table.Thead>
+											<Table.Tr>
+												<Table.Th>Symbol</Table.Th>
+												<Table.Th>Range Percent</Table.Th>
+												<Table.Th>Candle Count</Table.Th>
+											</Table.Tr>
+										</Table.Thead>
+										<Table.Tbody>
+											{query.data.items.map((item) => (
+												<Table.Tr key={item.symbol}>
+													<Table.Td>{item.symbol}</Table.Td>
+													<Table.Td>{item.range_percent}</Table.Td>
+													<Table.Td>{item.candle_count}</Table.Td>
+												</Table.Tr>
+											))}
+										</Table.Tbody>
+									</Table>
+								</Table.ScrollContainer>
+							</Paper>
+						)}
+					</Box>
+				) : null}
+			</Stack>
+		</Container>
+	);
+}
+
+function criteriaFromValidDraft(
+	values: MarketScanDraft,
+): MarketScanCriteria | undefined {
+	if (
+		typeof values.periodDays !== "number" ||
+		typeof values.percentile !== "number" ||
+		typeof values.minimumRangePercent !== "number"
+	) {
+		return undefined;
+	}
+
+	return {
+		minimumRangePercent: values.minimumRangePercent,
+		percentile: values.percentile,
+		periodDays: values.periodDays,
+	};
+}

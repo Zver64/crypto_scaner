@@ -16,6 +16,4 @@
 - [ ] Readiness is requested immediately from the existing health endpoint and refreshed every 30 seconds.
 - [ ] The header clearly distinguishes checking, ready, and unavailable states without exposing internal backend details.
 - [ ] Analysis actions have a reusable source of truth indicating whether authentication and readiness permit a request.
-- [ ] Development uses relative API paths proxied to the local backend; no production backend address or CORS workaround is embedded in client code.
-- [ ] A raw development init-data value may be read from a gitignored local environment file and injected by the Vite development proxy without entering `import.meta.env` or the production bundle.
 - [ ] The application remains usable in an ordinary development browser even though Telegram-only navigation controls are unavailable.

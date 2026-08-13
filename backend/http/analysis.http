@@ -5,8 +5,8 @@
 #
 # Copy http-client.private.env.json.example to http-client.private.env.json and
 # replace TELEGRAM_INIT_DATA there. The private file is ignored by Git.
-# initData expires according to TELEGRAM_INIT_DATA_MAX_AGE (15 minutes by
-# default), so refresh it from the Mini App when the API returns 401.
+# initData expires according to TELEGRAM_INIT_DATA_MAX_AGE (24 hours in the
+# example environment), so refresh it from the Mini App when the API returns 401.
 #
 # Query rules:
 # - Every documented query parameter is required exactly once.

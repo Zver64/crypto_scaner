@@ -13,12 +13,11 @@ import (
 )
 
 const (
-	defaultHTTPAddress            = "127.0.0.1:8080"
-	defaultLogLevel               = "info"
-	defaultTelegramInitDataMaxAge = 15 * time.Minute
-	defaultSyncWorkers            = 4
-	defaultSyncRetryAttempts      = 5
-	defaultShutdownTimeout        = 15 * time.Second
+	defaultHTTPAddress       = "127.0.0.1:8080"
+	defaultLogLevel          = "info"
+	defaultSyncWorkers       = 4
+	defaultSyncRetryAttempts = 5
+	defaultShutdownTimeout   = 15 * time.Second
 )
 
 // ServerConfig is the single source of truth for environment-derived server
@@ -60,7 +59,7 @@ func LoadServer() (ServerConfig, error) {
 	if !validLogLevel(cfg.LogLevel) {
 		return ServerConfig{}, fmt.Errorf("LOG_LEVEL must be one of debug, info, warn, error")
 	}
-	if cfg.TelegramInitDataMaxAge, err = positiveDuration("TELEGRAM_INIT_DATA_MAX_AGE", defaultTelegramInitDataMaxAge); err != nil {
+	if cfg.TelegramInitDataMaxAge, err = requiredPositiveDuration("TELEGRAM_INIT_DATA_MAX_AGE"); err != nil {
 		return ServerConfig{}, err
 	}
 	if cfg.SyncWorkers, err = positiveInt("SYNC_WORKERS", defaultSyncWorkers); err != nil {
@@ -151,6 +150,18 @@ func positiveDuration(name string, fallback time.Duration) (time.Duration, error
 	value := os.Getenv(name)
 	if value == "" {
 		return fallback, nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration <= 0 {
+		return 0, fmt.Errorf("%s must be a positive duration", name)
+	}
+	return duration, nil
+}
+
+func requiredPositiveDuration(name string) (time.Duration, error) {
+	value, err := required(name)
+	if err != nil {
+		return 0, err
 	}
 	duration, err := time.ParseDuration(value)
 	if err != nil || duration <= 0 {

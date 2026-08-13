@@ -22,8 +22,8 @@ func TestLoadServerUsesDocumentedDefaults(t *testing.T) {
 	if cfg.LogLevel != "info" {
 		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
 	}
-	if cfg.TelegramInitDataMaxAge != 15*time.Minute {
-		t.Errorf("TelegramInitDataMaxAge = %v, want %v", cfg.TelegramInitDataMaxAge, 15*time.Minute)
+	if cfg.TelegramInitDataMaxAge != 24*time.Hour {
+		t.Errorf("TelegramInitDataMaxAge = %v, want %v", cfg.TelegramInitDataMaxAge, 24*time.Hour)
 	}
 	if cfg.SyncWorkers != 4 {
 		t.Errorf("SyncWorkers = %d, want 4", cfg.SyncWorkers)
@@ -44,6 +44,7 @@ func TestLoadServerRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing
 		"POSTGRES_PASSWORD",
 		"POSTGRES_DB",
 		"TELEGRAM_BOT_TOKEN",
+		"TELEGRAM_INIT_DATA_MAX_AGE",
 	}
 
 	for _, name := range required {
@@ -186,13 +187,14 @@ func TestLoadBootstrapRejectsInvalidTelegramID(t *testing.T) {
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	values := map[string]string{
-		"DATABASE_URL":       "",
-		"POSTGRES_HOST":      "127.0.0.1",
-		"POSTGRES_PORT":      "5432",
-		"POSTGRES_USER":      "scanner",
-		"POSTGRES_PASSWORD":  "secret",
-		"POSTGRES_DB":        "scanner",
-		"TELEGRAM_BOT_TOKEN": "123456:token",
+		"DATABASE_URL":               "",
+		"POSTGRES_HOST":              "127.0.0.1",
+		"POSTGRES_PORT":              "5432",
+		"POSTGRES_USER":              "scanner",
+		"POSTGRES_PASSWORD":          "secret",
+		"POSTGRES_DB":                "scanner",
+		"TELEGRAM_BOT_TOKEN":         "123456:token",
+		"TELEGRAM_INIT_DATA_MAX_AGE": "24h",
 	}
 	for key, value := range values {
 		t.Setenv(key, value)
@@ -200,7 +202,6 @@ func setRequiredEnvironment(t *testing.T) {
 	for _, key := range []string{
 		"HTTP_ADDRESS",
 		"LOG_LEVEL",
-		"TELEGRAM_INIT_DATA_MAX_AGE",
 		"SYNC_WORKERS",
 		"SYNC_RETRY_ATTEMPTS",
 		"SHUTDOWN_TIMEOUT",

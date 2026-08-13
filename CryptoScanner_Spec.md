@@ -597,7 +597,7 @@ Configuration has one source of truth: `backend/internal/platform/config`. No ot
 | `ADMIN_TELEGRAM_ID` | bootstrap only | — | Initial administrator ID for the manual bootstrap script; not read by the server |
 | `HTTP_ADDRESS` | no | `127.0.0.1:8080` | Listen address behind Nginx |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, or `error` |
-| `TELEGRAM_INIT_DATA_MAX_AGE` | no | `15m` | Maximum accepted Mini App auth age |
+| `TELEGRAM_INIT_DATA_MAX_AGE` | yes | — | Maximum accepted Mini App auth age (`24h` in the example environment) |
 | `SYNC_WORKERS` | no | `4` | Binance instrument concurrency |
 | `SYNC_RETRY_ATTEMPTS` | no | `5` | Retry limit per Binance call |
 | `SHUTDOWN_TIMEOUT` | no | `15s` | Graceful shutdown deadline |

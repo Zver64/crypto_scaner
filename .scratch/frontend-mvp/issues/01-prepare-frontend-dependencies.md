@@ -12,7 +12,7 @@
 - [ ] Add Mantine Notifications as the global transient-notification solution.
 - [ ] Add Vitest as the test runner for pure frontend logic.
 - [ ] Do not add Zustand, React Testing Library, snapshot tooling, Playwright, an internationalization framework, or a second notification system.
-- [ ] Do not add a Telegram SDK unless the official `window.Telegram.WebApp` API is demonstrably insufficient for the agreed behavior.
+- [ ] Do not add a client Telegram SDK unless the official `window.Telegram.WebApp` API is demonstrably insufficient for the agreed runtime behavior.
 - [ ] Provide package scripts that let an agent run unit tests and the existing frontend quality checks consistently.
 - [ ] A clean dependency installation completes without unresolved or incompatible peer dependencies.
 - [ ] The unchanged frontend passes its configured static checks and production build after the dependency update.

@@ -66,7 +66,7 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 46. As a user, I want the notification system mounted once for the whole application, so that errors behave consistently on every page.
 47. As a user, I want a compact global header with a `CS` mark and backend status, so that persistent chrome uses minimal mobile space.
 48. As a user, I want a consistent fixed dark theme, so that every page and state feels like one application.
-49. As a developer, I want local protected API requests to work without embedding secrets in browser code, so that I can develop outside Telegram safely.
+49. As a developer, I want one command to generate and privately save fresh development init data, so that local protected API requests work without manual copying or browser-exposed secrets.
 50. As a developer, I want the frontend to call relative API paths, so that Vite can proxy development requests and production can use a same-origin reverse proxy without CORS configuration.
 51. As a developer, I want form drafts, committed navigation state, and server state to have separate owners, so that editing, navigation, and caching do not interfere with one another.
 52. As a developer, I want all frontend behavior to stay within existing backend capabilities, so that the UI never advertises price, volume, arbitrary symbol discovery, synchronization controls, or trading functions that do not exist.
@@ -77,6 +77,7 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 - Add TanStack Query for server-state requests, deduplication, request status, and in-memory session caching. Do not add Zustand or another global state manager.
 - Add Mantine Form for form state and validation.
 - Add Mantine Notifications. Mount its provider-level notifications renderer once in the shared application root and invoke the library's global notification API from any route or request boundary.
+- Add `@tma.js/init-data-node` as development-only tooling for generating correctly signed local Telegram init data. Do not implement Telegram signing logic by hand and do not ship this package as client runtime authentication.
 - Use one Mantine `AppShell` around every route. Its compact header contains `CS` on the left and backend readiness on the right. The instrument route's browser-only back control belongs in page content rather than expanding the global header.
 - Configure a fixed dark color scheme through `MantineProvider` and `createTheme`. Colors, radii, typography, spacing, variants, and component customization must use Mantine theme tokens, Mantine CSS variables, component props, and the official Styles API. Do not globally override Mantine component internals with ad hoc CSS or hardcoded colors.
 - Custom CSS may be used only where layout or application-specific structure is not adequately represented by Mantine props or the Styles API. Such CSS must consume theme variables instead of duplicating visual constants.
@@ -84,7 +85,10 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 - The application initializes the Telegram Mini App once at the root by calling the supported `ready()` and `expand()` methods. It incorporates Telegram/device safe-area values into the `AppShell` layout. It does not request Telegram full-screen mode.
 - In production, business pages require non-empty signed `Telegram.WebApp.initData`. When it is absent, show a blocking "Open in Telegram" state rather than allowing requests that will inevitably receive `401`.
 - API requests authenticate with `Authorization: tma <raw initData>`. The frontend never uses a standalone Telegram user ID as proof of identity.
-- For local development only, allow raw init data to be stored in the gitignored `.env.local`. Vite server configuration reads it and injects the authorization header into proxied business API requests. The secret must not use a `VITE_` prefix, enter `import.meta.env`, or appear in the production client bundle. Document an empty placeholder key in the environment example.
+- For local development only, provide a package command that reads `TELEGRAM_BOT_TOKEN` and `ADMIN_TELEGRAM_ID` from the repository environment, uses `@tma.js/init-data-node` to generate fresh signed init data with the current authentication date, and upserts it as `TELEGRAM_DEV_INIT_DATA` in the gitignored root `.env.local`.
+- The generator must not print the bot token or generated credential. It preserves unrelated local environment entries, creates or updates the private file with owner-only permissions, and reports only successful generation, the configured validity period, and the need to restart Vite.
+- Vite reads `TELEGRAM_DEV_INIT_DATA` only in its server process and injects `Authorization: tma <value>` into proxied business requests that do not already provide authorization. The value must not use a `VITE_` prefix, enter `import.meta.env`, appear in browser code, or enter the production bundle. Real Telegram authorization always takes precedence.
+- The backend remains stateless and validates raw init data on every business request. The required `TELEGRAM_INIT_DATA_MAX_AGE` environment variable is the single source of truth for credential validity and is configured as `24h` for this application. No backend session, access token, refresh token, or automatic credential renewal is introduced.
 - All client API calls use relative `/api/v1/...` and `/health/...` paths. Vite proxies them to `127.0.0.1:8080` during development. Production reverse-proxy and Nginx work are outside this spec.
 - Readiness uses `GET /health/ready`, runs immediately, and refetches every 30 seconds. Its status is visible in the global header. Analysis submit actions are disabled unless readiness succeeds.
 - The primary route is market scanning. It contains three numeric controls: integer analysis period with default 30 and bounds 1–3650; integer percentile with default 80 and bounds 0–100; non-negative minimum range with default 3 and step 0.1.
@@ -108,7 +112,7 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 - Inside Telegram, show and subscribe to the native `BackButton` only while the instrument route is active. Its handler performs a TanStack Router history transition. Remove the handler and hide the button on cleanup. Outside Telegram, show a normal Mantine back control.
 - Normalize backend error envelopes in one API-client boundary. Route code triggers globally mounted Mantine notifications with English messages appropriate to `unauthenticated`, `access_denied`, `symbol_not_found`, `insufficient_data`, `market_data_unavailable`, validation failures, network failures, and unexpected errors.
 - Notifications float outside document flow, auto-close after a reasonable duration, and use themed Mantine variants. Do not add route-specific alert components for request errors.
-- Existing backend routes, response schemas, authentication, synchronization, database schema, and analysis calculations are unchanged by this feature.
+- Existing backend routes, response schemas, stateless Telegram authentication, synchronization, database schema, and analysis calculations are unchanged by the frontend feature beyond the separately agreed 24-hour init-data maximum age.
 - No ADR is required: the agreed frontend library choices follow the project's existing TanStack/Mantine direction and do not create a surprising system-wide irreversible boundary.
 
 ## Testing Decisions
@@ -122,7 +126,8 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 - Test single-instrument API mapping, exact symbol preservation, URL encoding, UTC coverage strings, and canonical errors.
 - Test the percentage display formatter with zero, very small decimals, values around one, larger values, and three-significant-digit rounding.
 - Test local symbol filtering as a pure function, including empty filter, case handling, partial matches, no matches, and preservation of backend order.
-- Test development proxy header construction as isolated configuration logic if it is extracted into a callable unit; never assert or snapshot a real init-data secret.
+- Test development proxy header construction as isolated configuration logic: missing or blank development init data produces no authorization header, while a configured value produces the exact `tma` scheme. Never assert or snapshot a real credential.
+- Test the development generator through deterministic pure seams where practical: required environment validation, positive safe Telegram ID parsing, preservation/upsert behavior for the private environment file, and use of the current authentication date. Test fixtures use fake tokens and generated values only.
 - Existing backend HTTP handler tests are prior art for endpoint success and canonical error envelopes. Frontend tests should consume that published contract rather than duplicate backend percentile calculations.
 - UI rendering, responsive table behavior, `AppShell` composition, loaders, overlays, notification portals, Telegram BackButton integration, navigation restoration, and safe-area behavior are verified manually in a real browser and, where available, Telegram's Mini App environment.
 - Manual acceptance must cover initial readiness, blocked unauthenticated state, successful scan, empty scan, local filtering, row navigation, instrument recalculation, native/browser back behavior, cached return, explicit same-criteria refresh, API error notification, mobile width, and production build output.
@@ -130,7 +135,7 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 
 ## Out of Scope
 
-- Backend changes of any kind, including new routes, catalog endpoints, price data, volume data, synchronization controls, authentication changes, analysis formulas, schemas, or migrations.
+- Further backend changes beyond the already agreed 24-hour init-data maximum age, including sessions, new routes, catalog endpoints, price data, volume data, synchronization controls, authentication redesign, analysis formulas, schemas, or migrations.
 - Displaying current instrument price or any value absent from the current API response.
 - Browsing, searching, or autocompleting every active backend instrument independently of a scan result.
 - Manually entering a symbol to reach the instrument page from the user interface.
@@ -145,6 +150,7 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 - React Testing Library, component snapshots, Playwright, or another end-to-end test harness.
 - Production Nginx configuration, frontend containers, hosting, deployment, Telegram Bot API launch UX, webhook handling, or Mini App registration.
 - Full-screen Telegram mode or additional Telegram primary/secondary action buttons.
+- Automatic rotation of development init data while Vite is running; the developer explicitly regenerates it and restarts Vite when the configured 24-hour credential expires.
 
 ## Further Notes
 
@@ -153,3 +159,4 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 - Daily candles use Binance UTC boundaries by domain definition. The UTC label is therefore semantic, not merely a display preference.
 - The frontend should call the data items "instruments" or "symbols", not "coins", because identifiers such as `BTCUSDT` represent trading pairs.
 - The existing domain glossary is the source of truth for the terms Market Scan, Instrument Analysis, Daily Range, Daily Candle, Analysis Period, Range Percentile, Minimum Range, and Scan Result.
+- Local development authentication has been verified end to end: a credential generated by the package command, loaded from the private environment by a restarted Vite proxy, was accepted by the unchanged backend on a protected Instrument Analysis request.

@@ -13,6 +13,8 @@ path until one is chosen.
 
 - Go 1.26 or newer
 - Docker with Docker Compose
+- Air for Go hot reload
+- PostgreSQL client (`psql`) for the administrator bootstrap script
 - PostgreSQL 18 is supplied by Compose (PostgreSQL 15 or newer is also
   supported by the schema)
 
@@ -22,6 +24,7 @@ Run these commands from the repository root:
 
 ```sh
 make -C backend build        # build backend/bin/crypto-scanner
+make -C backend build-all    # build the service and migration command
 make -C backend test         # run all tests
 make -C backend vet          # run Go's static checks
 make -C backend generate     # run registered go:generate directives
@@ -30,7 +33,8 @@ make -C backend check        # test, vet, and build
 make -C backend migrate-up   # migrate DATABASE_URL to the current schema version
 make -C backend migrate-down # roll the current schema back to zero
 make -C backend bootstrap-admin # explicitly create or re-enable ADMIN_TELEGRAM_ID
-make -C backend run          # migrate, bootstrap, and run the Go service on the host
+make -C backend run          # run the Go service on the host
+make -C backend dev          # run the Go service with hot reload
 make -C backend clean        # remove Go build state and local binaries
 ```
 
@@ -51,23 +55,77 @@ Git.
 cp .env.example .env
 ```
 
-Set the Telegram bot token used to validate signed Mini App `initData` and the
-administrator Telegram ID before starting the service. The service does not
-receive Telegram Bot API updates or register a webhook.
+Set the Telegram bot token used to validate signed Mini App `initData`. Set the
+administrator Telegram ID before running the manual bootstrap script; the
+server itself does not read that setting. The service does not receive Telegram
+Bot API updates or register a webhook.
+
+### Hot-reload development
+
+Install Air globally once so that the `air` command is available on `PATH`:
+
+```sh
+go install github.com/air-verse/air@latest
+```
+
+The command installs Air into `GOBIN`, or into `GOPATH/bin` when `GOBIN` is
+unset. Ensure that directory is included in your `PATH`.
+
+When initializing a new development database, start PostgreSQL, apply the
+migrations, and explicitly create the administrator from the repository root:
+
+```sh
+docker compose up -d --wait postgres
+make -C backend migrate-up
+make -C backend bootstrap-admin
+```
+
+Then start the hot-reload server:
+
+```sh
+make -C backend dev
+```
+
+Ordinary sessions only require PostgreSQL and `make -C backend dev`. Run
+`migrate-up` after pulling or adding migrations. Run `bootstrap-admin` only
+when initializing a database or intentionally re-enabling the configured
+administrator.
+
+Air rebuilds and restarts the service after Go file changes. The development
+binary stays in the ignored `backend/bin/air/` directory; its build command is
+delegated to the backend Makefile. Air sends an interrupt on rebuild and waits
+for the configured `SHUTDOWN_TIMEOUT` before forcing termination. Press Ctrl-C
+to stop the service; PostgreSQL can remain running between development
+sessions. If the Compose `app` service is already running, stop it first with
+`docker compose stop app` so it does not occupy port 8080.
 
 ### Complete stack in Docker Compose
 
-From the repository root, run PostgreSQL, migrations, administrator bootstrap,
-and the application:
+Build the images and start PostgreSQL first:
 
 ```sh
-docker compose up --build
+docker compose build
+docker compose up -d --wait postgres
 ```
 
-Compose starts PostgreSQL and waits for its healthcheck. The application
-container then applies migrations, bootstraps the local administrator, and
-replaces that setup shell with the Go server. Check the service at
-<http://127.0.0.1:8080/health/live>.
+When initializing a new database, apply migrations and explicitly bootstrap
+the administrator:
+
+```sh
+docker compose run --rm app /usr/local/bin/migrate up
+make -C backend bootstrap-admin
+```
+
+Then start the application:
+
+```sh
+docker compose up -d --wait app
+```
+
+Ordinary application restarts never migrate the database or enable users. Run
+the migration command after pulling or adding migrations, and run the bootstrap
+command only when intentionally creating or re-enabling the administrator.
+Check the service at <http://127.0.0.1:8080/health/live>.
 
 Use the ordinary Compose interface to manage the stack:
 
@@ -82,14 +140,16 @@ The named PostgreSQL volume survives normal container restarts and
 
 ### PostgreSQL in Compose, Go on the host
 
-From the repository root, start only PostgreSQL and then run the host service.
-The `run` target applies migrations and bootstraps the configured administrator
-before it starts the server:
+From the repository root, start only PostgreSQL and then run the host service:
 
 ```sh
 docker compose up -d postgres
 make -C backend run
 ```
+
+Initialize or update the database beforehand with the explicit `migrate-up`
+and `bootstrap-admin` commands described above. The `run` target never changes
+the database schema or enables users.
 
 The host service uses the same Compose-managed database through its loopback
 port and serves <http://127.0.0.1:8080/health/live>. Stop the Go process with
@@ -127,9 +187,12 @@ After migrating, bootstrap the initial Telegram administrator explicitly:
 make -C backend bootstrap-admin
 ```
 
-The command reads `DATABASE_URL` and `ADMIN_TELEGRAM_ID`, requires the current
-database migration version, and creates or re-enables only that Telegram user.
-It is safe to repeat. Normal server startup never creates or enables users.
+The target passes `ADMIN_TELEGRAM_ID` safely to the lightweight
+`scripts/bootstrap-admin.sql` script and connects to the Compose-managed
+PostgreSQL database using the configured `POSTGRES_*` values. The script
+creates or re-enables only that Telegram user and is safe to repeat. Normal
+server startup never creates or enables users, and the bootstrap script is not
+included in the application image.
 
 The PostgreSQL integration test is destructive by design and only runs with an
 explicit disposable-database contract:

@@ -581,7 +581,7 @@ Do not expose internal errors, SQL, Binance payloads, secrets, or stack traces i
 
 - Telegram authenticates Mini App requests through signed `initData`.
 - PostgreSQL controls authorization through `app.users.is_enabled`.
-- `ADMIN_TELEGRAM_ID` is inserted or enabled by an explicit bootstrap command; startup does not silently rewrite users.
+- `ADMIN_TELEGRAM_ID` is inserted or enabled by an explicit SQL bootstrap script; startup does not silently rewrite users.
 - Usernames and display names are metadata and may change; `telegram_id` is the stable identity.
 - No login/password, access token, refresh token, or custom session is introduced for the MVP.
 - The backend does not receive Bot API updates, send bot messages, register a webhook, or provide `/start` launch behavior. Mini App hosting and launch UX are outside its scope.
@@ -594,7 +594,7 @@ Configuration has one source of truth: `backend/internal/platform/config`. No ot
 |---|---:|---|---|
 | `DATABASE_URL` | yes | — | PostgreSQL connection string |
 | `TELEGRAM_BOT_TOKEN` | yes | — | Mini App signature secret source |
-| `ADMIN_TELEGRAM_ID` | yes | — | Initial administrator ID for bootstrap command |
+| `ADMIN_TELEGRAM_ID` | bootstrap only | — | Initial administrator ID for the manual bootstrap script; not read by the server |
 | `HTTP_ADDRESS` | no | `127.0.0.1:8080` | Listen address behind Nginx |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, or `error` |
 | `TELEGRAM_INIT_DATA_MAX_AGE` | no | `15m` | Maximum accepted Mini App auth age |
@@ -664,7 +664,7 @@ The MVP is complete when all statements below are true:
 
 1. A fresh database can be created by the standalone migration command.
 2. Invalid or incomplete configuration prevents server startup with a precise error.
-3. An explicit bootstrap command creates/enables the administrator Telegram user.
+3. An explicit SQL bootstrap script creates/enables the administrator Telegram user.
 4. A valid enabled Telegram Mini App user can call both analysis endpoints.
 5. Invalid, expired, absent, or disabled Telegram identity is rejected as specified.
 6. The service exposes no Telegram Bot API webhook or outbound bot launch behavior.

@@ -28,14 +28,16 @@ and integration-test instructions.
 
 ## Local stack
 
-Create the shared local environment file, then start the Compose stack:
+Create the shared local environment file, then follow the initialization and
+startup instructions in the backend guide:
 
 ```sh
 cp .env.example .env
-docker compose up --build
 ```
 
-The API liveness endpoint is <http://127.0.0.1:8080/health/live>.
+See [`backend/README.md`](backend/README.md#complete-stack-in-docker-compose).
+Once started, the API liveness endpoint is
+<http://127.0.0.1:8080/health/live>.
 
 The `frontend/` directory is intentionally absent from this checkpoint. It will
 be created when frontend development begins.

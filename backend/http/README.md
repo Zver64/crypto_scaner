@@ -6,11 +6,8 @@ backend. The files use the JetBrains HTTP format supported by
 
 ## Setup
 
-Start the backend from the repository root:
-
-```sh
-docker compose up --build
-```
+Initialize and start the backend using the
+[backend development instructions](../README.md#complete-stack-in-docker-compose).
 
 For authenticated analysis requests, create the ignored private environment
 file:
@@ -23,7 +20,7 @@ cp backend/http/http-client.private.env.json.example \
 Open `backend/http/http-client.private.env.json` and replace the placeholder
 with the exact value of `window.Telegram.WebApp.initData` from the Mini App.
 The Telegram user must exist and be enabled in the application database. The
-bootstrap command enables the administrator configured by
+manual bootstrap script enables the administrator configured by
 `ADMIN_TELEGRAM_ID`:
 
 ```sh

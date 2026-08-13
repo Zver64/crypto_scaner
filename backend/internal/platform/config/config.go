@@ -25,20 +25,12 @@ const (
 type Config struct {
 	DatabaseURL            string
 	TelegramBotToken       string
-	AdminTelegramID        int64
 	HTTPAddress            string
 	LogLevel               string
 	TelegramInitDataMaxAge time.Duration
 	SyncWorkers            int
 	SyncRetryAttempts      int
 	ShutdownTimeout        time.Duration
-}
-
-// AdminBootstrapConfig contains the only settings used by the standalone
-// administrator bootstrap command.
-type AdminBootstrapConfig struct {
-	DatabaseURL     string
-	AdminTelegramID int64
 }
 
 // Load reads and validates process configuration from the environment.
@@ -53,9 +45,6 @@ func Load() (Config, error) {
 		return Config{}, fmt.Errorf("DATABASE_URL must be a valid PostgreSQL connection string")
 	}
 	if cfg.TelegramBotToken, err = required("TELEGRAM_BOT_TOKEN"); err != nil {
-		return Config{}, err
-	}
-	if cfg.AdminTelegramID, err = loadAdminTelegramID(); err != nil {
 		return Config{}, err
 	}
 	cfg.HTTPAddress = valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress)
@@ -86,32 +75,6 @@ func Load() (Config, error) {
 // Keeping this in config preserves one source of truth for environment access.
 func LoadDatabaseURL() (string, error) {
 	return required("DATABASE_URL")
-}
-
-// LoadAdminBootstrap reads and validates the settings required by the
-// standalone administrator bootstrap command.
-func LoadAdminBootstrap() (AdminBootstrapConfig, error) {
-	databaseURL, err := LoadDatabaseURL()
-	if err != nil {
-		return AdminBootstrapConfig{}, err
-	}
-	adminTelegramID, err := loadAdminTelegramID()
-	if err != nil {
-		return AdminBootstrapConfig{}, err
-	}
-	return AdminBootstrapConfig{DatabaseURL: databaseURL, AdminTelegramID: adminTelegramID}, nil
-}
-
-func loadAdminTelegramID() (int64, error) {
-	value, err := required("ADMIN_TELEGRAM_ID")
-	if err != nil {
-		return 0, err
-	}
-	telegramID, err := strconv.ParseInt(value, 10, 64)
-	if err != nil || telegramID <= 0 {
-		return 0, fmt.Errorf("ADMIN_TELEGRAM_ID must be a positive base-10 integer")
-	}
-	return telegramID, nil
 }
 
 func required(name string) (string, error) {

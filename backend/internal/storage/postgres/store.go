@@ -42,15 +42,6 @@ func (store *Store) FindEnabledByTelegramID(ctx context.Context, telegramID int6
 	return auth.User{ID: row.ID, TelegramID: row.TelegramID, Username: row.Username.String, DisplayName: row.DisplayName.String, Enabled: row.IsEnabled}, nil
 }
 
-// BootstrapAdministrator creates or re-enables exactly one user selected by
-// Telegram ID. Repeating it for an enabled user is a no-op.
-func (store *Store) BootstrapAdministrator(ctx context.Context, telegramID int64) error {
-	if err := store.queries.BootstrapAdministrator(ctx, telegramID); err != nil {
-		return fmt.Errorf("bootstrap administrator: %w", err)
-	}
-	return nil
-}
-
 func (store *Store) ApplyInstrumentSnapshot(ctx context.Context, items []market.Instrument) error {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {

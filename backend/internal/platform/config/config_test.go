@@ -40,7 +40,6 @@ func TestLoadRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing.T) {
 	required := []string{
 		"DATABASE_URL",
 		"TELEGRAM_BOT_TOKEN",
-		"ADMIN_TELEGRAM_ID",
 	}
 
 	for _, name := range required {
@@ -64,7 +63,6 @@ func TestLoadRejectsInvalidSettingsPreciselyAndSafely(t *testing.T) {
 		wantError string
 	}{
 		{name: "database URL", variable: "DATABASE_URL", value: "not a connection string", wantError: "DATABASE_URL must be a valid PostgreSQL connection string"},
-		{name: "administrator ID", variable: "ADMIN_TELEGRAM_ID", value: "not-an-id", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
 		{name: "HTTP address", variable: "HTTP_ADDRESS", value: "localhost", wantError: "HTTP_ADDRESS must be a valid host:port address"},
 		{name: "log level", variable: "LOG_LEVEL", value: "trace", wantError: "LOG_LEVEL must be one of debug, info, warn, error"},
 		{name: "init data age", variable: "TELEGRAM_INIT_DATA_MAX_AGE", value: "0s", wantError: "TELEGRAM_INIT_DATA_MAX_AGE must be a positive duration"},
@@ -113,52 +111,11 @@ func TestLoadParsesOptionalSettings(t *testing.T) {
 	}
 }
 
-func TestLoadAdminBootstrapReadsOnlyItsRequiredSettings(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://scanner:secret@localhost/scanner")
-	t.Setenv("ADMIN_TELEGRAM_ID", "987654321")
-	for _, name := range []string{"TELEGRAM_BOT_TOKEN"} {
-		t.Setenv(name, "")
-	}
-
-	cfg, err := config.LoadAdminBootstrap()
-	if err != nil {
-		t.Fatalf("LoadAdminBootstrap() error = %v", err)
-	}
-	if cfg.DatabaseURL != "postgres://scanner:secret@localhost/scanner" || cfg.AdminTelegramID != 987654321 {
-		t.Fatalf("LoadAdminBootstrap() = %#v", cfg)
-	}
-}
-
-func TestLoadAdminBootstrapRejectsInvalidAdministratorID(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://scanner:secret@localhost/scanner")
-	tests := []struct {
-		name      string
-		value     string
-		wantError string
-	}{
-		{name: "missing", value: "", wantError: "ADMIN_TELEGRAM_ID is required"},
-		{name: "not an integer", value: "not-an-id", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
-		{name: "zero", value: "0", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
-		{name: "negative", value: "-42", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Setenv("ADMIN_TELEGRAM_ID", tt.value)
-			_, err := config.LoadAdminBootstrap()
-			if err == nil || err.Error() != tt.wantError {
-				t.Fatalf("LoadAdminBootstrap() error = %v, want %q", err, tt.wantError)
-			}
-		})
-	}
-}
-
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	values := map[string]string{
 		"DATABASE_URL":       "postgres://scanner:secret@localhost/scanner",
 		"TELEGRAM_BOT_TOKEN": "123456:token",
-		"ADMIN_TELEGRAM_ID":  "123456789",
 	}
 	for key, value := range values {
 		t.Setenv(key, value)

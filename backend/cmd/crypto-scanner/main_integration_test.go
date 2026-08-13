@@ -124,7 +124,6 @@ func TestNormalServerStartupDoesNotMutateUsers(t *testing.T) {
 	cfg := config.Config{
 		DatabaseURL:      databaseURL,
 		TelegramBotToken: "123456:test-token",
-		AdminTelegramID:  222,
 		HTTPAddress:      address,
 		ShutdownTimeout:  time.Second,
 	}

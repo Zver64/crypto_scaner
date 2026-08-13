@@ -25,10 +25,6 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}?sslmode=disable
       HTTP_ADDRESS: 0.0.0.0:8080
-    command:
-      - /bin/sh
-      - -c
-      - /usr/local/bin/migrate up && /usr/local/bin/bootstrap-admin && exec /usr/local/bin/crypto-scanner
     ports:
       - "127.0.0.1:${HTTP_PORT}:8080"
     healthcheck:

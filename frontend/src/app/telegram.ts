@@ -19,6 +19,7 @@ interface TelegramWebApp {
 	contentSafeAreaInset?: TelegramSafeAreaInsets;
 	expand(): void;
 	initData: string;
+	isVersionAtLeast?(version: string): boolean;
 	offEvent?(
 		event: "contentSafeAreaChanged" | "safeAreaChanged",
 		listener: () => void,
@@ -94,7 +95,11 @@ export function getTelegramInitData() {
 }
 
 export function useTelegramBackButton(onBack: () => void) {
-	const backButton = window.Telegram?.WebApp?.BackButton;
+	const webApp = window.Telegram?.WebApp;
+	const backButton =
+		webApp?.BackButton && (webApp.isVersionAtLeast?.("6.1") ?? true)
+			? webApp.BackButton
+			: undefined;
 	const onBackRef = useRef(onBack);
 	onBackRef.current = onBack;
 

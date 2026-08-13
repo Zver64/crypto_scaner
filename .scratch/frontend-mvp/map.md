@@ -9,4 +9,4 @@ Implementation tickets for [`spec.md`](./spec.md):
 | [03 — Run Market Scan](./issues/03-run-market-scan.md) | resolved | Added the validated explicit Market Scan form, authorized Query request, ordered three-column results, empty state, and normalized notifications; cold-start browser acceptance passed. |
 | [04 — Refine Scan Results](./issues/04-refine-scan-results.md) | resolved | Added result counts, local symbol filtering, compact percentage formatting, and explicit refresh with retained data. |
 | [05 — Drill Into Instrument Analysis](./issues/05-drill-into-instrument-analysis.md) | resolved | Added exact-symbol Instrument Analysis routing, explicit recalculation, UTC coverage, and native/browser back navigation with cached Scan Result return. |
-| [06 — Verify and Document MVP](./issues/06-verify-and-document-mvp.md) | ready-for-agent | — |
+| [06 — Verify and Document MVP](./issues/06-verify-and-document-mvp.md) | resolved | Completed pure test coverage, clean-install quality/build verification, local setup documentation, and responsive browser acceptance. |

@@ -25,9 +25,35 @@ example config sets it to 24 hours (`24h`).
 
 ## Run
 
-Run from this directory:
+Start PostgreSQL and the backend from the repository root:
+
+```sh
+make db-up
+make migrate-up
+make devbackend
+```
+
+Then install frontend dependencies and start Vite from this directory:
 
 ```sh
 npm ci
 npm run dev
 ```
+
+Vite serves the Mini App at `http://127.0.0.1:3000` and proxies its relative
+API and readiness requests to the backend. The header should report `Ready`
+before Market Scan or Instrument Analysis can run.
+
+## Verify
+
+Run the complete frontend verification from this directory:
+
+```sh
+npm test
+npm run quality
+npm run build
+```
+
+`npm test` runs the pure Vitest suite. `npm run quality` runs Biome checks and
+TypeScript typechecking. `npm run build` creates the production bundle in
+`dist/`; the generated directory is a local build artifact and is not committed.

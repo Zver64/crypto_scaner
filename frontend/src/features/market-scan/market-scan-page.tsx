@@ -31,12 +31,7 @@ import {
 import { filterMarketScanItems, formatRangePercent } from "./results";
 
 export function marketScanQueryKey(criteria: MarketScanCriteria) {
-	return [
-		"market-scan",
-		criteria.periodDays,
-		criteria.percentile,
-		criteria.minimumRangePercent,
-	] as const;
+	return ["market-scan", ...marketScanCriteriaIdentity(criteria)] as const;
 }
 
 interface MarketScanPageProps {
@@ -254,11 +249,17 @@ function criteriaAreEqual(
 	left: MarketScanCriteria,
 	right: MarketScanCriteria,
 ): boolean {
-	return (
-		left.periodDays === right.periodDays &&
-		left.percentile === right.percentile &&
-		left.minimumRangePercent === right.minimumRangePercent
-	);
+	const leftIdentity = marketScanCriteriaIdentity(left);
+	const rightIdentity = marketScanCriteriaIdentity(right);
+	return leftIdentity.every((value, index) => value === rightIdentity[index]);
+}
+
+function marketScanCriteriaIdentity(criteria: MarketScanCriteria) {
+	return [
+		criteria.periodDays,
+		criteria.percentile,
+		criteria.minimumRangePercent,
+	] as const;
 }
 
 function criteriaFromValidDraft(

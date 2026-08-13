@@ -6,6 +6,7 @@
     "#/*": "./src/*"
   },
   "scripts": {
+    "predev": "npm run generate:dev-init-data",
     "dev": "vite dev --port 3000",
     "generate:dev-init-data": "node scripts/generate-dev-init-data.mjs",
     "generate-routes": "tsr generate",

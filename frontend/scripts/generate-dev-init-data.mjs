@@ -32,7 +32,6 @@ await upsertEnvValue(privateEnvPath, "TELEGRAM_DEV_INIT_DATA", initData);
 console.log(
 	`Development init data generated with configured lifetime ${maxAge}.`,
 );
-console.log("Restart Vite to load the refreshed value.");
 
 function required(values, name) {
 	const value = values[name]?.trim();

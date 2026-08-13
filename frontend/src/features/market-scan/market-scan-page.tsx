@@ -3,18 +3,21 @@ import {
 	Button,
 	Center,
 	Container,
+	Group,
 	Loader,
+	LoadingOverlay,
 	NumberInput,
 	Paper,
 	Stack,
 	Table,
 	Text,
+	TextInput,
 	Title,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { useQuery } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ApiError, fetchMarketScan } from "../../api/client";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
 import { getTelegramInitData } from "../../app/telegram";
@@ -25,6 +28,7 @@ import {
 	marketScanCriteriaConstraints,
 	validateMarketScanCriteria,
 } from "./criteria";
+import { filterMarketScanItems, formatRangePercent } from "./results";
 
 export function marketScanQueryKey(criteria: MarketScanCriteria) {
 	return [
@@ -45,6 +49,7 @@ export function MarketScanPage({
 	onCommit,
 }: MarketScanPageProps) {
 	const permission = useBusinessRequestPermission();
+	const [symbolFilter, setSymbolFilter] = useState("");
 	const form = useForm<MarketScanDraft>({
 		initialValues: committedCriteria ?? defaultMarketScanCriteria,
 		mode: "controlled",
@@ -86,12 +91,22 @@ export function MarketScanPage({
 
 	const handleSubmit = form.onSubmit(async (values) => {
 		const criteria = criteriaFromValidDraft(values);
-		if (criteria) {
-			await onCommit(criteria);
+		if (!criteria) {
+			return;
 		}
+
+		if (committedCriteria && criteriaAreEqual(criteria, committedCriteria)) {
+			await query.refetch();
+			return;
+		}
+
+		await onCommit(criteria);
 	});
 	const submissionDisabled =
 		!form.isValid() || !permission.allowed || query.isFetching;
+	const filteredItems = query.data
+		? filterMarketScanItems(query.data.items, symbolFilter)
+		: [];
 
 	return (
 		<Container maw={880} px={0} size="md">
@@ -152,41 +167,97 @@ export function MarketScanPage({
 
 				{query.data ? (
 					<Box pos="relative">
-						{query.data.items.length === 0 ? (
-							<Paper p="xl" ta="center" withBorder>
-								<Text fw={600}>No instruments matched these criteria.</Text>
-								<Text c="dimmed" mt={4} size="sm">
-									Adjust the criteria and run another Market Scan.
-								</Text>
+						<LoadingOverlay
+							loaderProps={{ "aria-label": "Refreshing Market Scan" }}
+							overlayProps={{ blur: 1 }}
+							visible={query.isFetching}
+							zIndex={10}
+						/>
+						<Stack gap="sm">
+							<Paper p="sm" withBorder>
+								<Group gap="lg">
+									<Text size="sm">
+										Matched{" "}
+										<Text component="strong">{query.data.matched_count}</Text>
+									</Text>
+									<Text size="sm">
+										Analyzed{" "}
+										<Text component="strong">{query.data.analyzed_count}</Text>
+									</Text>
+									<Text size="sm">
+										Insufficient data{" "}
+										<Text component="strong">
+											{query.data.insufficient_data_count}
+										</Text>
+									</Text>
+								</Group>
 							</Paper>
-						) : (
-							<Paper p="xs" withBorder>
-								<Table.ScrollContainer minWidth={420}>
-									<Table highlightOnHover verticalSpacing="xs">
-										<Table.Thead>
-											<Table.Tr>
-												<Table.Th>Symbol</Table.Th>
-												<Table.Th>Range Percent</Table.Th>
-												<Table.Th>Candle Count</Table.Th>
-											</Table.Tr>
-										</Table.Thead>
-										<Table.Tbody>
-											{query.data.items.map((item) => (
-												<Table.Tr key={item.symbol}>
-													<Table.Td>{item.symbol}</Table.Td>
-													<Table.Td>{item.range_percent}</Table.Td>
-													<Table.Td>{item.candle_count}</Table.Td>
+
+							<TextInput
+								aria-label="Filter current Scan Result by symbol"
+								description="Filters only the current Scan Result"
+								label="Symbol filter"
+								onChange={(event) => setSymbolFilter(event.currentTarget.value)}
+								placeholder="e.g. BTC"
+								value={symbolFilter}
+							/>
+
+							{query.data.items.length === 0 ? (
+								<Paper p="xl" ta="center" withBorder>
+									<Text fw={600}>No instruments matched these criteria.</Text>
+									<Text c="dimmed" mt={4} size="sm">
+										Adjust the criteria and run another Market Scan.
+									</Text>
+								</Paper>
+							) : filteredItems.length === 0 ? (
+								<Paper p="xl" ta="center" withBorder>
+									<Text fw={600}>No instruments match this symbol filter.</Text>
+									<Text c="dimmed" mt={4} size="sm">
+										Clear or change the filter to see this Scan Result.
+									</Text>
+								</Paper>
+							) : (
+								<Paper p="xs" withBorder>
+									<Table.ScrollContainer minWidth={420}>
+										<Table highlightOnHover verticalSpacing="xs">
+											<Table.Thead>
+												<Table.Tr>
+													<Table.Th>Symbol</Table.Th>
+													<Table.Th>Range Percent</Table.Th>
+													<Table.Th>Candle Count</Table.Th>
 												</Table.Tr>
-											))}
-										</Table.Tbody>
-									</Table>
-								</Table.ScrollContainer>
-							</Paper>
-						)}
+											</Table.Thead>
+											<Table.Tbody>
+												{filteredItems.map((item) => (
+													<Table.Tr key={item.symbol}>
+														<Table.Td>{item.symbol}</Table.Td>
+														<Table.Td>
+															{formatRangePercent(item.range_percent)}
+														</Table.Td>
+														<Table.Td>{item.candle_count}</Table.Td>
+													</Table.Tr>
+												))}
+											</Table.Tbody>
+										</Table>
+									</Table.ScrollContainer>
+								</Paper>
+							)}
+						</Stack>
 					</Box>
 				) : null}
 			</Stack>
 		</Container>
+	);
+}
+
+function criteriaAreEqual(
+	left: MarketScanCriteria,
+	right: MarketScanCriteria,
+): boolean {
+	return (
+		left.periodDays === right.periodDays &&
+		left.percentile === right.percentile &&
+		left.minimumRangePercent === right.minimumRangePercent
 	);
 }
 

@@ -623,10 +623,10 @@ crypto_go/
 │   │   └── storage/
 │   ├── migrations/
 │   ├── Dockerfile
-│   ├── Makefile
 │   ├── go.mod
 │   └── sqlc.yaml
 ├── compose.yaml
+├── Makefile
 └── README.md
 ```
 

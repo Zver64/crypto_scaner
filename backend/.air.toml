@@ -1,7 +1,7 @@
 tmp_dir = "bin/air"
 
 [build]
-cmd = "make build BINARY=bin/air/crypto-scanner"
+cmd = "make -C .. buildbackend BACKEND_BINARY=backend/bin/air/crypto-scanner"
 entrypoint = ["./bin/air/crypto-scanner"]
 send_interrupt = true
 kill_delay = "15s"

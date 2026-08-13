@@ -6,8 +6,8 @@ backend. The files use the JetBrains HTTP format supported by
 
 ## Setup
 
-Initialize and start the backend using the
-[backend development instructions](../README.md#complete-stack-in-docker-compose).
+From the repository root, initialize the database and start the backend with
+`make db-up migrate-up` and `make devbackend`.
 
 For authenticated analysis requests, create the ignored private environment
 file:
@@ -19,14 +19,7 @@ cp backend/http/http-client.private.env.json.example \
 
 Open `backend/http/http-client.private.env.json` and replace the placeholder
 with the exact value of `window.Telegram.WebApp.initData` from the Mini App.
-The Telegram user must exist and be enabled in the application database. The
-explicit bootstrap command enables the administrator configured by
-`ADMIN_TELEGRAM_ID`:
-
-```sh
-cd backend
-go run ./cmd/bootstrap-admin
-```
+The Telegram user must exist and be enabled in the application database.
 
 Open either `.http` file in Neovim, place the cursor within a request, and use
 Kulala's **Send request** action. Select the `default` environment if another

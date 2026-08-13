@@ -1,4 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+interface TelegramBackButton {
+	hide(): void;
+	offClick(listener: () => void): void;
+	onClick(listener: () => void): void;
+	show(): void;
+}
 
 interface TelegramSafeAreaInsets {
 	bottom: number;
@@ -8,6 +15,7 @@ interface TelegramSafeAreaInsets {
 }
 
 interface TelegramWebApp {
+	BackButton?: TelegramBackButton;
 	contentSafeAreaInset?: TelegramSafeAreaInsets;
 	expand(): void;
 	initData: string;
@@ -83,4 +91,27 @@ export function useTelegramMiniApp() {
 
 export function getTelegramInitData() {
 	return window.Telegram?.WebApp?.initData;
+}
+
+export function useTelegramBackButton(onBack: () => void) {
+	const backButton = window.Telegram?.WebApp?.BackButton;
+	const onBackRef = useRef(onBack);
+	onBackRef.current = onBack;
+
+	useEffect(() => {
+		if (!backButton) {
+			return;
+		}
+
+		const handleClick = () => onBackRef.current();
+		backButton.onClick(handleClick);
+		backButton.show();
+
+		return () => {
+			backButton.offClick(handleClick);
+			backButton.hide();
+		};
+	}, [backButton]);
+
+	return backButton !== undefined;
 }

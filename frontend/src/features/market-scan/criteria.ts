@@ -1,13 +1,19 @@
-export interface MarketScanCriteria {
-	minimumRangePercent: number;
+export interface AnalysisCriteria {
 	percentile: number;
 	periodDays: number;
 }
 
-export interface MarketScanDraft {
-	minimumRangePercent: number | string;
+export interface AnalysisDraft {
 	percentile: number | string;
 	periodDays: number | string;
+}
+
+export interface MarketScanCriteria extends AnalysisCriteria {
+	minimumRangePercent: number;
+}
+
+export interface MarketScanDraft extends AnalysisDraft {
+	minimumRangePercent: number | string;
 }
 
 export const defaultMarketScanCriteria: MarketScanCriteria = {
@@ -26,10 +32,14 @@ export type MarketScanValidationErrors = Partial<
 	Record<keyof MarketScanCriteria, string>
 >;
 
-export function validateMarketScanCriteria(
-	values: MarketScanDraft,
-): MarketScanValidationErrors {
-	const errors: MarketScanValidationErrors = {};
+export type AnalysisValidationErrors = Partial<
+	Record<keyof AnalysisCriteria, string>
+>;
+
+export function validateAnalysisCriteria(
+	values: AnalysisDraft,
+): AnalysisValidationErrors {
+	const errors: AnalysisValidationErrors = {};
 
 	validateInteger(
 		values.periodDays,
@@ -51,6 +61,14 @@ export function validateMarketScanCriteria(
 			errors.percentile = message;
 		},
 	);
+
+	return errors;
+}
+
+export function validateMarketScanCriteria(
+	values: MarketScanDraft,
+): MarketScanValidationErrors {
+	const errors: MarketScanValidationErrors = validateAnalysisCriteria(values);
 
 	if (values.minimumRangePercent === "") {
 		errors.minimumRangePercent = "Minimum range is required";

@@ -22,6 +22,16 @@ function Home() {
 			onCommit={async (criteria) => {
 				await navigate({ search: marketScanCriteriaToSearch(criteria) });
 			}}
+			onSelectInstrument={async (symbol, criteria) => {
+				await navigate({
+					params: { symbol },
+					search: {
+						percentile: criteria.percentile,
+						period_days: criteria.periodDays,
+					},
+					to: "/instruments/$symbol",
+				});
+			}}
 		/>
 	);
 }

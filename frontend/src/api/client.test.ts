@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, fetchMarketScan } from "./client";
+import { ApiError, fetchInstrumentAnalysis, fetchMarketScan } from "./client";
 
 const criteria = {
 	minimumRangePercent: 3.5,
@@ -129,6 +129,69 @@ describe("fetchMarketScan", () => {
 			expect.objectContaining({
 				code: "unexpected_error",
 				message: "An unexpected error occurred. Please try again.",
+			}),
+		);
+	});
+});
+
+describe("fetchInstrumentAnalysis", () => {
+	it("URL-encodes the exact symbol and maps UTC coverage without changing values", async () => {
+		const body = {
+			candle_count: 30,
+			from: "2026-07-05T00:00:00Z",
+			percentile: 80,
+			period_days: 30,
+			range_percent: 3.9012,
+			symbol: "币安/USDT",
+			to: "2026-08-03T00:00:00Z",
+		};
+		const request = vi.fn(
+			async (_input: RequestInfo | URL, _init?: RequestInit) =>
+				new Response(JSON.stringify(body), { status: 200 }),
+		);
+
+		const result = await fetchInstrumentAnalysis(
+			"币安/USDT",
+			{ percentile: 80, periodDays: 30 },
+			{ initData: "signed-fixture", request },
+		);
+
+		expect(request).toHaveBeenCalledWith(
+			"/api/v1/analysis/percentile/%E5%B8%81%E5%AE%89%2FUSDT?period_days=30&percentile=80",
+			{
+				headers: {
+					Accept: "application/json",
+					Authorization: "tma signed-fixture",
+				},
+				method: "GET",
+			},
+		);
+		expect(result).toEqual(body);
+	});
+
+	it("normalizes canonical instrument failures", async () => {
+		const request = vi.fn(
+			async () =>
+				new Response(
+					JSON.stringify({
+						error: { code: "insufficient_data" },
+						request_id: "request-456",
+					}),
+					{ status: 409 },
+				),
+		);
+
+		await expect(
+			fetchInstrumentAnalysis(
+				"BTCUSDT",
+				{ percentile: 80, periodDays: 30 },
+				{ request },
+			),
+		).rejects.toEqual(
+			expect.objectContaining({
+				code: "insufficient_data",
+				message: "There is not enough market history for this analysis.",
+				requestId: "request-456",
 			}),
 		);
 	});

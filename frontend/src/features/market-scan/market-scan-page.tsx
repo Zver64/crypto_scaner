@@ -37,11 +37,16 @@ export function marketScanQueryKey(criteria: MarketScanCriteria) {
 interface MarketScanPageProps {
 	committedCriteria: MarketScanCriteria | undefined;
 	onCommit(criteria: MarketScanCriteria): Promise<void>;
+	onSelectInstrument(
+		symbol: string,
+		criteria: MarketScanCriteria,
+	): Promise<void>;
 }
 
 export function MarketScanPage({
 	committedCriteria,
 	onCommit,
+	onSelectInstrument,
 }: MarketScanPageProps) {
 	const permission = useBusinessRequestPermission();
 	const [symbolFilter, setSymbolFilter] = useState("");
@@ -160,7 +165,7 @@ export function MarketScanPage({
 					</Center>
 				) : null}
 
-				{query.data ? (
+				{query.data && committedCriteria ? (
 					<Box pos="relative">
 						<LoadingOverlay
 							loaderProps={{ "aria-label": "Refreshing Market Scan" }}
@@ -224,7 +229,26 @@ export function MarketScanPage({
 											</Table.Thead>
 											<Table.Tbody>
 												{filteredItems.map((item) => (
-													<Table.Tr key={item.symbol}>
+													<Table.Tr
+														key={item.symbol}
+														onClick={() =>
+															void onSelectInstrument(
+																item.symbol,
+																committedCriteria,
+															)
+														}
+														onKeyDown={(event) => {
+															if (event.key === "Enter") {
+																void onSelectInstrument(
+																	item.symbol,
+																	committedCriteria,
+																);
+															}
+														}}
+														role="link"
+														style={{ cursor: "pointer" }}
+														tabIndex={0}
+													>
 														<Table.Td>{item.symbol}</Table.Td>
 														<Table.Td>
 															{formatRangePercent(item.range_percent)}

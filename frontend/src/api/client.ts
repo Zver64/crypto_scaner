@@ -1,4 +1,15 @@
+import type { InstrumentAnalysisCriteria } from "../features/instrument-analysis/criteria";
 import type { MarketScanCriteria } from "../features/market-scan/criteria";
+
+export interface InstrumentAnalysisResult {
+	candle_count: number;
+	from: string;
+	percentile: number;
+	period_days: number;
+	range_percent: number;
+	symbol: string;
+	to: string;
+}
 
 export interface MarketScanItem {
 	candle_count: number;
@@ -56,20 +67,48 @@ export class ApiError extends Error {
 	}
 }
 
-interface FetchMarketScanOptions {
+interface FetchAnalysisOptions {
 	initData?: string;
 	request?: typeof fetch;
 }
 
 export async function fetchMarketScan(
 	criteria: MarketScanCriteria,
-	options: FetchMarketScanOptions = {},
+	options: FetchAnalysisOptions = {},
 ): Promise<MarketScanResult> {
 	const parameters = new URLSearchParams({
 		period_days: String(criteria.periodDays),
 		percentile: String(criteria.percentile),
 		minimum_range_percent: String(criteria.minimumRangePercent),
 	});
+	return fetchAnalysisResult(
+		`/api/v1/analysis/percentile?${parameters.toString()}`,
+		options,
+		parseMarketScanResult,
+	);
+}
+
+export async function fetchInstrumentAnalysis(
+	symbol: string,
+	criteria: InstrumentAnalysisCriteria,
+	options: FetchAnalysisOptions = {},
+): Promise<InstrumentAnalysisResult> {
+	const parameters = new URLSearchParams({
+		period_days: String(criteria.periodDays),
+		percentile: String(criteria.percentile),
+	});
+	return fetchAnalysisResult(
+		`/api/v1/analysis/percentile/${encodeURIComponent(symbol)}?${parameters.toString()}`,
+		options,
+		parseInstrumentAnalysisResult,
+	);
+}
+
+async function fetchAnalysisResult<Result>(
+	url: string,
+	options: FetchAnalysisOptions,
+	parse: (payload: unknown) => Result,
+): Promise<Result> {
 	const headers: Record<string, string> = { Accept: "application/json" };
 	const initData = options.initData?.trim();
 	if (initData) {
@@ -77,16 +116,16 @@ export async function fetchMarketScan(
 	}
 
 	try {
-		const response = await (options.request ?? fetch)(
-			`/api/v1/analysis/percentile?${parameters.toString()}`,
-			{ headers, method: "GET" },
-		);
+		const response = await (options.request ?? fetch)(url, {
+			headers,
+			method: "GET",
+		});
 		const payload: unknown = await response.json();
 		if (!response.ok) {
 			throw backendError(payload, response.status);
 		}
 
-		return parseMarketScanResult(payload);
+		return parse(payload);
 	} catch (error) {
 		if (error instanceof ApiError) {
 			throw error;
@@ -96,6 +135,33 @@ export async function fetchMarketScan(
 		}
 		throw new ApiError("unexpected_error");
 	}
+}
+
+function parseInstrumentAnalysisResult(
+	payload: unknown,
+): InstrumentAnalysisResult {
+	if (
+		!isRecord(payload) ||
+		typeof payload.symbol !== "string" ||
+		!isFiniteNumber(payload.period_days) ||
+		!isFiniteNumber(payload.percentile) ||
+		!isFiniteNumber(payload.range_percent) ||
+		!isFiniteNumber(payload.candle_count) ||
+		!isUtcDateTime(payload.from) ||
+		!isUtcDateTime(payload.to)
+	) {
+		throw new ApiError("unexpected_error");
+	}
+
+	return {
+		candle_count: payload.candle_count,
+		from: payload.from,
+		percentile: payload.percentile,
+		period_days: payload.period_days,
+		range_percent: payload.range_percent,
+		symbol: payload.symbol,
+		to: payload.to,
+	};
 }
 
 function backendError(payload: unknown, status: number) {
@@ -174,4 +240,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isFiniteNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
+}
+
+function isUtcDateTime(value: unknown): value is string {
+	return (
+		typeof value === "string" &&
+		(value.endsWith("Z") || value.endsWith("+00:00")) &&
+		Number.isFinite(Date.parse(value))
+	);
 }

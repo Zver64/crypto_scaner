@@ -1,0 +1,12 @@
+# Frontend MVP
+
+Implementation tickets for [`spec.md`](./spec.md):
+
+| Ticket | Status | Result |
+| --- | --- | --- |
+| [01 — Prepare Frontend Dependencies](./issues/01-prepare-frontend-dependencies.md) | resolved | Added and verified TanStack Query, Mantine Form, Mantine Notifications, Vitest, and consistent frontend quality scripts. |
+| [02 — Bootstrap Mini App Shell](./issues/02-bootstrap-mini-app-shell.md) | ready-for-agent | — |
+| [03 — Run Market Scan](./issues/03-run-market-scan.md) | ready-for-agent | — |
+| [04 — Refine Scan Results](./issues/04-refine-scan-results.md) | ready-for-agent | — |
+| [05 — Drill Into Instrument Analysis](./issues/05-drill-into-instrument-analysis.md) | ready-for-agent | — |
+| [06 — Verify and Document MVP](./issues/06-verify-and-document-mvp.md) | ready-for-agent | — |

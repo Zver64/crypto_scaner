@@ -8,12 +8,12 @@ import (
 	"crypto-scanner/internal/platform/config"
 )
 
-func TestLoadUsesDocumentedDefaults(t *testing.T) {
+func TestLoadServerUsesDocumentedDefaults(t *testing.T) {
 	setRequiredEnvironment(t)
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadServer()
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("LoadServer() error = %v", err)
 	}
 
 	if cfg.HTTPAddress != "127.0.0.1:8080" {
@@ -36,9 +36,13 @@ func TestLoadUsesDocumentedDefaults(t *testing.T) {
 	}
 }
 
-func TestLoadRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing.T) {
+func TestLoadServerRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing.T) {
 	required := []string{
-		"DATABASE_URL",
+		"POSTGRES_HOST",
+		"POSTGRES_PORT",
+		"POSTGRES_USER",
+		"POSTGRES_PASSWORD",
+		"POSTGRES_DB",
 		"TELEGRAM_BOT_TOKEN",
 	}
 
@@ -47,15 +51,15 @@ func TestLoadRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing.T) {
 			setRequiredEnvironment(t)
 			t.Setenv(name, "")
 
-			_, err := config.Load()
+			_, err := config.LoadServer()
 			if err == nil || err.Error() != name+" is required" {
-				t.Fatalf("Load() error = %v, want %q", err, name+" is required")
+				t.Fatalf("LoadServer() error = %v, want %q", err, name+" is required")
 			}
 		})
 	}
 }
 
-func TestLoadRejectsInvalidSettingsPreciselyAndSafely(t *testing.T) {
+func TestLoadServerRejectsInvalidSettingsPreciselyAndSafely(t *testing.T) {
 	tests := []struct {
 		name      string
 		variable  string
@@ -76,18 +80,18 @@ func TestLoadRejectsInvalidSettingsPreciselyAndSafely(t *testing.T) {
 			setRequiredEnvironment(t)
 			t.Setenv(tt.variable, tt.value)
 
-			_, err := config.Load()
+			_, err := config.LoadServer()
 			if err == nil || err.Error() != tt.wantError {
-				t.Fatalf("Load() error = %v, want %q", err, tt.wantError)
+				t.Fatalf("LoadServer() error = %v, want %q", err, tt.wantError)
 			}
 			if strings.Contains(err.Error(), tt.value) {
-				t.Fatalf("Load() error leaks invalid value: %q", err)
+				t.Fatalf("LoadServer() error leaks invalid value: %q", err)
 			}
 		})
 	}
 }
 
-func TestLoadParsesOptionalSettings(t *testing.T) {
+func TestLoadServerParsesOptionalSettings(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("HTTP_ADDRESS", "0.0.0.0:9090")
 	t.Setenv("LOG_LEVEL", "debug")
@@ -96,9 +100,9 @@ func TestLoadParsesOptionalSettings(t *testing.T) {
 	t.Setenv("SYNC_RETRY_ATTEMPTS", "7")
 	t.Setenv("SHUTDOWN_TIMEOUT", "3s")
 
-	cfg, err := config.Load()
+	cfg, err := config.LoadServer()
 	if err != nil {
-		t.Fatalf("Load() error = %v", err)
+		t.Fatalf("LoadServer() error = %v", err)
 	}
 
 	if cfg.HTTPAddress != "0.0.0.0:9090" ||
@@ -107,14 +111,87 @@ func TestLoadParsesOptionalSettings(t *testing.T) {
 		cfg.SyncWorkers != 8 ||
 		cfg.SyncRetryAttempts != 7 ||
 		cfg.ShutdownTimeout != 3*time.Second {
-		t.Fatalf("Load() parsed unexpected configuration: %+v", cfg)
+		t.Fatalf("LoadServer() parsed unexpected configuration: %+v", cfg)
+	}
+}
+
+func TestLoadServerIgnoresBootstrapConfiguration(t *testing.T) {
+	setRequiredEnvironment(t)
+	t.Setenv("ADMIN_TELEGRAM_ID", "not-a-telegram-id")
+
+	if _, err := config.LoadServer(); err != nil {
+		t.Fatalf("LoadServer() read bootstrap-only configuration: %v", err)
+	}
+}
+
+func TestLoadBootstrap(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://scanner:secret@127.0.0.1:5432/scanner?sslmode=disable")
+	t.Setenv("ADMIN_TELEGRAM_ID", "123456789")
+
+	cfg, err := config.LoadBootstrap()
+	if err != nil {
+		t.Fatalf("LoadBootstrap() error = %v", err)
+	}
+	if cfg.AdminTelegramID != 123456789 {
+		t.Fatalf("AdminTelegramID = %d", cfg.AdminTelegramID)
+	}
+}
+
+func TestLoadDatabaseURLPrefersExplicitURL(t *testing.T) {
+	explicit := "postgres://production:secret@database.example/production?sslmode=require"
+	t.Setenv("DATABASE_URL", explicit)
+	t.Setenv("POSTGRES_HOST", "127.0.0.1")
+	t.Setenv("POSTGRES_PORT", "5432")
+	t.Setenv("POSTGRES_USER", "local")
+	t.Setenv("POSTGRES_PASSWORD", "local-secret")
+	t.Setenv("POSTGRES_DB", "local")
+
+	got, err := config.LoadDatabaseURL()
+	if err != nil {
+		t.Fatalf("LoadDatabaseURL() error = %v", err)
+	}
+	if got != explicit {
+		t.Fatalf("LoadDatabaseURL() = %q, want explicit DATABASE_URL", got)
+	}
+}
+
+func TestLoadDatabaseURLBuildsEscapedURLFromPostgresSettings(t *testing.T) {
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("POSTGRES_HOST", "127.0.0.1")
+	t.Setenv("POSTGRES_PORT", "55432")
+	t.Setenv("POSTGRES_USER", "scan@ner")
+	t.Setenv("POSTGRES_PASSWORD", "p:a/ss?#%")
+	t.Setenv("POSTGRES_DB", "scanner/local")
+
+	got, err := config.LoadDatabaseURL()
+	if err != nil {
+		t.Fatalf("LoadDatabaseURL() error = %v", err)
+	}
+	want := "postgres://scan%40ner:p%3Aa%2Fss%3F%23%25@127.0.0.1:55432/scanner%2Flocal?sslmode=disable"
+	if got != want {
+		t.Fatalf("LoadDatabaseURL() = %q, want %q", got, want)
+	}
+}
+
+func TestLoadBootstrapRejectsInvalidTelegramID(t *testing.T) {
+	t.Setenv("DATABASE_URL", "postgres://scanner:secret@127.0.0.1:5432/scanner?sslmode=disable")
+	t.Setenv("ADMIN_TELEGRAM_ID", "not-an-id")
+
+	_, err := config.LoadBootstrap()
+	if err == nil || err.Error() != "ADMIN_TELEGRAM_ID must be a positive base-10 integer" {
+		t.Fatalf("LoadBootstrap() error = %v", err)
 	}
 }
 
 func setRequiredEnvironment(t *testing.T) {
 	t.Helper()
 	values := map[string]string{
-		"DATABASE_URL":       "postgres://scanner:secret@localhost/scanner",
+		"DATABASE_URL":       "",
+		"POSTGRES_HOST":      "127.0.0.1",
+		"POSTGRES_PORT":      "5432",
+		"POSTGRES_USER":      "scanner",
+		"POSTGRES_PASSWORD":  "secret",
+		"POSTGRES_DB":        "scanner",
 		"TELEGRAM_BOT_TOKEN": "123456:token",
 	}
 	for key, value := range values {

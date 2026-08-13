@@ -121,7 +121,7 @@ func TestNormalServerStartupDoesNotMutateUsers(t *testing.T) {
 	address := availableAddress(t)
 	serverCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	cfg := config.Config{
+	cfg := config.ServerConfig{
 		DatabaseURL:      databaseURL,
 		TelegramBotToken: "123456:test-token",
 		HTTPAddress:      address,

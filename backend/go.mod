@@ -7,6 +7,7 @@ tool github.com/sqlc-dev/sqlc/cmd/sqlc
 require (
 	github.com/binance/binance-connector-go v0.8.0
 	github.com/jackc/pgx/v5 v5.10.0
+	github.com/joho/godotenv v1.5.1
 	golang.org/x/time v0.14.0
 )
 

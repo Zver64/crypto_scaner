@@ -20,18 +20,23 @@ import (
 	"crypto-scanner/internal/httpapi"
 	marketsync "crypto-scanner/internal/market/sync"
 	"crypto-scanner/internal/platform/config"
+	"crypto-scanner/internal/platform/envfile"
 	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/storage/postgres"
 )
 
 func main() {
+	if err := envfile.LoadRoot(); err != nil {
+		logFailure(logging.New(os.Stderr, "info"), "load_environment_file", err)
+		os.Exit(1)
+	}
 	if err := validateArgs(os.Args[1:]); err != nil {
 		logFailure(logging.New(os.Stderr, "info"), "validate_arguments", err)
 		os.Exit(1)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	cfg, err := config.Load()
+	cfg, err := config.LoadServer()
 	if err != nil {
 		logFailure(logging.New(os.Stderr, "info"), "load_configuration", fmt.Errorf("load configuration: %w", err))
 		os.Exit(1)
@@ -56,7 +61,7 @@ func validateArgs(args []string) error {
 	return nil
 }
 
-func run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
+func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) error {
 	database, err := postgres.OpenVerified(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return fmt.Errorf("initialize PostgreSQL: %w", err)

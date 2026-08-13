@@ -20,11 +20,12 @@ cp backend/http/http-client.private.env.json.example \
 Open `backend/http/http-client.private.env.json` and replace the placeholder
 with the exact value of `window.Telegram.WebApp.initData` from the Mini App.
 The Telegram user must exist and be enabled in the application database. The
-manual bootstrap script enables the administrator configured by
+explicit bootstrap command enables the administrator configured by
 `ADMIN_TELEGRAM_ID`:
 
 ```sh
-make -C backend bootstrap-admin
+cd backend
+go run ./cmd/bootstrap-admin
 ```
 
 Open either `.http` file in Neovim, place the cursor within a request, and use

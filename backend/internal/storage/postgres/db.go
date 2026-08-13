@@ -82,10 +82,10 @@ func VerifySchema(ctx context.Context, queries RowQuerier, databaseURL string) e
 		return safeError("verify PostgreSQL schema metadata", err, databaseURL)
 	}
 	if !exists {
-		return fmt.Errorf("PostgreSQL schema is not initialized; run make migrate-up")
+		return fmt.Errorf("PostgreSQL schema is not initialized; apply database migrations")
 	}
 	if version != migrations.CurrentVersion {
-		return fmt.Errorf("PostgreSQL schema is at version %d; version %d is required; run make migrate-up", version, migrations.CurrentVersion)
+		return fmt.Errorf("PostgreSQL schema is at version %d; version %d is required; apply database migrations", version, migrations.CurrentVersion)
 	}
 	return nil
 }

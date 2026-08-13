@@ -16,7 +16,7 @@ func TestVerifySchemaRejectsAnUninitializedDatabaseWithOperatorGuidance(t *testi
 
 	err := postgres.VerifySchema(context.Background(), queries, "postgres://localhost/test")
 
-	if err == nil || !strings.Contains(err.Error(), "schema is not initialized") || !strings.Contains(err.Error(), "make migrate-up") {
+	if err == nil || !strings.Contains(err.Error(), "schema is not initialized") || !strings.Contains(err.Error(), "apply database migrations") {
 		t.Fatalf("VerifySchema() error = %v, want migration guidance", err)
 	}
 }

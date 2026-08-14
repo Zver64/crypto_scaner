@@ -18,5 +18,80 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql
 
+  migrate:
+    build:
+      context: ./backend
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/usr/local/bin/migrate"]
+    command: ["up"]
+    restart: "no"
+
+  backend:
+    build:
+      context: ./backend
+    env_file:
+      - ./.env
+    environment:
+      HTTP_ADDRESS: 0.0.0.0:8080
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "127.0.0.1:8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:8080/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    develop:
+      watch:
+        - action: rebuild
+          path: ./backend
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      VITE_API_PROXY_TARGET: http://backend:8080
+    volumes:
+      - type: bind
+        source: ./.env
+        target: /workspace/.env
+        read_only: true
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:3000/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /workspace/frontend
+          initial_sync: true
+          ignore:
+            - dist/
+            - node_modules/
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/package-lock.json
+
 volumes:
   postgres-data:

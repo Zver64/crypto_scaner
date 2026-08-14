@@ -13,7 +13,10 @@ export function developmentAuthorizationHeader(initData: string | undefined) {
 
 const config = defineConfig(({ mode }) => {
 	const env = loadEnv(mode, repositoryRoot, "");
-	const apiTarget = env.VITE_API_PROXY_TARGET || "http://127.0.0.1:8080";
+	const apiTarget =
+		process.env.VITE_API_PROXY_TARGET ||
+		env.VITE_API_PROXY_TARGET ||
+		"http://127.0.0.1:8080";
 	const developmentAuthorization = developmentAuthorizationHeader(
 		env.TELEGRAM_DEV_INIT_DATA,
 	);

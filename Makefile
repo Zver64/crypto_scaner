@@ -2,10 +2,11 @@
 
 BACKEND_BINARY ?= backend/bin/crypto-scanner
 
-.PHONY: help prepare devbackend buildbackend db-up db-down migrate-up migrate-down
+.PHONY: help prepare dev devbackend buildbackend db-up db-down migrate-up migrate-down
 
 help:
 	@printf '%s\n' \
+		'make dev          Start the complete Docker development stack in watch mode' \
 		'make prepare      Prepare the backend' \
 		'make devbackend   Start the backend' \
 		'make db-up        Start PostgreSQL' \
@@ -15,6 +16,9 @@ help:
 
 prepare:
 	go -C backend mod download
+
+dev:
+	docker compose up --watch
 
 devbackend:
 	cd backend && air

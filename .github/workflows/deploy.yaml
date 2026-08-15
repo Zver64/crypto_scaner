@@ -1,0 +1,75 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            context: backend
+            target: ""
+          - name: frontend
+            context: frontend
+            target: production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: image
+        run: echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')-${{ matrix.name }}:main" >> "$GITHUB_OUTPUT"
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
+        with:
+          context: ${{ matrix.context }}
+          target: ${{ matrix.target }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.image.outputs.name }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Deploy with Compose
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          SSH_PORT: ${{ vars.SSH_PORT || '22' }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/id_deploy ~/.ssh/known_hosts
+
+          repository=$(printf '%s' "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          target="$DEPLOY_USER@$DEPLOY_HOST"
+          ssh_options=(-i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes)
+
+          ssh "${ssh_options[@]}" "$target" "mkdir -p '$DEPLOY_PATH'"
+          scp -i ~/.ssh/id_deploy -P "$SSH_PORT" -o StrictHostKeyChecking=yes compose.production.yaml "$target:$DEPLOY_PATH/"
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" "set -e; docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin; trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT; cd '$DEPLOY_PATH'; export BACKEND_IMAGE='ghcr.io/$repository-backend:main' FRONTEND_IMAGE='ghcr.io/$repository-frontend:main'; docker compose -f compose.production.yaml pull; docker compose -f compose.production.yaml up -d --wait --remove-orphans; docker image prune -f"

@@ -1,0 +1,56 @@
+name: crypto-scanner
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    env_file: .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres-data:/var/lib/postgresql
+
+  migrate:
+    image: ${BACKEND_IMAGE}
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    entrypoint: ["/usr/local/bin/migrate"]
+    command: ["up"]
+    restart: "no"
+
+  backend:
+    image: ${BACKEND_IMAGE}
+    env_file: .env
+    environment:
+      HTTP_ADDRESS: 0.0.0.0:8080
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:8080/health/live"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      - "${WEB_BIND_ADDRESS:-127.0.0.1:8081}:8080"
+
+volumes:
+  postgres-data:

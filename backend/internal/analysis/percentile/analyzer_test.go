@@ -25,8 +25,8 @@ func TestAnalyzerInterpolatesTypeSevenPercentile(t *testing.T) {
 	}
 
 	result, err := percentile.New().Analyze(context.Background(), analysis.AnalysisInput{
-		Candles:    candles,
-		PeriodDays: 4,
+		Candles: candles,
+		Unit:    analysis.UnitDays, Period: 4,
 		Percentile: 75,
 	})
 	if err != nil {
@@ -41,8 +41,8 @@ func TestAnalyzerReportsInsufficientHistory(t *testing.T) {
 	t.Parallel()
 
 	_, err := percentile.New().Analyze(context.Background(), analysis.AnalysisInput{
-		Candles:    []market.Candle{candleWithRange(time.Now(), 2)},
-		PeriodDays: 2,
+		Candles: []market.Candle{candleWithRange(time.Now(), 2)},
+		Unit:    analysis.UnitDays, Period: 2,
 		Percentile: 50,
 	})
 	var insufficient *analysis.InsufficientHistoryError
@@ -68,7 +68,7 @@ func TestAnalyzerRejectsNonPositiveOpen(t *testing.T) {
 					High:     10,
 					Low:      5,
 				}},
-				PeriodDays: 1,
+				Unit: analysis.UnitDays, Period: 1,
 				Percentile: 50,
 			})
 			if !errors.Is(err, analysis.ErrInvalidCandleData) {
@@ -83,10 +83,10 @@ func TestAnalyzerRejectsOutOfRangeInput(t *testing.T) {
 
 	candle := candleWithRange(time.Now(), 2)
 	inputs := map[string]analysis.AnalysisInput{
-		"zero period":          {Candles: []market.Candle{candle}, PeriodDays: 0, Percentile: 50},
-		"period above maximum": {Candles: []market.Candle{candle}, PeriodDays: 3651, Percentile: 50},
-		"negative percentile":  {Candles: []market.Candle{candle}, PeriodDays: 1, Percentile: -1},
-		"percentile above 100": {Candles: []market.Candle{candle}, PeriodDays: 1, Percentile: 101},
+		"zero period":          {Candles: []market.Candle{candle}, Unit: analysis.UnitDays, Period: 0, Percentile: 50},
+		"period above maximum": {Candles: []market.Candle{candle}, Unit: analysis.UnitDays, Period: 3651, Percentile: 50},
+		"negative percentile":  {Candles: []market.Candle{candle}, Unit: analysis.UnitDays, Period: 1, Percentile: -1},
+		"percentile above 100": {Candles: []market.Candle{candle}, Unit: analysis.UnitDays, Period: 1, Percentile: 101},
 	}
 
 	for name, input := range inputs {
@@ -118,8 +118,8 @@ func TestAnalyzerSupportsPercentileEndpointsAndSingleValue(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			result, err := percentile.New().Analyze(context.Background(), analysis.AnalysisInput{
-				Candles:    test.candles,
-				PeriodDays: len(test.candles),
+				Candles: test.candles,
+				Unit:    analysis.UnitDays, Period: len(test.candles),
 				Percentile: test.percentile,
 			})
 			if err != nil {
@@ -142,7 +142,7 @@ func TestAnalyzerRetainsFullPrecision(t *testing.T) {
 			High:     101_234.56,
 			Low:      100_000,
 		}},
-		PeriodDays: 1,
+		Unit: analysis.UnitDays, Period: 1,
 		Percentile: 50,
 	})
 	if err != nil {
@@ -167,7 +167,7 @@ func TestAnalyzerSelectsLatestRequestedCandlesAndReportsCoverage(t *testing.T) {
 			candleWithRange(latest, 4),
 			candleWithRange(start.AddDate(0, 0, 1), 2),
 		},
-		PeriodDays: 2,
+		Unit: analysis.UnitDays, Period: 2,
 		Percentile: 50,
 	})
 	if err != nil {

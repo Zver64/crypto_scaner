@@ -7,7 +7,8 @@ RUN go mod download
 
 COPY . .
 RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/crypto-scanner ./cmd/crypto-scanner \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate \
+    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/bootstrap-admin ./cmd/bootstrap-admin
 
 FROM alpine:3.23
 
@@ -17,6 +18,7 @@ RUN apk add --no-cache ca-certificates tzdata \
 
 COPY --from=build /out/crypto-scanner /usr/local/bin/crypto-scanner
 COPY --from=build /out/migrate /usr/local/bin/migrate
+COPY --from=build /out/bootstrap-admin /usr/local/bin/bootstrap-admin
 
 USER scanner
 EXPOSE 8080

@@ -20,6 +20,7 @@ import { useBusinessRequestPermission } from "../../app/business-request-context
 import { getTelegramInitData, useTelegramBackButton } from "../../app/telegram";
 import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
+import { defaultPeriodForUnit } from "../market-scan/criteria";
 import { formatRangePercent } from "../market-scan/results";
 import {
 	type InstrumentAnalysisCriteria,
@@ -50,7 +51,8 @@ export function InstrumentAnalysisPage({
 		validateInputOnChange: true,
 	});
 	const setFormValues = form.setValues;
-	const committedPeriodDays = committedCriteria.periodDays;
+	const committedPeriod = committedCriteria.period;
+	const committedUnit = committedCriteria.unit;
 	const committedPercentile = committedCriteria.percentile;
 	const query = useQuery({
 		enabled: permission.allowed,
@@ -67,22 +69,24 @@ export function InstrumentAnalysisPage({
 	useEffect(() => {
 		setFormValues({
 			percentile: committedPercentile,
-			periodDays: committedPeriodDays,
+			period: committedPeriod,
+			unit: committedUnit,
 		});
-	}, [committedPeriodDays, committedPercentile, setFormValues]);
+	}, [committedPeriod, committedPercentile, committedUnit, setFormValues]);
 
 	useAnalysisErrorNotification(query.error, "Instrument Analysis failed");
 
 	const handleSubmit = form.onSubmit(async (values) => {
 		if (
-			typeof values.periodDays !== "number" ||
+			typeof values.period !== "number" ||
 			typeof values.percentile !== "number"
 		) {
 			return;
 		}
 
 		if (
-			values.periodDays === committedCriteria.periodDays &&
+			values.period === committedCriteria.period &&
+			values.unit === committedCriteria.unit &&
 			values.percentile === committedCriteria.percentile
 		) {
 			await query.refetch();
@@ -91,7 +95,8 @@ export function InstrumentAnalysisPage({
 
 		await onCommit({
 			percentile: values.percentile,
-			periodDays: values.periodDays,
+			period: values.period,
+			unit: values.unit,
 		});
 	});
 	const submissionDisabled =
@@ -120,8 +125,12 @@ export function InstrumentAnalysisPage({
 						<AnalysisCriteriaFields
 							percentileInputProps={form.getInputProps("percentile")}
 							percentileKey={form.key("percentile")}
-							periodInputProps={form.getInputProps("periodDays")}
-							periodKey={form.key("periodDays")}
+							periodInputProps={form.getInputProps("period")}
+							periodKey={form.key("period")}
+							unit={form.values.unit}
+							onUnitChange={(unit) => {
+								form.setValues({ unit, period: defaultPeriodForUnit(unit) });
+							}}
 						/>
 						<Button
 							disabled={submissionDisabled}
@@ -157,7 +166,7 @@ export function InstrumentAnalysisPage({
 								</Group>
 								<SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
 									<ResultValue
-										label="Daily Range"
+										label={`${query.data.unit === "days" ? "Daily" : "Hourly"} Range`}
 										value={formatRangePercent(query.data.range_percent)}
 									/>
 									<ResultValue
@@ -189,7 +198,8 @@ function instrumentAnalysisQueryKey(
 	return [
 		"instrument-analysis",
 		symbol,
-		criteria.periodDays,
+		criteria.period,
+		criteria.unit,
 		criteria.percentile,
 	] as const;
 }

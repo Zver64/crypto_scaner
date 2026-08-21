@@ -4,7 +4,8 @@ import { ApiError, fetchInstrumentAnalysis, fetchMarketScan } from "./client";
 const criteria = {
 	minimumRangePercent: 3.5,
 	percentile: 80,
-	periodDays: 30,
+	period: 30,
+	unit: "days" as const,
 };
 
 describe("fetchMarketScan", () => {
@@ -19,7 +20,8 @@ describe("fetchMarketScan", () => {
 			matched_count: 2,
 			minimum_range_percent: 3.5,
 			percentile: 80,
-			period_days: 30,
+			period: 30,
+			unit: "days",
 		};
 		const request = vi.fn(
 			async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -35,7 +37,7 @@ describe("fetchMarketScan", () => {
 		});
 
 		expect(request).toHaveBeenCalledWith(
-			"/api/v1/analysis/percentile?period_days=30&percentile=80&minimum_range_percent=3.5",
+			"/api/v1/analysis/percentile?period=30&unit=days&percentile=80&minimum_range_percent=3.5",
 			{
 				headers: {
 					Accept: "application/json",
@@ -62,7 +64,8 @@ describe("fetchMarketScan", () => {
 						matched_count: 0,
 						minimum_range_percent: 3.5,
 						percentile: 80,
-						period_days: 30,
+						period: 30,
+						unit: "days",
 					}),
 					{ status: 200 },
 				),
@@ -140,7 +143,8 @@ describe("fetchInstrumentAnalysis", () => {
 			candle_count: 30,
 			from: "2026-07-05T00:00:00Z",
 			percentile: 80,
-			period_days: 30,
+			period: 30,
+			unit: "days",
 			range_percent: 3.9012,
 			symbol: "币安/USDT",
 			to: "2026-08-03T00:00:00Z",
@@ -152,12 +156,12 @@ describe("fetchInstrumentAnalysis", () => {
 
 		const result = await fetchInstrumentAnalysis(
 			"币安/USDT",
-			{ percentile: 80, periodDays: 30 },
+			{ percentile: 80, period: 30, unit: "days" as const },
 			{ initData: "signed-fixture", request },
 		);
 
 		expect(request).toHaveBeenCalledWith(
-			"/api/v1/analysis/percentile/%E5%B8%81%E5%AE%89%2FUSDT?period_days=30&percentile=80",
+			"/api/v1/analysis/percentile/%E5%B8%81%E5%AE%89%2FUSDT?period=30&unit=days&percentile=80",
 			{
 				headers: {
 					Accept: "application/json",
@@ -184,7 +188,7 @@ describe("fetchInstrumentAnalysis", () => {
 		await expect(
 			fetchInstrumentAnalysis(
 				"BTCUSDT",
-				{ percentile: 80, periodDays: 30 },
+				{ percentile: 80, period: 30, unit: "days" as const },
 				{ request },
 			),
 		).rejects.toEqual(

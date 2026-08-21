@@ -6,27 +6,31 @@ import {
 
 export interface InstrumentAnalysisSearch {
 	percentile: number;
-	period_days: number;
+	period: number;
+	unit: "days" | "hours";
 }
 
 export function parseInstrumentAnalysisSearch(
 	search: Record<string, unknown> | InstrumentAnalysisSearch,
 ): InstrumentAnalysisSearch {
-	const periodDays = search.period_days;
+	const period = search.period;
+	const unit = search.unit;
 	const percentile = search.percentile;
 
 	if (
-		typeof periodDays !== "number" ||
+		typeof period !== "number" ||
 		typeof percentile !== "number" ||
-		Object.keys(validateInstrumentAnalysisCriteria({ percentile, periodDays }))
-			.length > 0
+		(unit !== "days" && unit !== "hours") ||
+		Object.keys(
+			validateInstrumentAnalysisCriteria({ percentile, period, unit }),
+		).length > 0
 	) {
 		return instrumentAnalysisCriteriaToSearch(
 			defaultInstrumentAnalysisCriteria,
 		);
 	}
 
-	return { percentile, period_days: periodDays };
+	return { percentile, period, unit };
 }
 
 export function instrumentAnalysisCriteriaToSearch(
@@ -34,7 +38,8 @@ export function instrumentAnalysisCriteriaToSearch(
 ): InstrumentAnalysisSearch {
 	return {
 		percentile: criteria.percentile,
-		period_days: criteria.periodDays,
+		period: criteria.period,
+		unit: criteria.unit,
 	};
 }
 
@@ -43,6 +48,7 @@ export function instrumentAnalysisCriteriaFromSearch(
 ): InstrumentAnalysisCriteria {
 	return {
 		percentile: search.percentile,
-		periodDays: search.period_days,
+		period: search.period,
+		unit: search.unit,
 	};
 }

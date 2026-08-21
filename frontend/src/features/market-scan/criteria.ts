@@ -1,11 +1,13 @@
 export interface AnalysisCriteria {
 	percentile: number;
-	periodDays: number;
+	unit: AnalysisUnit;
+	period: number;
 }
 
 export interface AnalysisDraft {
 	percentile: number | string;
-	periodDays: number | string;
+	period: number | string;
+	unit: AnalysisUnit;
 }
 
 export interface MarketScanCriteria extends AnalysisCriteria {
@@ -16,17 +18,28 @@ export interface MarketScanDraft extends AnalysisDraft {
 	minimumRangePercent: number | string;
 }
 
+export type AnalysisUnit = "days" | "hours";
+
 export const defaultMarketScanCriteria: MarketScanCriteria = {
 	minimumRangePercent: 3,
 	percentile: 80,
-	periodDays: 30,
+	period: 30,
+	unit: "days",
 };
 
 export const marketScanCriteriaConstraints = {
 	minimumRangePercent: { minimum: 0 },
 	percentile: { maximum: 100, minimum: 0 },
-	periodDays: { maximum: 3650, minimum: 1 },
+	period: { maximum: 87600, minimum: 1 },
 } as const;
+
+export function defaultPeriodForUnit(unit: AnalysisUnit): number {
+	return unit === "hours" ? 60 : 30;
+}
+
+export function maximumPeriodForUnit(unit: AnalysisUnit): number {
+	return unit === "hours" ? 87600 : 3650;
+}
 
 export type MarketScanValidationErrors = Partial<
 	Record<keyof MarketScanCriteria, string>
@@ -42,13 +55,13 @@ export function validateAnalysisCriteria(
 	const errors: AnalysisValidationErrors = {};
 
 	validateInteger(
-		values.periodDays,
+		values.period,
 		"Analysis period",
-		marketScanCriteriaConstraints.periodDays.minimum,
-		marketScanCriteriaConstraints.periodDays.maximum,
-		"Analysis period must be between 1 and 3650 days",
+		marketScanCriteriaConstraints.period.minimum,
+		maximumPeriodForUnit(values.unit),
+		`Analysis period must be a whole number between 1 and ${maximumPeriodForUnit(values.unit)} ${values.unit}`,
 		(message) => {
-			errors.periodDays = message;
+			errors.period = message;
 		},
 	);
 	validateInteger(

@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -170,6 +171,29 @@ func TestExchangeListClosedCandlesRequestsLatestDailyHistoryAndMapsValues(t *tes
 	}}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("ListClosedCandles() = %#v, want %#v", got, want)
+	}
+}
+
+func TestExchangeListClosedCandlesRequestsLatestHourlyHistoryAtHourBoundary(t *testing.T) {
+	cutoff := time.Date(2026, time.August, 5, 5, 0, 30, 0, time.UTC)
+	boundary := time.Date(2026, time.August, 5, 5, 0, 0, 0, time.UTC)
+	httpClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		query := request.URL.Query()
+		if query.Get("symbol") != "BTCUSDT" || query.Get("interval") != "1h" || query.Get("limit") != "60" {
+			t.Errorf("query = %q, want BTCUSDT hourly limit 60", query.Encode())
+		}
+		wantEnd := strconv.FormatInt(boundary.UnixMilli()-1, 10)
+		if got := query.Get("endTime"); got != wantEnd {
+			t.Errorf("endTime = %q, want %q", got, wantEnd)
+		}
+		return jsonResponse(`[]`), nil
+	})}
+
+	_, err := binance.NewWithHTTPClient("https://fixture.invalid", httpClient).ListClosedCandles(context.Background(), market.CandleRequest{
+		Symbol: "BTCUSDT", Interval: "1h", Limit: 60, ClosedBefore: cutoff,
+	})
+	if err != nil {
+		t.Fatalf("ListClosedCandles() error = %v", err)
 	}
 }
 

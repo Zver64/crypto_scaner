@@ -16,17 +16,19 @@ SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
        volume, quote_asset_volume, trade_count
 FROM binance_spot.candles
 WHERE instrument_id = $1
+  AND interval = $2
 ORDER BY open_time DESC
-LIMIT $2
+LIMIT $3
 `
 
 type ListLatestCandlesParams struct {
 	InstrumentID int64
+	Interval     string
 	Limit        int32
 }
 
 func (q *Queries) ListLatestCandles(ctx context.Context, arg ListLatestCandlesParams) ([]BinanceSpotCandle, error) {
-	rows, err := q.db.Query(ctx, listLatestCandles, arg.InstrumentID, arg.Limit)
+	rows, err := q.db.Query(ctx, listLatestCandles, arg.InstrumentID, arg.Interval, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

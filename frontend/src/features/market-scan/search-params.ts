@@ -6,18 +6,21 @@ import {
 export interface MarketScanSearch {
 	minimum_range_percent?: number;
 	percentile?: number;
-	period_days?: number;
+	period?: number;
+	unit?: "days" | "hours";
 }
 
 export function parseMarketScanSearch(
 	search: Record<string, unknown>,
 ): MarketScanSearch {
-	const periodDays = search.period_days;
+	const period = search.period;
+	const unit = search.unit;
 	const percentile = search.percentile;
 	const minimumRangePercent = search.minimum_range_percent;
 
 	if (
-		typeof periodDays !== "number" ||
+		typeof period !== "number" ||
+		(unit !== "days" && unit !== "hours") ||
 		typeof percentile !== "number" ||
 		typeof minimumRangePercent !== "number"
 	) {
@@ -29,7 +32,8 @@ export function parseMarketScanSearch(
 			validateMarketScanCriteria({
 				minimumRangePercent,
 				percentile,
-				periodDays,
+				period,
+				unit,
 			}),
 		).length > 0
 	) {
@@ -39,7 +43,8 @@ export function parseMarketScanSearch(
 	return {
 		minimum_range_percent: minimumRangePercent,
 		percentile,
-		period_days: periodDays,
+		period,
+		unit,
 	};
 }
 
@@ -49,7 +54,8 @@ export function marketScanCriteriaToSearch(
 	return {
 		minimum_range_percent: criteria.minimumRangePercent,
 		percentile: criteria.percentile,
-		period_days: criteria.periodDays,
+		period: criteria.period,
+		unit: criteria.unit,
 	};
 }
 
@@ -59,7 +65,8 @@ export function marketScanCriteriaFromSearch(
 	if (
 		search.minimum_range_percent === undefined ||
 		search.percentile === undefined ||
-		search.period_days === undefined
+		search.period === undefined ||
+		search.unit === undefined
 	) {
 		return undefined;
 	}
@@ -67,6 +74,7 @@ export function marketScanCriteriaFromSearch(
 	return {
 		minimumRangePercent: search.minimum_range_percent,
 		percentile: search.percentile,
-		periodDays: search.period_days,
+		period: search.period,
+		unit: search.unit,
 	};
 }

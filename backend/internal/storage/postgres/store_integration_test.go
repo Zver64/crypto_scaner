@@ -135,7 +135,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if err := store.UpsertCandles(ctx, []market.Candle{candle}); err != nil {
 			t.Fatalf("second candle upsert: %v", err)
 		}
-		candles, err := store.ListLatestCandles(ctx, instrumentID, 30)
+		candles, err := store.ListLatestCandlesByInterval(ctx, instrumentID, "1d", 30)
 		if err != nil {
 			t.Fatalf("ListLatestCandles() error = %v", err)
 		}
@@ -146,7 +146,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if _, err := db.Exec(ctx, `UPDATE binance_spot.candles SET high = 1e10000 WHERE instrument_id = $1`, instrumentID); err != nil {
 			t.Fatalf("seed out-of-range numeric: %v", err)
 		}
-		if _, err := store.ListLatestCandles(ctx, instrumentID, 30); err == nil {
+		if _, err := store.ListLatestCandlesByInterval(ctx, instrumentID, "1d", 30); err == nil {
 			t.Fatal("ListLatestCandles() accepted a NUMERIC outside float64 range")
 		}
 	})

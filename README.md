@@ -5,10 +5,13 @@ Telegram Mini App: Go, React and PostgreSQL.
 ```sh
 cp .env.example .env
 make prepare
-make db-up migrate-up
+docker compose up
 ```
 
-Run the backend:
+The Compose stack waits for PostgreSQL migrations and automatically creates or
+re-enables the administrator identified by `ADMIN_TELEGRAM_ID`.
+
+For backend-only development:
 
 ```sh
 make devbackend

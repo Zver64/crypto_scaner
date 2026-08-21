@@ -1,11 +1,21 @@
-import { NumberInput, type NumberInputProps } from "@mantine/core";
-import { marketScanCriteriaConstraints } from "../market-scan/criteria";
+import {
+	NumberInput,
+	type NumberInputProps,
+	SegmentedControl,
+} from "@mantine/core";
+import {
+	type AnalysisUnit,
+	marketScanCriteriaConstraints,
+	maximumPeriodForUnit,
+} from "../market-scan/criteria";
 
 interface AnalysisCriteriaFieldsProps {
 	percentileInputProps: NumberInputProps;
 	percentileKey: string;
 	periodInputProps: NumberInputProps;
 	periodKey: string;
+	unit: AnalysisUnit;
+	onUnitChange(unit: AnalysisUnit): void;
 }
 
 export function AnalysisCriteriaFields({
@@ -13,17 +23,27 @@ export function AnalysisCriteriaFields({
 	percentileKey,
 	periodInputProps,
 	periodKey,
+	unit,
+	onUnitChange,
 }: AnalysisCriteriaFieldsProps) {
 	return (
 		<>
 			<NumberInput
 				allowDecimal={false}
 				key={periodKey}
-				label="Analysis Period"
-				max={marketScanCriteriaConstraints.periodDays.maximum}
-				min={marketScanCriteriaConstraints.periodDays.minimum}
-				suffix=" days"
+				label={`Analysis Period (${unit})`}
+				max={maximumPeriodForUnit(unit)}
+				min={marketScanCriteriaConstraints.period.minimum}
+				suffix={` ${unit}`}
 				{...periodInputProps}
+			/>
+			<SegmentedControl
+				data={[
+					{ label: "Days", value: "days" },
+					{ label: "Hours", value: "hours" },
+				]}
+				value={unit}
+				onChange={(value) => onUnitChange(value as AnalysisUnit)}
 			/>
 			<NumberInput
 				allowDecimal={false}

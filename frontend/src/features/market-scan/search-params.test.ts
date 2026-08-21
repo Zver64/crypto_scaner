@@ -10,33 +10,37 @@ describe("Market Scan search parameters", () => {
 		const search = marketScanCriteriaToSearch({
 			minimumRangePercent: 3.5,
 			percentile: 80,
-			periodDays: 30,
+			period: 30,
+			unit: "days",
 		});
 
 		expect(search).toEqual({
 			minimum_range_percent: 3.5,
 			percentile: 80,
-			period_days: 30,
+			period: 30,
+			unit: "days",
 		});
 		expect(marketScanCriteriaFromSearch(parseMarketScanSearch(search))).toEqual(
 			{
 				minimumRangePercent: 3.5,
 				percentile: 80,
-				periodDays: 30,
+				period: 30,
+				unit: "days",
 			},
 		);
 	});
 
 	it("treats absent, partial, and invalid URL state as uncommitted", () => {
 		expect(parseMarketScanSearch({})).toEqual({});
-		expect(parseMarketScanSearch({ percentile: 80, period_days: 30 })).toEqual(
-			{},
-		);
+		expect(
+			parseMarketScanSearch({ percentile: 80, period: 30, unit: "days" }),
+		).toEqual({});
 		expect(
 			parseMarketScanSearch({
 				minimum_range_percent: -1,
 				percentile: 101,
-				period_days: 0,
+				period: 0,
+				unit: "days",
 			}),
 		).toEqual({});
 	});
@@ -46,12 +50,14 @@ describe("Market Scan search parameters", () => {
 			parseMarketScanSearch({
 				minimum_range_percent: 0,
 				percentile: 100,
-				period_days: 3650,
+				period: 87600,
+				unit: "hours",
 			}),
 		).toEqual({
 			minimum_range_percent: 0,
 			percentile: 100,
-			period_days: 3650,
+			period: 87600,
+			unit: "hours",
 		});
 	});
 });

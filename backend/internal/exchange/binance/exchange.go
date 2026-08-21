@@ -18,6 +18,7 @@ import (
 const spotPermission = "SPOT"
 
 const dailyInterval = "1d"
+const hourlyInterval = "1h"
 
 // Exchange adapts the official Binance connector to market domain values.
 // Connector request and response types do not leave this package.
@@ -150,7 +151,7 @@ func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.
 	if symbol == "" {
 		return nil, fmt.Errorf("list Binance candles: symbol is required")
 	}
-	if request.Interval != dailyInterval {
+	if request.Interval != dailyInterval && request.Interval != hourlyInterval {
 		return nil, fmt.Errorf("list Binance candles for %s: unsupported interval %q", symbol, request.Interval)
 	}
 	if request.Limit <= 0 || request.Limit > 1000 {
@@ -160,20 +161,23 @@ func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.
 		return nil, fmt.Errorf("list Binance candles for %s: closed-before cutoff is required", symbol)
 	}
 	cutoffUTC := request.ClosedBefore.UTC()
-	currentDayStartedAt := time.Date(cutoffUTC.Year(), cutoffUTC.Month(), cutoffUTC.Day(), 0, 0, 0, 0, time.UTC)
-	if currentDayStartedAt.UnixMilli() <= 0 {
-		return nil, fmt.Errorf("list Binance candles for %s: closed-before cutoff must follow the Unix epoch day", symbol)
+	boundary := time.Date(cutoffUTC.Year(), cutoffUTC.Month(), cutoffUTC.Day(), 0, 0, 0, 0, time.UTC)
+	if request.Interval == hourlyInterval {
+		boundary = time.Date(cutoffUTC.Year(), cutoffUTC.Month(), cutoffUTC.Day(), cutoffUTC.Hour(), 0, 0, 0, time.UTC)
+	}
+	if boundary.UnixMilli() <= 0 {
+		return nil, fmt.Errorf("list Binance candles for %s: closed-before cutoff must follow the Unix epoch", symbol)
 	}
 
 	service := exchange.client.NewKlinesService().
 		Symbol(symbol).
 		Interval(request.Interval).
 		Limit(request.Limit).
-		EndTime(uint64(currentDayStartedAt.UnixMilli() - 1))
+		EndTime(uint64(boundary.UnixMilli() - 1))
 	if request.AfterOpenTime != nil {
 		start := request.AfterOpenTime.UTC().UnixMilli() + 1
-		if start <= 0 || start >= currentDayStartedAt.UnixMilli() {
-			return nil, fmt.Errorf("list Binance candles for %s: after-open-time must precede the current UTC day", symbol)
+		if start <= 0 || start >= boundary.UnixMilli() {
+			return nil, fmt.Errorf("list Binance candles for %s: after-open-time must precede the current UTC interval", symbol)
 		}
 		service.StartTime(uint64(start))
 	}

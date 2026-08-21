@@ -26,6 +26,18 @@ services:
     command: ["up"]
     restart: "no"
 
+  bootstrap-admin:
+    image: ${BACKEND_IMAGE}
+    env_file: .env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    entrypoint: ["/usr/local/bin/bootstrap-admin"]
+    restart: "no"
+
   backend:
     image: ${BACKEND_IMAGE}
     env_file: .env
@@ -34,7 +46,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
     depends_on:
-      migrate:
+      bootstrap-admin:
         condition: service_completed_successfully
     restart: unless-stopped
     healthcheck:

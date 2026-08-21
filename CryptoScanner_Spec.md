@@ -7,7 +7,7 @@
 
 ## 1. Purpose
 
-Crypto Scanner is a private HTTP service for screening cryptocurrency markets. The MVP keeps a local, continuously updated copy of closed Binance Spot daily candles and calculates candle-range percentiles on demand.
+Crypto Scanner is a private HTTP service for screening cryptocurrency markets. The MVP keeps local, continuously updated copies of closed Binance Spot daily and hourly candles and calculates candle-range percentiles on demand.
 
 The service supports two user operations:
 
@@ -26,8 +26,8 @@ Binance access is centralized in background synchronization. User requests never
 - Allow only explicitly enabled Telegram users.
 - Source market data from Binance Spot.
 - Track active `USDT` quote pairs only.
-- Store closed `1d` candles using Binance's default UTC candle boundaries.
-- Backfill up to 30 latest closed candles when an instrument is first discovered.
+- Store closed `1d` and `1h` candles using Binance's default UTC candle boundaries. The intervals are independent datasets and are never mixed during analysis.
+- Backfill up to 30 latest closed daily or 60 latest closed hourly candles when an instrument is first discovered, depending on the synchronization profile.
 - Append missing candles after restart or on each scheduled synchronization.
 - Preserve historical candles; do not use a rolling 30-row window.
 - Calculate percentiles synchronously from PostgreSQL on every analysis request.
@@ -52,7 +52,7 @@ The following decisions came directly from the requirements discussion:
 - `NUMERIC` in PostgreSQL for exchange values; `float64` inside statistical calculations.
 - Only closed candles.
 - No analysis-result cache.
-- Daily UTC candles independent of the user's timezone.
+- Daily and hourly UTC candles independent of the user's timezone.
 - Physical data isolation per exchange.
 - Two percentile use cases: one symbol and market-wide filtering.
 
@@ -281,7 +281,7 @@ CREATE TABLE binance_spot.candles (
     quote_asset_volume NUMERIC NOT NULL,
     trade_count       BIGINT NOT NULL,
     PRIMARY KEY (instrument_id, interval, open_time),
-    CONSTRAINT candles_supported_interval CHECK (interval = '1d'),
+    CONSTRAINT candles_supported_interval CHECK (interval IN ('1d', '1h')),
     CONSTRAINT candles_time_order CHECK (close_time > open_time),
     CONSTRAINT candles_open_positive CHECK (open > 0),
     CONSTRAINT candles_high_valid CHECK (high >= open AND high >= close AND high >= low),
@@ -321,7 +321,7 @@ CREATE TABLE binance_spot.sync_state (
 
 ### 7.1 Scheduling
 
-The embedded scheduler computes the next UTC daily-candle boundary. It runs at `00:00:30 UTC`, not every 24 hours from process start.
+The embedded scheduler computes the next UTC daily-candle boundary and the next UTC hourly-candle boundary. Daily work runs at `00:00:30 UTC`; hourly work runs at `HH:00:30 UTC`, not at intervals measured from process start. Each boundary has its own stable timer, so an hourly event does not discard the pending daily event.
 
 Only one synchronization may run inside the process. A non-blocking process-local mutex prevents overlap. The MVP is deployed as a single instance; multi-instance leader election is not implemented.
 
@@ -348,7 +348,7 @@ sequenceDiagram
     M->>P: list active USDT instruments
     loop each instrument with bounded concurrency
         M->>P: latest stored open_time
-        M->>B: list missing closed 1d candles
+        M->>B: list missing closed candles for profile interval
         B-->>M: candles
         M->>P: upsert candle batch
     end
@@ -368,10 +368,10 @@ sequenceDiagram
 
 For each active instrument:
 
-- If no candles exist, request the latest 30 daily klines.
+- If no candles exist, request the latest 30 daily klines or 60 hourly klines for the corresponding synchronization profile.
 - If candles exist, start after the latest stored `open_time` and page until caught up.
 - Exclude the current incomplete candle by validating `close_time < sync_started_at`.
-- Accept fewer than 30 candles for newly listed symbols.
+- Accept fewer than the profile's initial limit for newly listed symbols.
 - Upsert batches; do not delete older candles.
 - A failure for one instrument is recorded and does not prevent attempts for other instruments.
 - The overall profile is `failed` if any instrument remains failed after retries; successfully stored rows remain valid and idempotent.
@@ -400,9 +400,9 @@ range_percent = ((high - low) / open) * 100
 
 ### 8.2 Period selection
 
-For `period_days = N`, select the latest `N` closed `1d` candles ordered by `open_time DESC`, then calculate over all `N` values.
+For `unit = days|hours` and `period = N`, select the latest `N` closed candles from the matching `1d` or `1h` interval ordered by `open_time DESC`, then calculate over all `N` values.
 
-- `N` must be within `1..3650`.
+- `N` must be within `1..3650` for `days` or `1..87600` for `hours`.
 - If fewer than `N` candles exist, the symbol result is `insufficient_data`.
 - Inactive or unknown symbols are not analyzed.
 - User requests never trigger Binance access or synchronization.
@@ -433,13 +433,13 @@ value = 4 + 0.25 * (8 - 4) = 5
 
 ### 8.4 One-symbol analysis
 
-Input: `symbol`, `period_days`, `percentile`.
+Input: `symbol`, `unit`, `period`, `percentile`.
 
 Output: percentile range percentage plus the actual candle count and time coverage.
 
 ### 8.5 Market search
 
-Input: `period_days`, `percentile`, `minimum_range_percent`.
+Input: `unit`, `period`, `percentile`, `minimum_range_percent`.
 
 For every active Binance Spot/USDT instrument:
 
@@ -486,7 +486,7 @@ The frontend must never send a standalone Telegram ID as proof of identity.
 ### 9.3 Get one symbol percentile
 
 ```http
-GET /api/v1/analysis/percentile/BTCUSDT?period_days=30&percentile=75
+GET /api/v1/analysis/percentile/BTCUSDT?unit=days&period=30&percentile=75
 ```
 
 Successful response:
@@ -494,7 +494,8 @@ Successful response:
 ```json
 {
   "symbol": "BTCUSDT",
-  "period_days": 30,
+  "unit": "days",
+  "period": 30,
   "percentile": 75,
   "range_percent": 4.1827,
   "candle_count": 30,
@@ -506,14 +507,15 @@ Successful response:
 ### 9.4 Find matching symbols
 
 ```http
-GET /api/v1/analysis/percentile?period_days=30&percentile=75&minimum_range_percent=3
+GET /api/v1/analysis/percentile?unit=days&period=30&percentile=75&minimum_range_percent=3
 ```
 
 Successful response:
 
 ```json
 {
-  "period_days": 30,
+  "unit": "days",
+  "period": 30,
   "percentile": 75,
   "minimum_range_percent": 3,
   "matched_count": 2,
@@ -581,7 +583,7 @@ Do not expose internal errors, SQL, Binance payloads, secrets, or stack traces i
 
 - Telegram authenticates Mini App requests through signed `initData`.
 - PostgreSQL controls authorization through `app.users.is_enabled`.
-- `ADMIN_TELEGRAM_ID` is inserted or enabled by an explicit SQL bootstrap script; startup does not silently rewrite users.
+- Compose runs an idempotent one-shot administrator bootstrap after migrations; it inserts or enables `ADMIN_TELEGRAM_ID` before the backend starts.
 - Usernames and display names are metadata and may change; `telegram_id` is the stable identity.
 - No login/password, access token, refresh token, or custom session is introduced for the MVP.
 - The backend does not receive Bot API updates, send bot messages, register a webhook, or provide `/start` launch behavior. Mini App hosting and launch UX are outside its scope.
@@ -594,7 +596,7 @@ Configuration has one source of truth: `backend/internal/platform/config`. No ot
 |---|---:|---|---|
 | `DATABASE_URL` | yes | — | PostgreSQL connection string |
 | `TELEGRAM_BOT_TOKEN` | yes | — | Mini App signature secret source |
-| `ADMIN_TELEGRAM_ID` | bootstrap only | — | Initial administrator ID for the manual bootstrap script; not read by the server |
+| `ADMIN_TELEGRAM_ID` | bootstrap only | — | Initial administrator ID for the automatic Compose bootstrap; not read by the server |
 | `HTTP_ADDRESS` | no | `127.0.0.1:8080` | Listen address behind Nginx |
 | `LOG_LEVEL` | no | `info` | `debug`, `info`, `warn`, or `error` |
 | `TELEGRAM_INIT_DATA_MAX_AGE` | yes | — | Maximum accepted Mini App auth age (`24h` in the example environment) |
@@ -602,7 +604,7 @@ Configuration has one source of truth: `backend/internal/platform/config`. No ot
 | `SYNC_RETRY_ATTEMPTS` | no | `5` | Retry limit per Binance call |
 | `SHUTDOWN_TIMEOUT` | no | `15s` | Graceful shutdown deadline |
 
-Fixed business behavior (`binance`, `spot`, `USDT`, `1d`, `UTC`, initial 30 candles) is code-owned MVP policy, not environment configuration.
+Fixed business behavior (`binance`, `spot`, `USDT`, `1d`/`1h`, `UTC`, initial 30 daily or 60 hourly candles) is code-owned MVP policy, not environment configuration.
 
 The process fails before listening when required configuration is absent or invalid. Secrets are never logged. `.env` may be used locally but is not loaded by application code and must be excluded from version control; deployment injects environment variables.
 
@@ -664,14 +666,14 @@ The MVP is complete when all statements below are true:
 
 1. A fresh database can be created by the standalone migration command.
 2. Invalid or incomplete configuration prevents server startup with a precise error.
-3. An explicit SQL bootstrap script creates/enables the administrator Telegram user.
+3. The Compose startup bootstrap creates/enables the administrator Telegram user after migrations, including on repeated startup.
 4. A valid enabled Telegram Mini App user can call both analysis endpoints.
 5. Invalid, expired, absent, or disabled Telegram identity is rejected as specified.
 6. The service exposes no Telegram Bot API webhook or outbound bot launch behavior.
-7. The first successful synchronization discovers current Binance Spot/USDT instruments and stores up to 30 closed daily UTC candles per symbol.
-8. The incomplete current daily candle is never stored or analyzed.
+7. The first successful synchronization discovers current Binance Spot/USDT instruments and stores up to 30 closed daily or 60 closed hourly UTC candles per symbol in separate profiles.
+8. Incomplete current daily and hourly candles are never stored or analyzed.
 9. Restart synchronization loads only missing candles and does not create duplicates.
-10. Newly listed instruments are added even when they have fewer than 30 candles.
+10. Newly listed instruments are added even when they have fewer than the profile's initial candle limit.
 11. Delisted or non-trading instruments become inactive, keep historical data, and disappear from analysis.
 12. A partial Binance failure preserves all previously valid data and is visible in sync state/logs.
 13. One-symbol percentile output matches the formula and interpolation method in this document.

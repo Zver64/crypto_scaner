@@ -24,7 +24,7 @@ func TestServiceAnalyzesOneActiveSymbolFromSynchronizedCandles(t *testing.T) {
 	}
 
 	result, err := analysis.NewService(store, percentile.New()).AnalyzeSymbol(context.Background(), analysis.SymbolRequest{
-		Symbol: "BTCUSDT", PeriodDays: 2, Percentile: 50,
+		Symbol: "BTCUSDT", Unit: analysis.UnitDays, Period: 2, Percentile: 50,
 	})
 	if err != nil {
 		t.Fatalf("AnalyzeSymbol() error = %v", err)
@@ -58,7 +58,7 @@ func TestServiceSearchesMarketUsingUnroundedThresholdAndDeterministicOrder(t *te
 	}
 
 	result, err := analysis.NewService(store, percentile.New()).Search(context.Background(), analysis.SearchRequest{
-		PeriodDays: 2, Percentile: 75, MinimumRangePercent: 3.000005,
+		Unit: analysis.UnitDays, Period: 2, Percentile: 75, MinimumRangePercent: 3.000005,
 	})
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
@@ -86,7 +86,7 @@ func TestConcurrentAnalysisRequestsProceedIndependently(t *testing.T) {
 	for range 2 {
 		go func() {
 			_, err := service.AnalyzeSymbol(context.Background(), analysis.SymbolRequest{
-				Symbol: "BTCUSDT", PeriodDays: 1, Percentile: 50,
+				Symbol: "BTCUSDT", Unit: analysis.UnitDays, Period: 1, Percentile: 50,
 			})
 			results <- err
 		}()
@@ -103,6 +103,29 @@ func TestConcurrentAnalysisRequestsProceedIndependently(t *testing.T) {
 		if err := <-results; err != nil {
 			t.Fatalf("AnalyzeSymbol() error = %v", err)
 		}
+	}
+}
+
+func TestServiceAnalyzesHourlyPeriodUsingHourlyCandles(t *testing.T) {
+	start := time.Date(2026, time.July, 5, 0, 0, 0, 0, time.UTC)
+	candles := make([]market.Candle, 60)
+	for index := range candles {
+		candles[index] = analysisCandle(start.Add(time.Duration(index)*time.Hour), float64(index+1))
+	}
+	store := analysisStoreStub{
+		synchronized: true,
+		instruments:  []market.Instrument{{ID: 7, Symbol: "BTCUSDT", Active: true}},
+		candles:      map[int64][]market.Candle{7: candles},
+	}
+
+	result, err := analysis.NewService(store, percentile.New()).AnalyzeSymbol(context.Background(), analysis.SymbolRequest{
+		Symbol: "BTCUSDT", Unit: analysis.UnitHours, Period: 60, Percentile: 50,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeSymbol() error = %v", err)
+	}
+	if result.CandleCount != 60 || !result.From.Equal(start) || !result.To.Equal(start.Add(59*time.Hour)) {
+		t.Fatalf("hourly result = %+v, want 60 candles spanning one hour intervals", result)
 	}
 }
 
@@ -123,7 +146,7 @@ func (stub analysisStoreStub) GetSyncState(context.Context, market.SyncProfile) 
 func (stub analysisStoreStub) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	return append([]market.Instrument(nil), stub.instruments...), nil
 }
-func (stub analysisStoreStub) ListLatestCandles(_ context.Context, instrumentID int64, limit int) ([]market.Candle, error) {
+func (stub analysisStoreStub) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, _ string, limit int) ([]market.Candle, error) {
 	items := append([]market.Candle(nil), stub.candles[instrumentID]...)
 	if len(items) > limit {
 		items = items[:limit]
@@ -147,7 +170,7 @@ func (*concurrentAnalysisStore) GetSyncState(context.Context, market.SyncProfile
 func (*concurrentAnalysisStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	return []market.Instrument{{ID: 1, Symbol: "BTCUSDT", Active: true}}, nil
 }
-func (store *concurrentAnalysisStore) ListLatestCandles(context.Context, int64, int) ([]market.Candle, error) {
+func (store *concurrentAnalysisStore) ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error) {
 	store.entered <- struct{}{}
 	<-store.release
 	return []market.Candle{analysisCandle(time.Date(2026, time.August, 4, 0, 0, 0, 0, time.UTC), 3)}, nil

@@ -69,8 +69,9 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	defer database.Close()
 	store := postgres.NewStore(database)
 	exchange := binance.NewWithOptions(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
-	synchronizer := marketsync.NewWithOptions(exchange, store, logger, cfg.SyncWorkers)
-	scheduler := marketsync.NewScheduler(synchronizer, logger)
+	dailySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.MVPProfile())
+	hourlySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.HourlyProfile())
+	scheduler := marketsync.NewSchedulerWithHourly(dailySynchronizer, hourlySynchronizer, logger)
 	analysisService := analysis.NewService(store, percentile.New())
 	authenticator := authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge)
 

@@ -381,7 +381,7 @@ func (store *fakeMarketStore) ListActiveInstruments(context.Context) ([]market.I
 	return store.active, nil
 }
 
-func (store *fakeMarketStore) ListLatestCandles(_ context.Context, instrumentID int64, _ int) ([]market.Candle, error) {
+func (store *fakeMarketStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, _ string, _ int) ([]market.Candle, error) {
 	return store.latest[instrumentID], nil
 }
 

@@ -7,7 +7,7 @@ type MarketStore interface {
 	ApplyInstrumentSnapshot(context.Context, []Instrument) error
 	ListActiveInstruments(context.Context) ([]Instrument, error)
 	UpsertCandles(context.Context, []Candle) error
-	ListLatestCandles(context.Context, int64, int) ([]Candle, error)
+	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]Candle, error)
 	GetSyncState(context.Context, SyncProfile) (SyncState, error)
 	SaveSyncState(context.Context, SyncState) error
 }

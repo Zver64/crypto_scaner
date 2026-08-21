@@ -5,7 +5,8 @@ export interface InstrumentAnalysisResult {
 	candle_count: number;
 	from: string;
 	percentile: number;
-	period_days: number;
+	period: number;
+	unit: "days" | "hours";
 	range_percent: number;
 	symbol: string;
 	to: string;
@@ -24,7 +25,8 @@ export interface MarketScanResult {
 	matched_count: number;
 	minimum_range_percent: number;
 	percentile: number;
-	period_days: number;
+	period: number;
+	unit: "days" | "hours";
 }
 
 type ApiErrorCode =
@@ -77,7 +79,8 @@ export async function fetchMarketScan(
 	options: FetchAnalysisOptions = {},
 ): Promise<MarketScanResult> {
 	const parameters = new URLSearchParams({
-		period_days: String(criteria.periodDays),
+		period: String(criteria.period),
+		unit: criteria.unit,
 		percentile: String(criteria.percentile),
 		minimum_range_percent: String(criteria.minimumRangePercent),
 	});
@@ -94,7 +97,8 @@ export async function fetchInstrumentAnalysis(
 	options: FetchAnalysisOptions = {},
 ): Promise<InstrumentAnalysisResult> {
 	const parameters = new URLSearchParams({
-		period_days: String(criteria.periodDays),
+		period: String(criteria.period),
+		unit: criteria.unit,
 		percentile: String(criteria.percentile),
 	});
 	return fetchAnalysisResult(
@@ -143,7 +147,8 @@ function parseInstrumentAnalysisResult(
 	if (
 		!isRecord(payload) ||
 		typeof payload.symbol !== "string" ||
-		!isFiniteNumber(payload.period_days) ||
+		!isFiniteNumber(payload.period) ||
+		!isAnalysisUnit(payload.unit) ||
 		!isFiniteNumber(payload.percentile) ||
 		!isFiniteNumber(payload.range_percent) ||
 		!isFiniteNumber(payload.candle_count) ||
@@ -157,7 +162,8 @@ function parseInstrumentAnalysisResult(
 		candle_count: payload.candle_count,
 		from: payload.from,
 		percentile: payload.percentile,
-		period_days: payload.period_days,
+		period: payload.period,
+		unit: payload.unit,
 		range_percent: payload.range_percent,
 		symbol: payload.symbol,
 		to: payload.to,
@@ -194,7 +200,8 @@ function canonicalErrorCode(value: unknown): ApiErrorCode {
 function parseMarketScanResult(payload: unknown): MarketScanResult {
 	if (
 		!isRecord(payload) ||
-		!isFiniteNumber(payload.period_days) ||
+		!isFiniteNumber(payload.period) ||
+		!isAnalysisUnit(payload.unit) ||
 		!isFiniteNumber(payload.percentile) ||
 		!isFiniteNumber(payload.minimum_range_percent) ||
 		!isFiniteNumber(payload.matched_count) ||
@@ -213,7 +220,8 @@ function parseMarketScanResult(payload: unknown): MarketScanResult {
 		matched_count: payload.matched_count,
 		minimum_range_percent: payload.minimum_range_percent,
 		percentile: payload.percentile,
-		period_days: payload.period_days,
+		period: payload.period,
+		unit: payload.unit,
 	};
 }
 
@@ -240,6 +248,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isFiniteNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
+}
+
+function isAnalysisUnit(value: unknown): value is "days" | "hours" {
+	return value === "days" || value === "hours";
 }
 
 function isUtcDateTime(value: unknown): value is string {

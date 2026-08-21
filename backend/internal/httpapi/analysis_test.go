@@ -43,7 +43,7 @@ func TestEnabledTelegramUserCanRequestOneSymbolPercentile(t *testing.T) {
 		logging.New(io.Discard, "error"), readinessStub{marketSync: true},
 		service, authenticator,
 	)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?period_days=2&percentile=50", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?unit=days&period=2&percentile=50", nil)
 	request.Header.Set("Authorization", "tma "+analysisInitData)
 	response := httptest.NewRecorder()
 
@@ -54,7 +54,8 @@ func TestEnabledTelegramUserCanRequestOneSymbolPercentile(t *testing.T) {
 	}
 	var body struct {
 		Symbol       string    `json:"symbol"`
-		PeriodDays   int       `json:"period_days"`
+		Unit         string    `json:"unit"`
+		Period       int       `json:"period"`
 		Percentile   float64   `json:"percentile"`
 		RangePercent float64   `json:"range_percent"`
 		CandleCount  int       `json:"candle_count"`
@@ -64,11 +65,43 @@ func TestEnabledTelegramUserCanRequestOneSymbolPercentile(t *testing.T) {
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Symbol != "BTCUSDT" || body.PeriodDays != 2 || body.Percentile != 50 || body.RangePercent != 4 || body.CandleCount != 2 {
+	if body.Symbol != "BTCUSDT" || body.Unit != "days" || body.Period != 2 || body.Percentile != 50 || body.RangePercent != 4 || body.CandleCount != 2 {
 		t.Fatalf("response = %+v", body)
 	}
 	if !body.From.Equal(start) || !body.To.Equal(start.AddDate(0, 0, 1)) {
 		t.Fatalf("coverage = %s..%s", body.From, body.To)
+	}
+}
+
+func TestEnabledTelegramUserCanRequestHourlyPeriod(t *testing.T) {
+	start := time.Date(2026, time.July, 5, 0, 0, 0, 0, time.UTC)
+	candles := make([]market.Candle, 60)
+	for index := range candles {
+		candles[index] = market.Candle{OpenTime: start.Add(time.Duration(index) * time.Hour), Open: 100, High: 102, Low: 100}
+	}
+	store := httpAnalysisStore{
+		synchronized: true,
+		instruments:  []market.Instrument{{ID: 7, Symbol: "BTCUSDT", Active: true}},
+		candles:      map[int64][]market.Candle{7: candles},
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?unit=hours&period=60&percentile=50", nil)
+	request.Header.Set("Authorization", "tma "+analysisInitData)
+	response := httptest.NewRecorder()
+	newAnalysisHTTPHandler(store).ServeHTTP(response, request)
+
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", response.Code, response.Body.String())
+	}
+	var body struct {
+		Unit        string `json:"unit"`
+		Period      int    `json:"period"`
+		CandleCount int    `json:"candle_count"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if body.Unit != "hours" || body.Period != 60 || body.CandleCount != 60 {
+		t.Fatalf("response = %+v", body)
 	}
 }
 
@@ -89,7 +122,7 @@ func TestEnabledTelegramUserCanSearchAllActiveInstruments(t *testing.T) {
 		},
 	}
 	handler := newAnalysisHTTPHandler(store)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile?period_days=1&percentile=75&minimum_range_percent=4", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile?unit=days&period=1&percentile=75&minimum_range_percent=4", nil)
 	request.Header.Set("Authorization", "tma "+analysisInitData)
 	response := httptest.NewRecorder()
 
@@ -133,18 +166,18 @@ func TestAnalysisErrorsUseCanonicalEnvelope(t *testing.T) {
 	}{
 		{
 			name: "unknown symbol", store: httpAnalysisStore{synchronized: true},
-			target: "/api/v1/analysis/percentile/UNKNOWN?period_days=1&percentile=50", wantStatus: 404, wantCode: "symbol_not_found",
+			target: "/api/v1/analysis/percentile/UNKNOWN?unit=days&period=1&percentile=50", wantStatus: 404, wantCode: "symbol_not_found",
 		},
 		{
 			name: "insufficient history",
 			store: httpAnalysisStore{synchronized: true, instruments: []market.Instrument{{ID: 4, Symbol: "NEWUSDT", Active: true}}, candles: map[int64][]market.Candle{
 				4: {{OpenTime: start, Open: 100, High: 101, Low: 100}},
 			}},
-			target: "/api/v1/analysis/percentile/NEWUSDT?period_days=2&percentile=50", wantStatus: 409, wantCode: "insufficient_data", wantDetail: `"required":2`,
+			target: "/api/v1/analysis/percentile/NEWUSDT?unit=days&period=2&percentile=50", wantStatus: 409, wantCode: "insufficient_data", wantDetail: `"required":2`,
 		},
 		{
 			name: "no synchronized dataset", store: httpAnalysisStore{},
-			target: "/api/v1/analysis/percentile?period_days=1&percentile=50&minimum_range_percent=0", wantStatus: 503, wantCode: "market_data_unavailable",
+			target: "/api/v1/analysis/percentile?unit=days&period=1&percentile=50&minimum_range_percent=0", wantStatus: 503, wantCode: "market_data_unavailable",
 		},
 	}
 	for _, test := range tests {
@@ -168,12 +201,12 @@ func TestAnalysisRejectsInvalidArgumentsBeforeReadingMarketData(t *testing.T) {
 
 	targets := []string{
 		"/api/v1/analysis/percentile/BTCUSDT?percentile=50",
-		"/api/v1/analysis/percentile/BTCUSDT?period_days=0&percentile=50",
-		"/api/v1/analysis/percentile/BTCUSDT?period_days=1&percentile=101",
-		"/api/v1/analysis/percentile/BTCUSDT?period_days=one&percentile=50",
-		"/api/v1/analysis/percentile/BTCUSDT?period_days=1&period_days=2&percentile=50",
-		"/api/v1/analysis/percentile?period_days=1&percentile=50&minimum_range_percent=-1",
-		"/api/v1/analysis/percentile?period_days=1&percentile=50&minimum_range_percent=0&extra=true",
+		"/api/v1/analysis/percentile/BTCUSDT?unit=days&period=0&percentile=50",
+		"/api/v1/analysis/percentile/BTCUSDT?unit=days&period=1&percentile=101",
+		"/api/v1/analysis/percentile/BTCUSDT?unit=days&period=one&percentile=50",
+		"/api/v1/analysis/percentile/BTCUSDT?unit=days&unit=hours&period=1&percentile=50",
+		"/api/v1/analysis/percentile?unit=days&period=1&percentile=50&minimum_range_percent=-1",
+		"/api/v1/analysis/percentile?unit=days&period=1&percentile=50&minimum_range_percent=0&extra=true",
 	}
 	for _, target := range targets {
 		target := target
@@ -191,7 +224,7 @@ func TestAnalysisRejectsInvalidArgumentsBeforeReadingMarketData(t *testing.T) {
 func TestAnalysisEndpointsRequireTelegramAuthentication(t *testing.T) {
 	t.Parallel()
 
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?period_days=1&percentile=50", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?unit=days&period=1&percentile=50", nil)
 	response := httptest.NewRecorder()
 	newAnalysisHTTPHandler(httpAnalysisStore{synchronized: true}).ServeHTTP(response, request)
 	assertAnalysisError(t, response, http.StatusUnauthorized, "unauthenticated")
@@ -249,7 +282,7 @@ func (stub httpAnalysisStore) GetSyncState(context.Context, market.SyncProfile) 
 func (stub httpAnalysisStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	return append([]market.Instrument(nil), stub.instruments...), nil
 }
-func (stub httpAnalysisStore) ListLatestCandles(_ context.Context, instrumentID int64, limit int) ([]market.Candle, error) {
+func (stub httpAnalysisStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, _ string, limit int) ([]market.Candle, error) {
 	items := append([]market.Candle(nil), stub.candles[instrumentID]...)
 	if len(items) > limit {
 		items = items[:limit]

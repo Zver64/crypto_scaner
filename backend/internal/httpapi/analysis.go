@@ -14,20 +14,20 @@ import (
 
 func analyzeSymbol(service Analysis) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		periodDays, percentile, ok := analysisParameters(request.URL.Query(), false)
+		unit, period, percentile, ok := analysisParameters(request.URL.Query(), false)
 		if !ok {
 			writeAPIError(response, http.StatusBadRequest, "invalid_argument", "Invalid analysis argument", nil)
 			return
 		}
 		result, err := service.AnalyzeSymbol(request.Context(), analysis.SymbolRequest{
-			Symbol: request.PathValue("symbol"), PeriodDays: periodDays, Percentile: percentile,
+			Symbol: request.PathValue("symbol"), Unit: unit, Period: period, Percentile: percentile,
 		})
 		if err != nil {
 			writeAnalysisError(response, err, request.PathValue("symbol"))
 			return
 		}
 		writeJSON(response, http.StatusOK, symbolResponse{
-			Symbol: result.Symbol, PeriodDays: periodDays, Percentile: percentile,
+			Symbol: result.Symbol, Unit: string(unit), Period: period, Percentile: percentile,
 			RangePercent: roundPercentage(result.RangePercent), CandleCount: result.CandleCount,
 			From: result.From.UTC(), To: result.To.UTC(),
 		})
@@ -36,14 +36,14 @@ func analyzeSymbol(service Analysis) http.HandlerFunc {
 
 func searchMarket(service Analysis) http.HandlerFunc {
 	return func(response http.ResponseWriter, request *http.Request) {
-		periodDays, percentile, ok := analysisParameters(request.URL.Query(), true)
+		unit, period, percentile, ok := analysisParameters(request.URL.Query(), true)
 		minimum, minimumOK := oneFloat(request.URL.Query(), "minimum_range_percent")
 		if !ok || !minimumOK {
 			writeAPIError(response, http.StatusBadRequest, "invalid_argument", "Invalid analysis argument", nil)
 			return
 		}
 		result, err := service.Search(request.Context(), analysis.SearchRequest{
-			PeriodDays: periodDays, Percentile: percentile, MinimumRangePercent: minimum,
+			Unit: unit, Period: period, Percentile: percentile, MinimumRangePercent: minimum,
 		})
 		if err != nil {
 			writeAnalysisError(response, err, "")
@@ -56,30 +56,43 @@ func searchMarket(service Analysis) http.HandlerFunc {
 			}
 		}
 		writeJSON(response, http.StatusOK, searchResponse{
-			PeriodDays: periodDays, Percentile: percentile, MinimumRangePercent: minimum,
+			Unit: string(unit), Period: period, Percentile: percentile, MinimumRangePercent: minimum,
 			MatchedCount: result.MatchedCount, AnalyzedCount: result.AnalyzedCount,
 			InsufficientDataCount: result.InsufficientDataCount, Items: items,
 		})
 	}
 }
 
-func analysisParameters(values url.Values, search bool) (int, float64, bool) {
-	wantKeys := 2
+func analysisParameters(values url.Values, search bool) (analysis.Unit, int, float64, bool) {
+	wantKeys := 3
 	if search {
-		wantKeys = 3
+		wantKeys = 4
 	}
 	if len(values) != wantKeys {
-		return 0, 0, false
+		return "", 0, 0, false
 	}
-	period, ok := oneInt(values, "period_days")
+	unitValue, ok := oneString(values, "unit")
+	unit := analysis.Unit(unitValue)
+	if !ok || (unit != analysis.UnitDays && unit != analysis.UnitHours) {
+		return "", 0, 0, false
+	}
+	period, ok := oneInt(values, "period")
 	if !ok {
-		return 0, 0, false
+		return "", 0, 0, false
 	}
 	percentile, ok := oneFloat(values, "percentile")
 	if !ok {
-		return 0, 0, false
+		return "", 0, 0, false
 	}
-	return period, percentile, true
+	return unit, period, percentile, true
+}
+
+func oneString(values url.Values, name string) (string, bool) {
+	items, ok := values[name]
+	if !ok || len(items) != 1 || items[0] == "" {
+		return "", false
+	}
+	return items[0], true
 }
 
 func oneInt(values url.Values, name string) (int, bool) {
@@ -140,7 +153,8 @@ func roundPercentage(value float64) float64 { return math.Round(value*10_000) / 
 
 type symbolResponse struct {
 	Symbol       string    `json:"symbol"`
-	PeriodDays   int       `json:"period_days"`
+	Unit         string    `json:"unit"`
+	Period       int       `json:"period"`
 	Percentile   float64   `json:"percentile"`
 	RangePercent float64   `json:"range_percent"`
 	CandleCount  int       `json:"candle_count"`
@@ -155,7 +169,8 @@ type searchItemResponse struct {
 }
 
 type searchResponse struct {
-	PeriodDays            int                  `json:"period_days"`
+	Unit                  string               `json:"unit"`
+	Period                int                  `json:"period"`
 	Percentile            float64              `json:"percentile"`
 	MinimumRangePercent   float64              `json:"minimum_range_percent"`
 	MatchedCount          int                  `json:"matched_count"`

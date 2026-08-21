@@ -5,9 +5,7 @@ package migrations
 
 import "embed"
 
-const CurrentVersion int64 = 1
-
-// Files contains every migration required by the MVP.
+// Files contains every migration required by the application.
 //
 //go:embed *.sql
 var Files embed.FS

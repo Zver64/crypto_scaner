@@ -10,7 +10,8 @@ export type InstrumentAnalysisDraft = AnalysisDraft;
 
 export const defaultInstrumentAnalysisCriteria: InstrumentAnalysisCriteria = {
 	percentile: defaultMarketScanCriteria.percentile,
-	periodDays: defaultMarketScanCriteria.periodDays,
+	period: defaultMarketScanCriteria.period,
+	unit: defaultMarketScanCriteria.unit,
 };
 
 export const validateInstrumentAnalysisCriteria = validateAnalysisCriteria;

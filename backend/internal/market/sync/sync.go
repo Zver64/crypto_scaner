@@ -24,7 +24,7 @@ type Store interface {
 	SaveSyncState(context.Context, market.SyncState) error
 	ApplyInstrumentSnapshot(context.Context, []market.Instrument) error
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
-	ListLatestCandles(context.Context, int64, int) ([]market.Candle, error)
+	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
 	UpsertCandles(context.Context, []market.Candle) error
 }
 
@@ -35,12 +35,18 @@ func MVPProfile() market.SyncProfile {
 	}
 }
 
+// HourlyProfile returns the independently synchronized hourly dataset.
+func HourlyProfile() market.SyncProfile {
+	return market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC"}
+}
+
 // Synchronizer coordinates instrument discovery, backfill, and incremental loading.
 type Synchronizer struct {
 	exchange Exchange
 	store    Store
 	logger   *slog.Logger
 	workers  int
+	profile  market.SyncProfile
 	runLock  sync.Mutex
 }
 
@@ -61,13 +67,18 @@ func NewWithLogger(exchange Exchange, store Store, logger *slog.Logger) *Synchro
 
 // NewWithOptions creates a synchronizer with explicit per-instance instrument concurrency.
 func NewWithOptions(exchange Exchange, store Store, logger *slog.Logger, workers int) *Synchronizer {
+	return NewWithProfile(exchange, store, logger, workers, MVPProfile())
+}
+
+// NewWithProfile creates a synchronizer for one independently persisted interval.
+func NewWithProfile(exchange Exchange, store Store, logger *slog.Logger, workers int, profile market.SyncProfile) *Synchronizer {
 	if logger == nil {
 		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
 	}
 	if workers < 1 {
 		workers = 1
 	}
-	return &Synchronizer{exchange: exchange, store: store, logger: logger, workers: workers}
+	return &Synchronizer{exchange: exchange, store: store, logger: logger, workers: workers, profile: profile}
 }
 
 // Sync applies the catalog, backfills new instruments, and incrementally loads
@@ -78,7 +89,7 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	}
 	defer synchronizer.runLock.Unlock()
 
-	profile := MVPProfile()
+	profile := synchronizer.profile
 	operationStartedAt := time.Now()
 	stats := runStats{}
 	retriesBefore := synchronizer.retryCount()
@@ -191,11 +202,15 @@ func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instrumen
 }
 
 func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument market.Instrument, profile market.SyncProfile, startedAt time.Time) instrumentResult {
-	existing, err := synchronizer.store.ListLatestCandles(ctx, instrument.ID, 1)
+	existing, err := synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, profile.Interval, 1)
 	if err != nil {
 		return instrumentResult{err: fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)}
 	}
-	request := market.CandleRequest{Symbol: instrument.Symbol, Interval: profile.Interval, Limit: 30, ClosedBefore: startedAt}
+	initialLimit := 30
+	if profile.Interval == "1h" {
+		initialLimit = 60
+	}
+	request := market.CandleRequest{Symbol: instrument.Symbol, Interval: profile.Interval, Limit: initialLimit, ClosedBefore: startedAt}
 	if len(existing) > 0 {
 		latest := existing[0].OpenTime
 		request.AfterOpenTime = &latest

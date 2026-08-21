@@ -84,13 +84,21 @@ func VerifySchema(ctx context.Context, queries RowQuerier, databaseURL string) e
 	if !exists {
 		return fmt.Errorf("PostgreSQL schema is not initialized; apply database migrations")
 	}
-	if version != migrations.CurrentVersion {
-		return fmt.Errorf("PostgreSQL schema is at version %d; version %d is required; apply database migrations", version, migrations.CurrentVersion)
+	versions, err := migrations.Versions()
+	if err != nil {
+		return fmt.Errorf("discover embedded migrations: %w", err)
+	}
+	latestVersion := int64(0)
+	if len(versions) > 0 {
+		latestVersion = versions[len(versions)-1]
+	}
+	if version != latestVersion {
+		return fmt.Errorf("PostgreSQL schema is at version %d; version %d is required; apply database migrations", version, latestVersion)
 	}
 	return nil
 }
 
-// Migrate moves the database between version zero and the current MVP version.
+// Migrate applies all pending migrations, or rolls back one migration.
 func Migrate(ctx context.Context, databaseURL string, direction Direction) error {
 	db, err := Open(ctx, databaseURL)
 	if err != nil {
@@ -112,19 +120,37 @@ func Migrate(ctx context.Context, databaseURL string, direction Direction) error
 		return safeError("read PostgreSQL schema version", err, databaseURL)
 	}
 
-	var filename string
+	versions, err := migrations.Versions()
+	if err != nil {
+		return fmt.Errorf("discover embedded migrations: %w", err)
+	}
+	if len(versions) == 0 {
+		return fmt.Errorf("no embedded migrations found")
+	}
+	latestVersion := versions[len(versions)-1]
 	switch direction {
 	case DirectionUp:
-		if version == migrations.CurrentVersion {
+		if version == latestVersion {
 			if err := tx.Commit(ctx); err != nil {
 				return safeError("commit no-op PostgreSQL up migration", err, databaseURL)
 			}
 			return nil
 		}
-		if version != 0 {
-			return fmt.Errorf("cannot migrate PostgreSQL up from version %d; current version is %d", version, migrations.CurrentVersion)
+		if version < 0 || version >= latestVersion {
+			return fmt.Errorf("cannot migrate PostgreSQL up from version %d; latest version is %d", version, latestVersion)
 		}
-		filename = "000001_initial.up.sql"
+		for _, nextVersion := range versions {
+			if nextVersion <= version {
+				continue
+			}
+			filename, err := migrations.Filename(nextVersion, "up")
+			if err != nil {
+				return err
+			}
+			if err := applyMigration(ctx, tx, filename, databaseURL); err != nil {
+				return err
+			}
+		}
 	case DirectionDown:
 		if version == 0 {
 			if err := tx.Commit(ctx); err != nil {
@@ -132,23 +158,32 @@ func Migrate(ctx context.Context, databaseURL string, direction Direction) error
 			}
 			return nil
 		}
-		if version != migrations.CurrentVersion {
-			return fmt.Errorf("cannot migrate PostgreSQL down from version %d; current version is %d", version, migrations.CurrentVersion)
+		if version < 1 || version > latestVersion {
+			return fmt.Errorf("cannot migrate PostgreSQL down from version %d; latest version is %d", version, latestVersion)
 		}
-		filename = "000001_initial.down.sql"
+		filename, err := migrations.Filename(version, "down")
+		if err != nil {
+			return err
+		}
+		if err := applyMigration(ctx, tx, filename, databaseURL); err != nil {
+			return err
+		}
 	default:
 		return fmt.Errorf("unsupported migration direction %q", direction)
 	}
+	if err := tx.Commit(ctx); err != nil {
+		return safeError("commit PostgreSQL migration", err, databaseURL)
+	}
+	return nil
+}
 
+func applyMigration(ctx context.Context, tx pgx.Tx, filename, databaseURL string) error {
 	statement, err := migrations.Files.ReadFile(filename)
 	if err != nil {
 		return fmt.Errorf("read embedded migration %s: %w", filename, err)
 	}
 	if _, err := tx.Exec(ctx, string(statement)); err != nil {
 		return safeError("apply PostgreSQL migration "+filename, err, databaseURL)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return safeError("commit PostgreSQL migration", err, databaseURL)
 	}
 	return nil
 }

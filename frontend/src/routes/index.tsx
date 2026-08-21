@@ -27,7 +27,8 @@ function Home() {
 					params: { symbol },
 					search: {
 						percentile: criteria.percentile,
-						period_days: criteria.periodDays,
+						period: criteria.period,
+						unit: criteria.unit,
 					},
 					to: "/instruments/$symbol",
 				});

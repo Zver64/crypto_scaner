@@ -28,10 +28,10 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 8. As a user, I want backend readiness to be refreshed every 30 seconds, so that the interface recovers automatically when synchronization completes.
 9. As a user, I want the market-scanning page to be the primary application page, so that the main workflow is immediately available.
 10. As a user, I want the analysis period to default to 30 days, so that I can run a useful scan without configuring every field.
-11. As a user, I want to enter a custom integer analysis period, so that I can choose any backend-supported period from 1 through 3650 days.
-12. As a user, I want the range percentile to default to 80, so that the initial scan focuses on relatively sustained daily ranges.
+11. As a user, I want to choose days or hours and enter a custom integer analysis period, so that I can use any backend-supported period for the selected unit.
+12. As a user, I want the range percentile to default to 80, so that the initial scan focuses on relatively sustained ranges.
 13. As a user, I want to enter an integer range percentile from 0 through 100, so that I can tune the analysis without unsupported fractional input.
-14. As a user, I want the minimum range to default to 3%, so that the initial result filters out smaller daily ranges.
+14. As a user, I want the minimum range to default to 3%, so that the initial result filters out smaller ranges.
 15. As a user, I want to enter a non-negative minimum range in increments of 0.1, so that I can tune the market threshold precisely enough for the MVP.
 16. As a user, I want validation feedback before a request is sent, so that malformed criteria do not produce avoidable API errors.
 17. As a user, I want a scan to run only after I press the scan button, so that opening the application or editing a field does not launch an expensive market-wide request.
@@ -42,7 +42,7 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 22. As a user, I want each matching instrument displayed as one compact table row on mobile and desktop, so that large results remain easy to scan.
 23. As a user, I want each row to show the exact backend `symbol`, so that frontend formatting cannot corrupt or reinterpret an instrument identifier.
 24. As a user, I want each row to show `range_percent`, so that I can compare how strongly instruments met the selected criterion.
-25. As a user, I want each row to show `candle_count`, so that I can see how many closed daily candles contributed to the result.
+25. As a user, I want each row to show `candle_count`, so that I can see how many closed candles in the selected unit contributed to the result.
 26. As a user, I want range percentages formatted compactly with three significant digits, so that small and large values remain readable without arbitrary fixed decimal places.
 27. As a user, I want result ordering to remain exactly as supplied by the backend, so that the highest calculated ranges remain at the top.
 28. As a user, I want to filter the current result locally by exact or partial symbol text, so that I can find an instrument in a long table quickly.
@@ -50,7 +50,7 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 30. As a user, I want to select a table row to open that instrument's analysis page, so that I can inspect a matching instrument further.
 31. As a user, I want the instrument page to inherit the scan's period and percentile, so that its initial analysis corresponds to the criteria that produced the table row.
 32. As a user, I want the instrument page to show the exact backend symbol, calculated range percent, candle count, and analysis coverage dates, so that I can inspect all supported single-instrument output.
-33. As a user, I want coverage dates displayed as short dates with an explicit UTC label, so that the dates reflect Binance daily candle boundaries without local-time ambiguity.
+33. As a user, I want coverage timestamps displayed with an explicit UTC label, so that the dates reflect Binance candle boundaries without local-time ambiguity.
 34. As a user, I want to change the period and percentile on the instrument page, so that I can recalculate the same instrument under different supported assumptions.
 35. As a user, I want instrument recalculation to occur only after I press a button, so that intermediate numeric input does not trigger requests.
 36. As a user, I want editing and recalculating an instrument not to alter the criteria or contents of my saved market scan, so that I can return to the original context.
@@ -91,10 +91,10 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 - The backend remains stateless and validates raw init data on every business request. The required `TELEGRAM_INIT_DATA_MAX_AGE` environment variable is the single source of truth for credential validity and is configured as `24h` for this application. No backend session, access token, refresh token, or automatic credential renewal is introduced.
 - All client API calls use relative `/api/v1/...` and `/health/...` paths. Vite proxies them to `127.0.0.1:8080` during development. Production reverse-proxy and Nginx work are outside this spec.
 - Readiness uses `GET /health/ready`, runs immediately, and refetches every 30 seconds. Its status is visible in the global header. Analysis submit actions are disabled unless readiness succeeds.
-- The primary route is market scanning. It contains three numeric controls: integer analysis period with default 30 and bounds 1–3650; integer percentile with default 80 and bounds 0–100; non-negative minimum range with default 3 and step 0.1.
+- The primary route is market scanning. It contains a days/hours unit selector, an integer analysis period with a unit-specific default and bounds, an integer percentile with default 80 and bounds 0–100, and a non-negative minimum range with default 3 and step 0.1.
 - Forms use Mantine Form validation. Invalid values prevent submission and expose field-level validation. No form setting or result is persisted to `localStorage`, `sessionStorage`, IndexedDB, cookies, or a custom persistent store.
 - Form inputs represent draft values. Confirmed scan criteria are written to TanStack Router search parameters only on valid submit. Search parameters must be parsed and validated at the route boundary.
-- The market request calls the existing market percentile endpoint with `period_days`, `percentile`, and `minimum_range_percent`. The client models and displays `matched_count`, `analyzed_count`, `insufficient_data_count`, and every returned item's `symbol`, `range_percent`, and `candle_count`.
+- The market request calls the market percentile endpoint with `unit`, `period`, `percentile`, and `minimum_range_percent`. The client models and displays `matched_count`, `analyzed_count`, `insufficient_data_count`, and every returned item's `symbol`, `range_percent`, and `candle_count`.
 - The result uses a Mantine table at every breakpoint. It does not switch to cards on mobile. Each instrument occupies one row with exactly three data columns: symbol, range percent, and candle count.
 - Symbols are rendered byte-for-byte as returned by the backend. Do not insert separators, remove quote assets, relabel them as coins, or otherwise transform identifiers.
 - Range percent is formatted for display with `Intl.NumberFormat` and three significant digits. The original numeric value remains unchanged in cached data and is not re-rounded before comparison or ordering.
@@ -103,7 +103,7 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 - Selecting a row navigates to a dedicated instrument route. Manual symbol entry, global symbol search, autocomplete, and a complete active-instrument catalog are not implemented because the current backend does not expose a catalog endpoint.
 - The instrument route path contains the exact symbol. Its validated search parameters contain the committed period and percentile, allowing refresh to reconstruct the request.
 - The instrument page initially receives the period and percentile used by the originating scan. It calls the existing single-instrument percentile endpoint and displays symbol, range percent, candle count, and coverage dates.
-- Coverage boundaries are formatted as short calendar dates with a visible UTC label. The UI does not convert Binance daily candle boundaries to the user's local time and does not include a timezone switcher.
+- Coverage boundaries are formatted with a visible UTC label. The UI does not convert Binance candle boundaries to the user's local time and does not include a timezone switcher.
 - The instrument page has Mantine Form inputs for integer period and integer percentile. Submitting them commits new instrument search parameters and recalculates. These changes do not mutate the cached market-scan key or result.
 - TanStack Query keys are derived from committed, validated route parameters. Returning through Router navigation restores the market response from Query's in-memory cache without an automatic request.
 - An explicit market form submission always represents a refresh intent. When submitted criteria equal the current committed criteria, explicitly refetch instead of silently returning only cached data.
@@ -155,8 +155,8 @@ TanStack Router owns navigation and committed URL state. TanStack Query owns req
 ## Further Notes
 
 - The market endpoint is not a complete instrument-catalog endpoint. A minimum range of zero returns all analyzable active instruments for the selected period, but instruments with insufficient history are still omitted and reported only in `insufficient_data_count`.
-- Initial market synchronization backfills up to 30 closed daily candles. The frontend may accept periods above 30 because the backend supports up to 3650 and retained history grows over time, but fresh deployments can legitimately report many instruments as insufficient for longer periods.
-- Daily candles use Binance UTC boundaries by domain definition. The UTC label is therefore semantic, not merely a display preference.
+- Initial market synchronization backfills up to 30 closed daily or 60 closed hourly candles. The frontend may accept periods beyond those initial limits because the backend supports retained history, but fresh deployments can legitimately report many instruments as insufficient for longer periods.
+- Daily and hourly candles use Binance UTC boundaries by domain definition. The UTC label is therefore semantic, not merely a display preference.
 - The frontend should call the data items "instruments" or "symbols", not "coins", because identifiers such as `BTCUSDT` represent trading pairs.
-- The existing domain glossary is the source of truth for the terms Market Scan, Instrument Analysis, Daily Range, Daily Candle, Analysis Period, Range Percentile, Minimum Range, and Scan Result.
+- The existing domain glossary is the source of truth for the terms Market Scan, Instrument Analysis, Candle Range, Candle, Analysis Unit, Analysis Period, Range Percentile, Minimum Range, and Scan Result.
 - Local development authentication has been verified end to end: a credential generated by the package command, loaded from the private environment by a restarted Vite proxy, was accepted by the unchanged backend on a protected Instrument Analysis request.

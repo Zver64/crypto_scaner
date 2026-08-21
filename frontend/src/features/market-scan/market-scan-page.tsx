@@ -24,6 +24,7 @@ import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
 import {
 	defaultMarketScanCriteria,
+	defaultPeriodForUnit,
 	type MarketScanCriteria,
 	type MarketScanDraft,
 	marketScanCriteriaConstraints,
@@ -103,7 +104,7 @@ export function MarketScanPage({
 						Market Scan
 					</Title>
 					<Text c="dimmed" size="sm">
-						Find instruments by their daily range over a selected analysis
+						Find instruments by their candle range over a selected analysis
 						period.
 					</Text>
 				</Stack>
@@ -113,8 +114,12 @@ export function MarketScanPage({
 						<AnalysisCriteriaFields
 							percentileInputProps={form.getInputProps("percentile")}
 							percentileKey={form.key("percentile")}
-							periodInputProps={form.getInputProps("periodDays")}
-							periodKey={form.key("periodDays")}
+							periodInputProps={form.getInputProps("period")}
+							periodKey={form.key("period")}
+							unit={form.values.unit}
+							onUnitChange={(unit) => {
+								form.setValues({ unit, period: defaultPeriodForUnit(unit) });
+							}}
 						/>
 						<NumberInput
 							decimalScale={10}
@@ -256,7 +261,8 @@ function criteriaAreEqual(
 
 function marketScanCriteriaIdentity(criteria: MarketScanCriteria) {
 	return [
-		criteria.periodDays,
+		criteria.period,
+		criteria.unit,
 		criteria.percentile,
 		criteria.minimumRangePercent,
 	] as const;
@@ -266,7 +272,7 @@ function criteriaFromValidDraft(
 	values: MarketScanDraft,
 ): MarketScanCriteria | undefined {
 	if (
-		typeof values.periodDays !== "number" ||
+		typeof values.period !== "number" ||
 		typeof values.percentile !== "number" ||
 		typeof values.minimumRangePercent !== "number"
 	) {
@@ -276,6 +282,7 @@ function criteriaFromValidDraft(
 	return {
 		minimumRangePercent: values.minimumRangePercent,
 		percentile: values.percentile,
-		periodDays: values.periodDays,
+		period: values.period,
+		unit: values.unit,
 	};
 }

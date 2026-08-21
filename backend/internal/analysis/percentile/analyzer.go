@@ -26,13 +26,18 @@ func (Analyzer) Name() string {
 
 // Analyze calculates the requested percentile without rounding its result.
 func (Analyzer) Analyze(_ context.Context, input analysis.AnalysisInput) (analysis.AnalysisResult, error) {
-	if input.PeriodDays < 1 || input.PeriodDays > 3650 ||
-		math.IsNaN(input.Percentile) || input.Percentile < 0 || input.Percentile > 100 {
+	unit, period := input.Unit, input.Period
+	maxPeriod := 3650
+	if unit == analysis.UnitHours {
+		maxPeriod *= 24
+	}
+	if (unit != analysis.UnitDays && unit != analysis.UnitHours) || period < 1 || period > maxPeriod ||
+		math.IsNaN(input.Percentile) || math.IsInf(input.Percentile, 0) || input.Percentile < 0 || input.Percentile > 100 {
 		return analysis.AnalysisResult{}, analysis.ErrInvalidArgument
 	}
-	if len(input.Candles) < input.PeriodDays {
+	if len(input.Candles) < period {
 		return analysis.AnalysisResult{}, &analysis.InsufficientHistoryError{
-			Required:  input.PeriodDays,
+			Required:  period,
 			Available: len(input.Candles),
 		}
 	}
@@ -41,7 +46,7 @@ func (Analyzer) Analyze(_ context.Context, input analysis.AnalysisInput) (analys
 	sort.Slice(candles, func(i, j int) bool {
 		return candles[i].OpenTime.After(candles[j].OpenTime)
 	})
-	candles = candles[:input.PeriodDays]
+	candles = candles[:period]
 
 	ranges := make([]float64, len(candles))
 	for i, candle := range candles {

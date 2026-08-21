@@ -33,6 +33,20 @@ services:
     command: ["up"]
     restart: "no"
 
+  bootstrap-admin:
+    build:
+      context: ./backend
+    env_file:
+      - ./.env
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    entrypoint: ["/usr/local/bin/bootstrap-admin"]
+    restart: "no"
+
   backend:
     build:
       context: ./backend
@@ -43,7 +57,7 @@ services:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
     depends_on:
-      migrate:
+      bootstrap-admin:
         condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"

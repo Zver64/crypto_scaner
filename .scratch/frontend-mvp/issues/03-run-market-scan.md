@@ -13,7 +13,7 @@
 - [x] Mantine Form owns draft values and field validation; invalid input prevents submission and produces clear field-level feedback.
 - [x] Valid submission commits the three criteria to validated TanStack Router search parameters before requesting the Market Scan.
 - [x] Editing draft values without submitting does not change the committed URL or the displayed Scan Result.
-- [x] TanStack Query calls the existing market percentile endpoint with the committed `period_days`, `percentile`, and `minimum_range_percent` values.
+- [x] TanStack Query calls the market percentile endpoint with committed `unit`, `period`, `percentile`, and `minimum_range_percent` values.
 - [x] The first request with no prior data shows a Mantine loader, and the submit button exposes its built-in loading state.
 - [x] Submission is disabled while values are invalid, authentication is absent, readiness is unavailable, or an equivalent request is already pending.
 - [x] A successful response renders one compact Mantine table row per returned instrument at mobile and desktop widths.

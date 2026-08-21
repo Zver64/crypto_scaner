@@ -22,13 +22,14 @@ var ErrSymbolNotFound = errors.New("symbol not found")
 type Store interface {
 	GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error)
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
-	ListLatestCandles(context.Context, int64, int) ([]market.Candle, error)
+	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
 }
 
 // SymbolRequest describes one-symbol percentile analysis.
 type SymbolRequest struct {
 	Symbol     string
-	PeriodDays int
+	Unit       Unit
+	Period     int
 	Percentile float64
 }
 
@@ -43,7 +44,8 @@ type SymbolResult struct {
 
 // SearchRequest describes market-wide percentile filtering.
 type SearchRequest struct {
-	PeriodDays          int
+	Unit                Unit
+	Period              int
 	Percentile          float64
 	MinimumRangePercent float64
 }
@@ -76,10 +78,10 @@ func NewService(store Store, analyzer Analyzer) *Service {
 
 // AnalyzeSymbol calculates a percentile for one active instrument.
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
-	if invalidAnalysisArguments(request.PeriodDays, request.Percentile) {
+	if invalidAnalysisArguments(request.Unit, request.Period, request.Percentile) {
 		return SymbolResult{}, ErrInvalidArgument
 	}
-	if err := service.requireMarketData(ctx); err != nil {
+	if err := service.requireMarketData(ctx, request.Unit); err != nil {
 		return SymbolResult{}, err
 	}
 	instruments, err := service.store.ListActiveInstruments(ctx)
@@ -98,12 +100,12 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 	if !found {
 		return SymbolResult{}, ErrSymbolNotFound
 	}
-	candles, err := service.store.ListLatestCandles(ctx, instrument.ID, request.PeriodDays)
+	candles, err := service.store.ListLatestCandlesByInterval(ctx, instrument.ID, request.Unit.Interval(), request.Period)
 	if err != nil {
 		return SymbolResult{}, fmt.Errorf("list latest candles for %s: %w", request.Symbol, err)
 	}
 	result, err := service.analyzer.Analyze(ctx, AnalysisInput{
-		Candles: candles, PeriodDays: request.PeriodDays, Percentile: request.Percentile,
+		Candles: candles, Unit: request.Unit, Period: request.Period, Percentile: request.Percentile,
 	})
 	if err != nil {
 		return SymbolResult{}, err
@@ -117,11 +119,11 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 // Search calculates a percentile for every active instrument and returns those
 // meeting the unrounded minimum.
 func (service *Service) Search(ctx context.Context, request SearchRequest) (SearchResult, error) {
-	if invalidAnalysisArguments(request.PeriodDays, request.Percentile) ||
+	if invalidAnalysisArguments(request.Unit, request.Period, request.Percentile) ||
 		math.IsNaN(request.MinimumRangePercent) || math.IsInf(request.MinimumRangePercent, 0) || request.MinimumRangePercent < 0 {
 		return SearchResult{}, ErrInvalidArgument
 	}
-	if err := service.requireMarketData(ctx); err != nil {
+	if err := service.requireMarketData(ctx, request.Unit); err != nil {
 		return SearchResult{}, err
 	}
 	instruments, err := service.store.ListActiveInstruments(ctx)
@@ -130,12 +132,12 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	}
 	result := SearchResult{Items: make([]SearchItem, 0)}
 	for _, instrument := range instruments {
-		candles, loadErr := service.store.ListLatestCandles(ctx, instrument.ID, request.PeriodDays)
+		candles, loadErr := service.store.ListLatestCandlesByInterval(ctx, instrument.ID, request.Unit.Interval(), request.Period)
 		if loadErr != nil {
 			return SearchResult{}, fmt.Errorf("list latest candles for %s: %w", instrument.Symbol, loadErr)
 		}
 		calculated, analyzeErr := service.analyzer.Analyze(ctx, AnalysisInput{
-			Candles: candles, PeriodDays: request.PeriodDays, Percentile: request.Percentile,
+			Candles: candles, Unit: request.Unit, Period: request.Period, Percentile: request.Percentile,
 		})
 		var insufficient *InsufficientHistoryError
 		if errors.As(analyzeErr, &insufficient) {
@@ -162,16 +164,28 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	return result, nil
 }
 
-func invalidAnalysisArguments(periodDays int, percentile float64) bool {
-	return periodDays < 1 || periodDays > 3650 || math.IsNaN(percentile) || math.IsInf(percentile, 0) || percentile < 0 || percentile > 100
+func invalidAnalysisArguments(unit Unit, period int, percentile float64) bool {
+	max := 3650
+	if unit == UnitHours {
+		max = 3650 * 24
+	}
+	return (unit != UnitDays && unit != UnitHours) || period < 1 || period > max || math.IsNaN(percentile) || math.IsInf(percentile, 0) || percentile < 0 || percentile > 100
 }
 
 var marketProfile = market.SyncProfile{
 	Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1d", TimeZone: "UTC",
 }
 
-func (service *Service) requireMarketData(ctx context.Context) error {
-	state, err := service.store.GetSyncState(ctx, marketProfile)
+var hourlyMarketProfile = market.SyncProfile{
+	Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC",
+}
+
+func (service *Service) requireMarketData(ctx context.Context, unit Unit) error {
+	profile := marketProfile
+	if unit == UnitHours {
+		profile = hourlyMarketProfile
+	}
+	state, err := service.store.GetSyncState(ctx, profile)
 	if err != nil {
 		return fmt.Errorf("get market synchronization state: %w", err)
 	}

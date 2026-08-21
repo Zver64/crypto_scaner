@@ -29,8 +29,24 @@ func (err *InsufficientHistoryError) Error() string {
 // AnalysisInput contains exchange-independent candle data for one analysis.
 type AnalysisInput struct {
 	Candles    []market.Candle
-	PeriodDays int
+	Unit       Unit
+	Period     int
 	Percentile float64
+}
+
+// Unit identifies the candle granularity used by an analysis.
+type Unit string
+
+const (
+	UnitDays  Unit = "days"
+	UnitHours Unit = "hours"
+)
+
+func (unit Unit) Interval() string {
+	if unit == UnitDays {
+		return "1d"
+	}
+	return "1h"
 }
 
 // AnalysisResult is the unrounded outcome of an analysis.

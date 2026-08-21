@@ -107,11 +107,11 @@ func (store *Store) UpsertCandles(ctx context.Context, items []market.Candle) er
 	return nil
 }
 
-func (store *Store) ListLatestCandles(ctx context.Context, instrumentID int64, limit int) ([]market.Candle, error) {
+func (store *Store) ListLatestCandlesByInterval(ctx context.Context, instrumentID int64, interval string, limit int) ([]market.Candle, error) {
 	if limit <= 0 || int64(limit) > math.MaxInt32 {
 		return nil, fmt.Errorf("candle limit must be between 1 and %d", math.MaxInt32)
 	}
-	rows, err := store.queries.ListLatestCandles(ctx, generated.ListLatestCandlesParams{InstrumentID: instrumentID, Limit: int32(limit)})
+	rows, err := store.queries.ListLatestCandles(ctx, generated.ListLatestCandlesParams{InstrumentID: instrumentID, Interval: interval, Limit: int32(limit)})
 	if err != nil {
 		return nil, fmt.Errorf("list latest candles: %w", err)
 	}
@@ -155,7 +155,12 @@ func (store *Store) DatabaseReady(ctx context.Context) bool { return store.db.Pi
 
 func (store *Store) MigrationsReady(ctx context.Context) bool {
 	exists, version, err := schemaMetadata(ctx, store.db)
-	return err == nil && exists && version == migrations.CurrentVersion
+	latestVersion := int64(0)
+	versions, versionsErr := migrations.Versions()
+	if len(versions) > 0 {
+		latestVersion = versions[len(versions)-1]
+	}
+	return err == nil && versionsErr == nil && exists && version == latestVersion
 }
 
 func (store *Store) SuccessfulMarketSyncExists(ctx context.Context) bool {

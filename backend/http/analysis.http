@@ -11,12 +11,14 @@
 # Query rules:
 # - Every documented query parameter is required exactly once.
 # - Extra query parameters are rejected.
-# - period_days: integer from 1 through 3650.
+# - unit: exactly days or hours.
+# - period: integer from 1 through 3650 days or 87600 hours.
 # - percentile: number from 0 through 100.
 # - minimum_range_percent: non-negative number.
 
 @symbol = BTCUSDT
-@periodDays = 30
+@unit = days
+@period = 30
 @percentile = 75
 @minimumRangePercent = 4
 
@@ -26,7 +28,7 @@
 # BTCUSDT. Unknown or inactive symbols return 404 symbol_not_found; incomplete
 # history returns 409 insufficient_data.
 # @name analyzeSymbolPercentile
-GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?period_days={{periodDays}}&percentile={{percentile}} HTTP/1.1
+GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?unit={{unit}}&period={{period}}&percentile={{percentile}} HTTP/1.1
 Accept: application/json
 Authorization: tma {{TELEGRAM_INIT_DATA}}
 X-Request-ID: kulala-analysis-symbol
@@ -38,7 +40,7 @@ X-Request-ID: kulala-analysis-symbol
 # insufficient-data counts.
 # Expected: 200.
 # @name searchMarketPercentile
-GET {{BASE_URL}}/api/v1/analysis/percentile?period_days={{periodDays}}&percentile={{percentile}}&minimum_range_percent={{minimumRangePercent}} HTTP/1.1
+GET {{BASE_URL}}/api/v1/analysis/percentile?unit={{unit}}&period={{period}}&percentile={{percentile}}&minimum_range_percent={{minimumRangePercent}} HTTP/1.1
 Accept: application/json
 Authorization: tma {{TELEGRAM_INIT_DATA}}
 X-Request-ID: kulala-analysis-search
@@ -47,14 +49,14 @@ X-Request-ID: kulala-analysis-search
 # Omitting Authorization demonstrates the canonical 401 unauthenticated error.
 # A valid Telegram identity that is not enabled returns 403 access_denied.
 # @name analyzeWithoutAuthentication
-GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?period_days={{periodDays}}&percentile={{percentile}} HTTP/1.1
+GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?unit={{unit}}&period={{period}}&percentile={{percentile}} HTTP/1.1
 Accept: application/json
 X-Request-ID: kulala-analysis-unauthenticated
 
 ### Validation failure example
-# period_days=0 demonstrates the canonical 400 invalid_argument error.
+# period=0 demonstrates the canonical 400 invalid_argument error.
 # @name analyzeWithInvalidArguments
-GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?period_days=0&percentile={{percentile}} HTTP/1.1
+GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?unit={{unit}}&period=0&percentile={{percentile}} HTTP/1.1
 Accept: application/json
 Authorization: tma {{TELEGRAM_INIT_DATA}}
 X-Request-ID: kulala-analysis-invalid

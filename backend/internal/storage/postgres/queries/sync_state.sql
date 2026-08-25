@@ -17,6 +17,7 @@ ON CONFLICT (profile_key) DO UPDATE SET
     error_message = EXCLUDED.error_message;
 
 -- name: SuccessfulMarketSyncExists :one
-SELECT EXISTS (
-    SELECT 1 FROM binance_spot.sync_state WHERE last_succeeded_at IS NOT NULL
-);
+SELECT COUNT(DISTINCT profile_key) = 2
+FROM binance_spot.sync_state
+WHERE profile_key IN ('binance:spot:USDT:1d:UTC', 'binance:spot:USDT:1h:UTC')
+  AND last_succeeded_at IS NOT NULL;

@@ -23,19 +23,32 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 		t.Fatalf("open disposable PostgreSQL: %v", err)
 	}
 	t.Cleanup(db.Close)
+	lockDisposablePostgres(t, db)
+	reset := func() {
+		t.Helper()
+		if _, err := db.Exec(context.Background(), `DROP SCHEMA IF EXISTS app CASCADE; DROP SCHEMA IF EXISTS binance_spot CASCADE; DROP TABLE IF EXISTS public.crypto_scanner_schema_versions`); err != nil {
+			t.Errorf("reset disposable PostgreSQL: %v", err)
+		}
+	}
+	reset()
+	t.Cleanup(reset)
 
-	var appSchema, binanceSchema bool
+	var appSchema, binanceSchema, migrationMetadata bool
 	if err := db.QueryRow(ctx, `
 		SELECT to_regnamespace('app') IS NOT NULL,
-		       to_regnamespace('binance_spot') IS NOT NULL
-	`).Scan(&appSchema, &binanceSchema); err != nil {
+		       to_regnamespace('binance_spot') IS NOT NULL,
+		       to_regclass('public.crypto_scanner_schema_versions') IS NOT NULL
+	`).Scan(&appSchema, &binanceSchema, &migrationMetadata); err != nil {
 		t.Fatalf("inspect disposable database: %v", err)
 	}
-	if appSchema || binanceSchema {
-		t.Fatalf("integration database is not empty: app=%t binance_spot=%t", appSchema, binanceSchema)
+	if appSchema || binanceSchema || migrationMetadata {
+		t.Fatalf("integration database is not empty: app=%t binance_spot=%t migration_metadata=%t", appSchema, binanceSchema, migrationMetadata)
 	}
 	if err := postgres.VerifySchema(ctx, db, databaseURL); err == nil {
 		t.Fatal("VerifySchema() accepted a zero-version database")
+	}
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("down on fresh database: %v", err)
 	}
 
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
@@ -149,8 +162,17 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	`).Scan(&operatorTable, &usersTable, &remainingBinanceSchema); err != nil {
 		t.Fatalf("inspect rollback: %v", err)
 	}
-	if !operatorTable || usersTable || remainingBinanceSchema {
+	if !operatorTable || !usersTable || !remainingBinanceSchema {
 		t.Fatalf("rollback ownership: operator=%t users=%t binance_schema=%t", operatorTable, usersTable, remainingBinanceSchema)
+	}
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("migrate initial schema down: %v", err)
+	}
+	if err := db.QueryRow(ctx, `SELECT to_regclass('app.operator_owned') IS NOT NULL, to_regclass('app.users') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&operatorTable, &usersTable, &remainingBinanceSchema); err != nil {
+		t.Fatalf("inspect initial rollback: %v", err)
+	}
+	if !operatorTable || usersTable || remainingBinanceSchema {
+		t.Fatalf("initial rollback ownership: operator=%t users=%t binance_schema=%t", operatorTable, usersTable, remainingBinanceSchema)
 	}
 
 	if _, err := db.Exec(ctx, "DROP TABLE app.operator_owned; DROP SCHEMA app"); err != nil {
@@ -162,11 +184,23 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate absent schemas down: %v", err)
 	}
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("migrate absent schemas initial down: %v", err)
+	}
 	if err := db.QueryRow(ctx, `SELECT to_regnamespace('app') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&appSchema, &binanceSchema); err != nil {
 		t.Fatalf("inspect migration-owned schemas: %v", err)
 	}
 	if appSchema || binanceSchema {
 		t.Fatalf("migration-owned schemas survived down: app=%t binance_spot=%t", appSchema, binanceSchema)
+	}
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("migrate already-rolled-back schema down: %v", err)
+	}
+	if err := db.QueryRow(ctx, `SELECT to_regnamespace('app') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&appSchema, &binanceSchema); err != nil {
+		t.Fatalf("inspect idempotent rollback: %v", err)
+	}
+	if appSchema || binanceSchema {
+		t.Fatalf("idempotent rollback recreated schemas: app=%t binance_spot=%t", appSchema, binanceSchema)
 	}
 
 	if _, err := db.Exec(ctx, "CREATE SCHEMA app; CREATE SCHEMA binance_spot"); err != nil {
@@ -175,13 +209,13 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate pre-existing schemas up: %v", err)
 	}
-	if _, err := db.Exec(ctx, "UPDATE app.schema_migrations SET version = 2 WHERE version = 1"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 3 WHERE version = 2"); err != nil {
 		t.Fatalf("create future migration metadata: %v", err)
 	}
 	if err := postgres.VerifySchema(ctx, db, databaseURL); err == nil {
 		t.Fatal("VerifySchema() accepted future migration metadata")
 	}
-	if _, err := db.Exec(ctx, "UPDATE app.schema_migrations SET version = 1 WHERE version = 2"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 2 WHERE version = 3"); err != nil {
 		t.Fatalf("restore current migration metadata: %v", err)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
@@ -193,8 +227,21 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if !appSchema || !binanceSchema {
 		t.Fatalf("pre-existing schemas removed on down: app=%t binance_spot=%t", appSchema, binanceSchema)
 	}
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("migrate pre-existing schemas initial down: %v", err)
+	}
+	var appUsers, instruments bool
+	if err := db.QueryRow(ctx, `SELECT to_regclass('app.users') IS NOT NULL, to_regclass('binance_spot.instruments') IS NOT NULL, to_regnamespace('app') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&appUsers, &instruments, &appSchema, &binanceSchema); err != nil {
+		t.Fatalf("inspect pre-existing schemas after initial down: %v", err)
+	}
+	if appUsers || instruments || !appSchema || !binanceSchema {
+		t.Fatalf("pre-existing schema ownership after v1 down: users=%t instruments=%t app=%t binance_spot=%t", appUsers, instruments, appSchema, binanceSchema)
+	}
 	if _, err := db.Exec(ctx, "DROP SCHEMA app; DROP SCHEMA binance_spot"); err != nil {
 		t.Fatalf("clean up pre-existing schemas: %v", err)
+	}
+	if _, err := db.Exec(ctx, "DROP TABLE IF EXISTS public.crypto_scanner_schema_versions"); err != nil {
+		t.Fatalf("clean up migration metadata: %v", err)
 	}
 }
 

@@ -67,14 +67,15 @@ func (q *Queries) SaveSyncState(ctx context.Context, arg SaveSyncStateParams) er
 }
 
 const successfulMarketSyncExists = `-- name: SuccessfulMarketSyncExists :one
-SELECT EXISTS (
-    SELECT 1 FROM binance_spot.sync_state WHERE last_succeeded_at IS NOT NULL
-)
+SELECT COUNT(DISTINCT profile_key) = 2
+FROM binance_spot.sync_state
+WHERE profile_key IN ('binance:spot:USDT:1d:UTC', 'binance:spot:USDT:1h:UTC')
+  AND last_succeeded_at IS NOT NULL
 `
 
 func (q *Queries) SuccessfulMarketSyncExists(ctx context.Context) (bool, error) {
 	row := q.db.QueryRow(ctx, successfulMarketSyncExists)
-	var exists bool
-	err := row.Scan(&exists)
-	return exists, err
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }

@@ -24,7 +24,7 @@ func TestVerifySchemaRejectsAnUninitializedDatabaseWithOperatorGuidance(t *testi
 func TestVerifySchemaRejectsAnOutdatedDatabase(t *testing.T) {
 	queries := &querySequence{rows: []*stubRow{
 		{values: []any{true}},
-		{values: []any{int64(0)}},
+		{values: []any{int64(0), false}},
 	}}
 
 	err := postgres.VerifySchema(context.Background(), queries, "postgres://localhost/test")
@@ -37,7 +37,7 @@ func TestVerifySchemaRejectsAnOutdatedDatabase(t *testing.T) {
 func TestVerifySchemaAcceptsTheCurrentVersion(t *testing.T) {
 	queries := &querySequence{rows: []*stubRow{
 		{values: []any{true}},
-		{values: []any{int64(2)}},
+		{values: []any{int64(2), false}},
 	}}
 
 	if err := postgres.VerifySchema(context.Background(), queries, "postgres://localhost/test"); err != nil {
@@ -95,10 +95,10 @@ func (r *stubRow) Scan(dest ...any) error {
 	}
 	for index, value := range r.values {
 		switch target := dest[index].(type) {
-		case *bool:
-			*target = value.(bool)
 		case *int64:
 			*target = value.(int64)
+		case *bool:
+			*target = value.(bool)
 		default:
 			return errors.New("unexpected scan destination type")
 		}

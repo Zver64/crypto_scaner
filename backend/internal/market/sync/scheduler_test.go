@@ -68,7 +68,7 @@ func TestSchedulerStartsCatchUpAsynchronouslyAndCancelsItOnShutdown(t *testing.T
 }
 
 func TestHourlySchedulerStartsAndCancelsWithoutWaitGroupRace(t *testing.T) {
-	daily := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
+	daily := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{}), release: make(chan struct{})}
 	hourly := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
 	scheduler := marketsync.NewSchedulerWithHourly(daily, hourly, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -80,6 +80,9 @@ func TestHourlySchedulerStartsAndCancelsWithoutWaitGroupRace(t *testing.T) {
 		case <-started:
 		case <-time.After(time.Second):
 			t.Fatal("scheduled synchronization did not start")
+		}
+		if started == daily.started {
+			close(daily.release)
 		}
 	}
 	cancel()
@@ -95,14 +98,51 @@ func TestHourlySchedulerStartsAndCancelsWithoutWaitGroupRace(t *testing.T) {
 	}
 }
 
+func TestSchedulerDiscardsQueuedHourlyRunOnCancellation(t *testing.T) {
+	daily := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
+	hourly := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
+	scheduler := marketsync.NewSchedulerWithHourly(daily, hourly, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() { result <- scheduler.Run(ctx) }()
+
+	select {
+	case <-daily.started:
+	case <-time.After(time.Second):
+		t.Fatal("daily synchronization did not start")
+	}
+	cancel()
+	select {
+	case <-daily.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("active daily synchronization was not cancelled")
+	}
+	select {
+	case <-hourly.started:
+		t.Fatal("queued hourly synchronization started after cancellation")
+	case <-time.After(50 * time.Millisecond):
+	}
+	if err := <-result; err != nil {
+		t.Fatalf("Scheduler.Run() error = %v", err)
+	}
+}
+
 type blockingSyncRunner struct {
 	started chan struct{}
 	stopped chan struct{}
+	release chan struct{}
 }
 
 func (runner *blockingSyncRunner) Sync(ctx context.Context) error {
 	close(runner.started)
-	<-ctx.Done()
+	if runner.release == nil {
+		<-ctx.Done()
+	} else {
+		select {
+		case <-runner.release:
+		case <-ctx.Done():
+		}
+	}
 	close(runner.stopped)
 	return ctx.Err()
 }

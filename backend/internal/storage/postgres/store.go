@@ -11,7 +11,6 @@ import (
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/market"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
-	"crypto-scanner/migrations"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -154,13 +153,7 @@ func (store *Store) SaveSyncState(ctx context.Context, state market.SyncState) e
 func (store *Store) DatabaseReady(ctx context.Context) bool { return store.db.Ping(ctx) == nil }
 
 func (store *Store) MigrationsReady(ctx context.Context) bool {
-	exists, version, err := schemaMetadata(ctx, store.db)
-	latestVersion := int64(0)
-	versions, versionsErr := migrations.Versions()
-	if len(versions) > 0 {
-		latestVersion = versions[len(versions)-1]
-	}
-	return err == nil && versionsErr == nil && exists && version == latestVersion
+	return VerifySchema(ctx, store.db, "") == nil
 }
 
 func (store *Store) SuccessfulMarketSyncExists(ctx context.Context) bool {

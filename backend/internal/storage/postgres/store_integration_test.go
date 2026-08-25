@@ -24,6 +24,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		t.Fatalf("open disposable PostgreSQL: %v", err)
 	}
 	t.Cleanup(db.Close)
+	lockDisposablePostgres(t, db)
 	var appSchema, marketSchema bool
 	if err := db.QueryRow(ctx, `SELECT to_regnamespace('app') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&appSchema, &marketSchema); err != nil {
 		t.Fatalf("inspect disposable database: %v", err)
@@ -40,7 +41,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		t.Fatalf("migrate disposable PostgreSQL: %v", err)
 	}
 	t.Cleanup(func() {
-		if err := migrate.Run(context.Background(), []string{"down"}, loadURL); err != nil {
+		if _, err := db.Exec(context.Background(), `DROP SCHEMA IF EXISTS app CASCADE; DROP SCHEMA IF EXISTS binance_spot CASCADE; DROP TABLE IF EXISTS public.crypto_scanner_schema_versions`); err != nil {
 			t.Errorf("reset disposable PostgreSQL: %v", err)
 		}
 	})
@@ -171,8 +172,20 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if got.Status != market.SyncStatusSucceeded || got.LastSucceededAt == nil || !got.LastSucceededAt.Equal(succeeded) {
 			t.Fatalf("sync state = %#v", got)
 		}
+		// Readiness requires both independently synchronized datasets. A daily
+		// success alone must not make the market ready.
+		if _, err := db.Exec(ctx, `DELETE FROM binance_spot.sync_state WHERE profile_key = $1`, market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC"}.Key()); err != nil {
+			t.Fatalf("clear hourly state: %v", err)
+		}
+		if store.SuccessfulMarketSyncExists(ctx) {
+			t.Fatal("SuccessfulMarketSyncExists() = true after only a daily sync")
+		}
+		hourly := market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC"}
+		if err := store.SaveSyncState(ctx, market.SyncState{Profile: hourly, LastSucceededAt: &succeeded, Status: market.SyncStatusSucceeded}); err != nil {
+			t.Fatalf("save hourly success: %v", err)
+		}
 		if !store.SuccessfulMarketSyncExists(ctx) {
-			t.Fatal("SuccessfulMarketSyncExists() = false after a successful sync")
+			t.Fatal("SuccessfulMarketSyncExists() = false after both profile syncs succeeded")
 		}
 		failureMessage := "temporary exchange failure"
 		state.Status = market.SyncStatusFailed

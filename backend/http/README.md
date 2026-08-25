@@ -6,8 +6,8 @@ backend. The files use the JetBrains HTTP format supported by
 
 ## Setup
 
-From the repository root, initialize the database and start the backend with
-`make db-up migrate-up` and `make devbackend`.
+From the repository root, run `make prepare` and `make dev`. Compose starts the
+backend and applies database migrations automatically.
 
 For authenticated analysis requests, create the ignored private environment
 file:

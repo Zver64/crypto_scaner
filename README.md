@@ -5,16 +5,16 @@ Telegram Mini App: Go, React and PostgreSQL.
 ```sh
 cp .env.example .env
 make prepare
-docker compose up
+make dev
 ```
 
-The Compose stack waits for PostgreSQL migrations and automatically creates or
-re-enables the administrator identified by `ADMIN_TELEGRAM_ID`.
+Compose starts the development stack in watch mode, applies PostgreSQL migrations
+automatically, and creates or re-enables the administrator identified by
+`ADMIN_TELEGRAM_ID`.
 
-For backend-only development:
+## Migrations
 
 ```sh
-make devbackend
+make migrate-up    # apply migrations manually
+make migrate-down  # roll back one migration manually
 ```
-
-Use `make help` to see the remaining dev commands.

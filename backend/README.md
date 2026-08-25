@@ -1,11 +1,15 @@
 # Backend
 
-Run backend commands from the repository root:
+Run the development stack from the repository root:
 
 ```sh
-make devbackend
+make prepare
+make dev
+```
+
+Compose applies migrations automatically at startup. To manage them manually:
+
+```sh
 make migrate-up
 make migrate-down
 ```
-
-Use `make help` to see the remaining dev commands.

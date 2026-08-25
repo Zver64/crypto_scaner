@@ -5,8 +5,8 @@
 The development server proxies relative `/api` and `/health` requests to the
 backend configured by `VITE_API_PROXY_TARGET` in the repository root `.env`.
 
-Before every `npm run dev`, the frontend generates fresh Telegram development
-init data from the root `TELEGRAM_BOT_TOKEN` and `ADMIN_TELEGRAM_ID` values. The
+When Compose starts Vite, the frontend generates fresh Telegram development init
+data from the root `TELEGRAM_BOT_TOKEN` and `ADMIN_TELEGRAM_ID` values. The
 generator writes `TELEGRAM_DEV_INIT_DATA` to the gitignored root `.env.local`
 before Vite starts. It does not print the bot token or generated credential.
 During development, the proxy adds the stored credential to proxied API requests
@@ -28,24 +28,17 @@ example config sets it to 24 hours (`24h`).
 
 ## Run
 
-Start PostgreSQL and the backend from the repository root:
+For normal development, start the complete stack from the repository root:
 
 ```sh
-make db-up
-make migrate-up
-make devbackend
+make prepare
+make dev
 ```
 
-Then install frontend dependencies and start Vite from this directory:
-
-```sh
-npm ci
-npm run dev
-```
-
-Vite serves the Mini App at `http://127.0.0.1:3000` and proxies its relative
-API and readiness requests to the backend. The header should report `Ready`
-before Market Scan or Instrument Analysis can run.
+Compose applies migrations automatically. Vite serves the Mini App at
+`http://127.0.0.1:3000` and proxies its relative API and readiness requests to
+the backend. The header should report `Ready` before Market Scan or Instrument
+Analysis can run.
 
 ## Verify
 

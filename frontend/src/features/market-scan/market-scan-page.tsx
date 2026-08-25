@@ -1,4 +1,5 @@
 import {
+	Anchor,
 	Box,
 	Button,
 	Center,
@@ -30,7 +31,11 @@ import {
 	marketScanCriteriaConstraints,
 	validateMarketScanCriteria,
 } from "./criteria";
-import { filterMarketScanItems, formatRangePercent } from "./results";
+import {
+	binanceSpotUrl,
+	filterMarketScanItems,
+	formatRangePercent,
+} from "./results";
 
 export function marketScanQueryKey(criteria: MarketScanCriteria) {
 	return ["market-scan", ...marketScanCriteriaIdentity(criteria)] as const;
@@ -206,6 +211,7 @@ export function MarketScanPage({
 													<Table.Th>Symbol</Table.Th>
 													<Table.Th>Range Percent</Table.Th>
 													<Table.Th>Candle Count</Table.Th>
+													<Table.Th ta="right">Binance</Table.Th>
 												</Table.Tr>
 											</Table.Thead>
 											<Table.Tbody>
@@ -235,6 +241,22 @@ export function MarketScanPage({
 															{formatRangePercent(item.range_percent)}
 														</Table.Td>
 														<Table.Td>{item.candle_count}</Table.Td>
+														<Table.Td ta="right">
+															{binanceSpotUrl(item.symbol) ? (
+																<Anchor
+																	aria-label={`Open ${item.symbol} on Binance Spot in a new tab`}
+																	href={binanceSpotUrl(item.symbol)}
+																	onClick={(event) => event.stopPropagation()}
+																	onKeyDown={(event) => event.stopPropagation()}
+																	rel="noopener noreferrer"
+																	target="_blank"
+																>
+																	Open ↗
+																</Anchor>
+															) : (
+																<Text c="dimmed">—</Text>
+															)}
+														</Table.Td>
 													</Table.Tr>
 												))}
 											</Table.Tbody>

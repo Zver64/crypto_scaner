@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { MarketScanItem } from "../../api/client";
-import { filterMarketScanItems, formatRangePercent } from "./results";
+import {
+	binanceSpotUrl,
+	filterMarketScanItems,
+	formatRangePercent,
+} from "./results";
 
 const items: MarketScanItem[] = [
 	{ candle_count: 30, range_percent: 9.4381, symbol: "ZZZUSDT" },
@@ -18,6 +22,24 @@ describe("formatRangePercent", () => {
 		[1234.5, "1,230%"],
 	])("formats %s with three significant digits as %s", (value, expected) => {
 		expect(formatRangePercent(value)).toBe(expected);
+	});
+});
+
+describe("binanceSpotUrl", () => {
+	it("builds a Binance Spot trading URL for a USDT symbol", () => {
+		expect(binanceSpotUrl("BTCUSDT")).toBe(
+			"https://www.binance.com/en/trade/BTC_USDT?type=spot",
+		);
+	});
+
+	it("normalizes surrounding whitespace and symbol casing", () => {
+		expect(binanceSpotUrl(" adausdt ")).toBe(
+			"https://www.binance.com/en/trade/ADA_USDT?type=spot",
+		);
+	});
+
+	it.each(["", "USDT", "BTCEUR"])("rejects unsupported symbol %j", (symbol) => {
+		expect(binanceSpotUrl(symbol)).toBeUndefined();
 	});
 });
 

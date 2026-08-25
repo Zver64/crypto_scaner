@@ -1,32 +1,30 @@
-import type { AnalysisCriteria } from "../features/analysis/criteria";
-import type { MarketScanCriteria } from "../features/market-scan/criteria";
+export interface CriterionSelection {
+	name: string;
+	parameters: Record<string, unknown>;
+}
 
-export interface InstrumentAnalysisResult {
+export interface Evaluation {
 	candle_count: number;
 	from: string;
-	percentile: number;
-	period: number;
-	unit: "days" | "hours";
-	range_percent: number;
-	symbol: string;
+	matched: boolean;
+	metrics: Record<string, number>;
+	name: string;
 	to: string;
 }
 
-export interface MarketScanItem {
-	candle_count: number;
-	range_percent: number;
+export interface InstrumentAnalysisResult {
+	evaluations: Evaluation[];
+	matched: boolean;
 	symbol: string;
 }
+
+export interface MarketScanItem extends InstrumentAnalysisResult {}
 
 export interface MarketScanResult {
 	analyzed_count: number;
 	insufficient_data_count: number;
 	items: MarketScanItem[];
 	matched_count: number;
-	minimum_range_percent: number;
-	percentile: number;
-	period: number;
-	unit: "days" | "hours";
 }
 
 type ApiErrorCode =
@@ -38,6 +36,9 @@ type ApiErrorCode =
 	| "symbol_not_found"
 	| "unauthenticated"
 	| "unexpected_error";
+
+const rfc3339UtcDateTime =
+	/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z$/;
 
 const apiErrorMessages: Record<ApiErrorCode, string> = {
 	access_denied: "Your Telegram account does not have access to this scanner.",
@@ -75,17 +76,12 @@ interface FetchAnalysisOptions {
 }
 
 export async function fetchMarketScan(
-	criteria: MarketScanCriteria,
+	criteria: readonly CriterionSelection[],
 	options: FetchAnalysisOptions = {},
 ): Promise<MarketScanResult> {
-	const parameters = new URLSearchParams({
-		period: String(criteria.period),
-		unit: criteria.unit,
-		percentile: String(criteria.percentile),
-		minimum_range_percent: String(criteria.minimumRangePercent),
-	});
 	return fetchAnalysisResult(
-		`/api/v1/analysis/percentile?${parameters.toString()}`,
+		"/api/v1/analysis/market",
+		criteria,
 		options,
 		parseMarketScanResult,
 	);
@@ -93,16 +89,12 @@ export async function fetchMarketScan(
 
 export async function fetchInstrumentAnalysis(
 	symbol: string,
-	criteria: AnalysisCriteria,
+	criteria: readonly CriterionSelection[],
 	options: FetchAnalysisOptions = {},
 ): Promise<InstrumentAnalysisResult> {
-	const parameters = new URLSearchParams({
-		period: String(criteria.period),
-		unit: criteria.unit,
-		percentile: String(criteria.percentile),
-	});
 	return fetchAnalysisResult(
-		`/api/v1/analysis/percentile/${encodeURIComponent(symbol)}?${parameters.toString()}`,
+		`/api/v1/analysis/instruments/${encodeURIComponent(symbol)}`,
+		criteria,
 		options,
 		parseInstrumentAnalysisResult,
 	);
@@ -110,10 +102,14 @@ export async function fetchInstrumentAnalysis(
 
 async function fetchAnalysisResult<Result>(
 	url: string,
+	criteria: readonly CriterionSelection[],
 	options: FetchAnalysisOptions,
 	parse: (payload: unknown) => Result,
 ): Promise<Result> {
-	const headers: Record<string, string> = { Accept: "application/json" };
+	const headers: Record<string, string> = {
+		Accept: "application/json",
+		"Content-Type": "application/json",
+	};
 	const initData = options.initData?.trim();
 	if (initData) {
 		headers.Authorization = `tma ${initData}`;
@@ -121,8 +117,9 @@ async function fetchAnalysisResult<Result>(
 
 	try {
 		const response = await (options.request ?? fetch)(url, {
+			body: JSON.stringify({ criteria }),
 			headers,
-			method: "GET",
+			method: "POST",
 		});
 		const payload: unknown = await response.json();
 		if (!response.ok) {
@@ -147,26 +144,16 @@ function parseInstrumentAnalysisResult(
 	if (
 		!isRecord(payload) ||
 		typeof payload.symbol !== "string" ||
-		!isFiniteNumber(payload.period) ||
-		!isAnalysisUnit(payload.unit) ||
-		!isFiniteNumber(payload.percentile) ||
-		!isFiniteNumber(payload.range_percent) ||
-		!isFiniteNumber(payload.candle_count) ||
-		!isUtcDateTime(payload.from) ||
-		!isUtcDateTime(payload.to)
+		!isBoolean(payload.matched) ||
+		!Array.isArray(payload.evaluations)
 	) {
 		throw new ApiError("unexpected_error");
 	}
 
 	return {
-		candle_count: payload.candle_count,
-		from: payload.from,
-		percentile: payload.percentile,
-		period: payload.period,
-		unit: payload.unit,
-		range_percent: payload.range_percent,
+		evaluations: payload.evaluations.map(parseEvaluation),
+		matched: payload.matched,
 		symbol: payload.symbol,
-		to: payload.to,
 	};
 }
 
@@ -200,10 +187,6 @@ function canonicalErrorCode(value: unknown): ApiErrorCode {
 function parseMarketScanResult(payload: unknown): MarketScanResult {
 	if (
 		!isRecord(payload) ||
-		!isFiniteNumber(payload.period) ||
-		!isAnalysisUnit(payload.unit) ||
-		!isFiniteNumber(payload.percentile) ||
-		!isFiniteNumber(payload.minimum_range_percent) ||
 		!isFiniteNumber(payload.matched_count) ||
 		!isFiniteNumber(payload.analyzed_count) ||
 		!isFiniteNumber(payload.insufficient_data_count) ||
@@ -218,10 +201,6 @@ function parseMarketScanResult(payload: unknown): MarketScanResult {
 		insufficient_data_count: payload.insufficient_data_count,
 		items,
 		matched_count: payload.matched_count,
-		minimum_range_percent: payload.minimum_range_percent,
-		percentile: payload.percentile,
-		period: payload.period,
-		unit: payload.unit,
 	};
 }
 
@@ -229,16 +208,47 @@ function parseMarketScanItem(payload: unknown): MarketScanItem {
 	if (
 		!isRecord(payload) ||
 		typeof payload.symbol !== "string" ||
-		!isFiniteNumber(payload.range_percent) ||
-		!isFiniteNumber(payload.candle_count)
+		!isBoolean(payload.matched) ||
+		!Array.isArray(payload.evaluations)
 	) {
 		throw new ApiError("unexpected_error");
 	}
 
 	return {
-		candle_count: payload.candle_count,
-		range_percent: payload.range_percent,
+		evaluations: payload.evaluations.map(parseEvaluation),
+		matched: payload.matched,
 		symbol: payload.symbol,
+	};
+}
+
+function parseEvaluation(payload: unknown): Evaluation {
+	if (
+		!isRecord(payload) ||
+		typeof payload.name !== "string" ||
+		!isBoolean(payload.matched) ||
+		!isRecord(payload.metrics) ||
+		!isFiniteNumber(payload.candle_count) ||
+		!isRfc3339UtcDateTime(payload.from) ||
+		!isRfc3339UtcDateTime(payload.to)
+	) {
+		throw new ApiError("unexpected_error");
+	}
+
+	const metrics: Record<string, number> = {};
+	for (const [name, value] of Object.entries(payload.metrics)) {
+		if (!isFiniteNumber(value)) {
+			throw new ApiError("unexpected_error");
+		}
+		metrics[name] = value;
+	}
+
+	return {
+		candle_count: payload.candle_count,
+		from: payload.from,
+		matched: payload.matched,
+		metrics,
+		name: payload.name,
+		to: payload.to,
 	};
 }
 
@@ -250,14 +260,28 @@ function isFiniteNumber(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value);
 }
 
-function isAnalysisUnit(value: unknown): value is "days" | "hours" {
-	return value === "days" || value === "hours";
+function isBoolean(value: unknown): value is boolean {
+	return typeof value === "boolean";
 }
 
-function isUtcDateTime(value: unknown): value is string {
+function isRfc3339UtcDateTime(value: unknown): value is string {
+	if (typeof value !== "string") {
+		return false;
+	}
+
+	const parts = rfc3339UtcDateTime.exec(value);
+	const timestamp = Date.parse(value);
+	if (!parts || !Number.isFinite(timestamp)) {
+		return false;
+	}
+
+	const date = new Date(timestamp);
 	return (
-		typeof value === "string" &&
-		(value.endsWith("Z") || value.endsWith("+00:00")) &&
-		Number.isFinite(Date.parse(value))
+		date.getUTCFullYear() === Number(parts[1]) &&
+		date.getUTCMonth() + 1 === Number(parts[2]) &&
+		date.getUTCDate() === Number(parts[3]) &&
+		date.getUTCHours() === Number(parts[4]) &&
+		date.getUTCMinutes() === Number(parts[5]) &&
+		date.getUTCSeconds() === Number(parts[6])
 	);
 }

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { instrumentAnalysisCriteriaToSearch } from "../features/instrument-analysis/search-params";
 import { MarketScanPage } from "../features/market-scan/market-scan-page";
 import {
 	marketScanCriteriaFromSearch,
@@ -25,11 +26,7 @@ function Home() {
 			onSelectInstrument={async (symbol, criteria) => {
 				await navigate({
 					params: { symbol },
-					search: {
-						percentile: criteria.percentile,
-						period: criteria.period,
-						unit: criteria.unit,
-					},
+					search: instrumentAnalysisCriteriaToSearch(criteria),
 					to: "/instruments/$symbol",
 				});
 			}}

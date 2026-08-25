@@ -9,32 +9,21 @@ import (
 	"crypto-scanner/internal/market"
 )
 
-// ErrInvalidCandleData reports persisted candle data that cannot be analyzed.
 var ErrInvalidCandleData = errors.New("invalid candle data")
-
-// ErrInvalidArgument reports analyzer input outside the supported bounds.
 var ErrInvalidArgument = errors.New("invalid analysis argument")
 
-// InsufficientHistoryError reports that the requested period is unavailable.
+// InsufficientHistoryError identifies the criterion whose required history is unavailable.
 type InsufficientHistoryError struct {
+	Criterion string
 	Required  int
 	Available int
 }
 
-// Error implements error.
 func (err *InsufficientHistoryError) Error() string {
-	return fmt.Sprintf("insufficient candle history: required %d, available %d", err.Required, err.Available)
+	return fmt.Sprintf("insufficient candle history for %s: required %d, available %d", err.Criterion, err.Required, err.Available)
 }
 
-// AnalysisInput contains exchange-independent candle data for one analysis.
-type AnalysisInput struct {
-	Candles    []market.Candle
-	Unit       Unit
-	Period     int
-	Percentile float64
-}
-
-// Unit identifies the candle granularity used by an analysis.
+// Unit identifies a supported candle granularity.
 type Unit string
 
 const (
@@ -49,16 +38,38 @@ func (unit Unit) Interval() string {
 	return "1h"
 }
 
-// AnalysisResult is the unrounded outcome of an analysis.
-type AnalysisResult struct {
-	RangePercent float64
-	CandleCount  int
-	From         time.Time
-	To           time.Time
+// CandleRequirement declares candle data a criterion needs.
+type CandleRequirement struct {
+	Unit  Unit
+	Count int
 }
 
-// Analyzer calculates one kind of market analysis.
-type Analyzer interface {
+// CriterionConfig selects and configures a criterion for the application service.
+type CriterionConfig struct {
+	Name       string
+	Parameters map[string]any
+}
+
+// Factory builds a request-scoped, typed criterion.
+type Factory interface {
 	Name() string
-	Analyze(context.Context, AnalysisInput) (AnalysisResult, error)
+	Build(map[string]any) (Criterion, error)
+}
+
+// Criterion evaluates one typed rule against its required candle data.
+type Criterion interface {
+	Name() string
+	Requirements() []CandleRequirement
+	Evaluate(context.Context, map[Unit][]market.Candle) (Evaluation, error)
+}
+
+// Evaluation is an unrounded criterion result.
+type Evaluation struct {
+	Name          string
+	Matched       bool
+	Metrics       map[string]float64
+	OrderingScore *float64
+	CandleCount   int
+	From          time.Time
+	To            time.Time
 }

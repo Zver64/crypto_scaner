@@ -32,8 +32,8 @@ func New(logger *slog.Logger, readiness Readiness, service Analysis, authenticat
 	router := http.NewServeMux()
 	router.HandleFunc("GET /health/live", live)
 	router.HandleFunc("GET /health/ready", ready(readiness))
-	router.Handle("GET /api/v1/analysis/percentile/{symbol}", authenticator.Authenticate(analyzeSymbol(service)))
-	router.Handle("GET /api/v1/analysis/percentile", authenticator.Authenticate(searchMarket(service)))
+	router.Handle("POST /api/v1/analysis/instruments/{symbol}", authenticator.Authenticate(analyzeSymbol(service)))
+	router.Handle("POST /api/v1/analysis/market", authenticator.Authenticate(searchMarket(service)))
 	return requestMiddleware(logger, router)
 }
 

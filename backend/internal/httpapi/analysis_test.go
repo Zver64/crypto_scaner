@@ -1,17 +1,18 @@
 package httpapi_test
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"strings"
+	"reflect"
 	"testing"
 	"time"
 
 	"crypto-scanner/internal/analysis"
-	"crypto-scanner/internal/analysis/percentile"
+	"crypto-scanner/internal/analysis/criteria/percentile"
 	"crypto-scanner/internal/auth"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/httpapi"
@@ -20,214 +21,206 @@ import (
 )
 
 const analysisInitData = "auth_date=1785902400&query_id=AAHdF6IQAAAAAN0XogcAAAAA&user=%7B%22id%22%3A424242%2C%22first_name%22%3A%22Alice%22%2C%22username%22%3A%22alice%22%7D&hash=3787d0e46c1919cd293ec89f766ac33375446dbd7311acc07e422fecfc07812b"
+const analysisBody = `{"criteria":[{"name":"percentile","parameters":{"unit":"days","period":2,"percentile":50,"minimum_range_percent":0}}]}`
 
-func TestEnabledTelegramUserCanRequestOneSymbolPercentile(t *testing.T) {
-	t.Parallel()
-
-	start := time.Date(2026, time.July, 5, 0, 0, 0, 0, time.UTC)
-	store := httpAnalysisStore{
-		synchronized: true,
-		instruments:  []market.Instrument{{ID: 7, Symbol: "BTCUSDT", Active: true}},
-		candles: map[int64][]market.Candle{
-			7: {
-				{OpenTime: start, Open: 100, High: 102, Low: 100},
-				{OpenTime: start.AddDate(0, 0, 1), Open: 100, High: 106, Low: 100},
-			},
-		},
-	}
-	service := analysis.NewService(store, percentile.New())
-	authenticator := authtelegram.NewWithOptions(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{
-		Now: func() time.Time { return time.Date(2026, time.August, 5, 4, 10, 0, 0, time.UTC) },
-	})
-	handler := httpapi.New(
-		logging.New(io.Discard, "error"), readinessStub{marketSync: true},
-		service, authenticator,
-	)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?unit=days&period=2&percentile=50", nil)
-	request.Header.Set("Authorization", "tma "+analysisInitData)
-	response := httptest.NewRecorder()
-
-	handler.ServeHTTP(response, request)
-
+func TestAuthenticatedUserCanAnalyzeOneInstrument(t *testing.T) {
+	start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	store := httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {httpCandle(start, 2), httpCandle(start.AddDate(0, 0, 1), 6)}}}
+	response := analysisRequestTo(t, newAnalysisHTTPHandler(store), "/api/v1/analysis/instruments/BTCUSDT", analysisBody)
 	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body = %s", response.Code, response.Body.String())
+		t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
 	}
-	var body struct {
-		Symbol       string    `json:"symbol"`
-		Unit         string    `json:"unit"`
-		Period       int       `json:"period"`
-		Percentile   float64   `json:"percentile"`
-		RangePercent float64   `json:"range_percent"`
-		CandleCount  int       `json:"candle_count"`
-		From         time.Time `json:"from"`
-		To           time.Time `json:"to"`
-	}
+	var body symbolAnalysisResponse
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	if body.Symbol != "BTCUSDT" || body.Unit != "days" || body.Period != 2 || body.Percentile != 50 || body.RangePercent != 4 || body.CandleCount != 2 {
+	if body.Symbol != "BTCUSDT" || !body.Matched || len(body.Evaluations) != 1 {
 		t.Fatalf("response = %+v", body)
 	}
-	if !body.From.Equal(start) || !body.To.Equal(start.AddDate(0, 0, 1)) {
-		t.Fatalf("coverage = %s..%s", body.From, body.To)
+	evaluation := body.Evaluations[0]
+	if evaluation.Name != "percentile" || !evaluation.Matched || evaluation.CandleCount != 2 || evaluation.Metrics["range_percent"] != 4 || !evaluation.From.Equal(start) || !evaluation.To.Equal(start.AddDate(0, 0, 1)) {
+		t.Fatalf("evaluation = %+v", evaluation)
 	}
 }
 
-func TestEnabledTelegramUserCanRequestHourlyPeriod(t *testing.T) {
-	start := time.Date(2026, time.July, 5, 0, 0, 0, 0, time.UTC)
-	candles := make([]market.Candle, 60)
-	for index := range candles {
-		candles[index] = market.Candle{OpenTime: start.Add(time.Duration(index) * time.Hour), Open: 100, High: 102, Low: 100}
-	}
-	store := httpAnalysisStore{
-		synchronized: true,
-		instruments:  []market.Instrument{{ID: 7, Symbol: "BTCUSDT", Active: true}},
-		candles:      map[int64][]market.Candle{7: candles},
-	}
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?unit=hours&period=60&percentile=50", nil)
-	request.Header.Set("Authorization", "tma "+analysisInitData)
-	response := httptest.NewRecorder()
-	newAnalysisHTTPHandler(store).ServeHTTP(response, request)
-
-	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body = %s", response.Code, response.Body.String())
-	}
-	var body struct {
-		Unit        string `json:"unit"`
-		Period      int    `json:"period"`
-		CandleCount int    `json:"candle_count"`
-	}
-	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if body.Unit != "hours" || body.Period != 60 || body.CandleCount != 60 {
-		t.Fatalf("response = %+v", body)
-	}
-}
-
-func TestEnabledTelegramUserCanSearchAllActiveInstruments(t *testing.T) {
-	t.Parallel()
-
-	start := time.Date(2026, time.July, 5, 0, 0, 0, 0, time.UTC)
-	store := httpAnalysisStore{
-		synchronized: true,
-		instruments: []market.Instrument{
-			{ID: 1, Symbol: "ZZZUSDT", Active: true}, {ID: 2, Symbol: "AAAUSDT", Active: true},
-			{ID: 3, Symbol: "NEWUSDT", Active: true},
-		},
+func TestAuthenticatedUserCanSearchMarket(t *testing.T) {
+	start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	store := httpStore{
+		instruments: []market.Instrument{{ID: 1, Symbol: "ZZZUSDT"}, {ID: 2, Symbol: "AAAUSDT"}, {ID: 3, Symbol: "NEWUSDT"}},
 		candles: map[int64][]market.Candle{
-			1: {{OpenTime: start, Open: 100_000, High: 109_438.14, Low: 100_000}},
-			2: {{OpenTime: start, Open: 100, High: 104, Low: 100}},
-			3: {},
+			1: {httpCandle(start, 9.43814)}, 2: {httpCandle(start, 4)}, 3: {},
 		},
 	}
-	handler := newAnalysisHTTPHandler(store)
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile?unit=days&period=1&percentile=75&minimum_range_percent=4", nil)
-	request.Header.Set("Authorization", "tma "+analysisInitData)
-	response := httptest.NewRecorder()
-
-	handler.ServeHTTP(response, request)
-
+	bodyRequest := `{"criteria":[{"name":"percentile","parameters":{"unit":"days","period":1,"percentile":75,"minimum_range_percent":4}}]}`
+	response := analysisRequestTo(t, newAnalysisHTTPHandler(store), "/api/v1/analysis/market", bodyRequest)
 	if response.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200; body = %s", response.Code, response.Body.String())
+		t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
 	}
-	var body struct {
-		MatchedCount          int `json:"matched_count"`
-		AnalyzedCount         int `json:"analyzed_count"`
-		InsufficientDataCount int `json:"insufficient_data_count"`
-		Items                 []struct {
-			Symbol       string  `json:"symbol"`
-			RangePercent float64 `json:"range_percent"`
-			CandleCount  int     `json:"candle_count"`
-		} `json:"items"`
-	}
+	var body marketAnalysisResponse
 	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
 	if body.MatchedCount != 2 || body.AnalyzedCount != 2 || body.InsufficientDataCount != 1 || len(body.Items) != 2 {
-		t.Fatalf("response counts/items = %+v", body)
+		t.Fatalf("response = %+v", body)
 	}
-	if body.Items[0].Symbol != "ZZZUSDT" || body.Items[0].RangePercent != 9.4381 || body.Items[1].Symbol != "AAAUSDT" {
-		t.Fatalf("response items = %+v", body.Items)
+	if body.Items[0].Symbol != "ZZZUSDT" || body.Items[1].Symbol != "AAAUSDT" {
+		t.Fatalf("items = %+v", body.Items)
+	}
+	if len(body.Items[0].Evaluations) != 1 || len(body.Items[1].Evaluations) != 1 || !body.Items[0].Matched || !body.Items[1].Matched {
+		t.Fatalf("items = %+v", body.Items)
+	}
+	first, second := body.Items[0].Evaluations[0], body.Items[1].Evaluations[0]
+	if first.Name != "percentile" || !first.Matched || first.CandleCount != 1 || first.Metrics["range_percent"] != 9.4381 || second.Name != "percentile" || !second.Matched || second.CandleCount != 1 || second.Metrics["range_percent"] != 4 {
+		t.Fatalf("evaluations = %+v", body.Items)
+	}
+}
+func TestAnalysisRejectsMalformedAndUnknownJSON(t *testing.T) {
+	for _, body := range []string{"{", `{"criteria":[],"extra":true}`, `{"criteria":[{"name":"percentile","parameters":{},"extra":true}]}`} {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/analysis/market", bytes.NewBufferString(body))
+		req.Header.Set("Authorization", "tma "+analysisInitData)
+		res := httptest.NewRecorder()
+		newAnalysisHTTPHandler(httpStore{}).ServeHTTP(res, req)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("body=%s status=%d", body, res.Code)
+		}
+	}
+}
+func TestAnalysisEndpointsRequireAuthentication(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/analysis/market", bytes.NewBufferString(analysisBody))
+	res := httptest.NewRecorder()
+	newAnalysisHTTPHandler(httpStore{}).ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatal(res.Code)
 	}
 }
 
-func TestAnalysisErrorsUseCanonicalEnvelope(t *testing.T) {
-	t.Parallel()
-
-	start := time.Date(2026, time.July, 5, 0, 0, 0, 0, time.UTC)
-	tests := []struct {
-		name       string
-		store      httpAnalysisStore
-		target     string
-		wantStatus int
-		wantCode   string
-		wantDetail string
+func TestAnalysisPublicEndpointsReturnCanonicalErrors(t *testing.T) {
+	for _, test := range []struct {
+		name    string
+		store   httpStore
+		path    string
+		body    string
+		status  int
+		code    string
+		details map[string]any
 	}{
 		{
-			name: "unknown symbol", store: httpAnalysisStore{synchronized: true},
-			target: "/api/v1/analysis/percentile/UNKNOWN?unit=days&period=1&percentile=50", wantStatus: 404, wantCode: "symbol_not_found",
+			name:   "unknown symbol",
+			store:  httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}},
+			path:   "/api/v1/analysis/instruments/UNKNOWNUSDT",
+			body:   analysisBody,
+			status: http.StatusNotFound,
+			code:   "symbol_not_found",
 		},
 		{
-			name: "insufficient history",
-			store: httpAnalysisStore{synchronized: true, instruments: []market.Instrument{{ID: 4, Symbol: "NEWUSDT", Active: true}}, candles: map[int64][]market.Candle{
-				4: {{OpenTime: start, Open: 100, High: 101, Low: 100}},
-			}},
-			target: "/api/v1/analysis/percentile/NEWUSDT?unit=days&period=2&percentile=50", wantStatus: 409, wantCode: "insufficient_data", wantDetail: `"required":2`,
+			name:    "insufficient history",
+			store:   httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {httpCandle(time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC), 2)}}},
+			path:    "/api/v1/analysis/instruments/BTCUSDT",
+			body:    analysisBody,
+			status:  http.StatusConflict,
+			code:    "insufficient_data",
+			details: map[string]any{"symbol": "BTCUSDT", "criterion": "percentile", "required": float64(2), "available": float64(1)},
 		},
 		{
-			name: "no synchronized dataset", store: httpAnalysisStore{},
-			target: "/api/v1/analysis/percentile?unit=days&period=1&percentile=50&minimum_range_percent=0", wantStatus: 503, wantCode: "market_data_unavailable",
+			name:   "market data unavailable",
+			store:  httpStore{syncState: &market.SyncState{}},
+			path:   "/api/v1/analysis/market",
+			body:   analysisBody,
+			status: http.StatusServiceUnavailable,
+			code:   "market_data_unavailable",
 		},
-	}
-	for _, test := range tests {
-		test := test
+		{
+			name:   "invalid criterion parameters",
+			store:  httpStore{},
+			path:   "/api/v1/analysis/market",
+			body:   `{"criteria":[{"name":"percentile","parameters":{"unit":"weeks","period":2,"percentile":50,"minimum_range_percent":0}}]}`,
+			status: http.StatusBadRequest,
+			code:   "invalid_argument",
+		},
+		{
+			name:   "unknown criterion",
+			store:  httpStore{},
+			path:   "/api/v1/analysis/market",
+			body:   `{"criteria":[{"name":"unknown","parameters":{}}]}`,
+			status: http.StatusBadRequest,
+			code:   "invalid_argument",
+		},
+		{
+			name:   "unknown criterion parameter",
+			store:  httpStore{},
+			path:   "/api/v1/analysis/market",
+			body:   `{"criteria":[{"name":"percentile","parameters":{"unit":"days","period":2,"percentile":50,"minimum_range_percent":0,"unknown":true}}]}`,
+			status: http.StatusBadRequest,
+			code:   "invalid_argument",
+		},
+	} {
 		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			request := httptest.NewRequest(http.MethodGet, test.target, nil)
-			request.Header.Set("Authorization", "tma "+analysisInitData)
-			response := httptest.NewRecorder()
-			newAnalysisHTTPHandler(test.store).ServeHTTP(response, request)
-			assertAnalysisError(t, response, test.wantStatus, test.wantCode)
-			if test.wantDetail != "" && !strings.Contains(response.Body.String(), test.wantDetail) {
-				t.Fatalf("error body = %s, want %s", response.Body.String(), test.wantDetail)
+			response := analysisRequestTo(t, newAnalysisHTTPHandler(test.store), test.path, test.body)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d; body = %s", response.Code, test.status, response.Body.String())
+			}
+
+			var envelope struct {
+				Error struct {
+					Code    string         `json:"code"`
+					Message string         `json:"message"`
+					Details map[string]any `json:"details"`
+				} `json:"error"`
+				RequestID string `json:"request_id"`
+			}
+			var raw map[string]json.RawMessage
+			if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+				t.Fatalf("decode error envelope: %v", err)
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &raw); err != nil {
+				t.Fatalf("decode raw error envelope: %v", err)
+			}
+			if len(raw) != 2 || raw["error"] == nil || raw["request_id"] == nil {
+				t.Fatalf("error envelope = %s, want only error and request_id", response.Body.String())
+			}
+			if envelope.Error.Code != test.code || envelope.Error.Message == "" || !reflect.DeepEqual(envelope.Error.Details, test.details) {
+				t.Fatalf("error envelope = %+v, want code %q and details %#v", envelope, test.code, test.details)
+			}
+			if requestID := response.Header().Get("X-Request-ID"); requestID == "" || requestID != envelope.RequestID {
+				t.Fatalf("X-Request-ID = %q, request_id = %q", requestID, envelope.RequestID)
 			}
 		})
 	}
 }
 
-func TestAnalysisRejectsInvalidArgumentsBeforeReadingMarketData(t *testing.T) {
-	t.Parallel()
-
-	targets := []string{
-		"/api/v1/analysis/percentile/BTCUSDT?percentile=50",
-		"/api/v1/analysis/percentile/BTCUSDT?unit=days&period=0&percentile=50",
-		"/api/v1/analysis/percentile/BTCUSDT?unit=days&period=1&percentile=101",
-		"/api/v1/analysis/percentile/BTCUSDT?unit=days&period=one&percentile=50",
-		"/api/v1/analysis/percentile/BTCUSDT?unit=days&unit=hours&period=1&percentile=50",
-		"/api/v1/analysis/percentile?unit=days&period=1&percentile=50&minimum_range_percent=-1",
-		"/api/v1/analysis/percentile?unit=days&period=1&percentile=50&minimum_range_percent=0&extra=true",
-	}
-	for _, target := range targets {
-		target := target
-		t.Run(target, func(t *testing.T) {
-			t.Parallel()
-			request := httptest.NewRequest(http.MethodGet, target, nil)
-			request.Header.Set("Authorization", "tma "+analysisInitData)
-			response := httptest.NewRecorder()
-			newAnalysisHTTPHandler(httpAnalysisStore{synchronized: true}).ServeHTTP(response, request)
-			assertAnalysisError(t, response, http.StatusBadRequest, "invalid_argument")
-		})
-	}
+func analysisRequestTo(t *testing.T, handler http.Handler, path, body string) *httptest.ResponseRecorder {
+	t.Helper()
+	request := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
+	request.Header.Set("Authorization", "tma "+analysisInitData)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
 }
 
-func TestAnalysisEndpointsRequireTelegramAuthentication(t *testing.T) {
-	t.Parallel()
+type evaluationResponse struct {
+	Name        string             `json:"name"`
+	Matched     bool               `json:"matched"`
+	Metrics     map[string]float64 `json:"metrics"`
+	CandleCount int                `json:"candle_count"`
+	From        time.Time          `json:"from"`
+	To          time.Time          `json:"to"`
+}
 
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/analysis/percentile/BTCUSDT?unit=days&period=1&percentile=50", nil)
-	response := httptest.NewRecorder()
-	newAnalysisHTTPHandler(httpAnalysisStore{synchronized: true}).ServeHTTP(response, request)
-	assertAnalysisError(t, response, http.StatusUnauthorized, "unauthenticated")
+type symbolAnalysisResponse struct {
+	Symbol      string               `json:"symbol"`
+	Matched     bool                 `json:"matched"`
+	Evaluations []evaluationResponse `json:"evaluations"`
+}
+
+type marketAnalysisResponse struct {
+	MatchedCount          int `json:"matched_count"`
+	AnalyzedCount         int `json:"analyzed_count"`
+	InsufficientDataCount int `json:"insufficient_data_count"`
+	Items                 []struct {
+		Symbol      string               `json:"symbol"`
+		Matched     bool                 `json:"matched"`
+		Evaluations []evaluationResponse `json:"evaluations"`
+	} `json:"items"`
 }
 
 const fixtureBotToken = "123456789:AAExampleBotTokenForDeterministicTests"
@@ -237,55 +230,31 @@ type enabledUserStore struct{}
 func (enabledUserStore) FindEnabledByTelegramID(context.Context, int64) (auth.User, error) {
 	return auth.User{ID: 1, TelegramID: 424242, Enabled: true}, nil
 }
-
-func newAnalysisHTTPHandler(store httpAnalysisStore) http.Handler {
-	service := analysis.NewService(store, percentile.New())
-	authenticator := authtelegram.NewWithOptions(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{
-		Now: func() time.Time { return time.Date(2026, time.August, 5, 4, 10, 0, 0, time.UTC) },
-	})
+func newAnalysisHTTPHandler(store httpStore) http.Handler {
+	service, _ := analysis.NewService(store, percentile.New())
+	authenticator := authtelegram.NewWithOptions(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
 	return httpapi.New(logging.New(io.Discard, "error"), readinessStub{marketSync: true}, service, authenticator)
 }
 
-func assertAnalysisError(t *testing.T, response *httptest.ResponseRecorder, wantStatus int, wantCode string) {
-	t.Helper()
-	if response.Code != wantStatus {
-		t.Fatalf("status = %d, want %d; body = %s", response.Code, wantStatus, response.Body.String())
-	}
-	var body struct {
-		Error struct {
-			Code string `json:"code"`
-		} `json:"error"`
-		RequestID string `json:"request_id"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
-		t.Fatalf("decode error response: %v", err)
-	}
-	if body.Error.Code != wantCode || body.RequestID == "" || response.Header().Get("X-Request-ID") != body.RequestID {
-		t.Fatalf("error response = %+v headers=%v", body, response.Header())
-	}
+type httpStore struct {
+	instruments []market.Instrument
+	candles     map[int64][]market.Candle
+	syncState   *market.SyncState
 }
 
-type httpAnalysisStore struct {
-	synchronized bool
-	instruments  []market.Instrument
-	candles      map[int64][]market.Candle
-}
-
-func (stub httpAnalysisStore) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
-	state := market.SyncState{}
-	if stub.synchronized {
-		succeededAt := time.Date(2026, time.August, 5, 0, 0, 0, 0, time.UTC)
-		state.LastSucceededAt = &succeededAt
+func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
+	if s.syncState != nil {
+		return *s.syncState, nil
 	}
-	return state, nil
+	now := time.Now()
+	return market.SyncState{LastSucceededAt: &now}, nil
 }
-func (stub httpAnalysisStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
-	return append([]market.Instrument(nil), stub.instruments...), nil
+func (s httpStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
+	return s.instruments, nil
 }
-func (stub httpAnalysisStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, _ string, limit int) ([]market.Candle, error) {
-	items := append([]market.Candle(nil), stub.candles[instrumentID]...)
-	if len(items) > limit {
-		items = items[:limit]
-	}
-	return items, nil
+func (s httpStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, _ string, _ int) ([]market.Candle, error) {
+	return s.candles[instrumentID], nil
+}
+func httpCandle(openTime time.Time, rangePercent float64) market.Candle {
+	return market.Candle{OpenTime: openTime, Open: 100, High: 100 + rangePercent, Low: 100}
 }

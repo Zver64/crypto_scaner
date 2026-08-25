@@ -6,6 +6,7 @@ import {
 	Group,
 	Loader,
 	LoadingOverlay,
+	NumberInput,
 	Paper,
 	SimpleGrid,
 	Stack,
@@ -15,24 +16,26 @@ import {
 import { useForm } from "@mantine/form";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { fetchInstrumentAnalysis } from "../../api/client";
+import { ApiError, fetchInstrumentAnalysis } from "../../api/client";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
 import { getTelegramInitData, useTelegramBackButton } from "../../app/telegram";
 import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
-import {
-	type AnalysisCriteria,
-	type AnalysisDraft,
-	defaultPeriodForUnit,
-	validateAnalysisCriteria,
-} from "../analysis/criteria";
+import { defaultPeriodForUnit } from "../analysis/criteria";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
+import {
+	type MarketScanCriteria,
+	type MarketScanDraft,
+	percentileCriterionSelection,
+	percentileEvaluation,
+	validateMarketScanCriteria,
+} from "../market-scan/criteria";
 import { formatRangePercent } from "../market-scan/results";
 import { formatUtcCoverageDate } from "./presentation";
 
 interface InstrumentAnalysisPageProps {
-	committedCriteria: AnalysisCriteria;
+	committedCriteria: MarketScanCriteria;
 	onBack(): void;
-	onCommit(criteria: AnalysisCriteria): Promise<void>;
+	onCommit(criteria: MarketScanCriteria): Promise<void>;
 	symbol: string;
 }
 
@@ -44,23 +47,31 @@ export function InstrumentAnalysisPage({
 }: InstrumentAnalysisPageProps) {
 	const permission = useBusinessRequestPermission();
 	const hasNativeBackButton = useTelegramBackButton(onBack);
-	const form = useForm<AnalysisDraft>({
+	const form = useForm<MarketScanDraft>({
 		initialValues: committedCriteria,
 		mode: "controlled",
-		validate: validateAnalysisCriteria,
+		validate: validateMarketScanCriteria,
 		validateInputOnChange: true,
 	});
 	const setFormValues = form.setValues;
 	const committedPeriod = committedCriteria.period;
 	const committedUnit = committedCriteria.unit;
 	const committedPercentile = committedCriteria.percentile;
+	const committedMinimumRangePercent = committedCriteria.minimumRangePercent;
 	const query = useQuery({
 		enabled: permission.allowed,
 		placeholderData: keepPreviousData,
-		queryFn: () =>
-			fetchInstrumentAnalysis(symbol, committedCriteria, {
-				initData: getTelegramInitData(),
-			}),
+		queryFn: async () => {
+			const result = await fetchInstrumentAnalysis(
+				symbol,
+				[percentileCriterionSelection(committedCriteria)],
+				{ initData: getTelegramInitData() },
+			);
+			if (!percentileEvaluation(result.evaluations)) {
+				throw new ApiError("unexpected_error");
+			}
+			return result;
+		},
 		queryKey: instrumentAnalysisQueryKey(symbol, committedCriteria),
 		retry: false,
 		staleTime: Number.POSITIVE_INFINITY,
@@ -68,18 +79,26 @@ export function InstrumentAnalysisPage({
 
 	useEffect(() => {
 		setFormValues({
+			minimumRangePercent: committedMinimumRangePercent,
 			percentile: committedPercentile,
 			period: committedPeriod,
 			unit: committedUnit,
 		});
-	}, [committedPeriod, committedPercentile, committedUnit, setFormValues]);
+	}, [
+		committedMinimumRangePercent,
+		committedPeriod,
+		committedPercentile,
+		committedUnit,
+		setFormValues,
+	]);
 
 	useAnalysisErrorNotification(query.error, "Instrument Analysis failed");
 
 	const handleSubmit = form.onSubmit(async (values) => {
 		if (
 			typeof values.period !== "number" ||
-			typeof values.percentile !== "number"
+			typeof values.percentile !== "number" ||
+			typeof values.minimumRangePercent !== "number"
 		) {
 			return;
 		}
@@ -87,13 +106,15 @@ export function InstrumentAnalysisPage({
 		if (
 			values.period === committedCriteria.period &&
 			values.unit === committedCriteria.unit &&
-			values.percentile === committedCriteria.percentile
+			values.percentile === committedCriteria.percentile &&
+			values.minimumRangePercent === committedCriteria.minimumRangePercent
 		) {
 			await query.refetch();
 			return;
 		}
 
 		await onCommit({
+			minimumRangePercent: values.minimumRangePercent,
 			percentile: values.percentile,
 			period: values.period,
 			unit: values.unit,
@@ -101,6 +122,8 @@ export function InstrumentAnalysisPage({
 	});
 	const submissionDisabled =
 		!form.isValid() || !permission.allowed || query.isFetching;
+	const result = query.data;
+	const evaluation = result && percentileEvaluation(result.evaluations);
 
 	return (
 		<Container maw={720} px={0} size="sm">
@@ -132,6 +155,15 @@ export function InstrumentAnalysisPage({
 								form.setValues({ unit, period: defaultPeriodForUnit(unit) });
 							}}
 						/>
+						<NumberInput
+							decimalScale={10}
+							key={form.key("minimumRangePercent")}
+							label="Minimum Range"
+							min={0}
+							step={0.1}
+							suffix="%"
+							{...form.getInputProps("minimumRangePercent")}
+						/>
 						<Button
 							disabled={submissionDisabled}
 							loading={query.isFetching}
@@ -148,7 +180,7 @@ export function InstrumentAnalysisPage({
 					</Center>
 				) : null}
 
-				{query.data ? (
+				{result && evaluation ? (
 					<Box pos="relative">
 						<LoadingOverlay
 							loaderProps={{ "aria-label": "Refreshing Instrument Analysis" }}
@@ -162,24 +194,30 @@ export function InstrumentAnalysisPage({
 									<Text c="dimmed" size="sm">
 										Symbol
 									</Text>
-									<Text fw={700}>{query.data.symbol}</Text>
+									<Text fw={700}>{result.symbol}</Text>
+								</Group>
+								<Group justify="space-between">
+									<Text c="dimmed" size="sm">
+										Matched
+									</Text>
+									<Text fw={700}>{result.matched ? "Yes" : "No"}</Text>
 								</Group>
 								<SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
 									<ResultValue
-										label={`${query.data.unit === "days" ? "Daily" : "Hourly"} Range`}
-										value={formatRangePercent(query.data.range_percent)}
+										label="Range"
+										value={formatRangePercent(evaluation.rangePercent)}
 									/>
 									<ResultValue
 										label="Candle Count"
-										value={String(query.data.candle_count)}
+										value={String(evaluation.candleCount)}
 									/>
 									<ResultValue
 										label="Coverage From"
-										value={formatUtcCoverageDate(query.data.from)}
+										value={formatUtcCoverageDate(evaluation.from)}
 									/>
 									<ResultValue
 										label="Coverage To"
-										value={formatUtcCoverageDate(query.data.to)}
+										value={formatUtcCoverageDate(evaluation.to)}
 									/>
 								</SimpleGrid>
 							</Stack>
@@ -193,7 +231,7 @@ export function InstrumentAnalysisPage({
 
 function instrumentAnalysisQueryKey(
 	symbol: string,
-	criteria: AnalysisCriteria,
+	criteria: MarketScanCriteria,
 ) {
 	return [
 		"instrument-analysis",
@@ -201,6 +239,7 @@ function instrumentAnalysisQueryKey(
 		criteria.period,
 		criteria.unit,
 		criteria.percentile,
+		criteria.minimumRangePercent,
 	] as const;
 }
 

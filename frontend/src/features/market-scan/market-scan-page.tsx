@@ -29,6 +29,8 @@ import {
 	type MarketScanCriteria,
 	type MarketScanDraft,
 	marketScanCriteriaConstraints,
+	percentileCriterionSelection,
+	percentileEvaluation,
 	validateMarketScanCriteria,
 } from "./criteria";
 import {
@@ -69,9 +71,18 @@ export function MarketScanPage({
 			if (!committedCriteria) {
 				throw new ApiError("unexpected_error");
 			}
-			return fetchMarketScan(committedCriteria, {
-				initData: getTelegramInitData(),
-			});
+			const result = await fetchMarketScan(
+				[percentileCriterionSelection(committedCriteria)],
+				{
+					initData: getTelegramInitData(),
+				},
+			);
+			if (
+				result.items.some((item) => !percentileEvaluation(item.evaluations))
+			) {
+				throw new ApiError("unexpected_error");
+			}
+			return result;
 		},
 		queryKey: committedCriteria
 			? marketScanQueryKey(committedCriteria)
@@ -98,7 +109,10 @@ export function MarketScanPage({
 	const submissionDisabled =
 		!form.isValid() || !permission.allowed || query.isFetching;
 	const filteredItems = query.data
-		? filterMarketScanItems(query.data.items, symbolFilter)
+		? filterMarketScanItems(query.data.items, symbolFilter).flatMap((item) => {
+				const evaluation = percentileEvaluation(item.evaluations);
+				return evaluation ? [{ evaluation, item }] : [];
+			})
 		: [];
 
 	return (
@@ -215,7 +229,7 @@ export function MarketScanPage({
 												</Table.Tr>
 											</Table.Thead>
 											<Table.Tbody>
-												{filteredItems.map((item) => (
+												{filteredItems.map(({ evaluation, item }) => (
 													<Table.Tr
 														key={item.symbol}
 														onClick={() =>
@@ -238,9 +252,9 @@ export function MarketScanPage({
 													>
 														<Table.Td>{item.symbol}</Table.Td>
 														<Table.Td>
-															{formatRangePercent(item.range_percent)}
+															{formatRangePercent(evaluation.rangePercent)}
 														</Table.Td>
-														<Table.Td>{item.candle_count}</Table.Td>
+														<Table.Td>{evaluation.candleCount}</Table.Td>
 														<Table.Td ta="right">
 															{binanceSpotUrl(item.symbol) ? (
 																<Anchor

@@ -7,9 +7,9 @@ import {
 } from "./results";
 
 const items: MarketScanItem[] = [
-	{ candle_count: 30, range_percent: 9.4381, symbol: "ZZZUSDT" },
-	{ candle_count: 29, range_percent: 1, symbol: "AdaUsdt" },
-	{ candle_count: 28, range_percent: 0.004567, symbol: "AAAUSDT" },
+	{ evaluations: [], matched: true, symbol: "ZZZUSDT" },
+	{ evaluations: [], matched: true, symbol: "AdaUsdt" },
+	{ evaluations: [], matched: true, symbol: "AAAUSDT" },
 ];
 
 describe("formatRangePercent", () => {
@@ -63,8 +63,8 @@ describe("filterMarketScanItems", () => {
 		expect(filtered).toEqual([items[1], items[2]]);
 		expect(filtered[0]).toBe(items[1]);
 		expect(items[2]).toEqual({
-			candle_count: 28,
-			range_percent: 0.004567,
+			evaluations: [],
+			matched: true,
 			symbol: "AAAUSDT",
 		});
 	});

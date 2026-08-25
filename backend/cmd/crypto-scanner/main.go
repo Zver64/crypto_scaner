@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/analysis"
-	"crypto-scanner/internal/analysis/percentile"
+	"crypto-scanner/internal/analysis/criteria/percentile"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/httpapi"
@@ -72,7 +72,13 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	dailySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.MVPProfile())
 	hourlySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.HourlyProfile())
 	scheduler := marketsync.NewSchedulerWithHourly(dailySynchronizer, hourlySynchronizer, logger)
-	analysisService := analysis.NewService(store, percentile.New())
+	criterionFactories := []analysis.Factory{
+		percentile.New(),
+	}
+	analysisService, err := analysis.NewService(store, criterionFactories...)
+	if err != nil {
+		return fmt.Errorf("initialize analysis service: %w", err)
+	}
 	authenticator := authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge)
 
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)

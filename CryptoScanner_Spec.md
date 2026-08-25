@@ -433,21 +433,21 @@ value = 4 + 0.25 * (8 - 4) = 5
 
 ### 8.4 One-symbol analysis
 
-Input: `symbol`, `unit`, `period`, `percentile`.
+Input: `symbol` and one or more selected criteria. Each criterion owns its parameters and candle interval.
 
-Output: percentile range percentage plus the actual candle count and time coverage.
+Output: the overall AND match plus a named evaluation for every selected criterion, including metrics, actual candle count, and UTC coverage.
 
 ### 8.5 Market search
 
-Input: `unit`, `period`, `percentile`, `minimum_range_percent`.
+Input: one or more selected criteria.
 
 For every active Binance Spot/USDT instrument:
 
-1. Load its latest requested candles.
-2. Mark it `insufficient_data` if the requested count is unavailable.
-3. Calculate the requested percentile otherwise.
-4. Include it when the unrounded value is `>= minimum_range_percent`.
-5. Sort included items by value descending, then symbol ascending.
+1. Load each required interval once, using the greatest requested count for that interval.
+2. Mark it `insufficient_data` if any criterion's requested count is unavailable.
+3. Evaluate every selected criterion otherwise.
+4. Include it only when every criterion matches.
+5. Sort by the first criterion's ordering score when supplied, then symbol ascending.
 
 Insufficient symbols do not fail the market-wide request. Their count is returned in response metadata.
 
@@ -483,54 +483,53 @@ The middleware:
 
 The frontend must never send a standalone Telegram ID as proof of identity.
 
-### 9.3 Get one symbol percentile
+### 9.3 Analyze one symbol
 
 ```http
-GET /api/v1/analysis/percentile/BTCUSDT?unit=days&period=30&percentile=75
+POST /api/v1/analysis/instruments/BTCUSDT
 ```
 
-Successful response:
+Request body:
 
 ```json
 {
-  "symbol": "BTCUSDT",
-  "unit": "days",
-  "period": 30,
-  "percentile": 75,
-  "range_percent": 4.1827,
-  "candle_count": 30,
-  "from": "2026-07-05T00:00:00Z",
-  "to": "2026-08-03T00:00:00Z"
+  "criteria": [{"name":"percentile","parameters":{"unit":"days","period":30,"percentile":75,"minimum_range_percent":3}}]
 }
 ```
+
+The response contains `symbol`, `matched`, and `evaluations`; every evaluation contains `name`, `matched`, `metrics`, `candle_count`, `from`, and `to`.
 
 ### 9.4 Find matching symbols
 
 ```http
-GET /api/v1/analysis/percentile?unit=days&period=30&percentile=75&minimum_range_percent=3
+POST /api/v1/analysis/market
+```
+
+Request body:
+
+```json
+{
+  "criteria": [{"name":"percentile","parameters":{"unit":"days","period":30,"percentile":75,"minimum_range_percent":3}}]
+}
 ```
 
 Successful response:
 
 ```json
 {
-  "unit": "days",
-  "period": 30,
-  "percentile": 75,
-  "minimum_range_percent": 3,
   "matched_count": 2,
   "analyzed_count": 412,
   "insufficient_data_count": 7,
   "items": [
     {
       "symbol": "SOMEUSDT",
-      "range_percent": 9.4381,
-      "candle_count": 30
+      "matched": true,
+      "evaluations": [{"name":"percentile","matched":true,"metrics":{"range_percent":9.4381},"candle_count":30,"from":"2026-07-05T00:00:00Z","to":"2026-08-03T00:00:00Z"}]
     },
     {
       "symbol": "OTHERUSDT",
-      "range_percent": 5.1022,
-      "candle_count": 30
+      "matched": true,
+      "evaluations": [{"name":"percentile","matched":true,"metrics":{"range_percent":4.125},"candle_count":30,"from":"2026-07-05T00:00:00Z","to":"2026-08-03T00:00:00Z"}]
     }
   ]
 }

@@ -1,13 +1,14 @@
 import {
-	type AnalysisCriteria,
-	defaultAnalysisCriteria,
-	validateAnalysisCriteria,
-} from "../analysis/criteria";
+	defaultMarketScanCriteria,
+	type MarketScanCriteria,
+	validateMarketScanCriteria,
+} from "../market-scan/criteria";
 
 export interface InstrumentAnalysisSearch {
 	percentile: number;
 	period: number;
 	unit: "days" | "hours";
+	minimum_range_percent: number;
 }
 
 export function parseInstrumentAnalysisSearch(
@@ -16,24 +17,38 @@ export function parseInstrumentAnalysisSearch(
 	const period = search.period;
 	const unit = search.unit;
 	const percentile = search.percentile;
+	const minimumRangePercent = search.minimum_range_percent;
 
 	if (
 		typeof period !== "number" ||
 		typeof percentile !== "number" ||
+		typeof minimumRangePercent !== "number" ||
 		(unit !== "days" && unit !== "hours") ||
-		Object.keys(validateAnalysisCriteria({ percentile, period, unit })).length >
-			0
+		Object.keys(
+			validateMarketScanCriteria({
+				minimumRangePercent,
+				percentile,
+				period,
+				unit,
+			}),
+		).length > 0
 	) {
-		return instrumentAnalysisCriteriaToSearch(defaultAnalysisCriteria);
+		return instrumentAnalysisCriteriaToSearch(defaultMarketScanCriteria);
 	}
 
-	return { percentile, period, unit };
+	return {
+		minimum_range_percent: minimumRangePercent,
+		percentile,
+		period,
+		unit,
+	};
 }
 
 export function instrumentAnalysisCriteriaToSearch(
-	criteria: AnalysisCriteria,
+	criteria: MarketScanCriteria,
 ): InstrumentAnalysisSearch {
 	return {
+		minimum_range_percent: criteria.minimumRangePercent,
 		percentile: criteria.percentile,
 		period: criteria.period,
 		unit: criteria.unit,
@@ -42,8 +57,9 @@ export function instrumentAnalysisCriteriaToSearch(
 
 export function instrumentAnalysisCriteriaFromSearch(
 	search: InstrumentAnalysisSearch,
-): AnalysisCriteria {
+): MarketScanCriteria {
 	return {
+		minimumRangePercent: search.minimum_range_percent,
 		percentile: search.percentile,
 		period: search.period,
 		unit: search.unit,

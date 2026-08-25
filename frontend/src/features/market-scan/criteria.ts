@@ -1,9 +1,12 @@
+import type { CriterionSelection, Evaluation } from "../../api/client";
 import {
 	type AnalysisCriteria,
 	type AnalysisDraft,
 	defaultAnalysisCriteria,
 	validateAnalysisCriteria,
 } from "../analysis/criteria";
+
+export const percentileCriterionName = "percentile";
 
 export interface MarketScanCriteria extends AnalysisCriteria {
 	minimumRangePercent: number;
@@ -46,4 +49,46 @@ export function validateMarketScanCriteria(
 	}
 
 	return errors;
+}
+
+export function percentileCriterionSelection(
+	criteria: MarketScanCriteria,
+): CriterionSelection {
+	return {
+		name: percentileCriterionName,
+		parameters: {
+			minimum_range_percent: criteria.minimumRangePercent,
+			percentile: criteria.percentile,
+			period: criteria.period,
+			unit: criteria.unit,
+		},
+	};
+}
+
+export interface PercentileEvaluation {
+	candleCount: number;
+	from: string;
+	matched: boolean;
+	rangePercent: number;
+	to: string;
+}
+
+export function percentileEvaluation(
+	evaluations: readonly Evaluation[],
+): PercentileEvaluation | undefined {
+	const evaluation = evaluations.find(
+		({ name }) => name === percentileCriterionName,
+	);
+	const rangePercent = evaluation?.metrics.range_percent;
+	if (!evaluation || typeof rangePercent !== "number") {
+		return undefined;
+	}
+
+	return {
+		candleCount: evaluation.candle_count,
+		from: evaluation.from,
+		matched: evaluation.matched,
+		rangePercent,
+		to: evaluation.to,
+	};
 }

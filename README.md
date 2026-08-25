@@ -12,6 +12,13 @@ Compose starts the development stack in watch mode, applies PostgreSQL migration
 automatically, and creates or re-enables the administrator identified by
 `ADMIN_TELEGRAM_ID`.
 
+`make prepare` installs backend and frontend dependencies and the Git hooks.
+Run the full verification suite with:
+
+```sh
+make check
+```
+
 ## Migrations
 
 ```sh

@@ -1,0 +1,46 @@
+glob_matcher: doublestar
+
+pre-commit:
+  parallel: true
+  jobs:
+    - name: backend
+      root: "backend/"
+      glob: "backend/**/*.go"
+      group:
+        piped: true
+        jobs:
+          - name: gofmt
+            run: gofmt -w {staged_files}
+            stage_fixed: true
+          - name: go vet
+            run: go vet ./...
+
+    - name: frontend
+      root: "frontend/"
+      glob: "frontend/**/*"
+      group:
+        piped: true
+        jobs:
+          - name: biome
+            run: npm exec -- biome check --write --files-ignore-unknown=true --no-errors-on-unmatched {staged_files}
+            stage_fixed: true
+          - name: typecheck
+            run: npm run typecheck
+
+pre-push:
+  parallel: true
+  jobs:
+    - name: backend tests
+      glob: "backend/**/*"
+      run: go -C backend test ./...
+
+    - name: frontend
+      root: "frontend/"
+      glob: "**/*"
+      group:
+        piped: true
+        jobs:
+          - name: quality
+            run: npm run quality
+          - name: tests
+            run: npm run test

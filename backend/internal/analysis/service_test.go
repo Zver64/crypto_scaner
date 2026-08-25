@@ -27,7 +27,7 @@ func TestServiceSearchCombinesCriteriaAndOrdersMatches(t *testing.T) {
 	store := &storeStub{
 		instruments: []market.Instrument{
 			{ID: 1, Symbol: "ZZZUSDT"}, {ID: 2, Symbol: "AAAUSDT"}, {ID: 3, Symbol: "LOWUSDT"},
-			{ID: 4, Symbol: "FAILUSDT"}, {ID: 5, Symbol: "NEWUSDT"},
+			{ID: 4, Symbol: "FAILUSDT"}, {ID: 5, Symbol: "NEWUSDT"}, {ID: 6, Symbol: "EMPTYUSDT"},
 		},
 		candlesByInstrument: map[int64]map[string][]market.Candle{
 			1: {"1d": {testCandle(5), testCandle(5)}, "1h": {testCandle(6)}},
@@ -35,6 +35,7 @@ func TestServiceSearchCombinesCriteriaAndOrdersMatches(t *testing.T) {
 			3: {"1d": {testCandle(2), testCandle(2)}, "1h": {testCandle(6)}},
 			4: {"1d": {testCandle(6), testCandle(6)}, "1h": {testCandle(2)}},
 			5: {"1d": {testCandle(5)}, "1h": {testCandle(6)}},
+			6: {"1d": {}, "1h": {testCandle(6)}},
 		},
 	}
 	service, err := analysis.NewService(store, percentile.New(), hourlyMatchFactory{})
@@ -48,16 +49,19 @@ func TestServiceSearchCombinesCriteriaAndOrdersMatches(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
-	if result.MatchedCount != 2 || result.AnalyzedCount != 4 || result.InsufficientDataCount != 1 {
+	if result.MatchedCount != 3 || result.AnalyzedCount != 5 || result.InsufficientDataCount != 1 {
 		t.Fatalf("Search() counts = %+v", result)
 	}
-	if len(result.Items) != 2 || result.Items[0].Symbol != "AAAUSDT" || result.Items[1].Symbol != "ZZZUSDT" {
+	if len(result.Items) != 3 || result.Items[0].Symbol != "AAAUSDT" || result.Items[1].Symbol != "NEWUSDT" || result.Items[2].Symbol != "ZZZUSDT" {
 		t.Fatalf("Search() items = %+v", result.Items)
 	}
 	for _, item := range result.Items {
 		if !item.Matched || len(item.Evaluations) != 2 || !item.Evaluations[0].Matched || !item.Evaluations[1].Matched {
 			t.Fatalf("Search() item = %+v", item)
 		}
+	}
+	if result.Items[1].Evaluations[0].CandleCount != 1 {
+		t.Fatalf("NEWUSDT evaluation = %+v", result.Items[1].Evaluations[0])
 	}
 }
 func TestServiceRejectsInvalidSelectionBeforeReads(t *testing.T) {

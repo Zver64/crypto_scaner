@@ -25,7 +25,7 @@ const analysisBody = `{"criteria":[{"name":"percentile","parameters":{"unit":"da
 
 func TestAuthenticatedUserCanAnalyzeOneInstrument(t *testing.T) {
 	start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
-	store := httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {httpCandle(start, 2), httpCandle(start.AddDate(0, 0, 1), 6)}}}
+	store := httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {httpCandle(start, 2)}}}
 	response := analysisRequestTo(t, newAnalysisHTTPHandler(store), "/api/v1/analysis/instruments/BTCUSDT", analysisBody)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
@@ -38,7 +38,7 @@ func TestAuthenticatedUserCanAnalyzeOneInstrument(t *testing.T) {
 		t.Fatalf("response = %+v", body)
 	}
 	evaluation := body.Evaluations[0]
-	if evaluation.Name != "percentile" || !evaluation.Matched || evaluation.CandleCount != 2 || evaluation.Metrics["range_percent"] != 4 || !evaluation.From.Equal(start) || !evaluation.To.Equal(start.AddDate(0, 0, 1)) {
+	if evaluation.Name != "percentile" || !evaluation.Matched || evaluation.CandleCount != 1 || evaluation.Metrics["range_percent"] != 2 || !evaluation.From.Equal(start) || !evaluation.To.Equal(start) {
 		t.Fatalf("evaluation = %+v", evaluation)
 	}
 }
@@ -51,7 +51,7 @@ func TestAuthenticatedUserCanSearchMarket(t *testing.T) {
 			1: {httpCandle(start, 9.43814)}, 2: {httpCandle(start, 4)}, 3: {},
 		},
 	}
-	bodyRequest := `{"criteria":[{"name":"percentile","parameters":{"unit":"days","period":1,"percentile":75,"minimum_range_percent":4}}]}`
+	bodyRequest := `{"criteria":[{"name":"percentile","parameters":{"unit":"days","period":2,"percentile":75,"minimum_range_percent":4}}]}`
 	response := analysisRequestTo(t, newAnalysisHTTPHandler(store), "/api/v1/analysis/market", bodyRequest)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
@@ -114,12 +114,12 @@ func TestAnalysisPublicEndpointsReturnCanonicalErrors(t *testing.T) {
 		},
 		{
 			name:    "insufficient history",
-			store:   httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {httpCandle(time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC), 2)}}},
+			store:   httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {}}},
 			path:    "/api/v1/analysis/instruments/BTCUSDT",
 			body:    analysisBody,
 			status:  http.StatusConflict,
 			code:    "insufficient_data",
-			details: map[string]any{"symbol": "BTCUSDT", "criterion": "percentile", "required": float64(2), "available": float64(1)},
+			details: map[string]any{"symbol": "BTCUSDT", "criterion": "percentile", "required": float64(2), "available": float64(0)},
 		},
 		{
 			name:   "market data unavailable",

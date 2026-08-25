@@ -45,12 +45,12 @@ func (c criterion) Requirements() []analysis.CandleRequirement {
 
 func (c criterion) Evaluate(_ context.Context, data map[analysis.Unit][]market.Candle) (analysis.Evaluation, error) {
 	candles := data[c.unit]
-	if len(candles) < c.period {
+	if len(candles) == 0 {
 		return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Criterion: c.Name(), Required: c.period, Available: len(candles)}
 	}
 	candles = append([]market.Candle(nil), candles...)
 	sort.Slice(candles, func(i, j int) bool { return candles[i].OpenTime.After(candles[j].OpenTime) })
-	candles = candles[:c.period]
+	candles = candles[:min(c.period, len(candles))]
 	ranges := make([]float64, len(candles))
 	for i, candle := range candles {
 		if !(candle.Open > 0) {

@@ -1,4 +1,4 @@
-import type { InstrumentAnalysisCriteria } from "../features/instrument-analysis/criteria";
+import type { AnalysisCriteria } from "../features/analysis/criteria";
 import type { MarketScanCriteria } from "../features/market-scan/criteria";
 
 export interface InstrumentAnalysisResult {
@@ -93,7 +93,7 @@ export async function fetchMarketScan(
 
 export async function fetchInstrumentAnalysis(
 	symbol: string,
-	criteria: InstrumentAnalysisCriteria,
+	criteria: AnalysisCriteria,
 	options: FetchAnalysisOptions = {},
 ): Promise<InstrumentAnalysisResult> {
 	const parameters = new URLSearchParams({

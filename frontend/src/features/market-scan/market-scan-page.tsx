@@ -22,10 +22,10 @@ import { ApiError, fetchMarketScan } from "../../api/client";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
 import { getTelegramInitData } from "../../app/telegram";
 import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
+import { defaultPeriodForUnit } from "../analysis/criteria";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
 import {
 	defaultMarketScanCriteria,
-	defaultPeriodForUnit,
 	type MarketScanCriteria,
 	type MarketScanDraft,
 	marketScanCriteriaConstraints,

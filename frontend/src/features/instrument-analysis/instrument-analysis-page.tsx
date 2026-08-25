@@ -19,20 +19,20 @@ import { fetchInstrumentAnalysis } from "../../api/client";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
 import { getTelegramInitData, useTelegramBackButton } from "../../app/telegram";
 import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
-import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
-import { defaultPeriodForUnit } from "../market-scan/criteria";
-import { formatRangePercent } from "../market-scan/results";
 import {
-	type InstrumentAnalysisCriteria,
-	type InstrumentAnalysisDraft,
-	validateInstrumentAnalysisCriteria,
-} from "./criteria";
+	type AnalysisCriteria,
+	type AnalysisDraft,
+	defaultPeriodForUnit,
+	validateAnalysisCriteria,
+} from "../analysis/criteria";
+import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
+import { formatRangePercent } from "../market-scan/results";
 import { formatUtcCoverageDate } from "./presentation";
 
 interface InstrumentAnalysisPageProps {
-	committedCriteria: InstrumentAnalysisCriteria;
+	committedCriteria: AnalysisCriteria;
 	onBack(): void;
-	onCommit(criteria: InstrumentAnalysisCriteria): Promise<void>;
+	onCommit(criteria: AnalysisCriteria): Promise<void>;
 	symbol: string;
 }
 
@@ -44,10 +44,10 @@ export function InstrumentAnalysisPage({
 }: InstrumentAnalysisPageProps) {
 	const permission = useBusinessRequestPermission();
 	const hasNativeBackButton = useTelegramBackButton(onBack);
-	const form = useForm<InstrumentAnalysisDraft>({
+	const form = useForm<AnalysisDraft>({
 		initialValues: committedCriteria,
 		mode: "controlled",
-		validate: validateInstrumentAnalysisCriteria,
+		validate: validateAnalysisCriteria,
 		validateInputOnChange: true,
 	});
 	const setFormValues = form.setValues;
@@ -193,7 +193,7 @@ export function InstrumentAnalysisPage({
 
 function instrumentAnalysisQueryKey(
 	symbol: string,
-	criteria: InstrumentAnalysisCriteria,
+	criteria: AnalysisCriteria,
 ) {
 	return [
 		"instrument-analysis",

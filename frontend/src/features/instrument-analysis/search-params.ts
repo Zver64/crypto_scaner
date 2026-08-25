@@ -1,8 +1,8 @@
 import {
-	defaultInstrumentAnalysisCriteria,
-	type InstrumentAnalysisCriteria,
-	validateInstrumentAnalysisCriteria,
-} from "./criteria";
+	type AnalysisCriteria,
+	defaultAnalysisCriteria,
+	validateAnalysisCriteria,
+} from "../analysis/criteria";
 
 export interface InstrumentAnalysisSearch {
 	percentile: number;
@@ -21,20 +21,17 @@ export function parseInstrumentAnalysisSearch(
 		typeof period !== "number" ||
 		typeof percentile !== "number" ||
 		(unit !== "days" && unit !== "hours") ||
-		Object.keys(
-			validateInstrumentAnalysisCriteria({ percentile, period, unit }),
-		).length > 0
+		Object.keys(validateAnalysisCriteria({ percentile, period, unit })).length >
+			0
 	) {
-		return instrumentAnalysisCriteriaToSearch(
-			defaultInstrumentAnalysisCriteria,
-		);
+		return instrumentAnalysisCriteriaToSearch(defaultAnalysisCriteria);
 	}
 
 	return { percentile, period, unit };
 }
 
 export function instrumentAnalysisCriteriaToSearch(
-	criteria: InstrumentAnalysisCriteria,
+	criteria: AnalysisCriteria,
 ): InstrumentAnalysisSearch {
 	return {
 		percentile: criteria.percentile,
@@ -45,7 +42,7 @@ export function instrumentAnalysisCriteriaToSearch(
 
 export function instrumentAnalysisCriteriaFromSearch(
 	search: InstrumentAnalysisSearch,
-): InstrumentAnalysisCriteria {
+): AnalysisCriteria {
 	return {
 		percentile: search.percentile,
 		period: search.period,

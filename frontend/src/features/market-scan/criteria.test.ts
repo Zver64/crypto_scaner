@@ -5,38 +5,32 @@ import {
 } from "./criteria";
 
 describe("validateMarketScanCriteria", () => {
-	it("accepts the defaults and supported boundary values", () => {
+	it("accepts the default minimum range and zero", () => {
 		expect(validateMarketScanCriteria(defaultMarketScanCriteria)).toEqual({});
 		expect(
 			validateMarketScanCriteria({
 				minimumRangePercent: 0,
-				percentile: 0,
-				period: 1,
+				percentile: 80,
+				period: 30,
 				unit: "days",
-			}),
-		).toEqual({});
-		expect(
-			validateMarketScanCriteria({
-				minimumRangePercent: 0.1,
-				percentile: 100,
-				period: 87600,
-				unit: "hours",
 			}),
 		).toEqual({});
 	});
 
-	it("rejects fractional or out-of-range integer fields", () => {
+	it("rejects a negative minimum range", () => {
 		expect(
 			validateMarketScanCriteria({
-				minimumRangePercent: 3,
-				percentile: 80.5,
-				period: 30.5,
+				minimumRangePercent: -0.1,
+				percentile: 80,
+				period: 30,
 				unit: "days",
 			}),
 		).toEqual({
-			percentile: "Range percentile must be a whole number",
-			period: "Analysis period must be a whole number",
+			minimumRangePercent: "Minimum range must be zero or greater",
 		});
+	});
+
+	it("combines shared analysis and scan-specific validation errors", () => {
 		expect(
 			validateMarketScanCriteria({
 				minimumRangePercent: -0.1,
@@ -51,18 +45,16 @@ describe("validateMarketScanCriteria", () => {
 		});
 	});
 
-	it("rejects empty and non-numeric draft values", () => {
+	it("requires a numeric minimum range", () => {
 		expect(
 			validateMarketScanCriteria({
 				minimumRangePercent: "",
-				percentile: "",
-				period: "",
+				percentile: 80,
+				period: 30,
 				unit: "days",
 			}),
 		).toEqual({
 			minimumRangePercent: "Minimum range is required",
-			percentile: "Range percentile is required",
-			period: "Analysis period is required",
 		});
 	});
 });

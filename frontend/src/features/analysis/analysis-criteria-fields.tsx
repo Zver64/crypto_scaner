@@ -5,9 +5,9 @@ import {
 } from "@mantine/core";
 import {
 	type AnalysisUnit,
-	marketScanCriteriaConstraints,
+	analysisCriteriaConstraints,
 	maximumPeriodForUnit,
-} from "../market-scan/criteria";
+} from "./criteria";
 
 interface AnalysisCriteriaFieldsProps {
 	percentileInputProps: NumberInputProps;
@@ -33,7 +33,7 @@ export function AnalysisCriteriaFields({
 				key={periodKey}
 				label={`Analysis Period (${unit})`}
 				max={maximumPeriodForUnit(unit)}
-				min={marketScanCriteriaConstraints.period.minimum}
+				min={analysisCriteriaConstraints.period.minimum}
 				suffix={` ${unit}`}
 				{...periodInputProps}
 			/>
@@ -49,8 +49,8 @@ export function AnalysisCriteriaFields({
 				allowDecimal={false}
 				key={percentileKey}
 				label="Range Percentile"
-				max={marketScanCriteriaConstraints.percentile.maximum}
-				min={marketScanCriteriaConstraints.percentile.minimum}
+				max={analysisCriteriaConstraints.percentile.maximum}
+				min={analysisCriteriaConstraints.percentile.minimum}
 				{...percentileInputProps}
 			/>
 		</>

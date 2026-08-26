@@ -16,10 +16,8 @@ If these files do not exist, proceed silently. Domain-modeling workflows create 
 ```text
 /
 ├── CONTEXT.md
-├── docs/
-│   └── adr/
-└── backend/
-    └── internal/
+└── docs/
+    └── adr/
 ```
 
 ## Vocabulary

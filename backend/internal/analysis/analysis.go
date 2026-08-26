@@ -60,8 +60,14 @@ type Factory interface {
 type Criterion interface {
 	Name() string
 	Requirements() []CandleRequirement
-	Evaluate(context.Context, map[Unit][]market.Candle) (Evaluation, error)
+	Prepare(context.Context, []market.Instrument) ([]Warning, error)
+	Evaluate(context.Context, Input) (Evaluation, error)
 }
+type Input struct {
+	Instrument market.Instrument
+	Candles    map[Unit][]market.Candle
+}
+type Warning struct{ Code, Message string }
 
 // Evaluation is an unrounded criterion result.
 type Evaluation struct {

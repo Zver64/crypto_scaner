@@ -30,6 +30,8 @@ describe("fetchMarketScan", () => {
 				{ evaluations: [evaluation], matched: true, symbol: "AAAUSDT" },
 			],
 			matched_count: 2,
+			unresolved: [],
+			warnings: [],
 		};
 		const request = vi.fn(
 			async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -69,6 +71,8 @@ describe("fetchMarketScan", () => {
 						insufficient_data_count: 0,
 						items: [],
 						matched_count: 0,
+						unresolved: [],
+						warnings: [],
 					}),
 					{ status: 200 },
 				),
@@ -161,6 +165,8 @@ describe("fetchMarketScan", () => {
 							},
 						],
 						matched_count: 1,
+						unresolved: [],
+						warnings: [],
 					}),
 					{ status: 200 },
 				),
@@ -189,6 +195,8 @@ describe("fetchMarketScan", () => {
 							},
 						],
 						matched_count: 1,
+						unresolved: [],
+						warnings: [],
 					}),
 					{ status: 200 },
 				),
@@ -206,6 +214,12 @@ describe("fetchInstrumentAnalysis", () => {
 			evaluations: [evaluation],
 			matched: true,
 			symbol: "币安/USDT",
+			warnings: [
+				{
+					code: "market_cap_provider_unavailable",
+					message: "Cached values were used",
+				},
+			],
 		};
 		const request = vi.fn(
 			async (_input: RequestInfo | URL, _init?: RequestInit) =>
@@ -254,4 +268,85 @@ describe("fetchInstrumentAnalysis", () => {
 			}),
 		);
 	});
+
+	it("maps dynamic Market Cap resolution errors to an available message", async () => {
+		const request = vi.fn(
+			async () =>
+				new Response(JSON.stringify({ error: { code: "mapping_not_found" } }), {
+					status: 422,
+				}),
+		);
+
+		await expect(
+			fetchInstrumentAnalysis("BTCUSDT", [criteria], { request }),
+		).rejects.toEqual(
+			expect.objectContaining({
+				code: "market_cap_unavailable",
+				message:
+					"Market capitalization is unavailable for this instrument or is still loading. Try again shortly.",
+			}),
+		);
+	});
+});
+
+it("parses Market Cap warnings and unresolved instruments", async () => {
+	const request = vi.fn(
+		async () =>
+			new Response(
+				JSON.stringify({
+					analyzed_count: 1,
+					insufficient_data_count: 0,
+					items: [],
+					matched_count: 0,
+					unresolved: [
+						{
+							code: "mapping_not_found",
+							message: "Market capitalization could not be resolved",
+							symbol: "UNKNOWNUSDT",
+						},
+					],
+					warnings: [
+						{
+							code: "market_cap_provider_unavailable",
+							message: "Cached values were used",
+						},
+					],
+				}),
+				{ status: 200 },
+			),
+	);
+
+	await expect(fetchMarketScan([criteria], { request })).resolves.toMatchObject(
+		{
+			unresolved: [{ code: "mapping_not_found", symbol: "UNKNOWNUSDT" }],
+			warnings: [{ code: "market_cap_provider_unavailable" }],
+		},
+	);
+});
+
+it("rejects unknown unresolved instrument codes", async () => {
+	const request = vi.fn(
+		async () =>
+			new Response(
+				JSON.stringify({
+					analyzed_count: 0,
+					insufficient_data_count: 0,
+					items: [],
+					matched_count: 0,
+					unresolved: [
+						{
+							code: "unknown",
+							message: "Unavailable",
+							symbol: "UNKNOWNUSDT",
+						},
+					],
+					warnings: [],
+				}),
+				{ status: 200 },
+			),
+	);
+
+	await expect(fetchMarketScan([criteria], { request })).rejects.toEqual(
+		expect.objectContaining({ code: "unexpected_error" }),
+	);
 });

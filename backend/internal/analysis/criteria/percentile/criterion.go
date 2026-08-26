@@ -42,9 +42,12 @@ func (criterion) Name() string { return "percentile" }
 func (c criterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: c.unit, Count: c.period}}
 }
+func (criterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
+	return nil, nil
+}
 
-func (c criterion) Evaluate(_ context.Context, data map[analysis.Unit][]market.Candle) (analysis.Evaluation, error) {
-	candles := data[c.unit]
+func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
+	candles := input.Candles[c.unit]
 	if len(candles) == 0 {
 		return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Criterion: c.Name(), Required: c.period, Available: len(candles)}
 	}

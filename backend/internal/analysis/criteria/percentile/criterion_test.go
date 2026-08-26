@@ -19,7 +19,7 @@ func TestPercentileEvaluatesTypeSevenRangeAndThreshold(t *testing.T) {
 	}
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	data := []market.Candle{candle(start, 1), candle(start.AddDate(0, 0, 1), 2), candle(start.AddDate(0, 0, 2), 4), candle(start.AddDate(0, 0, 3), 8)}
-	result, err := c.Evaluate(context.Background(), map[analysis.Unit][]market.Candle{analysis.UnitDays: data})
+	result, err := c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: data}})
 	if err != nil || result.Metrics["range_percent"] != 5 || !result.Matched {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -30,7 +30,7 @@ func TestPercentileUsesAvailableHistoryAndReportsIt(t *testing.T) {
 		t.Fatal(err)
 	}
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	result, err := c.Evaluate(context.Background(), map[analysis.Unit][]market.Candle{analysis.UnitDays: {candle(start, 1.23456)}})
+	result, err := c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: {candle(start, 1.23456)}}})
 	if err != nil || math.Abs(result.Metrics["range_percent"]-1.23456) > 1e-12 || result.CandleCount != 1 || !result.From.Equal(start) || !result.To.Equal(start) {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
@@ -41,7 +41,7 @@ func TestPercentileRejectsZeroHistory(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = c.Evaluate(context.Background(), map[analysis.Unit][]market.Candle{analysis.UnitDays: {}})
+	_, err = c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: {}}})
 	var insufficient *analysis.InsufficientHistoryError
 	if !errors.As(err, &insufficient) || insufficient.Criterion != "percentile" || insufficient.Required != 2 || insufficient.Available != 0 {
 		t.Fatalf("err=%v", err)

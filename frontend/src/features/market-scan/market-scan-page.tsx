@@ -24,19 +24,24 @@ import { getTelegramInitData } from "../../app/telegram";
 import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
 import { defaultPeriodForUnit } from "../analysis/criteria";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
+import { useAnalysisWarningNotification } from "../analysis/use-analysis-warning-notification";
 import {
+	criterionSelections,
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
 	type MarketScanDraft,
+	marketCapEvaluation,
 	marketScanCriteriaConstraints,
-	percentileCriterionSelection,
 	percentileEvaluation,
 	validateMarketScanCriteria,
 } from "./criteria";
 import {
 	binanceSpotUrl,
 	filterMarketScanItems,
+	formatMarketCapUsd,
 	formatRangePercent,
+	hasRequiredMarketScanEvaluations,
+	marketCapUnavailableReason,
 } from "./results";
 
 export function marketScanQueryKey(criteria: MarketScanCriteria) {
@@ -72,13 +77,16 @@ export function MarketScanPage({
 				throw new ApiError("unexpected_error");
 			}
 			const result = await fetchMarketScan(
-				[percentileCriterionSelection(committedCriteria)],
+				criterionSelections(committedCriteria),
 				{
 					initData: getTelegramInitData(),
 				},
 			);
 			if (
-				result.items.some((item) => !percentileEvaluation(item.evaluations))
+				!hasRequiredMarketScanEvaluations(
+					result.items,
+					committedCriteria.minimumMarketCapMillions > 0,
+				)
 			) {
 				throw new ApiError("unexpected_error");
 			}
@@ -92,6 +100,7 @@ export function MarketScanPage({
 		staleTime: Number.POSITIVE_INFINITY,
 	});
 	useAnalysisErrorNotification(query.error, "Market Scan failed");
+	useAnalysisWarningNotification(query.data?.warnings, "Market Scan warning");
 
 	const handleSubmit = form.onSubmit(async (values) => {
 		const criteria = criteriaFromValidDraft(values);
@@ -108,10 +117,15 @@ export function MarketScanPage({
 	});
 	const submissionDisabled =
 		!form.isValid() || !permission.allowed || query.isFetching;
+	const marketCapEnabled =
+		(committedCriteria?.minimumMarketCapMillions ?? 0) > 0;
 	const filteredItems = query.data
 		? filterMarketScanItems(query.data.items, symbolFilter).flatMap((item) => {
 				const evaluation = percentileEvaluation(item.evaluations);
-				return evaluation ? [{ evaluation, item }] : [];
+				const marketCap = marketCapEvaluation(item.evaluations);
+				return evaluation && (!marketCapEnabled || marketCap)
+					? [{ evaluation, item, marketCap }]
+					: [];
 			})
 		: [];
 
@@ -148,6 +162,18 @@ export function MarketScanPage({
 							step={0.1}
 							suffix="%"
 							{...form.getInputProps("minimumRangePercent")}
+						/>
+						<NumberInput
+							decimalScale={2}
+							key={form.key("minimumMarketCapMillions")}
+							label="Minimum Market Cap (millions)"
+							min={
+								marketScanCriteriaConstraints.minimumMarketCapMillions.minimum
+							}
+							prefix="$"
+							step={1}
+							suffix="M"
+							{...form.getInputProps("minimumMarketCapMillions")}
 						/>
 						<Button
 							disabled={submissionDisabled}
@@ -218,66 +244,108 @@ export function MarketScanPage({
 								</Paper>
 							) : (
 								<Paper p="xs" withBorder>
-									<Table.ScrollContainer minWidth={420}>
+									<Table.ScrollContainer minWidth={540}>
 										<Table highlightOnHover verticalSpacing="xs">
 											<Table.Thead>
 												<Table.Tr>
 													<Table.Th>Symbol</Table.Th>
 													<Table.Th>Range Percent</Table.Th>
 													<Table.Th>Candle Count</Table.Th>
+													{marketCapEnabled ? (
+														<Table.Th>Market Cap USD</Table.Th>
+													) : null}
 													<Table.Th ta="right">Binance</Table.Th>
 												</Table.Tr>
 											</Table.Thead>
 											<Table.Tbody>
-												{filteredItems.map(({ evaluation, item }) => (
-													<Table.Tr
-														key={item.symbol}
-														onClick={() =>
-															void onSelectInstrument(
-																item.symbol,
-																committedCriteria,
-															)
-														}
-														onKeyDown={(event) => {
-															if (event.key === "Enter") {
+												{filteredItems.map(
+													({ evaluation, item, marketCap }) => (
+														<Table.Tr
+															key={item.symbol}
+															onClick={() =>
 																void onSelectInstrument(
 																	item.symbol,
 																	committedCriteria,
-																);
+																)
 															}
-														}}
-														role="link"
-														style={{ cursor: "pointer" }}
-														tabIndex={0}
-													>
-														<Table.Td>{item.symbol}</Table.Td>
-														<Table.Td>
-															{formatRangePercent(evaluation.rangePercent)}
-														</Table.Td>
-														<Table.Td>{evaluation.candleCount}</Table.Td>
-														<Table.Td ta="right">
-															{binanceSpotUrl(item.symbol) ? (
-																<Anchor
-																	aria-label={`Open ${item.symbol} on Binance Spot in a new tab`}
-																	href={binanceSpotUrl(item.symbol)}
-																	onClick={(event) => event.stopPropagation()}
-																	onKeyDown={(event) => event.stopPropagation()}
-																	rel="noopener noreferrer"
-																	target="_blank"
-																>
-																	Open ↗
-																</Anchor>
-															) : (
-																<Text c="dimmed">—</Text>
-															)}
-														</Table.Td>
-													</Table.Tr>
-												))}
+															onKeyDown={(event) => {
+																if (event.key === "Enter") {
+																	void onSelectInstrument(
+																		item.symbol,
+																		committedCriteria,
+																	);
+																}
+															}}
+															role="link"
+															style={{ cursor: "pointer" }}
+															tabIndex={0}
+														>
+															<Table.Td>{item.symbol}</Table.Td>
+															<Table.Td>
+																{formatRangePercent(evaluation.rangePercent)}
+															</Table.Td>
+															<Table.Td>{evaluation.candleCount}</Table.Td>
+															{marketCapEnabled && marketCap ? (
+																<Table.Td>
+																	{formatMarketCapUsd(marketCap.marketCapUsd)}
+																</Table.Td>
+															) : null}
+															<Table.Td ta="right">
+																{binanceSpotUrl(item.symbol) ? (
+																	<Anchor
+																		aria-label={`Open ${item.symbol} on Binance Spot in a new tab`}
+																		href={binanceSpotUrl(item.symbol)}
+																		onClick={(event) => event.stopPropagation()}
+																		onKeyDown={(event) =>
+																			event.stopPropagation()
+																		}
+																		rel="noopener noreferrer"
+																		target="_blank"
+																	>
+																		Open ↗
+																	</Anchor>
+																) : (
+																	<Text c="dimmed">—</Text>
+																)}
+															</Table.Td>
+														</Table.Tr>
+													),
+												)}
 											</Table.Tbody>
 										</Table>
 									</Table.ScrollContainer>
 								</Paper>
 							)}
+
+							{query.data.unresolved.length > 0 ? (
+								<Stack gap="xs">
+									<Title order={2} size="h4">
+										Instruments with unavailable Market Cap
+									</Title>
+									<Paper p="xs" withBorder>
+										<Table.ScrollContainer minWidth={420}>
+											<Table highlightOnHover verticalSpacing="xs">
+												<Table.Thead>
+													<Table.Tr>
+														<Table.Th>Symbol</Table.Th>
+														<Table.Th>Reason</Table.Th>
+													</Table.Tr>
+												</Table.Thead>
+												<Table.Tbody>
+													{query.data.unresolved.map((item) => (
+														<Table.Tr key={`${item.symbol}-${item.code}`}>
+															<Table.Td>{item.symbol}</Table.Td>
+															<Table.Td>
+																{marketCapUnavailableReason(item.code)}
+															</Table.Td>
+														</Table.Tr>
+													))}
+												</Table.Tbody>
+											</Table>
+										</Table.ScrollContainer>
+									</Paper>
+								</Stack>
+							) : null}
 						</Stack>
 					</Box>
 				) : null}
@@ -301,6 +369,7 @@ function marketScanCriteriaIdentity(criteria: MarketScanCriteria) {
 		criteria.unit,
 		criteria.percentile,
 		criteria.minimumRangePercent,
+		criteria.minimumMarketCapMillions,
 	] as const;
 }
 
@@ -310,12 +379,14 @@ function criteriaFromValidDraft(
 	if (
 		typeof values.period !== "number" ||
 		typeof values.percentile !== "number" ||
+		typeof values.minimumMarketCapMillions !== "number" ||
 		typeof values.minimumRangePercent !== "number"
 	) {
 		return undefined;
 	}
 
 	return {
+		minimumMarketCapMillions: values.minimumMarketCapMillions,
 		minimumRangePercent: values.minimumRangePercent,
 		percentile: values.percentile,
 		period: values.period,

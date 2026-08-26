@@ -7,21 +7,27 @@ import {
 } from "../analysis/criteria";
 
 export const percentileCriterionName = "percentile";
+export const marketCapCriterionName = "market_cap";
+const usdPerMillion = 1_000_000;
 
 export interface MarketScanCriteria extends AnalysisCriteria {
+	minimumMarketCapMillions: number;
 	minimumRangePercent: number;
 }
 
 export interface MarketScanDraft extends AnalysisDraft {
+	minimumMarketCapMillions: number | string;
 	minimumRangePercent: number | string;
 }
 
 export const defaultMarketScanCriteria: MarketScanCriteria = {
 	...defaultAnalysisCriteria,
+	minimumMarketCapMillions: 500,
 	minimumRangePercent: 3,
 };
 
 export const marketScanCriteriaConstraints = {
+	minimumMarketCapMillions: { minimum: 0 },
 	minimumRangePercent: { minimum: 0 },
 } as const;
 
@@ -33,22 +39,35 @@ export function validateMarketScanCriteria(
 	values: MarketScanDraft,
 ): MarketScanValidationErrors {
 	const errors: MarketScanValidationErrors = validateAnalysisCriteria(values);
-
-	if (values.minimumRangePercent === "") {
-		errors.minimumRangePercent = "Minimum range is required";
-	} else if (
-		typeof values.minimumRangePercent !== "number" ||
-		!Number.isFinite(values.minimumRangePercent)
-	) {
-		errors.minimumRangePercent = "Minimum range must be a number";
-	} else if (
-		values.minimumRangePercent <
-		marketScanCriteriaConstraints.minimumRangePercent.minimum
-	) {
-		errors.minimumRangePercent = "Minimum range must be zero or greater";
-	}
+	validateNonNegativeNumber(
+		values.minimumMarketCapMillions,
+		"Minimum market cap",
+		"minimumMarketCapMillions",
+		errors,
+	);
+	validateNonNegativeNumber(
+		values.minimumRangePercent,
+		"Minimum range",
+		"minimumRangePercent",
+		errors,
+	);
 
 	return errors;
+}
+
+function validateNonNegativeNumber(
+	value: number | string,
+	label: string,
+	field: keyof MarketScanCriteria,
+	errors: MarketScanValidationErrors,
+) {
+	if (value === "") {
+		errors[field] = `${label} is required`;
+	} else if (typeof value !== "number" || !Number.isFinite(value)) {
+		errors[field] = `${label} must be a number`;
+	} else if (value < 0) {
+		errors[field] = `${label} must be zero or greater`;
+	}
 }
 
 export function percentileCriterionSelection(
@@ -63,6 +82,21 @@ export function percentileCriterionSelection(
 			unit: criteria.unit,
 		},
 	};
+}
+
+export function criterionSelections(
+	criteria: MarketScanCriteria,
+): CriterionSelection[] {
+	const selections = [percentileCriterionSelection(criteria)];
+	if (criteria.minimumMarketCapMillions > 0) {
+		selections.push({
+			name: marketCapCriterionName,
+			parameters: {
+				min_market_cap_usd: criteria.minimumMarketCapMillions * usdPerMillion,
+			},
+		});
+	}
+	return selections;
 }
 
 export interface PercentileEvaluation {
@@ -91,4 +125,23 @@ export function percentileEvaluation(
 		rangePercent,
 		to: evaluation.to,
 	};
+}
+
+export interface MarketCapEvaluation {
+	marketCapUsd: number;
+	matched: boolean;
+}
+
+export function marketCapEvaluation(
+	evaluations: readonly Evaluation[],
+): MarketCapEvaluation | undefined {
+	const evaluation = evaluations.find(
+		({ name }) => name === marketCapCriterionName,
+	);
+	const marketCapUsd = evaluation?.metrics.market_cap_usd;
+	if (!evaluation || typeof marketCapUsd !== "number") {
+		return undefined;
+	}
+
+	return { marketCapUsd, matched: evaluation.matched };
 }

@@ -31,6 +31,7 @@ type ServerConfig struct {
 	SyncWorkers            int
 	SyncRetryAttempts      int
 	ShutdownTimeout        time.Duration
+	CoinGeckoDemoAPIKey    string
 }
 
 // BootstrapConfig contains the settings used only by the explicit
@@ -52,6 +53,7 @@ func LoadServer() (ServerConfig, error) {
 		return ServerConfig{}, err
 	}
 	cfg.HTTPAddress = valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress)
+	cfg.CoinGeckoDemoAPIKey = os.Getenv("COINGECKO_DEMO_API_KEY")
 	if !isHostPort(cfg.HTTPAddress) {
 		return ServerConfig{}, fmt.Errorf("HTTP_ADDRESS must be a valid host:port address")
 	}

@@ -16,15 +16,36 @@ export interface InstrumentAnalysisResult {
 	evaluations: Evaluation[];
 	matched: boolean;
 	symbol: string;
+	warnings: Warning[];
 }
 
-export interface MarketScanItem extends InstrumentAnalysisResult {}
+export interface MarketScanItem
+	extends Omit<InstrumentAnalysisResult, "warnings"> {}
+
+export type UnresolvedInstrumentCode =
+	| "mapping_conflict"
+	| "mapping_not_found"
+	| "mapping_provider_unavailable"
+	| "market_cap_missing";
+
+export interface UnresolvedInstrument {
+	code: UnresolvedInstrumentCode;
+	message: string;
+	symbol: string;
+}
+
+export interface Warning {
+	code: string;
+	message: string;
+}
 
 export interface MarketScanResult {
 	analyzed_count: number;
 	insufficient_data_count: number;
 	items: MarketScanItem[];
 	matched_count: number;
+	unresolved: UnresolvedInstrument[];
+	warnings: Warning[];
 }
 
 type ApiErrorCode =
@@ -32,6 +53,7 @@ type ApiErrorCode =
 	| "insufficient_data"
 	| "invalid_argument"
 	| "market_data_unavailable"
+	| "market_cap_unavailable"
 	| "network_error"
 	| "symbol_not_found"
 	| "unauthenticated"
@@ -45,6 +67,8 @@ const apiErrorMessages: Record<ApiErrorCode, string> = {
 	insufficient_data: "There is not enough market history for this analysis.",
 	invalid_argument: "The request contains unsupported analysis criteria.",
 	market_data_unavailable: "Market data is not ready yet. Try again shortly.",
+	market_cap_unavailable:
+		"Market capitalization is unavailable for this instrument or is still loading. Try again shortly.",
 	network_error:
 		"Unable to reach the scanner. Check your connection and try again.",
 	symbol_not_found: "This instrument is unknown or no longer active.",
@@ -145,7 +169,8 @@ function parseInstrumentAnalysisResult(
 		!isRecord(payload) ||
 		typeof payload.symbol !== "string" ||
 		!isBoolean(payload.matched) ||
-		!Array.isArray(payload.evaluations)
+		!Array.isArray(payload.evaluations) ||
+		!Array.isArray(payload.warnings)
 	) {
 		throw new ApiError("unexpected_error");
 	}
@@ -154,6 +179,7 @@ function parseInstrumentAnalysisResult(
 		evaluations: payload.evaluations.map(parseEvaluation),
 		matched: payload.matched,
 		symbol: payload.symbol,
+		warnings: payload.warnings.map(parseWarning),
 	};
 }
 
@@ -162,7 +188,10 @@ function backendError(payload: unknown, status: number) {
 		return new ApiError("unexpected_error", { status });
 	}
 
-	const code = canonicalErrorCode(payload.error.code);
+	const code =
+		status === 422
+			? "market_cap_unavailable"
+			: canonicalErrorCode(payload.error.code);
 	return new ApiError(code, {
 		requestId:
 			typeof payload.request_id === "string" ? payload.request_id : undefined,
@@ -176,6 +205,7 @@ function canonicalErrorCode(value: unknown): ApiErrorCode {
 		case "insufficient_data":
 		case "invalid_argument":
 		case "market_data_unavailable":
+		case "market_cap_unavailable":
 		case "symbol_not_found":
 		case "unauthenticated":
 			return value;
@@ -190,7 +220,9 @@ function parseMarketScanResult(payload: unknown): MarketScanResult {
 		!isFiniteNumber(payload.matched_count) ||
 		!isFiniteNumber(payload.analyzed_count) ||
 		!isFiniteNumber(payload.insufficient_data_count) ||
-		!Array.isArray(payload.items)
+		!Array.isArray(payload.items) ||
+		!Array.isArray(payload.unresolved) ||
+		!Array.isArray(payload.warnings)
 	) {
 		throw new ApiError("unexpected_error");
 	}
@@ -201,7 +233,52 @@ function parseMarketScanResult(payload: unknown): MarketScanResult {
 		insufficient_data_count: payload.insufficient_data_count,
 		items,
 		matched_count: payload.matched_count,
+		unresolved: payload.unresolved.map(parseUnresolvedInstrument),
+		warnings: payload.warnings.map(parseWarning),
 	};
+}
+
+function parseUnresolvedInstrument(payload: unknown): UnresolvedInstrument {
+	if (
+		!isRecord(payload) ||
+		typeof payload.symbol !== "string" ||
+		typeof payload.code !== "string" ||
+		typeof payload.message !== "string"
+	) {
+		throw new ApiError("unexpected_error");
+	}
+
+	return {
+		code: parseUnresolvedInstrumentCode(payload.code),
+		message: payload.message,
+		symbol: payload.symbol,
+	};
+}
+
+function parseUnresolvedInstrumentCode(
+	value: unknown,
+): UnresolvedInstrumentCode {
+	switch (value) {
+		case "mapping_conflict":
+		case "mapping_not_found":
+		case "mapping_provider_unavailable":
+		case "market_cap_missing":
+			return value;
+		default:
+			throw new ApiError("unexpected_error");
+	}
+}
+
+function parseWarning(payload: unknown): Warning {
+	if (
+		!isRecord(payload) ||
+		typeof payload.code !== "string" ||
+		typeof payload.message !== "string"
+	) {
+		throw new ApiError("unexpected_error");
+	}
+
+	return { code: payload.code, message: payload.message };
 }
 
 function parseMarketScanItem(payload: unknown): MarketScanItem {

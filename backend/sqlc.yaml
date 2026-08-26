@@ -1,7 +1,10 @@
 version: "2"
 sql:
   - engine: postgresql
-    schema: migrations/000001_initial.up.sql
+    schema:
+      - migrations/000001_initial.up.sql
+      - migrations/000002_hourly_candles.up.sql
+      - migrations/000003_market_cap.up.sql
     queries: internal/storage/postgres/queries
     gen:
       go:

@@ -8,6 +8,29 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AppCoingeckoAssetMapping struct {
+	BaseAsset    string
+	CoinID       pgtype.Text
+	QuoteAsset   string
+	SourceSymbol string
+	Status       string
+	Reason       pgtype.Text
+	ObservedAt   pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+}
+
+type AppCoingeckoMappingBootstrap struct {
+	ID          bool
+	CompletedAt pgtype.Timestamptz
+}
+
+type AppCoingeckoMarketCap struct {
+	CoinID       string
+	MarketCapUsd string
+	FetchedAt    pgtype.Timestamptz
+	ObservedAt   pgtype.Timestamptz
+}
+
 type AppSchemaMigration struct {
 	Version                  int64
 	AppliedAt                pgtype.Timestamptz

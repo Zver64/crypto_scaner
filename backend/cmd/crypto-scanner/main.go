@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"crypto-scanner/internal/analysis"
+	marketcapcriterion "crypto-scanner/internal/analysis/criteria/market_cap"
 	"crypto-scanner/internal/analysis/criteria/percentile"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/httpapi"
 	marketsync "crypto-scanner/internal/market/sync"
+	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/platform/envfile"
 	"crypto-scanner/internal/platform/logging"
@@ -72,13 +74,17 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	dailySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.MVPProfile())
 	hourlySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.HourlyProfile())
 	scheduler := marketsync.NewSchedulerWithHourly(dailySynchronizer, hourlySynchronizer, logger)
-	criterionFactories := []analysis.Factory{
-		percentile.New(),
-	}
+	marketCapResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
+	criterionFactories := []analysis.Factory{percentile.New(), marketcapcriterion.New(marketCapResolver)}
 	analysisService, err := analysis.NewService(store, criterionFactories...)
 	if err != nil {
 		return fmt.Errorf("initialize analysis service: %w", err)
 	}
+	go func() {
+		if err := marketCapResolver.BootstrapUntilComplete(ctx); err != nil && ctx.Err() == nil {
+			logger.Warn("CoinGecko mapping bootstrap failed", "module", "market_cap", "error", err.Error())
+		}
+	}()
 	authenticator := authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge)
 
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)

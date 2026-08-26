@@ -1,13 +1,43 @@
-import type { MarketScanItem } from "../../api/client";
+import type {
+	MarketScanItem,
+	UnresolvedInstrumentCode,
+} from "../../api/client";
+import { marketCapEvaluation, percentileEvaluation } from "./criteria";
 
 const rangePercentFormatter = new Intl.NumberFormat("en", {
 	maximumSignificantDigits: 3,
+});
+
+const marketCapFormatter = new Intl.NumberFormat("en", {
+	maximumFractionDigits: 1,
+	notation: "compact",
 });
 
 const binanceSpotQuoteAsset = "USDT";
 
 export function formatRangePercent(value: number): string {
 	return `${rangePercentFormatter.format(value)}%`;
+}
+
+export function formatMarketCapUsd(value: number): string {
+	return `$${marketCapFormatter.format(value)}`;
+}
+
+const marketCapUnavailableReasons: Record<UnresolvedInstrumentCode, string> = {
+	mapping_conflict:
+		"Multiple market capitalization matches were found for this instrument.",
+	mapping_not_found:
+		"No market capitalization match was found for this instrument.",
+	mapping_provider_unavailable:
+		"Market capitalization mapping data is temporarily unavailable.",
+	market_cap_missing:
+		"Market capitalization data is unavailable for this instrument.",
+};
+
+export function marketCapUnavailableReason(
+	code: UnresolvedInstrumentCode,
+): string {
+	return marketCapUnavailableReasons[code];
 }
 
 export function binanceSpotUrl(symbol: string): string | undefined {
@@ -34,5 +64,17 @@ export function filterMarketScanItems(
 
 	return items.filter((item) =>
 		item.symbol.toLocaleLowerCase("en-US").includes(normalizedFilter),
+	);
+}
+
+export function hasRequiredMarketScanEvaluations(
+	items: readonly MarketScanItem[],
+	marketCapRequired: boolean,
+): boolean {
+	return items.every(
+		(item) =>
+			percentileEvaluation(item.evaluations) !== undefined &&
+			(!marketCapRequired ||
+				marketCapEvaluation(item.evaluations) !== undefined),
 	);
 }

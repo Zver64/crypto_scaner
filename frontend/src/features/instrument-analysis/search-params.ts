@@ -9,6 +9,7 @@ export interface InstrumentAnalysisSearch {
 	period: number;
 	unit: "days" | "hours";
 	minimum_range_percent: number;
+	minimum_market_cap_millions: number;
 }
 
 export function parseInstrumentAnalysisSearch(
@@ -18,14 +19,20 @@ export function parseInstrumentAnalysisSearch(
 	const unit = search.unit;
 	const percentile = search.percentile;
 	const minimumRangePercent = search.minimum_range_percent;
+	const minimumMarketCapMillions =
+		search.minimum_market_cap_millions === undefined
+			? 0
+			: search.minimum_market_cap_millions;
 
 	if (
 		typeof period !== "number" ||
 		typeof percentile !== "number" ||
 		typeof minimumRangePercent !== "number" ||
+		typeof minimumMarketCapMillions !== "number" ||
 		(unit !== "days" && unit !== "hours") ||
 		Object.keys(
 			validateMarketScanCriteria({
+				minimumMarketCapMillions,
 				minimumRangePercent,
 				percentile,
 				period,
@@ -37,6 +44,7 @@ export function parseInstrumentAnalysisSearch(
 	}
 
 	return {
+		minimum_market_cap_millions: minimumMarketCapMillions,
 		minimum_range_percent: minimumRangePercent,
 		percentile,
 		period,
@@ -48,6 +56,7 @@ export function instrumentAnalysisCriteriaToSearch(
 	criteria: MarketScanCriteria,
 ): InstrumentAnalysisSearch {
 	return {
+		minimum_market_cap_millions: criteria.minimumMarketCapMillions,
 		minimum_range_percent: criteria.minimumRangePercent,
 		percentile: criteria.percentile,
 		period: criteria.period,
@@ -59,6 +68,7 @@ export function instrumentAnalysisCriteriaFromSearch(
 	search: InstrumentAnalysisSearch,
 ): MarketScanCriteria {
 	return {
+		minimumMarketCapMillions: search.minimum_market_cap_millions,
 		minimumRangePercent: search.minimum_range_percent,
 		percentile: search.percentile,
 		period: search.period,

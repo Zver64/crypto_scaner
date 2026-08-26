@@ -83,6 +83,94 @@ func TestServiceRejectsDuplicateFactoryNames(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 }
+func TestSearchPreparesAndLoadsSecondCriterionOnlyForSurvivors(t *testing.T) {
+	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "DROP"}, {ID: 2, Symbol: "KEEP"}}, candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}, 2: {"1d": {testCandle(2)}, "1h": {testCandle(1)}}}}
+	second := &trackingFactory{}
+	service, _ := analysis.NewService(store, firstFactory{}, second)
+	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Name: "first", Parameters: map[string]any{}}, {Name: "second", Parameters: map[string]any{}}}})
+	if err != nil || result.MatchedCount != 1 || second.prepared != 1 || second.evaluated != 1 {
+		t.Fatalf("result=%+v err=%v prepared=%d evaluated=%d", result, err, second.prepared, second.evaluated)
+	}
+	if store.loads["1h"] != 1 {
+		t.Fatalf("second criterion candle loads=%v", store.loads)
+	}
+}
+func TestSearchSkipsLaterCriteriaWhenNoCandidatesSurvive(t *testing.T) {
+	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "DROP"}}, candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}}}
+	second := &trackingFactory{}
+	service, _ := analysis.NewService(store, firstFactory{}, second)
+	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Name: "first", Parameters: map[string]any{}}, {Name: "second", Parameters: map[string]any{}}}})
+	if err != nil || result.MatchedCount != 0 || second.prepared != 0 || second.evaluated != 0 {
+		t.Fatalf("result=%+v err=%v prepared=%d evaluated=%d", result, err, second.prepared, second.evaluated)
+	}
+}
+
+func TestSearchDoesNotCountUnresolvedInstrumentsAsAnalyzed(t *testing.T) {
+	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "UNKNOWN"}}}
+	service, _ := analysis.NewService(store, unresolvedFactory{})
+	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Name: "unresolved", Parameters: map[string]any{}}}})
+	if err != nil || result.AnalyzedCount != 0 || len(result.Unresolved) != 1 {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+type firstFactory struct{}
+
+func (firstFactory) Name() string                                     { return "first" }
+func (firstFactory) Build(map[string]any) (analysis.Criterion, error) { return firstCriterion{}, nil }
+
+type firstCriterion struct{}
+
+func (firstCriterion) Name() string { return "first" }
+func (firstCriterion) Requirements() []analysis.CandleRequirement {
+	return []analysis.CandleRequirement{{Unit: analysis.UnitDays, Count: 1}}
+}
+func (firstCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
+	return nil, nil
+}
+func (firstCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
+	return analysis.Evaluation{Matched: input.Instrument.ID == 2}, nil
+}
+
+type trackingFactory struct{ prepared, evaluated int }
+
+func (t *trackingFactory) Name() string { return "second" }
+func (t *trackingFactory) Build(map[string]any) (analysis.Criterion, error) {
+	return &trackingCriterion{factory: t}, nil
+}
+
+type trackingCriterion struct{ factory *trackingFactory }
+
+func (*trackingCriterion) Name() string { return "second" }
+func (*trackingCriterion) Requirements() []analysis.CandleRequirement {
+	return []analysis.CandleRequirement{{Unit: analysis.UnitHours, Count: 1}}
+}
+func (t *trackingCriterion) Prepare(_ context.Context, candidates []market.Instrument) ([]analysis.Warning, error) {
+	t.factory.prepared = len(candidates)
+	return nil, nil
+}
+func (t *trackingCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
+	t.factory.evaluated++
+	return analysis.Evaluation{Matched: true}, nil
+}
+
+type unresolvedFactory struct{}
+
+func (unresolvedFactory) Name() string { return "unresolved" }
+func (unresolvedFactory) Build(map[string]any) (analysis.Criterion, error) {
+	return unresolvedCriterion{}, nil
+}
+
+type unresolvedCriterion struct{}
+
+func (unresolvedCriterion) Name() string                               { return "unresolved" }
+func (unresolvedCriterion) Requirements() []analysis.CandleRequirement { return nil }
+func (unresolvedCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
+	return nil, nil
+}
+func (unresolvedCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
+	return analysis.Evaluation{}, &analysis.UnresolvedError{Code: "missing", Message: "missing"}
+}
 
 type fakeFactory struct{}
 
@@ -94,6 +182,9 @@ type fakeCriterion struct{}
 func (fakeCriterion) Name() string { return "fake" }
 func (fakeCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitDays, Count: 1}, {Unit: analysis.UnitHours, Count: 1}}
+}
+func (fakeCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
+	return nil, nil
 }
 
 type hourlyMatchFactory struct{}
@@ -109,8 +200,11 @@ func (hourlyMatchCriterion) Name() string { return "hourly-match" }
 func (hourlyMatchCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitHours, Count: 1}}
 }
-func (hourlyMatchCriterion) Evaluate(_ context.Context, data map[analysis.Unit][]market.Candle) (analysis.Evaluation, error) {
-	candles := data[analysis.UnitHours]
+func (hourlyMatchCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
+	return nil, nil
+}
+func (hourlyMatchCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
+	candles := input.Candles[analysis.UnitHours]
 	if len(candles) == 0 {
 		return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Required: 1}
 	}
@@ -118,8 +212,8 @@ func (hourlyMatchCriterion) Evaluate(_ context.Context, data map[analysis.Unit][
 	return analysis.Evaluation{Matched: matched, Metrics: map[string]float64{}, CandleCount: 1}, nil
 }
 
-func (fakeCriterion) Evaluate(_ context.Context, data map[analysis.Unit][]market.Candle) (analysis.Evaluation, error) {
-	if len(data[analysis.UnitDays]) != 2 || len(data[analysis.UnitHours]) != 1 {
+func (fakeCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
+	if len(input.Candles[analysis.UnitDays]) != 2 || len(input.Candles[analysis.UnitHours]) != 1 {
 		return analysis.Evaluation{}, analysis.ErrInvalidArgument
 	}
 	return analysis.Evaluation{Matched: false, Metrics: map[string]float64{}, CandleCount: 1}, nil

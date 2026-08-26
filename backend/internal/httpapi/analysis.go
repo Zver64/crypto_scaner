@@ -42,7 +42,7 @@ func analyzeSymbol(service Analysis) http.HandlerFunc {
 			writeAnalysisError(response, err, request.PathValue("symbol"))
 			return
 		}
-		writeJSON(response, http.StatusOK, symbolResponse{Symbol: result.Symbol, Matched: result.Matched, Evaluations: responseEvaluations(result.Evaluations)})
+		writeJSON(response, http.StatusOK, symbolResponse{Symbol: result.Symbol, Matched: result.Matched, Evaluations: responseEvaluations(result.Evaluations), Warnings: responseWarnings(result.Warnings)})
 	}
 }
 
@@ -61,7 +61,11 @@ func searchMarket(service Analysis) http.HandlerFunc {
 		for i, item := range result.Items {
 			items[i] = searchItemResponse{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseEvaluations(item.Evaluations)}
 		}
-		writeJSON(response, http.StatusOK, searchResponse{MatchedCount: result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount, Items: items})
+		unresolved := make([]unresolvedResponse, len(result.Unresolved))
+		for i, item := range result.Unresolved {
+			unresolved[i] = unresolvedResponse{Symbol: item.Symbol, Code: item.Code, Message: item.Message}
+		}
+		writeJSON(response, http.StatusOK, searchResponse{MatchedCount: result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount, Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings)})
 	}
 }
 
@@ -79,6 +83,7 @@ func decodeAnalysisRequest(response http.ResponseWriter, request *http.Request) 
 
 func writeAnalysisError(response http.ResponseWriter, err error, symbol string) {
 	var insufficient *analysis.InsufficientHistoryError
+	var unresolved *analysis.UnresolvedError
 	switch {
 	case errors.Is(err, analysis.ErrInvalidArgument):
 		writeAPIError(response, http.StatusBadRequest, "invalid_argument", "Invalid analysis argument", nil)
@@ -88,6 +93,10 @@ func writeAnalysisError(response http.ResponseWriter, err error, symbol string) 
 		writeAPIError(response, http.StatusConflict, "insufficient_data", "Not enough closed candles for the requested period", map[string]any{"symbol": symbol, "criterion": insufficient.Criterion, "required": insufficient.Required, "available": insufficient.Available})
 	case errors.Is(err, analysis.ErrMarketDataUnavailable):
 		writeAPIError(response, http.StatusServiceUnavailable, "market_data_unavailable", "Market data is unavailable", nil)
+	case errors.Is(err, analysis.ErrMarketCapUnavailable):
+		writeAPIError(response, http.StatusServiceUnavailable, "market_cap_unavailable", "Market capitalization data is unavailable", nil)
+	case errors.As(err, &unresolved):
+		writeAPIError(response, http.StatusUnprocessableEntity, unresolved.Code, unresolved.Message, map[string]any{"symbol": symbol})
 	default:
 		writeAPIError(response, http.StatusInternalServerError, "internal_error", "Internal server error", nil)
 	}
@@ -138,6 +147,7 @@ type symbolResponse struct {
 	Symbol      string               `json:"symbol"`
 	Matched     bool                 `json:"matched"`
 	Evaluations []evaluationResponse `json:"evaluations"`
+	Warnings    []warningResponse    `json:"warnings"`
 }
 type searchItemResponse struct {
 	Symbol      string               `json:"symbol"`
@@ -149,4 +159,23 @@ type searchResponse struct {
 	AnalyzedCount         int                  `json:"analyzed_count"`
 	InsufficientDataCount int                  `json:"insufficient_data_count"`
 	Items                 []searchItemResponse `json:"items"`
+	Unresolved            []unresolvedResponse `json:"unresolved"`
+	Warnings              []warningResponse    `json:"warnings"`
+}
+type unresolvedResponse struct {
+	Symbol  string `json:"symbol"`
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+type warningResponse struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+func responseWarnings(warnings []analysis.Warning) []warningResponse {
+	result := make([]warningResponse, len(warnings))
+	for i, warning := range warnings {
+		result[i] = warningResponse{Code: warning.Code, Message: warning.Message}
+	}
+	return result
 }

@@ -124,7 +124,6 @@ func TestLoadServerIgnoresBootstrapConfiguration(t *testing.T) {
 		t.Fatalf("LoadServer() read bootstrap-only configuration: %v", err)
 	}
 }
-
 func TestLoadBootstrap(t *testing.T) {
 	t.Setenv("DATABASE_URL", "postgres://scanner:secret@127.0.0.1:5432/scanner?sslmode=disable")
 	t.Setenv("ADMIN_TELEGRAM_ID", "123456789")

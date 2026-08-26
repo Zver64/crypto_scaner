@@ -22,15 +22,20 @@ import { getTelegramInitData, useTelegramBackButton } from "../../app/telegram";
 import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
 import { defaultPeriodForUnit } from "../analysis/criteria";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
+import { useAnalysisWarningNotification } from "../analysis/use-analysis-warning-notification";
 import {
+	criterionSelections,
 	type MarketScanCriteria,
 	type MarketScanDraft,
-	percentileCriterionSelection,
+	marketCapEvaluation,
 	percentileEvaluation,
 	validateMarketScanCriteria,
 } from "../market-scan/criteria";
-import { formatRangePercent } from "../market-scan/results";
-import { formatUtcCoverageDate } from "./presentation";
+import { formatMarketCapUsd, formatRangePercent } from "../market-scan/results";
+import {
+	formatUtcCoverageDate,
+	hasRequiredInstrumentAnalysisEvaluations,
+} from "./presentation";
 
 interface InstrumentAnalysisPageProps {
 	committedCriteria: MarketScanCriteria;
@@ -58,16 +63,23 @@ export function InstrumentAnalysisPage({
 	const committedUnit = committedCriteria.unit;
 	const committedPercentile = committedCriteria.percentile;
 	const committedMinimumRangePercent = committedCriteria.minimumRangePercent;
+	const committedMinimumMarketCapMillions =
+		committedCriteria.minimumMarketCapMillions;
 	const query = useQuery({
 		enabled: permission.allowed,
 		placeholderData: keepPreviousData,
 		queryFn: async () => {
 			const result = await fetchInstrumentAnalysis(
 				symbol,
-				[percentileCriterionSelection(committedCriteria)],
+				criterionSelections(committedCriteria),
 				{ initData: getTelegramInitData() },
 			);
-			if (!percentileEvaluation(result.evaluations)) {
+			if (
+				!hasRequiredInstrumentAnalysisEvaluations(
+					result.evaluations,
+					committedCriteria.minimumMarketCapMillions > 0,
+				)
+			) {
 				throw new ApiError("unexpected_error");
 			}
 			return result;
@@ -79,6 +91,7 @@ export function InstrumentAnalysisPage({
 
 	useEffect(() => {
 		setFormValues({
+			minimumMarketCapMillions: committedMinimumMarketCapMillions,
 			minimumRangePercent: committedMinimumRangePercent,
 			percentile: committedPercentile,
 			period: committedPeriod,
@@ -86,6 +99,7 @@ export function InstrumentAnalysisPage({
 		});
 	}, [
 		committedMinimumRangePercent,
+		committedMinimumMarketCapMillions,
 		committedPeriod,
 		committedPercentile,
 		committedUnit,
@@ -93,11 +107,16 @@ export function InstrumentAnalysisPage({
 	]);
 
 	useAnalysisErrorNotification(query.error, "Instrument Analysis failed");
+	useAnalysisWarningNotification(
+		query.data?.warnings,
+		"Instrument Analysis warning",
+	);
 
 	const handleSubmit = form.onSubmit(async (values) => {
 		if (
 			typeof values.period !== "number" ||
 			typeof values.percentile !== "number" ||
+			typeof values.minimumMarketCapMillions !== "number" ||
 			typeof values.minimumRangePercent !== "number"
 		) {
 			return;
@@ -107,13 +126,16 @@ export function InstrumentAnalysisPage({
 			values.period === committedCriteria.period &&
 			values.unit === committedCriteria.unit &&
 			values.percentile === committedCriteria.percentile &&
-			values.minimumRangePercent === committedCriteria.minimumRangePercent
+			values.minimumRangePercent === committedCriteria.minimumRangePercent &&
+			values.minimumMarketCapMillions ===
+				committedCriteria.minimumMarketCapMillions
 		) {
 			await query.refetch();
 			return;
 		}
 
 		await onCommit({
+			minimumMarketCapMillions: values.minimumMarketCapMillions,
 			minimumRangePercent: values.minimumRangePercent,
 			percentile: values.percentile,
 			period: values.period,
@@ -124,6 +146,7 @@ export function InstrumentAnalysisPage({
 		!form.isValid() || !permission.allowed || query.isFetching;
 	const result = query.data;
 	const evaluation = result && percentileEvaluation(result.evaluations);
+	const marketCap = result && marketCapEvaluation(result.evaluations);
 
 	return (
 		<Container maw={720} px={0} size="sm">
@@ -163,6 +186,16 @@ export function InstrumentAnalysisPage({
 							step={0.1}
 							suffix="%"
 							{...form.getInputProps("minimumRangePercent")}
+						/>
+						<NumberInput
+							decimalScale={2}
+							key={form.key("minimumMarketCapMillions")}
+							label="Minimum Market Cap (millions)"
+							min={0}
+							prefix="$"
+							step={1}
+							suffix="M"
+							{...form.getInputProps("minimumMarketCapMillions")}
 						/>
 						<Button
 							disabled={submissionDisabled}
@@ -211,6 +244,12 @@ export function InstrumentAnalysisPage({
 										label="Candle Count"
 										value={String(evaluation.candleCount)}
 									/>
+									{marketCap ? (
+										<ResultValue
+											label="Market Cap"
+											value={formatMarketCapUsd(marketCap.marketCapUsd)}
+										/>
+									) : null}
 									<ResultValue
 										label="Coverage From"
 										value={formatUtcCoverageDate(evaluation.from)}
@@ -240,6 +279,7 @@ function instrumentAnalysisQueryKey(
 		criteria.unit,
 		criteria.percentile,
 		criteria.minimumRangePercent,
+		criteria.minimumMarketCapMillions,
 	] as const;
 }
 

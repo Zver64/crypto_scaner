@@ -4,6 +4,7 @@ import {
 } from "./criteria";
 
 export interface MarketScanSearch {
+	minimum_market_cap_millions?: number;
 	minimum_range_percent?: number;
 	percentile?: number;
 	period?: number;
@@ -17,12 +18,17 @@ export function parseMarketScanSearch(
 	const unit = search.unit;
 	const percentile = search.percentile;
 	const minimumRangePercent = search.minimum_range_percent;
+	const minimumMarketCapMillions =
+		search.minimum_market_cap_millions === undefined
+			? 0
+			: search.minimum_market_cap_millions;
 
 	if (
 		typeof period !== "number" ||
 		(unit !== "days" && unit !== "hours") ||
 		typeof percentile !== "number" ||
-		typeof minimumRangePercent !== "number"
+		typeof minimumRangePercent !== "number" ||
+		typeof minimumMarketCapMillions !== "number"
 	) {
 		return {};
 	}
@@ -30,6 +36,7 @@ export function parseMarketScanSearch(
 	if (
 		Object.keys(
 			validateMarketScanCriteria({
+				minimumMarketCapMillions,
 				minimumRangePercent,
 				percentile,
 				period,
@@ -41,6 +48,7 @@ export function parseMarketScanSearch(
 	}
 
 	return {
+		minimum_market_cap_millions: minimumMarketCapMillions,
 		minimum_range_percent: minimumRangePercent,
 		percentile,
 		period,
@@ -52,6 +60,7 @@ export function marketScanCriteriaToSearch(
 	criteria: MarketScanCriteria,
 ): Required<MarketScanSearch> {
 	return {
+		minimum_market_cap_millions: criteria.minimumMarketCapMillions,
 		minimum_range_percent: criteria.minimumRangePercent,
 		percentile: criteria.percentile,
 		period: criteria.period,
@@ -63,6 +72,7 @@ export function marketScanCriteriaFromSearch(
 	search: MarketScanSearch,
 ): MarketScanCriteria | undefined {
 	if (
+		search.minimum_market_cap_millions === undefined ||
 		search.minimum_range_percent === undefined ||
 		search.percentile === undefined ||
 		search.period === undefined ||
@@ -72,6 +82,7 @@ export function marketScanCriteriaFromSearch(
 	}
 
 	return {
+		minimumMarketCapMillions: search.minimum_market_cap_millions,
 		minimumRangePercent: search.minimum_range_percent,
 		percentile: search.percentile,
 		period: search.period,

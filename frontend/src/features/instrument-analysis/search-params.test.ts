@@ -9,6 +9,7 @@ describe("Instrument Analysis search parameters", () => {
 	it("round-trips committed percentile parameters including minimum range", () => {
 		const search = instrumentAnalysisCriteriaToSearch({
 			minimumRangePercent: 3.5,
+			minimumMarketCapMillions: 1,
 			percentile: 75,
 			period: 60,
 			unit: "hours",
@@ -16,6 +17,7 @@ describe("Instrument Analysis search parameters", () => {
 
 		expect(search).toEqual({
 			minimum_range_percent: 3.5,
+			minimum_market_cap_millions: 1,
 			percentile: 75,
 			period: 60,
 			unit: "hours",
@@ -25,6 +27,26 @@ describe("Instrument Analysis search parameters", () => {
 				parseInstrumentAnalysisSearch(search),
 			),
 		).toEqual({
+			minimumRangePercent: 3.5,
+			minimumMarketCapMillions: 1,
+			percentile: 75,
+			period: 60,
+			unit: "hours",
+		});
+	});
+
+	it("preserves legacy criteria when Market Cap is absent", () => {
+		expect(
+			instrumentAnalysisCriteriaFromSearch(
+				parseInstrumentAnalysisSearch({
+					minimum_range_percent: 3.5,
+					percentile: 75,
+					period: 60,
+					unit: "hours",
+				}),
+			),
+		).toEqual({
+			minimumMarketCapMillions: 0,
 			minimumRangePercent: 3.5,
 			percentile: 75,
 			period: 60,
@@ -46,6 +68,7 @@ describe("Instrument Analysis search parameters", () => {
 		]) {
 			expect(parseInstrumentAnalysisSearch(search)).toEqual({
 				minimum_range_percent: 3,
+				minimum_market_cap_millions: 500,
 				percentile: 80,
 				period: 30,
 				unit: "days",

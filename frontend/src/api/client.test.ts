@@ -354,3 +354,95 @@ it("rejects unknown unresolved instrument codes", async () => {
 		expect.objectContaining({ code: "unexpected_error" }),
 	);
 });
+
+it("submits the unified pipeline and preserves both keyed outcomes, warnings, and unresolved instruments", async () => {
+	const { criterionSelections, defaultMarketScanCriteria } = await import(
+		"../features/market-scan/pipeline"
+	);
+	const selections = criterionSelections(defaultMarketScanCriteria);
+	const body = {
+		matched_count: 1,
+		analyzed_count: 2,
+		insufficient_data_count: 0,
+		items: [
+			{
+				symbol: "BTCUSDT",
+				matched: true,
+				evaluations: [
+					{
+						...evaluation,
+						key: "daily_volatility",
+						label: "Daily Volatility",
+						metrics: { range_percent: 6 },
+					},
+					{
+						...evaluation,
+						key: "hourly_volatility",
+						label: "Hourly Volatility",
+						candle_count: 60,
+						metrics: { range_percent: 2 },
+					},
+					{
+						...evaluation,
+						key: "market_cap",
+						name: "market_cap",
+						label: "Market Cap",
+						candle_count: 0,
+						metrics: { market_cap_usd: 500_000_000 },
+					},
+				],
+			},
+		],
+		unresolved: [
+			{
+				symbol: "UNKNOWNUSDT",
+				code: "mapping_not_found",
+				message: "Mapping not found",
+			},
+		],
+		warnings: [
+			{
+				code: "market_cap_provider_unavailable",
+				message: "Cached values used",
+			},
+		],
+	};
+	const request = vi.fn(
+		async (_input: RequestInfo | URL, init?: RequestInit) => {
+			expect(JSON.parse(String(init?.body))).toEqual({
+				criteria: [
+					{
+						key: "daily_volatility",
+						name: "volatility",
+						label: "Daily Volatility",
+						parameters: {
+							unit: "days",
+							period: 30,
+							percentile: 80,
+							minimum_range_percent: 5,
+						},
+					},
+					{
+						key: "hourly_volatility",
+						name: "volatility",
+						label: "Hourly Volatility",
+						parameters: {
+							unit: "hours",
+							period: 60,
+							percentile: 80,
+							minimum_range_percent: 2,
+						},
+					},
+					{
+						key: "market_cap",
+						name: "market_cap",
+						label: "Market Cap",
+						parameters: { min_market_cap_usd: 500_000_000 },
+					},
+				],
+			});
+			return new Response(JSON.stringify(body), { status: 200 });
+		},
+	);
+	expect(await fetchMarketScan(selections, { request })).toEqual(body);
+});

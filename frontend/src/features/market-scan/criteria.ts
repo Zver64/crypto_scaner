@@ -114,10 +114,9 @@ export interface VolatilityEvaluation {
 
 export function volatilityEvaluation(
 	evaluations: readonly Evaluation[],
+	instanceKey = volatilityCriterionKey,
 ): VolatilityEvaluation | undefined {
-	const evaluation = evaluations.find(
-		({ key }) => key === volatilityCriterionKey,
-	);
+	const evaluation = evaluations.find(({ key }) => key === instanceKey);
 	const rangePercent = evaluation?.metrics.range_percent;
 	if (!evaluation || typeof rangePercent !== "number") {
 		return undefined;

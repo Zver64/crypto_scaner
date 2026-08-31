@@ -15,7 +15,7 @@ interface AnalysisCriteriaFieldsProps {
 	periodInputProps: NumberInputProps;
 	periodKey: string;
 	unit: AnalysisUnit;
-	onUnitChange(unit: AnalysisUnit): void;
+	onUnitChange?(unit: AnalysisUnit): void;
 }
 
 export function AnalysisCriteriaFields({
@@ -37,14 +37,16 @@ export function AnalysisCriteriaFields({
 				suffix={` ${unit}`}
 				{...periodInputProps}
 			/>
-			<SegmentedControl
-				data={[
-					{ label: "Days", value: "days" },
-					{ label: "Hours", value: "hours" },
-				]}
-				value={unit}
-				onChange={(value) => onUnitChange(value as AnalysisUnit)}
-			/>
+			{onUnitChange ? (
+				<SegmentedControl
+					data={[
+						{ label: "Days", value: "days" },
+						{ label: "Hours", value: "hours" },
+					]}
+					value={unit}
+					onChange={(value) => onUnitChange(value as AnalysisUnit)}
+				/>
+			) : null}
 			<NumberInput
 				allowDecimal={false}
 				key={percentileKey}

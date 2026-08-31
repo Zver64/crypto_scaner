@@ -3,6 +3,7 @@ import type {
 	UnresolvedInstrumentCode,
 } from "../../api/client";
 import { marketCapEvaluation, volatilityEvaluation } from "./criteria";
+import { dailyVolatilityKey, hourlyVolatilityKey } from "./pipeline";
 
 const rangePercentFormatter = new Intl.NumberFormat("en", {
 	maximumSignificantDigits: 3,
@@ -73,7 +74,10 @@ export function hasRequiredMarketScanEvaluations(
 ): boolean {
 	return items.every(
 		(item) =>
-			volatilityEvaluation(item.evaluations) !== undefined &&
+			volatilityEvaluation(item.evaluations, dailyVolatilityKey) !==
+				undefined &&
+			volatilityEvaluation(item.evaluations, hourlyVolatilityKey) !==
+				undefined &&
 			(!marketCapRequired ||
 				marketCapEvaluation(item.evaluations) !== undefined),
 	);

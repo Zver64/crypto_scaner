@@ -26,7 +26,10 @@ function Home() {
 			onSelectInstrument={async (symbol, criteria) => {
 				await navigate({
 					params: { symbol },
-					search: instrumentAnalysisCriteriaToSearch(criteria),
+					search: instrumentAnalysisCriteriaToSearch({
+						...criteria,
+						unit: "days",
+					}),
 					to: "/instruments/$symbol",
 				});
 			}}

@@ -4,6 +4,7 @@ import {
 	Button,
 	Center,
 	Container,
+	Fieldset,
 	Group,
 	Loader,
 	LoadingOverlay,
@@ -22,19 +23,22 @@ import { ApiError, fetchMarketScan } from "../../api/client";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
 import { getTelegramInitData } from "../../app/telegram";
 import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
-import { defaultPeriodForUnit } from "../analysis/criteria";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "../analysis/use-analysis-warning-notification";
 import {
-	criterionSelections,
-	defaultMarketScanCriteria,
-	type MarketScanCriteria,
-	type MarketScanDraft,
 	marketCapEvaluation,
 	marketScanCriteriaConstraints,
-	validateMarketScanCriteria,
 	volatilityEvaluation,
 } from "./criteria";
+import {
+	criterionSelections,
+	dailyVolatilityKey,
+	defaultMarketScanCriteria,
+	hourlyVolatilityKey,
+	type MarketScanCriteria,
+	type MarketScanDraft,
+	validateMarketScanCriteria,
+} from "./pipeline";
 import {
 	binanceSpotUrl,
 	filterMarketScanItems,
@@ -121,10 +125,17 @@ export function MarketScanPage({
 		(committedCriteria?.minimumMarketCapMillions ?? 0) > 0;
 	const filteredItems = query.data
 		? filterMarketScanItems(query.data.items, symbolFilter).flatMap((item) => {
-				const evaluation = volatilityEvaluation(item.evaluations);
+				const daily = volatilityEvaluation(
+					item.evaluations,
+					dailyVolatilityKey,
+				);
+				const hourly = volatilityEvaluation(
+					item.evaluations,
+					hourlyVolatilityKey,
+				);
 				const marketCap = marketCapEvaluation(item.evaluations);
-				return evaluation && (!marketCapEnabled || marketCap)
-					? [{ evaluation, item, marketCap }]
+				return daily && hourly && (!marketCapEnabled || marketCap)
+					? [{ daily, hourly, item, marketCap }]
 					: [];
 			})
 		: [];
@@ -137,44 +148,71 @@ export function MarketScanPage({
 						Market Scan
 					</Title>
 					<Text c="dimmed" size="sm">
-						Find instruments by their candle range over a selected analysis
-						period.
+						Evaluate daily volatility, then hourly volatility, then each enabled
+						criterion.
 					</Text>
 				</Stack>
 
 				<Paper component="form" onSubmit={handleSubmit} p="md" withBorder>
 					<Stack gap="sm">
-						<AnalysisCriteriaFields
-							percentileInputProps={form.getInputProps("percentile")}
-							percentileKey={form.key("percentile")}
-							periodInputProps={form.getInputProps("period")}
-							periodKey={form.key("period")}
-							unit={form.values.unit}
-							onUnitChange={(unit) => {
-								form.setValues({ unit, period: defaultPeriodForUnit(unit) });
-							}}
-						/>
-						<NumberInput
-							decimalScale={10}
-							key={form.key("minimumRangePercent")}
-							label="Minimum Range"
-							min={marketScanCriteriaConstraints.minimumRangePercent.minimum}
-							step={0.1}
-							suffix="%"
-							{...form.getInputProps("minimumRangePercent")}
-						/>
-						<NumberInput
-							decimalScale={2}
-							key={form.key("minimumMarketCapMillions")}
-							label="Minimum Market Cap (millions)"
-							min={
-								marketScanCriteriaConstraints.minimumMarketCapMillions.minimum
-							}
-							prefix="$"
-							step={1}
-							suffix="M"
-							{...form.getInputProps("minimumMarketCapMillions")}
-						/>
+						<Fieldset legend="Daily Volatility">
+							<Stack gap="sm">
+								<AnalysisCriteriaFields
+									percentileInputProps={form.getInputProps("percentile")}
+									percentileKey={form.key("percentile")}
+									periodInputProps={form.getInputProps("period")}
+									periodKey={form.key("period")}
+									unit="days"
+								/>
+								<NumberInput
+									decimalScale={10}
+									key={form.key("minimumRangePercent")}
+									label="Minimum Range"
+									min={
+										marketScanCriteriaConstraints.minimumRangePercent.minimum
+									}
+									step={0.1}
+									suffix="%"
+									{...form.getInputProps("minimumRangePercent")}
+								/>
+							</Stack>
+						</Fieldset>
+						<Fieldset legend="Hourly Volatility">
+							<Stack gap="sm">
+								<AnalysisCriteriaFields
+									percentileInputProps={form.getInputProps("hourlyPercentile")}
+									percentileKey={form.key("hourlyPercentile")}
+									periodInputProps={form.getInputProps("hourlyPeriod")}
+									periodKey={form.key("hourlyPeriod")}
+									unit="hours"
+								/>
+								<NumberInput
+									decimalScale={10}
+									key={form.key("hourlyMinimumRangePercent")}
+									label="Minimum Range"
+									min={
+										marketScanCriteriaConstraints.minimumRangePercent.minimum
+									}
+									step={0.1}
+									suffix="%"
+									{...form.getInputProps("hourlyMinimumRangePercent")}
+								/>
+							</Stack>
+						</Fieldset>
+						<Fieldset legend="Market Cap">
+							<NumberInput
+								decimalScale={2}
+								key={form.key("minimumMarketCapMillions")}
+								label="Minimum Market Cap (millions)"
+								min={
+									marketScanCriteriaConstraints.minimumMarketCapMillions.minimum
+								}
+								prefix="$"
+								step={1}
+								suffix="M"
+								{...form.getInputProps("minimumMarketCapMillions")}
+							/>
+						</Fieldset>
 						<Button
 							disabled={submissionDisabled}
 							loading={query.isFetching}
@@ -244,13 +282,15 @@ export function MarketScanPage({
 								</Paper>
 							) : (
 								<Paper p="xs" withBorder>
-									<Table.ScrollContainer minWidth={540}>
+									<Table.ScrollContainer minWidth={760}>
 										<Table highlightOnHover verticalSpacing="xs">
 											<Table.Thead>
 												<Table.Tr>
 													<Table.Th>Symbol</Table.Th>
-													<Table.Th>Range Percent</Table.Th>
-													<Table.Th>Candle Count</Table.Th>
+													<Table.Th>Daily Range</Table.Th>
+													<Table.Th>Daily Candle Count</Table.Th>
+													<Table.Th>Hourly Range</Table.Th>
+													<Table.Th>Hourly Candle Count</Table.Th>
 													{marketCapEnabled ? (
 														<Table.Th>Market Cap USD</Table.Th>
 													) : null}
@@ -259,7 +299,7 @@ export function MarketScanPage({
 											</Table.Thead>
 											<Table.Tbody>
 												{filteredItems.map(
-													({ evaluation, item, marketCap }) => (
+													({ daily, hourly, item, marketCap }) => (
 														<Table.Tr
 															key={item.symbol}
 															onClick={() =>
@@ -282,9 +322,13 @@ export function MarketScanPage({
 														>
 															<Table.Td>{item.symbol}</Table.Td>
 															<Table.Td>
-																{formatRangePercent(evaluation.rangePercent)}
+																{formatRangePercent(daily.rangePercent)}
 															</Table.Td>
-															<Table.Td>{evaluation.candleCount}</Table.Td>
+															<Table.Td>{daily.candleCount}</Table.Td>
+															<Table.Td>
+																{formatRangePercent(hourly.rangePercent)}
+															</Table.Td>
+															<Table.Td>{hourly.candleCount}</Table.Td>
 															{marketCapEnabled && marketCap ? (
 																<Table.Td>
 																	{formatMarketCapUsd(marketCap.marketCapUsd)}
@@ -317,7 +361,7 @@ export function MarketScanPage({
 								</Paper>
 							)}
 
-							{query.data.unresolved.length > 0 ? (
+							{marketCapEnabled && query.data.unresolved.length > 0 ? (
 								<Stack gap="xs">
 									<Title order={2} size="h4">
 										Instruments with unavailable Market Cap
@@ -366,7 +410,9 @@ function criteriaAreEqual(
 function marketScanCriteriaIdentity(criteria: MarketScanCriteria) {
 	return [
 		criteria.period,
-		criteria.unit,
+		criteria.hourlyPeriod,
+		criteria.hourlyPercentile,
+		criteria.hourlyMinimumRangePercent,
 		criteria.percentile,
 		criteria.minimumRangePercent,
 		criteria.minimumMarketCapMillions,
@@ -380,7 +426,10 @@ function criteriaFromValidDraft(
 		typeof values.period !== "number" ||
 		typeof values.percentile !== "number" ||
 		typeof values.minimumMarketCapMillions !== "number" ||
-		typeof values.minimumRangePercent !== "number"
+		typeof values.minimumRangePercent !== "number" ||
+		typeof values.hourlyPeriod !== "number" ||
+		typeof values.hourlyPercentile !== "number" ||
+		typeof values.hourlyMinimumRangePercent !== "number"
 	) {
 		return undefined;
 	}
@@ -390,6 +439,8 @@ function criteriaFromValidDraft(
 		minimumRangePercent: values.minimumRangePercent,
 		percentile: values.percentile,
 		period: values.period,
-		unit: values.unit,
+		hourlyPeriod: values.hourlyPeriod,
+		hourlyPercentile: values.hourlyPercentile,
+		hourlyMinimumRangePercent: values.hourlyMinimumRangePercent,
 	};
 }

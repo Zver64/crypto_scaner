@@ -249,16 +249,18 @@ type enabledUserStore struct{}
 func (enabledUserStore) FindEnabledByTelegramID(context.Context, int64) (auth.User, error) {
 	return auth.User{ID: 1, TelegramID: 424242, Enabled: true}, nil
 }
-func newAnalysisHTTPHandler(store httpStore) http.Handler {
-	service, _ := analysis.NewService(store, volatility.New())
+func newAnalysisHTTPHandler(store httpStore, additionalFactories ...analysis.Factory) http.Handler {
+	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
+	service, _ := analysis.NewService(store, factories...)
 	authenticator := authtelegram.NewWithOptions(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
 	return httpapi.New(logging.New(io.Discard, "error"), readinessStub{marketSync: true}, service, authenticator)
 }
 
 type httpStore struct {
-	instruments []market.Instrument
-	candles     map[int64][]market.Candle
-	syncState   *market.SyncState
+	candlesByInterval map[int64]map[string][]market.Candle
+	instruments       []market.Instrument
+	candles           map[int64][]market.Candle
+	syncState         *market.SyncState
 }
 
 func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
@@ -271,7 +273,10 @@ func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.Syn
 func (s httpStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	return s.instruments, nil
 }
-func (s httpStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, _ string, _ int) ([]market.Candle, error) {
+func (s httpStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, interval string, _ int) ([]market.Candle, error) {
+	if s.candlesByInterval != nil {
+		return s.candlesByInterval[instrumentID][interval], nil
+	}
 	return s.candles[instrumentID], nil
 }
 func httpCandle(openTime time.Time, rangePercent float64) market.Candle {

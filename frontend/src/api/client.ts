@@ -1,4 +1,6 @@
 export interface CriterionSelection {
+	key: string;
+	label: string;
 	name: string;
 	parameters: Record<string, unknown>;
 }
@@ -6,6 +8,8 @@ export interface CriterionSelection {
 export interface Evaluation {
 	candle_count: number;
 	from: string;
+	key: string;
+	label: string;
 	matched: boolean;
 	metrics: Record<string, number>;
 	name: string;
@@ -301,6 +305,8 @@ function parseMarketScanItem(payload: unknown): MarketScanItem {
 function parseEvaluation(payload: unknown): Evaluation {
 	if (
 		!isRecord(payload) ||
+		typeof payload.key !== "string" ||
+		typeof payload.label !== "string" ||
 		typeof payload.name !== "string" ||
 		!isBoolean(payload.matched) ||
 		!isRecord(payload.metrics) ||
@@ -322,6 +328,8 @@ function parseEvaluation(payload: unknown): Evaluation {
 	return {
 		candle_count: payload.candle_count,
 		from: payload.from,
+		key: payload.key,
+		label: payload.label,
 		matched: payload.matched,
 		metrics,
 		name: payload.name,

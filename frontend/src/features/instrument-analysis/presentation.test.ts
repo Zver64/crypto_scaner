@@ -16,30 +16,32 @@ describe("formatUtcCoverageDate", () => {
 });
 
 describe("hasRequiredInstrumentAnalysisEvaluations", () => {
-	const percentile = (matched: boolean) => ({
+	const volatility = (matched: boolean) => ({
 		candle_count: 30,
 		from: "2026-07-05T00:00:00Z",
+		key: "volatility",
+		label: "Volatility",
 		matched,
 		metrics: { range_percent: 4 },
-		name: "percentile",
+		name: "volatility",
 		to: "2026-08-03T00:00:00Z",
 	});
 
-	it("requires Market Cap when the enabled percentile matched", () => {
+	it("requires Market Cap when the enabled volatility criterion matched", () => {
 		expect(
-			hasRequiredInstrumentAnalysisEvaluations([percentile(true)], true),
+			hasRequiredInstrumentAnalysisEvaluations([volatility(true)], true),
 		).toBe(false);
 	});
 
-	it("accepts a missing Market Cap evaluation after a failed percentile", () => {
+	it("accepts a missing Market Cap evaluation after failed volatility", () => {
 		expect(
-			hasRequiredInstrumentAnalysisEvaluations([percentile(false)], true),
+			hasRequiredInstrumentAnalysisEvaluations([volatility(false)], true),
 		).toBe(true);
 	});
 
 	it("accepts a missing Market Cap evaluation when disabled", () => {
 		expect(
-			hasRequiredInstrumentAnalysisEvaluations([percentile(true)], false),
+			hasRequiredInstrumentAnalysisEvaluations([volatility(true)], false),
 		).toBe(true);
 	});
 });

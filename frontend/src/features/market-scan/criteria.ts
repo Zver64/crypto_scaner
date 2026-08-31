@@ -6,7 +6,8 @@ import {
 	validateAnalysisCriteria,
 } from "../analysis/criteria";
 
-export const percentileCriterionName = "percentile";
+export const volatilityCriterionKey = "volatility";
+export const volatilityCriterionName = "volatility";
 export const marketCapCriterionName = "market_cap";
 const usdPerMillion = 1_000_000;
 
@@ -70,11 +71,13 @@ function validateNonNegativeNumber(
 	}
 }
 
-export function percentileCriterionSelection(
+export function volatilityCriterionSelection(
 	criteria: MarketScanCriteria,
 ): CriterionSelection {
 	return {
-		name: percentileCriterionName,
+		key: volatilityCriterionKey,
+		label: "Volatility",
+		name: volatilityCriterionName,
 		parameters: {
 			minimum_range_percent: criteria.minimumRangePercent,
 			percentile: criteria.percentile,
@@ -87,9 +90,11 @@ export function percentileCriterionSelection(
 export function criterionSelections(
 	criteria: MarketScanCriteria,
 ): CriterionSelection[] {
-	const selections = [percentileCriterionSelection(criteria)];
+	const selections = [volatilityCriterionSelection(criteria)];
 	if (criteria.minimumMarketCapMillions > 0) {
 		selections.push({
+			key: marketCapCriterionName,
+			label: "Market Cap",
 			name: marketCapCriterionName,
 			parameters: {
 				min_market_cap_usd: criteria.minimumMarketCapMillions * usdPerMillion,
@@ -99,7 +104,7 @@ export function criterionSelections(
 	return selections;
 }
 
-export interface PercentileEvaluation {
+export interface VolatilityEvaluation {
 	candleCount: number;
 	from: string;
 	matched: boolean;
@@ -107,11 +112,11 @@ export interface PercentileEvaluation {
 	to: string;
 }
 
-export function percentileEvaluation(
+export function volatilityEvaluation(
 	evaluations: readonly Evaluation[],
-): PercentileEvaluation | undefined {
+): VolatilityEvaluation | undefined {
 	const evaluation = evaluations.find(
-		({ name }) => name === percentileCriterionName,
+		({ key }) => key === volatilityCriterionKey,
 	);
 	const rangePercent = evaluation?.metrics.range_percent;
 	if (!evaluation || typeof rangePercent !== "number") {
@@ -136,7 +141,7 @@ export function marketCapEvaluation(
 	evaluations: readonly Evaluation[],
 ): MarketCapEvaluation | undefined {
 	const evaluation = evaluations.find(
-		({ name }) => name === marketCapCriterionName,
+		({ key }) => key === marketCapCriterionName,
 	);
 	const marketCapUsd = evaluation?.metrics.market_cap_usd;
 	if (!evaluation || typeof marketCapUsd !== "number") {

@@ -1,4 +1,4 @@
-package percentile_test
+package volatility_test
 
 import (
 	"context"
@@ -8,12 +8,26 @@ import (
 	"time"
 
 	"crypto-scanner/internal/analysis"
-	"crypto-scanner/internal/analysis/criteria/percentile"
+	"crypto-scanner/internal/analysis/criteria/volatility"
 	"crypto-scanner/internal/market"
 )
 
+func TestFactoryExposesVolatilityCriterionType(t *testing.T) {
+	factory := volatility.New()
+	if factory.Name() != "volatility" {
+		t.Fatalf("factory name = %q", factory.Name())
+	}
+	criterion, err := factory.Build(map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if criterion.Name() != "volatility" {
+		t.Fatalf("criterion name = %q", criterion.Name())
+	}
+}
+
 func TestPercentileEvaluatesTypeSevenRangeAndThreshold(t *testing.T) {
-	c, err := percentile.New().Build(map[string]any{"unit": "days", "period": float64(4), "percentile": float64(75), "minimum_range_percent": float64(5)})
+	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(4), "percentile": float64(75), "minimum_range_percent": float64(5)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,7 +39,7 @@ func TestPercentileEvaluatesTypeSevenRangeAndThreshold(t *testing.T) {
 	}
 }
 func TestPercentileUsesAvailableHistoryAndReportsIt(t *testing.T) {
-	c, err := percentile.New().Build(map[string]any{"unit": "days", "period": float64(2), "percentile": float64(50), "minimum_range_percent": float64(0)})
+	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(2), "percentile": float64(50), "minimum_range_percent": float64(0)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,18 +51,18 @@ func TestPercentileUsesAvailableHistoryAndReportsIt(t *testing.T) {
 }
 
 func TestPercentileRejectsZeroHistory(t *testing.T) {
-	c, err := percentile.New().Build(map[string]any{"unit": "days", "period": float64(2), "percentile": float64(50), "minimum_range_percent": float64(0)})
+	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(2), "percentile": float64(50), "minimum_range_percent": float64(0)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: {}}})
 	var insufficient *analysis.InsufficientHistoryError
-	if !errors.As(err, &insufficient) || insufficient.Criterion != "percentile" || insufficient.Required != 2 || insufficient.Available != 0 {
+	if !errors.As(err, &insufficient) || insufficient.Criterion != "volatility" || insufficient.Required != 2 || insufficient.Available != 0 {
 		t.Fatalf("err=%v", err)
 	}
 }
 func TestPercentileRejectsInvalidParameters(t *testing.T) {
-	_, err := percentile.New().Build(map[string]any{"unit": "days", "period": float64(1), "percentile": math.NaN(), "minimum_range_percent": float64(0)})
+	_, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(1), "percentile": math.NaN(), "minimum_range_percent": float64(0)})
 	if !errors.Is(err, analysis.ErrInvalidArgument) {
 		t.Fatalf("err=%v", err)
 	}

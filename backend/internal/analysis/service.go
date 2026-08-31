@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strings"
 
 	"crypto-scanner/internal/market"
 )
@@ -49,6 +50,12 @@ type UnresolvedItem struct{ Symbol, Code, Message string }
 type Service struct {
 	store     Store
 	factories map[string]Factory
+}
+
+type criterionInstance struct {
+	Criterion
+	key   string
+	label string
 }
 
 // NewService validates and registers the explicitly composed criterion factories.
@@ -160,16 +167,19 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	return result, nil
 }
 
-func (service *Service) prepare(configs []CriterionConfig) ([]Criterion, map[Unit]int, error) {
+func (service *Service) prepare(configs []CriterionConfig) ([]criterionInstance, map[Unit]int, error) {
 	if len(configs) == 0 {
 		return nil, nil, ErrInvalidArgument
 	}
-	criteria := make([]Criterion, 0, len(configs))
+	criteria := make([]criterionInstance, 0, len(configs))
 	requirements := map[Unit]int{}
-	selected := map[string]bool{}
+	selectedKeys := map[string]bool{}
 	for _, config := range configs {
+		if strings.TrimSpace(config.Key) == "" || strings.TrimSpace(config.Label) == "" || selectedKeys[config.Key] {
+			return nil, nil, ErrInvalidArgument
+		}
 		factory, ok := service.factories[config.Name]
-		if !ok || selected[config.Name] {
+		if !ok {
 			return nil, nil, ErrInvalidArgument
 		}
 		criterion, err := factory.Build(config.Parameters)
@@ -179,8 +189,8 @@ func (service *Service) prepare(configs []CriterionConfig) ([]Criterion, map[Uni
 		if criterion == nil || criterion.Name() != config.Name {
 			return nil, nil, ErrInvalidArgument
 		}
-		selected[config.Name] = true
-		criteria = append(criteria, criterion)
+		selectedKeys[config.Key] = true
+		criteria = append(criteria, criterionInstance{Criterion: criterion, key: config.Key, label: config.Label})
 		for _, requirement := range criterion.Requirements() {
 			if (requirement.Unit != UnitDays && requirement.Unit != UnitHours) || requirement.Count < 1 {
 				return nil, nil, ErrInvalidArgument
@@ -193,7 +203,7 @@ func (service *Service) prepare(configs []CriterionConfig) ([]Criterion, map[Uni
 	return criteria, requirements, nil
 }
 
-func (service *Service) evaluate(ctx context.Context, instrument market.Instrument, criteria []Criterion, requirements map[Unit]int) (SymbolResult, error) {
+func (service *Service) evaluate(ctx context.Context, instrument market.Instrument, criteria []criterionInstance, requirements map[Unit]int) (SymbolResult, error) {
 	_ = requirements
 	result := SymbolResult{Symbol: instrument.Symbol, Matched: true, Evaluations: make([]Evaluation, 0, len(criteria))}
 	data := make(map[Unit][]market.Candle)
@@ -226,11 +236,11 @@ type UnresolvedError struct{ Code, Message string }
 
 func (e *UnresolvedError) Error() string { return e.Message }
 
-func (service *Service) evaluateCriterion(ctx context.Context, instrument market.Instrument, criterion Criterion) (SymbolResult, error) {
+func (service *Service) evaluateCriterion(ctx context.Context, instrument market.Instrument, criterion criterionInstance) (SymbolResult, error) {
 	data := make(map[Unit][]market.Candle)
 	return service.evaluateCriterionWithData(ctx, instrument, criterion, data)
 }
-func (service *Service) evaluateCriterionWithData(ctx context.Context, instrument market.Instrument, criterion Criterion, data map[Unit][]market.Candle) (SymbolResult, error) {
+func (service *Service) evaluateCriterionWithData(ctx context.Context, instrument market.Instrument, criterion criterionInstance, data map[Unit][]market.Candle) (SymbolResult, error) {
 	for _, requirement := range criterion.Requirements() {
 		if existing, ok := data[requirement.Unit]; ok && len(existing) >= requirement.Count {
 			continue
@@ -250,6 +260,8 @@ func (service *Service) evaluateCriterionWithData(ctx context.Context, instrumen
 		return SymbolResult{}, fmt.Errorf("evaluate criterion %s: %w", criterion.Name(), err)
 	}
 	evaluation.Name = criterion.Name()
+	evaluation.Key = criterion.key
+	evaluation.Label = criterion.label
 	return SymbolResult{Symbol: instrument.Symbol, Matched: evaluation.Matched, Evaluations: []Evaluation{evaluation}}, nil
 }
 

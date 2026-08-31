@@ -1,5 +1,5 @@
-// Package percentile implements candle-range percentile filtering.
-package percentile
+// Package volatility implements candle-range percentile filtering.
+package volatility
 
 import (
 	"context"
@@ -13,7 +13,7 @@ import (
 type Factory struct{}
 
 func New() Factory           { return Factory{} }
-func (Factory) Name() string { return "percentile" }
+func (Factory) Name() string { return "volatility" }
 
 func (Factory) Build(parameters map[string]any) (analysis.Criterion, error) {
 	if len(parameters) != 4 {
@@ -38,7 +38,7 @@ type criterion struct {
 	percentile, minimum float64
 }
 
-func (criterion) Name() string { return "percentile" }
+func (criterion) Name() string { return "volatility" }
 func (c criterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: c.unit, Count: c.period}}
 }

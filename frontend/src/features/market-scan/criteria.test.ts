@@ -3,9 +3,9 @@ import {
 	criterionSelections,
 	defaultMarketScanCriteria,
 	marketCapEvaluation,
-	percentileCriterionSelection,
-	percentileEvaluation,
 	validateMarketScanCriteria,
+	volatilityCriterionSelection,
+	volatilityEvaluation,
 } from "./criteria";
 
 describe("validateMarketScanCriteria", () => {
@@ -69,9 +69,9 @@ describe("validateMarketScanCriteria", () => {
 	});
 });
 
-it("adapts percentile form criteria and safely extracts its evaluation", () => {
+it("adapts volatility form criteria and safely extracts its evaluation", () => {
 	expect(
-		percentileCriterionSelection({
+		volatilityCriterionSelection({
 			minimumRangePercent: 3.5,
 			minimumMarketCapMillions: 0,
 			percentile: 80,
@@ -79,7 +79,9 @@ it("adapts percentile form criteria and safely extracts its evaluation", () => {
 			unit: "days",
 		}),
 	).toEqual({
-		name: "percentile",
+		key: "volatility",
+		label: "Volatility",
+		name: "volatility",
 		parameters: {
 			minimum_range_percent: 3.5,
 			percentile: 80,
@@ -88,13 +90,15 @@ it("adapts percentile form criteria and safely extracts its evaluation", () => {
 		},
 	});
 	expect(
-		percentileEvaluation([
+		volatilityEvaluation([
 			{
 				candle_count: 30,
 				from: "2026-08-01T00:00:00Z",
+				key: "volatility",
+				label: "Volatility",
 				matched: true,
 				metrics: { range_percent: 4 },
-				name: "percentile",
+				name: "volatility",
 				to: "2026-08-02T00:00:00Z",
 			},
 		]),
@@ -105,10 +109,10 @@ it("adapts percentile form criteria and safely extracts its evaluation", () => {
 		rangePercent: 4,
 		to: "2026-08-02T00:00:00Z",
 	});
-	expect(percentileEvaluation([])).toBeUndefined();
+	expect(volatilityEvaluation([])).toBeUndefined();
 });
 
-it("sends Market Cap after percentile only when it is positive", () => {
+it("sends Market Cap after volatility only when it is positive", () => {
 	const criteria = {
 		minimumMarketCapMillions: 1,
 		minimumRangePercent: 3.5,
@@ -118,13 +122,18 @@ it("sends Market Cap after percentile only when it is positive", () => {
 	};
 
 	expect(criterionSelections(criteria)).toEqual([
-		percentileCriterionSelection(criteria),
-		{ name: "market_cap", parameters: { min_market_cap_usd: 1_000_000 } },
+		volatilityCriterionSelection(criteria),
+		{
+			key: "market_cap",
+			label: "Market Cap",
+			name: "market_cap",
+			parameters: { min_market_cap_usd: 1_000_000 },
+		},
 	]);
 	expect(
 		criterionSelections({ ...criteria, minimumMarketCapMillions: 0 }),
 	).toEqual([
-		percentileCriterionSelection({ ...criteria, minimumMarketCapMillions: 0 }),
+		volatilityCriterionSelection({ ...criteria, minimumMarketCapMillions: 0 }),
 	]);
 });
 
@@ -134,6 +143,8 @@ it("extracts a Market Cap evaluation without candle coverage", () => {
 			{
 				candle_count: 0,
 				from: "0001-01-01T00:00:00Z",
+				key: "market_cap",
+				label: "Market Cap",
 				matched: true,
 				metrics: { market_cap_usd: 1_234_567 },
 				name: "market_cap",

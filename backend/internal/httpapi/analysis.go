@@ -19,14 +19,16 @@ type analysisRequest struct {
 }
 
 type criterionRequest struct {
+	Key        string         `json:"key"`
 	Name       string         `json:"name"`
+	Label      string         `json:"label"`
 	Parameters map[string]any `json:"parameters"`
 }
 
 func (request analysisRequest) criterionConfigs() []analysis.CriterionConfig {
 	configs := make([]analysis.CriterionConfig, len(request.Criteria))
 	for i, criterion := range request.Criteria {
-		configs[i] = analysis.CriterionConfig{Name: criterion.Name, Parameters: criterion.Parameters}
+		configs[i] = analysis.CriterionConfig{Key: criterion.Key, Name: criterion.Name, Label: criterion.Label, Parameters: criterion.Parameters}
 	}
 	return configs
 }
@@ -130,13 +132,15 @@ func responseEvaluations(evaluations []analysis.Evaluation) []evaluationResponse
 				metrics[name] = roundPercentage(value)
 			}
 		}
-		items[i] = evaluationResponse{Name: evaluation.Name, Matched: evaluation.Matched, Metrics: metrics, CandleCount: evaluation.CandleCount, From: evaluation.From.UTC(), To: evaluation.To.UTC()}
+		items[i] = evaluationResponse{Key: evaluation.Key, Name: evaluation.Name, Label: evaluation.Label, Matched: evaluation.Matched, Metrics: metrics, CandleCount: evaluation.CandleCount, From: evaluation.From.UTC(), To: evaluation.To.UTC()}
 	}
 	return items
 }
 
 type evaluationResponse struct {
+	Key         string             `json:"key"`
 	Name        string             `json:"name"`
+	Label       string             `json:"label"`
 	Matched     bool               `json:"matched"`
 	Metrics     map[string]float64 `json:"metrics"`
 	CandleCount int                `json:"candle_count"`

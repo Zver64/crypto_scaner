@@ -2,7 +2,7 @@ import type {
 	MarketScanItem,
 	UnresolvedInstrumentCode,
 } from "../../api/client";
-import { marketCapEvaluation, percentileEvaluation } from "./criteria";
+import { marketCapEvaluation, volatilityEvaluation } from "./criteria";
 
 const rangePercentFormatter = new Intl.NumberFormat("en", {
 	maximumSignificantDigits: 3,
@@ -73,7 +73,7 @@ export function hasRequiredMarketScanEvaluations(
 ): boolean {
 	return items.every(
 		(item) =>
-			percentileEvaluation(item.evaluations) !== undefined &&
+			volatilityEvaluation(item.evaluations) !== undefined &&
 			(!marketCapRequired ||
 				marketCapEvaluation(item.evaluations) !== undefined),
 	);

@@ -1,7 +1,7 @@
 import type { Evaluation } from "../../api/client";
 import {
 	marketCapEvaluation,
-	percentileEvaluation,
+	volatilityEvaluation,
 } from "../market-scan/criteria";
 
 const utcDateFormatter = new Intl.DateTimeFormat("en", {
@@ -17,11 +17,11 @@ export function hasRequiredInstrumentAnalysisEvaluations(
 	evaluations: readonly Evaluation[],
 	marketCapRequired: boolean,
 ): boolean {
-	const percentile = percentileEvaluation(evaluations);
+	const volatility = volatilityEvaluation(evaluations);
 	return (
-		percentile !== undefined &&
+		volatility !== undefined &&
 		(!marketCapRequired ||
-			!percentile.matched ||
+			!volatility.matched ||
 			marketCapEvaluation(evaluations) !== undefined)
 	);
 }

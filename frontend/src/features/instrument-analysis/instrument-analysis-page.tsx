@@ -28,8 +28,8 @@ import {
 	type MarketScanCriteria,
 	type MarketScanDraft,
 	marketCapEvaluation,
-	percentileEvaluation,
 	validateMarketScanCriteria,
+	volatilityEvaluation,
 } from "../market-scan/criteria";
 import { formatMarketCapUsd, formatRangePercent } from "../market-scan/results";
 import {
@@ -145,7 +145,7 @@ export function InstrumentAnalysisPage({
 	const submissionDisabled =
 		!form.isValid() || !permission.allowed || query.isFetching;
 	const result = query.data;
-	const evaluation = result && percentileEvaluation(result.evaluations);
+	const evaluation = result && volatilityEvaluation(result.evaluations);
 	const marketCap = result && marketCapEvaluation(result.evaluations);
 
 	return (

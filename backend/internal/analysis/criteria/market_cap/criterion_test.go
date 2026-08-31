@@ -18,7 +18,7 @@ func TestValidationAndInclusiveBoundary(t *testing.T) {
 		t.Fatalf("err=%v", err)
 	}
 	service, _ := analysis.NewService(store, factory)
-	result, err := service.AnalyzeSymbol(context.Background(), analysis.SymbolRequest{Symbol: "BTCUSDT", Criteria: []analysis.CriterionConfig{{Name: "market_cap", Parameters: map[string]any{"min_market_cap_usd": float64(100)}}}})
+	result, err := service.AnalyzeSymbol(context.Background(), analysis.SymbolRequest{Symbol: "BTCUSDT", Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{"min_market_cap_usd": float64(100)}}}})
 	if err != nil || !result.Matched {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}

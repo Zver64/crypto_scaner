@@ -46,7 +46,9 @@ type CandleRequirement struct {
 
 // CriterionConfig selects and configures a criterion for the application service.
 type CriterionConfig struct {
+	Key        string
 	Name       string
+	Label      string
 	Parameters map[string]any
 }
 
@@ -71,7 +73,9 @@ type Warning struct{ Code, Message string }
 
 // Evaluation is an unrounded criterion result.
 type Evaluation struct {
+	Key           string
 	Name          string
+	Label         string
 	Matched       bool
 	Metrics       map[string]float64
 	OrderingScore *float64

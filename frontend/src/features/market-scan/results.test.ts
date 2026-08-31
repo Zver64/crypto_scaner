@@ -104,17 +104,21 @@ describe("filterMarketScanItems", () => {
 });
 
 describe("hasRequiredMarketScanEvaluations", () => {
-	const percentile = {
+	const volatility = {
 		candle_count: 30,
 		from: "2026-08-01T00:00:00Z",
+		key: "volatility",
+		label: "Volatility",
 		matched: true,
 		metrics: { range_percent: 4 },
-		name: "percentile",
+		name: "volatility",
 		to: "2026-08-02T00:00:00Z",
 	};
 	const marketCap = {
 		candle_count: 0,
 		from: "0001-01-01T00:00:00Z",
+		key: "market_cap",
+		label: "Market Cap",
 		matched: true,
 		metrics: { market_cap_usd: 1_000_000 },
 		name: "market_cap",
@@ -124,7 +128,7 @@ describe("hasRequiredMarketScanEvaluations", () => {
 	it("requires a Market Cap evaluation when the filter is enabled", () => {
 		expect(
 			hasRequiredMarketScanEvaluations(
-				[{ evaluations: [percentile], matched: true, symbol: "BTCUSDT" }],
+				[{ evaluations: [volatility], matched: true, symbol: "BTCUSDT" }],
 				true,
 			),
 		).toBe(false);
@@ -132,7 +136,7 @@ describe("hasRequiredMarketScanEvaluations", () => {
 			hasRequiredMarketScanEvaluations(
 				[
 					{
-						evaluations: [percentile, marketCap],
+						evaluations: [volatility, marketCap],
 						matched: true,
 						symbol: "BTCUSDT",
 					},

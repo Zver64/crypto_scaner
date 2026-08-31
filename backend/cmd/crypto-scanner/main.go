@@ -15,7 +15,7 @@ import (
 
 	"crypto-scanner/internal/analysis"
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/market_cap"
-	"crypto-scanner/internal/analysis/criteria/percentile"
+	"crypto-scanner/internal/analysis/criteria/volatility"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/httpapi"
@@ -75,7 +75,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	hourlySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.HourlyProfile())
 	scheduler := marketsync.NewSchedulerWithHourly(dailySynchronizer, hourlySynchronizer, logger)
 	marketCapResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
-	criterionFactories := []analysis.Factory{percentile.New(), marketcapcriterion.New(marketCapResolver)}
+	criterionFactories := []analysis.Factory{volatility.New(), marketcapcriterion.New(marketCapResolver)}
 	analysisService, err := analysis.NewService(store, criterionFactories...)
 	if err != nil {
 		return fmt.Errorf("initialize analysis service: %w", err)

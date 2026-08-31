@@ -1,62 +1,104 @@
-# Crypto Scanner percentile analysis endpoints
+# Crypto Scanner analysis endpoints
 #
 # Both endpoints require fresh Telegram Mini App initData from an enabled user:
 #   Authorization: tma <window.Telegram.WebApp.initData>
 #
 # Copy http-client.private.env.json.example to http-client.private.env.json and
 # replace TELEGRAM_INIT_DATA there. The private file is ignored by Git.
-# initData expires according to TELEGRAM_INIT_DATA_MAX_AGE (24 hours in the
-# example environment), so refresh it from the Mini App when the API returns 401.
-#
-# Query rules:
-# - Every documented query parameter is required exactly once.
-# - Extra query parameters are rejected.
-# - unit: exactly days or hours.
-# - period: integer from 1 through 3650 days or 87600 hours.
-# - percentile: number from 0 through 100.
-# - minimum_range_percent: non-negative number.
 
 @symbol = BTCUSDT
-@unit = days
-@period = 30
-@percentile = 75
-@minimumRangePercent = 4
 
 ### Analyze one active symbol
-# Returns its percentile range, candle count, and UTC time coverage.
-# Expected: 200. The symbol must match an active symbol exactly, for example
-# BTCUSDT. Unknown or inactive symbols return 404 symbol_not_found; incomplete
-# history returns 409 insufficient_data.
-# @name analyzeSymbolPercentile
-GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?unit={{unit}}&period={{period}}&percentile={{percentile}} HTTP/1.1
+# Criterion instance keys must be nonempty and unique within the request. Labels
+# are presentation identity; names select reusable criterion implementations.
+# @name analyzeSymbol
+POST {{BASE_URL}}/api/v1/analysis/instruments/{{symbol}} HTTP/1.1
 Accept: application/json
 Authorization: tma {{TELEGRAM_INIT_DATA}}
+Content-Type: application/json
 X-Request-ID: kulala-analysis-symbol
 
+{
+  "criteria": [
+    {
+      "key": "daily_volatility",
+      "name": "volatility",
+      "label": "Daily Volatility",
+      "parameters": {
+        "unit": "days",
+        "period": 30,
+        "percentile": 80,
+        "minimum_range_percent": 5
+      }
+    },
+    {
+      "key": "hourly_volatility",
+      "name": "volatility",
+      "label": "Hourly Volatility",
+      "parameters": {
+        "unit": "hours",
+        "period": 60,
+        "percentile": 80,
+        "minimum_range_percent": 2
+      }
+    }
+  ]
+}
+
 ### Search all active symbols
-# Analyzes every active instrument and returns only items whose unrounded range
-# is at least minimum_range_percent. Items are ordered by range descending, then
-# symbol ascending. The response also reports matched, analyzed, and
-# insufficient-data counts.
-# Expected: 200.
-# @name searchMarketPercentile
-GET {{BASE_URL}}/api/v1/analysis/percentile?unit={{unit}}&period={{period}}&percentile={{percentile}}&minimum_range_percent={{minimumRangePercent}} HTTP/1.1
+# Criteria run in request order and later instances receive only survivors.
+# @name searchMarket
+POST {{BASE_URL}}/api/v1/analysis/market HTTP/1.1
 Accept: application/json
 Authorization: tma {{TELEGRAM_INIT_DATA}}
+Content-Type: application/json
 X-Request-ID: kulala-analysis-search
 
-### Authentication failure example
-# Omitting Authorization demonstrates the canonical 401 unauthenticated error.
-# A valid Telegram identity that is not enabled returns 403 access_denied.
-# @name analyzeWithoutAuthentication
-GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?unit={{unit}}&period={{period}}&percentile={{percentile}} HTTP/1.1
-Accept: application/json
-X-Request-ID: kulala-analysis-unauthenticated
+{
+  "criteria": [
+    {
+      "key": "volatility",
+      "name": "volatility",
+      "label": "Volatility",
+      "parameters": {
+        "unit": "days",
+        "period": 30,
+        "percentile": 80,
+        "minimum_range_percent": 3
+      }
+    },
+    {
+      "key": "market_cap",
+      "name": "market_cap",
+      "label": "Market Cap",
+      "parameters": {
+        "min_market_cap_usd": 500000000
+      }
+    }
+  ]
+}
 
 ### Validation failure example
-# period=0 demonstrates the canonical 400 invalid_argument error.
+# A blank instance key demonstrates the canonical 400 invalid_argument error.
 # @name analyzeWithInvalidArguments
-GET {{BASE_URL}}/api/v1/analysis/percentile/{{symbol}}?unit={{unit}}&period=0&percentile={{percentile}} HTTP/1.1
+POST {{BASE_URL}}/api/v1/analysis/instruments/{{symbol}} HTTP/1.1
 Accept: application/json
 Authorization: tma {{TELEGRAM_INIT_DATA}}
+Content-Type: application/json
 X-Request-ID: kulala-analysis-invalid
+
+{
+  "criteria": [
+    {
+      "key": "",
+      "name": "volatility",
+      "label": "Volatility",
+      "parameters": {
+        "unit": "days",
+        "period": 30,
+        "percentile": 80,
+        "minimum_range_percent": 3
+      }
+    }
+  ]
+}

@@ -32,8 +32,8 @@ import {
 	type MarketScanDraft,
 	marketCapEvaluation,
 	marketScanCriteriaConstraints,
-	percentileEvaluation,
 	validateMarketScanCriteria,
+	volatilityEvaluation,
 } from "./criteria";
 import {
 	binanceSpotUrl,
@@ -121,7 +121,7 @@ export function MarketScanPage({
 		(committedCriteria?.minimumMarketCapMillions ?? 0) > 0;
 	const filteredItems = query.data
 		? filterMarketScanItems(query.data.items, symbolFilter).flatMap((item) => {
-				const evaluation = percentileEvaluation(item.evaluations);
+				const evaluation = volatilityEvaluation(item.evaluations);
 				const marketCap = marketCapEvaluation(item.evaluations);
 				return evaluation && (!marketCapEnabled || marketCap)
 					? [{ evaluation, item, marketCap }]

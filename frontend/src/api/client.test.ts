@@ -2,7 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 import { ApiError, fetchInstrumentAnalysis, fetchMarketScan } from "./client";
 
 const criteria = {
-	name: "percentile",
+	key: "volatility",
+	label: "Volatility",
+	name: "volatility",
 	parameters: {
 		minimum_range_percent: 3.5,
 		percentile: 80,
@@ -14,9 +16,11 @@ const criteria = {
 const evaluation = {
 	candle_count: 30,
 	from: "2026-07-05T00:00:00Z",
+	key: "volatility",
+	label: "Volatility",
 	matched: true,
 	metrics: { range_percent: 4 },
-	name: "percentile",
+	name: "volatility",
 	to: "2026-08-03T00:00:00Z",
 };
 

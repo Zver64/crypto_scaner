@@ -1,4 +1,4 @@
-// Package volatility implements candle-range percentile filtering.
+// Package volatility implements the volatility criterion using candle-range percentiles.
 package volatility
 
 import (

@@ -26,7 +26,6 @@ function renderAnalysis(result: InstrumentAnalysisResult) {
 					<InstrumentAnalysisPage
 						committedCriteria={defaultMarketScanCriteria}
 						onBack={() => {}}
-						onCommit={async () => {}}
 						symbol="BTCUSDT"
 					/>
 				</BusinessRequestContext>
@@ -35,7 +34,7 @@ function renderAnalysis(result: InstrumentAnalysisResult) {
 	);
 }
 
-it("presents independent daily and hourly evaluations by criterion-instance key", () => {
+it("shows the instrument summary and market cap without volatility details", () => {
 	const daily = {
 		candle_count: 30,
 		from: "2026-08-01T00:00:00Z",
@@ -54,20 +53,41 @@ it("presents independent daily and hourly evaluations by criterion-instance key"
 		metrics: { range_percent: 2.75 },
 	};
 	const html = renderAnalysis({
-		evaluations: [hourly, daily],
+		evaluations: [
+			hourly,
+			daily,
+			{
+				candle_count: 0,
+				from: "0001-01-01T00:00:00Z",
+				key: "market_cap",
+				label: "Market Cap",
+				matched: true,
+				metrics: { market_cap_usd: 1_500_000_000 },
+				name: "market_cap",
+				to: "0001-01-01T00:00:00Z",
+			},
+		],
 		matched: true,
 		symbol: "BTCUSDT",
 		warnings: [],
 	});
 
-	expect(html).toContain("Daily Volatility");
-	expect(html).toContain("Hourly Volatility");
-	expect(html).toMatch(/Daily Volatility.*6.25%.*30.*Aug 1, 2026 UTC/);
-	expect(html).toMatch(/Hourly Volatility.*2.75%.*60.*Aug 1, 2026 UTC/);
+	expect(html).toContain("Symbol");
+	expect(html).toContain("BTCUSDT");
+	expect(html).toContain("Market Cap");
+	expect(html).toContain("$1.5B");
+	expect(html).not.toContain("Daily Volatility");
+	expect(html).not.toContain("Hourly Volatility");
+	expect(html).not.toContain("Coverage From");
+	expect(html).not.toContain("Coverage To");
 	expect(html).not.toContain('type="radio"');
+	expect(html).not.toContain("Minimum Market Cap");
+	expect(html).not.toContain("Recalculate Instrument");
+	expect(html).not.toContain("Matched");
+	expect(html).not.toContain("Instrument Analysis");
 });
 
-it("explains that Hourly Volatility was short-circuited after a daily rejection", () => {
+it("keeps the summary visible when volatility short-circuits market cap", () => {
 	const html = renderAnalysis({
 		evaluations: [
 			{
@@ -86,9 +106,8 @@ it("explains that Hourly Volatility was short-circuited after a daily rejection"
 		warnings: [],
 	});
 
-	expect(html).toContain("Hourly Volatility");
-	expect(html).toContain(
-		"Not evaluated because Daily Volatility did not match.",
-	);
-	expect(html).toContain("Market Cap");
+	expect(html).toContain("Symbol");
+	expect(html).not.toContain("Matched");
+	expect(html).not.toContain("Daily Volatility");
+	expect(html).not.toContain("Hourly Volatility");
 });

@@ -4,6 +4,8 @@ import { MarketScanPage } from "../features/market-scan/market-scan-page";
 import {
 	marketScanCriteriaFromSearch,
 	marketScanCriteriaToSearch,
+	marketScanSortFromSearch,
+	marketScanSortToSearch,
 	parseMarketScanSearch,
 } from "../features/market-scan/search-params";
 
@@ -16,12 +18,23 @@ function Home() {
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
 	const committedCriteria = marketScanCriteriaFromSearch(search);
+	const sort = marketScanSortFromSearch(search);
 
 	return (
 		<MarketScanPage
 			committedCriteria={committedCriteria}
 			onCommit={async (criteria) => {
-				await navigate({ search: marketScanCriteriaToSearch(criteria) });
+				await navigate({
+					search: {
+						...marketScanCriteriaToSearch(criteria),
+						...marketScanSortToSearch(sort),
+					},
+				});
+			}}
+			onSortChange={async (nextSort) => {
+				await navigate({
+					search: { ...search, ...marketScanSortToSearch(nextSort) },
+				});
 			}}
 			onSelectInstrument={async (symbol, criteria) => {
 				await navigate({
@@ -33,6 +46,7 @@ function Home() {
 					to: "/instruments/$symbol",
 				});
 			}}
+			sort={sort}
 		/>
 	);
 }

@@ -15,6 +15,7 @@ import {
 	Text,
 	TextInput,
 	Title,
+	UnstyledButton,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useQuery } from "@tanstack/react-query";
@@ -46,7 +47,13 @@ import {
 	formatRangePercent,
 	hasRequiredMarketScanEvaluations,
 	marketCapUnavailableReason,
+	sortMarketScanItems,
 } from "./results";
+import {
+	type MarketScanSort,
+	type MarketScanSortColumn,
+	nextMarketScanSort,
+} from "./sort";
 
 export function marketScanQueryKey(criteria: MarketScanCriteria) {
 	return ["market-scan", ...marketScanCriteriaIdentity(criteria)] as const;
@@ -55,16 +62,20 @@ export function marketScanQueryKey(criteria: MarketScanCriteria) {
 interface MarketScanPageProps {
 	committedCriteria: MarketScanCriteria | undefined;
 	onCommit(criteria: MarketScanCriteria): Promise<void>;
+	onSortChange(sort: MarketScanSort): Promise<void>;
 	onSelectInstrument(
 		symbol: string,
 		criteria: MarketScanCriteria,
 	): Promise<void>;
+	sort: MarketScanSort;
 }
 
 export function MarketScanPage({
 	committedCriteria,
 	onCommit,
+	onSortChange,
 	onSelectInstrument,
+	sort,
 }: MarketScanPageProps) {
 	const permission = useBusinessRequestPermission();
 	const [symbolFilter, setSymbolFilter] = useState("");
@@ -124,7 +135,10 @@ export function MarketScanPage({
 	const marketCapEnabled =
 		(committedCriteria?.minimumMarketCapMillions ?? 0) > 0;
 	const filteredItems = query.data
-		? filterMarketScanItems(query.data.items, symbolFilter).flatMap((item) => {
+		? sortMarketScanItems(
+				filterMarketScanItems(query.data.items, symbolFilter),
+				sort,
+			).flatMap((item) => {
 				const daily = volatilityEvaluation(
 					item.evaluations,
 					dailyVolatilityKey,
@@ -287,12 +301,27 @@ export function MarketScanPage({
 											<Table.Thead>
 												<Table.Tr>
 													<Table.Th>Symbol</Table.Th>
-													<Table.Th>Daily Range</Table.Th>
+													<SortableMarketScanHeader
+														column="daily_volatility"
+														label="Daily Range"
+														onSortChange={onSortChange}
+														sort={sort}
+													/>
 													<Table.Th>Daily Candle Count</Table.Th>
-													<Table.Th>Hourly Range</Table.Th>
+													<SortableMarketScanHeader
+														column="hourly_volatility"
+														label="Hourly Range"
+														onSortChange={onSortChange}
+														sort={sort}
+													/>
 													<Table.Th>Hourly Candle Count</Table.Th>
 													{marketCapEnabled ? (
-														<Table.Th>Market Cap USD</Table.Th>
+														<SortableMarketScanHeader
+															column="market_cap"
+															label="Market Cap USD"
+															onSortChange={onSortChange}
+															sort={sort}
+														/>
 													) : null}
 													<Table.Th ta="right">Binance</Table.Th>
 												</Table.Tr>
@@ -395,6 +424,38 @@ export function MarketScanPage({
 				) : null}
 			</Stack>
 		</Container>
+	);
+}
+
+function SortableMarketScanHeader({
+	column,
+	label,
+	onSortChange,
+	sort,
+}: {
+	column: MarketScanSortColumn;
+	label: string;
+	onSortChange(sort: MarketScanSort): Promise<void>;
+	sort: MarketScanSort;
+}) {
+	const active = sort.column === column;
+	const ariaSort = !active
+		? "none"
+		: sort.direction === "desc"
+			? "descending"
+			: "ascending";
+	const nextSort = nextMarketScanSort(sort, column);
+
+	return (
+		<Table.Th aria-sort={ariaSort}>
+			<UnstyledButton
+				aria-label={`Sort by ${label}${active ? `, currently ${sort.direction}ending` : ""}`}
+				onClick={() => void onSortChange(nextSort)}
+			>
+				{label}
+				{active ? (sort.direction === "desc" ? " ↓" : " ↑") : null}
+			</UnstyledButton>
+		</Table.Th>
 	);
 }
 

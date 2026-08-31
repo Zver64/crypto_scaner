@@ -6,8 +6,13 @@ import type { MarketScanResult } from "../../api/client";
 import { BusinessRequestContext } from "../../app/business-request-context";
 import { MarketScanPage, marketScanQueryKey } from "./market-scan-page";
 import { defaultMarketScanCriteria, type MarketScanCriteria } from "./pipeline";
+import { defaultMarketScanSort, type MarketScanSort } from "./sort";
 
-function renderScan(criteria: MarketScanCriteria, result?: MarketScanResult) {
+function renderScan(
+	criteria: MarketScanCriteria,
+	result?: MarketScanResult,
+	sort = defaultMarketScanSort,
+) {
 	const client = new QueryClient();
 	if (result) client.setQueryData(marketScanQueryKey(criteria), result);
 	return renderToStaticMarkup(
@@ -20,6 +25,8 @@ function renderScan(criteria: MarketScanCriteria, result?: MarketScanResult) {
 						committedCriteria={criteria}
 						onCommit={async () => {}}
 						onSelectInstrument={async () => {}}
+						onSortChange={async () => {}}
+						sort={sort}
 					/>
 				</BusinessRequestContext>
 			</QueryClientProvider>
@@ -38,6 +45,68 @@ it("renders separate mandatory volatility controls without a mode selector", () 
 	expect(html).toContain('value="2%"');
 	expect(html).not.toContain('type="radio"');
 	expect(html).toContain("Run Market Scan");
+});
+
+it.each<MarketScanSort>([
+	{ column: "daily_volatility", direction: "desc" },
+	{ column: "daily_volatility", direction: "asc" },
+	{ column: "hourly_volatility", direction: "desc" },
+	{ column: "hourly_volatility", direction: "asc" },
+	{ column: "market_cap", direction: "desc" },
+	{ column: "market_cap", direction: "asc" },
+])("renders %s sorting direction in the active header", (sort) => {
+	const html = renderScan(
+		defaultMarketScanCriteria,
+		{
+			analyzed_count: 1,
+			insufficient_data_count: 0,
+			items: [
+				{
+					evaluations: [
+						{
+							candle_count: 30,
+							from: "2026-08-01T00:00:00Z",
+							key: "daily_volatility",
+							label: "Daily Volatility",
+							matched: true,
+							metrics: { range_percent: 6 },
+							name: "volatility",
+							to: "2026-08-02T00:00:00Z",
+						},
+						{
+							candle_count: 60,
+							from: "2026-08-01T00:00:00Z",
+							key: "hourly_volatility",
+							label: "Hourly Volatility",
+							matched: true,
+							metrics: { range_percent: 2 },
+							name: "volatility",
+							to: "2026-08-02T00:00:00Z",
+						},
+						{
+							candle_count: 0,
+							from: "0001-01-01T00:00:00Z",
+							key: "market_cap",
+							label: "Market Cap",
+							matched: true,
+							metrics: { market_cap_usd: 500_000_000 },
+							name: "market_cap",
+							to: "0001-01-01T00:00:00Z",
+						},
+					],
+					matched: true,
+					symbol: "BTCUSDT",
+				},
+			],
+			matched_count: 1,
+			unresolved: [],
+			warnings: [],
+		},
+		sort,
+	);
+	expect(html).toContain(
+		`aria-sort="${sort.direction === "desc" ? "descending" : "ascending"}"`,
+	);
 });
 
 it("identifies both ranges and candle counts by key and hides inactive Market Cap results", () => {
@@ -81,10 +150,16 @@ it("identifies both ranges and candle counts by key and hides inactive Market Ca
 	};
 	const html = renderScan(defaultMarketScanCriteria, result);
 	expect(html).toMatch(
-		/Daily Range<.*Daily Candle Count<.*Hourly Range<.*Hourly Candle Count</,
+		/Daily Range.*Daily Candle Count.*Hourly Range.*Hourly Candle Count/,
 	);
+	expect(html).toContain('aria-sort="descending"');
+	expect(html).toContain(
+		'aria-label="Sort by Daily Range, currently descending"',
+	);
+	expect(html).toContain('aria-label="Sort by Hourly Range"');
 	expect(html).toMatch(/6.25%<.*30<.*2.75%<.*60</);
 	expect(html).toContain("Market Cap USD");
+	expect(html).toContain('aria-label="Sort by Market Cap USD"');
 	expect(html).toContain("$750M");
 	expect(html).toContain("https://www.binance.com/en/trade/BTC_USDT?type=spot");
 	const disabledHtml = renderScan(

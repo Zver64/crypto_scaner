@@ -10,6 +10,7 @@ import {
 	formatRangePercent,
 	hasRequiredMarketScanEvaluations,
 	marketCapUnavailableReason,
+	sortMarketScanItems,
 } from "./results";
 
 const items: MarketScanItem[] = [
@@ -100,6 +101,107 @@ describe("filterMarketScanItems", () => {
 			matched: true,
 			symbol: "AAAUSDT",
 		});
+	});
+});
+
+describe("sortMarketScanItems", () => {
+	const daily = {
+		candle_count: 30,
+		from: "2026-08-01T00:00:00Z",
+		key: "daily_volatility",
+		label: "Daily Volatility",
+		matched: true,
+		metrics: { range_percent: 4 },
+		name: "volatility",
+		to: "2026-08-02T00:00:00Z",
+	};
+	const hourly = {
+		...daily,
+		candle_count: 60,
+		key: "hourly_volatility",
+		label: "Hourly Volatility",
+		metrics: { range_percent: 2 },
+	};
+	const marketCap = {
+		...daily,
+		candle_count: 0,
+		key: "market_cap",
+		label: "Market Cap",
+		metrics: { market_cap_usd: 400 },
+		name: "market_cap",
+	};
+	const sortableItems = [
+		{
+			evaluations: [daily, hourly, marketCap],
+			matched: true,
+			symbol: "ZEBRAUSDT",
+		},
+		{
+			evaluations: [
+				{ ...daily, metrics: { range_percent: 6 } },
+				{ ...hourly, metrics: { range_percent: 1 } },
+				{ ...marketCap, metrics: { market_cap_usd: 900 } },
+			],
+			matched: true,
+			symbol: "ALPHAUSDT",
+		},
+		{
+			evaluations: [
+				{ ...daily, metrics: { range_percent: 6 } },
+				{ ...hourly, metrics: { range_percent: 3 } },
+				{ ...marketCap, metrics: { market_cap_usd: 100 } },
+			],
+			matched: true,
+			symbol: "BRAVOUSDT",
+		},
+		{
+			evaluations: [
+				{ ...daily, metrics: { range_percent: 5 } },
+				{ ...hourly, metrics: { range_percent: 3 } },
+				{ ...marketCap, metrics: { market_cap_usd: 100 } },
+			],
+			matched: true,
+			symbol: "CHARLIEUSDT",
+		},
+	];
+
+	it.each([
+		[
+			"daily_volatility",
+			"desc",
+			["ALPHAUSDT", "BRAVOUSDT", "CHARLIEUSDT", "ZEBRAUSDT"],
+		],
+		[
+			"daily_volatility",
+			"asc",
+			["ZEBRAUSDT", "CHARLIEUSDT", "ALPHAUSDT", "BRAVOUSDT"],
+		],
+		[
+			"hourly_volatility",
+			"desc",
+			["BRAVOUSDT", "CHARLIEUSDT", "ZEBRAUSDT", "ALPHAUSDT"],
+		],
+		[
+			"hourly_volatility",
+			"asc",
+			["ALPHAUSDT", "ZEBRAUSDT", "BRAVOUSDT", "CHARLIEUSDT"],
+		],
+		[
+			"market_cap",
+			"desc",
+			["ALPHAUSDT", "ZEBRAUSDT", "BRAVOUSDT", "CHARLIEUSDT"],
+		],
+		[
+			"market_cap",
+			"asc",
+			["BRAVOUSDT", "CHARLIEUSDT", "ZEBRAUSDT", "ALPHAUSDT"],
+		],
+	] as const)("sorts %s %s with alphabetical ties", (column, direction, symbols) => {
+		expect(
+			sortMarketScanItems(sortableItems, { column, direction }).map(
+				({ symbol }) => symbol,
+			),
+		).toEqual(symbols);
 	});
 });
 

@@ -4,6 +4,7 @@ import type {
 } from "../../api/client";
 import { marketCapEvaluation, volatilityEvaluation } from "./criteria";
 import { dailyVolatilityKey, hourlyVolatilityKey } from "./pipeline";
+import type { MarketScanSort } from "./sort";
 
 const rangePercentFormatter = new Intl.NumberFormat("en", {
 	maximumSignificantDigits: 3,
@@ -65,6 +66,38 @@ export function filterMarketScanItems(
 
 	return items.filter((item) =>
 		item.symbol.toLocaleLowerCase("en-US").includes(normalizedFilter),
+	);
+}
+
+export function sortMarketScanItems(
+	items: readonly MarketScanItem[],
+	sort: MarketScanSort,
+): MarketScanItem[] {
+	return [...items].sort((left, right) => {
+		const leftValue = marketScanSortValue(left, sort.column);
+		const rightValue = marketScanSortValue(right, sort.column);
+		const valueComparison =
+			sort.direction === "desc"
+				? rightValue - leftValue
+				: leftValue - rightValue;
+
+		return valueComparison || left.symbol.localeCompare(right.symbol, "en-US");
+	});
+}
+
+function marketScanSortValue(
+	item: MarketScanItem,
+	column: MarketScanSort["column"],
+): number {
+	if (column === "market_cap") {
+		return marketCapEvaluation(item.evaluations)?.marketCapUsd ?? 0;
+	}
+
+	return (
+		volatilityEvaluation(
+			item.evaluations,
+			column === "daily_volatility" ? dailyVolatilityKey : hourlyVolatilityKey,
+		)?.rangePercent ?? 0
 	);
 }
 

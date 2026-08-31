@@ -3,6 +3,10 @@ import {
 	marketCapEvaluation,
 	volatilityEvaluation,
 } from "../market-scan/criteria";
+import {
+	dailyVolatilityKey,
+	hourlyVolatilityKey,
+} from "../market-scan/pipeline";
 
 const utcDateFormatter = new Intl.DateTimeFormat("en", {
 	dateStyle: "medium",
@@ -17,11 +21,14 @@ export function hasRequiredInstrumentAnalysisEvaluations(
 	evaluations: readonly Evaluation[],
 	marketCapRequired: boolean,
 ): boolean {
-	const volatility = volatilityEvaluation(evaluations);
+	const daily = volatilityEvaluation(evaluations, dailyVolatilityKey);
+	const hourly = volatilityEvaluation(evaluations, hourlyVolatilityKey);
 	return (
-		volatility !== undefined &&
-		(!marketCapRequired ||
-			!volatility.matched ||
-			marketCapEvaluation(evaluations) !== undefined)
+		daily !== undefined &&
+		(!daily.matched ||
+			(hourly !== undefined &&
+				(!hourly.matched ||
+					!marketCapRequired ||
+					marketCapEvaluation(evaluations) !== undefined)))
 	);
 }

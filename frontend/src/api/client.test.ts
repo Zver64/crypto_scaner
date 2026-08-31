@@ -213,6 +213,46 @@ describe("fetchMarketScan", () => {
 });
 
 describe("fetchInstrumentAnalysis", () => {
+	it("submits Daily Volatility, Hourly Volatility, then enabled criteria", async () => {
+		const { criterionSelections, defaultMarketScanCriteria } = await import(
+			"../features/market-scan/pipeline"
+		);
+		const selections = criterionSelections(defaultMarketScanCriteria);
+		const body = {
+			evaluations: [
+				{
+					...evaluation,
+					key: "daily_volatility",
+					label: "Daily Volatility",
+				},
+				{
+					...evaluation,
+					key: "hourly_volatility",
+					label: "Hourly Volatility",
+				},
+			],
+			matched: true,
+			symbol: "BTCUSDT",
+			warnings: [],
+		};
+		const request = vi.fn(
+			async (_input: RequestInfo | URL, init?: RequestInit) => {
+				expect(JSON.parse(String(init?.body))).toMatchObject({
+					criteria: [
+						{ key: "daily_volatility", name: "volatility" },
+						{ key: "hourly_volatility", name: "volatility" },
+						{ key: "market_cap", name: "market_cap" },
+					],
+				});
+				return new Response(JSON.stringify(body), { status: 200 });
+			},
+		);
+
+		expect(
+			await fetchInstrumentAnalysis("BTCUSDT", selections, { request }),
+		).toEqual(body);
+	});
+
 	it("URL-encodes the exact symbol and maps UTC coverage without changing values", async () => {
 		const body = {
 			evaluations: [evaluation],

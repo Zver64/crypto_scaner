@@ -6,51 +6,61 @@ import {
 } from "./search-params";
 
 describe("Instrument Analysis search parameters", () => {
-	it("round-trips committed percentile parameters including minimum range", () => {
+	it("round-trips independent daily and hourly configurations without a unit mode", () => {
 		const search = instrumentAnalysisCriteriaToSearch({
 			minimumRangePercent: 3.5,
 			minimumMarketCapMillions: 1,
 			percentile: 75,
 			period: 60,
-			unit: "hours",
+			hourlyMinimumRangePercent: 2.5,
+			hourlyPercentile: 90,
+			hourlyPeriod: 72,
 		});
 
 		expect(search).toEqual({
+			hourly_minimum_range_percent: 2.5,
+			hourly_percentile: 90,
+			hourly_period: 72,
 			minimum_range_percent: 3.5,
 			minimum_market_cap_millions: 1,
 			percentile: 75,
 			period: 60,
-			unit: "hours",
 		});
 		expect(
 			instrumentAnalysisCriteriaFromSearch(
 				parseInstrumentAnalysisSearch(search),
 			),
 		).toEqual({
+			hourlyMinimumRangePercent: 2.5,
+			hourlyPercentile: 90,
+			hourlyPeriod: 72,
 			minimumRangePercent: 3.5,
 			minimumMarketCapMillions: 1,
 			percentile: 75,
 			period: 60,
-			unit: "hours",
 		});
 	});
 
-	it("preserves legacy criteria when Market Cap is absent", () => {
+	it("preserves a disabled Market Cap criterion", () => {
 		expect(
 			instrumentAnalysisCriteriaFromSearch(
 				parseInstrumentAnalysisSearch({
+					hourly_minimum_range_percent: 2.5,
+					hourly_percentile: 90,
+					hourly_period: 72,
 					minimum_range_percent: 3.5,
 					percentile: 75,
 					period: 60,
-					unit: "hours",
 				}),
 			),
 		).toEqual({
+			hourlyMinimumRangePercent: 2.5,
+			hourlyPercentile: 90,
+			hourlyPeriod: 72,
 			minimumMarketCapMillions: 0,
 			minimumRangePercent: 3.5,
 			percentile: 75,
 			period: 60,
-			unit: "hours",
 		});
 	});
 
@@ -58,20 +68,31 @@ describe("Instrument Analysis search parameters", () => {
 		for (const search of [
 			{},
 			{ percentile: 75 },
-			{ minimum_range_percent: 3, percentile: 101, period: 0, unit: "days" },
 			{
+				hourly_minimum_range_percent: 2,
+				hourly_percentile: 80,
+				hourly_period: 60,
+				minimum_range_percent: 3,
+				percentile: 101,
+				period: 0,
+			},
+			{
+				hourly_minimum_range_percent: -1,
+				hourly_percentile: 80.5,
+				hourly_period: 60.5,
 				minimum_range_percent: -1,
 				percentile: 80.5,
 				period: 30.5,
-				unit: "days",
 			},
 		]) {
 			expect(parseInstrumentAnalysisSearch(search)).toEqual({
-				minimum_range_percent: 3,
+				hourly_minimum_range_percent: 2,
+				hourly_percentile: 80,
+				hourly_period: 60,
+				minimum_range_percent: 5,
 				minimum_market_cap_millions: 500,
 				percentile: 80,
 				period: 30,
-				unit: "days",
 			});
 		}
 	});

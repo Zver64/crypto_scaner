@@ -3,6 +3,7 @@ import {
 	Button,
 	Center,
 	Container,
+	Fieldset,
 	Group,
 	Loader,
 	LoadingOverlay,
@@ -20,17 +21,20 @@ import { ApiError, fetchInstrumentAnalysis } from "../../api/client";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
 import { getTelegramInitData, useTelegramBackButton } from "../../app/telegram";
 import { AnalysisCriteriaFields } from "../analysis/analysis-criteria-fields";
-import { defaultPeriodForUnit } from "../analysis/criteria";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "../analysis/use-analysis-warning-notification";
 import {
-	criterionSelections,
-	type MarketScanCriteria,
-	type MarketScanDraft,
 	marketCapEvaluation,
-	validateMarketScanCriteria,
 	volatilityEvaluation,
 } from "../market-scan/criteria";
+import {
+	criterionSelections,
+	dailyVolatilityKey,
+	hourlyVolatilityKey,
+	type MarketScanCriteria,
+	type MarketScanDraft,
+	validateMarketScanCriteria,
+} from "../market-scan/pipeline";
 import { formatMarketCapUsd, formatRangePercent } from "../market-scan/results";
 import {
 	formatUtcCoverageDate,
@@ -60,9 +64,12 @@ export function InstrumentAnalysisPage({
 	});
 	const setFormValues = form.setValues;
 	const committedPeriod = committedCriteria.period;
-	const committedUnit = committedCriteria.unit;
 	const committedPercentile = committedCriteria.percentile;
 	const committedMinimumRangePercent = committedCriteria.minimumRangePercent;
+	const committedHourlyPeriod = committedCriteria.hourlyPeriod;
+	const committedHourlyPercentile = committedCriteria.hourlyPercentile;
+	const committedHourlyMinimumRangePercent =
+		committedCriteria.hourlyMinimumRangePercent;
 	const committedMinimumMarketCapMillions =
 		committedCriteria.minimumMarketCapMillions;
 	const query = useQuery({
@@ -91,18 +98,22 @@ export function InstrumentAnalysisPage({
 
 	useEffect(() => {
 		setFormValues({
+			hourlyMinimumRangePercent: committedHourlyMinimumRangePercent,
+			hourlyPercentile: committedHourlyPercentile,
+			hourlyPeriod: committedHourlyPeriod,
 			minimumMarketCapMillions: committedMinimumMarketCapMillions,
 			minimumRangePercent: committedMinimumRangePercent,
 			percentile: committedPercentile,
 			period: committedPeriod,
-			unit: committedUnit,
 		});
 	}, [
+		committedHourlyMinimumRangePercent,
+		committedHourlyPercentile,
+		committedHourlyPeriod,
 		committedMinimumRangePercent,
 		committedMinimumMarketCapMillions,
 		committedPeriod,
 		committedPercentile,
-		committedUnit,
 		setFormValues,
 	]);
 
@@ -117,16 +128,22 @@ export function InstrumentAnalysisPage({
 			typeof values.period !== "number" ||
 			typeof values.percentile !== "number" ||
 			typeof values.minimumMarketCapMillions !== "number" ||
-			typeof values.minimumRangePercent !== "number"
+			typeof values.minimumRangePercent !== "number" ||
+			typeof values.hourlyPeriod !== "number" ||
+			typeof values.hourlyPercentile !== "number" ||
+			typeof values.hourlyMinimumRangePercent !== "number"
 		) {
 			return;
 		}
 
 		if (
 			values.period === committedCriteria.period &&
-			values.unit === committedCriteria.unit &&
 			values.percentile === committedCriteria.percentile &&
 			values.minimumRangePercent === committedCriteria.minimumRangePercent &&
+			values.hourlyPeriod === committedCriteria.hourlyPeriod &&
+			values.hourlyPercentile === committedCriteria.hourlyPercentile &&
+			values.hourlyMinimumRangePercent ===
+				committedCriteria.hourlyMinimumRangePercent &&
 			values.minimumMarketCapMillions ===
 				committedCriteria.minimumMarketCapMillions
 		) {
@@ -135,18 +152,26 @@ export function InstrumentAnalysisPage({
 		}
 
 		await onCommit({
+			hourlyMinimumRangePercent: values.hourlyMinimumRangePercent,
+			hourlyPercentile: values.hourlyPercentile,
+			hourlyPeriod: values.hourlyPeriod,
 			minimumMarketCapMillions: values.minimumMarketCapMillions,
 			minimumRangePercent: values.minimumRangePercent,
 			percentile: values.percentile,
 			period: values.period,
-			unit: values.unit,
 		});
 	});
 	const submissionDisabled =
 		!form.isValid() || !permission.allowed || query.isFetching;
 	const result = query.data;
-	const evaluation = result && volatilityEvaluation(result.evaluations);
+	const daily =
+		result && volatilityEvaluation(result.evaluations, dailyVolatilityKey);
+	const hourly =
+		result && volatilityEvaluation(result.evaluations, hourlyVolatilityKey);
 	const marketCap = result && marketCapEvaluation(result.evaluations);
+	const shortCircuitReason = hourly
+		? "Hourly Volatility did not match."
+		: "Daily Volatility did not match.";
 
 	return (
 		<Container maw={720} px={0} size="sm">
@@ -168,35 +193,58 @@ export function InstrumentAnalysisPage({
 
 				<Paper component="form" onSubmit={handleSubmit} p="md" withBorder>
 					<Stack gap="sm">
-						<AnalysisCriteriaFields
-							percentileInputProps={form.getInputProps("percentile")}
-							percentileKey={form.key("percentile")}
-							periodInputProps={form.getInputProps("period")}
-							periodKey={form.key("period")}
-							unit={form.values.unit}
-							onUnitChange={(unit) => {
-								form.setValues({ unit, period: defaultPeriodForUnit(unit) });
-							}}
-						/>
-						<NumberInput
-							decimalScale={10}
-							key={form.key("minimumRangePercent")}
-							label="Minimum Range"
-							min={0}
-							step={0.1}
-							suffix="%"
-							{...form.getInputProps("minimumRangePercent")}
-						/>
-						<NumberInput
-							decimalScale={2}
-							key={form.key("minimumMarketCapMillions")}
-							label="Minimum Market Cap (millions)"
-							min={0}
-							prefix="$"
-							step={1}
-							suffix="M"
-							{...form.getInputProps("minimumMarketCapMillions")}
-						/>
+						<Fieldset legend="Daily Volatility">
+							<Stack gap="sm">
+								<AnalysisCriteriaFields
+									percentileInputProps={form.getInputProps("percentile")}
+									percentileKey={form.key("percentile")}
+									periodInputProps={form.getInputProps("period")}
+									periodKey={form.key("period")}
+									unit="days"
+								/>
+								<NumberInput
+									decimalScale={10}
+									key={form.key("minimumRangePercent")}
+									label="Minimum Range"
+									min={0}
+									step={0.1}
+									suffix="%"
+									{...form.getInputProps("minimumRangePercent")}
+								/>
+							</Stack>
+						</Fieldset>
+						<Fieldset legend="Hourly Volatility">
+							<Stack gap="sm">
+								<AnalysisCriteriaFields
+									percentileInputProps={form.getInputProps("hourlyPercentile")}
+									percentileKey={form.key("hourlyPercentile")}
+									periodInputProps={form.getInputProps("hourlyPeriod")}
+									periodKey={form.key("hourlyPeriod")}
+									unit="hours"
+								/>
+								<NumberInput
+									decimalScale={10}
+									key={form.key("hourlyMinimumRangePercent")}
+									label="Minimum Range"
+									min={0}
+									step={0.1}
+									suffix="%"
+									{...form.getInputProps("hourlyMinimumRangePercent")}
+								/>
+							</Stack>
+						</Fieldset>
+						<Fieldset legend="Market Cap">
+							<NumberInput
+								decimalScale={2}
+								key={form.key("minimumMarketCapMillions")}
+								label="Minimum Market Cap (millions)"
+								min={0}
+								prefix="$"
+								step={1}
+								suffix="M"
+								{...form.getInputProps("minimumMarketCapMillions")}
+							/>
+						</Fieldset>
 						<Button
 							disabled={submissionDisabled}
 							loading={query.isFetching}
@@ -213,7 +261,7 @@ export function InstrumentAnalysisPage({
 					</Center>
 				) : null}
 
-				{result && evaluation ? (
+				{result && daily ? (
 					<Box pos="relative">
 						<LoadingOverlay
 							loaderProps={{ "aria-label": "Refreshing Instrument Analysis" }}
@@ -235,30 +283,29 @@ export function InstrumentAnalysisPage({
 									</Text>
 									<Text fw={700}>{result.matched ? "Yes" : "No"}</Text>
 								</Group>
-								<SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
-									<ResultValue
-										label="Range"
-										value={formatRangePercent(evaluation.rangePercent)}
+								<VolatilityResult label="Daily Volatility" evaluation={daily} />
+								{hourly ? (
+									<VolatilityResult
+										label="Hourly Volatility"
+										evaluation={hourly}
 									/>
-									<ResultValue
-										label="Candle Count"
-										value={String(evaluation.candleCount)}
+								) : (
+									<ShortCircuitedResult
+										label="Hourly Volatility"
+										reason="Daily Volatility did not match."
 									/>
-									{marketCap ? (
-										<ResultValue
-											label="Market Cap"
-											value={formatMarketCapUsd(marketCap.marketCapUsd)}
-										/>
-									) : null}
+								)}
+								{marketCap ? (
 									<ResultValue
-										label="Coverage From"
-										value={formatUtcCoverageDate(evaluation.from)}
+										label="Market Cap"
+										value={formatMarketCapUsd(marketCap.marketCapUsd)}
 									/>
-									<ResultValue
-										label="Coverage To"
-										value={formatUtcCoverageDate(evaluation.to)}
+								) : committedCriteria.minimumMarketCapMillions > 0 ? (
+									<ShortCircuitedResult
+										label="Market Cap"
+										reason={shortCircuitReason}
 									/>
-								</SimpleGrid>
+								) : null}
 							</Stack>
 						</Paper>
 					</Box>
@@ -268,7 +315,7 @@ export function InstrumentAnalysisPage({
 	);
 }
 
-function instrumentAnalysisQueryKey(
+export function instrumentAnalysisQueryKey(
 	symbol: string,
 	criteria: MarketScanCriteria,
 ) {
@@ -276,11 +323,64 @@ function instrumentAnalysisQueryKey(
 		"instrument-analysis",
 		symbol,
 		criteria.period,
-		criteria.unit,
 		criteria.percentile,
 		criteria.minimumRangePercent,
+		criteria.hourlyPeriod,
+		criteria.hourlyPercentile,
+		criteria.hourlyMinimumRangePercent,
 		criteria.minimumMarketCapMillions,
 	] as const;
+}
+
+function VolatilityResult({
+	evaluation,
+	label,
+}: {
+	evaluation: NonNullable<ReturnType<typeof volatilityEvaluation>>;
+	label: string;
+}) {
+	return (
+		<Fieldset legend={label}>
+			<SimpleGrid cols={{ base: 1, xs: 2 }} spacing="sm">
+				<ResultValue
+					label="Matched"
+					value={evaluation.matched ? "Yes" : "No"}
+				/>
+				<ResultValue
+					label="Range"
+					value={formatRangePercent(evaluation.rangePercent)}
+				/>
+				<ResultValue
+					label="Candle Count"
+					value={String(evaluation.candleCount)}
+				/>
+				<ResultValue
+					label="Coverage From"
+					value={formatUtcCoverageDate(evaluation.from)}
+				/>
+				<ResultValue
+					label="Coverage To"
+					value={formatUtcCoverageDate(evaluation.to)}
+				/>
+			</SimpleGrid>
+		</Fieldset>
+	);
+}
+
+function ShortCircuitedResult({
+	label,
+	reason,
+}: {
+	label: string;
+	reason: string;
+}) {
+	return (
+		<Fieldset legend={label}>
+			<Text c="dimmed" size="sm">
+				Not evaluated because {reason}
+			</Text>
+		</Fieldset>
+	);
 }
 
 function ResultValue({ label, value }: { label: string; value: string }) {

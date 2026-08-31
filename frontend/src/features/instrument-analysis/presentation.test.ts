@@ -16,32 +16,41 @@ describe("formatUtcCoverageDate", () => {
 });
 
 describe("hasRequiredInstrumentAnalysisEvaluations", () => {
-	const volatility = (matched: boolean) => ({
+	const dailyVolatility = (matched: boolean) => ({
 		candle_count: 30,
 		from: "2026-07-05T00:00:00Z",
-		key: "volatility",
-		label: "Volatility",
+		key: "daily_volatility",
+		label: "Daily Volatility",
 		matched,
 		metrics: { range_percent: 4 },
 		name: "volatility",
 		to: "2026-08-03T00:00:00Z",
 	});
+	const hourlyVolatility = (matched: boolean) => ({
+		...dailyVolatility(matched),
+		candle_count: 60,
+		key: "hourly_volatility",
+		label: "Hourly Volatility",
+	});
 
-	it("requires Market Cap when the enabled volatility criterion matched", () => {
+	it("requires Hourly Volatility after a matching Daily Volatility", () => {
 		expect(
-			hasRequiredInstrumentAnalysisEvaluations([volatility(true)], true),
+			hasRequiredInstrumentAnalysisEvaluations([dailyVolatility(true)], false),
 		).toBe(false);
 	});
 
-	it("accepts a missing Market Cap evaluation after failed volatility", () => {
+	it("accepts later evaluations omitted after a failed Daily Volatility", () => {
 		expect(
-			hasRequiredInstrumentAnalysisEvaluations([volatility(false)], true),
+			hasRequiredInstrumentAnalysisEvaluations([dailyVolatility(false)], true),
 		).toBe(true);
 	});
 
-	it("accepts a missing Market Cap evaluation when disabled", () => {
+	it("requires Market Cap only after both matching volatility evaluations", () => {
 		expect(
-			hasRequiredInstrumentAnalysisEvaluations([volatility(true)], false),
-		).toBe(true);
+			hasRequiredInstrumentAnalysisEvaluations(
+				[dailyVolatility(true), hourlyVolatility(true)],
+				true,
+			),
+		).toBe(false);
 	});
 });

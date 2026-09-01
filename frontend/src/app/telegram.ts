@@ -17,6 +17,7 @@ interface TelegramSafeAreaInsets {
 interface TelegramWebApp {
 	BackButton?: TelegramBackButton;
 	contentSafeAreaInset?: TelegramSafeAreaInsets;
+	disableVerticalSwipes?(): void;
 	expand(): void;
 	initData: string;
 	isVersionAtLeast?(version: string): boolean;
@@ -47,6 +48,19 @@ const emptyInsets: TelegramSafeAreaInsets = {
 
 const initializedWebApps = new WeakSet<TelegramWebApp>();
 
+export function initializeTelegramMiniApp(webApp: TelegramWebApp) {
+	if (initializedWebApps.has(webApp)) {
+		return;
+	}
+
+	webApp.ready();
+	webApp.expand();
+	if (webApp.isVersionAtLeast?.("7.7")) {
+		webApp.disableVerticalSwipes?.();
+	}
+	initializedWebApps.add(webApp);
+}
+
 function getSafeAreaInsets(webApp: TelegramWebApp | undefined) {
 	const safeArea = webApp?.safeAreaInset ?? emptyInsets;
 	const contentSafeArea = webApp?.contentSafeAreaInset ?? emptyInsets;
@@ -70,11 +84,7 @@ export function useTelegramMiniApp() {
 			return;
 		}
 
-		if (!initializedWebApps.has(webApp)) {
-			webApp.ready();
-			webApp.expand();
-			initializedWebApps.add(webApp);
-		}
+		initializeTelegramMiniApp(webApp);
 
 		const updateSafeArea = () => setSafeAreaInsets(getSafeAreaInsets(webApp));
 		updateSafeArea();

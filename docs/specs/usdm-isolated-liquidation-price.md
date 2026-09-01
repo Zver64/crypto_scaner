@@ -44,7 +44,7 @@ The calculator intentionally omits Binance risk-bracket adjustments and therefor
 - Test the public calculation function's observable contract: a valid input returns the expected estimate, while invalid inputs are rejected. Do not test internal formula steps.
 - Use Vitest unit tests, following the existing frontend pure-helper tests.
 - Cover long and short Positions, a zero maintenance-margin ratio, invalid maintenance-margin ratios, and invalid numeric inputs.
-- Use tolerance-based comparisons appropriate to JavaScript floating-point arithmetic. A future Binance Futures Calculator fixture is considered correct when the result is within one symbol price tick; the fixture must record its symbol, direction, entry price, quantity, leverage, isolated mode, calculated result, and collection date.
+- Use tolerance-based comparisons appropriate to JavaScript floating-point arithmetic. Formula-derived fixtures define the calculator contract; Binance Futures Calculator output is not an oracle for this conservative estimate.
 - Tests use formula-derived cases. They must not claim exact parity with Binance Futures Calculator values for later risk brackets.
 - Run frontend quality checks, unit tests, and production build for the implementation task.
 

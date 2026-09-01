@@ -1,5 +1,16 @@
 export type PositionDirection = "long" | "short";
 
+export interface LinearAverageEntryPriceFill {
+	quantity: number;
+	price: number;
+}
+
+export interface InverseAverageEntryPriceFill {
+	contractCount: number;
+	contractSize: number;
+	price: number;
+}
+
 export interface CoinmIsolatedLiquidationPriceOptions {
 	direction: PositionDirection;
 	contractCount: number;

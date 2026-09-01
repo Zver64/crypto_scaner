@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-	calculateUsdmIsolatedLiquidationPrice,
-	type UsdmIsolatedLiquidationPriceInput,
-} from "./usdm-isolated-liquidation-price";
+import type { UsdmIsolatedLiquidationPriceInput } from "./types";
+import { calculateUsdmIsolatedLiquidationPrice } from "./usdm-isolated-liquidation-price";
 
 const validInput: UsdmIsolatedLiquidationPriceInput = {
 	direction: "long",

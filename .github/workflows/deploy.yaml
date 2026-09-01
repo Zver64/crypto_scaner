@@ -1,13 +1,12 @@
 name: Deploy
 
 on:
-  pull_request:
   push:
     branches: [main]
 
 concurrency:
-  group: ${{ github.event_name == 'push' && 'production' || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: production
+  cancel-in-progress: false
 
 permissions:
   contents: read
@@ -31,7 +30,6 @@ jobs:
 
   build:
     needs: quality
-    if: github.event_name == 'push'
     permissions:
       contents: read
       packages: write
@@ -68,7 +66,6 @@ jobs:
 
   deploy:
     needs: build
-    if: github.event_name == 'push'
     permissions:
       contents: read
       packages: read

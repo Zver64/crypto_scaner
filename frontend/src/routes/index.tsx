@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { instrumentAnalysisCriteriaToSearch } from "../features/instrument-analysis/search-params";
-import { MarketScanPage } from "../features/market-scan/market-scan-page";
+import { MarketScanPage } from "../features/market-scan/page";
 import {
 	marketScanCriteriaFromSearch,
 	marketScanCriteriaToSearch,

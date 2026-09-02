@@ -4,7 +4,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import type { MarketScanResult } from "../../api/client";
 import { BusinessRequestContext } from "../../app/business-request-context";
-import { MarketScanPage, marketScanQueryKey } from "./market-scan-page";
+import { MarketScanPage, marketScanQueryKey } from "./page";
 import { defaultMarketScanCriteria, type MarketScanCriteria } from "./pipeline";
 import { defaultMarketScanSort, type MarketScanSort } from "./sort";
 

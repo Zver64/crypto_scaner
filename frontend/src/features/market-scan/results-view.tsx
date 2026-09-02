@@ -10,6 +10,7 @@ import {
 } from "@mantine/core";
 import { useState } from "react";
 import type { MarketScanItem, MarketScanResult } from "@/api/client";
+import { openTelegramExternalLink } from "@/app/telegram";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { marketCapEvaluation, volatilityEvaluation } from "./criteria";
@@ -96,11 +97,6 @@ export function MarketScanResults({
 			onSortChange,
 			({ daily }) => formatRangePercent(daily.rangePercent),
 		),
-		{
-			cell: ({ daily }) => daily.candleCount,
-			header: "Daily Candle Count",
-			key: "daily-candle-count",
-		},
 		sortableColumn(
 			"hourly_volatility",
 			"Hourly Range",
@@ -113,20 +109,30 @@ export function MarketScanResults({
 			header: "Hourly Candle Count",
 			key: "hourly-candle-count",
 		},
+		{
+			cell: ({ daily }) => daily.candleCount,
+			header: "Daily Candle Count",
+			key: "daily-candle-count",
+		},
 		...(marketCapColumn ? [marketCapColumn] : []),
 		{
 			cell: ({ item }) => {
 				const url = binanceSpotUrl(item.symbol);
 				return url ? (
 					<Anchor
-						aria-label={`Open ${item.symbol} on Binance Spot in a new tab`}
+						aria-label={`Open ${item.symbol} on Binance Spot`}
 						href={url}
-						onClick={(event) => event.stopPropagation()}
+						onClick={(event) => {
+							event.stopPropagation();
+							if (openTelegramExternalLink(url)) {
+								event.preventDefault();
+							}
+						}}
 						onKeyDown={(event) => event.stopPropagation()}
 						rel="noopener noreferrer"
 						target="_blank"
 					>
-						Open ↗
+						↗
 					</Anchor>
 				) : (
 					<Text c="dimmed">—</Text>

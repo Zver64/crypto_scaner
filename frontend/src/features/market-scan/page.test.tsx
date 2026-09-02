@@ -160,17 +160,19 @@ it("identifies both ranges and candle counts by key and hides inactive Market Ca
 	};
 	const html = renderScan(defaultMarketScanCriteria, result);
 	expect(html).toMatch(
-		/Daily Range.*Daily Candle Count.*Hourly Range.*Hourly Candle Count/,
+		/Daily Range.*Hourly Range.*Hourly Candle Count.*Daily Candle Count.*Market Cap USD.*Binance/,
 	);
 	expect(html).toContain('aria-sort="descending"');
 	expect(html).toContain(
 		'aria-label="Sort by Daily Range, currently descending"',
 	);
 	expect(html).toContain('aria-label="Sort by Hourly Range"');
-	expect(html).toMatch(/6.25%<.*30<.*2.75%<.*60</);
+	expect(html).toMatch(/6.25%<.*2.75%<.*60<.*30<.*\$750M/);
 	expect(html).toContain("Market Cap USD");
 	expect(html).toContain('aria-label="Sort by Market Cap USD"');
 	expect(html).toContain("$750M");
+	expect(html).toContain('aria-label="Open BTCUSDT on Binance Spot"');
+	expect(html).not.toContain(">Open ↗</a>");
 	expect(html).toContain("https://www.binance.com/en/trade/BTC_USDT?type=spot");
 	const disabledHtml = renderScan(
 		{ ...defaultMarketScanCriteria, minimumMarketCapMillions: 0 },

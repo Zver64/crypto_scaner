@@ -21,6 +21,7 @@ interface TelegramWebApp {
 	expand(): void;
 	initData: string;
 	isVersionAtLeast?(version: string): boolean;
+	openLink?(url: string): void;
 	offEvent?(
 		event: "contentSafeAreaChanged" | "safeAreaChanged",
 		listener: () => void,
@@ -102,6 +103,20 @@ export function useTelegramMiniApp() {
 
 export function getTelegramInitData() {
 	return window.Telegram?.WebApp?.initData;
+}
+
+export function openTelegramExternalLink(url: string): boolean {
+	if (typeof window === "undefined") {
+		return false;
+	}
+
+	const openLink = window.Telegram?.WebApp?.openLink;
+	if (!openLink) {
+		return false;
+	}
+
+	openLink(url);
+	return true;
 }
 
 export function useTelegramBackButton(onBack: () => void) {

@@ -15,6 +15,10 @@ import { getBusinessRequestPermission } from "./request-permission";
 import { ShellContentCenter } from "./shell-content-center";
 import { useTelegramMiniApp } from "./telegram";
 
+export function getAppVersion(value?: string) {
+	return value?.trim() || "dev";
+}
+
 const headerContentHeight = "3.25rem";
 
 type ReadinessStatus = "checking" | "ready" | "unavailable";
@@ -27,6 +31,7 @@ const readinessPresentation = {
 
 export function MiniAppShell() {
 	const { safeAreaInsets, webApp } = useTelegramMiniApp();
+	const appVersion = getAppVersion(import.meta.env.VITE_APP_VERSION);
 	const readiness = useQuery({
 		queryFn: () => fetchReadiness(),
 		queryKey: readinessQueryKey,
@@ -68,9 +73,14 @@ export function MiniAppShell() {
 			>
 				<AppShell.Header>
 					<Group h={headerContentHeight} justify="space-between" px="sm">
-						<Text fw={800} lts="0.08em">
-							CS
-						</Text>
+						<Group gap="xs">
+							<Text fw={800} lts="0.08em">
+								CS
+							</Text>
+							<Text c="dimmed" size="xs">
+								{appVersion}
+							</Text>
+						</Group>
 						<ReadinessBadge status={readinessStatus} />
 					</Group>
 				</AppShell.Header>

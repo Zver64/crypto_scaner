@@ -56,6 +56,12 @@ npm -C frontend run build
 
 Run the checks relevant to changed code before finishing. Use `make check` for cross-cutting changes.
 
+## Commits
+
+Use Conventional Commit messages. Use `feat:` and `fix:` only when a release
+should receive the matching SemVer bump; use `!` or `BREAKING CHANGE:` only for
+a genuine breaking change.
+
 ## Generated files
 
 - Do not edit `backend/internal/storage/postgres/sqlc/*.go` directly. Edit migrations or SQL queries and regenerate with sqlc.

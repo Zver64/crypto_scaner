@@ -1,4 +1,11 @@
+lefthook: go -C .tools tool lefthook
+
 glob_matcher: doublestar
+
+commit-msg:
+  commands:
+    conventional-commit:
+      run: go -C .tools tool conform enforce --commit-msg-file "$PWD/{1}"
 
 pre-commit:
   parallel: true

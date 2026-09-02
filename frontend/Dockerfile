@@ -16,7 +16,8 @@ EXPOSE 3000
 CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
 
 FROM development AS build
-RUN npm run build
+ARG APP_VERSION=dev
+RUN VITE_APP_VERSION="$APP_VERSION" npm run build
 
 FROM nginxinc/nginx-unprivileged:1.29-alpine AS production
 

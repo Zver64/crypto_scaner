@@ -3,7 +3,7 @@
 prepare:
 	go -C backend mod download
 	npm -C frontend ci
-	npm -C frontend exec -- lefthook install
+	go -C .tools tool lefthook install
 
 check:
 	test -z "$$(gofmt -l $$(git ls-files 'backend/*.go'))"

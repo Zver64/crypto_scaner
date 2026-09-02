@@ -1,4 +1,4 @@
-name: Deploy
+name: Release and Deploy
 
 on:
   push:
@@ -12,10 +12,32 @@ permissions:
   contents: read
 
 jobs:
+  release:
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      sha: ${{ steps.release.outputs.sha }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+          token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
+
   quality:
+    needs: release
+    if: needs.release.outputs.created == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.release.outputs.tag }}
       - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
         with:
           go-version-file: backend/go.mod
@@ -29,7 +51,7 @@ jobs:
       - run: make check
 
   build:
-    needs: quality
+    needs: [release, quality]
     permissions:
       contents: read
       packages: write
@@ -45,6 +67,8 @@ jobs:
             target: production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.release.outputs.tag }}
       - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
       - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
         with:
@@ -52,7 +76,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - id: image
-        run: echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')-${{ matrix.name }}:main" >> "$GITHUB_OUTPUT"
+        run: echo "name=ghcr.io/$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')-${{ matrix.name }}:${{ needs.release.outputs.tag }}" >> "$GITHUB_OUTPUT"
       - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
@@ -61,11 +85,15 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.image.outputs.name }}
+          build-args: APP_VERSION=${{ needs.release.outputs.tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.release.outputs.tag }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
 
   deploy:
-    needs: build
+    needs: [release, build]
     permissions:
       contents: read
       packages: read
@@ -73,6 +101,8 @@ jobs:
     environment: production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.release.outputs.tag }}
       - name: Deploy with Compose
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -92,6 +122,8 @@ jobs:
           target="$DEPLOY_USER@$DEPLOY_HOST"
           ssh_options=(-i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes)
 
+          release_tag='${{ needs.release.outputs.tag }}'
+
           ssh "${ssh_options[@]}" "$target" "mkdir -p '$DEPLOY_PATH'"
           scp -i ~/.ssh/id_deploy -P "$SSH_PORT" -o StrictHostKeyChecking=yes compose.production.yaml "$target:$DEPLOY_PATH/"
-          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" "set -e; docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin; trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT; cd '$DEPLOY_PATH'; export BACKEND_IMAGE='ghcr.io/$repository-backend:main' FRONTEND_IMAGE='ghcr.io/$repository-frontend:main'; docker compose -f compose.production.yaml pull; docker compose -f compose.production.yaml up -d --wait --remove-orphans; docker image prune -f"
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" "set -e; docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin; trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT; cd '$DEPLOY_PATH'; export BACKEND_IMAGE='ghcr.io/$repository-backend:$release_tag' FRONTEND_IMAGE='ghcr.io/$repository-frontend:$release_tag'; docker compose -f compose.production.yaml pull; docker compose -f compose.production.yaml up -d --wait --remove-orphans; docker image prune -f"

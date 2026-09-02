@@ -22,6 +22,7 @@ jobs:
       created: ${{ steps.release.outputs.release_created }}
       sha: ${{ steps.release.outputs.sha }}
       tag: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - id: release
         uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
@@ -85,7 +86,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.image.outputs.name }}
-          build-args: APP_VERSION=${{ needs.release.outputs.tag }}
+          build-args: APP_VERSION=${{ needs.release.outputs.version }}
           labels: |
             org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
             org.opencontainers.image.version=${{ needs.release.outputs.tag }}

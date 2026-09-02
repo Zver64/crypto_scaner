@@ -9,15 +9,12 @@ import {
 } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "@tanstack/react-router";
+import { getAppVersion } from "@/utils/app-version";
 import { BusinessRequestContext } from "./business-request-context";
 import { fetchReadiness, readinessQueryKey } from "./readiness";
 import { getBusinessRequestPermission } from "./request-permission";
 import { ShellContentCenter } from "./shell-content-center";
 import { useTelegramMiniApp } from "./telegram";
-
-export function getAppVersion(value?: string) {
-	return value?.trim() || "dev";
-}
 
 const headerContentHeight = "3.25rem";
 

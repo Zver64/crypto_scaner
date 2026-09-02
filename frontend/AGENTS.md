@@ -62,3 +62,9 @@ tanstackIntent:
     run: "npx @tanstack/intent@latest load @tanstack/virtual-file-routes#virtual-file-routes"
     for: "Programmatic route tree building as an alternative to filesystem conventions: rootRoute, index, route, layout, physical, defineVirtualSubtreeConfig. Use with TanStack Router plugin's virtualRouteConfig option."
 <!-- intent-skills:end -->
+
+## Utilities
+
+- Place UI- and feature-independent utility functions in `src/utils/`, not in components, app-shell modules, routes, or feature modules.
+- Co-locate a utility's unit tests with that utility in `src/utils/`.
+- Use the `@/` alias for imports; do not add relative imports.

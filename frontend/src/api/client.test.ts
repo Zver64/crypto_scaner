@@ -459,7 +459,7 @@ it("submits the unified pipeline and preserves both keyed outcomes, warnings, an
 							unit: "days",
 							period: 30,
 							percentile: 80,
-							minimum_range_percent: 5,
+							minimum_range_percent: 10,
 						},
 					},
 					{

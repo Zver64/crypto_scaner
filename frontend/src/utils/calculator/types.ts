@@ -1,8 +1,15 @@
+import type Decimal from "decimal.js";
+
 export type PositionDirection = "long" | "short";
 
 export interface LinearAverageEntryPriceFill {
 	quantity: number;
 	price: number;
+}
+
+export interface UsdmAverageEntryPriceFill {
+	price: Decimal.Value;
+	quoteNotional: Decimal.Value;
 }
 
 export interface InverseAverageEntryPriceFill {

@@ -15,6 +15,7 @@ export interface UsdmAverageEntryPriceFill {
 export interface InverseAverageEntryPriceFill {
 	contractCount: number;
 	contractSize: number;
+	direction?: PositionDirection;
 	price: number;
 }
 

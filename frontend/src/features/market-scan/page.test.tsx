@@ -2,10 +2,15 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
+import { marketScanQueryOptions } from "@/api/market-scan";
 import type { MarketScanResult } from "../../api/client";
 import { BusinessRequestContext } from "../../app/business-request-context";
-import { MarketScanPage, marketScanQueryKey } from "./page";
-import { defaultMarketScanCriteria, type MarketScanCriteria } from "./pipeline";
+import { MarketScanPage } from "./page";
+import {
+	criterionSelections,
+	defaultMarketScanCriteria,
+	type MarketScanCriteria,
+} from "./pipeline";
 import { defaultMarketScanSort, type MarketScanSort } from "./sort";
 
 function renderScan(
@@ -14,7 +19,12 @@ function renderScan(
 	sort = defaultMarketScanSort,
 ) {
 	const client = new QueryClient();
-	if (result) client.setQueryData(marketScanQueryKey(criteria), result);
+	if (result) {
+		client.setQueryData(
+			marketScanQueryOptions(criterionSelections(criteria)).queryKey,
+			result,
+		);
+	}
 	return renderToStaticMarkup(
 		<MantineProvider>
 			<QueryClientProvider client={client}>
@@ -176,6 +186,11 @@ it.each([
 	"hourlyMinimumRangePercent",
 ] as const)("separates cached scans when %s changes", (field) => {
 	expect(
-		marketScanQueryKey({ ...defaultMarketScanCriteria, [field]: 10 }),
-	).not.toEqual(marketScanQueryKey(defaultMarketScanCriteria));
+		marketScanQueryOptions(
+			criterionSelections({ ...defaultMarketScanCriteria, [field]: 10 }),
+		).queryKey,
+	).not.toEqual(
+		marketScanQueryOptions(criterionSelections(defaultMarketScanCriteria))
+			.queryKey,
+	);
 });

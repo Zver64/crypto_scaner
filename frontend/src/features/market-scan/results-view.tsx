@@ -1,11 +1,8 @@
 import {
 	Anchor,
-	Box,
 	Group,
-	LoadingOverlay,
 	Paper,
 	Stack,
-	Table,
 	Text,
 	TextInput,
 	Title,
@@ -13,6 +10,8 @@ import {
 } from "@mantine/core";
 import { useState } from "react";
 import type { MarketScanItem, MarketScanResult } from "@/api/client";
+import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { marketCapEvaluation, volatilityEvaluation } from "./criteria";
 import {
 	dailyVolatilityKey,
@@ -45,6 +44,13 @@ interface MarketScanResultsProps {
 	sort: MarketScanSort;
 }
 
+interface ResultRow {
+	daily: NonNullable<ReturnType<typeof volatilityEvaluation>>;
+	hourly: NonNullable<ReturnType<typeof volatilityEvaluation>>;
+	item: MarketScanItem;
+	marketCap: ReturnType<typeof marketCapEvaluation>;
+}
+
 export function MarketScanResults({
 	criteria,
 	isRefreshing,
@@ -55,24 +61,110 @@ export function MarketScanResults({
 }: MarketScanResultsProps) {
 	const [symbolFilter, setSymbolFilter] = useState("");
 	const marketCapEnabled = criteria.minimumMarketCapMillions > 0;
-	const items = marketScanRows(
+	const rows = toResultRows(
 		sortMarketScanItems(
 			filterMarketScanItems(result.items, symbolFilter),
 			sort,
 		),
 		marketCapEnabled,
 	);
+	const marketCapColumn: DataTableColumn<ResultRow> | undefined =
+		marketCapEnabled
+			? {
+					ariaSort: sort.column === "market_cap" ? sortDirection(sort) : "none",
+					cell: ({ marketCap }) =>
+						marketCap ? formatMarketCapUsd(marketCap.marketCapUsd) : "—",
+					header: sortableHeader(
+						"market_cap",
+						"Market Cap USD",
+						sort,
+						onSortChange,
+					),
+					key: "market-cap",
+				}
+			: undefined;
+	const columns: DataTableColumn<ResultRow>[] = [
+		{
+			cell: ({ item }) => item.symbol,
+			header: "Symbol",
+			key: "symbol",
+		},
+		sortableColumn(
+			"daily_volatility",
+			"Daily Range",
+			sort,
+			onSortChange,
+			({ daily }) => formatRangePercent(daily.rangePercent),
+		),
+		{
+			cell: ({ daily }) => daily.candleCount,
+			header: "Daily Candle Count",
+			key: "daily-candle-count",
+		},
+		sortableColumn(
+			"hourly_volatility",
+			"Hourly Range",
+			sort,
+			onSortChange,
+			({ hourly }) => formatRangePercent(hourly.rangePercent),
+		),
+		{
+			cell: ({ hourly }) => hourly.candleCount,
+			header: "Hourly Candle Count",
+			key: "hourly-candle-count",
+		},
+		...(marketCapColumn ? [marketCapColumn] : []),
+		{
+			cell: ({ item }) => {
+				const url = binanceSpotUrl(item.symbol);
+				return url ? (
+					<Anchor
+						aria-label={`Open ${item.symbol} on Binance Spot in a new tab`}
+						href={url}
+						onClick={(event) => event.stopPropagation()}
+						onKeyDown={(event) => event.stopPropagation()}
+						rel="noopener noreferrer"
+						target="_blank"
+					>
+						Open ↗
+					</Anchor>
+				) : (
+					<Text c="dimmed">—</Text>
+				);
+			},
+			header: "Binance",
+			key: "binance",
+			textAlign: "right",
+		},
+	];
+	const unresolvedColumns: DataTableColumn<
+		MarketScanResult["unresolved"][number]
+	>[] = [
+		{ cell: (item) => item.symbol, header: "Symbol", key: "symbol" },
+		{
+			cell: (item) => marketCapUnavailableReason(item.code),
+			header: "Reason",
+			key: "reason",
+		},
+	];
 
 	return (
-		<Box pos="relative">
-			<LoadingOverlay
-				loaderProps={{ "aria-label": "Refreshing Market Scan" }}
-				overlayProps={{ blur: 1 }}
-				visible={isRefreshing}
-				zIndex={10}
-			/>
+		<RefreshingOverlay label="Refreshing Market Scan" visible={isRefreshing}>
 			<Stack gap="sm">
-				<ScanSummary result={result} />
+				<Paper p="sm" withBorder>
+					<Group gap="lg">
+						<Text size="sm">
+							Matched <Text component="strong">{result.matched_count}</Text>
+						</Text>
+						<Text size="sm">
+							Analyzed <Text component="strong">{result.analyzed_count}</Text>
+						</Text>
+						<Text size="sm">
+							Insufficient data{" "}
+							<Text component="strong">{result.insufficient_data_count}</Text>
+						</Text>
+					</Group>
+				</Paper>
 				<TextInput
 					aria-label="Filter current Scan Result by symbol"
 					description="Filters only the current Scan Result"
@@ -81,79 +173,87 @@ export function MarketScanResults({
 					placeholder="e.g. BTC"
 					value={symbolFilter}
 				/>
-
 				{result.items.length === 0 ? (
-					<EmptyResult />
-				) : items.length === 0 ? (
-					<EmptyFilterResult />
+					<Paper p="xl" ta="center" withBorder>
+						<Text fw={600}>No instruments matched these criteria.</Text>
+						<Text c="dimmed" mt={4} size="sm">
+							Adjust the criteria and run another Market Scan.
+						</Text>
+					</Paper>
+				) : rows.length === 0 ? (
+					<Paper p="xl" ta="center" withBorder>
+						<Text fw={600}>No instruments match this symbol filter.</Text>
+						<Text c="dimmed" mt={4} size="sm">
+							Clear or change the filter to see this Scan Result.
+						</Text>
+					</Paper>
 				) : (
-					<MarketScanTable
-						criteria={criteria}
-						items={items}
-						marketCapEnabled={marketCapEnabled}
-						onSelectInstrument={onSelectInstrument}
-						onSortChange={onSortChange}
-						sort={sort}
+					<DataTable
+						columns={columns}
+						getRowKey={({ item }) => item.symbol}
+						minWidth={760}
+						onRowClick={({ item }) =>
+							void onSelectInstrument(item.symbol, criteria)
+						}
+						rows={rows}
 					/>
 				)}
-
 				{marketCapEnabled && result.unresolved.length > 0 ? (
-					<UnresolvedMarketCapTable unresolved={result.unresolved} />
+					<Stack gap="xs">
+						<Title order={2} size="h4">
+							Instruments with unavailable Market Cap
+						</Title>
+						<DataTable
+							columns={unresolvedColumns}
+							getRowKey={(item) => `${item.symbol}-${item.code}`}
+							minWidth={420}
+							rows={result.unresolved}
+						/>
+					</Stack>
 				) : null}
 			</Stack>
-		</Box>
+		</RefreshingOverlay>
 	);
 }
 
-function ScanSummary({ result }: { result: MarketScanResult }) {
+function sortableColumn(
+	column: MarketScanSortColumn,
+	label: string,
+	sort: MarketScanSort,
+	onSortChange: (sort: MarketScanSort) => Promise<void>,
+	cell: DataTableColumn<ResultRow>["cell"],
+): DataTableColumn<ResultRow> {
+	return {
+		ariaSort: sort.column === column ? sortDirection(sort) : "none",
+		cell,
+		header: sortableHeader(column, label, sort, onSortChange),
+		key: column,
+	};
+}
+
+function sortableHeader(
+	column: MarketScanSortColumn,
+	label: string,
+	sort: MarketScanSort,
+	onSortChange: (sort: MarketScanSort) => Promise<void>,
+) {
+	const active = sort.column === column;
 	return (
-		<Paper p="sm" withBorder>
-			<Group gap="lg">
-				<Text size="sm">
-					Matched <Text component="strong">{result.matched_count}</Text>
-				</Text>
-				<Text size="sm">
-					Analyzed <Text component="strong">{result.analyzed_count}</Text>
-				</Text>
-				<Text size="sm">
-					Insufficient data{" "}
-					<Text component="strong">{result.insufficient_data_count}</Text>
-				</Text>
-			</Group>
-		</Paper>
+		<UnstyledButton
+			aria-label={`Sort by ${label}${active ? `, currently ${sort.direction}ending` : ""}`}
+			onClick={() => void onSortChange(nextMarketScanSort(sort, column))}
+		>
+			{label}
+			{active ? (sort.direction === "desc" ? " ↓" : " ↑") : null}
+		</UnstyledButton>
 	);
 }
 
-function EmptyResult() {
-	return (
-		<Paper p="xl" ta="center" withBorder>
-			<Text fw={600}>No instruments matched these criteria.</Text>
-			<Text c="dimmed" mt={4} size="sm">
-				Adjust the criteria and run another Market Scan.
-			</Text>
-		</Paper>
-	);
+function sortDirection(sort: MarketScanSort): "ascending" | "descending" {
+	return sort.direction === "desc" ? "descending" : "ascending";
 }
 
-function EmptyFilterResult() {
-	return (
-		<Paper p="xl" ta="center" withBorder>
-			<Text fw={600}>No instruments match this symbol filter.</Text>
-			<Text c="dimmed" mt={4} size="sm">
-				Clear or change the filter to see this Scan Result.
-			</Text>
-		</Paper>
-	);
-}
-
-interface ResultRow {
-	daily: NonNullable<ReturnType<typeof volatilityEvaluation>>;
-	hourly: NonNullable<ReturnType<typeof volatilityEvaluation>>;
-	item: MarketScanItem;
-	marketCap: ReturnType<typeof marketCapEvaluation>;
-}
-
-function marketScanRows(
+function toResultRows(
 	items: readonly MarketScanItem[],
 	marketCapEnabled: boolean,
 ): ResultRow[] {
@@ -165,173 +265,4 @@ function marketScanRows(
 			? [{ daily, hourly, item, marketCap }]
 			: [];
 	});
-}
-
-interface MarketScanTableProps {
-	criteria: MarketScanCriteria;
-	items: ResultRow[];
-	marketCapEnabled: boolean;
-	onSelectInstrument(
-		symbol: string,
-		criteria: MarketScanCriteria,
-	): Promise<void>;
-	onSortChange(sort: MarketScanSort): Promise<void>;
-	sort: MarketScanSort;
-}
-
-function MarketScanTable({
-	criteria,
-	items,
-	marketCapEnabled,
-	onSelectInstrument,
-	onSortChange,
-	sort,
-}: MarketScanTableProps) {
-	return (
-		<Paper p="xs" withBorder>
-			<Table.ScrollContainer minWidth={760}>
-				<Table highlightOnHover verticalSpacing="xs">
-					<Table.Thead>
-						<Table.Tr>
-							<Table.Th>Symbol</Table.Th>
-							<SortableMarketScanHeader
-								column="daily_volatility"
-								label="Daily Range"
-								onSortChange={onSortChange}
-								sort={sort}
-							/>
-							<Table.Th>Daily Candle Count</Table.Th>
-							<SortableMarketScanHeader
-								column="hourly_volatility"
-								label="Hourly Range"
-								onSortChange={onSortChange}
-								sort={sort}
-							/>
-							<Table.Th>Hourly Candle Count</Table.Th>
-							{marketCapEnabled ? (
-								<SortableMarketScanHeader
-									column="market_cap"
-									label="Market Cap USD"
-									onSortChange={onSortChange}
-									sort={sort}
-								/>
-							) : null}
-							<Table.Th ta="right">Binance</Table.Th>
-						</Table.Tr>
-					</Table.Thead>
-					<Table.Tbody>
-						{items.map(({ daily, hourly, item, marketCap }) => (
-							<Table.Tr
-								key={item.symbol}
-								onClick={() => void onSelectInstrument(item.symbol, criteria)}
-								onKeyDown={(event) => {
-									if (event.key === "Enter")
-										void onSelectInstrument(item.symbol, criteria);
-								}}
-								role="link"
-								style={{ cursor: "pointer" }}
-								tabIndex={0}
-							>
-								<Table.Td>{item.symbol}</Table.Td>
-								<Table.Td>{formatRangePercent(daily.rangePercent)}</Table.Td>
-								<Table.Td>{daily.candleCount}</Table.Td>
-								<Table.Td>{formatRangePercent(hourly.rangePercent)}</Table.Td>
-								<Table.Td>{hourly.candleCount}</Table.Td>
-								{marketCapEnabled && marketCap ? (
-									<Table.Td>
-										{formatMarketCapUsd(marketCap.marketCapUsd)}
-									</Table.Td>
-								) : null}
-								<Table.Td ta="right">
-									<BinanceLink symbol={item.symbol} />
-								</Table.Td>
-							</Table.Tr>
-						))}
-					</Table.Tbody>
-				</Table>
-			</Table.ScrollContainer>
-		</Paper>
-	);
-}
-
-function BinanceLink({ symbol }: { symbol: string }) {
-	const url = binanceSpotUrl(symbol);
-	return url ? (
-		<Anchor
-			aria-label={`Open ${symbol} on Binance Spot in a new tab`}
-			href={url}
-			onClick={(event) => event.stopPropagation()}
-			onKeyDown={(event) => event.stopPropagation()}
-			rel="noopener noreferrer"
-			target="_blank"
-		>
-			Open ↗
-		</Anchor>
-	) : (
-		<Text c="dimmed">—</Text>
-	);
-}
-
-function UnresolvedMarketCapTable({
-	unresolved,
-}: {
-	unresolved: MarketScanResult["unresolved"];
-}) {
-	return (
-		<Stack gap="xs">
-			<Title order={2} size="h4">
-				Instruments with unavailable Market Cap
-			</Title>
-			<Paper p="xs" withBorder>
-				<Table.ScrollContainer minWidth={420}>
-					<Table highlightOnHover verticalSpacing="xs">
-						<Table.Thead>
-							<Table.Tr>
-								<Table.Th>Symbol</Table.Th>
-								<Table.Th>Reason</Table.Th>
-							</Table.Tr>
-						</Table.Thead>
-						<Table.Tbody>
-							{unresolved.map((item) => (
-								<Table.Tr key={`${item.symbol}-${item.code}`}>
-									<Table.Td>{item.symbol}</Table.Td>
-									<Table.Td>{marketCapUnavailableReason(item.code)}</Table.Td>
-								</Table.Tr>
-							))}
-						</Table.Tbody>
-					</Table>
-				</Table.ScrollContainer>
-			</Paper>
-		</Stack>
-	);
-}
-
-function SortableMarketScanHeader({
-	column,
-	label,
-	onSortChange,
-	sort,
-}: {
-	column: MarketScanSortColumn;
-	label: string;
-	onSortChange(sort: MarketScanSort): Promise<void>;
-	sort: MarketScanSort;
-}) {
-	const active = sort.column === column;
-	const ariaSort = !active
-		? "none"
-		: sort.direction === "desc"
-			? "descending"
-			: "ascending";
-	return (
-		<Table.Th aria-sort={ariaSort}>
-			<UnstyledButton
-				aria-label={`Sort by ${label}${active ? `, currently ${sort.direction}ending` : ""}`}
-				onClick={() => void onSortChange(nextMarketScanSort(sort, column))}
-			>
-				{label}
-				{active ? (sort.direction === "desc" ? " ↓" : " ↑") : null}
-			</UnstyledButton>
-		</Table.Th>
-	);
 }

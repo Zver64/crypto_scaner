@@ -1,19 +1,17 @@
 import {
-	Box,
 	Button,
 	Center,
 	Container,
 	Group,
 	Loader,
-	LoadingOverlay,
 	Paper,
 	Stack,
 	Text,
 } from "@mantine/core";
-import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import { ApiError, fetchInstrumentAnalysis } from "../../api/client";
+import { useInstrumentAnalysisQuery } from "@/api/instrument-analysis";
+import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { useBusinessRequestPermission } from "../../app/business-request-context";
-import { getTelegramInitData, useTelegramBackButton } from "../../app/telegram";
+import { useTelegramBackButton } from "../../app/telegram";
 import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "../analysis/use-analysis-warning-notification";
 import { marketCapEvaluation } from "../market-scan/criteria";
@@ -22,7 +20,6 @@ import {
 	type MarketScanCriteria,
 } from "../market-scan/pipeline";
 import { formatMarketCapUsd } from "../market-scan/results";
-import { hasRequiredInstrumentAnalysisEvaluations } from "./presentation";
 
 interface InstrumentAnalysisPageProps {
 	committedCriteria: MarketScanCriteria;
@@ -37,29 +34,11 @@ export function InstrumentAnalysisPage({
 }: InstrumentAnalysisPageProps) {
 	const permission = useBusinessRequestPermission();
 	const hasNativeBackButton = useTelegramBackButton(onBack);
-	const query = useQuery({
-		enabled: permission.allowed,
-		placeholderData: keepPreviousData,
-		queryFn: async () => {
-			const result = await fetchInstrumentAnalysis(
-				symbol,
-				criterionSelections(committedCriteria),
-				{ initData: getTelegramInitData() },
-			);
-			if (
-				!hasRequiredInstrumentAnalysisEvaluations(
-					result.evaluations,
-					committedCriteria.minimumMarketCapMillions > 0,
-				)
-			) {
-				throw new ApiError("unexpected_error");
-			}
-			return result;
-		},
-		queryKey: instrumentAnalysisQueryKey(symbol, committedCriteria),
-		retry: false,
-		staleTime: Number.POSITIVE_INFINITY,
-	});
+	const query = useInstrumentAnalysisQuery(
+		symbol,
+		criterionSelections(committedCriteria),
+		permission.allowed,
+	);
 
 	useAnalysisErrorNotification(query.error, "Instrument Analysis failed");
 	useAnalysisWarningNotification(
@@ -86,13 +65,10 @@ export function InstrumentAnalysisPage({
 				) : null}
 
 				{result ? (
-					<Box pos="relative">
-						<LoadingOverlay
-							loaderProps={{ "aria-label": "Refreshing Instrument Analysis" }}
-							overlayProps={{ blur: 1 }}
-							visible={query.isFetching}
-							zIndex={10}
-						/>
+					<RefreshingOverlay
+						label="Refreshing Instrument Analysis"
+						visible={query.isFetching}
+					>
 						<Paper p="md" withBorder>
 							<Stack gap="md">
 								<Group justify="space-between">
@@ -113,26 +89,9 @@ export function InstrumentAnalysisPage({
 								) : null}
 							</Stack>
 						</Paper>
-					</Box>
+					</RefreshingOverlay>
 				) : null}
 			</Stack>
 		</Container>
 	);
-}
-
-export function instrumentAnalysisQueryKey(
-	symbol: string,
-	criteria: MarketScanCriteria,
-) {
-	return [
-		"instrument-analysis",
-		symbol,
-		criteria.period,
-		criteria.percentile,
-		criteria.minimumRangePercent,
-		criteria.hourlyPeriod,
-		criteria.hourlyPercentile,
-		criteria.hourlyMinimumRangePercent,
-		criteria.minimumMarketCapMillions,
-	] as const;
 }

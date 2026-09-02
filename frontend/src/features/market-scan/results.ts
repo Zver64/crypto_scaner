@@ -100,18 +100,3 @@ function marketScanSortValue(
 		)?.rangePercent ?? 0
 	);
 }
-
-export function hasRequiredMarketScanEvaluations(
-	items: readonly MarketScanItem[],
-	marketCapRequired: boolean,
-): boolean {
-	return items.every(
-		(item) =>
-			volatilityEvaluation(item.evaluations, dailyVolatilityKey) !==
-				undefined &&
-			volatilityEvaluation(item.evaluations, hourlyVolatilityKey) !==
-				undefined &&
-			(!marketCapRequired ||
-				marketCapEvaluation(item.evaluations) !== undefined),
-	);
-}

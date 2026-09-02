@@ -8,7 +8,6 @@ import {
 	filterMarketScanItems,
 	formatMarketCapUsd,
 	formatRangePercent,
-	hasRequiredMarketScanEvaluations,
 	marketCapUnavailableReason,
 	sortMarketScanItems,
 } from "./results";
@@ -203,95 +202,4 @@ describe("sortMarketScanItems", () => {
 			),
 		).toEqual(symbols);
 	});
-});
-
-describe("hasRequiredMarketScanEvaluations", () => {
-	const volatility = {
-		candle_count: 30,
-		from: "2026-08-01T00:00:00Z",
-		key: "daily_volatility",
-		label: "Daily Volatility",
-		matched: true,
-		metrics: { range_percent: 4 },
-		name: "volatility",
-		to: "2026-08-02T00:00:00Z",
-	};
-	const hourly = {
-		...volatility,
-		key: "hourly_volatility",
-		label: "Hourly Volatility",
-		candle_count: 60,
-		metrics: { range_percent: 2 },
-	};
-	const marketCap = {
-		candle_count: 0,
-		from: "0001-01-01T00:00:00Z",
-		key: "market_cap",
-		label: "Market Cap",
-		matched: true,
-		metrics: { market_cap_usd: 1_000_000 },
-		name: "market_cap",
-		to: "0001-01-01T00:00:00Z",
-	};
-
-	it("requires a Market Cap evaluation when the filter is enabled", () => {
-		expect(
-			hasRequiredMarketScanEvaluations(
-				[
-					{
-						evaluations: [volatility, hourly],
-						matched: true,
-						symbol: "BTCUSDT",
-					},
-				],
-				true,
-			),
-		).toBe(false);
-		expect(
-			hasRequiredMarketScanEvaluations(
-				[
-					{
-						evaluations: [volatility, hourly, marketCap],
-						matched: true,
-						symbol: "BTCUSDT",
-					},
-				],
-				true,
-			),
-		).toBe(true);
-	});
-});
-
-it("requires both keyed volatility outcomes even when Market Cap is disabled", () => {
-	const daily = {
-		key: "daily_volatility",
-		name: "volatility",
-		label: "Daily Volatility",
-		matched: true,
-		candle_count: 30,
-		from: "2026-08-01T00:00:00Z",
-		to: "2026-08-02T00:00:00Z",
-		metrics: { range_percent: 6 },
-	};
-	const hourly = {
-		...daily,
-		key: "hourly_volatility",
-		label: "Hourly Volatility",
-		candle_count: 60,
-		metrics: { range_percent: 2 },
-	};
-	for (const evaluations of [[], [daily], [hourly], [daily, daily]]) {
-		expect(
-			hasRequiredMarketScanEvaluations(
-				[{ symbol: "BTCUSDT", matched: true, evaluations }],
-				false,
-			),
-		).toBe(false);
-	}
-	expect(
-		hasRequiredMarketScanEvaluations(
-			[{ symbol: "BTCUSDT", matched: true, evaluations: [hourly, daily] }],
-			false,
-		),
-	).toBe(true);
 });

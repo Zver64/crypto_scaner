@@ -2,19 +2,23 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
+import { instrumentAnalysisQueryKey } from "@/api/instrument-analysis";
 import type { InstrumentAnalysisResult } from "../../api/client";
 import { BusinessRequestContext } from "../../app/business-request-context";
-import { defaultMarketScanCriteria } from "../market-scan/pipeline";
 import {
-	InstrumentAnalysisPage,
-	instrumentAnalysisQueryKey,
-} from "./instrument-analysis-page";
+	criterionSelections,
+	defaultMarketScanCriteria,
+} from "../market-scan/pipeline";
+import { InstrumentAnalysisPage } from "./instrument-analysis-page";
 
 function renderAnalysis(result: InstrumentAnalysisResult) {
 	vi.stubGlobal("window", {});
 	const client = new QueryClient();
 	client.setQueryData(
-		instrumentAnalysisQueryKey("BTCUSDT", defaultMarketScanCriteria),
+		instrumentAnalysisQueryKey(
+			"BTCUSDT",
+			criterionSelections(defaultMarketScanCriteria),
+		),
 		result,
 	);
 	return renderToStaticMarkup(

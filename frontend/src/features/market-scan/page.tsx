@@ -1,14 +1,12 @@
 import { Center, Container, Loader, Stack, Text, Title } from "@mantine/core";
+import { useMarketScanQuery } from "@/api/market-scan";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanForm } from "./form";
-import type { MarketScanCriteria } from "./pipeline";
-import { useMarketScanQuery } from "./query";
+import { criterionSelections, type MarketScanCriteria } from "./pipeline";
 import { MarketScanResults } from "./results-view";
 import type { MarketScanSort } from "./sort";
-
-export { marketScanQueryKey } from "./query";
 
 interface MarketScanPageProps {
 	committedCriteria: MarketScanCriteria | undefined;
@@ -29,7 +27,10 @@ export function MarketScanPage({
 	sort,
 }: MarketScanPageProps) {
 	const permission = useBusinessRequestPermission();
-	const query = useMarketScanQuery(committedCriteria, permission.allowed);
+	const query = useMarketScanQuery(
+		committedCriteria ? criterionSelections(committedCriteria) : undefined,
+		permission.allowed,
+	);
 	useAnalysisErrorNotification(query.error, "Market Scan failed");
 	useAnalysisWarningNotification(query.data?.warnings, "Market Scan warning");
 

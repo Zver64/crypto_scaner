@@ -3,8 +3,6 @@ import { defaultMarketScanCriteria } from "./pipeline";
 import {
 	marketScanCriteriaFromSearch,
 	marketScanCriteriaToSearch,
-	marketScanSortFromSearch,
-	marketScanSortToSearch,
 	parseMarketScanSearch,
 } from "./search-params";
 import { defaultMarketScanSort, nextMarketScanSort } from "./sort";
@@ -36,31 +34,6 @@ describe("Market Scan search parameters", () => {
 			criteria,
 		);
 	});
-	it("defaults sort state when the URL has no sort choice", () => {
-		expect(marketScanSortFromSearch(parseMarketScanSearch(search))).toEqual(
-			defaultMarketScanSort,
-		);
-	});
-	it.each([
-		["daily_volatility", "desc"],
-		["daily_volatility", "asc"],
-		["hourly_volatility", "desc"],
-		["hourly_volatility", "asc"],
-		["market_cap", "desc"],
-		["market_cap", "asc"],
-	] as const)("persists %s sorting in %s order", (column, direction) => {
-		const sort = { column, direction };
-		expect(marketScanSortToSearch(sort)).toEqual({ direction, sort: column });
-		expect(
-			marketScanSortFromSearch(
-				parseMarketScanSearch({
-					...search,
-					direction,
-					sort: column,
-				}),
-			),
-		).toEqual(sort);
-	});
 	it("starts a new column descending and toggles the active column", () => {
 		expect(
 			nextMarketScanSort(defaultMarketScanSort, "hourly_volatility"),
@@ -75,23 +48,14 @@ describe("Market Scan search parameters", () => {
 			direction: "asc",
 		});
 	});
-	it("falls back to Daily Range descending for invalid or inactive sorts", () => {
-		const marketCapDisabledSearch = {
-			...search,
-			minimum_market_cap_millions: 0,
-		};
-		for (const invalidSort of [
-			{ direction: "desc", sort: "unknown" },
-			{ direction: "sideways", sort: "daily_volatility" },
-			{ direction: "asc", sort: "market_cap" },
-		]) {
-			const parsed = parseMarketScanSearch({
-				...marketCapDisabledSearch,
-				...invalidSort,
-			});
-			expect(parsed).toEqual(marketCapDisabledSearch);
-			expect(marketScanSortFromSearch(parsed)).toEqual(defaultMarketScanSort);
-		}
+	it("discards sorting choices because sorting is local page state", () => {
+		expect(
+			parseMarketScanSearch({
+				...search,
+				direction: "asc",
+				sort: "market_cap",
+			}),
+		).toEqual(search);
 	});
 	it("discards unit rather than using it to choose a mode", () => {
 		expect(parseMarketScanSearch({ ...search, unit: "hours" })).toEqual(search);

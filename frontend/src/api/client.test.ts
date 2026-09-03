@@ -449,38 +449,7 @@ it("submits the unified pipeline and preserves both keyed outcomes, warnings, an
 	};
 	const request = vi.fn(
 		async (_input: RequestInfo | URL, init?: RequestInit) => {
-			expect(JSON.parse(String(init?.body))).toEqual({
-				criteria: [
-					{
-						key: "daily_volatility",
-						name: "volatility",
-						label: "Daily Volatility",
-						parameters: {
-							unit: "days",
-							period: 30,
-							percentile: 80,
-							minimum_range_percent: 5,
-						},
-					},
-					{
-						key: "hourly_volatility",
-						name: "volatility",
-						label: "Hourly Volatility",
-						parameters: {
-							unit: "hours",
-							period: 60,
-							percentile: 80,
-							minimum_range_percent: 2,
-						},
-					},
-					{
-						key: "market_cap",
-						name: "market_cap",
-						label: "Market Cap",
-						parameters: { min_market_cap_usd: 500_000_000 },
-					},
-				],
-			});
+			expect(JSON.parse(String(init?.body))).toEqual({ criteria: selections });
 			return new Response(JSON.stringify(body), { status: 200 });
 		},
 	);

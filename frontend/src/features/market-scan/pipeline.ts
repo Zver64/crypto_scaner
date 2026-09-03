@@ -24,7 +24,7 @@ export type MarketScanDraft = {
 export const defaultMarketScanCriteria: MarketScanCriteria = {
 	period: 30,
 	percentile: 80,
-	minimumRangePercent: 5,
+	minimumRangePercent: 10,
 	hourlyPeriod: 60,
 	hourlyPercentile: 80,
 	hourlyMinimumRangePercent: 2,

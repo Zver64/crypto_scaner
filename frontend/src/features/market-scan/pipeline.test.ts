@@ -5,6 +5,18 @@ import {
 	validateMarketScanCriteria,
 } from "./pipeline";
 
+it("defines the Market Scan product defaults", () => {
+	expect(defaultMarketScanCriteria).toEqual({
+		hourlyMinimumRangePercent: 2,
+		hourlyPercentile: 80,
+		hourlyPeriod: 60,
+		minimumMarketCapMillions: 500,
+		minimumRangePercent: 10,
+		percentile: 80,
+		period: 30,
+	});
+});
+
 it("composes mandatory daily and hourly volatility before enabled Market Cap", () => {
 	expect(criterionSelections(defaultMarketScanCriteria)).toEqual([
 		{
@@ -13,9 +25,9 @@ it("composes mandatory daily and hourly volatility before enabled Market Cap", (
 			name: "volatility",
 			parameters: {
 				unit: "days",
-				period: 30,
-				percentile: 80,
-				minimum_range_percent: 5,
+				period: defaultMarketScanCriteria.period,
+				percentile: defaultMarketScanCriteria.percentile,
+				minimum_range_percent: defaultMarketScanCriteria.minimumRangePercent,
 			},
 		},
 		{
@@ -24,16 +36,20 @@ it("composes mandatory daily and hourly volatility before enabled Market Cap", (
 			name: "volatility",
 			parameters: {
 				unit: "hours",
-				period: 60,
-				percentile: 80,
-				minimum_range_percent: 2,
+				period: defaultMarketScanCriteria.hourlyPeriod,
+				percentile: defaultMarketScanCriteria.hourlyPercentile,
+				minimum_range_percent:
+					defaultMarketScanCriteria.hourlyMinimumRangePercent,
 			},
 		},
 		{
 			key: "market_cap",
 			label: "Market Cap",
 			name: "market_cap",
-			parameters: { min_market_cap_usd: 500_000_000 },
+			parameters: {
+				min_market_cap_usd:
+					defaultMarketScanCriteria.minimumMarketCapMillions * 1_000_000,
+			},
 		},
 	]);
 });

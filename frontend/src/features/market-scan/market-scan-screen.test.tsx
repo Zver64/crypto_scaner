@@ -56,7 +56,9 @@ it("renders separate mandatory volatility controls without a mode selector", () 
 	expect(html).toContain("Market Cap");
 	expect(html).toContain('value="30 days"');
 	expect(html).toContain('value="60 hours"');
-	expect(html).toContain('value="5%"');
+	expect(html).toContain(
+		`value="${defaultMarketScanCriteria.minimumRangePercent}%"`,
+	);
 	expect(html).toContain('value="2%"');
 	expect(html).not.toContain('type="radio"');
 	expect(html).toContain("Run Market Scan");

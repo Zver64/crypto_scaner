@@ -22,7 +22,6 @@ const listActiveInstruments = `-- name: ListActiveInstruments :many
 SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
 FROM binance_spot.instruments
 WHERE is_active = TRUE
-ORDER BY symbol
 `
 
 func (q *Queries) ListActiveInstruments(ctx context.Context) ([]BinanceSpotInstrument, error) {

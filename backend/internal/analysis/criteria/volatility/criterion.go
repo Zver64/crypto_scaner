@@ -65,7 +65,7 @@ func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.E
 	rank := (c.percentile / 100) * float64(len(ranges)-1)
 	lower, upper := int(math.Floor(rank)), int(math.Ceil(rank))
 	value := ranges[lower] + (rank-float64(lower))*(ranges[upper]-ranges[lower])
-	return analysis.Evaluation{Name: c.Name(), Matched: value >= c.minimum, Metrics: map[string]float64{"range_percent": value}, OrderingScore: &value, CandleCount: len(candles), From: candles[len(candles)-1].OpenTime.UTC(), To: candles[0].OpenTime.UTC()}, nil
+	return analysis.Evaluation{Name: c.Name(), Matched: value >= c.minimum, Metrics: map[string]float64{"range_percent": value}, CandleCount: len(candles), From: candles[len(candles)-1].OpenTime.UTC(), To: candles[0].OpenTime.UTC()}, nil
 }
 
 func number(value any) (float64, bool) { number, ok := value.(float64); return number, ok }

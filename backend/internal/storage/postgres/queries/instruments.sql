@@ -15,5 +15,4 @@ RETURNING id, symbol, base_asset, quote_asset, exchange_status, is_active;
 -- name: ListActiveInstruments :many
 SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
 FROM binance_spot.instruments
-WHERE is_active = TRUE
-ORDER BY symbol;
+WHERE is_active = TRUE;

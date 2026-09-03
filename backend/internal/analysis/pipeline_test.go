@@ -94,7 +94,61 @@ func TestMarketScanPipelineRetainsOnlySequentialSurvivors(t *testing.T) {
 	}
 }
 
-type pipelineCapStore struct{ requested []string }
+func TestMarketScanPreservesStoreOrder(t *testing.T) {
+	for _, position := range []string{"first", "last", "disabled"} {
+		t.Run(position, func(t *testing.T) {
+			store := &storeStub{
+				instruments: []market.Instrument{
+					{ID: 1, Symbol: "AAAZEROUSDT", BaseAsset: "ZERO"},
+					{ID: 2, Symbol: "SMALLUSDT", BaseAsset: "SMALL"},
+					{ID: 3, Symbol: "BIGUSDT", BaseAsset: "BIG"},
+					{ID: 4, Symbol: "LARGEUSDT", BaseAsset: "LARGE"},
+				},
+				candlesByInstrument: map[int64]map[string][]market.Candle{
+					1: {"1d": {testCandle(10)}},
+					2: {"1d": {testCandle(9)}},
+					3: {"1d": {testCandle(6)}},
+					4: {"1d": {testCandle(7)}},
+				},
+			}
+			caps := &pipelineCapStore{values: map[string]float64{"ZERO": 0, "SMALL": 100, "BIG": 1000, "LARGE": 1000}}
+			service, err := analysis.NewService(store, volatility.New(), market_cap.New(marketcap.New(caps, unavailableCapProvider{})))
+			if err != nil {
+				t.Fatal(err)
+			}
+			criteria := []analysis.CriterionConfig{
+				{Key: "daily", Name: "volatility", Label: "Daily", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(5)}},
+			}
+			capConfig := analysis.CriterionConfig{Key: "custom_cap_key", Name: "market_cap", Label: "Capitalization", Parameters: map[string]any{"min_market_cap_usd": float64(0)}}
+			switch position {
+			case "first":
+				criteria = append([]analysis.CriterionConfig{capConfig}, criteria...)
+			case "last":
+				criteria = append(criteria, capConfig)
+			}
+			result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: criteria})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var symbols []string
+			for _, item := range result.Items {
+				symbols = append(symbols, item.Symbol)
+			}
+			want := []string{"AAAZEROUSDT", "SMALLUSDT", "BIGUSDT", "LARGEUSDT"}
+			if !slices.Equal(symbols, want) {
+				t.Fatalf("symbols = %v, want %v", symbols, want)
+			}
+			if position == "disabled" && len(caps.requested) != 0 {
+				t.Fatalf("disabled Market Cap was loaded: %v", caps.requested)
+			}
+		})
+	}
+}
+
+type pipelineCapStore struct {
+	requested []string
+	values    map[string]float64
+}
 
 func (*pipelineCapStore) BootstrapCompleted(context.Context) (bool, error)           { return true, nil }
 func (*pipelineCapStore) ReplaceSnapshot(context.Context, []marketcap.Mapping) error { return nil }
@@ -106,10 +160,13 @@ func (s *pipelineCapStore) GetMapping(_ context.Context, base string) (marketcap
 	return marketcap.Mapping{BaseAsset: base, CoinID: base, Status: "resolved"}, nil
 }
 func (*pipelineCapStore) SaveMapping(context.Context, marketcap.Mapping) error { return nil }
-func (*pipelineCapStore) GetCap(_ context.Context, id string) (marketcap.Cap, error) {
+func (s *pipelineCapStore) GetCap(_ context.Context, id string) (marketcap.Cap, error) {
 	value := float64(500_000_000)
 	if id == "LOWCAP" {
 		value = 499_999_999
+	}
+	if s.values != nil {
+		value = s.values[id]
 	}
 	return marketcap.Cap{CoinID: id, USD: value, Available: true, FetchedAt: time.Now().Add(-2 * time.Hour)}, nil
 }

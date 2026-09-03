@@ -19,12 +19,9 @@ describe("Market Scan sorting", () => {
 			direction: "desc",
 		});
 		expect(
-			nextMarketScanSort(
-				defaultMarketScanSort,
-				marketScanColumnKeys.dailyRange,
-			),
+			nextMarketScanSort(defaultMarketScanSort, marketScanColumnKeys.marketCap),
 		).toEqual({
-			column: marketScanColumnKeys.dailyRange,
+			column: marketScanColumnKeys.marketCap,
 			direction: "asc",
 		});
 	});
@@ -117,8 +114,8 @@ describe("sortMarketScanRows", () => {
 			["ALPHAUSDT", "ZEBRAUSDT", "BRAVOUSDT", "CHARLIEUSDT"],
 		],
 		[
-			marketScanColumnKeys.marketCap,
-			"desc",
+			defaultMarketScanSort.column,
+			defaultMarketScanSort.direction,
 			["ALPHAUSDT", "ZEBRAUSDT", "BRAVOUSDT", "CHARLIEUSDT"],
 		],
 		[

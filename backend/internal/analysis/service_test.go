@@ -85,7 +85,7 @@ func TestSearchEvaluatesRepeatedCriterionTypesOnlyForSurvivors(t *testing.T) {
 	}
 }
 
-func TestServiceSearchCombinesCriteriaAndOrdersMatches(t *testing.T) {
+func TestServiceSearchCombinesCriteriaAndPreservesStoreOrder(t *testing.T) {
 	store := &storeStub{
 		instruments: []market.Instrument{
 			{ID: 1, Symbol: "ZZZUSDT"}, {ID: 2, Symbol: "AAAUSDT"}, {ID: 3, Symbol: "LOWUSDT"},
@@ -114,7 +114,7 @@ func TestServiceSearchCombinesCriteriaAndOrdersMatches(t *testing.T) {
 	if result.MatchedCount != 3 || result.AnalyzedCount != 5 || result.InsufficientDataCount != 1 {
 		t.Fatalf("Search() counts = %+v", result)
 	}
-	if len(result.Items) != 3 || result.Items[0].Symbol != "AAAUSDT" || result.Items[1].Symbol != "NEWUSDT" || result.Items[2].Symbol != "ZZZUSDT" {
+	if len(result.Items) != 3 || result.Items[0].Symbol != "ZZZUSDT" || result.Items[1].Symbol != "AAAUSDT" || result.Items[2].Symbol != "NEWUSDT" {
 		t.Fatalf("Search() items = %+v", result.Items)
 	}
 	for _, item := range result.Items {
@@ -122,8 +122,8 @@ func TestServiceSearchCombinesCriteriaAndOrdersMatches(t *testing.T) {
 			t.Fatalf("Search() item = %+v", item)
 		}
 	}
-	if result.Items[1].Evaluations[0].CandleCount != 1 {
-		t.Fatalf("NEWUSDT evaluation = %+v", result.Items[1].Evaluations[0])
+	if result.Items[2].Evaluations[0].CandleCount != 1 {
+		t.Fatalf("NEWUSDT evaluation = %+v", result.Items[2].Evaluations[0])
 	}
 }
 func TestServiceRejectsInvalidSelectionBeforeReads(t *testing.T) {

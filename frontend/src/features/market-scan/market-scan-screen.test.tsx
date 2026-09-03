@@ -194,13 +194,13 @@ it("identifies metrics by key and keeps every column when the Market Cap criteri
 	}
 	expect(html).toContain("BTCUSDT: 7-day hourly closing prices");
 	expect(html).toContain('aria-sort="descending"');
-	expect(html).toContain(
-		'aria-label="Sort by Daily Range, currently descending"',
-	);
+	expect(html).toContain('aria-label="Sort by Daily Range"');
 	expect(html).toContain('aria-label="Sort by Hourly Range"');
 	expect(html).toMatch(/6.25%<.*2.75%<.*60<.*30<.*\$750M/);
 	expect(html).toContain("Market Cap USD");
-	expect(html).toContain('aria-label="Sort by Market Cap USD"');
+	expect(html).toContain(
+		'aria-label="Sort by Market Cap USD, currently descending"',
+	);
 	expect(html).toContain("$750M");
 	expect(html).toContain('aria-label="Open BTCUSDT on Binance Spot"');
 	expect(html).toContain('style="text-align:center"');

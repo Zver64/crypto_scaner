@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -34,11 +33,10 @@ type SymbolResult struct {
 }
 type SearchRequest struct{ Criteria []CriterionConfig }
 type SearchItem struct {
-	PriceHistory  []*float64
-	Symbol        string
-	Matched       bool
-	Evaluations   []Evaluation
-	orderingScore *float64
+	PriceHistory []*float64
+	Symbol       string
+	Matched      bool
+	Evaluations  []Evaluation
 }
 type SearchResult struct {
 	PriceHistoryWindow    market.PriceHistoryWindow
@@ -163,15 +161,8 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	}
 	for _, instrument := range candidates {
 		item := results[instrument.ID]
-		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID], orderingScore: firstScore(item.Evaluations)})
+		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID]})
 	}
-	sort.Slice(result.Items, func(i, j int) bool {
-		a, b := result.Items[i].orderingScore, result.Items[j].orderingScore
-		if a != nil && b != nil && *a != *b {
-			return *a > *b
-		}
-		return result.Items[i].Symbol < result.Items[j].Symbol
-	})
 	result.MatchedCount = len(result.Items)
 	return result, nil
 }
@@ -272,13 +263,6 @@ func (service *Service) evaluateCriterionWithData(ctx context.Context, instrumen
 	evaluation.Key = criterion.key
 	evaluation.Label = criterion.label
 	return SymbolResult{Symbol: instrument.Symbol, Matched: evaluation.Matched, Evaluations: []Evaluation{evaluation}}, nil
-}
-
-func firstScore(evaluations []Evaluation) *float64 {
-	if len(evaluations) == 0 {
-		return nil
-	}
-	return evaluations[0].OrderingScore
 }
 
 var marketProfile = market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1d", TimeZone: "UTC"}

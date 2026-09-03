@@ -73,13 +73,12 @@ type Warning struct{ Code, Message string }
 
 // Evaluation is an unrounded criterion result.
 type Evaluation struct {
-	Key           string
-	Name          string
-	Label         string
-	Matched       bool
-	Metrics       map[string]float64
-	OrderingScore *float64
-	CandleCount   int
-	From          time.Time
-	To            time.Time
+	Key         string
+	Name        string
+	Label       string
+	Matched     bool
+	Metrics     map[string]float64
+	CandleCount int
+	From        time.Time
+	To          time.Time
 }

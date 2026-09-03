@@ -10,7 +10,7 @@ export interface MarketScanSort {
 }
 
 export const defaultMarketScanSort: MarketScanSort = {
-	column: marketScanColumnKeys.dailyRange,
+	column: marketScanColumnKeys.marketCap,
 	direction: "desc",
 };
 

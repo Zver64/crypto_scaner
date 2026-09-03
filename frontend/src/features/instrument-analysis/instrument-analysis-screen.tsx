@@ -9,30 +9,26 @@ import {
 	Text,
 	useMatches,
 } from "@mantine/core";
+import type { CriterionSelection } from "@/api/client";
 import { useInstrumentAnalysisQuery } from "@/api/instrument-analysis";
+import { useBusinessRequestPermission } from "@/app/business-request-context";
+import { useTelegramBackButton } from "@/app/telegram";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
-import { useBusinessRequestPermission } from "../../app/business-request-context";
-import { useTelegramBackButton } from "../../app/telegram";
-import { useAnalysisErrorNotification } from "../analysis/use-analysis-error-notification";
-import { useAnalysisWarningNotification } from "../analysis/use-analysis-warning-notification";
-import { marketCapEvaluation } from "../market-scan/criteria";
-import {
-	criterionSelections,
-	type MarketScanCriteria,
-} from "../market-scan/pipeline";
-import { formatMarketCapUsd } from "../market-scan/results";
+import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
+import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
+import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 
-interface InstrumentAnalysisPageProps {
-	committedCriteria: MarketScanCriteria;
+interface InstrumentAnalysisScreenProps {
+	criterionSelections: readonly CriterionSelection[];
 	onBack(): void;
 	symbol: string;
 }
 
-export function InstrumentAnalysisPage({
-	committedCriteria,
+export function InstrumentAnalysisScreen({
+	criterionSelections,
 	onBack,
 	symbol,
-}: InstrumentAnalysisPageProps) {
+}: InstrumentAnalysisScreenProps) {
 	const contentSpacing = useMatches({ base: "sm", sm: "md" });
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const textSize = useMatches({ base: "xs", sm: "sm" });
@@ -40,7 +36,7 @@ export function InstrumentAnalysisPage({
 	const hasNativeBackButton = useTelegramBackButton(onBack);
 	const query = useInstrumentAnalysisQuery(
 		symbol,
-		criterionSelections(committedCriteria),
+		criterionSelections,
 		permission.allowed,
 	);
 

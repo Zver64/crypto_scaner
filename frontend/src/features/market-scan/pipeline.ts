@@ -1,11 +1,11 @@
-import type { CriterionSelection } from "../../api/client";
+import type { CriterionSelection } from "@/api/client";
 import {
 	type MarketScanCriteria as SingleVolatilityCriteria,
 	defaultMarketScanCriteria as singleVolatilityDefaults,
 	criterionSelections as singleVolatilitySelections,
 	validateMarketScanCriteria as validateSingleVolatility,
 	volatilityCriterionSelection,
-} from "./criteria";
+} from "@/features/market-scan/criteria";
 
 export const dailyVolatilityKey = "daily_volatility";
 export const hourlyVolatilityKey = "hourly_volatility";

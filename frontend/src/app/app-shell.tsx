@@ -9,11 +9,11 @@ import {
 } from "@mantine/core";
 import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "@tanstack/react-router";
+import { fetchReadiness, readinessQueryKey } from "@/api/readiness";
+import { ShellContentCenter } from "@/components/shell-content-center";
 import { getAppVersion } from "@/utils/app-version";
+import { getBusinessRequestPermission } from "@/utils/business-request-permission";
 import { BusinessRequestContext } from "./business-request-context";
-import { fetchReadiness, readinessQueryKey } from "./readiness";
-import { getBusinessRequestPermission } from "./request-permission";
-import { ShellContentCenter } from "./shell-content-center";
 import { useTelegramMiniApp } from "./telegram";
 
 const headerContentHeight = "3.25rem";

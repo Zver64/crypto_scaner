@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getBusinessRequestPermission } from "./request-permission";
+import { getBusinessRequestPermission } from "@/utils/business-request-permission";
 
 describe("getBusinessRequestPermission", () => {
 	it("blocks production requests without signed Telegram init data", () => {
@@ -9,11 +9,7 @@ describe("getBusinessRequestPermission", () => {
 				isProduction: true,
 				telegramInitData: "  ",
 			}),
-		).toEqual({
-			allowed: false,
-			authenticated: false,
-			backendReady: true,
-		});
+		).toEqual({ allowed: false, authenticated: false, backendReady: true });
 	});
 
 	it("allows an ordinary development browser when the backend is ready", () => {
@@ -23,11 +19,7 @@ describe("getBusinessRequestPermission", () => {
 				isProduction: false,
 				telegramInitData: undefined,
 			}),
-		).toEqual({
-			allowed: true,
-			authenticated: true,
-			backendReady: true,
-		});
+		).toEqual({ allowed: true, authenticated: true, backendReady: true });
 	});
 
 	it("blocks authenticated requests while the backend is unavailable", () => {
@@ -37,10 +29,6 @@ describe("getBusinessRequestPermission", () => {
 				isProduction: true,
 				telegramInitData: "query_id=signed",
 			}),
-		).toEqual({
-			allowed: false,
-			authenticated: true,
-			backendReady: false,
-		});
+		).toEqual({ allowed: false, authenticated: true, backendReady: false });
 	});
 });

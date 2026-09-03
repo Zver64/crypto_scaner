@@ -1,10 +1,10 @@
-import type { CriterionSelection, Evaluation } from "../../api/client";
+import type { CriterionSelection, Evaluation } from "@/api/client";
 import {
 	type AnalysisCriteria,
 	type AnalysisDraft,
 	defaultAnalysisCriteria,
 	validateAnalysisCriteria,
-} from "../analysis/criteria";
+} from "@/features/analysis/criteria";
 
 export const volatilityCriterionKey = "volatility";
 export const volatilityCriterionName = "volatility";
@@ -129,23 +129,4 @@ export function volatilityEvaluation(
 		rangePercent,
 		to: evaluation.to,
 	};
-}
-
-export interface MarketCapEvaluation {
-	marketCapUsd: number;
-	matched: boolean;
-}
-
-export function marketCapEvaluation(
-	evaluations: readonly Evaluation[],
-): MarketCapEvaluation | undefined {
-	const evaluation = evaluations.find(
-		({ key }) => key === marketCapCriterionName,
-	);
-	const marketCapUsd = evaluation?.metrics.market_cap_usd;
-	if (!evaluation || typeof marketCapUsd !== "number") {
-		return undefined;
-	}
-
-	return { marketCapUsd, matched: evaluation.matched };
 }

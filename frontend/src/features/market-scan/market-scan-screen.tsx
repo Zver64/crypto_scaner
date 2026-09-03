@@ -11,12 +11,15 @@ import { useMarketScanQuery } from "@/api/market-scan";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
-import { MarketScanForm } from "./form";
-import { criterionSelections, type MarketScanCriteria } from "./pipeline";
-import { MarketScanResults } from "./results-view";
-import type { MarketScanSort } from "./sort";
+import { MarketScanForm } from "@/features/market-scan/form";
+import {
+	criterionSelections,
+	type MarketScanCriteria,
+} from "@/features/market-scan/pipeline";
+import { MarketScanResults } from "@/features/market-scan/results-view";
+import type { MarketScanSort } from "@/features/market-scan/sort";
 
-interface MarketScanPageProps {
+interface MarketScanScreenProps {
 	committedCriteria: MarketScanCriteria | undefined;
 	onCommit(criteria: MarketScanCriteria): Promise<void>;
 	onSortChange(sort: MarketScanSort): Promise<void>;
@@ -27,13 +30,13 @@ interface MarketScanPageProps {
 	sort: MarketScanSort;
 }
 
-export function MarketScanPage({
+export function MarketScanScreen({
 	committedCriteria,
 	onCommit,
 	onSortChange,
 	onSelectInstrument,
 	sort,
-}: MarketScanPageProps) {
+}: MarketScanScreenProps) {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
 	const query = useMarketScanQuery(

@@ -11,12 +11,15 @@ import { useForm } from "@mantine/form";
 import { AnalysisCriteriaFields } from "@/features/analysis/analysis-criteria-fields";
 import { marketScanCriteriaConstraints } from "@/features/market-scan/criteria";
 import {
+	criteriaAreEqual,
+	criteriaFromValidDraft,
+} from "@/features/market-scan/form/utils";
+import {
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
 	type MarketScanDraft,
 	validateMarketScanCriteria,
 } from "@/features/market-scan/pipeline";
-import { criteriaAreEqual, criteriaFromValidDraft } from "./utils";
 
 interface MarketScanFormProps {
 	committedCriteria: MarketScanCriteria | undefined;

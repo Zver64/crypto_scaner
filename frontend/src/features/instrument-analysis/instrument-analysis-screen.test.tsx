@@ -2,14 +2,14 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
+import type { InstrumentAnalysisResult } from "@/api/client";
 import { instrumentAnalysisQueryKey } from "@/api/instrument-analysis";
-import type { InstrumentAnalysisResult } from "../../api/client";
-import { BusinessRequestContext } from "../../app/business-request-context";
+import { BusinessRequestContext } from "@/app/business-request-context";
+import { InstrumentAnalysisScreen } from "@/features/instrument-analysis/instrument-analysis-screen";
 import {
 	criterionSelections,
 	defaultMarketScanCriteria,
-} from "../market-scan/pipeline";
-import { InstrumentAnalysisPage } from "./instrument-analysis-page";
+} from "@/features/market-scan/pipeline";
 
 function renderAnalysis(result: InstrumentAnalysisResult) {
 	vi.stubGlobal("window", {});
@@ -27,8 +27,8 @@ function renderAnalysis(result: InstrumentAnalysisResult) {
 				<BusinessRequestContext
 					value={{ allowed: true, authenticated: true, backendReady: true }}
 				>
-					<InstrumentAnalysisPage
-						committedCriteria={defaultMarketScanCriteria}
+					<InstrumentAnalysisScreen
+						criterionSelections={criterionSelections(defaultMarketScanCriteria)}
 						onBack={() => {}}
 						symbol="BTCUSDT"
 					/>

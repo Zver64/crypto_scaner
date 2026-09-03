@@ -1,28 +1,20 @@
-import type {
-	MarketScanItem,
-	UnresolvedInstrumentCode,
-} from "../../api/client";
-import { marketCapEvaluation, volatilityEvaluation } from "./criteria";
-import { dailyVolatilityKey, hourlyVolatilityKey } from "./pipeline";
-import type { MarketScanSort } from "./sort";
+import type { MarketScanItem, UnresolvedInstrumentCode } from "@/api/client";
+import { volatilityEvaluation } from "@/features/market-scan/criteria";
+import {
+	dailyVolatilityKey,
+	hourlyVolatilityKey,
+} from "@/features/market-scan/pipeline";
+import type { MarketScanSort } from "@/features/market-scan/sort";
+import { marketCapEvaluation } from "@/utils/market-cap";
 
 const rangePercentFormatter = new Intl.NumberFormat("en", {
 	maximumSignificantDigits: 3,
-});
-
-const marketCapFormatter = new Intl.NumberFormat("en", {
-	maximumFractionDigits: 1,
-	notation: "compact",
 });
 
 const binanceSpotQuoteAsset = "USDT";
 
 export function formatRangePercent(value: number): string {
 	return `${rangePercentFormatter.format(value)}%`;
-}
-
-export function formatMarketCapUsd(value: number): string {
-	return `$${marketCapFormatter.format(value)}`;
 }
 
 const marketCapUnavailableReasons: Record<UnresolvedInstrumentCode, string> = {

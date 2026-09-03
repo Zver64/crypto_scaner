@@ -1,31 +1,30 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
-import { instrumentAnalysisCriteriaToSearch } from "../features/instrument-analysis/search-params";
-import { MarketScanPage } from "../features/market-scan/page";
+import { MarketScanScreen } from "@/features/market-scan/market-scan-screen";
+import { defaultMarketScanSort } from "@/features/market-scan/sort";
 import {
-	marketScanCriteriaFromSearch,
-	marketScanCriteriaToSearch,
-	parseMarketScanSearch,
-} from "../features/market-scan/search-params";
-import { defaultMarketScanSort } from "../features/market-scan/sort";
+	parseOptionalScanCriteriaSearch,
+	scanCriteriaFromSearch,
+	scanCriteriaToSearch,
+} from "@/routes/-scan-criteria-search";
 
 export const Route = createFileRoute("/")({
 	component: Home,
-	validateSearch: parseMarketScanSearch,
+	validateSearch: parseOptionalScanCriteriaSearch,
 });
 
 function Home() {
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
-	const committedCriteria = marketScanCriteriaFromSearch(search);
+	const committedCriteria = scanCriteriaFromSearch(search);
 	const [sort, setSort] = useState(defaultMarketScanSort);
 
 	return (
-		<MarketScanPage
+		<MarketScanScreen
 			committedCriteria={committedCriteria}
 			onCommit={async (criteria) => {
 				await navigate({
-					search: marketScanCriteriaToSearch(criteria),
+					search: scanCriteriaToSearch(criteria),
 				});
 			}}
 			onSortChange={async (nextSort) => {
@@ -34,7 +33,7 @@ function Home() {
 			onSelectInstrument={async (symbol, criteria) => {
 				await navigate({
 					params: { symbol },
-					search: instrumentAnalysisCriteriaToSearch(criteria),
+					search: scanCriteriaToSearch(criteria),
 					to: "/instruments/$symbol",
 				});
 			}}

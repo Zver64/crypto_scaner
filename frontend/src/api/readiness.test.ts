@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fetchReadiness } from "./readiness";
+import { fetchReadiness } from "@/api/readiness";
 
 describe("fetchReadiness", () => {
 	it("requests the relative readiness endpoint and reports success", async () => {

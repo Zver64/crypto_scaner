@@ -1,6 +1,6 @@
 import { notifications } from "@mantine/notifications";
 import { useEffect } from "react";
-import { ApiError } from "../../api/client";
+import { ApiError } from "@/api/client";
 
 export function useAnalysisErrorNotification(
 	error: Error | null,

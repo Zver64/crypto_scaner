@@ -2,16 +2,19 @@ import { MantineProvider } from "@mantine/core";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
+import type { MarketScanResult } from "@/api/client";
 import { marketScanQueryOptions } from "@/api/market-scan";
-import type { MarketScanResult } from "../../api/client";
-import { BusinessRequestContext } from "../../app/business-request-context";
-import { MarketScanPage } from "./page";
+import { BusinessRequestContext } from "@/app/business-request-context";
+import { MarketScanScreen } from "@/features/market-scan/market-scan-screen";
 import {
 	criterionSelections,
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
-} from "./pipeline";
-import { defaultMarketScanSort, type MarketScanSort } from "./sort";
+} from "@/features/market-scan/pipeline";
+import {
+	defaultMarketScanSort,
+	type MarketScanSort,
+} from "@/features/market-scan/sort";
 
 function renderScan(
 	criteria: MarketScanCriteria,
@@ -31,7 +34,7 @@ function renderScan(
 				<BusinessRequestContext
 					value={{ allowed: true, authenticated: true, backendReady: true }}
 				>
-					<MarketScanPage
+					<MarketScanScreen
 						committedCriteria={criteria}
 						onCommit={async () => {}}
 						onSelectInstrument={async () => {}}

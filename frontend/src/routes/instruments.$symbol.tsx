@@ -1,24 +1,25 @@
 import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { InstrumentAnalysisPage } from "../features/instrument-analysis/instrument-analysis-page";
+import { InstrumentAnalysisScreen } from "@/features/instrument-analysis/instrument-analysis-screen";
+import { criterionSelections } from "@/features/market-scan/pipeline";
 import {
-	instrumentAnalysisCriteriaFromSearch,
-	parseInstrumentAnalysisSearch,
-} from "../features/instrument-analysis/search-params";
+	parseRequiredScanCriteriaSearch,
+	requiredScanCriteriaFromSearch,
+} from "@/routes/-scan-criteria-search";
 
 export const Route = createFileRoute("/instruments/$symbol")({
 	component: InstrumentRoute,
-	validateSearch: parseInstrumentAnalysisSearch,
+	validateSearch: parseRequiredScanCriteriaSearch,
 });
 
 function InstrumentRoute() {
 	const { symbol } = Route.useParams();
 	const search = Route.useSearch();
 	const router = useRouter();
-	const committedCriteria = instrumentAnalysisCriteriaFromSearch(search);
+	const criteria = requiredScanCriteriaFromSearch(search);
 
 	return (
-		<InstrumentAnalysisPage
-			committedCriteria={committedCriteria}
+		<InstrumentAnalysisScreen
+			criterionSelections={criterionSelections(criteria)}
 			onBack={() => router.history.back()}
 			symbol={symbol}
 		/>

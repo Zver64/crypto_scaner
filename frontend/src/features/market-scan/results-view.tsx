@@ -14,25 +14,25 @@ import type { MarketScanItem, MarketScanResult } from "@/api/client";
 import { openTelegramExternalLink } from "@/app/telegram";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
-import { marketCapEvaluation, volatilityEvaluation } from "./criteria";
+import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import {
 	dailyVolatilityKey,
 	hourlyVolatilityKey,
 	type MarketScanCriteria,
-} from "./pipeline";
+} from "@/features/market-scan/pipeline";
 import {
 	binanceSpotUrl,
 	filterMarketScanItems,
-	formatMarketCapUsd,
 	formatRangePercent,
 	marketCapUnavailableReason,
 	sortMarketScanItems,
-} from "./results";
+} from "@/features/market-scan/results";
 import {
 	type MarketScanSort,
 	type MarketScanSortColumn,
 	nextMarketScanSort,
-} from "./sort";
+} from "@/features/market-scan/sort";
+import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 
 interface MarketScanResultsProps {
 	criteria: MarketScanCriteria;

@@ -1,6 +1,6 @@
 import { notifications } from "@mantine/notifications";
 import { useEffect } from "react";
-import type { Warning } from "../../api/client";
+import type { Warning } from "@/api/client";
 
 export function useAnalysisWarningNotification(
 	warnings: readonly Warning[] | undefined,

@@ -215,7 +215,7 @@ describe("fetchMarketScan", () => {
 describe("fetchInstrumentAnalysis", () => {
 	it("submits Daily Volatility, Hourly Volatility, then enabled criteria", async () => {
 		const { criterionSelections, defaultMarketScanCriteria } = await import(
-			"../features/market-scan/pipeline"
+			"@/features/market-scan/pipeline"
 		);
 		const selections = criterionSelections(defaultMarketScanCriteria);
 		const body = {
@@ -397,7 +397,7 @@ it("rejects unknown unresolved instrument codes", async () => {
 
 it("submits the unified pipeline and preserves both keyed outcomes, warnings, and unresolved instruments", async () => {
 	const { criterionSelections, defaultMarketScanCriteria } = await import(
-		"../features/market-scan/pipeline"
+		"@/features/market-scan/pipeline"
 	);
 	const selections = criterionSelections(defaultMarketScanCriteria);
 	const body = {
@@ -459,7 +459,7 @@ it("submits the unified pipeline and preserves both keyed outcomes, warnings, an
 							unit: "days",
 							period: 30,
 							percentile: 80,
-							minimum_range_percent: 10,
+							minimum_range_percent: 5,
 						},
 					},
 					{

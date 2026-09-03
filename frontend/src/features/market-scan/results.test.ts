@@ -6,7 +6,6 @@ import type {
 import {
 	binanceSpotUrl,
 	filterMarketScanItems,
-	formatMarketCapUsd,
 	formatRangePercent,
 	marketCapUnavailableReason,
 	sortMarketScanItems,
@@ -32,10 +31,6 @@ describe("formatRangePercent", () => {
 });
 
 describe("Market Cap presentation", () => {
-	it("formats compact USD values", () => {
-		expect(formatMarketCapUsd(1_234_567)).toBe("$1.2M");
-	});
-
 	it.each<[UnresolvedInstrumentCode, string]>([
 		[
 			"mapping_not_found",

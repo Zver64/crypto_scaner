@@ -1,5 +1,5 @@
 import { createContext, useContext } from "react";
-import type { BusinessRequestPermission } from "./request-permission";
+import type { BusinessRequestPermission } from "@/utils/business-request-permission";
 
 export const BusinessRequestContext = createContext<
 	BusinessRequestPermission | undefined

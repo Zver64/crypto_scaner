@@ -45,7 +45,6 @@ The frontend needs the charting dependency and styles before the results-table f
 - Install the current compatible `@microcharts/react` package using npm, recording the resolved version in `frontend/package-lock.json`.
 - Import `@microcharts/react/styles.css` once in `frontend/src/main.tsx`.
 - Use the static `@microcharts/react/sparkline` entry for the feature; no interactive entry or motion setup is needed.
-- Check rendering in the application's dark theme with a temporary local example. Do not leave a demonstration chart in the product UI.
 - This task does not change market synchronization, the analysis API, or the results table.
 
 ### Acceptance and Verification

@@ -74,11 +74,10 @@ export function MarketScanForm({
 						<NumberInput
 							decimalScale={10}
 							key={form.key("minimumRangePercent")}
-							label="Minimum Range"
+							label="Minimum Range (%)"
 							min={marketScanCriteriaConstraints.minimumRangePercent.minimum}
 							size={inputSize}
 							step={0.1}
-							suffix="%"
 							{...form.getInputProps("minimumRangePercent")}
 						/>
 					</SimpleGrid>
@@ -96,11 +95,10 @@ export function MarketScanForm({
 						<NumberInput
 							decimalScale={10}
 							key={form.key("hourlyMinimumRangePercent")}
-							label="Minimum Range"
+							label="Minimum Range (%)"
 							min={marketScanCriteriaConstraints.minimumRangePercent.minimum}
 							size={inputSize}
 							step={0.1}
-							suffix="%"
 							{...form.getInputProps("hourlyMinimumRangePercent")}
 						/>
 					</SimpleGrid>
@@ -109,12 +107,10 @@ export function MarketScanForm({
 					<NumberInput
 						decimalScale={2}
 						key={form.key("minimumMarketCapMillions")}
-						label="Minimum Market Cap (millions)"
+						label="Minimum Market Cap (USD millions)"
 						min={marketScanCriteriaConstraints.minimumMarketCapMillions.minimum}
 						size={inputSize}
-						prefix="$"
 						step={1}
-						suffix="M"
 						{...form.getInputProps("minimumMarketCapMillions")}
 					/>
 				</Fieldset>

@@ -37,7 +37,6 @@ export function AnalysisCriteriaFields({
 				max={maximumPeriodForUnit(unit)}
 				min={analysisCriteriaConstraints.period.minimum}
 				size={inputSize}
-				suffix={` ${unit}`}
 				{...periodInputProps}
 			/>
 			{onUnitChange ? (

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.4.0](https://github.com/Zver64/crypto_scaner/compare/v0.3.0...v0.4.0) (2026-09-03)
+
+
+### Features
+
+* add seven-day price charts to analysis results ([#19](https://github.com/Zver64/crypto_scaner/issues/19)) ([0b24d6c](https://github.com/Zver64/crypto_scaner/commit/0b24d6c41fb9da540bc6b7bcd4a55a790aa5f6a9))
+* Show instrument range statistics and sample coverage ([365f8ca](https://github.com/Zver64/crypto_scaner/commit/365f8ca401b4cd748bd13774a6bd61c8681589d9))
+* tweaket default filter ([09f1c4e](https://github.com/Zver64/crypto_scaner/commit/09f1c4ec1585a85252b8810d1c0753e17647ab70))
+
+
+### Bug Fixes
+
+* refine responsive scan interface ([cafe41c](https://github.com/Zver64/crypto_scaner/commit/cafe41c7f4edb7943821b3f86e008174dc2ca2a7))
+* show units only in scan field labels ([be76167](https://github.com/Zver64/crypto_scaner/commit/be761678fe47b588bee45b1e88e42b6d114d139f))
+
 ## [0.3.0](https://github.com/Zver64/crypto_scaner/compare/v0.2.0...v0.3.0) (2026-09-02)
 
 

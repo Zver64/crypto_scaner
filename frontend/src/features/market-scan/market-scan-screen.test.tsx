@@ -11,6 +11,7 @@ import {
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
 } from "@/features/market-scan/pipeline";
+import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
 import {
 	defaultMarketScanSort,
 	type MarketScanSort,
@@ -70,12 +71,12 @@ it("renders separate mandatory volatility controls without a mode selector", () 
 });
 
 it.each<MarketScanSort>([
-	{ column: "daily_volatility", direction: "desc" },
-	{ column: "daily_volatility", direction: "asc" },
-	{ column: "hourly_volatility", direction: "desc" },
-	{ column: "hourly_volatility", direction: "asc" },
-	{ column: "market_cap", direction: "desc" },
-	{ column: "market_cap", direction: "asc" },
+	{ column: marketScanColumnKeys.dailyRange, direction: "desc" },
+	{ column: marketScanColumnKeys.dailyRange, direction: "asc" },
+	{ column: marketScanColumnKeys.hourlyRange, direction: "desc" },
+	{ column: marketScanColumnKeys.hourlyRange, direction: "asc" },
+	{ column: marketScanColumnKeys.marketCap, direction: "desc" },
+	{ column: marketScanColumnKeys.marketCap, direction: "asc" },
 ])("renders %s sorting direction in the active header", (sort) => {
 	const html = renderScan(
 		defaultMarketScanCriteria,
@@ -136,7 +137,7 @@ it.each<MarketScanSort>([
 	);
 });
 
-it("identifies both ranges and candle counts by key and hides inactive Market Cap results", () => {
+it("identifies metrics by key and keeps every column when the Market Cap criterion is disabled", () => {
 	const daily = {
 		key: "daily_volatility",
 		name: "volatility",
@@ -213,8 +214,36 @@ it("identifies both ranges and candle counts by key and hides inactive Market Ca
 		{ ...defaultMarketScanCriteria, minimumMarketCapMillions: 0 },
 		result,
 	);
-	expect(disabledHtml).not.toContain("Market Cap USD");
-	expect(disabledHtml).not.toContain("$750M");
+	expect(disabledHtml).toContain("Market Cap USD");
+	expect(disabledHtml).toContain("$750M");
+	const withoutMarketCap = {
+		...result,
+		items: result.items.map((item) => ({
+			...item,
+			evaluations: [hourly, daily],
+		})),
+	};
+	const noCapHtml = renderScan(
+		{ ...defaultMarketScanCriteria, minimumMarketCapMillions: 0 },
+		withoutMarketCap,
+		{ column: marketScanColumnKeys.marketCap, direction: "desc" },
+	);
+	const headers = (markup: string) =>
+		[...markup.matchAll(/<th\b[^>]*>([\s\S]*?)<\/th>/g)].map((match) =>
+			match[1]
+				.replace(/<[^>]+>/g, "")
+				.replace(/[↑↓]/g, "")
+				.trim(),
+		);
+	expect(headers(disabledHtml)).toEqual(headers(html));
+	expect(headers(noCapHtml)).toEqual(headers(html));
+	expect(headers(noCapHtml)).toHaveLength(8);
+	expect(noCapHtml).toContain("BTCUSDT");
+	expect(noCapHtml).toContain(
+		'aria-label="Sort by Market Cap USD, currently descending"',
+	);
+	expect(noCapHtml).toMatch(/<td[^>]*>—<\/td>/);
+	expect(noCapHtml).not.toContain("$750M");
 });
 
 it.each([

@@ -1,3 +1,7 @@
+import {
+	criterionNames,
+	evaluationMetricKeys,
+} from "@/api/analysis-identifiers";
 import type {
 	CriterionSelection,
 	Evaluation,
@@ -42,11 +46,15 @@ function hasExpectedMetrics(
 	evaluation: Evaluation,
 	criterion: CriterionSelection,
 ): boolean {
-	if (criterion.name === "volatility") {
-		return typeof evaluation.metrics.range_percent === "number";
+	if (criterion.name === criterionNames.volatility) {
+		return (
+			typeof evaluation.metrics[evaluationMetricKeys.rangePercent] === "number"
+		);
 	}
-	if (criterion.name === "market_cap") {
-		return typeof evaluation.metrics.market_cap_usd === "number";
+	if (criterion.name === criterionNames.marketCap) {
+		return (
+			typeof evaluation.metrics[evaluationMetricKeys.marketCapUsd] === "number"
+		);
 	}
 	return true;
 }

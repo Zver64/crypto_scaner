@@ -1,39 +1,24 @@
 import {
-	Anchor,
 	Group,
 	Paper,
 	Stack,
 	Text,
 	TextInput,
 	Title,
-	UnstyledButton,
 	useMatches,
 } from "@mantine/core";
 import { useState } from "react";
-import type { MarketScanItem, MarketScanResult } from "@/api/client";
-import { openTelegramExternalLink } from "@/app/telegram";
-import { DataTable, type DataTableColumn } from "@/components/data-table";
+import type { MarketScanResult } from "@/api/client";
+import { DataTable } from "@/components/data-table";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
-import { volatilityEvaluation } from "@/features/market-scan/criteria";
+import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
+import { MarketScanResultsTable } from "@/features/market-scan/results-table";
+import { unresolvedInstrumentColumns } from "@/features/market-scan/results-table/columns";
 import {
-	dailyVolatilityKey,
-	hourlyVolatilityKey,
-	type MarketScanCriteria,
-} from "@/features/market-scan/pipeline";
-import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
-import {
-	binanceSpotUrl,
-	filterMarketScanItems,
-	formatRangePercent,
-	marketCapUnavailableReason,
-	sortMarketScanItems,
-} from "@/features/market-scan/results";
-import {
-	type MarketScanSort,
-	type MarketScanSortColumn,
-	nextMarketScanSort,
-} from "@/features/market-scan/sort";
-import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
+	filterMarketScanRows,
+	toMarketScanRows,
+} from "@/features/market-scan/results-table/utils";
+import type { MarketScanSort } from "@/features/market-scan/sort";
 
 interface MarketScanResultsProps {
 	criteria: MarketScanCriteria;
@@ -47,13 +32,6 @@ interface MarketScanResultsProps {
 	sort: MarketScanSort;
 }
 
-interface ResultRow {
-	daily: NonNullable<ReturnType<typeof volatilityEvaluation>>;
-	hourly: NonNullable<ReturnType<typeof volatilityEvaluation>>;
-	item: MarketScanItem;
-	marketCap: ReturnType<typeof marketCapEvaluation>;
-}
-
 export function MarketScanResults({
 	criteria,
 	isRefreshing,
@@ -63,131 +41,12 @@ export function MarketScanResults({
 	sort,
 }: MarketScanResultsProps) {
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
-	const iconSize = useMatches({ base: 16, sm: 18 });
 	const textSize = useMatches({ base: "xs", sm: "sm" });
 	const [symbolFilter, setSymbolFilter] = useState("");
-	const marketCapEnabled = criteria.minimumMarketCapMillions > 0;
-	const rows = toResultRows(
-		sortMarketScanItems(
-			filterMarketScanItems(result.items, symbolFilter),
-			sort,
-		),
-		marketCapEnabled,
+	const rows = filterMarketScanRows(
+		toMarketScanRows(result.items),
+		symbolFilter,
 	);
-	const marketCapColumn: DataTableColumn<ResultRow> | undefined =
-		marketCapEnabled
-			? {
-					ariaSort: sort.column === "market_cap" ? sortDirection(sort) : "none",
-					cell: ({ marketCap }) =>
-						marketCap ? formatMarketCapUsd(marketCap.marketCapUsd) : "—",
-					header: sortableHeader(
-						"market_cap",
-						"Market Cap USD",
-						sort,
-						onSortChange,
-					),
-					key: "market-cap",
-				}
-			: undefined;
-	const columns: DataTableColumn<ResultRow>[] = [
-		{
-			cell: ({ item }) => item.symbol,
-			header: "Symbol",
-			key: "symbol",
-		},
-		sortableColumn(
-			"daily_volatility",
-			"Daily Range",
-			sort,
-			onSortChange,
-			({ daily }) => formatRangePercent(daily.rangePercent),
-		),
-		sortableColumn(
-			"hourly_volatility",
-			"Hourly Range",
-			sort,
-			onSortChange,
-			({ hourly }) => formatRangePercent(hourly.rangePercent),
-		),
-		{
-			cell: ({ hourly }) => hourly.candleCount,
-			header: "Hourly Candle Count",
-			key: "hourly-candle-count",
-		},
-		{
-			cell: ({ daily }) => daily.candleCount,
-			header: "Daily Candle Count",
-			key: "daily-candle-count",
-		},
-		...(marketCapColumn ? [marketCapColumn] : []),
-		{
-			cell: ({ item }) => (
-				<PriceHistoryChart
-					prices={item.price_history}
-					symbol={item.symbol}
-					window={result.price_history_window}
-				/>
-			),
-			header: "7d change",
-			key: "price-history",
-		},
-		{
-			cell: ({ item }) => {
-				const url = binanceSpotUrl(item.symbol);
-				return url ? (
-					<Anchor
-						aria-label={`Open ${item.symbol} on Binance Spot`}
-						href={url}
-						onClick={(event) => {
-							event.stopPropagation();
-							if (openTelegramExternalLink(url)) {
-								event.preventDefault();
-							}
-						}}
-						onKeyDown={(event) => event.stopPropagation()}
-						rel="noopener noreferrer"
-						style={{
-							display: "inline-flex",
-							lineHeight: 0,
-							verticalAlign: "middle",
-						}}
-						target="_blank"
-					>
-						<svg
-							aria-hidden="true"
-							data-icon="external-link"
-							fill="none"
-							height={iconSize}
-							stroke="currentColor"
-							strokeLinecap="round"
-							strokeLinejoin="round"
-							strokeWidth="2"
-							viewBox="0 0 24 24"
-							width={iconSize}
-						>
-							<path d="m6 18 12-12" />
-							<path d="M9 6h9v9" />
-						</svg>
-					</Anchor>
-				) : (
-					<Text c="dimmed">—</Text>
-				);
-			},
-			header: "Binance",
-			key: "binance",
-			textAlign: "center",
-		},
-	];
-	const unresolvedColumns: DataTableColumn<
-		MarketScanResult["unresolved"][number]
-	>[] = [
-		{ cell: (item) => item.symbol, header: "Symbol", key: "symbol" },
-		{
-			cell: (item) => marketCapUnavailableReason(item.code),
-			header: "Reason",
-			key: "reason",
-		},
-	];
 
 	return (
 		<RefreshingOverlay label="Refreshing Market Scan" visible={isRefreshing}>
@@ -230,23 +89,23 @@ export function MarketScanResults({
 						</Text>
 					</Paper>
 				) : (
-					<DataTable
-						columns={columns}
-						getRowKey={({ item }) => item.symbol}
-						minWidth={760}
-						onRowClick={({ item }) =>
-							void onSelectInstrument(item.symbol, criteria)
-						}
+					<MarketScanResultsTable
 						rows={rows}
+						window={result.price_history_window}
+						sort={sort}
+						onSortChange={onSortChange}
+						onSelectInstrument={(symbol) =>
+							void onSelectInstrument(symbol, criteria)
+						}
 					/>
 				)}
-				{marketCapEnabled && result.unresolved.length > 0 ? (
+				{result.unresolved.length > 0 ? (
 					<Stack gap="xs">
 						<Title order={2} size={textSize === "xs" ? "h5" : "h4"}>
 							Instruments with unavailable Market Cap
 						</Title>
 						<DataTable
-							columns={unresolvedColumns}
+							columns={unresolvedInstrumentColumns}
 							getRowKey={(item) => `${item.symbol}-${item.code}`}
 							minWidth={420}
 							rows={result.unresolved}
@@ -256,56 +115,4 @@ export function MarketScanResults({
 			</Stack>
 		</RefreshingOverlay>
 	);
-}
-
-function sortableColumn(
-	column: MarketScanSortColumn,
-	label: string,
-	sort: MarketScanSort,
-	onSortChange: (sort: MarketScanSort) => Promise<void>,
-	cell: DataTableColumn<ResultRow>["cell"],
-): DataTableColumn<ResultRow> {
-	return {
-		ariaSort: sort.column === column ? sortDirection(sort) : "none",
-		cell,
-		header: sortableHeader(column, label, sort, onSortChange),
-		key: column,
-	};
-}
-
-function sortableHeader(
-	column: MarketScanSortColumn,
-	label: string,
-	sort: MarketScanSort,
-	onSortChange: (sort: MarketScanSort) => Promise<void>,
-) {
-	const active = sort.column === column;
-	return (
-		<UnstyledButton
-			aria-label={`Sort by ${label}${active ? `, currently ${sort.direction}ending` : ""}`}
-			style={{ font: "inherit" }}
-			onClick={() => void onSortChange(nextMarketScanSort(sort, column))}
-		>
-			{label}
-			{active ? (sort.direction === "desc" ? " ↓" : " ↑") : null}
-		</UnstyledButton>
-	);
-}
-
-function sortDirection(sort: MarketScanSort): "ascending" | "descending" {
-	return sort.direction === "desc" ? "descending" : "ascending";
-}
-
-function toResultRows(
-	items: readonly MarketScanItem[],
-	marketCapEnabled: boolean,
-): ResultRow[] {
-	return items.flatMap((item) => {
-		const daily = volatilityEvaluation(item.evaluations, dailyVolatilityKey);
-		const hourly = volatilityEvaluation(item.evaluations, hourlyVolatilityKey);
-		const marketCap = marketCapEvaluation(item.evaluations);
-		return daily && hourly && (!marketCapEnabled || marketCap)
-			? [{ daily, hourly, item, marketCap }]
-			: [];
-	});
 }

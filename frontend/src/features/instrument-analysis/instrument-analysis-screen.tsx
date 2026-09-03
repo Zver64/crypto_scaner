@@ -9,6 +9,10 @@ import {
 	Text,
 	useMatches,
 } from "@mantine/core";
+import {
+	criterionKeys,
+	evaluationMetricKeys,
+} from "@/api/analysis-identifiers";
 import type { CriterionSelection } from "@/api/client";
 import { useInstrumentAnalysisQuery } from "@/api/instrument-analysis";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
@@ -16,21 +20,17 @@ import { useTelegramBackButton } from "@/app/telegram";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
-import {
-	dailyVolatilityKey,
-	hourlyVolatilityKey,
-} from "@/features/market-scan/pipeline";
-import { formatRangePercent } from "@/features/market-scan/results";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
+import { formatRangePercent } from "@/utils/range-percent";
 
 const rangeStatistics = [
 	{
-		key: dailyVolatilityKey,
+		key: criterionKeys.dailyVolatility,
 		label: "Daily Range",
 		coverageLabel: "Дней доступно",
 	},
 	{
-		key: hourlyVolatilityKey,
+		key: criterionKeys.hourlyVolatility,
 		label: "Hourly Range",
 		coverageLabel: "Часов доступно",
 	},
@@ -110,7 +110,8 @@ export function InstrumentAnalysisScreen({
 									const period = criterionSelections.find(
 										(item) => item.key === key,
 									)?.parameters.period;
-									const range = evaluation?.metrics.range_percent;
+									const range =
+										evaluation?.metrics[evaluationMetricKeys.rangePercent];
 									const count = evaluation?.candle_count;
 									const coverage =
 										typeof count === "number" &&

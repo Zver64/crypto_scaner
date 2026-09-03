@@ -1,3 +1,4 @@
+import { criterionKeys } from "@/api/analysis-identifiers";
 import type { CriterionSelection } from "@/api/client";
 import {
 	type MarketScanCriteria as SingleVolatilityCriteria,
@@ -6,9 +7,6 @@ import {
 	validateMarketScanCriteria as validateSingleVolatility,
 	volatilityCriterionSelection,
 } from "@/features/market-scan/criteria";
-
-export const dailyVolatilityKey = "daily_volatility";
-export const hourlyVolatilityKey = "hourly_volatility";
 
 export interface MarketScanCriteria
 	extends Omit<SingleVolatilityCriteria, "unit"> {
@@ -76,8 +74,12 @@ export function criterionSelections(
 		minimumRangePercent: criteria.hourlyMinimumRangePercent,
 	});
 	return [
-		{ ...daily, key: dailyVolatilityKey, label: "Daily Volatility" },
-		{ ...hourly, key: hourlyVolatilityKey, label: "Hourly Volatility" },
+		{ ...daily, key: criterionKeys.dailyVolatility, label: "Daily Volatility" },
+		{
+			...hourly,
+			key: criterionKeys.hourlyVolatility,
+			label: "Hourly Volatility",
+		},
 		...existingCriteria,
 	];
 }

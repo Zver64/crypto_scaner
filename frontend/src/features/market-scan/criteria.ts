@@ -1,3 +1,8 @@
+import {
+	criterionKeys,
+	criterionNames,
+	evaluationMetricKeys,
+} from "@/api/analysis-identifiers";
 import type { CriterionSelection, Evaluation } from "@/api/client";
 import {
 	type AnalysisCriteria,
@@ -6,9 +11,6 @@ import {
 	validateAnalysisCriteria,
 } from "@/features/analysis/criteria";
 
-export const volatilityCriterionKey = "volatility";
-export const volatilityCriterionName = "volatility";
-export const marketCapCriterionName = "market_cap";
 const usdPerMillion = 1_000_000;
 
 export interface MarketScanCriteria extends AnalysisCriteria {
@@ -75,9 +77,9 @@ export function volatilityCriterionSelection(
 	criteria: MarketScanCriteria,
 ): CriterionSelection {
 	return {
-		key: volatilityCriterionKey,
+		key: criterionKeys.volatility,
 		label: "Volatility",
-		name: volatilityCriterionName,
+		name: criterionNames.volatility,
 		parameters: {
 			minimum_range_percent: criteria.minimumRangePercent,
 			percentile: criteria.percentile,
@@ -93,9 +95,9 @@ export function criterionSelections(
 	const selections = [volatilityCriterionSelection(criteria)];
 	if (criteria.minimumMarketCapMillions > 0) {
 		selections.push({
-			key: marketCapCriterionName,
+			key: criterionKeys.marketCap,
 			label: "Market Cap",
-			name: marketCapCriterionName,
+			name: criterionNames.marketCap,
 			parameters: {
 				min_market_cap_usd: criteria.minimumMarketCapMillions * usdPerMillion,
 			},
@@ -114,10 +116,10 @@ export interface VolatilityEvaluation {
 
 export function volatilityEvaluation(
 	evaluations: readonly Evaluation[],
-	instanceKey = volatilityCriterionKey,
+	instanceKey: string = criterionKeys.volatility,
 ): VolatilityEvaluation | undefined {
 	const evaluation = evaluations.find(({ key }) => key === instanceKey);
-	const rangePercent = evaluation?.metrics.range_percent;
+	const rangePercent = evaluation?.metrics[evaluationMetricKeys.rangePercent];
 	if (!evaluation || typeof rangePercent !== "number") {
 		return undefined;
 	}

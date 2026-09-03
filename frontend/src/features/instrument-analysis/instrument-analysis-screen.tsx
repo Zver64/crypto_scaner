@@ -16,7 +16,25 @@ import { useTelegramBackButton } from "@/app/telegram";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
+import {
+	dailyVolatilityKey,
+	hourlyVolatilityKey,
+} from "@/features/market-scan/pipeline";
+import { formatRangePercent } from "@/features/market-scan/results";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
+
+const rangeStatistics = [
+	{
+		key: dailyVolatilityKey,
+		label: "Daily Range",
+		coverageLabel: "Дней доступно",
+	},
+	{
+		key: hourlyVolatilityKey,
+		label: "Hourly Range",
+		coverageLabel: "Часов доступно",
+	},
+];
 
 interface InstrumentAnalysisScreenProps {
 	criterionSelections: readonly CriterionSelection[];
@@ -31,7 +49,7 @@ export function InstrumentAnalysisScreen({
 }: InstrumentAnalysisScreenProps) {
 	const contentSpacing = useMatches({ base: "sm", sm: "md" });
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
-	const textSize = useMatches({ base: "xs", sm: "sm" });
+	const textSize = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
 	const hasNativeBackButton = useTelegramBackButton(onBack);
 	const query = useInstrumentAnalysisQuery(
@@ -71,24 +89,57 @@ export function InstrumentAnalysisScreen({
 					>
 						<Paper p={paperPadding} withBorder>
 							<Stack gap={contentSpacing}>
-								<Group justify="space-between">
-									<Text c="dimmed" size={textSize}>
-										Symbol
-									</Text>
-									<Text fw={700} size={textSize}>
+								<Group justify="space-between" wrap="nowrap">
+									<Text size={textSize}>Symbol</Text>
+									<Text fw={700} size={textSize} ta="right">
 										{result.symbol}
 									</Text>
 								</Group>
 								{marketCap ? (
-									<Group justify="space-between">
-										<Text c="dimmed" size={textSize}>
-											Market Cap
-										</Text>
-										<Text fw={700} size={textSize}>
+									<Group justify="space-between" wrap="nowrap">
+										<Text size={textSize}>Market Cap</Text>
+										<Text fw={700} size={textSize} ta="right">
 											{formatMarketCapUsd(marketCap.marketCapUsd)}
 										</Text>
 									</Group>
 								) : null}
+								{rangeStatistics.map(({ key, label, coverageLabel }) => {
+									const evaluation = result.evaluations.find(
+										(item) => item.key === key,
+									);
+									const period = criterionSelections.find(
+										(item) => item.key === key,
+									)?.parameters.period;
+									const range = evaluation?.metrics.range_percent;
+									const count = evaluation?.candle_count;
+									const coverage =
+										typeof count === "number" &&
+										Number.isInteger(count) &&
+										count >= 0 &&
+										typeof period === "number" &&
+										Number.isInteger(period) &&
+										period > 0
+											? `${Math.min(count, period)} из ${period}`
+											: "—";
+									return (
+										<Stack gap={contentSpacing} key={key}>
+											<Group justify="space-between" wrap="nowrap">
+												<Text size={textSize}>{label}</Text>
+												<Text fw={700} size={textSize} ta="right">
+													{typeof range === "number" && Number.isFinite(range)
+														? formatRangePercent(range)
+														: "—"}
+												</Text>
+											</Group>
+											<Group justify="space-between" wrap="nowrap">
+												<Text size={textSize}>{`${coverageLabel}: `}</Text>
+												<Text fw={700} size={textSize} ta="right">
+													{coverage}
+												</Text>
+											</Group>
+										</Stack>
+									);
+								})}
 							</Stack>
 						</Paper>
 					</RefreshingOverlay>

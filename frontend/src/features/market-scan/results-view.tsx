@@ -67,7 +67,6 @@ export function MarketScanResults({
 				</Paper>
 				<TextInput
 					aria-label="Filter current Scan Result by symbol"
-					description="Filters only the current Scan Result"
 					label="Symbol filter"
 					size={textSize}
 					onChange={(event) => setSymbolFilter(event.currentTarget.value)}

@@ -7,6 +7,7 @@ import {
 	Paper,
 	Stack,
 	Text,
+	useMatches,
 } from "@mantine/core";
 import { useInstrumentAnalysisQuery } from "@/api/instrument-analysis";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
@@ -32,6 +33,9 @@ export function InstrumentAnalysisPage({
 	onBack,
 	symbol,
 }: InstrumentAnalysisPageProps) {
+	const contentSpacing = useMatches({ base: "sm", sm: "md" });
+	const paperPadding = useMatches({ base: "xs", sm: "md" });
+	const textSize = useMatches({ base: "xs", sm: "sm" });
 	const permission = useBusinessRequestPermission();
 	const hasNativeBackButton = useTelegramBackButton(onBack);
 	const query = useInstrumentAnalysisQuery(
@@ -51,9 +55,9 @@ export function InstrumentAnalysisPage({
 
 	return (
 		<Container maw={720} px={0} size="sm">
-			<Stack gap="md">
+			<Stack gap={contentSpacing}>
 				{hasNativeBackButton ? null : (
-					<Button onClick={onBack} variant="subtle">
+					<Button onClick={onBack} size={textSize} variant="subtle">
 						Back to Market Scan
 					</Button>
 				)}
@@ -69,20 +73,22 @@ export function InstrumentAnalysisPage({
 						label="Refreshing Instrument Analysis"
 						visible={query.isFetching}
 					>
-						<Paper p="md" withBorder>
-							<Stack gap="md">
+						<Paper p={paperPadding} withBorder>
+							<Stack gap={contentSpacing}>
 								<Group justify="space-between">
-									<Text c="dimmed" size="sm">
+									<Text c="dimmed" size={textSize}>
 										Symbol
 									</Text>
-									<Text fw={700}>{result.symbol}</Text>
+									<Text fw={700} size={textSize}>
+										{result.symbol}
+									</Text>
 								</Group>
 								{marketCap ? (
 									<Group justify="space-between">
-										<Text c="dimmed" size="sm">
+										<Text c="dimmed" size={textSize}>
 											Market Cap
 										</Text>
-										<Text fw={700}>
+										<Text fw={700} size={textSize}>
 											{formatMarketCapUsd(marketCap.marketCapUsd)}
 										</Text>
 									</Group>

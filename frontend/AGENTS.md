@@ -68,3 +68,4 @@ tanstackIntent:
 - Place UI- and feature-independent utility functions in `src/utils/`, not in components, app-shell modules, routes, or feature modules.
 - Co-locate a utility's unit tests with that utility in `src/utils/`.
 - Use the `@/` alias for imports; do not add relative imports.
+- Keep component-specific helpers and their tests in the component directory as `utils.ts` and `utils.test.ts`. Do not use `<component>-utils.ts` files at the feature root.

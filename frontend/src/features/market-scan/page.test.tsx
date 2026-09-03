@@ -47,6 +47,8 @@ function renderScan(
 it("renders separate mandatory volatility controls without a mode selector", () => {
 	const html = renderScan(defaultMarketScanCriteria);
 	expect(html).toContain("Daily Volatility");
+	expect(html).toContain('data-size="h3"');
+	expect(html).toContain('data-size="xs"');
 	expect(html).toContain("Hourly Volatility");
 	expect(html).toContain("Market Cap");
 	expect(html).toContain('value="30 days"');
@@ -172,6 +174,11 @@ it("identifies both ranges and candle counts by key and hides inactive Market Ca
 	expect(html).toContain('aria-label="Sort by Market Cap USD"');
 	expect(html).toContain("$750M");
 	expect(html).toContain('aria-label="Open BTCUSDT on Binance Spot"');
+	expect(html).toContain('style="text-align:center"');
+	expect(html).toContain('data-icon="external-link"');
+	expect(html).toContain('height="16"');
+	expect(html).toContain('width="16"');
+	expect(html).toContain("font-size:var(--mantine-font-size-xs)");
 	expect(html).not.toContain(">Open ↗</a>");
 	expect(html).toContain("https://www.binance.com/en/trade/BTC_USDT?type=spot");
 	const disabledHtml = renderScan(

@@ -1,4 +1,4 @@
-import { Paper, Table } from "@mantine/core";
+import { Paper, Table, useMatches } from "@mantine/core";
 import type { ReactNode } from "react";
 
 export interface DataTableColumn<Row> {
@@ -24,10 +24,17 @@ export function DataTable<Row>({
 	onRowClick,
 	rows,
 }: DataTableProps<Row>) {
+	const fontSize = useMatches({ base: "xs", sm: "sm" });
+	const spacing = useMatches({ base: "4px", sm: "xs" });
 	return (
 		<Paper p="xs" withBorder>
 			<Table.ScrollContainer minWidth={minWidth}>
-				<Table highlightOnHover verticalSpacing="xs">
+				<Table
+					fz={fontSize}
+					highlightOnHover
+					horizontalSpacing={spacing}
+					verticalSpacing={spacing}
+				>
 					<Table.Thead>
 						<Table.Tr>
 							{columns.map((column) => (

@@ -7,6 +7,7 @@ import {
 	TextInput,
 	Title,
 	UnstyledButton,
+	useMatches,
 } from "@mantine/core";
 import { useState } from "react";
 import type { MarketScanItem, MarketScanResult } from "@/api/client";
@@ -60,6 +61,9 @@ export function MarketScanResults({
 	result,
 	sort,
 }: MarketScanResultsProps) {
+	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
+	const iconSize = useMatches({ base: 16, sm: 18 });
+	const textSize = useMatches({ base: "xs", sm: "sm" });
 	const [symbolFilter, setSymbolFilter] = useState("");
 	const marketCapEnabled = criteria.minimumMarketCapMillions > 0;
 	const rows = toResultRows(
@@ -130,9 +134,28 @@ export function MarketScanResults({
 						}}
 						onKeyDown={(event) => event.stopPropagation()}
 						rel="noopener noreferrer"
+						style={{
+							display: "inline-flex",
+							lineHeight: 0,
+							verticalAlign: "middle",
+						}}
 						target="_blank"
 					>
-						↗
+						<svg
+							aria-hidden="true"
+							data-icon="external-link"
+							fill="none"
+							height={iconSize}
+							stroke="currentColor"
+							strokeLinecap="round"
+							strokeLinejoin="round"
+							strokeWidth="2"
+							viewBox="0 0 24 24"
+							width={iconSize}
+						>
+							<path d="m6 18 12-12" />
+							<path d="M9 6h9v9" />
+						</svg>
 					</Anchor>
 				) : (
 					<Text c="dimmed">—</Text>
@@ -140,7 +163,7 @@ export function MarketScanResults({
 			},
 			header: "Binance",
 			key: "binance",
-			textAlign: "right",
+			textAlign: "center",
 		},
 	];
 	const unresolvedColumns: DataTableColumn<
@@ -156,16 +179,16 @@ export function MarketScanResults({
 
 	return (
 		<RefreshingOverlay label="Refreshing Market Scan" visible={isRefreshing}>
-			<Stack gap="sm">
-				<Paper p="sm" withBorder>
+			<Stack gap={contentSpacing}>
+				<Paper p={contentSpacing} withBorder>
 					<Group gap="lg">
-						<Text size="sm">
+						<Text size={textSize}>
 							Matched <Text component="strong">{result.matched_count}</Text>
 						</Text>
-						<Text size="sm">
+						<Text size={textSize}>
 							Analyzed <Text component="strong">{result.analyzed_count}</Text>
 						</Text>
-						<Text size="sm">
+						<Text size={textSize}>
 							Insufficient data{" "}
 							<Text component="strong">{result.insufficient_data_count}</Text>
 						</Text>
@@ -175,6 +198,7 @@ export function MarketScanResults({
 					aria-label="Filter current Scan Result by symbol"
 					description="Filters only the current Scan Result"
 					label="Symbol filter"
+					size={textSize}
 					onChange={(event) => setSymbolFilter(event.currentTarget.value)}
 					placeholder="e.g. BTC"
 					value={symbolFilter}
@@ -206,7 +230,7 @@ export function MarketScanResults({
 				)}
 				{marketCapEnabled && result.unresolved.length > 0 ? (
 					<Stack gap="xs">
-						<Title order={2} size="h4">
+						<Title order={2} size={textSize === "xs" ? "h5" : "h4"}>
 							Instruments with unavailable Market Cap
 						</Title>
 						<DataTable

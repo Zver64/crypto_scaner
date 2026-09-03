@@ -1,4 +1,12 @@
-import { Center, Container, Loader, Stack, Text, Title } from "@mantine/core";
+import {
+	Center,
+	Container,
+	Loader,
+	Stack,
+	Text,
+	Title,
+	useMatches,
+} from "@mantine/core";
 import { useMarketScanQuery } from "@/api/market-scan";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
@@ -26,6 +34,7 @@ export function MarketScanPage({
 	onSelectInstrument,
 	sort,
 }: MarketScanPageProps) {
+	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
 	const query = useMarketScanQuery(
 		committedCriteria ? criterionSelections(committedCriteria) : undefined,
@@ -36,7 +45,7 @@ export function MarketScanPage({
 
 	return (
 		<Container maw={880} px={0} size="md">
-			<Stack gap="md">
+			<Stack gap={pageGap}>
 				<PageHeading />
 				<MarketScanForm
 					committedCriteria={committedCriteria}
@@ -66,12 +75,15 @@ export function MarketScanPage({
 }
 
 function PageHeading() {
+	const headingSize = useMatches({ base: "h3", sm: "h2" });
+	const descriptionSize = useMatches({ base: "xs", sm: "sm" });
+
 	return (
 		<Stack gap={2}>
-			<Title order={1} size="h2">
+			<Title order={1} size={headingSize}>
 				Market Scan
 			</Title>
-			<Text c="dimmed" size="sm">
+			<Text c="dimmed" size={descriptionSize}>
 				Evaluate daily volatility, then hourly volatility, then each enabled
 				criterion.
 			</Text>

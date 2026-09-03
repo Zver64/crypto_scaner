@@ -1,14 +1,22 @@
-import { Button, Fieldset, NumberInput, Paper, Stack } from "@mantine/core";
+import {
+	Button,
+	Fieldset,
+	NumberInput,
+	Paper,
+	SimpleGrid,
+	Stack,
+	useMatches,
+} from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { AnalysisCriteriaFields } from "@/features/analysis/analysis-criteria-fields";
-import { marketScanCriteriaConstraints } from "./criteria";
+import { marketScanCriteriaConstraints } from "@/features/market-scan/criteria";
 import {
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
 	type MarketScanDraft,
-	marketScanCriteriaIdentity,
 	validateMarketScanCriteria,
-} from "./pipeline";
+} from "@/features/market-scan/pipeline";
+import { criteriaAreEqual, criteriaFromValidDraft } from "./utils";
 
 interface MarketScanFormProps {
 	committedCriteria: MarketScanCriteria | undefined;
@@ -25,6 +33,9 @@ export function MarketScanForm({
 	onCommit,
 	onRefresh,
 }: MarketScanFormProps) {
+	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
+	const inputSize = useMatches({ base: "xs", sm: "sm" });
+	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const form = useForm<MarketScanDraft>({
 		initialValues: committedCriteria ?? defaultMarketScanCriteria,
 		mode: "controlled",
@@ -45,15 +56,16 @@ export function MarketScanForm({
 	});
 
 	return (
-		<Paper component="form" onSubmit={handleSubmit} p="md" withBorder>
-			<Stack gap="sm">
+		<Paper component="form" onSubmit={handleSubmit} p={paperPadding} withBorder>
+			<Stack gap={contentSpacing}>
 				<Fieldset legend="Daily Volatility">
-					<Stack gap="sm">
+					<SimpleGrid cols={{ base: 1, xs: 3 }} spacing={contentSpacing}>
 						<AnalysisCriteriaFields
 							percentileInputProps={form.getInputProps("percentile")}
 							percentileKey={form.key("percentile")}
 							periodInputProps={form.getInputProps("period")}
 							periodKey={form.key("period")}
+							inputSize={inputSize}
 							unit="days"
 						/>
 						<NumberInput
@@ -61,19 +73,21 @@ export function MarketScanForm({
 							key={form.key("minimumRangePercent")}
 							label="Minimum Range"
 							min={marketScanCriteriaConstraints.minimumRangePercent.minimum}
+							size={inputSize}
 							step={0.1}
 							suffix="%"
 							{...form.getInputProps("minimumRangePercent")}
 						/>
-					</Stack>
+					</SimpleGrid>
 				</Fieldset>
 				<Fieldset legend="Hourly Volatility">
-					<Stack gap="sm">
+					<SimpleGrid cols={{ base: 1, xs: 3 }} spacing={contentSpacing}>
 						<AnalysisCriteriaFields
 							percentileInputProps={form.getInputProps("hourlyPercentile")}
 							percentileKey={form.key("hourlyPercentile")}
 							periodInputProps={form.getInputProps("hourlyPeriod")}
 							periodKey={form.key("hourlyPeriod")}
+							inputSize={inputSize}
 							unit="hours"
 						/>
 						<NumberInput
@@ -81,11 +95,12 @@ export function MarketScanForm({
 							key={form.key("hourlyMinimumRangePercent")}
 							label="Minimum Range"
 							min={marketScanCriteriaConstraints.minimumRangePercent.minimum}
+							size={inputSize}
 							step={0.1}
 							suffix="%"
 							{...form.getInputProps("hourlyMinimumRangePercent")}
 						/>
-					</Stack>
+					</SimpleGrid>
 				</Fieldset>
 				<Fieldset legend="Market Cap">
 					<NumberInput
@@ -93,6 +108,7 @@ export function MarketScanForm({
 						key={form.key("minimumMarketCapMillions")}
 						label="Minimum Market Cap (millions)"
 						min={marketScanCriteriaConstraints.minimumMarketCapMillions.minimum}
+						size={inputSize}
 						prefix="$"
 						step={1}
 						suffix="M"
@@ -102,6 +118,7 @@ export function MarketScanForm({
 				<Button
 					disabled={disabled || !form.isValid()}
 					loading={isSubmitting}
+					size={inputSize}
 					type="submit"
 				>
 					Run Market Scan
@@ -109,39 +126,4 @@ export function MarketScanForm({
 			</Stack>
 		</Paper>
 	);
-}
-
-function criteriaAreEqual(
-	left: MarketScanCriteria,
-	right: MarketScanCriteria,
-): boolean {
-	const leftIdentity = marketScanCriteriaIdentity(left);
-	const rightIdentity = marketScanCriteriaIdentity(right);
-	return leftIdentity.every((value, index) => value === rightIdentity[index]);
-}
-
-function criteriaFromValidDraft(
-	values: MarketScanDraft,
-): MarketScanCriteria | undefined {
-	if (
-		typeof values.period !== "number" ||
-		typeof values.percentile !== "number" ||
-		typeof values.minimumMarketCapMillions !== "number" ||
-		typeof values.minimumRangePercent !== "number" ||
-		typeof values.hourlyPeriod !== "number" ||
-		typeof values.hourlyPercentile !== "number" ||
-		typeof values.hourlyMinimumRangePercent !== "number"
-	) {
-		return undefined;
-	}
-
-	return {
-		hourlyMinimumRangePercent: values.hourlyMinimumRangePercent,
-		hourlyPercentile: values.hourlyPercentile,
-		hourlyPeriod: values.hourlyPeriod,
-		minimumMarketCapMillions: values.minimumMarketCapMillions,
-		minimumRangePercent: values.minimumRangePercent,
-		percentile: values.percentile,
-		period: values.period,
-	};
 }

@@ -10,6 +10,7 @@ import {
 } from "./criteria";
 
 interface AnalysisCriteriaFieldsProps {
+	inputSize: NonNullable<NumberInputProps["size"]>;
 	percentileInputProps: NumberInputProps;
 	percentileKey: string;
 	periodInputProps: NumberInputProps;
@@ -19,6 +20,7 @@ interface AnalysisCriteriaFieldsProps {
 }
 
 export function AnalysisCriteriaFields({
+	inputSize,
 	percentileInputProps,
 	percentileKey,
 	periodInputProps,
@@ -34,6 +36,7 @@ export function AnalysisCriteriaFields({
 				label={`Analysis Period (${unit})`}
 				max={maximumPeriodForUnit(unit)}
 				min={analysisCriteriaConstraints.period.minimum}
+				size={inputSize}
 				suffix={` ${unit}`}
 				{...periodInputProps}
 			/>
@@ -45,6 +48,7 @@ export function AnalysisCriteriaFields({
 					]}
 					value={unit}
 					onChange={(value) => onUnitChange(value as AnalysisUnit)}
+					size={inputSize}
 				/>
 			) : null}
 			<NumberInput
@@ -53,6 +57,7 @@ export function AnalysisCriteriaFields({
 				label="Range Percentile"
 				max={analysisCriteriaConstraints.percentile.maximum}
 				min={analysisCriteriaConstraints.percentile.minimum}
+				size={inputSize}
 				{...percentileInputProps}
 			/>
 		</>

@@ -7,6 +7,7 @@ import { getRouter } from "@/router";
 
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
+import "@microcharts/react/styles.css";
 
 const theme = createTheme({
 	defaultRadius: "md",

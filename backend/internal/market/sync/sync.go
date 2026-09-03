@@ -202,19 +202,40 @@ func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instrumen
 }
 
 func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument market.Instrument, profile market.SyncProfile, startedAt time.Time) instrumentResult {
-	existing, err := synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, profile.Interval, 1)
+	historyLimit := 1
+	if profile.Interval == "1h" {
+		historyLimit = market.SevenDayPriceSlots
+	}
+	existing, err := synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, profile.Interval, historyLimit)
 	if err != nil {
 		return instrumentResult{err: fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)}
 	}
 	initialLimit := 30
 	if profile.Interval == "1h" {
-		initialLimit = 60
+		initialLimit = market.SevenDayPriceSlots
 	}
 	request := market.CandleRequest{Symbol: instrument.Symbol, Interval: profile.Interval, Limit: initialLimit, ClosedBefore: startedAt}
 	if len(existing) > 0 {
 		latest := existing[0].OpenTime
 		request.AfterOpenTime = &latest
 		request.Limit = 1000
+	}
+	if profile.Interval == "1h" {
+		window := market.SevenDayWindow(startedAt)
+		present := make(map[time.Time]bool, len(existing))
+		for _, candle := range existing {
+			present[candle.OpenTime.UTC()] = true
+		}
+		for hour := window.From; !hour.After(window.To); hour = hour.Add(time.Hour) {
+			if !present[hour] {
+				beforeGap := hour.Add(-time.Millisecond)
+				if request.AfterOpenTime == nil || beforeGap.Before(*request.AfterOpenTime) {
+					request.AfterOpenTime = &beforeGap
+				}
+				request.Limit = 1000
+				break
+			}
+		}
 	}
 	result := instrumentResult{}
 	for {

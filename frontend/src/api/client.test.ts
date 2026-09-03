@@ -1,5 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
-import { ApiError, fetchInstrumentAnalysis, fetchMarketScan } from "./client";
+import {
+	ApiError,
+	fetchInstrumentAnalysis,
+	fetchMarketScan,
+} from "@/api/client";
+
+const priceHistoryWindow = {
+	from: "2026-08-26T23:00:00Z",
+	to: "2026-09-02T23:00:00Z",
+};
 
 const criteria = {
 	key: "volatility",
@@ -28,10 +37,21 @@ describe("fetchMarketScan", () => {
 	it("requests the protected market endpoint and preserves response values and order", async () => {
 		const body = {
 			analyzed_count: 3,
+			price_history_window: priceHistoryWindow,
 			insufficient_data_count: 1,
 			items: [
-				{ evaluations: [evaluation], matched: true, symbol: "ZZZUSDT" },
-				{ evaluations: [evaluation], matched: true, symbol: "AAAUSDT" },
+				{
+					evaluations: [evaluation],
+					matched: true,
+					symbol: "ZZZUSDT",
+					price_history: Array(169).fill(null),
+				},
+				{
+					evaluations: [evaluation],
+					matched: true,
+					symbol: "AAAUSDT",
+					price_history: Array(169).fill(null),
+				},
 			],
 			matched_count: 2,
 			unresolved: [],
@@ -72,6 +92,7 @@ describe("fetchMarketScan", () => {
 				new Response(
 					JSON.stringify({
 						analyzed_count: 0,
+						price_history_window: priceHistoryWindow,
 						insufficient_data_count: 0,
 						items: [],
 						matched_count: 0,
@@ -339,6 +360,7 @@ it("parses Market Cap warnings and unresolved instruments", async () => {
 			new Response(
 				JSON.stringify({
 					analyzed_count: 1,
+					price_history_window: priceHistoryWindow,
 					insufficient_data_count: 0,
 					items: [],
 					matched_count: 0,
@@ -374,6 +396,7 @@ it("rejects unknown unresolved instrument codes", async () => {
 			new Response(
 				JSON.stringify({
 					analyzed_count: 0,
+					price_history_window: priceHistoryWindow,
 					insufficient_data_count: 0,
 					items: [],
 					matched_count: 0,
@@ -402,11 +425,13 @@ it("submits the unified pipeline and preserves both keyed outcomes, warnings, an
 	const selections = criterionSelections(defaultMarketScanCriteria);
 	const body = {
 		matched_count: 1,
+		price_history_window: priceHistoryWindow,
 		analyzed_count: 2,
 		insufficient_data_count: 0,
 		items: [
 			{
 				symbol: "BTCUSDT",
+				price_history: Array(169).fill(null),
 				matched: true,
 				evaluations: [
 					{

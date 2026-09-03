@@ -20,6 +20,7 @@ import {
 	hourlyVolatilityKey,
 	type MarketScanCriteria,
 } from "@/features/market-scan/pipeline";
+import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
 import {
 	binanceSpotUrl,
 	filterMarketScanItems,
@@ -119,6 +120,17 @@ export function MarketScanResults({
 			key: "daily-candle-count",
 		},
 		...(marketCapColumn ? [marketCapColumn] : []),
+		{
+			cell: ({ item }) => (
+				<PriceHistoryChart
+					prices={item.price_history}
+					symbol={item.symbol}
+					window={result.price_history_window}
+				/>
+			),
+			header: "7d change",
+			key: "price-history",
+		},
 		{
 			cell: ({ item }) => {
 				const url = binanceSpotUrl(item.symbol);
@@ -271,6 +283,7 @@ function sortableHeader(
 	return (
 		<UnstyledButton
 			aria-label={`Sort by ${label}${active ? `, currently ${sort.direction}ending` : ""}`}
+			style={{ font: "inherit" }}
 			onClick={() => void onSortChange(nextMarketScanSort(sort, column))}
 		>
 			{label}

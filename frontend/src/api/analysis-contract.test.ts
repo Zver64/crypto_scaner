@@ -51,6 +51,7 @@ const marketCapEvaluation = {
 it("requires every selected Market Scan evaluation", () => {
 	const item = {
 		matched: true,
+		price_history: Array(169).fill(null),
 		symbol: "BTCUSDT",
 	};
 	expect(

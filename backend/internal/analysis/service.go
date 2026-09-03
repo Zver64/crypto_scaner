@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"crypto-scanner/internal/market"
 )
@@ -18,6 +19,7 @@ type Store interface {
 	GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error)
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
 	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
+	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
 }
 
 type SymbolRequest struct {
@@ -32,12 +34,14 @@ type SymbolResult struct {
 }
 type SearchRequest struct{ Criteria []CriterionConfig }
 type SearchItem struct {
+	PriceHistory  []*float64
 	Symbol        string
 	Matched       bool
 	Evaluations   []Evaluation
 	orderingScore *float64
 }
 type SearchResult struct {
+	PriceHistoryWindow    market.PriceHistoryWindow
 	MatchedCount          int
 	AnalyzedCount         int
 	InsufficientDataCount int
@@ -101,6 +105,7 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 }
 
 func (service *Service) Search(ctx context.Context, request SearchRequest) (SearchResult, error) {
+	window := market.SevenDayWindow(time.Now())
 	criteria, requirements, err := service.prepare(request.Criteria)
 	if err != nil {
 		return SearchResult{}, err
@@ -112,7 +117,7 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("list active instruments: %w", err)
 	}
-	result := SearchResult{Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
+	result := SearchResult{PriceHistoryWindow: window, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
 	candidates := append([]market.Instrument(nil), instruments...)
 	results := make(map[int64]SymbolResult, len(candidates))
 	for _, criterion := range criteria {
@@ -152,9 +157,13 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 		candidates = next
 	}
 	result.AnalyzedCount = len(instruments) - result.InsufficientDataCount - len(result.Unresolved)
+	histories, err := service.priceHistories(ctx, candidates, window)
+	if err != nil {
+		return SearchResult{}, err
+	}
 	for _, instrument := range candidates {
 		item := results[instrument.ID]
-		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, orderingScore: firstScore(item.Evaluations)})
+		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID], orderingScore: firstScore(item.Evaluations)})
 	}
 	sort.Slice(result.Items, func(i, j int) bool {
 		a, b := result.Items[i].orderingScore, result.Items[j].orderingScore

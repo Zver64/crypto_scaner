@@ -321,6 +321,10 @@ type storeStub struct {
 	reads               int
 }
 
+func (s *storeStub) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+	return nil, nil
+}
+
 func (s *storeStub) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
 	s.reads++
 	now := time.Now()

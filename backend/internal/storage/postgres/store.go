@@ -197,6 +197,22 @@ func (store *Store) GetSyncState(ctx context.Context, profile market.SyncProfile
 	}, nil
 }
 
+func (store *Store) ListHourlyPrices(ctx context.Context, instrumentIDs []int64, from, to time.Time) ([]market.HourlyPrice, error) {
+	rows, err := store.queries.ListHourlyPrices(ctx, generated.ListHourlyPricesParams{InstrumentIds: instrumentIDs, FromTime: timestamptz(&from), ToTime: timestamptz(&to)})
+	if err != nil {
+		return nil, fmt.Errorf("list hourly prices: %w", err)
+	}
+	prices := make([]market.HourlyPrice, 0, len(rows))
+	for _, row := range rows {
+		price, err := strconv.ParseFloat(row.Close, 64)
+		if err != nil || math.IsNaN(price) || math.IsInf(price, 0) {
+			return nil, fmt.Errorf("invalid hourly close for instrument %d at %s", row.InstrumentID, row.OpenTime.Time)
+		}
+		prices = append(prices, market.HourlyPrice{InstrumentID: row.InstrumentID, OpenTime: row.OpenTime.Time.UTC(), Close: price})
+	}
+	return prices, nil
+}
+
 func (store *Store) SaveSyncState(ctx context.Context, state market.SyncState) error {
 	if err := store.queries.SaveSyncState(ctx, generated.SaveSyncStateParams{
 		ProfileKey: state.Profile.Key(), LastStartedAt: timestamptz(state.LastStartedAt), LastSucceededAt: timestamptz(state.LastSucceededAt),

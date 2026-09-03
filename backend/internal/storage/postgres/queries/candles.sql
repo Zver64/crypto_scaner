@@ -21,3 +21,13 @@ WHERE instrument_id = $1
   AND interval = $2
 ORDER BY open_time DESC
 LIMIT $3;
+
+-- name: ListHourlyPrices :many
+SELECT instrument_id, open_time, close
+FROM binance_spot.candles
+WHERE instrument_id = ANY(sqlc.arg(instrument_ids)::bigint[])
+  AND interval = '1h'
+  AND open_time >= sqlc.arg(from_time)
+  AND open_time <= sqlc.arg(to_time)
+  AND close_time < sqlc.arg(to_time)::timestamptz + INTERVAL '1 hour'
+ORDER BY instrument_id, open_time;

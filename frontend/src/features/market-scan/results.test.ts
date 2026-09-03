@@ -12,9 +12,24 @@ import {
 } from "./results";
 
 const items: MarketScanItem[] = [
-	{ evaluations: [], matched: true, symbol: "ZZZUSDT" },
-	{ evaluations: [], matched: true, symbol: "AdaUsdt" },
-	{ evaluations: [], matched: true, symbol: "AAAUSDT" },
+	{
+		evaluations: [],
+		matched: true,
+		symbol: "ZZZUSDT",
+		price_history: Array(169).fill(null),
+	},
+	{
+		evaluations: [],
+		matched: true,
+		symbol: "AdaUsdt",
+		price_history: Array(169).fill(null),
+	},
+	{
+		evaluations: [],
+		matched: true,
+		symbol: "AAAUSDT",
+		price_history: Array(169).fill(null),
+	},
 ];
 
 describe("formatRangePercent", () => {
@@ -93,6 +108,7 @@ describe("filterMarketScanItems", () => {
 		expect(items[2]).toEqual({
 			evaluations: [],
 			matched: true,
+			price_history: Array(169).fill(null),
 			symbol: "AAAUSDT",
 		});
 	});
@@ -129,6 +145,7 @@ describe("sortMarketScanItems", () => {
 			evaluations: [daily, hourly, marketCap],
 			matched: true,
 			symbol: "ZEBRAUSDT",
+			price_history: Array(169).fill(null),
 		},
 		{
 			evaluations: [
@@ -138,6 +155,7 @@ describe("sortMarketScanItems", () => {
 			],
 			matched: true,
 			symbol: "ALPHAUSDT",
+			price_history: Array(169).fill(null),
 		},
 		{
 			evaluations: [
@@ -147,6 +165,7 @@ describe("sortMarketScanItems", () => {
 			],
 			matched: true,
 			symbol: "BRAVOUSDT",
+			price_history: Array(169).fill(null),
 		},
 		{
 			evaluations: [
@@ -156,6 +175,7 @@ describe("sortMarketScanItems", () => {
 			],
 			matched: true,
 			symbol: "CHARLIEUSDT",
+			price_history: Array(169).fill(null),
 		},
 	];
 

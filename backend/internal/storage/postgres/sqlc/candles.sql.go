@@ -11,6 +11,49 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const listHourlyPrices = `-- name: ListHourlyPrices :many
+SELECT instrument_id, open_time, close
+FROM binance_spot.candles
+WHERE instrument_id = ANY($1::bigint[])
+  AND interval = '1h'
+  AND open_time >= $2
+  AND open_time <= $3
+  AND close_time < $3::timestamptz + INTERVAL '1 hour'
+ORDER BY instrument_id, open_time
+`
+
+type ListHourlyPricesParams struct {
+	InstrumentIds []int64
+	FromTime      pgtype.Timestamptz
+	ToTime        pgtype.Timestamptz
+}
+
+type ListHourlyPricesRow struct {
+	InstrumentID int64
+	OpenTime     pgtype.Timestamptz
+	Close        string
+}
+
+func (q *Queries) ListHourlyPrices(ctx context.Context, arg ListHourlyPricesParams) ([]ListHourlyPricesRow, error) {
+	rows, err := q.db.Query(ctx, listHourlyPrices, arg.InstrumentIds, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListHourlyPricesRow
+	for rows.Next() {
+		var i ListHourlyPricesRow
+		if err := rows.Scan(&i.InstrumentID, &i.OpenTime, &i.Close); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLatestCandles = `-- name: ListLatestCandles :many
 SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
        volume, quote_asset_volume, trade_count

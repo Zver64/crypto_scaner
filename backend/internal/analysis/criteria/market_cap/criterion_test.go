@@ -46,6 +46,9 @@ func (s *storeStub) ListActiveInstruments(context.Context) ([]market.Instrument,
 func (s *storeStub) ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error) {
 	return nil, nil
 }
+func (s *storeStub) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+	return nil, nil
+}
 
 type providerStub struct{}
 

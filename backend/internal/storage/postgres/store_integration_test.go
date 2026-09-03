@@ -121,6 +121,45 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("price history is bounded by instruments, hourly interval and closed window", func(t *testing.T) {
+		instruments, err := store.ListActiveInstruments(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+		end := start.Add(168 * time.Hour)
+		t.Cleanup(func() {
+			if _, err := db.Exec(ctx, `DELETE FROM binance_spot.candles WHERE open_time BETWEEN $1 AND $2`, start.Add(-time.Hour), end.Add(time.Hour)); err != nil {
+				t.Errorf("clean price history fixture: %v", err)
+			}
+		})
+		for _, instrument := range instruments {
+			for _, hour := range []int{-1, 0, 168, 169} {
+				open := start.Add(time.Duration(hour) * time.Hour)
+				candle := market.Candle{InstrumentID: instrument.ID, Interval: "1h", OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 10, High: 12, Low: 9, Close: 10.12345678}
+				if err := store.UpsertCandles(ctx, []market.Candle{candle, candle}); err != nil {
+					t.Fatal(err)
+				}
+				candle.Interval = "1d"
+				candle.CloseTime = open.Add(24*time.Hour - time.Millisecond)
+				if err := store.UpsertCandles(ctx, []market.Candle{candle}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		prices, err := store.ListHourlyPrices(ctx, []int64{instruments[0].ID}, start, end)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(prices) != 2 || !prices[0].OpenTime.Equal(start) || !prices[1].OpenTime.Equal(end) || prices[0].Close != 10.12345678 || prices[1].InstrumentID != instruments[0].ID {
+			t.Fatalf("wrong bounded prices: %+v", prices)
+		}
+		empty, err := store.ListHourlyPrices(ctx, nil, start, end)
+		if err != nil || len(empty) != 0 {
+			t.Fatalf("empty instrument selection: %+v / %v", empty, err)
+		}
+	})
+
 	t.Run("candle upsert is idempotent and numerics are checked", func(t *testing.T) {
 		instruments, err := store.ListActiveInstruments(ctx)
 		if err != nil {

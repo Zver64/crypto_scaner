@@ -24,7 +24,15 @@ export interface InstrumentAnalysisResult {
 }
 
 export interface MarketScanItem
-	extends Omit<InstrumentAnalysisResult, "warnings"> {}
+	extends Omit<InstrumentAnalysisResult, "warnings"> {
+	price_history: (number | null)[];
+}
+
+export interface PriceHistoryWindow {
+	/** Inclusive hourly candle open times in UTC. */
+	from: string;
+	to: string;
+}
 
 export type UnresolvedInstrumentCode =
 	| "mapping_conflict"
@@ -44,6 +52,7 @@ export interface Warning {
 }
 
 export interface MarketScanResult {
+	price_history_window: PriceHistoryWindow;
 	analyzed_count: number;
 	insufficient_data_count: number;
 	items: MarketScanItem[];
@@ -237,6 +246,7 @@ function parseMarketScanResult(payload: unknown): MarketScanResult {
 		insufficient_data_count: payload.insufficient_data_count,
 		items,
 		matched_count: payload.matched_count,
+		price_history_window: parsePriceHistoryWindow(payload.price_history_window),
 		unresolved: payload.unresolved.map(parseUnresolvedInstrument),
 		warnings: payload.warnings.map(parseWarning),
 	};
@@ -298,8 +308,32 @@ function parseMarketScanItem(payload: unknown): MarketScanItem {
 	return {
 		evaluations: payload.evaluations.map(parseEvaluation),
 		matched: payload.matched,
+		price_history: parsePriceHistory(payload.price_history),
 		symbol: payload.symbol,
 	};
+}
+
+function parsePriceHistory(payload: unknown): (number | null)[] {
+	if (!Array.isArray(payload) || payload.length !== 169) {
+		throw new ApiError("unexpected_error");
+	}
+	return payload.map((price: unknown) => {
+		if (price === null || isFiniteNumber(price)) return price;
+		throw new ApiError("unexpected_error");
+	});
+}
+
+function parsePriceHistoryWindow(payload: unknown): PriceHistoryWindow {
+	if (
+		!isRecord(payload) ||
+		!isRfc3339UtcDateTime(payload.from) ||
+		!isRfc3339UtcDateTime(payload.to) ||
+		Date.parse(payload.from) % 3_600_000 !== 0 ||
+		Date.parse(payload.to) - Date.parse(payload.from) !== 168 * 3_600_000
+	) {
+		throw new ApiError("unexpected_error");
+	}
+	return { from: payload.from, to: payload.to };
 }
 
 function parseEvaluation(payload: unknown): Evaluation {

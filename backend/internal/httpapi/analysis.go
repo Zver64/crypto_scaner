@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/analysis"
+	"crypto-scanner/internal/market"
 )
 
 const maxAnalysisRequestBody = 1 << 20
@@ -61,13 +62,13 @@ func searchMarket(service Analysis) http.HandlerFunc {
 		}
 		items := make([]searchItemResponse, len(result.Items))
 		for i, item := range result.Items {
-			items[i] = searchItemResponse{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseEvaluations(item.Evaluations)}
+			items[i] = searchItemResponse{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseEvaluations(item.Evaluations), PriceHistory: item.PriceHistory}
 		}
 		unresolved := make([]unresolvedResponse, len(result.Unresolved))
 		for i, item := range result.Unresolved {
 			unresolved[i] = unresolvedResponse{Symbol: item.Symbol, Code: item.Code, Message: item.Message}
 		}
-		writeJSON(response, http.StatusOK, searchResponse{MatchedCount: result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount, Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings)})
+		writeJSON(response, http.StatusOK, searchResponse{PriceHistoryWindow: result.PriceHistoryWindow, MatchedCount: result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount, Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings)})
 	}
 }
 
@@ -154,17 +155,19 @@ type symbolResponse struct {
 	Warnings    []warningResponse    `json:"warnings"`
 }
 type searchItemResponse struct {
-	Symbol      string               `json:"symbol"`
-	Matched     bool                 `json:"matched"`
-	Evaluations []evaluationResponse `json:"evaluations"`
+	PriceHistory []*float64           `json:"price_history"`
+	Symbol       string               `json:"symbol"`
+	Matched      bool                 `json:"matched"`
+	Evaluations  []evaluationResponse `json:"evaluations"`
 }
 type searchResponse struct {
-	MatchedCount          int                  `json:"matched_count"`
-	AnalyzedCount         int                  `json:"analyzed_count"`
-	InsufficientDataCount int                  `json:"insufficient_data_count"`
-	Items                 []searchItemResponse `json:"items"`
-	Unresolved            []unresolvedResponse `json:"unresolved"`
-	Warnings              []warningResponse    `json:"warnings"`
+	PriceHistoryWindow    market.PriceHistoryWindow `json:"price_history_window"`
+	MatchedCount          int                       `json:"matched_count"`
+	AnalyzedCount         int                       `json:"analyzed_count"`
+	InsufficientDataCount int                       `json:"insufficient_data_count"`
+	Items                 []searchItemResponse      `json:"items"`
+	Unresolved            []unresolvedResponse      `json:"unresolved"`
+	Warnings              []warningResponse         `json:"warnings"`
 }
 type unresolvedResponse struct {
 	Symbol  string `json:"symbol"`

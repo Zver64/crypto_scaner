@@ -249,7 +249,7 @@ type enabledUserStore struct{}
 func (enabledUserStore) FindEnabledByTelegramID(context.Context, int64) (auth.User, error) {
 	return auth.User{ID: 1, TelegramID: 424242, Enabled: true}, nil
 }
-func newAnalysisHTTPHandler(store httpStore, additionalFactories ...analysis.Factory) http.Handler {
+func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysis.Factory) http.Handler {
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
 	service, _ := analysis.NewService(store, factories...)
 	authenticator := authtelegram.NewWithOptions(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
@@ -272,6 +272,9 @@ func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.Syn
 }
 func (s httpStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	return s.instruments, nil
+}
+func (s httpStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+	return nil, nil
 }
 func (s httpStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, interval string, _ int) ([]market.Candle, error) {
 	if s.candlesByInterval != nil {

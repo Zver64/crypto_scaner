@@ -81,9 +81,14 @@ it.each<MarketScanSort>([
 		defaultMarketScanCriteria,
 		{
 			analyzed_count: 1,
+			price_history_window: {
+				from: "2026-08-26T23:00:00Z",
+				to: "2026-09-02T23:00:00Z",
+			},
 			insufficient_data_count: 0,
 			items: [
 				{
+					price_history: Array(169).fill(null),
 					evaluations: [
 						{
 							candle_count: 30,
@@ -157,11 +162,16 @@ it("identifies both ranges and candle counts by key and hides inactive Market Ca
 		metrics: { market_cap_usd: 750_000_000 },
 	};
 	const result = {
+		price_history_window: {
+			from: "2026-08-26T23:00:00Z",
+			to: "2026-09-02T23:00:00Z",
+		},
 		analyzed_count: 1,
 		matched_count: 1,
 		insufficient_data_count: 0,
 		items: [
 			{
+				price_history: Array.from({ length: 169 }, (_, i) => i + 1),
 				symbol: "BTCUSDT",
 				matched: true,
 				evaluations: [hourly, marketCap, daily],
@@ -172,8 +182,16 @@ it("identifies both ranges and candle counts by key and hides inactive Market Ca
 	};
 	const html = renderScan(defaultMarketScanCriteria, result);
 	expect(html).toMatch(
-		/Daily Range.*Hourly Range.*Hourly Candle Count.*Daily Candle Count.*Market Cap USD.*Binance/,
+		/Daily Range.*Hourly Range.*Hourly Candle Count.*Daily Candle Count.*Market Cap USD.*7d change.*Binance/,
 	);
+	const sortButtons = html.match(
+		/<button[^>]*aria-label="Sort by [^"]*"[^>]*>/g,
+	);
+	expect(sortButtons).toHaveLength(3);
+	for (const button of sortButtons ?? []) {
+		expect(button).toContain("font:inherit");
+	}
+	expect(html).toContain("BTCUSDT: 7-day hourly closing prices");
 	expect(html).toContain('aria-sort="descending"');
 	expect(html).toContain(
 		'aria-label="Sort by Daily Range, currently descending"',

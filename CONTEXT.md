@@ -20,6 +20,10 @@ _Avoid_: Percentile criterion, daily criterion, hourly criterion
 An ordered sequence of criterion instances in which each criterion evaluates only the instruments retained by preceding criteria.
 _Avoid_: Daily scan, hourly scan
 
+**Seven-day Price History**:
+An instrument's hourly closing prices within a rolling seven-day period ending at the last completed market hour. Instruments in the same analysis share the period, even when some of their price history is unavailable; the history is independent of the criteria used to select them.
+_Avoid_: Calendar week history
+
 **Position**:
 A directional futures exposure in an instrument, represented by its entry price, quantity, leverage, and margin mode.
 _Avoid_: Trade, order

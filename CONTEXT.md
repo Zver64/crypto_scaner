@@ -24,6 +24,10 @@ _Avoid_: Daily scan, hourly scan
 An instrument's hourly closing prices within a rolling seven-day period ending at the last completed market hour. Instruments in the same analysis share the period, even when some of their price history is unavailable; the history is independent of the criteria used to select them.
 _Avoid_: Calendar week history
 
+**Grid Step**:
+The percentage spacing between adjacent orders in a trading bot's grid. The recommended hourly and daily steps are half the corresponding hourly and daily volatility values.
+_Avoid_: Grid width, total grid span
+
 **Position**:
 A directional futures exposure in an instrument, represented by its entry price, quantity, leverage, and margin mode.
 _Avoid_: Trade, order

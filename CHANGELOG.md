@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/Zver64/crypto_scaner/compare/v0.4.0...v0.5.0) (2026-09-04)
+
+
+### Features
+
+* show grid step recommendations ([3a329ea](https://github.com/Zver64/crypto_scaner/commit/3a329ea6f5cce877c1b8b8bff9b3a94759951dd9))
+
+
+### Bug Fixes
+
+* remove redundant text ([ff964b8](https://github.com/Zver64/crypto_scaner/commit/ff964b81f88c93514d41f93860927693592daa60))
+
 ## [0.4.0](https://github.com/Zver64/crypto_scaner/compare/v0.3.0...v0.4.0) (2026-09-03)
 
 

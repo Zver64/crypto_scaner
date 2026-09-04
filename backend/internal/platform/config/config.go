@@ -25,6 +25,7 @@ const (
 type ServerConfig struct {
 	DatabaseURL            string
 	TelegramBotToken       string
+	AdminTelegramID        int64
 	HTTPAddress            string
 	LogLevel               string
 	TelegramInitDataMaxAge time.Duration
@@ -50,6 +51,9 @@ func LoadServer() (ServerConfig, error) {
 		return ServerConfig{}, err
 	}
 	if cfg.TelegramBotToken, err = required("TELEGRAM_BOT_TOKEN"); err != nil {
+		return ServerConfig{}, err
+	}
+	if cfg.AdminTelegramID, err = positiveInt64("ADMIN_TELEGRAM_ID"); err != nil {
 		return ServerConfig{}, err
 	}
 	cfg.HTTPAddress = valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress)

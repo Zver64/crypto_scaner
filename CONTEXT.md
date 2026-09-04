@@ -39,3 +39,11 @@ _Avoid_: Average price, cost basis
 **Liquidation Price**:
 The estimated mark price at which a Position's isolated margin no longer covers its maintenance margin requirement.
 _Avoid_: Bankruptcy price
+
+**Scanner Access**:
+Membership in the enabled application-user set that authorizes a Telegram identity to use protected Crypto Scanner APIs.
+_Avoid_: Allowlist, permission
+
+**Administrator**:
+The single Telegram identity configured to manage Scanner Access; it is not a role that application users can grant or inherit.
+_Avoid_: Owner, superuser

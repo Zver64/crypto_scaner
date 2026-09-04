@@ -32,7 +32,7 @@ func TestRunServicesMakesHTTPAvailableBeforeSchedulerStartup(t *testing.T) {
 	go func() {
 		result <- runServices(ctx, listener, http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 			response.WriteHeader(http.StatusOK)
-		}), probe, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Second)
+		}), probe, idleService{}, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Second)
 	}()
 	select {
 	case <-probe.started:
@@ -48,6 +48,13 @@ func TestRunServicesMakesHTTPAvailableBeforeSchedulerStartup(t *testing.T) {
 type startupProbeScheduler struct {
 	listener *acceptProbeListener
 	started  chan struct{}
+}
+
+type idleService struct{}
+
+func (idleService) Run(ctx context.Context) error {
+	<-ctx.Done()
+	return nil
 }
 
 func (scheduler *startupProbeScheduler) Run(ctx context.Context) error {
@@ -89,7 +96,7 @@ type dummyAddress string
 func (address dummyAddress) Network() string { return string(address) }
 func (address dummyAddress) String() string  { return string(address) }
 
-func TestNormalServerStartupDoesNotMutateUsers(t *testing.T) {
+func TestNormalServerStartupBootstrapsConfiguredAdministrator(t *testing.T) {
 	databaseURL := os.Getenv("CRYPTO_SCANNER_TEST_DATABASE_URL")
 	if databaseURL == "" || os.Getenv("CRYPTO_SCANNER_TEST_DATABASE_RESET_OK") != "1" {
 		t.Skip("set CRYPTO_SCANNER_TEST_DATABASE_URL to a disposable empty database and CRYPTO_SCANNER_TEST_DATABASE_RESET_OK=1")
@@ -124,6 +131,7 @@ func TestNormalServerStartupDoesNotMutateUsers(t *testing.T) {
 	cfg := config.ServerConfig{
 		DatabaseURL:      databaseURL,
 		TelegramBotToken: "123456:test-token",
+		AdminTelegramID:  111,
 		HTTPAddress:      address,
 		ShutdownTimeout:  time.Second,
 	}
@@ -148,7 +156,11 @@ func TestNormalServerStartupDoesNotMutateUsers(t *testing.T) {
 		t.Fatalf("inspect user after startup: %v", err)
 	}
 	if count != 1 || username != "disabled" || displayName != "Disabled User" || enabled || !gotUpdatedAt.Equal(updatedAt) {
-		t.Fatalf("normal startup mutated users: count=%d username=%q display_name=%q enabled=%t updated_at=%s", count, username, displayName, enabled, gotUpdatedAt)
+		t.Fatalf("normal startup changed unrelated users: count=%d username=%q display_name=%q enabled=%t updated_at=%s", count, username, displayName, enabled, gotUpdatedAt)
+	}
+	var administratorEnabled bool
+	if err := db.QueryRow(ctx, `SELECT is_enabled FROM app.users WHERE telegram_id = 111`).Scan(&administratorEnabled); err != nil || !administratorEnabled {
+		t.Fatalf("configured administrator was not bootstrapped: enabled=%t error=%v", administratorEnabled, err)
 	}
 }
 

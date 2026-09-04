@@ -28,6 +28,7 @@ func NewStore(db *DB) *Store { return &Store{db: db, queries: generated.New(db)}
 
 var (
 	_ auth.UserStore     = (*Store)(nil)
+	_ auth.AccessStore   = (*Store)(nil)
 	_ market.MarketStore = (*Store)(nil)
 	_ marketcap.Store    = (*Store)(nil)
 )
@@ -97,6 +98,67 @@ func (store *Store) FindEnabledByTelegramID(ctx context.Context, telegramID int6
 		return auth.User{}, fmt.Errorf("find enabled user by Telegram ID: %w", err)
 	}
 	return auth.User{ID: row.ID, TelegramID: row.TelegramID, Username: row.Username.String, DisplayName: row.DisplayName.String, Enabled: row.IsEnabled}, nil
+}
+
+// GrantAccess creates or re-enables an application user. The boolean reports
+// whether Scanner Access changed, so repeated additions remain harmless.
+func (store *Store) GrantAccess(ctx context.Context, telegramID int64, username, displayName string) (auth.User, bool, error) {
+	existing, err := store.FindEnabledByTelegramID(ctx, telegramID)
+	if err == nil {
+		return existing, false, nil
+	}
+	if !errors.Is(err, auth.ErrUserNotFound) {
+		return auth.User{}, false, fmt.Errorf("look up user before grant: %w", err)
+	}
+	row, err := store.queries.GrantUserAccess(ctx, generated.GrantUserAccessParams{
+		TelegramID:  telegramID,
+		Username:    pgtype.Text{String: username, Valid: username != ""},
+		DisplayName: pgtype.Text{String: displayName, Valid: displayName != ""},
+	})
+	if err != nil {
+		return auth.User{}, false, fmt.Errorf("grant user access: %w", err)
+	}
+	return auth.User{ID: row.ID, TelegramID: row.TelegramID, Username: row.Username.String, DisplayName: row.DisplayName.String, Enabled: row.IsEnabled}, true, nil
+}
+
+// ListNonAdministratorUsers returns a deterministic page of accounts that the
+// configured Administrator may remove.
+func (store *Store) ListNonAdministratorUsers(ctx context.Context, administratorID int64, offset, limit int) ([]auth.User, error) {
+	if offset < 0 || limit <= 0 || limit > math.MaxInt32 {
+		return nil, fmt.Errorf("invalid user page")
+	}
+	rows, err := store.queries.ListNonAdministratorUsers(ctx, generated.ListNonAdministratorUsersParams{TelegramID: administratorID, Limit: int32(limit), Offset: int32(offset)})
+	if err != nil {
+		return nil, fmt.Errorf("list enabled users: %w", err)
+	}
+	users := make([]auth.User, 0, len(rows))
+	for _, row := range rows {
+		users = append(users, auth.User{ID: row.ID, TelegramID: row.TelegramID, Username: row.Username.String, DisplayName: row.DisplayName.String, Enabled: row.IsEnabled})
+	}
+	return users, nil
+}
+
+// DeleteUser hard-deletes precisely the selected database record. Matching the
+// stable record ID prevents a stale deletion from removing a later re-add.
+func (store *Store) DeleteUser(ctx context.Context, id, telegramID int64) (bool, error) {
+	_, err := store.queries.DeleteUserByID(ctx, generated.DeleteUserByIDParams{ID: id, TelegramID: telegramID})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("delete user: %w", err)
+	}
+	return true, nil
+}
+
+// BootstrapAdministrator preserves idempotent startup access for the one
+// configured administrator without granting administrative authority to anyone
+// else; authority is always checked against configuration by telegrambot.
+func (store *Store) BootstrapAdministrator(ctx context.Context, telegramID int64) error {
+	if err := store.queries.BootstrapAdministrator(ctx, telegramID); err != nil {
+		return fmt.Errorf("bootstrap administrator: %w", err)
+	}
+	return nil
 }
 
 func (store *Store) ApplyInstrumentSnapshot(ctx context.Context, items []market.Instrument) error {

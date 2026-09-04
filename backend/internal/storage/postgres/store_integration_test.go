@@ -69,6 +69,38 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("access management grants lists and hard-deletes users", func(t *testing.T) {
+		granted, changed, err := store.GrantAccess(ctx, 201, "ada", "Ada")
+		if err != nil || !changed || granted.TelegramID != 201 || !granted.Enabled {
+			t.Fatalf("GrantAccess() = %#v, %t, %v", granted, changed, err)
+		}
+		again, changed, err := store.GrantAccess(ctx, 201, "different", "Different")
+		if err != nil || changed || again.ID != granted.ID || again.Username != "ada" {
+			t.Fatalf("idempotent GrantAccess() = %#v, %t, %v", again, changed, err)
+		}
+		if _, changed, err = store.GrantAccess(ctx, 202, "", "Same Name"); err != nil || !changed {
+			t.Fatalf("second GrantAccess() changed=%t error=%v", changed, err)
+		}
+		users, err := store.ListNonAdministratorUsers(ctx, 999, 0, 10)
+		if err != nil || len(users) < 3 {
+			t.Fatalf("ListEnabledUsers() = %#v, %v", users, err)
+		}
+		deleted, err := store.DeleteUser(ctx, granted.ID, granted.TelegramID)
+		if err != nil || !deleted {
+			t.Fatalf("DeleteUser() = %t, %v", deleted, err)
+		}
+		if _, err := store.FindEnabledByTelegramID(ctx, 201); !errors.Is(err, auth.ErrUserNotFound) {
+			t.Fatalf("deleted user still has access: %v", err)
+		}
+		fresh, changed, err := store.GrantAccess(ctx, 201, "ada", "Ada")
+		if err != nil || !changed || fresh.ID == granted.ID {
+			t.Fatalf("re-add after deletion = %#v, %t, %v", fresh, changed, err)
+		}
+		if deleted, err := store.DeleteUser(ctx, granted.ID, granted.TelegramID); err != nil || deleted {
+			t.Fatalf("stale DeleteUser() = %t, %v", deleted, err)
+		}
+	})
+
 	t.Run("instrument snapshots deactivate and reactivate atomically", func(t *testing.T) {
 		btc := market.Instrument{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING", Active: true}
 		eth := market.Instrument{Symbol: "ETHUSDT", BaseAsset: "ETH", QuoteAsset: "USDT", Status: "TRADING", Active: true}

@@ -34,6 +34,9 @@ func TestLoadServerUsesDocumentedDefaults(t *testing.T) {
 	if cfg.ShutdownTimeout != 15*time.Second {
 		t.Errorf("ShutdownTimeout = %v, want %v", cfg.ShutdownTimeout, 15*time.Second)
 	}
+	if cfg.AdminTelegramID != 123456789 {
+		t.Errorf("AdminTelegramID = %d, want 123456789", cfg.AdminTelegramID)
+	}
 }
 
 func TestLoadServerRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing.T) {
@@ -45,6 +48,7 @@ func TestLoadServerRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing
 		"POSTGRES_DB",
 		"TELEGRAM_BOT_TOKEN",
 		"TELEGRAM_INIT_DATA_MAX_AGE",
+		"ADMIN_TELEGRAM_ID",
 	}
 
 	for _, name := range required {
@@ -74,6 +78,7 @@ func TestLoadServerRejectsInvalidSettingsPreciselyAndSafely(t *testing.T) {
 		{name: "sync workers", variable: "SYNC_WORKERS", value: "0", wantError: "SYNC_WORKERS must be a positive integer"},
 		{name: "retry attempts", variable: "SYNC_RETRY_ATTEMPTS", value: "many", wantError: "SYNC_RETRY_ATTEMPTS must be a positive integer"},
 		{name: "shutdown timeout", variable: "SHUTDOWN_TIMEOUT", value: "later", wantError: "SHUTDOWN_TIMEOUT must be a positive duration"},
+		{name: "administrator Telegram ID", variable: "ADMIN_TELEGRAM_ID", value: "not-an-id", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
 	}
 
 	for _, tt := range tests {
@@ -111,17 +116,18 @@ func TestLoadServerParsesOptionalSettings(t *testing.T) {
 		cfg.TelegramInitDataMaxAge != 30*time.Minute ||
 		cfg.SyncWorkers != 8 ||
 		cfg.SyncRetryAttempts != 7 ||
-		cfg.ShutdownTimeout != 3*time.Second {
+		cfg.ShutdownTimeout != 3*time.Second ||
+		cfg.AdminTelegramID != 123456789 {
 		t.Fatalf("LoadServer() parsed unexpected configuration: %+v", cfg)
 	}
 }
 
-func TestLoadServerIgnoresBootstrapConfiguration(t *testing.T) {
+func TestLoadServerUsesAdministratorConfiguration(t *testing.T) {
 	setRequiredEnvironment(t)
 	t.Setenv("ADMIN_TELEGRAM_ID", "not-a-telegram-id")
 
-	if _, err := config.LoadServer(); err != nil {
-		t.Fatalf("LoadServer() read bootstrap-only configuration: %v", err)
+	if _, err := config.LoadServer(); err == nil || err.Error() != "ADMIN_TELEGRAM_ID must be a positive base-10 integer" {
+		t.Fatalf("LoadServer() error = %v", err)
 	}
 }
 func TestLoadBootstrap(t *testing.T) {
@@ -194,6 +200,7 @@ func setRequiredEnvironment(t *testing.T) {
 		"POSTGRES_DB":                "scanner",
 		"TELEGRAM_BOT_TOKEN":         "123456:token",
 		"TELEGRAM_INIT_DATA_MAX_AGE": "24h",
+		"ADMIN_TELEGRAM_ID":          "123456789",
 	}
 	for key, value := range values {
 		t.Setenv(key, value)

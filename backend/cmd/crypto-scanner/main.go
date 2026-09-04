@@ -25,6 +25,7 @@ import (
 	"crypto-scanner/internal/platform/envfile"
 	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/storage/postgres"
+	"crypto-scanner/internal/telegrambot"
 )
 
 func main() {
@@ -70,6 +71,9 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	}
 	defer database.Close()
 	store := postgres.NewStore(database)
+	if err := store.BootstrapAdministrator(ctx, cfg.AdminTelegramID); err != nil {
+		return err
+	}
 	exchange := binance.NewWithOptions(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
 	dailySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.MVPProfile())
 	hourlySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.HourlyProfile())
@@ -86,6 +90,10 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		}
 	}()
 	authenticator := authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge)
+	botService, err := telegrambot.New(cfg.TelegramBotToken, cfg.AdminTelegramID, store, telegrambot.Options{Logger: logger})
+	if err != nil {
+		return fmt.Errorf("initialize Telegram bot: %w", err)
+	}
 
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
@@ -97,7 +105,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.New(logger, store, analysisService, authenticator), scheduler, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.New(logger, store, analysisService, authenticator), scheduler, botService, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",
@@ -117,6 +125,7 @@ func runServices(
 	listener net.Listener,
 	handler http.Handler,
 	scheduler scheduledService,
+	botService scheduledService,
 	logger *slog.Logger,
 	shutdownTimeout time.Duration,
 ) error {
@@ -140,28 +149,50 @@ func runServices(
 
 	schedulerResult := make(chan error, 1)
 	go func() { schedulerResult <- scheduler.Run(schedulerCtx) }()
+	botCtx, stopBot := context.WithCancel(context.Background())
+	defer stopBot()
+	botResult := make(chan error, 1)
+	go func() { botResult <- botService.Run(botCtx) }()
 
 	select {
 	case <-ctx.Done():
 		stopScheduler()
+		stopBot()
 		stopHTTP()
 		schedulerErr := <-schedulerResult
+		botErr := <-botResult
 		httpErr := <-httpResult
 		if schedulerErr != nil {
 			return fmt.Errorf("stop market scheduler: %w", schedulerErr)
 		}
+		if botErr != nil {
+			return fmt.Errorf("stop Telegram bot: %w", botErr)
+		}
 		return httpErr
 	case err := <-httpResult:
 		stopScheduler()
+		stopBot()
 		<-schedulerResult
+		<-botResult
 		return err
 	case err := <-schedulerResult:
+		stopBot()
 		stopHTTP()
+		<-botResult
 		<-httpResult
 		if err != nil {
 			return fmt.Errorf("run market scheduler: %w", err)
 		}
 		return fmt.Errorf("market scheduler stopped unexpectedly")
+	case err := <-botResult:
+		stopScheduler()
+		stopHTTP()
+		<-schedulerResult
+		<-httpResult
+		if err != nil {
+			return fmt.Errorf("run Telegram bot: %w", err)
+		}
+		return fmt.Errorf("Telegram bot stopped unexpectedly")
 	}
 }
 

@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { fetchMarketScan } from "@/api/client";
+import { fetchInstrumentAnalysis, fetchMarketScan } from "@/api/client";
 
 const window = { from: "2026-08-26T23:00:00Z", to: "2026-09-02T23:00:00Z" };
 const prices: (number | null)[] = Array.from({ length: 169 }, () => null);
@@ -27,6 +27,32 @@ it("preserves the analysis window, missing positions and unrounded prices", asyn
 		request: async () => Response.json(payload),
 	});
 	expect(result).toEqual(payload);
+});
+
+it("validates instrument history with the same strict contract", async () => {
+	const instrumentPayload = {
+		evaluations: [],
+		matched: true,
+		price_history: prices,
+		price_history_window: window,
+		symbol: "BTCUSDT",
+		warnings: [],
+	};
+	await expect(
+		fetchInstrumentAnalysis("BTCUSDT", [], {
+			request: async () => Response.json(instrumentPayload),
+		}),
+	).resolves.toEqual(instrumentPayload);
+
+	await expect(
+		fetchInstrumentAnalysis("BTCUSDT", [], {
+			request: async () =>
+				Response.json({
+					...instrumentPayload,
+					price_history_window: undefined,
+				}),
+		}),
+	).rejects.toMatchObject({ code: "unexpected_error" });
 });
 
 it.each([

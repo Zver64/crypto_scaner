@@ -19,12 +19,17 @@ export interface Evaluation {
 export interface InstrumentAnalysisResult {
 	evaluations: Evaluation[];
 	matched: boolean;
+	price_history: (number | null)[];
+	price_history_window: PriceHistoryWindow;
 	symbol: string;
 	warnings: Warning[];
 }
 
 export interface MarketScanItem
-	extends Omit<InstrumentAnalysisResult, "warnings"> {
+	extends Omit<
+		InstrumentAnalysisResult,
+		"price_history" | "price_history_window" | "warnings"
+	> {
 	price_history: (number | null)[];
 }
 
@@ -191,6 +196,8 @@ function parseInstrumentAnalysisResult(
 	return {
 		evaluations: payload.evaluations.map(parseEvaluation),
 		matched: payload.matched,
+		price_history: parsePriceHistory(payload.price_history),
+		price_history_window: parsePriceHistoryWindow(payload.price_history_window),
 		symbol: payload.symbol,
 		warnings: payload.warnings.map(parseWarning),
 	};

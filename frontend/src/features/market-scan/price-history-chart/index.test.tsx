@@ -9,6 +9,25 @@ function render(prices: (number | null)[]) {
 	);
 }
 
+it("uses responsive enlarged dimensions without changing table defaults", () => {
+	const html = renderToStaticMarkup(
+		<PriceHistoryChart
+			height={180}
+			prices={Array.from({ length: 169 }, (_, i) => i + 1)}
+			responsive
+			symbol="BTCUSDT"
+			width={640}
+			window={window}
+		/>,
+	);
+
+	expect(html).toContain('viewBox="0 0 640 180"');
+	expect(html).toContain('style="width:100%;');
+	expect(render(Array.from({ length: 169 }, (_, i) => i + 1))).toContain(
+		'viewBox="0 0 140 40"',
+	);
+});
+
 it("renders a static rising line with an accessible description", () => {
 	const html = render(Array.from({ length: 169 }, (_, i) => i + 1));
 	expect(html).toContain('viewBox="0 0 140 40"');

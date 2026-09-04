@@ -26,10 +26,12 @@ type SymbolRequest struct {
 	Criteria []CriterionConfig
 }
 type SymbolResult struct {
-	Symbol      string
-	Matched     bool
-	Evaluations []Evaluation
-	Warnings    []Warning
+	PriceHistory       []*float64
+	PriceHistoryWindow market.PriceHistoryWindow
+	Symbol             string
+	Matched            bool
+	Evaluations        []Evaluation
+	Warnings           []Warning
 }
 type SearchRequest struct{ Criteria []CriterionConfig }
 type SearchItem struct {
@@ -79,6 +81,7 @@ func NewService(store Store, factories ...Factory) (*Service, error) {
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
+	window := market.SevenDayWindow(time.Now())
 	criteria, requirements, err := service.prepare(request.Criteria)
 	if err != nil {
 		return SymbolResult{}, err
@@ -96,6 +99,12 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 			if err != nil {
 				return SymbolResult{}, fmt.Errorf("analyze %s: %w", request.Symbol, err)
 			}
+			histories, err := service.priceHistories(ctx, []market.Instrument{instrument}, window)
+			if err != nil {
+				return SymbolResult{}, err
+			}
+			result.PriceHistory = histories[instrument.ID]
+			result.PriceHistoryWindow = window
 			return result, nil
 		}
 	}

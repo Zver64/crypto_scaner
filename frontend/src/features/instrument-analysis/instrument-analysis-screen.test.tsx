@@ -17,8 +17,21 @@ import {
 	defaultMarketScanCriteria,
 } from "@/features/market-scan/pipeline";
 
+const priceHistoryWindow = {
+	from: "2026-08-26T23:00:00Z",
+	to: "2026-09-02T23:00:00Z",
+};
+
+type RenderedInstrumentAnalysis = Omit<
+	InstrumentAnalysisResult,
+	"price_history" | "price_history_window"
+> &
+	Partial<
+		Pick<InstrumentAnalysisResult, "price_history" | "price_history_window">
+	>;
+
 function renderAnalysis(
-	result: InstrumentAnalysisResult | undefined,
+	result: RenderedInstrumentAnalysis | undefined,
 	selections: readonly CriterionSelection[] = criterionSelections(
 		defaultMarketScanCriteria,
 	),
@@ -30,10 +43,11 @@ function renderAnalysis(
 		retryOnMount: false,
 	});
 	if (result)
-		client.setQueryData(
-			instrumentAnalysisQueryKey("BTCUSDT", selections),
-			result,
-		);
+		client.setQueryData(instrumentAnalysisQueryKey("BTCUSDT", selections), {
+			price_history: Array(169).fill(null),
+			price_history_window: priceHistoryWindow,
+			...result,
+		});
 	return renderToStaticMarkup(
 		<MantineProvider>
 			<QueryClientProvider client={client}>
@@ -286,6 +300,8 @@ it.each([
 	stubJSONResponse({
 		evaluations: [evaluation],
 		matched: false,
+		price_history: Array(169).fill(null),
+		price_history_window: priceHistoryWindow,
 		symbol: "BTCUSDT",
 		warnings: [],
 	});
@@ -294,6 +310,48 @@ it.each([
 	expect(text).toContain("Recommended trading bot settings");
 	expect(text).toContain(`Daily Grid Step${expected}`);
 	expect(text).toContain("Hourly Grid StepNot enough data");
+});
+
+it("shows the enlarged history chart without hiding valid information when history is empty", () => {
+	const html = renderAnalysis({
+		evaluations: [
+			{
+				candle_count: 30,
+				from: "2026-08-01T00:00:00Z",
+				key: "daily_volatility",
+				label: "Daily Volatility",
+				matched: true,
+				metrics: { range_percent: 4 },
+				name: "volatility",
+				to: "2026-08-30T00:00:00Z",
+			},
+			{
+				candle_count: 60,
+				from: "2026-08-30T00:00:00Z",
+				key: "hourly_volatility",
+				label: "Hourly Volatility",
+				matched: true,
+				metrics: { range_percent: 2 },
+				name: "volatility",
+				to: "2026-09-01T12:00:00Z",
+			},
+		],
+		matched: true,
+		price_history: Array(169).fill(null),
+		price_history_window: priceHistoryWindow,
+		symbol: "BTCUSDT",
+		warnings: [],
+	});
+
+	const text = html.replace(/<[^>]*>/g, "");
+	expect(text).toContain("Symbol");
+	expect(text).toContain("Recommended trading bot settings");
+	expect(text).toContain("Daily Range4%");
+	expect(text).toContain("Hourly Range2%");
+	expect(text).toContain("Daily Grid Step2%");
+	expect(text).toContain("Hourly Grid Step1%");
+	expect(text).toContain("Seven-day Price History");
+	expect(html).toContain("No hourly price history");
 });
 
 it("shows unavailable recommendations for canonical insufficient_data without inventing coverage", async () => {
@@ -375,6 +433,8 @@ it("preserves valid analysis content when a refresh returns insufficient_data", 
 			},
 		],
 		matched: false,
+		price_history: Array(169).fill(null),
+		price_history_window: priceHistoryWindow,
 		symbol: "BTCUSDT",
 		warnings: [
 			{

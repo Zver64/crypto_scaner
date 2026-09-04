@@ -22,6 +22,7 @@ import { useTelegramBackButton } from "@/app/telegram";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
+import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 import { formatRangePercent } from "@/utils/range-percent";
 
@@ -195,6 +196,27 @@ export function InstrumentAnalysisScreen({
 									</Text>
 								</Stack>
 							</Paper>
+							{result ? (
+								<Paper
+									component="section"
+									aria-labelledby="price-history-heading"
+									p={paperPadding}
+								>
+									<Stack gap="md">
+										<Title id="price-history-heading" order={2} size="h3">
+											Seven-day Price History
+										</Title>
+										<PriceHistoryChart
+											height={180}
+											prices={result.price_history}
+											responsive
+											symbol={result.symbol}
+											width={640}
+											window={result.price_history_window}
+										/>
+									</Stack>
+								</Paper>
+							) : null}
 						</Stack>
 					</RefreshingOverlay>
 				) : null}

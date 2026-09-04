@@ -253,6 +253,8 @@ describe("fetchInstrumentAnalysis", () => {
 				},
 			],
 			matched: true,
+			price_history: Array(169).fill(null),
+			price_history_window: priceHistoryWindow,
 			symbol: "BTCUSDT",
 			warnings: [],
 		};
@@ -278,6 +280,8 @@ describe("fetchInstrumentAnalysis", () => {
 		const body = {
 			evaluations: [evaluation],
 			matched: true,
+			price_history: Array(169).fill(null),
+			price_history_window: priceHistoryWindow,
 			symbol: "币安/USDT",
 			warnings: [
 				{

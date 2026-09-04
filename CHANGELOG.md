@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0](https://github.com/Zver64/crypto_scaner/compare/v0.5.0...v0.6.0) (2026-09-04)
+
+
+### Features
+
+* show detail price history ([22a083b](https://github.com/Zver64/crypto_scaner/commit/22a083b22c01a3df9ceee5a3029ff5a63a694130))
+* telegram bot access management for the Administrator ([3006322](https://github.com/Zver64/crypto_scaner/commit/300632204530a82b6284edd239b46c5f38422e28)), closes [#24](https://github.com/Zver64/crypto_scaner/issues/24)
+
 ## [0.5.0](https://github.com/Zver64/crypto_scaner/compare/v0.4.0...v0.5.0) (2026-09-04)
 
 

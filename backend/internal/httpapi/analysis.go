@@ -62,7 +62,7 @@ func searchMarket(service Analysis) http.HandlerFunc {
 		}
 		items := make([]searchItemResponse, len(result.Items))
 		for i, item := range result.Items {
-			items[i] = searchItemResponse{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseEvaluations(item.Evaluations), PriceHistory: item.PriceHistory}
+			items[i] = searchItemResponse{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory}
 		}
 		unresolved := make([]unresolvedResponse, len(result.Unresolved))
 		for i, item := range result.Unresolved {
@@ -129,11 +129,22 @@ func responseEvaluations(evaluations []analysis.Evaluation) []evaluationResponse
 		metrics := make(map[string]float64, len(evaluation.Metrics))
 		for name, value := range evaluation.Metrics {
 			metrics[name] = value
-			if strings.HasSuffix(name, "_percent") {
-				metrics[name] = roundPercentage(value)
-			}
 		}
 		items[i] = evaluationResponse{Key: evaluation.Key, Name: evaluation.Name, Label: evaluation.Label, Matched: evaluation.Matched, Metrics: metrics, CandleCount: evaluation.CandleCount, From: evaluation.From.UTC(), To: evaluation.To.UTC()}
+	}
+	return items
+}
+
+// Market Scan retains its presentation rounding. Instrument Analysis carries
+// original metrics so derived recommendations can be calculated before rounding.
+func responseMarketScanEvaluations(evaluations []analysis.Evaluation) []evaluationResponse {
+	items := responseEvaluations(evaluations)
+	for _, evaluation := range items {
+		for name, value := range evaluation.Metrics {
+			if strings.HasSuffix(name, "_percent") {
+				evaluation.Metrics[name] = roundPercentage(value)
+			}
+		}
 	}
 	return items
 }

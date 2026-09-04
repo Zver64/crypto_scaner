@@ -27,7 +27,7 @@ export function DataTable<Row>({
 	const fontSize = useMatches({ base: "xs", sm: "sm" });
 	const spacing = useMatches({ base: "4px", sm: "xs" });
 	return (
-		<Paper p="xs" withBorder>
+		<Paper p="xs">
 			<Table.ScrollContainer minWidth={minWidth}>
 				<Table
 					fz={fontSize}

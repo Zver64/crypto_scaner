@@ -5,15 +5,17 @@ import {
 	Group,
 	Loader,
 	Paper,
+	SimpleGrid,
 	Stack,
 	Text,
+	Title,
 	useMatches,
 } from "@mantine/core";
 import {
 	criterionKeys,
 	evaluationMetricKeys,
 } from "@/api/analysis-identifiers";
-import type { CriterionSelection } from "@/api/client";
+import { ApiError, type CriterionSelection } from "@/api/client";
 import { useInstrumentAnalysisQuery } from "@/api/instrument-analysis";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { useTelegramBackButton } from "@/app/telegram";
@@ -27,12 +29,14 @@ const rangeStatistics = [
 	{
 		key: criterionKeys.dailyVolatility,
 		label: "Daily Range",
-		coverageLabel: "Дней доступно",
+		stepLabel: "Daily Grid Step",
+		coverageLabel: "Days available",
 	},
 	{
 		key: criterionKeys.hourlyVolatility,
 		label: "Hourly Range",
-		coverageLabel: "Часов доступно",
+		stepLabel: "Hourly Grid Step",
+		coverageLabel: "Hours available",
 	},
 ];
 
@@ -58,7 +62,12 @@ export function InstrumentAnalysisScreen({
 		permission.allowed,
 	);
 
-	useAnalysisErrorNotification(query.error, "Instrument Analysis failed");
+	const insufficientHistory =
+		query.error instanceof ApiError && query.error.code === "insufficient_data";
+	useAnalysisErrorNotification(
+		insufficientHistory ? null : query.error,
+		"Instrument Analysis failed",
+	);
 	useAnalysisWarningNotification(
 		query.data?.warnings,
 		"Instrument Analysis warning",
@@ -66,6 +75,31 @@ export function InstrumentAnalysisScreen({
 
 	const result = query.data;
 	const marketCap = result && marketCapEvaluation(result.evaluations);
+
+	const statistics = rangeStatistics.map((statistic) => {
+		const { key } = statistic;
+		const evaluation = result?.evaluations.find((item) => item.key === key);
+		const period = criterionSelections.find((item) => item.key === key)
+			?.parameters.period;
+		const range = evaluation?.metrics[evaluationMetricKeys.rangePercent];
+		const count = evaluation?.candle_count;
+		const hasCoverage =
+			typeof count === "number" &&
+			Number.isInteger(count) &&
+			count >= 0 &&
+			typeof period === "number" &&
+			Number.isInteger(period) &&
+			period > 0;
+		const coverage = hasCoverage
+			? `${Math.min(count, period)} of ${period}`
+			: "—";
+		return {
+			...statistic,
+			range,
+			coverage,
+			partial: hasCoverage && count < period,
+		};
+	});
 
 	return (
 		<Container maw={720} px={0} size="sm">
@@ -82,67 +116,86 @@ export function InstrumentAnalysisScreen({
 					</Center>
 				) : null}
 
-				{result ? (
+				{result || insufficientHistory ? (
 					<RefreshingOverlay
 						label="Refreshing Instrument Analysis"
 						visible={query.isFetching}
 					>
-						<Paper p={paperPadding} withBorder>
-							<Stack gap={contentSpacing}>
-								<Group justify="space-between" wrap="nowrap">
-									<Text size={textSize}>Symbol</Text>
-									<Text fw={700} size={textSize} ta="right">
-										{result.symbol}
-									</Text>
-								</Group>
-								{marketCap ? (
+						<Stack gap={contentSpacing}>
+							<Paper p={paperPadding}>
+								<Stack gap={contentSpacing}>
 									<Group justify="space-between" wrap="nowrap">
-										<Text size={textSize}>Market Cap</Text>
+										<Text size={textSize}>Symbol</Text>
 										<Text fw={700} size={textSize} ta="right">
-											{formatMarketCapUsd(marketCap.marketCapUsd)}
+											{result?.symbol ?? symbol}
 										</Text>
 									</Group>
-								) : null}
-								{rangeStatistics.map(({ key, label, coverageLabel }) => {
-									const evaluation = result.evaluations.find(
-										(item) => item.key === key,
-									);
-									const period = criterionSelections.find(
-										(item) => item.key === key,
-									)?.parameters.period;
-									const range =
-										evaluation?.metrics[evaluationMetricKeys.rangePercent];
-									const count = evaluation?.candle_count;
-									const coverage =
-										typeof count === "number" &&
-										Number.isInteger(count) &&
-										count >= 0 &&
-										typeof period === "number" &&
-										Number.isInteger(period) &&
-										period > 0
-											? `${Math.min(count, period)} из ${period}`
-											: "—";
-									return (
-										<Stack gap={contentSpacing} key={key}>
-											<Group justify="space-between" wrap="nowrap">
-												<Text size={textSize}>{label}</Text>
-												<Text fw={700} size={textSize} ta="right">
-													{typeof range === "number" && Number.isFinite(range)
-														? formatRangePercent(range)
-														: "—"}
-												</Text>
-											</Group>
-											<Group justify="space-between" wrap="nowrap">
-												<Text size={textSize}>{`${coverageLabel}: `}</Text>
-												<Text fw={700} size={textSize} ta="right">
-													{coverage}
-												</Text>
-											</Group>
-										</Stack>
-									);
-								})}
-							</Stack>
-						</Paper>
+									{marketCap ? (
+										<Group justify="space-between" wrap="nowrap">
+											<Text size={textSize}>Market Cap</Text>
+											<Text fw={700} size={textSize} ta="right">
+												{formatMarketCapUsd(marketCap.marketCapUsd)}
+											</Text>
+										</Group>
+									) : null}
+									{statistics.map(
+										({ key, label, coverageLabel, range, coverage }) => {
+											return (
+												<Stack gap={contentSpacing} key={key}>
+													<Group justify="space-between" wrap="nowrap">
+														<Text size={textSize}>{label}</Text>
+														<Text fw={700} size={textSize} ta="right">
+															{typeof range === "number" &&
+															Number.isFinite(range)
+																? formatRangePercent(range)
+																: "—"}
+														</Text>
+													</Group>
+													<Group justify="space-between" wrap="nowrap">
+														<Text size={textSize}>{`${coverageLabel}: `}</Text>
+														<Text fw={700} size={textSize} ta="right">
+															{coverage}
+														</Text>
+													</Group>
+												</Stack>
+											);
+										},
+									)}
+								</Stack>
+							</Paper>
+							<Paper
+								component="section"
+								aria-labelledby="bot-settings-heading"
+								p={paperPadding}
+							>
+								<Stack gap="md">
+									<Title id="bot-settings-heading" order={2} size="h3">
+										Recommended trading bot settings
+									</Title>
+									<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+										{statistics.map(
+											({ key, stepLabel, range, coverage, partial }) => (
+												<Stack gap={4} key={key}>
+													<Text fw={500}>{stepLabel}</Text>
+													<Text fw={700} size="xl">
+														{typeof range === "number" && Number.isFinite(range)
+															? formatRangePercent(range / 2)
+															: "Not enough data"}
+													</Text>
+													{partial ? (
+														<Text size="sm">Incomplete sample: {coverage}</Text>
+													) : null}
+												</Stack>
+											),
+										)}
+									</SimpleGrid>
+									<Text size="sm" c="dimmed">
+										Grid Step is the percentage spacing between adjacent grid
+										orders.
+									</Text>
+								</Stack>
+							</Paper>
+						</Stack>
 					</RefreshingOverlay>
 				) : null}
 			</Stack>

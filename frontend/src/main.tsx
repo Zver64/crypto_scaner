@@ -8,6 +8,7 @@ import { getRouter } from "@/router";
 import "@mantine/core/styles.css";
 import "@mantine/notifications/styles.css";
 import "@microcharts/react/styles.css";
+import "@/styles.css";
 
 const theme = createTheme({
 	defaultRadius: "md",
@@ -26,11 +27,7 @@ if (!rootElement.innerHTML) {
 	const root = ReactDOM.createRoot(rootElement);
 	root.render(
 		<QueryClientProvider client={queryClient}>
-			<MantineProvider
-				defaultColorScheme="dark"
-				forceColorScheme="dark"
-				theme={theme}
-			>
+			<MantineProvider defaultColorScheme="dark" theme={theme}>
 				<Notifications position="top-center" />
 				<RouterProvider router={router} />
 			</MantineProvider>

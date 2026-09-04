@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
@@ -40,6 +41,51 @@ func TestAuthenticatedUserCanAnalyzeOneInstrument(t *testing.T) {
 	evaluation := body.Evaluations[0]
 	if evaluation.Key != "daily_volatility" || evaluation.Name != "volatility" || evaluation.Label != "Daily Volatility" || !evaluation.Matched || evaluation.CandleCount != 1 || evaluation.Metrics["range_percent"] != 2 || !evaluation.From.Equal(start) || !evaluation.To.Equal(start) {
 		t.Fatalf("evaluation = %+v", evaluation)
+	}
+}
+
+func TestInstrumentAnalysisPreservesRangePrecisionForGridSteps(t *testing.T) {
+	for _, test := range []struct {
+		name         string
+		rangePercent float64
+		scanRange    float64
+	}{
+		// 0.02469 / 2 displays as 0.0123%; rounding first gives 0.0124%.
+		{"rounding changes displayed step", 0.02469, 0.0247},
+		{"small positive range", 0.00001234, 0},
+		{"genuine zero", 0, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+			store := httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {httpCandle(start, test.rangePercent)}}}
+			handler := newAnalysisHTTPHandler(store)
+			response := analysisRequestTo(t, handler, "/api/v1/analysis/instruments/BTCUSDT", analysisBody)
+			if response.Code != http.StatusOK {
+				t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
+			}
+			var body symbolAnalysisResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if len(body.Evaluations) != 1 {
+				t.Fatalf("evaluations = %+v", body.Evaluations)
+			}
+			if got := body.Evaluations[0].Metrics["range_percent"]; math.Abs(got-test.rangePercent) > 1e-12 {
+				t.Fatalf("range = %.12g, want %.12g", got, test.rangePercent)
+			}
+
+			response = analysisRequestTo(t, handler, "/api/v1/analysis/market", analysisBody)
+			var scan marketAnalysisResponse
+			if response.Code != http.StatusOK {
+				t.Fatalf("scan status = %d; body = %s", response.Code, response.Body.String())
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &scan); err != nil {
+				t.Fatal(err)
+			}
+			if len(scan.Items) != 1 || len(scan.Items[0].Evaluations) != 1 || scan.Items[0].Evaluations[0].Metrics["range_percent"] != test.scanRange {
+				t.Fatalf("scan presentation changed: %+v", scan.Items)
+			}
+		})
 	}
 }
 

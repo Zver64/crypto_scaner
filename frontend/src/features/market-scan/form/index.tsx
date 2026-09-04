@@ -59,7 +59,7 @@ export function MarketScanForm({
 	});
 
 	return (
-		<Paper component="form" onSubmit={handleSubmit} p={paperPadding} withBorder>
+		<Paper component="form" onSubmit={handleSubmit} p={paperPadding}>
 			<Stack gap={contentSpacing}>
 				<Fieldset legend="Daily Volatility">
 					<SimpleGrid cols={{ base: 1, xs: 3 }} spacing={contentSpacing}>

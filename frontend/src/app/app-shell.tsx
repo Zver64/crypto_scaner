@@ -52,7 +52,7 @@ export function MiniAppShell() {
 			<AppShell
 				header={{ height: headerContentHeight }}
 				padding={{ base: "xs", sm: "sm" }}
-				withBorder
+				withBorder={false}
 			>
 				<AppShell.Header>
 					<Group
@@ -92,13 +92,7 @@ function ReadinessBadge({ status }: { status: ReadinessStatus }) {
 function OpenInTelegram() {
 	return (
 		<ShellContentCenter>
-			<Paper
-				maw={420}
-				p={{ base: "xs", sm: "xl" }}
-				radius="lg"
-				shadow="sm"
-				withBorder
-			>
+			<Paper maw={420} p={{ base: "xs", sm: "xl" }} radius="lg" shadow="sm">
 				<Stack align="center" gap="sm" ta="center">
 					<Title order={1} size="h2">
 						Open in Telegram

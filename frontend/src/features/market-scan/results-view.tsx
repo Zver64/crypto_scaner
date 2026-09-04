@@ -51,7 +51,7 @@ export function MarketScanResults({
 	return (
 		<RefreshingOverlay label="Refreshing Market Scan" visible={isRefreshing}>
 			<Stack gap={contentSpacing}>
-				<Paper p={contentSpacing} withBorder>
+				<Paper p={contentSpacing}>
 					<Group gap="lg">
 						<Text size={textSize}>
 							Matched <Text component="strong">{result.matched_count}</Text>
@@ -74,14 +74,14 @@ export function MarketScanResults({
 					value={symbolFilter}
 				/>
 				{result.items.length === 0 ? (
-					<Paper p="xl" ta="center" withBorder>
+					<Paper p="xl" ta="center">
 						<Text fw={600}>No instruments matched these criteria.</Text>
 						<Text c="dimmed" mt={4} size="sm">
 							Adjust the criteria and run another Market Scan.
 						</Text>
 					</Paper>
 				) : rows.length === 0 ? (
-					<Paper p="xl" ta="center" withBorder>
+					<Paper p="xl" ta="center">
 						<Text fw={600}>No instruments match this symbol filter.</Text>
 						<Text c="dimmed" mt={4} size="sm">
 							Clear or change the filter to see this Scan Result.

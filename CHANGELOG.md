@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/Zver64/crypto_scaner/compare/v0.6.0...v0.7.0) (2026-09-05)
+
+
+### Features
+
+* add sortable seven-day change percentage ([a216d7c](https://github.com/Zver64/crypto_scaner/commit/a216d7c065cf7a9dc58e945144429469f27d3888))
+
+
+### Bug Fixes
+
+* close Telegram access flow and validate bot startup ([e568b0b](https://github.com/Zver64/crypto_scaner/commit/e568b0b8ecc57fbfddb3af94606f98132a575dda))
+* keep first table column visible while scrolling ([c45e953](https://github.com/Zver64/crypto_scaner/commit/c45e9533d9834bde8533a7f4d6700716b5ddbec5))
+* retain market cap metrics at zero threshold ([3bd8f83](https://github.com/Zver64/crypto_scaner/commit/3bd8f8319ac248a188066916ed1ecd03f07279d9))
+
 ## [0.6.0](https://github.com/Zver64/crypto_scaner/compare/v0.5.0...v0.6.0) (2026-09-04)
 
 

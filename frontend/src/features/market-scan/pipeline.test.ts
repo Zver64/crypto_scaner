@@ -54,7 +54,7 @@ it("composes mandatory daily and hourly volatility before enabled Market Cap", (
 	]);
 });
 
-it("keeps independent settings and omits only Market Cap at zero", () => {
+it("keeps independent settings and includes Market Cap at zero", () => {
 	expect(
 		criterionSelections({
 			...defaultMarketScanCriteria,
@@ -88,6 +88,12 @@ it("keeps independent settings and omits only Market Cap at zero", () => {
 				percentile: 95,
 				minimum_range_percent: 1.5,
 			},
+		},
+		{
+			key: "market_cap",
+			label: "Market Cap",
+			name: "market_cap",
+			parameters: { min_market_cap_usd: 0 },
 		},
 	]);
 });

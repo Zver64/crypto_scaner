@@ -111,7 +111,7 @@ it("adapts volatility form criteria and safely extracts its evaluation", () => {
 	expect(volatilityEvaluation([])).toBeUndefined();
 });
 
-it("sends Market Cap after volatility only when it is positive", () => {
+it("always sends Market Cap after volatility, including when its minimum is zero", () => {
 	const criteria = {
 		minimumMarketCapMillions: 1,
 		minimumRangePercent: 3.5,
@@ -133,5 +133,11 @@ it("sends Market Cap after volatility only when it is positive", () => {
 		criterionSelections({ ...criteria, minimumMarketCapMillions: 0 }),
 	).toEqual([
 		volatilityCriterionSelection({ ...criteria, minimumMarketCapMillions: 0 }),
+		{
+			key: "market_cap",
+			label: "Market Cap",
+			name: "market_cap",
+			parameters: { min_market_cap_usd: 0 },
+		},
 	]);
 });

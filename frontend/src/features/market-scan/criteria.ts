@@ -92,18 +92,17 @@ export function volatilityCriterionSelection(
 export function criterionSelections(
 	criteria: MarketScanCriteria,
 ): CriterionSelection[] {
-	const selections = [volatilityCriterionSelection(criteria)];
-	if (criteria.minimumMarketCapMillions > 0) {
-		selections.push({
+	return [
+		volatilityCriterionSelection(criteria),
+		{
 			key: criterionKeys.marketCap,
 			label: "Market Cap",
 			name: criterionNames.marketCap,
 			parameters: {
 				min_market_cap_usd: criteria.minimumMarketCapMillions * usdPerMillion,
 			},
-		});
-	}
-	return selections;
+		},
+	];
 }
 
 export interface VolatilityEvaluation {

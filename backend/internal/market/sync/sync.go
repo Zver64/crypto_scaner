@@ -28,16 +28,14 @@ type Store interface {
 	UpsertCandles(context.Context, []market.Candle) error
 }
 
-// MVPProfile returns the code-owned Binance Spot synchronization profile.
+// MVPProfile returns the canonical market daily synchronization profile.
 func MVPProfile() market.SyncProfile {
-	return market.SyncProfile{
-		Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1d", TimeZone: "UTC",
-	}
+	return market.DailySyncProfile()
 }
 
-// HourlyProfile returns the independently synchronized hourly dataset.
+// HourlyProfile returns the canonical market hourly synchronization profile.
 func HourlyProfile() market.SyncProfile {
-	return market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC"}
+	return market.HourlySyncProfile()
 }
 
 // Synchronizer coordinates instrument discovery, backfill, and incremental loading.

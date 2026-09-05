@@ -15,6 +15,15 @@ import (
 	marketsync "crypto-scanner/internal/market/sync"
 )
 
+func TestCompatibilityProfilesDelegateToMarketProfiles(t *testing.T) {
+	if got, want := marketsync.MVPProfile(), market.DailySyncProfile(); got != want {
+		t.Fatalf("MVPProfile() = %+v, want %+v", got, want)
+	}
+	if got, want := marketsync.HourlyProfile(), market.HourlySyncProfile(); got != want {
+		t.Fatalf("HourlyProfile() = %+v, want %+v", got, want)
+	}
+}
+
 func TestSynchronizerAppliesCompleteSnapshotAndRecordsSuccess(t *testing.T) {
 	previousSuccess := time.Date(2026, time.August, 4, 0, 1, 0, 0, time.UTC)
 	previousClosed := time.Date(2026, time.August, 3, 0, 0, 0, 0, time.UTC)

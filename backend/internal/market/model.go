@@ -51,6 +51,16 @@ func (profile SyncProfile) Key() string {
 	return profile.Exchange + ":" + profile.Market + ":" + profile.QuoteAsset + ":" + profile.Interval + ":" + profile.TimeZone
 }
 
+// DailySyncProfile returns the code-owned Binance Spot daily synchronization profile.
+func DailySyncProfile() SyncProfile {
+	return SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1d", TimeZone: "UTC"}
+}
+
+// HourlySyncProfile returns the code-owned Binance Spot hourly synchronization profile.
+func HourlySyncProfile() SyncProfile {
+	return SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC"}
+}
+
 // SyncStatus is the durable outcome of market synchronization.
 type SyncStatus string
 

@@ -95,7 +95,7 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 	}
 	for _, instrument := range instruments {
 		if instrument.Symbol == request.Symbol {
-			result, err := service.evaluate(ctx, instrument, criteria, requirements)
+			result, err := service.evaluate(ctx, instrument, criteria)
 			if err != nil {
 				return SymbolResult{}, fmt.Errorf("analyze %s: %w", request.Symbol, err)
 			}
@@ -212,8 +212,7 @@ func (service *Service) prepare(configs []CriterionConfig) ([]criterionInstance,
 	return criteria, requirements, nil
 }
 
-func (service *Service) evaluate(ctx context.Context, instrument market.Instrument, criteria []criterionInstance, requirements map[Unit]int) (SymbolResult, error) {
-	_ = requirements
+func (service *Service) evaluate(ctx context.Context, instrument market.Instrument, criteria []criterionInstance) (SymbolResult, error) {
 	result := SymbolResult{Symbol: instrument.Symbol, Matched: true, Evaluations: make([]Evaluation, 0, len(criteria))}
 	data := make(map[Unit][]market.Candle)
 	for _, criterion := range criteria {
@@ -274,8 +273,8 @@ func (service *Service) evaluateCriterionWithData(ctx context.Context, instrumen
 	return SymbolResult{Symbol: instrument.Symbol, Matched: evaluation.Matched, Evaluations: []Evaluation{evaluation}}, nil
 }
 
-var marketProfile = market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1d", TimeZone: "UTC"}
-var hourlyMarketProfile = market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC"}
+var marketProfile = market.DailySyncProfile()
+var hourlyMarketProfile = market.HourlySyncProfile()
 
 func (service *Service) requireMarketData(ctx context.Context, requirements map[Unit]int) error {
 	for unit := range requirements {

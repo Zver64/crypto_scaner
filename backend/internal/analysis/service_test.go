@@ -23,6 +23,32 @@ func TestServiceCombinesCriteriaAndLoadsMergedRequirementsOnce(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSymbolShortCircuitsLaterCriteria(t *testing.T) {
+	store := &storeStub{
+		instruments:         []market.Instrument{{ID: 1, Symbol: "DROP"}},
+		candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}},
+	}
+	second := &trackingFactory{}
+	service, err := analysis.NewService(store, firstFactory{}, second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.AnalyzeSymbol(context.Background(), analysis.SymbolRequest{Symbol: "DROP", Criteria: []analysis.CriterionConfig{
+		{Key: "first", Name: "first", Label: "First", Parameters: map[string]any{}},
+		{Key: "second", Name: "second", Label: "Second", Parameters: map[string]any{}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Matched || len(result.Evaluations) != 1 || second.prepared != 0 || second.evaluated != 0 {
+		t.Fatalf("result=%+v prepared=%d evaluated=%d", result, second.prepared, second.evaluated)
+	}
+	if store.loads["1d"] != 1 || store.loads["1h"] != 0 {
+		t.Fatalf("candle loads = %v", store.loads)
+	}
+}
+
 func TestServiceCorrelatesRepeatedCriterionTypesByInstanceIdentity(t *testing.T) {
 	store := &storeStub{
 		instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}},

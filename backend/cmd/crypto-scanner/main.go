@@ -6,12 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
-	"net/http"
 	"os"
 	"os/signal"
-	"sync"
 	"syscall"
-	"time"
 
 	"crypto-scanner/internal/analysis"
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/market_cap"
@@ -114,97 +111,6 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"outcome", "success",
 	)
 	return nil
-}
-
-type scheduledService interface {
-	Run(context.Context) error
-}
-
-func runServices(
-	ctx context.Context,
-	listener net.Listener,
-	handler http.Handler,
-	scheduler scheduledService,
-	botService scheduledService,
-	logger *slog.Logger,
-	shutdownTimeout time.Duration,
-) error {
-	httpCtx, stopHTTP := context.WithCancel(context.Background())
-	defer stopHTTP()
-	schedulerCtx, stopScheduler := context.WithCancel(context.Background())
-	defer stopScheduler()
-
-	httpReady := make(chan struct{})
-	listener = &acceptSignalingListener{Listener: listener, ready: httpReady}
-	httpResult := make(chan error, 1)
-	go func() { httpResult <- httpapi.Serve(httpCtx, listener, handler, logger, shutdownTimeout) }()
-	select {
-	case <-httpReady:
-	case err := <-httpResult:
-		return err
-	case <-ctx.Done():
-		stopHTTP()
-		return <-httpResult
-	}
-
-	schedulerResult := make(chan error, 1)
-	go func() { schedulerResult <- scheduler.Run(schedulerCtx) }()
-	botCtx, stopBot := context.WithCancel(context.Background())
-	defer stopBot()
-	botResult := make(chan error, 1)
-	go func() { botResult <- botService.Run(botCtx) }()
-
-	select {
-	case <-ctx.Done():
-		stopScheduler()
-		stopBot()
-		stopHTTP()
-		schedulerErr := <-schedulerResult
-		botErr := <-botResult
-		httpErr := <-httpResult
-		if schedulerErr != nil {
-			return fmt.Errorf("stop market scheduler: %w", schedulerErr)
-		}
-		if botErr != nil {
-			return fmt.Errorf("stop Telegram bot: %w", botErr)
-		}
-		return httpErr
-	case err := <-httpResult:
-		stopScheduler()
-		stopBot()
-		<-schedulerResult
-		<-botResult
-		return err
-	case err := <-schedulerResult:
-		stopBot()
-		stopHTTP()
-		<-botResult
-		<-httpResult
-		if err != nil {
-			return fmt.Errorf("run market scheduler: %w", err)
-		}
-		return fmt.Errorf("market scheduler stopped unexpectedly")
-	case err := <-botResult:
-		stopScheduler()
-		stopHTTP()
-		<-schedulerResult
-		<-httpResult
-		if err != nil {
-			return fmt.Errorf("run Telegram bot: %w", err)
-		}
-		return fmt.Errorf("Telegram bot stopped unexpectedly")
-	}
-}
-
-type acceptSignalingListener struct {
-	net.Listener
-	once  sync.Once
-	ready chan<- struct{}
-}
-
-func (listener *acceptSignalingListener) Accept() (net.Conn, error) {
-	listener.once.Do(func() { close(listener.ready) })
-	return listener.Listener.Accept()
 }
 
 func logFailure(logger *slog.Logger, operation string, err error) {

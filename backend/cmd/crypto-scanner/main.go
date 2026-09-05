@@ -84,16 +84,16 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	if err != nil {
 		return fmt.Errorf("initialize analysis service: %w", err)
 	}
-	go func() {
-		if err := marketCapResolver.BootstrapUntilComplete(ctx); err != nil && ctx.Err() == nil {
-			logger.Warn("CoinGecko mapping bootstrap failed", "module", "market_cap", "error", err.Error())
-		}
-	}()
 	authenticator := authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge)
 	botService, err := telegrambot.New(cfg.TelegramBotToken, cfg.AdminTelegramID, store, telegrambot.Options{Logger: logger})
 	if err != nil {
 		return fmt.Errorf("initialize Telegram bot: %w", err)
 	}
+	go func() {
+		if err := marketCapResolver.BootstrapUntilComplete(ctx); err != nil && ctx.Err() == nil {
+			logger.Warn("CoinGecko mapping bootstrap failed", "module", "market_cap", "error", err.Error())
+		}
+	}()
 
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {

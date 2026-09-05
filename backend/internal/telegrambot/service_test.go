@@ -3,6 +3,7 @@ package telegrambot_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -57,13 +58,97 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 	if _, err := store.FindEnabledByTelegramID(context.Background(), 201); err != auth.ErrUserNotFound {
 		t.Fatalf("replayed picker selection changed confirmed identity: %v", err)
 	}
-	if got := transport.lastSendMessage(t).Text; got != "Scanner Access granted to Ada (@ada, ID 200)." {
-		t.Fatalf("success message = %q", got)
+	success := transport.lastSendMessage(t)
+	if success.Text != "Scanner Access granted to Ada (@ada, ID 200)." {
+		t.Fatalf("success message = %q", success.Text)
 	}
+	assertReplyKeyboardRemoved(t, success)
 
 	service.ProcessUpdate(context.Background(), callbackUpdate(100, confirm))
 	if got := transport.lastCallback(t).Text; got != "This action is no longer valid." {
 		t.Fatalf("stale callback message = %q", got)
+	}
+}
+
+func TestAddUserCancelRemovesPickerReplyKeyboard(t *testing.T) {
+	transport := newTelegramTransport(t)
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	if err != nil {
+		t.Fatalf("create bot service: %v", err)
+	}
+
+	service.ProcessUpdate(context.Background(), messageUpdate(100, "Add user"))
+	requestID := transport.lastSendMessage(t).ReplyMarkup.Keyboard[0][0].RequestUsers.RequestID
+	service.ProcessUpdate(context.Background(), sharedUserUpdate(requestID, 200, "Ada", "ada"))
+	cancel := transport.lastSendMessage(t).Inline.InlineKeyboard[0][1].CallbackData
+	service.ProcessUpdate(context.Background(), callbackUpdate(100, cancel))
+
+	outcome := transport.lastSendMessage(t)
+	if outcome.Text != "No Scanner Access changes were made." {
+		t.Fatalf("cancel message = %q", outcome.Text)
+	}
+	assertReplyKeyboardRemoved(t, outcome)
+}
+
+func TestAddUserGrantErrorRemovesPickerReplyKeyboard(t *testing.T) {
+	transport := newTelegramTransport(t)
+	store := &accessStore{grantErr: errors.New("storage unavailable")}
+	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	if err != nil {
+		t.Fatalf("create bot service: %v", err)
+	}
+
+	service.ProcessUpdate(context.Background(), messageUpdate(100, "Add user"))
+	requestID := transport.lastSendMessage(t).ReplyMarkup.Keyboard[0][0].RequestUsers.RequestID
+	service.ProcessUpdate(context.Background(), sharedUserUpdate(requestID, 200, "Ada", "ada"))
+	confirm := transport.lastSendMessage(t).Inline.InlineKeyboard[0][0].CallbackData
+	service.ProcessUpdate(context.Background(), callbackUpdate(100, confirm))
+
+	outcome := transport.lastSendMessage(t)
+	if outcome.Text != "Scanner Access was not changed. Please try again." {
+		t.Fatalf("error message = %q", outcome.Text)
+	}
+	assertReplyKeyboardRemoved(t, outcome)
+}
+
+func TestStaleAddUserSelectionRemovesPickerReplyKeyboard(t *testing.T) {
+	transport := newTelegramTransport(t)
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	if err != nil {
+		t.Fatalf("create bot service: %v", err)
+	}
+
+	service.ProcessUpdate(context.Background(), messageUpdate(100, "Add user"))
+	requestID := transport.lastSendMessage(t).ReplyMarkup.Keyboard[0][0].RequestUsers.RequestID
+	service.ProcessUpdate(context.Background(), sharedUserUpdate(requestID, 200, "Ada", "ada"))
+	service.ProcessUpdate(context.Background(), sharedUserUpdate(requestID, 201, "Babbage", ""))
+
+	outcome := transport.lastSendMessage(t)
+	if outcome.Text != "This selection is no longer valid. Choose Add user again." {
+		t.Fatalf("stale selection message = %q", outcome.Text)
+	}
+	assertReplyKeyboardRemoved(t, outcome)
+}
+
+func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
+	transport := newTelegramTransport(t)
+	transport.setGetMeResponse(`{"ok":false,"error_code":401,"description":"Unauthorized"}`)
+
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	if err == nil {
+		t.Fatal("New() error = nil, want Telegram initialization failure")
+	}
+	if service != nil {
+		t.Fatal("New() service != nil after Telegram initialization failure")
+	}
+	if !strings.Contains(err.Error(), "create Telegram bot") || !strings.Contains(err.Error(), "unauthorized") {
+		t.Fatalf("New() error = %v", err)
+	}
+	if strings.Contains(err.Error(), "test-token") {
+		t.Fatalf("New() exposed the token in its error: %v", err)
+	}
+	if transport.getMeCallsCount() != 1 {
+		t.Fatalf("getMe calls = %d, want 1", transport.getMeCallsCount())
 	}
 }
 
@@ -204,8 +289,9 @@ func TestAdministratorCanNavigateLongUserList(t *testing.T) {
 }
 
 type accessStore struct {
-	users map[int64]auth.User
-	next  int64
+	users    map[int64]auth.User
+	next     int64
+	grantErr error
 }
 
 func (store *accessStore) FindEnabledByTelegramID(_ context.Context, telegramID int64) (auth.User, error) {
@@ -217,6 +303,9 @@ func (store *accessStore) FindEnabledByTelegramID(_ context.Context, telegramID 
 }
 
 func (store *accessStore) GrantAccess(_ context.Context, telegramID int64, username, displayName string) (auth.User, bool, error) {
+	if store.grantErr != nil {
+		return auth.User{}, false, store.grantErr
+	}
 	if store.users == nil {
 		store.users = map[int64]auth.User{}
 	}
@@ -256,16 +345,19 @@ func (store *accessStore) DeleteUser(_ context.Context, id, telegramID int64) (b
 type telegramTransport struct {
 	t *testing.T
 	*httptest.Server
-	mu        sync.Mutex
-	messages  []sendMessage
-	callbacks []answerCallback
+	mu            sync.Mutex
+	messages      []sendMessage
+	callbacks     []answerCallback
+	getMeResponse string
+	getMeCalls    int
 }
 
 type sendMessage struct {
-	ChatID      int64                       `json:"chat_id"`
-	Text        string                      `json:"text"`
-	ReplyMarkup models.ReplyKeyboardMarkup  `json:"-"`
-	Inline      models.InlineKeyboardMarkup `json:"-"`
+	ChatID          int64                       `json:"chat_id"`
+	Text            string                      `json:"text"`
+	ReplyMarkup     models.ReplyKeyboardMarkup  `json:"-"`
+	Inline          models.InlineKeyboardMarkup `json:"-"`
+	replyMarkupWire json.RawMessage
 }
 
 func (message *sendMessage) UnmarshalJSON(data []byte) error {
@@ -278,6 +370,7 @@ func (message *sendMessage) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	message.ChatID, message.Text = wire.ChatID, wire.Text
+	message.replyMarkupWire = append(message.replyMarkupWire[:0], wire.ReplyMarkup...)
 	if len(wire.ReplyMarkup) == 0 {
 		return nil
 	}
@@ -293,9 +386,15 @@ type answerCallback struct {
 
 func newTelegramTransport(t *testing.T) *telegramTransport {
 	t.Helper()
-	transport := &telegramTransport{t: t}
+	transport := &telegramTransport{t: t, getMeResponse: `{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Scanner"}}`}
 	transport.Server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
+		case "/bot123456:test-token/getMe":
+			transport.mu.Lock()
+			transport.getMeCalls++
+			getMeResponse := transport.getMeResponse
+			transport.mu.Unlock()
+			_, _ = response.Write([]byte(getMeResponse))
 		case "/bot123456:test-token/sendMessage":
 			if err := request.ParseMultipartForm(1 << 20); err != nil {
 				t.Errorf("parse sendMessage form: %v", err)
@@ -305,6 +404,7 @@ func newTelegramTransport(t *testing.T) *telegramTransport {
 				t.Errorf("parse chat ID: %v", err)
 			}
 			if markup := request.FormValue("reply_markup"); markup != "" {
+				message.replyMarkupWire = append(message.replyMarkupWire, markup...)
 				if err := json.Unmarshal([]byte(markup), &message.ReplyMarkup); err != nil {
 					t.Errorf("decode reply keyboard: %v", err)
 				}
@@ -354,10 +454,36 @@ func (transport *telegramTransport) lastCallback(t *testing.T) answerCallback {
 	return transport.callbacks[len(transport.callbacks)-1]
 }
 
+func (transport *telegramTransport) setGetMeResponse(response string) {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	transport.getMeResponse = response
+}
+
+func (transport *telegramTransport) getMeCallsCount() int {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	return transport.getMeCalls
+}
+
 func (transport *telegramTransport) messageCount() int {
 	transport.mu.Lock()
 	defer transport.mu.Unlock()
 	return len(transport.messages)
+}
+
+func assertReplyKeyboardRemoved(t *testing.T, message sendMessage) {
+	t.Helper()
+	if got := string(message.replyMarkupWire); got != `{"remove_keyboard":true}` {
+		t.Fatalf("reply markup wire = %s, want reply keyboard removal", got)
+	}
+}
+
+func sharedUserUpdate(requestID int32, userID int64, firstName, username string) *models.Update {
+	return &models.Update{Message: &models.Message{
+		From: &models.User{ID: 100}, Chat: models.Chat{ID: 100, Type: models.ChatTypePrivate},
+		UsersShared: &models.UsersShared{RequestID: int(requestID), Users: []models.SharedUser{{UserID: userID, FirstName: firstName, Username: username}}},
+	}}
 }
 
 func messageUpdate(userID int64, text string) *models.Update {

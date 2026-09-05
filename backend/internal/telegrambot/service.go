@@ -88,7 +88,6 @@ func New(token string, administratorID int64, store auth.AccessStore, options Op
 	}
 	service := &Service{store: store, administratorID: administratorID, logger: logger, operations: map[string]*operation{}}
 	botOptions := []telegram.Option{
-		telegram.WithSkipGetMe(),
 		telegram.WithAllowedUpdates(telegram.AllowedUpdates{"message", "callback_query"}),
 		telegram.WithDefaultHandler(service.handleUpdate),
 	}
@@ -207,8 +206,19 @@ func (service *Service) handleSharedUser(ctx context.Context, client *telegram.B
 		}
 	}
 	if token == "" {
+		hasPendingPicker := false
+		for _, operation := range service.operations {
+			if operation.kind == operationAdd && operation.chatID == message.Chat.ID && operation.user.TelegramID == 0 && !operation.busy {
+				hasPendingPicker = true
+				break
+			}
+		}
 		service.mu.Unlock()
-		service.send(ctx, client, message.Chat.ID, "This selection is no longer valid. Choose Add user again.", nil)
+		if hasPendingPicker {
+			service.send(ctx, client, message.Chat.ID, "This selection is no longer valid. Choose Add user again.", nil)
+			return
+		}
+		service.sendWithoutReplyKeyboard(ctx, client, message.Chat.ID, "This selection is no longer valid. Choose Add user again.")
 		return
 	}
 	selected := shared.Users[0]
@@ -359,6 +369,10 @@ func (service *Service) confirmOrCancel(ctx context.Context, client *telegram.Bo
 		delete(service.operations, token)
 		service.mu.Unlock()
 		service.answer(ctx, client, callback.ID, "Cancelled.")
+		if kind == operationAdd {
+			service.sendWithoutReplyKeyboard(ctx, client, chatID, "No Scanner Access changes were made.")
+			return
+		}
 		service.send(ctx, client, chatID, "No Scanner Access changes were made.", nil)
 		return
 	}
@@ -381,7 +395,7 @@ func (service *Service) confirmOrCancel(ctx context.Context, client *telegram.Bo
 		deleted, err = service.store.DeleteUser(ctx, operation.user.ID, operation.user.TelegramID)
 	}
 	service.mu.Lock()
-	if err == nil && (kind == operationAdd || deleted) {
+	if kind == operationAdd || (err == nil && deleted) {
 		delete(service.operations, token)
 	} else if current := service.operations[token]; current != nil {
 		current.busy = false
@@ -389,16 +403,20 @@ func (service *Service) confirmOrCancel(ctx context.Context, client *telegram.Bo
 	service.mu.Unlock()
 	if err != nil || kind == operationDelete && !deleted {
 		service.answer(ctx, client, callback.ID, "This action could not be completed.")
+		if kind == operationAdd {
+			service.sendWithoutReplyKeyboard(ctx, client, chatID, "Scanner Access was not changed. Please try again.")
+			return
+		}
 		service.send(ctx, client, chatID, "Scanner Access was not changed. Please try again.", nil)
 		return
 	}
 	service.answer(ctx, client, callback.ID, "")
 	if kind == operationAdd && !created {
-		service.send(ctx, client, chatID, formatUser(operation.user)+" already has Scanner Access.", nil)
+		service.sendWithoutReplyKeyboard(ctx, client, chatID, formatUser(operation.user)+" already has Scanner Access.")
 		return
 	}
 	if kind == operationAdd {
-		service.send(ctx, client, chatID, "Scanner Access granted to "+formatUser(operation.user)+".", nil)
+		service.sendWithoutReplyKeyboard(ctx, client, chatID, "Scanner Access granted to "+formatUser(operation.user)+".")
 		return
 	}
 	service.send(ctx, client, chatID, "Scanner Access removed from "+formatUser(operation.user)+".", nil)
@@ -441,6 +459,10 @@ func (service *Service) invalidateChatOperations(chatID int64) {
 			delete(service.operations, token)
 		}
 	}
+}
+
+func (service *Service) sendWithoutReplyKeyboard(ctx context.Context, client *telegram.Bot, chatID int64, text string) {
+	service.send(ctx, client, chatID, text, &models.ReplyKeyboardRemove{RemoveKeyboard: true})
 }
 
 func (service *Service) send(ctx context.Context, client *telegram.Bot, chatID int64, text string, markup models.ReplyMarkup) {

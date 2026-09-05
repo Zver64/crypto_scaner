@@ -77,6 +77,8 @@ it.each<MarketScanSort>([
 	{ column: marketScanColumnKeys.hourlyRange, direction: "asc" },
 	{ column: marketScanColumnKeys.marketCap, direction: "desc" },
 	{ column: marketScanColumnKeys.marketCap, direction: "asc" },
+	{ column: marketScanColumnKeys.sevenDayChangePercent, direction: "desc" },
+	{ column: marketScanColumnKeys.sevenDayChangePercent, direction: "asc" },
 ])("renders %s sorting direction in the active header", (sort) => {
 	const html = renderScan(
 		defaultMarketScanCriteria,
@@ -183,12 +185,12 @@ it("identifies metrics by key and keeps every column when the Market Cap criteri
 	};
 	const html = renderScan(defaultMarketScanCriteria, result);
 	expect(html).toMatch(
-		/Daily Range.*Hourly Range.*Hourly Candle Count.*Daily Candle Count.*Market Cap USD.*7d change.*Binance/,
+		/Daily Range.*Hourly Range.*Hourly Candle Count.*Daily Candle Count.*Market Cap USD.*7d change.*7d change percent.*Binance/,
 	);
 	const sortButtons = html.match(
 		/<button[^>]*aria-label="Sort by [^"]*"[^>]*>/g,
 	);
-	expect(sortButtons).toHaveLength(3);
+	expect(sortButtons).toHaveLength(4);
 	for (const button of sortButtons ?? []) {
 		expect(button).toContain("font:inherit");
 	}
@@ -196,7 +198,21 @@ it("identifies metrics by key and keeps every column when the Market Cap criteri
 	expect(html).toContain('aria-sort="descending"');
 	expect(html).toContain('aria-label="Sort by Daily Range"');
 	expect(html).toContain('aria-label="Sort by Hourly Range"');
-	expect(html).toMatch(/6.25%<.*2.75%<.*60<.*30<.*\$750M/);
+	expect(html).toContain('aria-label="Sort by 7d change percent"');
+	expect(html).toMatch(/6.25%<.*2.75%<.*60<.*30<.*\$750M.*16,800%/);
+	expect(html).toContain(
+		'<span style="color:var(--mantine-color-green-6)">16,800%</span>',
+	);
+	const fallingHtml = renderScan(defaultMarketScanCriteria, {
+		...result,
+		items: result.items.map((item) => ({
+			...item,
+			price_history: [100, 80],
+		})),
+	});
+	expect(fallingHtml).toContain(
+		'<span style="color:var(--mantine-color-red-6)">-20%</span>',
+	);
 	expect(html).toContain("Market Cap USD");
 	expect(html).toContain(
 		'aria-label="Sort by Market Cap USD, currently descending"',
@@ -237,7 +253,7 @@ it("identifies metrics by key and keeps every column when the Market Cap criteri
 		);
 	expect(headers(disabledHtml)).toEqual(headers(html));
 	expect(headers(noCapHtml)).toEqual(headers(html));
-	expect(headers(noCapHtml)).toHaveLength(8);
+	expect(headers(noCapHtml)).toHaveLength(9);
 	expect(noCapHtml).toContain("BTCUSDT");
 	expect(noCapHtml).toContain(
 		'aria-label="Sort by Market Cap USD, currently descending"',

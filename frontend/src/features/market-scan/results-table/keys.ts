@@ -7,6 +7,7 @@ export const marketScanColumnKeys = {
 	dailyCandleCount: "dailyCandleCount",
 	marketCap: "marketCapUsd",
 	priceHistory: "priceHistory",
+	sevenDayChangePercent: "sevenDayChangePercent",
 	binance: "binance",
 	reason: "reason",
 } as const;

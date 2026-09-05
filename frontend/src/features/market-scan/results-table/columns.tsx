@@ -73,6 +73,23 @@ export const marketScanColumns = [
 		),
 	},
 	{
+		key: marketScanColumnKeys.sevenDayChangePercent,
+		header: "7d change percent",
+		cell: (row) => {
+			const change = row.sevenDayChangePercent;
+			if (change === null) return "—";
+
+			const color =
+				change > 0
+					? "var(--mantine-color-green-6)"
+					: change < 0
+						? "var(--mantine-color-red-6)"
+						: undefined;
+			return <span style={{ color }}>{formatRangePercent(change)}</span>;
+		},
+		sortable: true,
+	},
+	{
 		key: marketScanColumnKeys.binance,
 		header: "Binance",
 		cell: (row) => <BinanceLink symbol={row.symbol} />,

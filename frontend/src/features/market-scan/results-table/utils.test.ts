@@ -87,5 +87,6 @@ it("preserves rows with absent metrics instead of silently dropping instruments"
 		hourlyCandleCount: null,
 		marketCapUsd: null,
 		priceHistory: Array(169).fill(null),
+		sevenDayChangePercent: null,
 	});
 });

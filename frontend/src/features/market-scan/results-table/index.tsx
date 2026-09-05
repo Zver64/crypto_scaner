@@ -55,7 +55,7 @@ export function MarketScanResultsTable({
 			columns={columns}
 			rows={sortMarketScanRows(rows, sort)}
 			getRowKey={(row) => row.symbol}
-			minWidth={760}
+			minWidth={900}
 			onRowClick={(row) => onSelectInstrument(row.symbol)}
 		/>
 	);

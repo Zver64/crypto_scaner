@@ -136,6 +136,32 @@ describe("sortMarketScanRows", () => {
 it.each([
 	"asc",
 	"desc",
+] as const)("sorts seven-day change percent last when unavailable (%s)", (direction) => {
+	const base = toMarketScanRows([
+		{ symbol: "BASEUSDT", evaluations: [], matched: true, price_history: [] },
+	])[0];
+	const rows = [
+		{ ...base, symbol: "B", sevenDayChangePercent: null },
+		{ ...base, symbol: "ZERO", sevenDayChangePercent: 0 },
+		{ ...base, symbol: "A", sevenDayChangePercent: null },
+		{ ...base, symbol: "VALUE", sevenDayChangePercent: 100 },
+		{ ...base, symbol: "LOSS", sevenDayChangePercent: -25 },
+	];
+	expect(
+		sortMarketScanRows(rows, {
+			column: marketScanColumnKeys.sevenDayChangePercent,
+			direction,
+		}).map((row) => row.symbol),
+	).toEqual(
+		direction === "asc"
+			? ["LOSS", "ZERO", "VALUE", "A", "B"]
+			: ["VALUE", "ZERO", "LOSS", "A", "B"],
+	);
+});
+
+it.each([
+	"asc",
+	"desc",
 ] as const)("sorts unavailable Market Cap last (%s), separately from zero", (direction) => {
 	const base = toMarketScanRows([
 		{ symbol: "BASEUSDT", evaluations: [], matched: true, price_history: [] },

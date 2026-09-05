@@ -2,6 +2,7 @@ import { criterionKeys } from "@/api/analysis-identifiers";
 import type { MarketScanItem, UnresolvedInstrumentCode } from "@/api/client";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { marketCapEvaluation } from "@/utils/market-cap";
+import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
 
 export interface MarketScanRow {
 	symbol: string;
@@ -11,6 +12,7 @@ export interface MarketScanRow {
 	hourlyCandleCount: number | null;
 	marketCapUsd: number | null;
 	priceHistory: readonly (number | null)[];
+	sevenDayChangePercent: number | null;
 }
 
 // Required evaluations are validated by the query. Presentation preserves every
@@ -35,6 +37,7 @@ export function toMarketScanRows(
 			hourlyCandleCount: hourly?.candleCount ?? null,
 			marketCapUsd: marketCapEvaluation(item.evaluations)?.marketCapUsd ?? null,
 			priceHistory: item.price_history,
+			sevenDayChangePercent: sevenDayChangePercent(item.price_history),
 		};
 	});
 }

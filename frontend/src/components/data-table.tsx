@@ -37,9 +37,10 @@ export function DataTable<Row>({
 				>
 					<Table.Thead>
 						<Table.Tr>
-							{columns.map((column) => (
+							{columns.map((column, index) => (
 								<Table.Th
 									aria-sort={column.ariaSort}
+									className={index === 0 ? "sticky-first-column" : undefined}
 									key={column.key}
 									ta={column.textAlign}
 								>
@@ -64,8 +65,12 @@ export function DataTable<Row>({
 								style={onRowClick ? { cursor: "pointer" } : undefined}
 								tabIndex={onRowClick ? 0 : undefined}
 							>
-								{columns.map((column) => (
-									<Table.Td key={column.key} ta={column.textAlign}>
+								{columns.map((column, index) => (
+									<Table.Td
+										className={index === 0 ? "sticky-first-column" : undefined}
+										key={column.key}
+										ta={column.textAlign}
+									>
 										{column.cell(row)}
 									</Table.Td>
 								))}

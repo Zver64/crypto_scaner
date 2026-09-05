@@ -4,3 +4,19 @@ body {
 		var(--mantine-color-dark-8)
 	);
 }
+
+.sticky-first-column {
+	position: sticky;
+	inset-inline-start: 0;
+	z-index: 1;
+	background-color: var(--mantine-color-body);
+	box-shadow: 1px 0 0 var(--table-border-color);
+}
+
+thead .sticky-first-column {
+	z-index: 2;
+}
+
+tbody tr:where([data-hover]):hover > .sticky-first-column {
+	background-color: var(--tr-hover-bg);
+}

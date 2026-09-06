@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/Zver64/crypto_scaner/compare/v0.7.0...v0.7.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* simplify backend startup provisioning ([88cad37](https://github.com/Zver64/crypto_scaner/commit/88cad372b0d23e1cec6c93819242d8451f3972ff))
+
 ## [0.7.0](https://github.com/Zver64/crypto_scaner/compare/v0.6.0...v0.7.0) (2026-09-05)
 
 

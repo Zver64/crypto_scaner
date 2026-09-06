@@ -3,6 +3,7 @@ package postgres_test
 import (
 	"context"
 	"errors"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -54,6 +55,33 @@ func TestVerifySchemaRedactsKeywordDSNPasswordFromRuntimeErrors(t *testing.T) {
 	}
 	if strings.Contains(err.Error(), credential) {
 		t.Fatalf("VerifySchema() exposed keyword DSN credential: %v", err)
+	}
+}
+
+func TestVerifySchemaPreservesRuntimeErrorWithoutDSN(t *testing.T) {
+	queries := &querySequence{rows: []*stubRow{{err: errors.New("metadata query failed")}}}
+	err := postgres.VerifySchema(context.Background(), queries, "")
+	const want = "verify PostgreSQL schema metadata: metadata query failed"
+	if err == nil || err.Error() != want {
+		t.Fatalf("VerifySchema() error = %v, want %q", err, want)
+	}
+}
+
+func TestVerifySchemaRedactsURLAndPasswordForms(t *testing.T) {
+	const password = "fixture+p@ss word"
+	dsn := (&url.URL{Scheme: "postgres", User: url.UserPassword("scanner", password), Host: "localhost", Path: "/test"}).String()
+	for _, test := range []struct{ name, text string }{
+		{"full DSN", dsn},
+		{"raw password", password},
+		{"escaped password", url.QueryEscape(password)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			queries := &querySequence{rows: []*stubRow{{err: errors.New("driver failed: " + test.text)}}}
+			err := postgres.VerifySchema(context.Background(), queries, dsn)
+			if err == nil || !strings.Contains(err.Error(), "driver failed: [REDACTED]") || strings.Contains(err.Error(), test.text) {
+				t.Fatalf("VerifySchema() did not redact synthetic credential: %v", err)
+			}
+		})
 	}
 }
 

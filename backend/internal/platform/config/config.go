@@ -35,13 +35,6 @@ type ServerConfig struct {
 	CoinGeckoDemoAPIKey    string
 }
 
-// BootstrapConfig contains the settings used only by the explicit
-// administrator bootstrap command.
-type BootstrapConfig struct {
-	DatabaseURL     string
-	AdminTelegramID int64
-}
-
 // LoadServer reads and validates server configuration from the environment.
 func LoadServer() (ServerConfig, error) {
 	var cfg ServerConfig
@@ -129,19 +122,6 @@ func validateDatabaseURL(databaseURL string) (string, error) {
 		return "", fmt.Errorf("DATABASE_URL must be a valid PostgreSQL connection string")
 	}
 	return databaseURL, nil
-}
-
-// LoadBootstrap reads configuration for the explicit administrator bootstrap.
-func LoadBootstrap() (BootstrapConfig, error) {
-	databaseURL, err := LoadDatabaseURL()
-	if err != nil {
-		return BootstrapConfig{}, err
-	}
-	adminTelegramID, err := positiveInt64("ADMIN_TELEGRAM_ID")
-	if err != nil {
-		return BootstrapConfig{}, err
-	}
-	return BootstrapConfig{DatabaseURL: databaseURL, AdminTelegramID: adminTelegramID}, nil
 }
 
 func required(name string) (string, error) {

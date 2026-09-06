@@ -151,9 +151,9 @@ func (store *Store) DeleteUser(ctx context.Context, id, telegramID int64) (bool,
 	return true, nil
 }
 
-// BootstrapAdministrator preserves idempotent startup access for the one
-// configured administrator without granting administrative authority to anyone
-// else; authority is always checked against configuration by telegrambot.
+// BootstrapAdministrator inserts the configured administrator only if absent.
+// Existing rows, including disabled users and their timestamps, stay untouched.
+// Administrative authority is always checked against configuration by telegrambot.
 func (store *Store) BootstrapAdministrator(ctx context.Context, telegramID int64) error {
 	if err := store.queries.BootstrapAdministrator(ctx, telegramID); err != nil {
 		return fmt.Errorf("bootstrap administrator: %w", err)

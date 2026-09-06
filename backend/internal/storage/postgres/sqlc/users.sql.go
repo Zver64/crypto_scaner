@@ -14,9 +14,7 @@ import (
 const bootstrapAdministrator = `-- name: BootstrapAdministrator :exec
 INSERT INTO app.users (telegram_id, is_enabled)
 VALUES ($1, TRUE)
-ON CONFLICT (telegram_id) DO UPDATE
-SET is_enabled = TRUE,
-    updated_at = now()
+ON CONFLICT (telegram_id) DO NOTHING
 `
 
 func (q *Queries) BootstrapAdministrator(ctx context.Context, telegramID int64) error {

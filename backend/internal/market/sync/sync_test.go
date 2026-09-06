@@ -102,6 +102,50 @@ func TestSynchronizerBackfillsLatestClosedCandlesForInstrumentWithoutHistory(t *
 	}
 }
 
+func TestSynchronizerUsesPolicyForInitialRequests(t *testing.T) {
+	instrument := market.Instrument{ID: 41, Symbol: "BTCUSDT", QuoteAsset: "USDT", Status: "TRADING", Active: true}
+	tests := []struct {
+		name       string
+		profile    market.SyncProfile
+		wantLimit  int
+		wantGapFix bool
+	}{
+		{name: "daily", profile: marketsync.MVPProfile(), wantLimit: 30},
+		{name: "hourly empty history repairs seven day gap", profile: marketsync.HourlyProfile(), wantLimit: 1000, wantGapFix: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			exchange := &fakeExchange{items: []market.Instrument{instrument}, candles: map[string][]market.Candle{}}
+			store := &fakeMarketStore{
+				state:  market.SyncState{Profile: test.profile, Status: market.SyncStatusNeverRun},
+				active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{},
+			}
+
+			if err := marketsync.NewWithProfile(exchange, store, nil, 1, test.profile).Sync(context.Background()); err != nil {
+				t.Fatalf("Sync() error = %v", err)
+			}
+			if len(exchange.candleRequests) != 1 {
+				t.Fatalf("candle requests = %#v, want one", exchange.candleRequests)
+			}
+			request := exchange.candleRequests[0]
+			if request.Limit != test.wantLimit {
+				t.Fatalf("request limit = %d, want %d", request.Limit, test.wantLimit)
+			}
+			if test.wantGapFix {
+				wantAfter := market.SevenDayWindow(request.ClosedBefore).From.Add(-time.Millisecond)
+				if request.AfterOpenTime == nil || !request.AfterOpenTime.Equal(wantAfter) {
+					t.Fatalf("hourly gap repair request = %#v, want after %s", request, wantAfter)
+				}
+				return
+			}
+			if request.AfterOpenTime != nil {
+				t.Fatalf("daily initial request = %#v, want no after-open-time", request)
+			}
+		})
+	}
+}
+
 func TestSynchronizerRequestsOnlyCandlesAfterLatestStoredOpenTime(t *testing.T) {
 	instrument := market.Instrument{ID: 41, Symbol: "BTCUSDT", QuoteAsset: "USDT", Status: "TRADING", Active: true}
 	latest := market.Candle{InstrumentID: instrument.ID, Interval: "1d", OpenTime: time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)}

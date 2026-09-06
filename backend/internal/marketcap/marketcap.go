@@ -128,7 +128,7 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 	missing := map[string]market.Instrument{}
 	for base, i := range bases {
 		m, e := r.store.GetMapping(ctx, base)
-		if e == nil && (m.Status == "resolved" || m.ExpiresAt == nil || m.ExpiresAt.After(r.now())) {
+		if r.mappingCacheValid(m, e) {
 			mappings[base] = m
 		} else {
 			missing[base] = i
@@ -224,7 +224,7 @@ func (r *Resolver) resolveMappings(ctx context.Context, missing map[string]marke
 	still := map[string]market.Instrument{}
 	for base, i := range missing {
 		m, e := r.store.GetMapping(ctx, base)
-		if e == nil && (m.Status == "resolved" || m.ExpiresAt == nil || m.ExpiresAt.After(r.now())) {
+		if r.mappingCacheValid(m, e) {
 			mappings[base] = m
 		} else {
 			still[base] = i
@@ -267,6 +267,10 @@ func (r *Resolver) resolveMappings(ctx context.Context, missing map[string]marke
 	}
 	return false, nil
 }
+func (r *Resolver) mappingCacheValid(mapping Mapping, err error) bool {
+	return err == nil && (mapping.Status == "resolved" || mapping.ExpiresAt == nil || mapping.ExpiresAt.After(r.now()))
+}
+
 func (r *Resolver) allMappings(ctx context.Context) ([]Mapping, error) {
 	byBase := map[string]Mapping{}
 	for page := 1; ; page++ {

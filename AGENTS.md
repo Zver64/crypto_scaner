@@ -27,7 +27,7 @@ make prepare
 make dev
 ```
 
-The development stack starts PostgreSQL, applies migrations, bootstraps the configured Telegram administrator, starts the backend on `127.0.0.1:8080`, and serves the frontend on `127.0.0.1:3000`.
+The development stack starts PostgreSQL, applies migrations, starts the backend on `127.0.0.1:8080`, and serves the frontend on `127.0.0.1:3000`. On normal backend startup, the configured `ADMIN_TELEGRAM_ID` is inserted only when absent; all existing administrator rows remain untouched.
 
 Use `make migrate-up` and `make migrate-down` for manual migration control.
 

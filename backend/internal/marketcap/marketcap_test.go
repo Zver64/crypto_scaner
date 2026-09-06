@@ -171,6 +171,73 @@ func TestConcurrentStaleRefreshIsDeduplicated(t *testing.T) {
 		t.Fatalf("market calls=%d", provider.marketCalls)
 	}
 }
+func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
+	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
+	future := now.Add(time.Nanosecond)
+	exact := now
+	past := now.Add(-time.Nanosecond)
+	storeErr := errors.New("mapping store unavailable")
+	cases := []struct {
+		name  string
+		entry Mapping
+		err   error
+		valid bool
+	}{
+		{name: "resolved", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}, valid: true},
+		{name: "resolved past expiry", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: &past}, valid: true},
+		{name: "unresolved future expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found", ExpiresAt: &future}, valid: true},
+		{name: "unresolved exact expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found", ExpiresAt: &exact}},
+		{name: "unresolved past expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found", ExpiresAt: &past}},
+		{name: "unresolved nil expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found"}, valid: true},
+		{name: "store error", err: storeErr},
+		{name: "store error with resolved mapping", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}, err: storeErr},
+	}
+
+	for _, phase := range []string{"initial lookup", "lookup after scan lock"} {
+		t.Run(phase, func(t *testing.T) {
+			for _, tc := range cases {
+				t.Run(tc.name, func(t *testing.T) {
+					store := &fakeStore{
+						done:     true,
+						mappings: map[string]Mapping{},
+						caps:     map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now}},
+					}
+					if phase == "initial lookup" {
+						store.getMapping = func(string) (Mapping, error) { return tc.entry, tc.err }
+					} else {
+						lookups := 0
+						store.getMapping = func(string) (Mapping, error) {
+							lookups++
+							if lookups == 1 {
+								return Mapping{}, errors.New("missing")
+							}
+							return tc.entry, tc.err
+						}
+					}
+					provider := &fakeProvider{tickerErr: errors.New("ticker unavailable")}
+					r := New(store, provider)
+					r.now = func() time.Time { return now }
+
+					batch, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}})
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantTickerCalls := 0
+					if !tc.valid {
+						wantTickerCalls = 1
+					}
+					if provider.tickerCalls != wantTickerCalls {
+						t.Fatalf("ticker calls=%d, want %d", provider.tickerCalls, wantTickerCalls)
+					}
+					if batch.ProviderWarning != !tc.valid {
+						t.Fatalf("provider warning=%v, want %v", batch.ProviderWarning, !tc.valid)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestMissingCapIsCooledPerIDWithoutGlobalWarning(t *testing.T) {
 	now := time.Now()
 	store := &fakeStore{done: true, mappings: map[string]Mapping{"NULL": {BaseAsset: "NULL", CoinID: "null", Status: "resolved"}, "OK": {BaseAsset: "OK", CoinID: "ok", Status: "resolved"}, "OTHER": {BaseAsset: "OTHER", CoinID: "other", Status: "resolved"}}, caps: map[string]Cap{}}
@@ -190,6 +257,7 @@ func TestMissingCapIsCooledPerIDWithoutGlobalWarning(t *testing.T) {
 
 type fakeStore struct {
 	done         bool
+	getMapping   func(string) (Mapping, error)
 	replacements int
 	snapshot     []Mapping
 	mappings     map[string]Mapping
@@ -203,6 +271,9 @@ func (s *fakeStore) ReplaceSnapshot(_ context.Context, mappings []Mapping) error
 	return nil
 }
 func (s *fakeStore) GetMapping(_ context.Context, b string) (Mapping, error) {
+	if s.getMapping != nil {
+		return s.getMapping(b)
+	}
 	m, ok := s.mappings[b]
 	if !ok {
 		return Mapping{}, errors.New("missing")

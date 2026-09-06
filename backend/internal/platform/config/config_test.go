@@ -130,19 +130,6 @@ func TestLoadServerUsesAdministratorConfiguration(t *testing.T) {
 		t.Fatalf("LoadServer() error = %v", err)
 	}
 }
-func TestLoadBootstrap(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://scanner:secret@127.0.0.1:5432/scanner?sslmode=disable")
-	t.Setenv("ADMIN_TELEGRAM_ID", "123456789")
-
-	cfg, err := config.LoadBootstrap()
-	if err != nil {
-		t.Fatalf("LoadBootstrap() error = %v", err)
-	}
-	if cfg.AdminTelegramID != 123456789 {
-		t.Fatalf("AdminTelegramID = %d", cfg.AdminTelegramID)
-	}
-}
-
 func TestLoadDatabaseURLPrefersExplicitURL(t *testing.T) {
 	explicit := "postgres://production:secret@database.example/production?sslmode=require"
 	t.Setenv("DATABASE_URL", explicit)
@@ -176,16 +163,6 @@ func TestLoadDatabaseURLBuildsEscapedURLFromPostgresSettings(t *testing.T) {
 	want := "postgres://scan%40ner:p%3Aa%2Fss%3F%23%25@127.0.0.1:55432/scanner%2Flocal?sslmode=disable"
 	if got != want {
 		t.Fatalf("LoadDatabaseURL() = %q, want %q", got, want)
-	}
-}
-
-func TestLoadBootstrapRejectsInvalidTelegramID(t *testing.T) {
-	t.Setenv("DATABASE_URL", "postgres://scanner:secret@127.0.0.1:5432/scanner?sslmode=disable")
-	t.Setenv("ADMIN_TELEGRAM_ID", "not-an-id")
-
-	_, err := config.LoadBootstrap()
-	if err == nil || err.Error() != "ADMIN_TELEGRAM_ID must be a positive base-10 integer" {
-		t.Fatalf("LoadBootstrap() error = %v", err)
 	}
 }
 

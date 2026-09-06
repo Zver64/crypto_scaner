@@ -8,9 +8,7 @@ make prepare
 make dev
 ```
 
-Compose starts the development stack in watch mode, applies PostgreSQL migrations
-automatically, and creates or re-enables the administrator identified by
-`ADMIN_TELEGRAM_ID`.
+Compose starts the development stack in watch mode and applies PostgreSQL migrations automatically. On normal backend startup, `ADMIN_TELEGRAM_ID` is inserted as an administrator only when no row for that Telegram ID exists. Existing rows—including disabled administrators—are left unchanged; the removed `bootstrap-admin` command is replaced by this automatic insert-only startup provisioning.
 
 `make prepare` installs backend and frontend dependencies and the Git hooks.
 Run the full verification suite with:

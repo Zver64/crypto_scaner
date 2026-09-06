@@ -287,10 +287,12 @@ func validateLegacyMigrationVersion(version int64) error {
 
 func safeError(operation string, err error, databaseURL string) error {
 	message := err.Error()
-	message = strings.ReplaceAll(message, databaseURL, "[REDACTED]")
-	if parsed, parseErr := pgxpool.ParseConfig(databaseURL); parseErr == nil && parsed.ConnConfig.Password != "" {
-		message = strings.ReplaceAll(message, parsed.ConnConfig.Password, "[REDACTED]")
-		message = strings.ReplaceAll(message, url.QueryEscape(parsed.ConnConfig.Password), "[REDACTED]")
+	if databaseURL != "" {
+		message = strings.ReplaceAll(message, databaseURL, "[REDACTED]")
+		if parsed, parseErr := pgxpool.ParseConfig(databaseURL); parseErr == nil && parsed.ConnConfig.Password != "" {
+			message = strings.ReplaceAll(message, parsed.ConnConfig.Password, "[REDACTED]")
+			message = strings.ReplaceAll(message, url.QueryEscape(parsed.ConnConfig.Password), "[REDACTED]")
+		}
 	}
 	return fmt.Errorf("%s: %s", operation, message)
 }

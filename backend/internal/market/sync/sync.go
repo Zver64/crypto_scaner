@@ -50,6 +50,23 @@ type Synchronizer struct {
 
 const defaultWorkerCount = 4
 
+type intervalPolicy struct {
+	inspectionLimit int
+	initialLimit    int
+	repairGaps      bool
+}
+
+func policyForInterval(interval string) intervalPolicy {
+	if interval == "1h" {
+		return intervalPolicy{
+			inspectionLimit: market.SevenDayPriceSlots,
+			initialLimit:    market.SevenDayPriceSlots,
+			repairGaps:      true,
+		}
+	}
+	return intervalPolicy{inspectionLimit: 1, initialLimit: 30}
+}
+
 // ErrSyncInProgress reports that another process-local synchronization owns the run lock.
 var ErrSyncInProgress = errors.New("market synchronization already in progress")
 
@@ -200,25 +217,18 @@ func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instrumen
 }
 
 func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument market.Instrument, profile market.SyncProfile, startedAt time.Time) instrumentResult {
-	historyLimit := 1
-	if profile.Interval == "1h" {
-		historyLimit = market.SevenDayPriceSlots
-	}
-	existing, err := synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, profile.Interval, historyLimit)
+	policy := policyForInterval(profile.Interval)
+	existing, err := synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, profile.Interval, policy.inspectionLimit)
 	if err != nil {
 		return instrumentResult{err: fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)}
 	}
-	initialLimit := 30
-	if profile.Interval == "1h" {
-		initialLimit = market.SevenDayPriceSlots
-	}
-	request := market.CandleRequest{Symbol: instrument.Symbol, Interval: profile.Interval, Limit: initialLimit, ClosedBefore: startedAt}
+	request := market.CandleRequest{Symbol: instrument.Symbol, Interval: profile.Interval, Limit: policy.initialLimit, ClosedBefore: startedAt}
 	if len(existing) > 0 {
 		latest := existing[0].OpenTime
 		request.AfterOpenTime = &latest
 		request.Limit = 1000
 	}
-	if profile.Interval == "1h" {
+	if policy.repairGaps {
 		window := market.SevenDayWindow(startedAt)
 		present := make(map[time.Time]bool, len(existing))
 		for _, candle := range existing {

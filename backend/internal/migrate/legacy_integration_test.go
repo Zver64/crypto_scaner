@@ -23,14 +23,14 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 	}
 	t.Cleanup(db.Close)
 	lockDisposablePostgres(t, db)
-	reset := func() {
+	reset := func(t *testing.T) {
 		t.Helper()
 		if _, err := db.Exec(ctx, `DROP SCHEMA IF EXISTS app CASCADE; DROP SCHEMA IF EXISTS binance_spot CASCADE; DROP TABLE IF EXISTS public.crypto_scanner_schema_versions`); err != nil {
 			t.Fatalf("reset disposable PostgreSQL: %v", err)
 		}
 	}
-	reset()
-	t.Cleanup(reset)
+	reset(t)
+	t.Cleanup(func() { reset(t) })
 	var appSchema, binanceSchema, migrationMetadata bool
 	if err := db.QueryRow(ctx, `SELECT to_regnamespace('app') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL, to_regclass('public.crypto_scanner_schema_versions') IS NOT NULL`).Scan(&appSchema, &binanceSchema, &migrationMetadata); err != nil {
 		t.Fatalf("inspect reset disposable PostgreSQL: %v", err)
@@ -49,7 +49,7 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 	}
 	loadURL := func() (string, error) { return migrationDatabaseURL, nil }
 
-	apply := func(name string) {
+	apply := func(t *testing.T, name string) {
 		t.Helper()
 		sql, err := migrations.Files.ReadFile(name)
 		if err != nil {
@@ -59,7 +59,7 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 			t.Fatalf("execute legacy migration %s: %v", name, err)
 		}
 	}
-	assertLibraryVersion := func(want int64) {
+	assertLibraryVersion := func(t *testing.T, want int64) {
 		t.Helper()
 		var got int64
 		var dirty bool
@@ -70,7 +70,7 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 			t.Fatalf("golang-migrate metadata = version %d dirty %t, want version %d clean", got, dirty, want)
 		}
 	}
-	assertRows := func() {
+	assertRows := func(t *testing.T) {
 		t.Helper()
 		var users, instruments, daily int
 		if err := db.QueryRow(ctx, `SELECT (SELECT COUNT(*) FROM app.users), (SELECT COUNT(*) FROM binance_spot.instruments), (SELECT COUNT(*) FROM binance_spot.candles WHERE interval = '1d')`).Scan(&users, &instruments, &daily); err != nil {
@@ -87,47 +87,47 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 			t.Fatalf("preserved row values = username:%q symbol:%q close:%q", username, symbol, close)
 		}
 	}
-	seedLegacyRows := func() {
+	seedLegacyRows := func(t *testing.T) {
 		t.Helper()
 		if _, err := db.Exec(ctx, `INSERT INTO app.users (telegram_id, username) VALUES (7001, 'legacy-user'); INSERT INTO binance_spot.instruments (symbol, base_asset, quote_asset, exchange_status, is_active) VALUES ('LEGACYUSDT', 'LEGACY', 'USDT', 'TRADING', true); INSERT INTO binance_spot.candles (instrument_id, interval, open_time, close_time, open, high, low, close, volume, quote_asset_volume, trade_count) SELECT id, '1d', '2026-01-01T00:00:00Z', '2026-01-01T23:59:00Z', 100, 110, 90, 105.25, 10, 1000, 7 FROM binance_spot.instruments WHERE symbol = 'LEGACYUSDT'`); err != nil {
 			t.Fatalf("seed legacy rows: %v", err)
 		}
 	}
 
-	t.Run("legacy v1 baseline applies v2 and repeated up is a no-op", func(t *testing.T) {
-		apply("000001_initial.up.sql")
-		seedLegacyRows()
+	t.Run("legacy v1 baseline applies current migrations and repeated up is a no-op", func(t *testing.T) {
+		apply(t, "000001_initial.up.sql")
+		seedLegacyRows(t)
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
 			t.Fatalf("adopt legacy v1 and migrate up: %v", err)
 		}
-		assertLibraryVersion(2)
-		assertRows()
+		assertLibraryVersion(t, 3)
+		assertRows(t)
 		if _, err := db.Exec(ctx, `INSERT INTO binance_spot.candles (instrument_id, interval, open_time, close_time, open, high, low, close, volume, quote_asset_volume, trade_count) SELECT id, '1h', '2026-01-02T00:00:00Z', '2026-01-02T00:59:00Z', 100, 110, 90, 105, 1, 100, 1 FROM binance_spot.instruments WHERE symbol = 'LEGACYUSDT'`); err != nil {
 			t.Fatalf("hourly constraint rejected migrated schema: %v", err)
 		}
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
 			t.Fatalf("repeated migrate up: %v", err)
 		}
-		assertLibraryVersion(2)
-		assertRows()
-		reset()
+		assertLibraryVersion(t, 3)
+		assertRows(t)
+		reset(t)
 	})
 
-	t.Run("legacy v2 adoption and one-step down/up", func(t *testing.T) {
-		apply("000001_initial.up.sql")
-		apply("000002_hourly_candles.up.sql")
+	t.Run("legacy v2 adoption rolls back hourly data only at v2 to v1", func(t *testing.T) {
+		apply(t, "000001_initial.up.sql")
+		apply(t, "000002_hourly_candles.up.sql")
 		if _, err := db.Exec(ctx, "UPDATE app.schema_migrations SET version = 2"); err != nil {
 			t.Fatalf("construct legacy v2 metadata: %v", err)
 		}
-		seedLegacyRows()
+		seedLegacyRows(t)
 		if _, err := db.Exec(ctx, `INSERT INTO binance_spot.candles (instrument_id, interval, open_time, close_time, open, high, low, close, volume, quote_asset_volume, trade_count) SELECT id, '1h', '2026-01-02T00:00:00Z', '2026-01-02T00:59:00Z', 100, 110, 90, 105, 1, 100, 1 FROM binance_spot.instruments WHERE symbol = 'LEGACYUSDT'`); err != nil {
 			t.Fatalf("seed legacy hourly row: %v", err)
 		}
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
 			t.Fatalf("adopt legacy v2: %v", err)
 		}
-		assertLibraryVersion(2)
-		assertRows()
+		assertLibraryVersion(t, 3)
+		assertRows(t)
 		var hourly int
 		if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM binance_spot.candles WHERE interval = '1h'").Scan(&hourly); err != nil || hourly != 1 {
 			t.Fatalf("adopted hourly rows = %d, error = %v", hourly, err)
@@ -135,7 +135,7 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 		if _, err := db.Exec(ctx, `INSERT INTO binance_spot.sync_state (profile_key, status, last_succeeded_at) VALUES ('binance:spot:USDT:1d:UTC', 'succeeded', now()), ('binance:spot:USDT:1h:UTC', 'succeeded', now())`); err != nil {
 			t.Fatalf("seed successful profile states: %v", err)
 		}
-		assertReady := func(want bool) {
+		assertReady := func(t *testing.T, want bool) {
 			t.Helper()
 			var ready bool
 			if err := db.QueryRow(ctx, `SELECT COUNT(DISTINCT profile_key) = 2 FROM binance_spot.sync_state WHERE profile_key IN ('binance:spot:USDT:1d:UTC', 'binance:spot:USDT:1h:UTC') AND last_succeeded_at IS NOT NULL`).Scan(&ready); err != nil {
@@ -145,25 +145,40 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 				t.Fatalf("profile readiness = %t, want %t", ready, want)
 			}
 		}
-		assertReady(true)
+		assertReady(t, true)
+
 		if err := migrate.Run(ctx, []string{"down"}, loadURL); err != nil {
-			t.Fatalf("one-step down from adopted v2: %v", err)
+			t.Fatalf("down from adopted v3 to v2: %v", err)
 		}
-		assertLibraryVersion(1)
-		assertRows()
+		assertLibraryVersion(t, 2)
+		assertRows(t)
+		if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM binance_spot.candles WHERE interval = '1h'").Scan(&hourly); err != nil || hourly != 1 {
+			t.Fatalf("hourly rows after v3 to v2 down = %d, error = %v", hourly, err)
+		}
+		assertReady(t, true)
+
+		if err := migrate.Run(ctx, []string{"down"}, loadURL); err != nil {
+			t.Fatalf("down from v2 to v1: %v", err)
+		}
+		assertLibraryVersion(t, 1)
+		assertRows(t)
 		if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM binance_spot.candles WHERE interval = '1h'").Scan(&hourly); err != nil || hourly != 0 {
-			t.Fatalf("hourly rows after one-step down = %d, error = %v", hourly, err)
+			t.Fatalf("hourly rows after v2 to v1 down = %d, error = %v", hourly, err)
 		}
-		assertReady(false)
+		assertReady(t, false)
+
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
-			t.Fatalf("up after one-step down: %v", err)
+			t.Fatalf("up after v2 to v1 down: %v", err)
 		}
-		assertLibraryVersion(2)
-		assertRows()
-		assertReady(false)
+		assertLibraryVersion(t, 3)
+		assertRows(t)
+		if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM binance_spot.candles WHERE interval = '1h'").Scan(&hourly); err != nil || hourly != 0 {
+			t.Fatalf("hourly rows after returning to v3 = %d, error = %v", hourly, err)
+		}
+		assertReady(t, false)
 		if _, err := db.Exec(ctx, `INSERT INTO binance_spot.sync_state (profile_key, status, last_succeeded_at) VALUES ('binance:spot:USDT:1h:UTC', 'succeeded', now())`); err != nil {
 			t.Fatalf("record hourly resynchronization: %v", err)
 		}
-		assertReady(true)
+		assertReady(t, true)
 	})
 }

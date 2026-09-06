@@ -50,6 +50,49 @@ func TestPostgresStoreContracts(t *testing.T) {
 		t.Fatal("fresh migrated database should be reachable and current but have no successful sync")
 	}
 
+	t.Run("administrator bootstrap inserts once and preserves existing rows", func(t *testing.T) {
+		const adminID int64 = 301
+		t.Cleanup(func() {
+			if _, err := db.Exec(ctx, `DELETE FROM app.users WHERE telegram_id = $1`, adminID); err != nil {
+				t.Errorf("clean administrator fixture: %v", err)
+			}
+		})
+		// Concurrent starts must create only one enabled administrator.
+		results := make(chan error, 8)
+		for range cap(results) {
+			go func() { results <- store.BootstrapAdministrator(ctx, adminID) }()
+		}
+		for range cap(results) {
+			if err := <-results; err != nil {
+				t.Errorf("bootstrap administrator: %v", err)
+			}
+		}
+		var count int
+		if err := db.QueryRow(ctx, `SELECT count(*) FROM app.users WHERE telegram_id = $1 AND is_enabled`, adminID).Scan(&count); err != nil || count != 1 {
+			t.Fatalf("created administrators = %d, error = %v", count, err)
+		}
+		for _, enabled := range []bool{true, false} {
+			if _, err := db.Exec(ctx, `UPDATE app.users SET username = 'existing-admin', display_name = 'Existing Admin', is_enabled = $2, created_at = '2024-01-01', updated_at = '2024-02-01' WHERE telegram_id = $1`, adminID, enabled); err != nil {
+				t.Fatal(err)
+			}
+			var before, after string
+			if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = $1`, adminID).Scan(&before); err != nil {
+				t.Fatal(err)
+			}
+			for range 2 {
+				if err := store.BootstrapAdministrator(ctx, adminID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = $1`, adminID).Scan(&after); err != nil {
+				t.Fatal(err)
+			}
+			if after != before {
+				t.Errorf("bootstrap changed existing administrator (enabled=%t): before=%s after=%s", enabled, before, after)
+			}
+		}
+	})
+
 	t.Run("enabled user lookup", func(t *testing.T) {
 		if _, err := db.Exec(ctx, `INSERT INTO app.users (telegram_id, username, display_name, is_enabled) VALUES (101, 'alice', 'Alice', true), (102, 'bob', 'Bob', false)`); err != nil {
 			t.Fatalf("seed users: %v", err)

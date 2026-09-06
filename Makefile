@@ -6,7 +6,7 @@ prepare:
 	go -C .tools tool lefthook install
 
 check:
-	test -z "$$(gofmt -l $$(git ls-files 'backend/*.go'))"
+	test -z "$$(gofmt -l $$(find backend -type f -name '*.go'))"
 	go -C backend vet ./...
 	go -C backend test ./...
 	npm -C frontend run quality

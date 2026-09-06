@@ -62,6 +62,9 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	}
 
 	wantRelations := []string{
+		"app.coingecko_asset_mappings",
+		"app.coingecko_mapping_bootstrap",
+		"app.coingecko_market_caps",
 		"app.schema_migrations",
 		"app.users",
 		"binance_spot.candles",
@@ -99,7 +102,10 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 		"candles_high_valid", "candles_instrument_id_fkey", "candles_low_valid",
 		"candles_open_positive", "candles_pkey", "candles_quote_volume_nonnegative",
 		"candles_supported_interval", "candles_time_order", "candles_trade_count_nonnegative",
-		"candles_volume_nonnegative", "instruments_base_nonempty", "instruments_pkey",
+		"candles_volume_nonnegative", "coingecko_asset_mappings_pkey",
+		"coingecko_asset_mappings_status_check", "coingecko_mapping_bootstrap_id_check",
+		"coingecko_mapping_bootstrap_pkey", "coingecko_market_caps_market_cap_usd_check",
+		"coingecko_market_caps_pkey", "instruments_base_nonempty", "instruments_pkey",
 		"instruments_quote_nonempty", "instruments_symbol_key", "instruments_symbol_nonempty",
 		"schema_migrations_pkey", "sync_state_pkey", "sync_state_status", "users_pkey",
 		"users_telegram_id_key",
@@ -154,25 +160,37 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 		t.Fatalf("migrate down: %v", err)
 	}
 
-	var operatorTable, usersTable, remainingBinanceSchema bool
+	var operatorTable, usersTable, remainingBinanceSchema, marketCapTables bool
 	if err := db.QueryRow(ctx, `
 		SELECT to_regclass('app.operator_owned') IS NOT NULL,
 		       to_regclass('app.users') IS NOT NULL,
-		       to_regnamespace('binance_spot') IS NOT NULL
-	`).Scan(&operatorTable, &usersTable, &remainingBinanceSchema); err != nil {
-		t.Fatalf("inspect rollback: %v", err)
+		       to_regnamespace('binance_spot') IS NOT NULL,
+		       to_regclass('app.coingecko_mapping_bootstrap') IS NOT NULL
+		       OR to_regclass('app.coingecko_asset_mappings') IS NOT NULL
+		       OR to_regclass('app.coingecko_market_caps') IS NOT NULL
+	`).Scan(&operatorTable, &usersTable, &remainingBinanceSchema, &marketCapTables); err != nil {
+		t.Fatalf("inspect v3 to v2 rollback: %v", err)
 	}
-	if !operatorTable || !usersTable || !remainingBinanceSchema {
-		t.Fatalf("rollback ownership: operator=%t users=%t binance_schema=%t", operatorTable, usersTable, remainingBinanceSchema)
+	if !operatorTable || !usersTable || !remainingBinanceSchema || marketCapTables {
+		t.Fatalf("v3 to v2 rollback ownership: operator=%t users=%t binance_schema=%t market_cap_tables=%t", operatorTable, usersTable, remainingBinanceSchema, marketCapTables)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
-		t.Fatalf("migrate initial schema down: %v", err)
+		t.Fatalf("migrate v2 to v1 down: %v", err)
 	}
 	if err := db.QueryRow(ctx, `SELECT to_regclass('app.operator_owned') IS NOT NULL, to_regclass('app.users') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&operatorTable, &usersTable, &remainingBinanceSchema); err != nil {
-		t.Fatalf("inspect initial rollback: %v", err)
+		t.Fatalf("inspect v2 to v1 rollback: %v", err)
+	}
+	if !operatorTable || !usersTable || !remainingBinanceSchema {
+		t.Fatalf("v2 to v1 rollback ownership: operator=%t users=%t binance_schema=%t", operatorTable, usersTable, remainingBinanceSchema)
+	}
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("migrate v1 down: %v", err)
+	}
+	if err := db.QueryRow(ctx, `SELECT to_regclass('app.operator_owned') IS NOT NULL, to_regclass('app.users') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&operatorTable, &usersTable, &remainingBinanceSchema); err != nil {
+		t.Fatalf("inspect v1 rollback: %v", err)
 	}
 	if !operatorTable || usersTable || remainingBinanceSchema {
-		t.Fatalf("initial rollback ownership: operator=%t users=%t binance_schema=%t", operatorTable, usersTable, remainingBinanceSchema)
+		t.Fatalf("v1 rollback ownership: operator=%t users=%t binance_schema=%t", operatorTable, usersTable, remainingBinanceSchema)
 	}
 
 	if _, err := db.Exec(ctx, "DROP TABLE app.operator_owned; DROP SCHEMA app"); err != nil {
@@ -183,6 +201,9 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate absent schemas down: %v", err)
+	}
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("migrate absent schemas v2 down: %v", err)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate absent schemas initial down: %v", err)
@@ -209,13 +230,13 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate pre-existing schemas up: %v", err)
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 3 WHERE version = 2"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 4 WHERE version = 3"); err != nil {
 		t.Fatalf("create future migration metadata: %v", err)
 	}
 	if err := postgres.VerifySchema(ctx, db, databaseURL); err == nil {
 		t.Fatal("VerifySchema() accepted future migration metadata")
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 2 WHERE version = 3"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 3 WHERE version = 4"); err != nil {
 		t.Fatalf("restore current migration metadata: %v", err)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
@@ -226,6 +247,9 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	}
 	if !appSchema || !binanceSchema {
 		t.Fatalf("pre-existing schemas removed on down: app=%t binance_spot=%t", appSchema, binanceSchema)
+	}
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("migrate pre-existing schemas v2 down: %v", err)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate pre-existing schemas initial down: %v", err)

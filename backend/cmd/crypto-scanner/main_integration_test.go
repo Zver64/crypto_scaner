@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -101,21 +102,42 @@ func TestNormalServerStartupBootstrapsConfiguredAdministrator(t *testing.T) {
 	if databaseURL == "" || os.Getenv("CRYPTO_SCANNER_TEST_DATABASE_RESET_OK") != "1" {
 		t.Skip("set CRYPTO_SCANNER_TEST_DATABASE_URL to a disposable empty database and CRYPTO_SCANNER_TEST_DATABASE_RESET_OK=1")
 	}
+	// Keep real database/startup behavior, but never contact external APIs.
+	// This test is deliberately not parallel because it replaces the default transport.
+	transport := http.DefaultTransport
+	http.DefaultTransport = startupTransport{}
+	t.Cleanup(func() { http.DefaultTransport = transport })
 	ctx := context.Background()
+	db, err := postgres.Open(ctx, databaseURL)
+	if err != nil {
+		t.Fatalf("open disposable PostgreSQL: %v", err)
+	}
+	t.Cleanup(db.Close)
+	lock, err := db.Acquire(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Share the integration lock with the storage and migration test packages.
+	const integrationLock int64 = 739184027451
+	if _, err := lock.Exec(ctx, "SELECT pg_advisory_lock($1)", integrationLock); err != nil {
+		lock.Release()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if _, err := lock.Exec(ctx, "SELECT pg_advisory_unlock($1)", integrationLock); err != nil {
+			t.Errorf("release integration lock: %v", err)
+		}
+		lock.Release()
+	})
+	t.Cleanup(func() {
+		if _, err := db.Exec(ctx, `DROP SCHEMA IF EXISTS app CASCADE; DROP SCHEMA IF EXISTS binance_spot CASCADE; DROP TABLE IF EXISTS public.crypto_scanner_schema_versions`); err != nil {
+			t.Errorf("reset disposable PostgreSQL: %v", err)
+		}
+	})
 	loadDatabaseURL := func() (string, error) { return databaseURL, nil }
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate disposable PostgreSQL: %v", err)
 	}
-	t.Cleanup(func() {
-		if err := migrate.Run(context.Background(), []string{"down"}, loadDatabaseURL); err != nil {
-			t.Errorf("reset disposable PostgreSQL: %v", err)
-		}
-	})
-	db, err := postgres.OpenVerified(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("open verified PostgreSQL: %v", err)
-	}
-	t.Cleanup(db.Close)
 
 	updatedAt := time.Date(2024, time.March, 4, 5, 6, 7, 0, time.UTC)
 	if _, err := db.Exec(ctx, `
@@ -125,24 +147,32 @@ func TestNormalServerStartupBootstrapsConfiguredAdministrator(t *testing.T) {
 		t.Fatalf("seed disabled user: %v", err)
 	}
 
-	address := availableAddress(t)
-	serverCtx, cancel := context.WithCancel(ctx)
-	defer cancel()
 	cfg := config.ServerConfig{
 		DatabaseURL:      databaseURL,
 		TelegramBotToken: "123456:test-token",
 		AdminTelegramID:  111,
-		HTTPAddress:      address,
 		ShutdownTimeout:  time.Second,
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	result := make(chan error, 1)
-	go func() { result <- run(serverCtx, cfg, logger) }()
-	waitUntilListening(t, address, result)
-	cancel()
-	if err := <-result; err != nil {
-		t.Fatalf("stop normal server: %v", err)
+	startAndStop := func() {
+		t.Helper()
+		serverCtx, cancel := context.WithCancel(ctx)
+		defer cancel()
+		cfg.HTTPAddress = availableAddress(t)
+		result := make(chan error, 1)
+		go func() { result <- run(serverCtx, cfg, logger) }()
+		waitUntilListening(t, cfg.HTTPAddress, result)
+		cancel()
+		select {
+		case err := <-result:
+			if err != nil {
+				t.Fatalf("stop normal server: %v", err)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("normal server did not stop")
+		}
 	}
+	startAndStop()
 
 	var count int
 	var username, displayName string
@@ -162,6 +192,47 @@ func TestNormalServerStartupBootstrapsConfiguredAdministrator(t *testing.T) {
 	if err := db.QueryRow(ctx, `SELECT is_enabled FROM app.users WHERE telegram_id = 111`).Scan(&administratorEnabled); err != nil || !administratorEnabled {
 		t.Fatalf("configured administrator was not bootstrapped: enabled=%t error=%v", administratorEnabled, err)
 	}
+	for _, enabled := range []bool{true, false} {
+		if _, err := db.Exec(ctx, `UPDATE app.users SET username = 'admin', display_name = 'Existing Admin', is_enabled = $1, created_at = $2, updated_at = $2 WHERE telegram_id = 111`, enabled, updatedAt); err != nil {
+			t.Fatal(err)
+		}
+		var before, after string
+		if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = 111`).Scan(&before); err != nil {
+			t.Fatal(err)
+		}
+		startAndStop()
+		if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = 111`).Scan(&after); err != nil {
+			t.Fatal(err)
+		}
+		if after != before {
+			t.Fatalf("restart changed existing administrator (enabled=%t): before=%s after=%s", enabled, before, after)
+		}
+	}
+}
+
+type startupTransport struct{}
+
+func (startupTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	// Consume and close uploads like a real transport, including Telegram's
+	// pipe-backed multipart body, so its writer is not left blocked at shutdown.
+	if request.Body != nil {
+		_, err := io.Copy(io.Discard, request.Body)
+		_ = request.Body.Close()
+		if err != nil {
+			return nil, err
+		}
+	}
+	if request.URL.Host == "api.telegram.org" && strings.HasSuffix(request.URL.Path, "/getMe") {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     make(http.Header),
+			Body:       io.NopCloser(strings.NewReader(`{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Test","username":"test_bot"}}`)),
+			Request:    request,
+		}, nil
+	}
+	// Polling, market discovery and CoinGecko bootstrap wait for shutdown.
+	<-request.Context().Done()
+	return nil, request.Context().Err()
 }
 
 func availableAddress(t *testing.T) string {

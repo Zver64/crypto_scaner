@@ -1,24 +1,39 @@
 name: crypto-scanner
 
+x-logging: &default-logging
+  driver: local
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:18-alpine
-    env_file: .env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     restart: unless-stopped
+    logging: *default-logging
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
       retries: 20
+      start_period: 5s
     volumes:
       - postgres-data:/var/lib/postgresql
 
   migrate:
-    image: ${BACKEND_IMAGE}
-    env_file: .env
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     environment:
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    logging: *default-logging
     depends_on:
       postgres:
         condition: service_healthy
@@ -27,28 +42,42 @@ services:
     restart: "no"
 
   backend:
-    image: ${BACKEND_IMAGE}
+    image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     env_file: .env
     environment:
       HTTP_ADDRESS: 0.0.0.0:8080
       POSTGRES_HOST: postgres
       POSTGRES_PORT: "5432"
+      DATABASE_URL: ${DATABASE_URL:-}
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     depends_on:
       migrate:
         condition: service_completed_successfully
     restart: unless-stopped
+    stop_grace_period: ${BACKEND_STOP_GRACE_PERIOD:-30s}
+    logging: *default-logging
     healthcheck:
       test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:8080/health/live"]
       interval: 5s
       timeout: 3s
       retries: 12
+      start_period: 10s
 
   frontend:
-    image: ${FRONTEND_IMAGE}
+    image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
     depends_on:
       backend:
         condition: service_healthy
     restart: unless-stopped
+    logging: *default-logging
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:8080/"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
     ports:
       - "${WEB_BIND_ADDRESS:-127.0.0.1:8081}:8080"
 

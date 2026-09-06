@@ -17,6 +17,23 @@ Run the full verification suite with:
 make check
 ```
 
+## Docker Compose operations
+
+`compose.production.yaml` is a standalone production deployment file, not an
+overlay for `compose.yaml`. Set `BACKEND_IMAGE` and `FRONTEND_IMAGE`, along with
+the required PostgreSQL settings, before deploying it.
+
+Production services use Docker's `local` logging driver with rotation (10 MiB
+per file, three files) to bound container log disk use. The backend gets a
+30-second Compose stop grace period by default; override
+`BACKEND_STOP_GRACE_PERIOD` only with a value greater than `SHUTDOWN_TIMEOUT`
+(the application default is 15 seconds).
+
+See Docker's references for
+[stop grace periods](https://docs.docker.com/reference/compose-file/services/#stop_grace_period),
+[logging configuration](https://docs.docker.com/engine/logging/configure/), and
+[Compose interpolation](https://docs.docker.com/reference/compose-file/interpolation/).
+
 ## Git hooks
 
 Lefthook is a repository-local Go tool, declared in [`.tools/go.mod`](.tools/go.mod)

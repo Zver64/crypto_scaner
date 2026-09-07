@@ -37,7 +37,7 @@ export function MarketScanForm({
 	onRefresh,
 }: MarketScanFormProps) {
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
-	const inputSize = useMatches({ base: "xs", sm: "sm" });
+	const inputSize = "md";
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const form = useForm<MarketScanDraft>({
 		initialValues: committedCriteria ?? defaultMarketScanCriteria,

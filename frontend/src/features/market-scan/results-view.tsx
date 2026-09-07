@@ -68,7 +68,7 @@ export function MarketScanResults({
 				<TextInput
 					aria-label="Filter current Scan Result by symbol"
 					label="Symbol filter"
-					size={textSize}
+					size="md"
 					onChange={(event) => setSymbolFilter(event.currentTarget.value)}
 					placeholder="e.g. BTC"
 					value={symbolFilter}

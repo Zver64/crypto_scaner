@@ -53,6 +53,7 @@ it("renders separate mandatory volatility controls without a mode selector", () 
 	expect(html).toContain("Daily Volatility");
 	expect(html).toContain('data-size="h3"');
 	expect(html).toContain('data-size="xs"');
+	expect(html).toContain('data-size="md"');
 	expect(html).toContain("Hourly Volatility");
 	expect(html).toContain("Market Cap");
 	expect(html).toContain('value="30"');

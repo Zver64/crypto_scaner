@@ -7,7 +7,7 @@ Telegram Mini App for scanning cryptocurrency markets and analyzing instruments.
 - `backend/`: Go HTTP API, Telegram authentication, market synchronization, analysis criteria, PostgreSQL storage, migrations, and service commands.
 - `frontend/`: React Telegram Mini App built with Vite and TanStack Router.
 - `docs/agents/`: repository-specific configuration consumed by engineering skills.
-- `compose.yaml`: complete local development stack.
+- `compose.yaml`: local PostgreSQL, migrations, and backend development stack (frontend runs on the host).
 - `compose.production.yaml`: production deployment stack.
 
 Instructions in `frontend/AGENTS.md` also apply when working under `frontend/`.
@@ -24,10 +24,12 @@ Copy `.env.example` to `.env`, then run:
 
 ```sh
 make prepare
-make dev
+docker compose up
 ```
 
-The development stack starts PostgreSQL, applies migrations, starts the backend on `127.0.0.1:8080`, and serves the frontend on `127.0.0.1:3000`. On normal backend startup, the configured `ADMIN_TELEGRAM_ID` is inserted only when absent; all existing administrator rows remain untouched.
+In a separate terminal, run `npm -C frontend run dev` to serve the frontend on the host at `127.0.0.1:3000`.
+
+The Compose development stack starts PostgreSQL, applies migrations, and starts the backend on `127.0.0.1:8080`. The frontend is not included in development Compose. Use `docker compose up --watch` for automatic backend rebuilds on file changes. On normal backend startup, the configured `ADMIN_TELEGRAM_ID` is inserted only when absent; all existing administrator rows remain untouched.
 
 Use `make migrate-up` and `make migrate-down` for manual migration control.
 

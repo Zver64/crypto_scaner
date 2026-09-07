@@ -1,4 +1,4 @@
-.PHONY: prepare check dev migrate-up migrate-down
+.PHONY: prepare check migrate-up migrate-down
 
 prepare:
 	go -C backend mod download
@@ -11,9 +11,6 @@ check:
 	go -C backend test ./...
 	npm -C frontend run quality
 	npm -C frontend run test
-
-dev:
-	docker compose up --watch
 
 migrate-up:
 	go -C backend run ./cmd/migrate up

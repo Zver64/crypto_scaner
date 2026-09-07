@@ -6,7 +6,7 @@ backend. The files use the JetBrains HTTP format supported by
 
 ## Setup
 
-From the repository root, run `make prepare` and `make dev`. Compose starts the
+From the repository root, run `make prepare` and `docker compose up`. Compose starts the
 backend and applies database migrations automatically.
 
 For authenticated analysis requests, create the ignored private environment

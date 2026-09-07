@@ -65,44 +65,5 @@ services:
         - action: rebuild
           path: ./backend
 
-  frontend:
-    init: true
-    build:
-      context: ./frontend
-      target: development
-    environment:
-      VITE_API_PROXY_TARGET: http://backend:8080
-    volumes:
-      - type: bind
-        source: ./.env
-        target: /workspace/.env
-        read_only: true
-        bind:
-          create_host_path: false
-    depends_on:
-      backend:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:3000:3000"
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:3000/"]
-      interval: 5s
-      timeout: 3s
-      retries: 12
-      start_period: 10s
-    develop:
-      watch:
-        - action: sync
-          path: ./frontend
-          target: /workspace/frontend
-          initial_sync: true
-          ignore:
-            - dist/
-            - node_modules/
-        - action: rebuild
-          path: ./frontend/package.json
-        - action: rebuild
-          path: ./frontend/package-lock.json
-
 volumes:
   postgres-data:

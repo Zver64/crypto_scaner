@@ -19,12 +19,14 @@ import { ApiError, type CriterionSelection } from "@/api/client";
 import { useInstrumentAnalysisQuery } from "@/api/instrument-analysis";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { useTelegramBackButton } from "@/app/telegram";
+import { PercentChange } from "@/components/percent-change";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 import { formatRangePercent } from "@/utils/range-percent";
+import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
 
 const rangeStatistics = [
 	{
@@ -76,6 +78,9 @@ export function InstrumentAnalysisScreen({
 
 	const result = query.data;
 	const marketCap = result && marketCapEvaluation(result.evaluations);
+	const sevenDayChange = result
+		? sevenDayChangePercent(result.price_history)
+		: null;
 
 	const statistics = rangeStatistics.map((statistic) => {
 		const { key } = statistic;
@@ -136,6 +141,14 @@ export function InstrumentAnalysisScreen({
 											<Text size={textSize}>Market Cap</Text>
 											<Text fw={700} size={textSize} ta="right">
 												{formatMarketCapUsd(marketCap.marketCapUsd)}
+											</Text>
+										</Group>
+									) : null}
+									{result ? (
+										<Group justify="space-between" wrap="nowrap">
+											<Text size={textSize}>7d change percent</Text>
+											<Text fw={700} size={textSize} ta="right">
+												<PercentChange value={sevenDayChange} />
 											</Text>
 										</Group>
 									) : null}

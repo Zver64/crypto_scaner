@@ -169,6 +169,24 @@ it("shows keyed ranges and complete sample coverage with non-default scan settin
 	expect(html).not.toContain("Instrument Analysis");
 });
 
+it("shows the seven-day change percent from price history", () => {
+	const priceHistory = Array<number | null>(169).fill(null);
+	priceHistory[0] = 100;
+	priceHistory[168] = 112.345;
+
+	const html = renderAnalysis({
+		evaluations: [],
+		matched: true,
+		price_history: priceHistory,
+		price_history_window: priceHistoryWindow,
+		symbol: "BTCUSDT",
+		warnings: [],
+	});
+
+	expect(html.replace(/<[^>]*>/g, "")).toContain("7d change percent12.3%");
+	expect(html).toContain("mantine-color-green-6");
+});
+
 it("keeps the summary visible when volatility short-circuits market cap", () => {
 	const html = renderAnalysis({
 		evaluations: [

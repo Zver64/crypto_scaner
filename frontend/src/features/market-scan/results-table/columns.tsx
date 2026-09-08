@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import type { PriceHistoryWindow, UnresolvedInstrument } from "@/api/client";
 import type { DataTableColumn } from "@/components/data-table";
+import { PercentChange } from "@/components/percent-change";
 import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
 import { BinanceLink } from "@/features/market-scan/results-table/binance-link";
 import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
@@ -75,18 +76,7 @@ export const marketScanColumns = [
 	{
 		key: marketScanColumnKeys.sevenDayChangePercent,
 		header: "7d change percent",
-		cell: (row) => {
-			const change = row.sevenDayChangePercent;
-			if (change === null) return "—";
-
-			const color =
-				change > 0
-					? "var(--mantine-color-green-6)"
-					: change < 0
-						? "var(--mantine-color-red-6)"
-						: undefined;
-			return <span style={{ color }}>{formatRangePercent(change)}</span>;
-		},
+		cell: (row) => <PercentChange value={row.sevenDayChangePercent} />,
 		sortable: true,
 	},
 	{

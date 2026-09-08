@@ -16,8 +16,8 @@ func TestPolicyForInterval(t *testing.T) {
 			name:     "hourly",
 			interval: "1h",
 			want: intervalPolicy{
-				inspectionLimit: market.SevenDayPriceSlots,
-				initialLimit:    market.SevenDayPriceSlots,
+				inspectionLimit: market.ThirtyDayPriceSlots,
+				initialLimit:    market.ThirtyDayPriceSlots,
 				repairGaps:      true,
 			},
 		},

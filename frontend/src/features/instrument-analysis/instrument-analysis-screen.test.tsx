@@ -18,17 +18,29 @@ import {
 } from "@/features/market-scan/pipeline";
 
 const priceHistoryWindow = {
-	from: "2026-08-26T23:00:00Z",
+	from: "2026-08-03T23:00:00Z",
 	to: "2026-09-02T23:00:00Z",
 };
 
 type RenderedInstrumentAnalysis = Omit<
 	InstrumentAnalysisResult,
-	"price_history" | "price_history_window"
+	"candle_history" | "price_history_window"
 > &
 	Partial<
-		Pick<InstrumentAnalysisResult, "price_history" | "price_history_window">
+		Pick<InstrumentAnalysisResult, "candle_history" | "price_history_window">
 	>;
+
+function priceCandle(close: number, slot: number) {
+	return {
+		close,
+		high: close + 1,
+		low: close - 1,
+		open: close - 0.5,
+		open_time: new Date(
+			Date.parse(priceHistoryWindow.from) + slot * 3_600_000,
+		).toISOString(),
+	};
+}
 
 function renderAnalysis(
 	result: RenderedInstrumentAnalysis | undefined,
@@ -44,7 +56,7 @@ function renderAnalysis(
 	});
 	if (result)
 		client.setQueryData(instrumentAnalysisQueryKey("BTCUSDT", selections), {
-			price_history: Array(169).fill(null),
+			candle_history: Array(721).fill(null),
 			price_history_window: priceHistoryWindow,
 			...result,
 		});
@@ -170,14 +182,14 @@ it("shows keyed ranges and complete sample coverage with non-default scan settin
 });
 
 it("shows the seven-day change percent from price history", () => {
-	const priceHistory = Array<number | null>(169).fill(null);
-	priceHistory[0] = 100;
-	priceHistory[168] = 112.345;
+	const candleHistory = Array(721).fill(null);
+	candleHistory[552] = priceCandle(100, 552);
+	candleHistory[720] = priceCandle(112.345, 720);
 
 	const html = renderAnalysis({
 		evaluations: [],
 		matched: true,
-		price_history: priceHistory,
+		candle_history: candleHistory,
 		price_history_window: priceHistoryWindow,
 		symbol: "BTCUSDT",
 		warnings: [],
@@ -316,9 +328,9 @@ it.each([
 		to: "2026-08-30T00:00:00Z",
 	};
 	stubJSONResponse({
+		candle_history: Array(721).fill(null),
 		evaluations: [evaluation],
 		matched: false,
-		price_history: Array(169).fill(null),
 		price_history_window: priceHistoryWindow,
 		symbol: "BTCUSDT",
 		warnings: [],
@@ -355,7 +367,7 @@ it("shows the enlarged history chart without hiding valid information when histo
 			},
 		],
 		matched: true,
-		price_history: Array(169).fill(null),
+		candle_history: Array(721).fill(null),
 		price_history_window: priceHistoryWindow,
 		symbol: "BTCUSDT",
 		warnings: [],
@@ -369,7 +381,7 @@ it("shows the enlarged history chart without hiding valid information when histo
 	expect(text).toContain("Daily Grid Step2%");
 	expect(text).toContain("Hourly Grid Step1%");
 	expect(text).toContain("Seven-day Price History");
-	expect(html).toContain("No hourly price history");
+	expect(html).toContain("No hourly candle history");
 });
 
 it("shows unavailable recommendations for canonical insufficient_data without inventing coverage", async () => {
@@ -451,7 +463,7 @@ it("preserves valid analysis content when a refresh returns insufficient_data", 
 			},
 		],
 		matched: false,
-		price_history: Array(169).fill(null),
+		candle_history: Array(721).fill(null),
 		price_history_window: priceHistoryWindow,
 		symbol: "BTCUSDT",
 		warnings: [

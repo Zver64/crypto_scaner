@@ -11,17 +11,17 @@ import (
 	marketsync "crypto-scanner/internal/market/sync"
 )
 
-func TestHourlySyncLoadsSevenDaysOfClosedPrices(t *testing.T) {
+func TestHourlySyncLoadsThirtyDaysOfClosedPrices(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
-		exchange := &historyExchange{instrument: instrument, candles: hourlyCandles(170)}
+		exchange := &historyExchange{instrument: instrument, candles: hourlyCandles(722)}
 		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}}
 		if err := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.HourlyProfile()).Sync(t.Context()); err != nil {
 			t.Fatal(err)
 		}
 		got, _ := store.ListLatestCandlesByInterval(t.Context(), 1, "1h", 1000)
-		if len(got) != 169 || !got[0].OpenTime.Equal(time.Now().Add(-time.Hour)) || !got[168].OpenTime.Equal(time.Now().Add(-169*time.Hour)) {
-			t.Fatalf("wanted 169 closed prices spanning 168 hours, got %d candles", len(got))
+		if len(got) != 721 || !got[0].OpenTime.Equal(time.Now().Add(-time.Hour)) || !got[720].OpenTime.Equal(time.Now().Add(-721*time.Hour)) {
+			t.Fatalf("wanted 721 closed prices spanning 720 hours, got %d candles", len(got))
 		}
 	})
 }
@@ -31,16 +31,16 @@ func TestHourlySyncRepairsExistingShortAndGappedHistory(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
-				all := hourlyCandles(170)
-				stored := append([]market.Candle(nil), all[109:169]...)
-				want := 169
+				all := hourlyCandles(722)
+				stored := append([]market.Candle(nil), all[661:721]...)
+				want := 721
 				switch scenario {
 				case "internal gap":
-					stored = append(append([]market.Candle(nil), all[:80]...), all[81:169]...)
+					stored = append(append([]market.Candle(nil), all[:350]...), all[351:721]...)
 				case "stale":
 					stored = append([]market.Candle(nil), all[10:50]...)
 				case "new listing":
-					all = all[120:]
+					all = all[672:]
 					stored = nil
 					want = 49
 				case "paginated outage":

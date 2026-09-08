@@ -45,7 +45,7 @@ func analyzeSymbol(service Analysis) http.HandlerFunc {
 			writeAnalysisError(response, err, request.PathValue("symbol"))
 			return
 		}
-		writeJSON(response, http.StatusOK, symbolResponse{Symbol: result.Symbol, Matched: result.Matched, Evaluations: responseEvaluations(result.Evaluations), PriceHistory: result.PriceHistory, PriceHistoryWindow: result.PriceHistoryWindow, Warnings: responseWarnings(result.Warnings)})
+		writeJSON(response, http.StatusOK, symbolResponse{Symbol: result.Symbol, Matched: result.Matched, Evaluations: responseEvaluations(result.Evaluations), CandleHistory: result.CandleHistory, PriceHistoryWindow: result.PriceHistoryWindow, Warnings: responseWarnings(result.Warnings)})
 	}
 }
 
@@ -160,7 +160,7 @@ type evaluationResponse struct {
 	To          time.Time          `json:"to"`
 }
 type symbolResponse struct {
-	PriceHistory       []*float64                `json:"price_history"`
+	CandleHistory      []*market.HourlyCandle    `json:"candle_history"`
 	PriceHistoryWindow market.PriceHistoryWindow `json:"price_history_window"`
 	Symbol             string                    `json:"symbol"`
 	Matched            bool                      `json:"matched"`

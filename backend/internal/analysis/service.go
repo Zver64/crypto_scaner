@@ -18,6 +18,7 @@ type Store interface {
 	GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error)
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
 	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
+	ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error)
 	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
 }
 
@@ -26,7 +27,7 @@ type SymbolRequest struct {
 	Criteria []CriterionConfig
 }
 type SymbolResult struct {
-	PriceHistory       []*float64
+	CandleHistory      []*market.HourlyCandle
 	PriceHistoryWindow market.PriceHistoryWindow
 	Symbol             string
 	Matched            bool
@@ -81,7 +82,7 @@ func NewService(store Store, factories ...Factory) (*Service, error) {
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
-	window := market.SevenDayWindow(time.Now())
+	window := market.ThirtyDayWindow(time.Now())
 	criteria, requirements, err := service.prepare(request.Criteria)
 	if err != nil {
 		return SymbolResult{}, err
@@ -99,11 +100,11 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 			if err != nil {
 				return SymbolResult{}, fmt.Errorf("analyze %s: %w", request.Symbol, err)
 			}
-			histories, err := service.priceHistories(ctx, []market.Instrument{instrument}, window)
+			history, err := service.candleHistory(ctx, instrument, window)
 			if err != nil {
 				return SymbolResult{}, err
 			}
-			result.PriceHistory = histories[instrument.ID]
+			result.CandleHistory = history
 			result.PriceHistoryWindow = window
 			return result, nil
 		}

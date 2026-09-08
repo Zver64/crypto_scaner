@@ -16,21 +16,28 @@ export interface Evaluation {
 	to: string;
 }
 
+export interface PriceCandle {
+	close: number;
+	high: number;
+	low: number;
+	open: number;
+	open_time: string;
+}
+
 export interface InstrumentAnalysisResult {
+	candle_history: (PriceCandle | null)[];
 	evaluations: Evaluation[];
 	matched: boolean;
-	price_history: (number | null)[];
 	price_history_window: PriceHistoryWindow;
 	symbol: string;
 	warnings: Warning[];
 }
 
-export interface MarketScanItem
-	extends Omit<
-		InstrumentAnalysisResult,
-		"price_history" | "price_history_window" | "warnings"
-	> {
+export interface MarketScanItem {
+	evaluations: Evaluation[];
+	matched: boolean;
 	price_history: (number | null)[];
+	symbol: string;
 }
 
 export interface PriceHistoryWindow {
@@ -193,11 +200,16 @@ function parseInstrumentAnalysisResult(
 		throw new ApiError("unexpected_error");
 	}
 
+	const window = parsePriceHistoryWindow(
+		payload.price_history_window,
+		undefined,
+		720,
+	);
 	return {
+		candle_history: parseCandleHistory(payload.candle_history, window),
 		evaluations: payload.evaluations.map(parseEvaluation),
 		matched: payload.matched,
-		price_history: parsePriceHistory(payload.price_history),
-		price_history_window: parsePriceHistoryWindow(payload.price_history_window),
+		price_history_window: window,
 		symbol: payload.symbol,
 		warnings: payload.warnings.map(parseWarning),
 	};
@@ -253,7 +265,10 @@ function parseMarketScanResult(payload: unknown): MarketScanResult {
 		insufficient_data_count: payload.insufficient_data_count,
 		items,
 		matched_count: payload.matched_count,
-		price_history_window: parsePriceHistoryWindow(payload.price_history_window),
+		price_history_window: parsePriceHistoryWindow(
+			payload.price_history_window,
+			168,
+		),
 		unresolved: payload.unresolved.map(parseUnresolvedInstrument),
 		warnings: payload.warnings.map(parseWarning),
 	};
@@ -320,6 +335,40 @@ function parseMarketScanItem(payload: unknown): MarketScanItem {
 	};
 }
 
+function parseCandleHistory(
+	payload: unknown,
+	window: PriceHistoryWindow,
+): (PriceCandle | null)[] {
+	const from = Date.parse(window.from);
+	const expectedSlots = (Date.parse(window.to) - from) / 3_600_000 + 1;
+	if (!Array.isArray(payload) || payload.length !== expectedSlots) {
+		throw new ApiError("unexpected_error");
+	}
+	return payload.map((candle: unknown, index) => {
+		if (candle === null) return null;
+		if (
+			!isRecord(candle) ||
+			!isRfc3339UtcDateTime(candle.open_time) ||
+			Date.parse(candle.open_time) !== from + index * 3_600_000 ||
+			!isFiniteNumber(candle.open) ||
+			!isFiniteNumber(candle.high) ||
+			!isFiniteNumber(candle.low) ||
+			!isFiniteNumber(candle.close) ||
+			candle.low > Math.min(candle.open, candle.close) ||
+			candle.high < Math.max(candle.open, candle.close)
+		) {
+			throw new ApiError("unexpected_error");
+		}
+		return {
+			close: candle.close,
+			high: candle.high,
+			low: candle.low,
+			open: candle.open,
+			open_time: candle.open_time,
+		};
+	});
+}
+
 function parsePriceHistory(payload: unknown): (number | null)[] {
 	if (!Array.isArray(payload) || payload.length !== 169) {
 		throw new ApiError("unexpected_error");
@@ -330,13 +379,23 @@ function parsePriceHistory(payload: unknown): (number | null)[] {
 	});
 }
 
-function parsePriceHistoryWindow(payload: unknown): PriceHistoryWindow {
+function parsePriceHistoryWindow(
+	payload: unknown,
+	expectedHours?: number,
+	maximumHours?: number,
+): PriceHistoryWindow {
 	if (
 		!isRecord(payload) ||
 		!isRfc3339UtcDateTime(payload.from) ||
 		!isRfc3339UtcDateTime(payload.to) ||
 		Date.parse(payload.from) % 3_600_000 !== 0 ||
-		Date.parse(payload.to) - Date.parse(payload.from) !== 168 * 3_600_000
+		Date.parse(payload.to) < Date.parse(payload.from) ||
+		(expectedHours !== undefined &&
+			Date.parse(payload.to) - Date.parse(payload.from) !==
+				expectedHours * 3_600_000) ||
+		(maximumHours !== undefined &&
+			Date.parse(payload.to) - Date.parse(payload.from) >
+				maximumHours * 3_600_000)
 	) {
 		throw new ApiError("unexpected_error");
 	}

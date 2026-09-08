@@ -229,6 +229,13 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if len(prices) != 2 || !prices[0].OpenTime.Equal(start) || !prices[1].OpenTime.Equal(end) || prices[0].Close != 10.12345678 || prices[1].InstrumentID != instruments[0].ID {
 			t.Fatalf("wrong bounded prices: %+v", prices)
 		}
+		candles, err := store.ListHourlyCandles(ctx, instruments[0].ID, start, end)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(candles) != 2 || !candles[0].OpenTime.Equal(start) || candles[0].Open != 10 || candles[0].High != 12 || candles[0].Low != 9 || candles[0].Close != 10.12345678 {
+			t.Fatalf("wrong bounded candles: %+v", candles)
+		}
 		empty, err := store.ListHourlyPrices(ctx, nil, start, end)
 		if err != nil || len(empty) != 0 {
 			t.Fatalf("empty instrument selection: %+v / %v", empty, err)

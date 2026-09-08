@@ -31,3 +31,13 @@ WHERE instrument_id = ANY(sqlc.arg(instrument_ids)::bigint[])
   AND open_time <= sqlc.arg(to_time)
   AND close_time < sqlc.arg(to_time)::timestamptz + INTERVAL '1 hour'
 ORDER BY instrument_id, open_time;
+
+-- name: ListHourlyCandles :many
+SELECT instrument_id, open_time, open, high, low, close
+FROM binance_spot.candles
+WHERE instrument_id = sqlc.arg(instrument_id)
+  AND interval = '1h'
+  AND open_time >= sqlc.arg(from_time)
+  AND open_time <= sqlc.arg(to_time)
+  AND close_time < sqlc.arg(to_time)::timestamptz + INTERVAL '1 hour'
+ORDER BY open_time;

@@ -12,7 +12,7 @@ import (
 	"crypto-scanner/internal/market"
 )
 
-func TestInstrumentAPIIncludesFixedSevenDayWindowAndClosedPrices(t *testing.T) {
+func TestInstrumentAPIIncludesUpToThirtyDaysOfClosedHourlyCandles(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// synctest starts at 2000-01-01 00:00 UTC, crossing a day/year boundary.
 		store := priceHistoryHTTPStore{httpStore: httpStore{
@@ -28,7 +28,7 @@ func TestInstrumentAPIIncludesFixedSevenDayWindowAndClosedPrices(t *testing.T) {
 			Symbol      string                    `json:"symbol"`
 			Evaluations []evaluationResponse      `json:"evaluations"`
 			Window      market.PriceHistoryWindow `json:"price_history_window"`
-			Prices      []*float64                `json:"price_history"`
+			Candles     []*market.HourlyCandle    `json:"candle_history"`
 		}
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
@@ -36,7 +36,12 @@ func TestInstrumentAPIIncludesFixedSevenDayWindowAndClosedPrices(t *testing.T) {
 		if body.Symbol != "BTCUSDT" || len(body.Evaluations) != 1 {
 			t.Fatalf("missing analysis response values: %+v", body)
 		}
-		assertCompleteSevenDayHistory(t, body.Window, body.Prices)
+		if body.Window.From.Format(time.RFC3339) != "1999-12-01T23:00:00Z" || body.Window.To.Format(time.RFC3339) != "1999-12-31T23:00:00Z" {
+			t.Fatalf("wrong thirty-day window: %+v", body.Window)
+		}
+		if len(body.Candles) != market.ThirtyDayPriceSlots || body.Candles[550] != nil || body.Candles[551] == nil || body.Candles[551].Close != 30 || body.Candles[720] == nil || body.Candles[720].Close != 199 {
+			t.Fatalf("available month candles were not returned in fixed slots: %v / %v (%d)", body.Candles[551], body.Candles[720], len(body.Candles))
+		}
 	})
 }
 
@@ -60,10 +65,10 @@ func TestInstrumentAPIKeepsGappedIsolatedStaleAndEmptyHistory(t *testing.T) {
 			slots  map[int]float64
 			short  bool
 		}{
-			{symbol: "PARTIAL", slots: map[int]float64{96: 10.00000001, 98: 9.99999999}},
+			{symbol: "PARTIAL", slots: map[int]float64{648: 10.00000001, 650: 9.99999999}},
 			{symbol: "EMPTY", slots: map[int]float64{}},
-			{symbol: "SINGLE", slots: map[int]float64{145: 3}},
-			{symbol: "STALE", slots: map[int]float64{}},
+			{symbol: "SINGLE", slots: map[int]float64{697: 3}},
+			{symbol: "STALE", slots: map[int]float64{521: 4}},
 			{symbol: "SHORT", short: true},
 		} {
 			response := analysisRequestTo(t, newAnalysisHTTPHandler(store), "/api/v1/analysis/instruments/"+test.symbol, analysisBody)
@@ -71,24 +76,24 @@ func TestInstrumentAPIKeepsGappedIsolatedStaleAndEmptyHistory(t *testing.T) {
 				t.Fatalf("%s status %d: %s", test.symbol, response.Code, response.Body.String())
 			}
 			var body struct {
-				Prices []*float64 `json:"price_history"`
+				Candles []*market.HourlyCandle `json:"candle_history"`
 			}
 			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
-			if len(body.Prices) != market.SevenDayPriceSlots {
-				t.Fatalf("%s history slots = %d", test.symbol, len(body.Prices))
+			if len(body.Candles) != market.ThirtyDayPriceSlots {
+				t.Fatalf("%s history slots = %d", test.symbol, len(body.Candles))
 			}
-			for slot, price := range body.Prices {
+			for slot, candle := range body.Candles {
 				want, exists := test.slots[slot]
-				if test.short && slot >= 96 {
-					want, exists = float64(slot), true
+				if test.short && slot >= 648 {
+					want, exists = float64(slot-552), true
 				}
-				if exists && (price == nil || *price != want) {
-					t.Fatalf("%s slot %d = %v, want %v", test.symbol, slot, price, want)
+				if exists && (candle == nil || candle.Close != want) {
+					t.Fatalf("%s slot %d = %v, want close %v", test.symbol, slot, candle, want)
 				}
-				if !exists && price != nil {
-					t.Fatalf("%s slot %d = %v, want missing", test.symbol, slot, *price)
+				if !exists && candle != nil {
+					t.Fatalf("%s slot %d = %v, want missing", test.symbol, slot, candle)
 				}
 			}
 		}
@@ -177,14 +182,13 @@ func assertCompleteSevenDayHistory(t *testing.T, window market.PriceHistoryWindo
 	if prices[0] == nil || *prices[0] != 31 || prices[168] == nil || *prices[168] != 199 {
 		t.Fatalf("open hour was included or closed endpoints were wrong: %v / %v", prices[0], prices[168])
 	}
-	for i, price := range prices {
-		if price == nil {
-			t.Fatalf("missing complete-history slot %d", i)
-		}
-	}
 }
 
 type failingHistoryHTTPStore struct{ httpStore }
+
+func (failingHistoryHTTPStore) ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error) {
+	return nil, errors.New("database unavailable")
+}
 
 func (failingHistoryHTTPStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
 	return nil, errors.New("database unavailable")
@@ -250,6 +254,19 @@ func TestMarketAPIKeepsMissingHistoryAndFreezesWindowBeforeSlowAnalysis(t *testi
 			}
 		}
 	})
+}
+
+func (s priceHistoryHTTPStore) ListHourlyCandles(_ context.Context, id int64, from, to time.Time) ([]market.HourlyCandle, error) {
+	var result []market.HourlyCandle
+	for _, price := range s.prices {
+		if price.InstrumentID == id && !price.OpenTime.Before(from) && !price.OpenTime.After(to) {
+			result = append(result, market.HourlyCandle{
+				InstrumentID: id, OpenTime: price.OpenTime, Open: price.Close - 0.5,
+				High: price.Close + 1, Low: price.Close - 1, Close: price.Close,
+			})
+		}
+	}
+	return result, nil
 }
 
 func (s priceHistoryHTTPStore) ListHourlyPrices(_ context.Context, ids []int64, from, to time.Time) ([]market.HourlyPrice, error) {

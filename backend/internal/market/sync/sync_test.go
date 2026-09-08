@@ -133,7 +133,7 @@ func TestSynchronizerUsesPolicyForInitialRequests(t *testing.T) {
 				t.Fatalf("request limit = %d, want %d", request.Limit, test.wantLimit)
 			}
 			if test.wantGapFix {
-				wantAfter := market.SevenDayWindow(request.ClosedBefore).From.Add(-time.Millisecond)
+				wantAfter := market.ThirtyDayWindow(request.ClosedBefore).From.Add(-time.Millisecond)
 				if request.AfterOpenTime == nil || !request.AfterOpenTime.Equal(wantAfter) {
 					t.Fatalf("hourly gap repair request = %#v, want after %s", request, wantAfter)
 				}

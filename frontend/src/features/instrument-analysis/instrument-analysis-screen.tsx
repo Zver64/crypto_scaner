@@ -23,7 +23,7 @@ import { PercentChange } from "@/components/percent-change";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
-import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
+import { InstrumentPriceHistoryChart } from "@/features/instrument-analysis/price-history-chart";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 import { formatRangePercent } from "@/utils/range-percent";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
@@ -79,7 +79,11 @@ export function InstrumentAnalysisScreen({
 	const result = query.data;
 	const marketCap = result && marketCapEvaluation(result.evaluations);
 	const sevenDayChange = result
-		? sevenDayChangePercent(result.price_history)
+		? sevenDayChangePercent(
+				result.candle_history
+					.slice(-169)
+					.map((candle) => candle?.close ?? null),
+			)
 		: null;
 
 	const statistics = rangeStatistics.map((statistic) => {
@@ -219,12 +223,9 @@ export function InstrumentAnalysisScreen({
 										<Title id="price-history-heading" order={2} size="h3">
 											Seven-day Price History
 										</Title>
-										<PriceHistoryChart
-											height={180}
-											prices={result.price_history}
-											responsive
+										<InstrumentPriceHistoryChart
+											candles={result.candle_history}
 											symbol={result.symbol}
-											width={640}
 											window={result.price_history_window}
 										/>
 									</Stack>

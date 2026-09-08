@@ -9,6 +9,10 @@ const priceHistoryWindow = {
 	from: "2026-08-26T23:00:00Z",
 	to: "2026-09-02T23:00:00Z",
 };
+const instrumentHistoryWindow = {
+	from: "2026-08-03T23:00:00Z",
+	to: "2026-09-02T23:00:00Z",
+};
 
 const criteria = {
 	key: "volatility",
@@ -240,6 +244,7 @@ describe("fetchInstrumentAnalysis", () => {
 		);
 		const selections = criterionSelections(defaultMarketScanCriteria);
 		const body = {
+			candle_history: Array(721).fill(null),
 			evaluations: [
 				{
 					...evaluation,
@@ -253,8 +258,7 @@ describe("fetchInstrumentAnalysis", () => {
 				},
 			],
 			matched: true,
-			price_history: Array(169).fill(null),
-			price_history_window: priceHistoryWindow,
+			price_history_window: instrumentHistoryWindow,
 			symbol: "BTCUSDT",
 			warnings: [],
 		};
@@ -278,10 +282,10 @@ describe("fetchInstrumentAnalysis", () => {
 
 	it("URL-encodes the exact symbol and maps UTC coverage without changing values", async () => {
 		const body = {
+			candle_history: Array(721).fill(null),
 			evaluations: [evaluation],
 			matched: true,
-			price_history: Array(169).fill(null),
-			price_history_window: priceHistoryWindow,
+			price_history_window: instrumentHistoryWindow,
 			symbol: "币安/USDT",
 			warnings: [
 				{

@@ -59,8 +59,8 @@ type intervalPolicy struct {
 func policyForInterval(interval string) intervalPolicy {
 	if interval == "1h" {
 		return intervalPolicy{
-			inspectionLimit: market.SevenDayPriceSlots,
-			initialLimit:    market.SevenDayPriceSlots,
+			inspectionLimit: market.ThirtyDayPriceSlots,
+			initialLimit:    market.ThirtyDayPriceSlots,
 			repairGaps:      true,
 		}
 	}
@@ -229,7 +229,7 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 		request.Limit = 1000
 	}
 	if policy.repairGaps {
-		window := market.SevenDayWindow(startedAt)
+		window := market.ThirtyDayWindow(startedAt)
 		present := make(map[time.Time]bool, len(existing))
 		for _, candle := range existing {
 			present[candle.OpenTime.UTC()] = true

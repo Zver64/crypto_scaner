@@ -23,6 +23,35 @@ func TestServiceCombinesCriteriaAndLoadsMergedRequirementsOnce(t *testing.T) {
 	}
 }
 
+func TestAnalyzeSymbolBuildsThirtyDayGappedHourlyCandleHistory(t *testing.T) {
+	window := market.ThirtyDayWindow(time.Now())
+	first := window.From
+	store := &storeStub{
+		instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}},
+		candles:     map[string][]market.Candle{"1d": {testCandle(1)}},
+		hourlyCandles: []market.HourlyCandle{
+			{InstrumentID: 1, OpenTime: first, Open: 10, High: 12, Low: 9, Close: 11},
+			{InstrumentID: 2, OpenTime: first.Add(time.Hour), Open: 20, High: 22, Low: 19, Close: 21},
+			{InstrumentID: 1, OpenTime: first.Add(time.Hour + time.Minute), Open: 30, High: 32, Low: 29, Close: 31},
+			{InstrumentID: 1, OpenTime: first.Add(2 * time.Hour), Open: 12, High: 14, Low: 11, Close: 13},
+		},
+	}
+	service, err := analysis.NewService(store, volatility.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.AnalyzeSymbol(context.Background(), analysis.SymbolRequest{Symbol: "BTCUSDT", Criteria: []analysis.CriterionConfig{{Key: "volatility", Name: "volatility", Label: "Volatility", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.CandleHistory) != market.ThirtyDayPriceSlots || result.CandleHistory[0] == nil || result.CandleHistory[0].Close != 11 || result.CandleHistory[2] == nil || result.CandleHistory[2].Close != 13 {
+		t.Fatalf("candle history = %+v", result.CandleHistory)
+	}
+	if result.CandleHistory[1] != nil || !result.PriceHistoryWindow.From.Equal(window.From) || !result.PriceHistoryWindow.To.Equal(window.To) {
+		t.Fatalf("history window/gap = %+v / %+v", result.PriceHistoryWindow, result.CandleHistory[1])
+	}
+}
+
 func TestAnalyzeSymbolShortCircuitsLaterCriteria(t *testing.T) {
 	store := &storeStub{
 		instruments:         []market.Instrument{{ID: 1, Symbol: "DROP"}},
@@ -344,7 +373,12 @@ type storeStub struct {
 	candlesByInstrument map[int64]map[string][]market.Candle
 	loads               map[string]int
 	failRepeatedLoad    bool
+	hourlyCandles       []market.HourlyCandle
 	reads               int
+}
+
+func (s *storeStub) ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error) {
+	return s.hourlyCandles, nil
 }
 
 func (s *storeStub) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {

@@ -259,6 +259,32 @@ func (store *Store) GetSyncState(ctx context.Context, profile market.SyncProfile
 	}, nil
 }
 
+func (store *Store) ListHourlyCandles(ctx context.Context, instrumentID int64, from, to time.Time) ([]market.HourlyCandle, error) {
+	rows, err := store.queries.ListHourlyCandles(ctx, generated.ListHourlyCandlesParams{InstrumentID: instrumentID, FromTime: timestamptz(&from), ToTime: timestamptz(&to)})
+	if err != nil {
+		return nil, fmt.Errorf("list hourly candles: %w", err)
+	}
+	candles := make([]market.HourlyCandle, 0, len(rows))
+	for _, row := range rows {
+		fields := []struct{ name, value string }{
+			{"open", row.Open}, {"high", row.High}, {"low", row.Low}, {"close", row.Close},
+		}
+		values := make([]float64, len(fields))
+		for index, field := range fields {
+			value, parseErr := strconv.ParseFloat(field.value, 64)
+			if parseErr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+				return nil, fmt.Errorf("invalid hourly %s for instrument %d at %s", field.name, row.InstrumentID, row.OpenTime.Time)
+			}
+			values[index] = value
+		}
+		candles = append(candles, market.HourlyCandle{
+			InstrumentID: row.InstrumentID, OpenTime: row.OpenTime.Time.UTC(),
+			Open: values[0], High: values[1], Low: values[2], Close: values[3],
+		})
+	}
+	return candles, nil
+}
+
 func (store *Store) ListHourlyPrices(ctx context.Context, instrumentIDs []int64, from, to time.Time) ([]market.HourlyPrice, error) {
 	rows, err := store.queries.ListHourlyPrices(ctx, generated.ListHourlyPricesParams{InstrumentIds: instrumentIDs, FromTime: timestamptz(&from), ToTime: timestamptz(&to)})
 	if err != nil {

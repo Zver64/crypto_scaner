@@ -319,6 +319,9 @@ func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.Syn
 func (s httpStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	return s.instruments, nil
 }
+func (s httpStore) ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error) {
+	return nil, nil
+}
 func (s httpStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
 	return nil, nil
 }

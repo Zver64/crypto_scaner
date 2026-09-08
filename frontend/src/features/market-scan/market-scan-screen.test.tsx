@@ -67,6 +67,17 @@ it("renders separate mandatory volatility controls without a mode selector", () 
 	);
 	expect(html).toContain("Minimum Range (%)");
 	expect(html).toContain("Minimum Market Cap (USD millions)");
+	expect(html).toContain('mantine-Button-label">15</span>');
+	expect(html).toContain('mantine-Button-label">5</span>');
+	expect(html).toContain('mantine-Button-label">2.5</span>');
+	expect(html).toContain('mantine-Button-label">3</span>');
+	expect(html).toContain('mantine-Button-label">100M</span>');
+	expect(html).toContain('mantine-Button-label">500M</span>');
+	expect(html).toContain('mantine-Button-label">1B</span>');
+	expect(html).toContain("flex-direction:column");
+	expect(html).toContain("--group-gap:var(--mantine-spacing-xs)");
+	expect(html).toContain("--group-justify:center");
+	expect(html).not.toContain("mantine-ButtonGroup-group");
 	expect(html).not.toContain('type="radio"');
 	expect(html).toContain("Run Market Scan");
 });

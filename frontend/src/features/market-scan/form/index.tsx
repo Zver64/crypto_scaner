@@ -1,14 +1,10 @@
-import {
-	Button,
-	Fieldset,
-	NumberInput,
-	Paper,
-	SimpleGrid,
-	Stack,
-	useMatches,
-} from "@mantine/core";
+import { Button, Paper, Stack, useMatches } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import { AnalysisCriteriaFields } from "@/features/analysis/analysis-criteria-fields";
+import { NumberInputFieldset } from "@/components/number-input-fieldset";
+import {
+	analysisCriteriaConstraints,
+	maximumPeriodForUnit,
+} from "@/features/analysis/criteria";
 import { marketScanCriteriaConstraints } from "@/features/market-scan/criteria";
 import {
 	criteriaAreEqual,
@@ -20,6 +16,16 @@ import {
 	type MarketScanDraft,
 	validateMarketScanCriteria,
 } from "@/features/market-scan/pipeline";
+
+const dailyPeriodPresets = [15, 30, 60] as const;
+const dailyMinimumRangePresets = [5, 10] as const;
+const hourlyMinimumRangePresets = [1, 2, 2.5, 3] as const;
+const marketCapPresets = [100, 500, 1000] as const;
+const percentilePresets = [75, 80, 90] as const;
+
+function formatMarketCapPreset(value: (typeof marketCapPresets)[number]) {
+	return value === 1000 ? "1B" : `${value}M`;
+}
 
 interface MarketScanFormProps {
 	committedCriteria: MarketScanCriteria | undefined;
@@ -61,59 +67,127 @@ export function MarketScanForm({
 	return (
 		<Paper component="form" onSubmit={handleSubmit} p={paperPadding}>
 			<Stack gap={contentSpacing}>
-				<Fieldset legend="Daily Volatility">
-					<SimpleGrid cols={{ base: 1, xs: 3 }} spacing={contentSpacing}>
-						<AnalysisCriteriaFields
-							percentileInputProps={form.getInputProps("percentile")}
-							percentileKey={form.key("percentile")}
-							periodInputProps={form.getInputProps("period")}
-							periodKey={form.key("period")}
-							inputSize={inputSize}
-							unit="days"
-						/>
-						<NumberInput
-							decimalScale={10}
-							key={form.key("minimumRangePercent")}
-							label="Minimum Range (%)"
-							min={marketScanCriteriaConstraints.minimumRangePercent.minimum}
-							size={inputSize}
-							step={0.1}
-							{...form.getInputProps("minimumRangePercent")}
-						/>
-					</SimpleGrid>
-				</Fieldset>
-				<Fieldset legend="Hourly Volatility">
-					<SimpleGrid cols={{ base: 1, xs: 3 }} spacing={contentSpacing}>
-						<AnalysisCriteriaFields
-							percentileInputProps={form.getInputProps("hourlyPercentile")}
-							percentileKey={form.key("hourlyPercentile")}
-							periodInputProps={form.getInputProps("hourlyPeriod")}
-							periodKey={form.key("hourlyPeriod")}
-							inputSize={inputSize}
-							unit="hours"
-						/>
-						<NumberInput
-							decimalScale={10}
-							key={form.key("hourlyMinimumRangePercent")}
-							label="Minimum Range (%)"
-							min={marketScanCriteriaConstraints.minimumRangePercent.minimum}
-							size={inputSize}
-							step={0.1}
-							{...form.getInputProps("hourlyMinimumRangePercent")}
-						/>
-					</SimpleGrid>
-				</Fieldset>
-				<Fieldset legend="Market Cap">
-					<NumberInput
-						decimalScale={2}
-						key={form.key("minimumMarketCapMillions")}
-						label="Minimum Market Cap (USD millions)"
-						min={marketScanCriteriaConstraints.minimumMarketCapMillions.minimum}
-						size={inputSize}
-						step={1}
-						{...form.getInputProps("minimumMarketCapMillions")}
-					/>
-				</Fieldset>
+				<NumberInputFieldset
+					inputs={[
+						{
+							allowDecimal: false,
+							error: form.errors.period,
+							id: form.key("period"),
+							label: "Analysis Period (days)",
+							max: maximumPeriodForUnit("days"),
+							min: analysisCriteriaConstraints.period.minimum,
+							onChange: (value) => form.setFieldValue("period", value),
+							presets: dailyPeriodPresets.map((value) => ({
+								label: String(value),
+								value,
+							})),
+							size: inputSize,
+							value: form.values.period,
+						},
+						{
+							allowDecimal: false,
+							error: form.errors.percentile,
+							id: form.key("percentile"),
+							label: "Range Percentile",
+							max: analysisCriteriaConstraints.percentile.maximum,
+							min: analysisCriteriaConstraints.percentile.minimum,
+							onChange: (value) => form.setFieldValue("percentile", value),
+							presets: percentilePresets.map((value) => ({
+								label: String(value),
+								value,
+							})),
+							size: inputSize,
+							value: form.values.percentile,
+						},
+						{
+							decimalScale: 10,
+							error: form.errors.minimumRangePercent,
+							id: form.key("minimumRangePercent"),
+							label: "Minimum Range (%)",
+							min: marketScanCriteriaConstraints.minimumRangePercent.minimum,
+							onChange: (value) =>
+								form.setFieldValue("minimumRangePercent", value),
+							presets: dailyMinimumRangePresets.map((value) => ({
+								label: String(value),
+								value,
+							})),
+							size: inputSize,
+							step: 0.1,
+							value: form.values.minimumRangePercent,
+						},
+					]}
+					title="Daily Volatility"
+				/>
+				<NumberInputFieldset
+					inputs={[
+						{
+							allowDecimal: false,
+							error: form.errors.hourlyPeriod,
+							id: form.key("hourlyPeriod"),
+							label: "Analysis Period (hours)",
+							max: maximumPeriodForUnit("hours"),
+							min: analysisCriteriaConstraints.period.minimum,
+							onChange: (value) => form.setFieldValue("hourlyPeriod", value),
+							size: inputSize,
+							value: form.values.hourlyPeriod,
+						},
+						{
+							allowDecimal: false,
+							error: form.errors.hourlyPercentile,
+							id: form.key("hourlyPercentile"),
+							label: "Range Percentile",
+							max: analysisCriteriaConstraints.percentile.maximum,
+							min: analysisCriteriaConstraints.percentile.minimum,
+							onChange: (value) =>
+								form.setFieldValue("hourlyPercentile", value),
+							presets: percentilePresets.map((value) => ({
+								label: String(value),
+								value,
+							})),
+							size: inputSize,
+							value: form.values.hourlyPercentile,
+						},
+						{
+							decimalScale: 10,
+							error: form.errors.hourlyMinimumRangePercent,
+							id: form.key("hourlyMinimumRangePercent"),
+							label: "Minimum Range (%)",
+							min: marketScanCriteriaConstraints.minimumRangePercent.minimum,
+							onChange: (value) =>
+								form.setFieldValue("hourlyMinimumRangePercent", value),
+							presets: hourlyMinimumRangePresets.map((value) => ({
+								label: String(value),
+								value,
+							})),
+							size: inputSize,
+							step: 0.1,
+							value: form.values.hourlyMinimumRangePercent,
+						},
+					]}
+					title="Hourly Volatility"
+				/>
+				<NumberInputFieldset
+					inputs={[
+						{
+							decimalScale: 2,
+							error: form.errors.minimumMarketCapMillions,
+							id: form.key("minimumMarketCapMillions"),
+							label: "Minimum Market Cap (USD millions)",
+							min: marketScanCriteriaConstraints.minimumMarketCapMillions
+								.minimum,
+							onChange: (value) =>
+								form.setFieldValue("minimumMarketCapMillions", value),
+							presets: marketCapPresets.map((value) => ({
+								label: formatMarketCapPreset(value),
+								value,
+							})),
+							size: inputSize,
+							step: 1,
+							value: form.values.minimumMarketCapMillions,
+						},
+					]}
+					title="Market Cap"
+				/>
 				<Button
 					disabled={disabled || !form.isValid()}
 					loading={isSubmitting}

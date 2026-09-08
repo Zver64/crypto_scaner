@@ -56,7 +56,7 @@ npm -C frontend run test
 npm -C frontend run build
 ```
 
-Run the checks relevant to changed code before finishing. Use `make check` for cross-cutting changes.
+Pre-commit hooks run the checks relevant to staged changes, so do not routinely run those checks separately before committing. Run checks manually only when diagnosing a failure, when no commit will be created, or when explicitly requested. Use `make check` for manual verification of cross-cutting changes.
 
 ## Commits
 

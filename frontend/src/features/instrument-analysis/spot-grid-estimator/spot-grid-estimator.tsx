@@ -13,6 +13,7 @@ import {
 import { useForm } from "@mantine/form";
 import { type FocusEvent, type KeyboardEvent, useMemo, useState } from "react";
 import type { PriceCandle } from "@/api/client";
+import { ValueGroup } from "@/components/value-group";
 import {
 	calculateSpotGridInput,
 	latestAvailableCandle,
@@ -44,17 +45,6 @@ function formValues(input: SpotGridInput): SpotGridFormValues {
 		gridType: "geometric",
 		markup: 5,
 	};
-}
-
-function EstimateValue({ label, value }: { label: string; value: string }) {
-	return (
-		<Stack gap={2}>
-			<Text fw={500} size="sm">
-				{label}
-			</Text>
-			<Text fw={700}>{value}</Text>
-		</Stack>
-	);
 }
 
 export function SpotGridEstimator({
@@ -234,14 +224,20 @@ export function SpotGridEstimator({
 						{calculation.error}
 					</Alert>
 				) : null}
-				<SimpleGrid cols={2} spacing="md" aria-live="polite">
-					<EstimateValue
-						label="Profit per step"
-						value={`${values.profitPerStep}, ${values.profitPerStepPercent}`}
+				<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md" aria-live="polite">
+					<ValueGroup
+						title="Profit"
+						items={[
+							{ label: "USDT (nominal)", value: values.profitPerStep },
+							{ label: "Percent", value: values.profitPerStepPercent },
+						]}
 					/>
-					<EstimateValue
-						label="Average entry price"
-						value={values.averageEntryPrice}
+					<ValueGroup
+						title="Grid info"
+						items={[
+							{ label: "Average price", value: values.averageEntryPrice },
+							{ label: "Grid step", value: values.gridStepPercent },
+						]}
 					/>
 				</SimpleGrid>
 			</Stack>

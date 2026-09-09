@@ -63,6 +63,14 @@ tanstackIntent:
     for: "Programmatic route tree building as an alternative to filesystem conventions: rootRoute, index, route, layout, physical, defineVirtualSubtreeConfig. Use with TanStack Router plugin's virtualRouteConfig option."
 <!-- intent-skills:end -->
 
+## Component decomposition
+
+- Keep each React component in its own file.
+- Place genuinely reusable, business-agnostic UI components in `src/components/`. Their names, props, and implementation must not depend on a specific feature, domain concept, or business meaning.
+- Shared components accept generic presentation data or content. Keep business calculations, domain-specific labels, units, formatting, API calls, and feature state in the consuming feature; shared components must not import from feature modules.
+- Place components specific to a feature or screen alongside that feature in separate files, not in `src/components/`. Repetition alone does not make a component suitable for the shared directory.
+- Follow KISS: extract clear UI responsibilities and reuse existing components rather than duplicating markup. Do not introduce speculative abstractions or configuration unrelated to actual use cases.
+
 ## Utilities
 
 - Place UI- and feature-independent utility functions in `src/utils/`, not in components, app-shell modules, routes, or feature modules.

@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
 
-it("shows combined zero-valued profit per step before input is complete", () => {
+it("shows profit and grid info with their subgroups", () => {
 	const html = renderToStaticMarkup(
 		<MantineProvider>
 			<SpotGridEstimator
@@ -34,9 +34,15 @@ it("shows combined zero-valued profit per step before input is complete", () => 
 	expect(html).toContain('value="40"');
 	expect(html).toContain('value="1000"');
 	expect(html).toMatch(/checked="" value="geometric"/);
-	expect(text).toContain("Profit per step0.2 USDT, 0.799%");
-	expect(text).not.toContain("Profit per step (%)");
-	expect(text).toContain("Average entry price85.1 USDT");
+	expect(html).toContain('role="group" aria-label="Profit"');
+	expect(html).toContain('role="group" aria-label="Grid info"');
+	expect(html.match(/<h3\b/g)).toHaveLength(2);
+	expect(text).toContain("Profit");
+	expect(text).toContain("USDT (nominal)0.2 USDTPercent0.799%");
+	expect(text).not.toContain("Profit per step");
+	expect(text).toContain("Grid info");
+	expect(text).toContain("Average price85.1 USDTGrid step1%");
+	expect(text).not.toContain("Average entry price");
 	expect(text).not.toContain("Allocation per buy");
 	expect(text).not.toContain("Arithmetic quote step");
 	expect(text).not.toContain("Estimated fee impact");

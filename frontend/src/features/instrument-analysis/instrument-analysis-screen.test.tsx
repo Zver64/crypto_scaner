@@ -196,9 +196,10 @@ it("shows the simplified four-input spot grid calculator after the chart", () =>
 	expect(text).toContain("Upper price (USDT)");
 	expect(text).toContain("Grid count");
 	expect(text).toContain("USDT investment");
-	expect(text).toContain("Profit per step0 USDT, 0%");
-	expect(text).not.toContain("Profit per step (%)");
-	expect(text).toContain("Average entry price0 USDT");
+	expect(text).toContain("USDT (nominal)0 USDTPercent0%");
+	expect(text).not.toContain("Profit per step");
+	expect(text).toContain("Grid info");
+	expect(text).toContain("Average price0 USDTGrid step0%");
 	expect(html.match(/inputMode=/g)).toHaveLength(4);
 	expect(text).not.toContain("Binance");
 	expect(text).not.toContain("all buys fill before any sells");

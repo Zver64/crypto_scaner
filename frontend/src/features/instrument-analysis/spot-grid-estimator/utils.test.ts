@@ -17,6 +17,7 @@ const validInput = {
 
 const zeroValues = {
 	averageEntryPrice: "0 USDT",
+	gridStepPercent: "0%",
 	profitPerStep: "0 USDT",
 	profitPerStepPercent: "0%",
 };
@@ -127,9 +128,19 @@ describe("calculateSpotGridInput", () => {
 		expect(calculation?.error).toBeNull();
 		expect(spotGridEstimateValues(calculation?.estimate ?? null)).toEqual({
 			averageEntryPrice: "105 USDT",
+			gridStepPercent: "10%",
 			profitPerStep: "10.8 USDT",
 			profitPerStepPercent: "9.78%",
 		});
+	});
+
+	it("shows the arithmetic grid step percent range", () => {
+		const calculation = calculateSpotGridInput(validInput, "arithmetic");
+
+		expect(calculation?.error).toBeNull();
+		expect(
+			spotGridEstimateValues(calculation?.estimate ?? null).gridStepPercent,
+		).toBe("9.09%–10%");
 	});
 
 	it("clears a valid estimate after cleared or invalid input", () => {

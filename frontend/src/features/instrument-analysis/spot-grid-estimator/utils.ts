@@ -147,6 +147,7 @@ export function spotGridEstimateValues(estimate: SpotGridEstimate | null) {
 	if (!estimate) {
 		return {
 			averageEntryPrice: "0 USDT",
+			gridStepPercent: "0%",
 			profitPerStep: "0 USDT",
 			profitPerStepPercent: "0%",
 		};
@@ -154,6 +155,9 @@ export function spotGridEstimateValues(estimate: SpotGridEstimate | null) {
 	const isGeometric = "cycleProfit" in estimate;
 	return {
 		averageEntryPrice: `${formatNumber(estimate.averageEntryPrice.toFixed())} USDT`,
+		gridStepPercent: isGeometric
+			? `${formatNumber(estimate.stepPercent.toFixed())}%`
+			: `${formatNumber(estimate.stepPercentMinimum.toFixed())}%–${formatNumber(estimate.stepPercentMaximum.toFixed())}%`,
 		profitPerStep: isGeometric
 			? `${formatNumber(estimate.cycleProfit.toFixed())} USDT`
 			: `${formatNumber(estimate.cycleProfitMinimum.toFixed())}–${formatNumber(estimate.cycleProfitMaximum.toFixed())} USDT`,

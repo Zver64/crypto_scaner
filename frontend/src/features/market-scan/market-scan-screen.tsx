@@ -3,7 +3,6 @@ import {
 	Container,
 	Loader,
 	Stack,
-	Text,
 	Title,
 	useMatches,
 } from "@mantine/core";
@@ -79,17 +78,14 @@ export function MarketScanScreen({
 
 function PageHeading() {
 	const headingSize = useMatches({ base: "h3", sm: "h2" });
-	const descriptionSize = useMatches({ base: "xs", sm: "sm" });
 
 	return (
 		<Stack gap={2}>
-			<Title order={1} size={headingSize}>
-				Market Scan
-			</Title>
-			<Text c="dimmed" size={descriptionSize}>
-				Evaluate daily volatility, then hourly volatility, then each enabled
-				criterion.
-			</Text>
+			<Center>
+				<Title order={1} size={headingSize}>
+					Market Scan
+				</Title>
+			</Center>
 		</Stack>
 	);
 }

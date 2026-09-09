@@ -142,6 +142,21 @@ export function InstrumentAnalysisScreen({
 						visible={query.isFetching}
 					>
 						<Stack gap={contentSpacing}>
+							{result ? (
+								<Paper
+									component="section"
+									aria-labelledby="price-history-heading"
+									p={paperPadding}
+								>
+									<Stack gap="md">
+										<InstrumentPriceHistoryChart
+											candles={result.candle_history}
+											symbol={result.symbol}
+											window={result.price_history_window}
+										/>
+									</Stack>
+								</Paper>
+							) : null}
 							<Paper p={paperPadding}>
 								<Stack gap={contentSpacing}>
 									<Group justify="space-between" wrap="nowrap">
@@ -191,33 +206,17 @@ export function InstrumentAnalysisScreen({
 									)}
 								</Stack>
 							</Paper>
-							{result ? (
-								<Paper
-									component="section"
-									aria-labelledby="price-history-heading"
-									p={paperPadding}
-								>
-									<Stack gap="md">
-										<Title id="price-history-heading" order={2} size="h3">
-											Seven-day Price History
-										</Title>
-										<InstrumentPriceHistoryChart
-											candles={result.candle_history}
-											symbol={result.symbol}
-											window={result.price_history_window}
-										/>
-									</Stack>
-								</Paper>
-							) : null}
 							<Paper
 								component="section"
 								aria-labelledby="bot-settings-heading"
 								p={paperPadding}
 							>
 								<Stack gap="md">
-									<Title id="bot-settings-heading" order={2} size="h3">
-										Recommended grid step
-									</Title>
+									<Center>
+										<Title id="bot-settings-heading" order={2} size="h3">
+											Recommended grid step
+										</Title>
+									</Center>
 									<SimpleGrid cols={2} spacing="md">
 										{statistics.map(
 											({ key, stepLabel, range, coverage, partial }) => (

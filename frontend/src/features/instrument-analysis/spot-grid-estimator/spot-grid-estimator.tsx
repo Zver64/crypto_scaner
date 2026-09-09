@@ -1,5 +1,6 @@
 import {
 	Alert,
+	Center,
 	Group,
 	Paper,
 	SegmentedControl,
@@ -130,9 +131,11 @@ export function SpotGridEstimator({
 			p={paperPadding}
 		>
 			<Stack gap="md">
-				<Title id="spot-grid-estimator-heading" order={2} size="h3">
-					Spot Grid Calculator
-				</Title>
+				<Center>
+					<Title id="spot-grid-estimator-heading" order={2} size="h3">
+						Spot Grid Calculator
+					</Title>
+				</Center>
 				<SegmentedControl
 					aria-label="Grid type"
 					data={[

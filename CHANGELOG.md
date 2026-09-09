@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/Zver64/crypto_scaner/compare/v0.8.1...v0.8.2) (2026-09-09)
+
+
+### Bug Fixes
+
+* refine instrument analysis summaries ([c45ae9e](https://github.com/Zver64/crypto_scaner/commit/c45ae9ee7bf91cc0829997b89657a3a5e42c0f41))
+
 ## [0.8.1](https://github.com/Zver64/crypto_scaner/compare/v0.8.0...v0.8.1) (2026-09-09)
 
 

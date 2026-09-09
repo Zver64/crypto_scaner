@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.8.0](https://github.com/Zver64/crypto_scaner/compare/v0.7.1...v0.8.0) (2026-09-09)
+
+
+### Features
+
+* add geometric spot grid calculator ([0238ad4](https://github.com/Zver64/crypto_scaner/commit/0238ad412aa1490663f27d7518869ac640eea775))
+* add market scan filter presets ([1b5231b](https://github.com/Zver64/crypto_scaner/commit/1b5231b0640f96a796a98b688bb83e18d45e20d5))
+* add spot grid calculator ([35b25d5](https://github.com/Zver64/crypto_scaner/commit/35b25d5a7c8922eb8ee276d668121643fd34cfb8))
+* add thirty-day instrument candlestick charts ([a42a8bb](https://github.com/Zver64/crypto_scaner/commit/a42a8bb12391298218db5a8b58e3979742086919))
+* group spot grid results and display grid step ([b504fb3](https://github.com/Zver64/crypto_scaner/commit/b504fb31f60ae66b7262ebb5ecf714a7ba037bed))
+* prefill spot grid calculator ([67a27b3](https://github.com/Zver64/crypto_scaner/commit/67a27b361955cc320f3e10f819d6c68e1f4c0cd9))
+* reorder blocks ([bd606d8](https://github.com/Zver64/crypto_scaner/commit/bd606d81b97b5bd461607086bc2ce3991f302ff6))
+* show seven-day change on coin page ([7eb5b5f](https://github.com/Zver64/crypto_scaner/commit/7eb5b5f8efadcd492382c0034d974f11bf106fbe))
+
+
+### Bug Fixes
+
+* prevent iOS input zoom ([756e563](https://github.com/Zver64/crypto_scaner/commit/756e5637e1e25611c9f86ab3d5e1e7a9d0b13f01))
+
 ## [0.7.1](https://github.com/Zver64/crypto_scaner/compare/v0.7.0...v0.7.1) (2026-09-06)
 
 

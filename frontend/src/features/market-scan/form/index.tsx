@@ -18,13 +18,14 @@ import {
 } from "@/features/market-scan/pipeline";
 
 const dailyPeriodPresets = [15, 30, 60] as const;
+const hourlyPeriodPresets = [24, 60, 100] as const;
 const dailyMinimumRangePresets = [5, 10] as const;
 const hourlyMinimumRangePresets = [1, 2, 2.5, 3] as const;
-const marketCapPresets = [100, 500, 1000] as const;
+const marketCapPresets = [500, 1000, 5000, 10000] as const;
 const percentilePresets = [75, 80, 90] as const;
 
-function formatMarketCapPreset(value: (typeof marketCapPresets)[number]) {
-	return value === 1000 ? "1B" : `${value}M`;
+function formatMarketCapPreset(value: number) {
+	return value >= 1000 ? `${value / 1000}B` : `${value}M`;
 }
 
 interface MarketScanFormProps {
@@ -73,7 +74,7 @@ export function MarketScanForm({
 							allowDecimal: false,
 							error: form.errors.period,
 							id: form.key("period"),
-							label: "Analysis Period (days)",
+							label: "Period",
 							max: maximumPeriodForUnit("days"),
 							min: analysisCriteriaConstraints.period.minimum,
 							onChange: (value) => form.setFieldValue("period", value),
@@ -88,7 +89,7 @@ export function MarketScanForm({
 							allowDecimal: false,
 							error: form.errors.percentile,
 							id: form.key("percentile"),
-							label: "Range Percentile",
+							label: "Percentile",
 							max: analysisCriteriaConstraints.percentile.maximum,
 							min: analysisCriteriaConstraints.percentile.minimum,
 							onChange: (value) => form.setFieldValue("percentile", value),
@@ -103,7 +104,7 @@ export function MarketScanForm({
 							decimalScale: 10,
 							error: form.errors.minimumRangePercent,
 							id: form.key("minimumRangePercent"),
-							label: "Minimum Range (%)",
+							label: "Candle Range (%)",
 							min: marketScanCriteriaConstraints.minimumRangePercent.minimum,
 							onChange: (value) =>
 								form.setFieldValue("minimumRangePercent", value),
@@ -124,10 +125,14 @@ export function MarketScanForm({
 							allowDecimal: false,
 							error: form.errors.hourlyPeriod,
 							id: form.key("hourlyPeriod"),
-							label: "Analysis Period (hours)",
+							label: "Period",
 							max: maximumPeriodForUnit("hours"),
 							min: analysisCriteriaConstraints.period.minimum,
 							onChange: (value) => form.setFieldValue("hourlyPeriod", value),
+							presets: hourlyPeriodPresets.map((value) => ({
+								label: String(value),
+								value,
+							})),
 							size: inputSize,
 							value: form.values.hourlyPeriod,
 						},
@@ -135,7 +140,7 @@ export function MarketScanForm({
 							allowDecimal: false,
 							error: form.errors.hourlyPercentile,
 							id: form.key("hourlyPercentile"),
-							label: "Range Percentile",
+							label: "Percentile",
 							max: analysisCriteriaConstraints.percentile.maximum,
 							min: analysisCriteriaConstraints.percentile.minimum,
 							onChange: (value) =>
@@ -151,7 +156,7 @@ export function MarketScanForm({
 							decimalScale: 10,
 							error: form.errors.hourlyMinimumRangePercent,
 							id: form.key("hourlyMinimumRangePercent"),
-							label: "Minimum Range (%)",
+							label: "Candle Range (%)",
 							min: marketScanCriteriaConstraints.minimumRangePercent.minimum,
 							onChange: (value) =>
 								form.setFieldValue("hourlyMinimumRangePercent", value),
@@ -172,7 +177,7 @@ export function MarketScanForm({
 							decimalScale: 2,
 							error: form.errors.minimumMarketCapMillions,
 							id: form.key("minimumMarketCapMillions"),
-							label: "Minimum Market Cap (USD millions)",
+							label: "Minimum Market Cap",
 							min: marketScanCriteriaConstraints.minimumMarketCapMillions
 								.minimum,
 							onChange: (value) =>
@@ -186,6 +191,7 @@ export function MarketScanForm({
 							value: form.values.minimumMarketCapMillions,
 						},
 					]}
+					presetsPosition="below"
 					title="Market Cap"
 				/>
 				<Button

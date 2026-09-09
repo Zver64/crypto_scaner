@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.1](https://github.com/Zver64/crypto_scaner/compare/v0.8.0...v0.8.1) (2026-09-09)
+
+
+### Bug Fixes
+
+* disable mobile viewport zoom ([20b26a2](https://github.com/Zver64/crypto_scaner/commit/20b26a2d6f8d26c462d7b9a757dde37f6808beec))
+* keep spot grid inputs in two columns ([89f7fc1](https://github.com/Zver64/crypto_scaner/commit/89f7fc18deb6bca6b855683e564aeb0e1d9e5d17))
+* move candle count columns to table end ([4a8e343](https://github.com/Zver64/crypto_scaner/commit/4a8e34318dfac4aa7ac2ac59e084098a1f19a6d8))
+* refine market scan table labels and alignment ([f7a1639](https://github.com/Zver64/crypto_scaner/commit/f7a163934ad91c4b71549d56595ada18eff8cd01))
+
 ## [0.8.0](https://github.com/Zver64/crypto_scaner/compare/v0.7.1...v0.8.0) (2026-09-09)
 
 

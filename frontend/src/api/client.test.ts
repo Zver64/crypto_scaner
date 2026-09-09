@@ -90,6 +90,38 @@ describe("fetchMarketScan", () => {
 		]);
 	});
 
+	it("sends optional backend sorting and limit", async () => {
+		const request = vi.fn(
+			async (_input: RequestInfo | URL, _init?: RequestInit) =>
+				new Response(
+					JSON.stringify({
+						analyzed_count: 0,
+						price_history_window: priceHistoryWindow,
+						insufficient_data_count: 0,
+						items: [],
+						matched_count: 0,
+						unresolved: [],
+						warnings: [],
+					}),
+					{ status: 200 },
+				),
+		);
+
+		await fetchMarketScan([criteria], {
+			limit: 10,
+			request,
+			sort: { direction: "desc", field: "market_cap_usd" },
+		});
+
+		expect(request.mock.calls[0]?.[1]?.body).toBe(
+			JSON.stringify({
+				criteria: [criteria],
+				limit: 10,
+				sort: { direction: "desc", field: "market_cap_usd" },
+			}),
+		);
+	});
+
 	it("does not send an authorization header when local Vite must provide it", async () => {
 		const request = vi.fn(
 			async (_input: RequestInfo | URL, _init?: RequestInit) =>

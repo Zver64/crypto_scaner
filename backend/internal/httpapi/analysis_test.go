@@ -137,8 +137,24 @@ func TestAuthenticatedUserCanSearchMarket(t *testing.T) {
 		t.Fatalf("evaluations = %+v", body.Items)
 	}
 }
+func TestAuthenticatedUserCanRequestSortedLimitedMarketScan(t *testing.T) {
+	start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	store := &httpStore{
+		rankedInstruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}},
+		candles:           map[int64][]market.Candle{1: {httpCandle(start, 2)}},
+	}
+	body := `{"criteria":[{"key":"daily_volatility","name":"volatility","label":"Daily Volatility","parameters":{"unit":"days","period":1,"percentile":50,"minimum_range_percent":0}},{"key":"market_cap","name":"market_cap","label":"Market Cap","parameters":{}}],"limit":10,"sort":{"field":"market_cap_usd","direction":"desc"}}`
+	response := analysisRequestTo(t, newAnalysisHTTPHandler(store, httpMarketCapFactory{}), "/api/v1/analysis/market", body)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
+	}
+	if store.selectionLimit != 10 || store.selectionDirection != "desc" {
+		t.Fatalf("selection limit=%d direction=%q", store.selectionLimit, store.selectionDirection)
+	}
+}
+
 func TestAnalysisRejectsMalformedAndUnknownJSON(t *testing.T) {
-	for _, body := range []string{"{", `{"criteria":[],"extra":true}`, `{"criteria":[{"key":"volatility","name":"volatility","label":"Volatility","parameters":{},"extra":true}]}`} {
+	for _, body := range []string{"{", `{"criteria":[],"extra":true}`, `{"criteria":[{"key":"volatility","name":"volatility","label":"Volatility","parameters":{},"extra":true}]}`, `{"criteria":[],"sort":{"field":"market_cap_usd","direction":"desc","extra":true}}`} {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/analysis/market", bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "tma "+analysisInitData)
 		res := httptest.NewRecorder()
@@ -303,10 +319,13 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 }
 
 type httpStore struct {
-	candlesByInterval map[int64]map[string][]market.Candle
-	instruments       []market.Instrument
-	candles           map[int64][]market.Candle
-	syncState         *market.SyncState
+	candlesByInterval  map[int64]map[string][]market.Candle
+	instruments        []market.Instrument
+	rankedInstruments  []market.Instrument
+	candles            map[int64][]market.Candle
+	syncState          *market.SyncState
+	selectionLimit     int
+	selectionDirection string
 }
 
 func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
@@ -318,6 +337,19 @@ func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.Syn
 }
 func (s httpStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	return s.instruments, nil
+}
+func (s *httpStore) ListActiveInstrumentsLimited(_ context.Context, limit int) ([]market.Instrument, error) {
+	s.selectionLimit = limit
+	return s.instruments[:min(limit, len(s.instruments))], nil
+}
+func (s *httpStore) ListActiveInstrumentsSortedByMarketCap(_ context.Context, limit int, direction string) ([]market.Instrument, error) {
+	s.selectionLimit = limit
+	s.selectionDirection = direction
+	items := s.rankedInstruments
+	if limit > 0 {
+		items = items[:min(limit, len(items))]
+	}
+	return items, nil
 }
 func (s httpStore) ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error) {
 	return nil, nil
@@ -331,6 +363,25 @@ func (s httpStore) ListLatestCandlesByInterval(_ context.Context, instrumentID i
 	}
 	return s.candles[instrumentID], nil
 }
+
+type httpMarketCapFactory struct{}
+
+func (httpMarketCapFactory) Name() string { return "market_cap" }
+func (httpMarketCapFactory) Build(map[string]any) (analysis.Criterion, error) {
+	return httpMarketCapCriterion{}, nil
+}
+
+type httpMarketCapCriterion struct{}
+
+func (httpMarketCapCriterion) Name() string                               { return "market_cap" }
+func (httpMarketCapCriterion) Requirements() []analysis.CandleRequirement { return nil }
+func (httpMarketCapCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
+	return nil, nil
+}
+func (httpMarketCapCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
+	return analysis.Evaluation{Matched: true, Metrics: map[string]float64{"market_cap_usd": 1}}, nil
+}
+
 func httpCandle(openTime time.Time, rangePercent float64) market.Candle {
 	return market.Candle{OpenTime: openTime, Open: 100, High: 100 + rangePercent, Low: 100}
 }

@@ -124,13 +124,27 @@ interface FetchAnalysisOptions {
 	request?: typeof fetch;
 }
 
+export interface MarketScanSortOption {
+	direction: "asc" | "desc";
+	field: "market_cap_usd";
+}
+
+interface FetchMarketScanOptions extends FetchAnalysisOptions {
+	limit?: number;
+	sort?: MarketScanSortOption;
+}
+
 export async function fetchMarketScan(
 	criteria: readonly CriterionSelection[],
-	options: FetchAnalysisOptions = {},
+	options: FetchMarketScanOptions = {},
 ): Promise<MarketScanResult> {
 	return fetchAnalysisResult(
 		"/api/v1/analysis/market",
-		criteria,
+		{
+			criteria,
+			...(options.limit === undefined ? {} : { limit: options.limit }),
+			...(options.sort === undefined ? {} : { sort: options.sort }),
+		},
 		options,
 		parseMarketScanResult,
 	);
@@ -143,7 +157,7 @@ export async function fetchInstrumentAnalysis(
 ): Promise<InstrumentAnalysisResult> {
 	return fetchAnalysisResult(
 		`/api/v1/analysis/instruments/${encodeURIComponent(symbol)}`,
-		criteria,
+		{ criteria },
 		options,
 		parseInstrumentAnalysisResult,
 	);
@@ -151,7 +165,7 @@ export async function fetchInstrumentAnalysis(
 
 async function fetchAnalysisResult<Result>(
 	url: string,
-	criteria: readonly CriterionSelection[],
+	body: Record<string, unknown>,
 	options: FetchAnalysisOptions,
 	parse: (payload: unknown) => Result,
 ): Promise<Result> {
@@ -166,7 +180,7 @@ async function fetchAnalysisResult<Result>(
 
 	try {
 		const response = await (options.request ?? fetch)(url, {
-			body: JSON.stringify({ criteria }),
+			body: JSON.stringify(body),
 			headers,
 			method: "POST",
 		});

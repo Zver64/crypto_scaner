@@ -1,39 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { Evaluation, MarketScanItem } from "@/api/client";
+import type { MarketScanItem } from "@/api/client";
 import {
 	topCoinsCriteria,
+	topCoinsRequestOptions,
 	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
 
-function item(symbol: string, marketCapUsd?: number): MarketScanItem {
-	const evaluations: Evaluation[] =
-		marketCapUsd === undefined
-			? []
-			: [
-					{
-						candle_count: 0,
-						from: "2026-01-01T00:00:00Z",
-						key: "market_cap",
-						label: "Market Cap",
-						matched: true,
-						metrics: { market_cap_usd: marketCapUsd },
-						name: "market_cap",
-						to: "2026-01-01T00:00:00Z",
-					},
-				];
+function item(symbol: string): MarketScanItem {
 	return {
-		evaluations,
+		evaluations: [],
 		matched: true,
 		price_history: [],
 		symbol,
 	};
-}
-
-function ranking(items: readonly MarketScanItem[]) {
-	return toTopCoinRows(items).map(({ marketCapUsd, symbol }) => ({
-		marketCapUsd,
-		symbol,
-	}));
 }
 
 describe("topCoinsCriteria", () => {
@@ -51,56 +30,23 @@ describe("topCoinsCriteria", () => {
 	});
 });
 
+describe("topCoinsRequestOptions", () => {
+	it("asks the backend for the ten largest market caps", () => {
+		expect(topCoinsRequestOptions).toEqual({
+			limit: 10,
+			sort: { direction: "desc", field: "market_cap_usd" },
+		});
+	});
+});
+
 describe("toTopCoinRows", () => {
-	it("sorts descending, resolves ties by symbol, and limits the result", () => {
-		const items = [
-			item("F", 1),
-			item("B", 5),
-			item("A", 5),
-			item("C", 4),
-			item("D", 3),
-			item("E", 2),
-		];
+	it("preserves the backend result without client-side ranking or limiting", () => {
+		const items = Array.from({ length: 11 }, (_, index) =>
+			item(`COIN${index}`),
+		);
 
-		expect(ranking(items)).toEqual([
-			{ marketCapUsd: 5, symbol: "A" },
-			{ marketCapUsd: 5, symbol: "B" },
-			{ marketCapUsd: 4, symbol: "C" },
-			{ marketCapUsd: 3, symbol: "D" },
-			{ marketCapUsd: 2, symbol: "E" },
-		]);
-		expect(items.map(({ symbol }) => symbol)).toEqual([
-			"F",
-			"B",
-			"A",
-			"C",
-			"D",
-			"E",
-		]);
-	});
-
-	it("returns fewer than five rows and excludes missing evaluations", () => {
-		expect(ranking([item("BTC", 10), item("UNKNOWN")])).toEqual([
-			{ marketCapUsd: 10, symbol: "BTC" },
-		]);
-	});
-
-	it("includes a zero market cap", () => {
-		expect(ranking([item("ZERO", 0)])).toEqual([
-			{ marketCapUsd: 0, symbol: "ZERO" },
-		]);
-	});
-
-	it("excludes an evaluation whose market cap metric is missing", () => {
-		const missingMetric = item("UNKNOWN", 10);
-		missingMetric.evaluations[0]!.metrics = {};
-
-		expect(ranking([item("BTC", 10), missingMetric])).toEqual([
-			{ marketCapUsd: 10, symbol: "BTC" },
-		]);
-	});
-
-	it("returns an empty result for empty input", () => {
-		expect(ranking([])).toEqual([]);
+		expect(toTopCoinRows(items).map(({ symbol }) => symbol)).toEqual(
+			items.map(({ symbol }) => symbol),
+		);
 	});
 });

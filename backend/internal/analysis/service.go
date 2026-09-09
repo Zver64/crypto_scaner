@@ -22,6 +22,11 @@ type Store interface {
 	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
 }
 
+type instrumentSelectionStore interface {
+	ListActiveInstrumentsLimited(context.Context, int) ([]market.Instrument, error)
+	ListActiveInstrumentsSortedByMarketCap(context.Context, int, string) ([]market.Instrument, error)
+}
+
 type SymbolRequest struct {
 	Symbol   string
 	Criteria []CriterionConfig
@@ -34,7 +39,15 @@ type SymbolResult struct {
 	Evaluations        []Evaluation
 	Warnings           []Warning
 }
-type SearchRequest struct{ Criteria []CriterionConfig }
+type SearchRequest struct {
+	Criteria []CriterionConfig
+	Limit    int
+	Sort     *SearchSort
+}
+type SearchSort struct {
+	Field     string
+	Direction string
+}
 type SearchItem struct {
 	PriceHistory []*float64
 	Symbol       string
@@ -118,14 +131,49 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	if err != nil {
 		return SearchResult{}, err
 	}
+	if err := validateSearchOptions(request, criteria); err != nil {
+		return SearchResult{}, err
+	}
 	if err := service.requireMarketData(ctx, requirements); err != nil {
 		return SearchResult{}, err
 	}
-	instruments, err := service.store.ListActiveInstruments(ctx)
+	preselectionWarnings := make([]Warning, 0)
+	if request.Sort != nil {
+		universe, listErr := service.store.ListActiveInstruments(ctx)
+		if listErr != nil {
+			return SearchResult{}, fmt.Errorf("list active instruments for sorting: %w", listErr)
+		}
+		for _, criterion := range criteria {
+			if criterion.Name() != "market_cap" {
+				continue
+			}
+			warnings, prepareErr := criterion.Prepare(ctx, universe)
+			if prepareErr != nil {
+				return SearchResult{}, fmt.Errorf("prepare Market Cap sorting: %w", prepareErr)
+			}
+			preselectionWarnings = append(preselectionWarnings, warnings...)
+			break
+		}
+	}
+	var instruments []market.Instrument
+	switch {
+	case request.Sort != nil || request.Limit > 0:
+		selectionStore, ok := service.store.(instrumentSelectionStore)
+		if !ok {
+			return SearchResult{}, fmt.Errorf("instrument selection is unsupported")
+		}
+		if request.Sort != nil {
+			instruments, err = selectionStore.ListActiveInstrumentsSortedByMarketCap(ctx, request.Limit, request.Sort.Direction)
+		} else {
+			instruments, err = selectionStore.ListActiveInstrumentsLimited(ctx, request.Limit)
+		}
+	default:
+		instruments, err = service.store.ListActiveInstruments(ctx)
+	}
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("list active instruments: %w", err)
 	}
-	result := SearchResult{PriceHistoryWindow: window, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
+	result := SearchResult{PriceHistoryWindow: window, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0), Warnings: preselectionWarnings}
 	candidates := append([]market.Instrument(nil), instruments...)
 	results := make(map[int64]SymbolResult, len(candidates))
 	for _, criterion := range criteria {
@@ -137,7 +185,7 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 		if prepareErr != nil {
 			return SearchResult{}, fmt.Errorf("prepare criterion %s: %w", criterion.Name(), prepareErr)
 		}
-		result.Warnings = append(result.Warnings, warnings...)
+		result.Warnings = appendUniqueWarnings(result.Warnings, warnings)
 		for _, instrument := range candidates {
 			item, evaluateErr := service.evaluateCriterion(ctx, instrument, criterion)
 			var insufficient *InsufficientHistoryError
@@ -175,6 +223,40 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	}
 	result.MatchedCount = len(result.Items)
 	return result, nil
+}
+
+func appendUniqueWarnings(existing, additions []Warning) []Warning {
+	for _, addition := range additions {
+		duplicate := false
+		for _, warning := range existing {
+			if warning == addition {
+				duplicate = true
+				break
+			}
+		}
+		if !duplicate {
+			existing = append(existing, addition)
+		}
+	}
+	return existing
+}
+
+func validateSearchOptions(request SearchRequest, criteria []criterionInstance) error {
+	if request.Limit < 0 || request.Limit > 100 {
+		return ErrInvalidArgument
+	}
+	if request.Sort == nil {
+		return nil
+	}
+	if request.Sort.Field != "market_cap_usd" || (request.Sort.Direction != "asc" && request.Sort.Direction != "desc") {
+		return ErrInvalidArgument
+	}
+	for _, criterion := range criteria {
+		if criterion.Name() == "market_cap" {
+			return nil
+		}
+	}
+	return ErrInvalidArgument
 }
 
 func (service *Service) prepare(configs []CriterionConfig) ([]criterionInstance, map[Unit]int, error) {

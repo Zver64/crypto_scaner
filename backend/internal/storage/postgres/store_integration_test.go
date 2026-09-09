@@ -196,6 +196,48 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("active instruments support database limit and Market Cap sorting", func(t *testing.T) {
+		now := time.Now().UTC()
+		fixtures := []struct {
+			baseAsset string
+			coinID    string
+			marketCap int
+		}{
+			{baseAsset: "BTC", coinID: "bitcoin", marketCap: 100},
+			{baseAsset: "ETH", coinID: "ethereum", marketCap: 200},
+		}
+		for _, fixture := range fixtures {
+			if _, err := db.Exec(ctx, `INSERT INTO app.coingecko_asset_mappings
+				(base_asset, coin_id, quote_asset, source_symbol, status, observed_at)
+				VALUES ($1, $2, 'USDT', $1, 'resolved', $3)`, fixture.baseAsset, fixture.coinID, now); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(ctx, `INSERT INTO app.coingecko_market_caps
+				(coin_id, market_cap_usd, fetched_at, observed_at)
+				VALUES ($1, $2, $3, $3)`, fixture.coinID, fixture.marketCap, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+		t.Cleanup(func() {
+			if _, err := db.Exec(ctx, `DELETE FROM app.coingecko_market_caps WHERE coin_id IN ('bitcoin', 'ethereum'); DELETE FROM app.coingecko_asset_mappings WHERE base_asset IN ('BTC', 'ETH')`); err != nil {
+				t.Errorf("clean Market Cap fixtures: %v", err)
+			}
+		})
+
+		limited, err := store.ListActiveInstrumentsLimited(ctx, 1)
+		if err != nil || len(limited) != 1 {
+			t.Fatalf("limited instruments = %+v, %v", limited, err)
+		}
+		descending, err := store.ListActiveInstrumentsSortedByMarketCap(ctx, 1, "desc")
+		if err != nil || len(descending) != 1 || descending[0].Symbol != "ETHUSDT" {
+			t.Fatalf("descending instruments = %+v, %v", descending, err)
+		}
+		ascending, err := store.ListActiveInstrumentsSortedByMarketCap(ctx, 0, "asc")
+		if err != nil || len(ascending) != 2 || ascending[0].Symbol != "BTCUSDT" || ascending[1].Symbol != "ETHUSDT" {
+			t.Fatalf("ascending instruments = %+v, %v", ascending, err)
+		}
+	})
+
 	t.Run("price history is bounded by instruments, hourly interval and closed window", func(t *testing.T) {
 		instruments, err := store.ListActiveInstruments(ctx)
 		if err != nil {

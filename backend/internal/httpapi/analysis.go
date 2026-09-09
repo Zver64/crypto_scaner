@@ -17,6 +17,13 @@ const maxAnalysisRequestBody = 1 << 20
 
 type analysisRequest struct {
 	Criteria []criterionRequest `json:"criteria"`
+	Limit    int                `json:"limit,omitempty"`
+	Sort     *sortRequest       `json:"sort,omitempty"`
+}
+
+type sortRequest struct {
+	Field     string `json:"field"`
+	Direction string `json:"direction"`
 }
 
 type criterionRequest struct {
@@ -24,6 +31,14 @@ type criterionRequest struct {
 	Name       string         `json:"name"`
 	Label      string         `json:"label"`
 	Parameters map[string]any `json:"parameters"`
+}
+
+func (request analysisRequest) searchRequest() analysis.SearchRequest {
+	result := analysis.SearchRequest{Criteria: request.criterionConfigs(), Limit: request.Limit}
+	if request.Sort != nil {
+		result.Sort = &analysis.SearchSort{Field: request.Sort.Field, Direction: request.Sort.Direction}
+	}
+	return result
 }
 
 func (request analysisRequest) criterionConfigs() []analysis.CriterionConfig {
@@ -55,7 +70,7 @@ func searchMarket(service Analysis) http.HandlerFunc {
 		if !ok {
 			return
 		}
-		result, err := service.Search(request.Context(), analysis.SearchRequest{Criteria: body.criterionConfigs()})
+		result, err := service.Search(request.Context(), body.searchRequest())
 		if err != nil {
 			writeAnalysisError(response, err, "")
 			return

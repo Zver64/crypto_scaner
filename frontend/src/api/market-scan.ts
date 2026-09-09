@@ -4,11 +4,18 @@ import {
 	ApiError,
 	type CriterionSelection,
 	fetchMarketScan,
+	type MarketScanSortOption,
 } from "@/api/client";
 import { getTelegramInitData } from "@/app/telegram";
 
+interface MarketScanRequestOptions {
+	limit: number;
+	sort: MarketScanSortOption;
+}
+
 export function marketScanQueryOptions(
 	criteria: readonly CriterionSelection[] | undefined,
+	requestOptions?: MarketScanRequestOptions,
 ) {
 	return queryOptions({
 		queryFn: async () => {
@@ -16,6 +23,7 @@ export function marketScanQueryOptions(
 
 			const result = await fetchMarketScan(criteria, {
 				initData: getTelegramInitData(),
+				...requestOptions,
 			});
 			if (!hasExpectedMarketScanEvaluations(result.items, criteria)) {
 				throw new ApiError("unexpected_error");
@@ -23,7 +31,9 @@ export function marketScanQueryOptions(
 			return result;
 		},
 		queryKey: criteria
-			? (["market-scan", criteria] as const)
+			? requestOptions
+				? (["market-scan", criteria, requestOptions] as const)
+				: (["market-scan", criteria] as const)
 			: (["market-scan", "uncommitted"] as const),
 		retry: false,
 		gcTime: Number.POSITIVE_INFINITY,
@@ -34,9 +44,10 @@ export function marketScanQueryOptions(
 export function useMarketScanQuery(
 	criteria: readonly CriterionSelection[] | undefined,
 	enabled: boolean,
+	requestOptions?: MarketScanRequestOptions,
 ) {
 	return useQuery({
-		...marketScanQueryOptions(criteria),
+		...marketScanQueryOptions(criteria, requestOptions),
 		enabled: criteria !== undefined && enabled,
 	});
 }

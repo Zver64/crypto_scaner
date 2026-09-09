@@ -3,12 +3,15 @@ package analysis_test
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 	"time"
 
 	"crypto-scanner/internal/analysis"
+	marketcapcriterion "crypto-scanner/internal/analysis/criteria/market_cap"
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/marketcap"
 )
 
 func TestServiceCombinesCriteriaAndLoadsMergedRequirementsOnce(t *testing.T) {
@@ -181,11 +184,115 @@ func TestServiceSearchCombinesCriteriaAndPreservesStoreOrder(t *testing.T) {
 		t.Fatalf("NEWUSDT evaluation = %+v", result.Items[2].Evaluations[0])
 	}
 }
+func TestSearchRefreshesMarketCapsBeforeDatabaseRanking(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		caps map[string]marketcap.Cap
+	}{
+		{name: "cold cache", caps: map[string]marketcap.Cap{}},
+		{name: "stale cache", caps: map[string]marketcap.Cap{
+			"a": {CoinID: "a", USD: 100, Available: true, FetchedAt: time.Now().Add(-2 * time.Hour)},
+			"b": {CoinID: "b", USD: 90, Available: true, FetchedAt: time.Now().Add(-2 * time.Hour)},
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &rankingStore{
+				instruments: []market.Instrument{{ID: 1, Symbol: "AUSDT", BaseAsset: "A"}, {ID: 2, Symbol: "BUSDT", BaseAsset: "B"}},
+				mappings: map[string]marketcap.Mapping{
+					"A": {BaseAsset: "A", CoinID: "a", Status: "resolved"},
+					"B": {BaseAsset: "B", CoinID: "b", Status: "resolved"},
+				},
+				caps: test.caps,
+			}
+			provider := &rankingProvider{caps: []marketcap.Cap{
+				{CoinID: "a", USD: 80, Available: true},
+				{CoinID: "b", USD: 110, Available: true},
+			}}
+			service, err := analysis.NewService(store, marketcapcriterion.New(marketcap.New(store, provider)))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := service.Search(context.Background(), analysis.SearchRequest{
+				Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{"min_market_cap_usd": float64(0)}}},
+				Limit:    1,
+				Sort:     &analysis.SearchSort{Field: "market_cap_usd", Direction: "desc"},
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if provider.calls != 1 || len(result.Items) != 1 || result.Items[0].Symbol != "BUSDT" {
+				t.Fatalf("provider calls=%d items=%+v", provider.calls, result.Items)
+			}
+		})
+	}
+}
+
+func TestSearchUsesBackendMarketCapSortAndLimit(t *testing.T) {
+	store := &storeStub{
+		rankedInstruments: []market.Instrument{
+			{ID: 2, Symbol: "BTCUSDT"},
+			{ID: 1, Symbol: "ETHUSDT"},
+		},
+	}
+	service, err := analysis.NewService(store, marketCapTestFactory{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Search(context.Background(), analysis.SearchRequest{
+		Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{}}},
+		Limit:    1,
+		Sort:     &analysis.SearchSort{Field: "market_cap_usd", Direction: "desc"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Symbol != "BTCUSDT" {
+		t.Fatalf("items = %+v", result.Items)
+	}
+	if store.selectionLimit != 1 || store.selectionDirection != "desc" || store.activeListCalls != 1 {
+		t.Fatalf("selection limit=%d direction=%q active calls=%d", store.selectionLimit, store.selectionDirection, store.activeListCalls)
+	}
+}
+
+func TestSearchUsesBackendLimitWithoutChangingStoreOrder(t *testing.T) {
+	store := &storeStub{
+		instruments: []market.Instrument{
+			{ID: 1, Symbol: "ZZZUSDT"},
+			{ID: 2, Symbol: "AAAUSDT"},
+		},
+	}
+	service, err := analysis.NewService(store, marketCapTestFactory{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Search(context.Background(), analysis.SearchRequest{
+		Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{}}},
+		Limit:    1,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 1 || result.Items[0].Symbol != "ZZZUSDT" {
+		t.Fatalf("items = %+v", result.Items)
+	}
+	if store.selectionLimit != 1 || store.selectionDirection != "" || store.activeListCalls != 0 {
+		t.Fatalf("selection limit=%d direction=%q active calls=%d", store.selectionLimit, store.selectionDirection, store.activeListCalls)
+	}
+}
+
 func TestServiceRejectsInvalidSelectionBeforeReads(t *testing.T) {
 	store := &storeStub{}
 	service, _ := analysis.NewService(store, volatility.New())
-	for _, configs := range [][]analysis.CriterionConfig{nil, {{Key: "missing", Name: "missing", Label: "Missing"}}} {
-		_, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: configs})
+	for _, request := range []analysis.SearchRequest{
+		{},
+		{Criteria: []analysis.CriterionConfig{{Key: "missing", Name: "missing", Label: "Missing"}}},
+		{Criteria: []analysis.CriterionConfig{{Key: "volatility", Name: "volatility", Label: "Volatility", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}}}, Limit: -1},
+		{Criteria: []analysis.CriterionConfig{{Key: "volatility", Name: "volatility", Label: "Volatility", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}}}, Limit: 101},
+		{Criteria: []analysis.CriterionConfig{{Key: "volatility", Name: "volatility", Label: "Volatility", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}}}, Sort: &analysis.SearchSort{Field: "market_cap_usd", Direction: "sideways"}},
+		{Criteria: []analysis.CriterionConfig{{Key: "volatility", Name: "volatility", Label: "Volatility", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}}}, Sort: &analysis.SearchSort{Field: "price", Direction: "desc"}},
+		{Criteria: []analysis.CriterionConfig{{Key: "volatility", Name: "volatility", Label: "Volatility", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}}}, Sort: &analysis.SearchSort{Field: "market_cap_usd", Direction: "desc"}},
+	} {
+		_, err := service.Search(context.Background(), request)
 		if !errors.Is(err, analysis.ErrInvalidArgument) {
 			t.Fatalf("err=%v", err)
 		}
@@ -320,6 +427,24 @@ func (unresolvedCriterion) Evaluate(context.Context, analysis.Input) (analysis.E
 	return analysis.Evaluation{}, &analysis.UnresolvedError{Code: "missing", Message: "missing"}
 }
 
+type marketCapTestFactory struct{}
+
+func (marketCapTestFactory) Name() string { return "market_cap" }
+func (marketCapTestFactory) Build(map[string]any) (analysis.Criterion, error) {
+	return marketCapTestCriterion{}, nil
+}
+
+type marketCapTestCriterion struct{}
+
+func (marketCapTestCriterion) Name() string                               { return "market_cap" }
+func (marketCapTestCriterion) Requirements() []analysis.CandleRequirement { return nil }
+func (marketCapTestCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
+	return nil, nil
+}
+func (marketCapTestCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
+	return analysis.Evaluation{Matched: true, Metrics: map[string]float64{"market_cap_usd": float64(input.Instrument.ID)}}, nil
+}
+
 type fakeFactory struct{}
 
 func (fakeFactory) Name() string                                     { return "fake" }
@@ -367,14 +492,86 @@ func (fakeCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis
 	return analysis.Evaluation{Matched: false, Metrics: map[string]float64{}, CandleCount: 1}, nil
 }
 
+type rankingStore struct {
+	instruments []market.Instrument
+	mappings    map[string]marketcap.Mapping
+	caps        map[string]marketcap.Cap
+}
+
+func (*rankingStore) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
+	return market.SyncState{}, nil
+}
+func (s *rankingStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
+	return s.instruments, nil
+}
+func (s *rankingStore) ListActiveInstrumentsLimited(_ context.Context, limit int) ([]market.Instrument, error) {
+	return s.instruments[:min(limit, len(s.instruments))], nil
+}
+func (s *rankingStore) ListActiveInstrumentsSortedByMarketCap(_ context.Context, limit int, direction string) ([]market.Instrument, error) {
+	items := append([]market.Instrument(nil), s.instruments...)
+	sort.Slice(items, func(i, j int) bool {
+		left := s.caps[s.mappings[items[i].BaseAsset].CoinID].USD
+		right := s.caps[s.mappings[items[j].BaseAsset].CoinID].USD
+		if direction == "asc" {
+			return left < right
+		}
+		return left > right
+	})
+	if limit > 0 {
+		items = items[:min(limit, len(items))]
+	}
+	return items, nil
+}
+func (*rankingStore) ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error) {
+	return nil, nil
+}
+func (*rankingStore) ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error) {
+	return nil, nil
+}
+func (*rankingStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+	return nil, nil
+}
+func (*rankingStore) BootstrapCompleted(context.Context) (bool, error)           { return true, nil }
+func (*rankingStore) ReplaceSnapshot(context.Context, []marketcap.Mapping) error { return nil }
+func (s *rankingStore) GetMapping(_ context.Context, base string) (marketcap.Mapping, error) {
+	return s.mappings[base], nil
+}
+func (*rankingStore) SaveMapping(context.Context, marketcap.Mapping) error { return nil }
+func (s *rankingStore) GetCap(_ context.Context, id string) (marketcap.Cap, error) {
+	cap, ok := s.caps[id]
+	if !ok {
+		return marketcap.Cap{}, errors.New("missing cap")
+	}
+	return cap, nil
+}
+func (s *rankingStore) SaveCap(_ context.Context, cap marketcap.Cap) error {
+	s.caps[cap.CoinID] = cap
+	return nil
+}
+
+type rankingProvider struct {
+	caps  []marketcap.Cap
+	calls int
+}
+
+func (*rankingProvider) Tickers(context.Context, int) ([]marketcap.Ticker, error) { return nil, nil }
+func (p *rankingProvider) Markets(context.Context, []string) ([]marketcap.Cap, error) {
+	p.calls++
+	return p.caps, nil
+}
+
 type storeStub struct {
 	instruments         []market.Instrument
+	rankedInstruments   []market.Instrument
 	candles             map[string][]market.Candle
 	candlesByInstrument map[int64]map[string][]market.Candle
 	loads               map[string]int
 	failRepeatedLoad    bool
 	hourlyCandles       []market.HourlyCandle
 	reads               int
+	activeListCalls     int
+	selectionLimit      int
+	selectionDirection  string
 }
 
 func (s *storeStub) ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error) {
@@ -392,7 +589,23 @@ func (s *storeStub) GetSyncState(context.Context, market.SyncProfile) (market.Sy
 }
 func (s *storeStub) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	s.reads++
+	s.activeListCalls++
 	return s.instruments, nil
+}
+func (s *storeStub) ListActiveInstrumentsLimited(_ context.Context, limit int) ([]market.Instrument, error) {
+	s.reads++
+	s.selectionLimit = limit
+	return s.instruments[:min(limit, len(s.instruments))], nil
+}
+func (s *storeStub) ListActiveInstrumentsSortedByMarketCap(_ context.Context, limit int, direction string) ([]market.Instrument, error) {
+	s.reads++
+	s.selectionLimit = limit
+	s.selectionDirection = direction
+	items := s.rankedInstruments
+	if limit > 0 {
+		items = items[:min(limit, len(items))]
+	}
+	return items, nil
 }
 func (s *storeStub) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, interval string, _ int) ([]market.Candle, error) {
 	s.reads++

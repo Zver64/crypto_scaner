@@ -17,13 +17,18 @@ import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import { defaultMarketScanSort } from "@/features/market-scan/sort";
 import {
 	topCoinsCriteria,
+	topCoinsRequestOptions,
 	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
 
 export function TopCoinsScreen() {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
-	const query = useMarketScanQuery(topCoinsCriteria, permission.allowed);
+	const query = useMarketScanQuery(
+		topCoinsCriteria,
+		permission.allowed,
+		topCoinsRequestOptions,
+	);
 	const [sort, setSort] = useState(defaultMarketScanSort);
 	const rows = toTopCoinRows(query.data?.items ?? []);
 	useAnalysisErrorNotification(query.error, "Top Market Cap failed");

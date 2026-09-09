@@ -7,10 +7,6 @@ import {
 	type MarketScanRow,
 	toMarketScanRows,
 } from "@/features/market-scan/results-table/utils";
-import {
-	defaultMarketScanSort,
-	sortMarketScanRows,
-} from "@/features/market-scan/sort";
 
 export const topCoinsCriteria: readonly CriterionSelection[] =
 	criterionSelections({
@@ -20,14 +16,16 @@ export const topCoinsCriteria: readonly CriterionSelection[] =
 		minimumRangePercent: 0,
 	});
 
+export const topCoinsRequestOptions = {
+	limit: 10,
+	sort: {
+		direction: "desc",
+		field: "market_cap_usd",
+	},
+} as const;
+
 export function toTopCoinRows(
 	items: readonly MarketScanItem[],
 ): MarketScanRow[] {
-	const rowsWithMarketCap = toMarketScanRows(items).filter(
-		(row) => row.marketCapUsd !== null,
-	);
-	return sortMarketScanRows(rowsWithMarketCap, defaultMarketScanSort).slice(
-		0,
-		5,
-	);
+	return toMarketScanRows(items);
 }

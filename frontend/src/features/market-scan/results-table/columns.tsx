@@ -64,7 +64,7 @@ export const marketScanColumns = [
 	},
 	{
 		key: marketScanColumnKeys.priceHistory,
-		header: "7d change",
+		header: "7d chart",
 		cell: (row, window) => (
 			<PriceHistoryChart
 				prices={row.priceHistory}
@@ -75,7 +75,7 @@ export const marketScanColumns = [
 	},
 	{
 		key: marketScanColumnKeys.sevenDayChangePercent,
-		header: "7d change percent",
+		header: "7d change",
 		cell: (row) => <PercentChange value={row.sevenDayChangePercent} />,
 		sortable: true,
 	},

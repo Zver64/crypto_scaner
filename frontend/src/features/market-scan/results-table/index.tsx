@@ -2,6 +2,7 @@ import { UnstyledButton } from "@mantine/core";
 import type { PriceHistoryWindow } from "@/api/client";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { marketScanColumns } from "@/features/market-scan/results-table/columns";
+import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
 import type { MarketScanRow } from "@/features/market-scan/results-table/utils";
 import {
 	type MarketScanSort,
@@ -31,7 +32,8 @@ export function MarketScanResultsTable({
 			const active = sortable && column.key === sort.column;
 			return {
 				key: column.key,
-				textAlign: "textAlign" in column ? column.textAlign : undefined,
+				textAlign:
+					column.key === marketScanColumnKeys.symbol ? "left" : "center",
 				cell: (row) => column.cell(row, window),
 				ariaSort: sortable ? (active ? direction : "none") : undefined,
 				header: sortable ? (

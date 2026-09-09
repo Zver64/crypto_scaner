@@ -197,7 +197,7 @@ it("identifies metrics by key and keeps every column when the Market Cap criteri
 	};
 	const html = renderScan(defaultMarketScanCriteria, result);
 	expect(html).toMatch(
-		/Daily Range.*Hourly Range.*Hourly Candle Count.*Daily Candle Count.*Market Cap USD.*7d change.*7d change percent.*Binance/,
+		/Daily Range.*Hourly Range.*Hourly Candle Count.*Daily Candle Count.*Market Cap USD.*7d chart.*7d change.*Binance/,
 	);
 	const sortButtons = html.match(
 		/<button[^>]*aria-label="Sort by [^"]*"[^>]*>/g,
@@ -210,7 +210,9 @@ it("identifies metrics by key and keeps every column when the Market Cap criteri
 	expect(html).toContain('aria-sort="descending"');
 	expect(html).toContain('aria-label="Sort by Daily Range"');
 	expect(html).toContain('aria-label="Sort by Hourly Range"');
-	expect(html).toContain('aria-label="Sort by 7d change percent"');
+	expect(html).toContain('aria-label="Sort by 7d change"');
+	expect(html.match(/text-align:center/g)).toHaveLength(16);
+	expect(html.match(/text-align:left/g)).toHaveLength(2);
 	expect(html).toMatch(/6.25%<.*2.75%<.*60<.*30<.*\$750M.*16,800%/);
 	expect(html).toContain(
 		'<span style="color:var(--mantine-color-green-6)">16,800%</span>',

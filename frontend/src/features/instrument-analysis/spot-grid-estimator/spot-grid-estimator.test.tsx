@@ -11,6 +11,10 @@ it("shows combined zero-valued profit per step before input is complete", () => 
 	);
 	const text = html.replace(/<[^>]*>/g, "");
 
+	expect(text).toContain("Arithmetic");
+	expect(text).toContain("Geometric");
+	expect(html).toContain('aria-label="Grid type"');
+	expect(html).toMatch(/checked="" value="geometric"/);
 	expect(text).toContain("Profit per step0 USDT, 0%");
 	expect(text).not.toContain("Profit per step (%)");
 	expect(text).toContain("Average entry price0 USDT");

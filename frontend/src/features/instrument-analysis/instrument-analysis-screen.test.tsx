@@ -174,7 +174,6 @@ it("shows keyed ranges and complete sample coverage with non-default scan settin
 	expect(html).not.toContain("Hourly Volatility");
 	expect(html).not.toContain("Coverage From");
 	expect(html).not.toContain("Coverage To");
-	expect(html).not.toContain('type="radio"');
 	expect(html).not.toContain("Minimum Market Cap");
 	expect(html).not.toContain("Recalculate Instrument");
 	expect(html).not.toContain("Matched");
@@ -191,6 +190,8 @@ it("shows the simplified four-input spot grid calculator after the chart", () =>
 	const text = html.replace(/<[^>]*>/g, "");
 
 	expect(text).toContain("Spot Grid Calculator");
+	expect(text).toContain("Arithmetic");
+	expect(text).toContain("Geometric");
 	expect(text).toContain("Lower price (USDT)");
 	expect(text).toContain("Upper price (USDT)");
 	expect(text).toContain("Grid count");
@@ -198,7 +199,7 @@ it("shows the simplified four-input spot grid calculator after the chart", () =>
 	expect(text).toContain("Profit per step0 USDT, 0%");
 	expect(text).not.toContain("Profit per step (%)");
 	expect(text).toContain("Average entry price0 USDT");
-	expect(html.match(/<input/g)).toHaveLength(4);
+	expect(html.match(/inputMode=/g)).toHaveLength(4);
 	expect(text).not.toContain("Binance");
 	expect(text).not.toContain("all buys fill before any sells");
 	expect(html.indexOf("Seven-day Price History")).toBeLessThan(

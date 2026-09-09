@@ -29,6 +29,20 @@ describe("calculateSpotGridInput", () => {
 		);
 	});
 
+	it("calculates a geometric grid with a single constant profit per step", () => {
+		const calculation = calculateSpotGridInput(
+			{ ...validInput, upperPrice: "121" },
+			"geometric",
+		);
+
+		expect(calculation?.error).toBeNull();
+		expect(spotGridEstimateValues(calculation?.estimate ?? null)).toEqual({
+			averageEntryPrice: "105 USDT",
+			profitPerStep: "10.8 USDT",
+			profitPerStepPercent: "9.78%",
+		});
+	});
+
 	it("clears a valid estimate after cleared or invalid input", () => {
 		const validCalculation = calculateSpotGridInput(validInput);
 

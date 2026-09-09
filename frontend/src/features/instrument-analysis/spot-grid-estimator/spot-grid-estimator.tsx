@@ -1,6 +1,7 @@
 import {
 	Alert,
 	Paper,
+	SegmentedControl,
 	SimpleGrid,
 	Stack,
 	Text,
@@ -10,15 +11,16 @@ import {
 import { useMemo, useState } from "react";
 import {
 	calculateSpotGridInput,
+	type SpotGridType,
 	spotGridEstimateValues,
 } from "@/features/instrument-analysis/spot-grid-estimator/utils";
-import type { ArithmeticSpotGridInput } from "@/utils/calculator/arithmetic-spot-grid";
+import type { SpotGridInput } from "@/utils/calculator/spot-grid";
 
 interface SpotGridEstimatorProps {
 	paperPadding: string;
 }
 
-const emptyInput: ArithmeticSpotGridInput = {
+const emptyInput: SpotGridInput = {
 	lowerPrice: "",
 	upperPrice: "",
 	gridCount: "",
@@ -38,11 +40,15 @@ function EstimateValue({ label, value }: { label: string; value: string }) {
 
 export function SpotGridEstimator({ paperPadding }: SpotGridEstimatorProps) {
 	const [input, setInput] = useState(emptyInput);
-	const calculation = useMemo(() => calculateSpotGridInput(input), [input]);
+	const [gridType, setGridType] = useState<SpotGridType>("geometric");
+	const calculation = useMemo(
+		() => calculateSpotGridInput(input, gridType),
+		[input, gridType],
+	);
 	const estimate = calculation?.estimate ?? null;
 	const values = spotGridEstimateValues(estimate);
 
-	function update(field: keyof ArithmeticSpotGridInput, value: string) {
+	function update(field: keyof SpotGridInput, value: string) {
 		setInput((current) => ({ ...current, [field]: value }));
 	}
 
@@ -56,6 +62,16 @@ export function SpotGridEstimator({ paperPadding }: SpotGridEstimatorProps) {
 				<Title id="spot-grid-estimator-heading" order={2} size="h3">
 					Spot Grid Calculator
 				</Title>
+				<SegmentedControl
+					aria-label="Grid type"
+					data={[
+						{ label: "Arithmetic", value: "arithmetic" },
+						{ label: "Geometric", value: "geometric" },
+					]}
+					fullWidth
+					onChange={(value) => setGridType(value as SpotGridType)}
+					value={gridType}
+				/>
 				<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
 					<TextInput
 						inputMode="decimal"

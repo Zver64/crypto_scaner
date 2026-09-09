@@ -76,14 +76,14 @@ export const marketScanColumns = [
 		textAlign: "center",
 	},
 	{
-		key: marketScanColumnKeys.hourlyCandleCount,
-		header: "Hourly Candle Count",
-		cell: (row) => row.hourlyCandleCount ?? "—",
-	},
-	{
 		key: marketScanColumnKeys.dailyCandleCount,
 		header: "Daily Candle Count",
 		cell: (row) => row.dailyCandleCount ?? "—",
+	},
+	{
+		key: marketScanColumnKeys.hourlyCandleCount,
+		header: "Hourly Candle Count",
+		cell: (row) => row.hourlyCandleCount ?? "—",
 	},
 ] as const satisfies readonly MarketScanColumn[];
 

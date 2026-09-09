@@ -15,7 +15,7 @@ interface MarketScanResultsTableProps {
 	window: PriceHistoryWindow;
 	sort: MarketScanSort;
 	onSortChange(sort: MarketScanSort): void;
-	onSelectInstrument(symbol: string): void;
+	onSelectInstrument?(symbol: string): void;
 }
 
 export function MarketScanResultsTable({
@@ -58,7 +58,9 @@ export function MarketScanResultsTable({
 			rows={sortMarketScanRows(rows, sort)}
 			getRowKey={(row) => row.symbol}
 			minWidth={900}
-			onRowClick={(row) => onSelectInstrument(row.symbol)}
+			onRowClick={
+				onSelectInstrument ? (row) => onSelectInstrument(row.symbol) : undefined
+			}
 		/>
 	);
 }

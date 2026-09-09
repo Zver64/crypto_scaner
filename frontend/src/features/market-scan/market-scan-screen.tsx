@@ -1,13 +1,7 @@
-import {
-	Center,
-	Container,
-	Loader,
-	Stack,
-	Title,
-	useMatches,
-} from "@mantine/core";
+import { Center, Container, Loader, Stack, useMatches } from "@mantine/core";
 import { useMarketScanQuery } from "@/api/market-scan";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
+import { PageNavigation } from "@/app/page-navigation";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanForm } from "@/features/market-scan/form";
@@ -48,7 +42,7 @@ export function MarketScanScreen({
 	return (
 		<Container maw={880} px={0} size="md">
 			<Stack gap={pageGap}>
-				<PageHeading />
+				<PageNavigation current="market-scan" title="Market Scan" />
 				<MarketScanForm
 					committedCriteria={committedCriteria}
 					disabled={!permission.allowed || query.isFetching}
@@ -73,19 +67,5 @@ export function MarketScanScreen({
 				) : null}
 			</Stack>
 		</Container>
-	);
-}
-
-function PageHeading() {
-	const headingSize = useMatches({ base: "h3", sm: "h2" });
-
-	return (
-		<Stack gap={2}>
-			<Center>
-				<Title order={1} size={headingSize}>
-					Market Scan
-				</Title>
-			</Center>
-		</Stack>
 	);
 }

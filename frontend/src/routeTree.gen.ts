@@ -10,11 +10,17 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TopCoinsRouteImport } from './routes/top-coins'
 import { Route as InstrumentsSymbolRouteImport } from './routes/instruments.$symbol'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TopCoinsRoute = TopCoinsRouteImport.update({
+  id: '/top-coins',
+  path: '/top-coins',
   getParentRoute: () => rootRouteImport,
 } as any)
 const InstrumentsSymbolRoute = InstrumentsSymbolRouteImport.update({
@@ -25,27 +31,31 @@ const InstrumentsSymbolRoute = InstrumentsSymbolRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/top-coins': typeof TopCoinsRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/top-coins': typeof TopCoinsRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/top-coins': typeof TopCoinsRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/instruments/$symbol'
+  fullPaths: '/' | '/top-coins' | '/instruments/$symbol'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/instruments/$symbol'
-  id: '__root__' | '/' | '/instruments/$symbol'
+  to: '/' | '/top-coins' | '/instruments/$symbol'
+  id: '__root__' | '/' | '/top-coins' | '/instruments/$symbol'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  TopCoinsRoute: typeof TopCoinsRoute
   InstrumentsSymbolRoute: typeof InstrumentsSymbolRoute
 }
 
@@ -56,6 +66,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/top-coins': {
+      id: '/top-coins'
+      path: '/top-coins'
+      fullPath: '/top-coins'
+      preLoaderRoute: typeof TopCoinsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/instruments/$symbol': {
@@ -70,6 +87,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  TopCoinsRoute: TopCoinsRoute,
   InstrumentsSymbolRoute: InstrumentsSymbolRoute,
 }
 export const routeTree = rootRouteImport

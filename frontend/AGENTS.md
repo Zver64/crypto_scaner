@@ -71,6 +71,13 @@ tanstackIntent:
 - Place components specific to a feature or screen alongside that feature in separate files, not in `src/components/`. Repetition alone does not make a component suitable for the shared directory.
 - Follow KISS: extract clear UI responsibilities and reuse existing components rather than duplicating markup. Do not introduce speculative abstractions or configuration unrelated to actual use cases.
 
+## Testing
+
+- Do not test React components, JSX/TSX output, rendered markup, styles, layout, accessibility attributes, or any other visual/UI behavior with Vitest.
+- Vitest tests must cover only ordinary non-visual functions and modules that do not depend on JSX/TSX rendering.
+- Do not add `.test.tsx` or `.spec.tsx` files, component render tests, snapshots, DOM assertions, or `react-dom`/Testing Library render helpers to Vitest tests.
+- Extract non-visual logic from components into plain TypeScript functions when it needs unit-test coverage, and test those functions separately in `.test.ts` files.
+
 ## Utilities
 
 - Place UI- and feature-independent utility functions in `src/utils/`, not in components, app-shell modules, routes, or feature modules.

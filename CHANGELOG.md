@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/Zver64/crypto_scaner/compare/v0.8.2...v0.9.0) (2026-09-09)
+
+
+### Features
+
+* better layout ([f176ad9](https://github.com/Zver64/crypto_scaner/commit/f176ad9d4cf24768536099e903274b4547668fe6))
+* refine market scan criteria presets ([fbf8410](https://github.com/Zver64/crypto_scaner/commit/fbf84100b839b882a6f83bdc784c62d35c9d14ea))
+
 ## [0.8.2](https://github.com/Zver64/crypto_scaner/compare/v0.8.1...v0.8.2) (2026-09-09)
 
 

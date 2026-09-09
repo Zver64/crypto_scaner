@@ -46,16 +46,6 @@ export const marketScanColumns = [
 		sortable: true,
 	},
 	{
-		key: marketScanColumnKeys.hourlyCandleCount,
-		header: "Hourly Candle Count",
-		cell: (row) => row.hourlyCandleCount ?? "—",
-	},
-	{
-		key: marketScanColumnKeys.dailyCandleCount,
-		header: "Daily Candle Count",
-		cell: (row) => row.dailyCandleCount ?? "—",
-	},
-	{
 		key: marketScanColumnKeys.marketCap,
 		header: "Market Cap USD",
 		cell: (row) =>
@@ -84,6 +74,16 @@ export const marketScanColumns = [
 		header: "Binance",
 		cell: (row) => <BinanceLink symbol={row.symbol} />,
 		textAlign: "center",
+	},
+	{
+		key: marketScanColumnKeys.hourlyCandleCount,
+		header: "Hourly Candle Count",
+		cell: (row) => row.hourlyCandleCount ?? "—",
+	},
+	{
+		key: marketScanColumnKeys.dailyCandleCount,
+		header: "Daily Candle Count",
+		cell: (row) => row.dailyCandleCount ?? "—",
 	},
 ] as const satisfies readonly MarketScanColumn[];
 

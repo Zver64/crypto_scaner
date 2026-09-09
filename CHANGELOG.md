@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.10.0](https://github.com/Zver64/crypto_scaner/compare/v0.9.0...v0.10.0) (2026-09-09)
+
+
+### Features
+
+* add top market cap page ([16dbda7](https://github.com/Zver64/crypto_scaner/commit/16dbda7783f0daa39cb21969646ac60e20fd10f8))
+
+
+### Bug Fixes
+
+* rank top market caps on backend ([d3e3b7f](https://github.com/Zver64/crypto_scaner/commit/d3e3b7f266fe09c313331d316eef314833521d0c))
+
 ## [0.9.0](https://github.com/Zver64/crypto_scaner/compare/v0.8.2...v0.9.0) (2026-09-09)
 
 

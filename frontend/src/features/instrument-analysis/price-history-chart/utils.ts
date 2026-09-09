@@ -5,6 +5,7 @@ import type {
 } from "lightweight-charts";
 import type { PriceCandle } from "@/api/client";
 import { formatNumber } from "@/utils/number-format";
+import { formatRangePercent } from "@/utils/range-percent";
 
 const dateTimeFormatter = new Intl.DateTimeFormat("en", {
 	day: "numeric",
@@ -72,6 +73,10 @@ export function formatUtcTimestamp(value: string | number): string {
 	const timestamp =
 		typeof value === "number" ? value * 1_000 : Date.parse(value);
 	return `${dateTimeFormatter.format(new Date(timestamp))} UTC`;
+}
+
+export function formatCandleRange(candle: PriceCandle | ChartCandle): string {
+	return formatRangePercent(((candle.high - candle.low) / candle.open) * 100);
 }
 
 export function formatOhlc(candle: PriceCandle | ChartCandle): string {

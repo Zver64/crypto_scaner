@@ -153,6 +153,7 @@ it("renders the latest OHLC fallback and an accessible chart summary", () => {
 
 	expect(html).toContain("Sep 2, 23:00 UTC");
 	expect(html).toContain("O 10  H 12  L 9  C 11");
+	expect(html).toContain("R 30%");
 	expect(html).toContain(
 		"Up to 30 days of hourly candlestick prices. 1 of 721 hourly slots contain candles",
 	);

@@ -391,7 +391,7 @@ it.each([
 	});
 	await analysis.query();
 	const text = analysis.renderText();
-	expect(text).toContain("Recommended trading bot settings");
+	expect(text).toContain("Recommended grid step");
 	expect(text).toContain(`Daily Grid Step${expected}`);
 	expect(text).toContain("Hourly Grid StepNot enough data");
 });
@@ -429,7 +429,7 @@ it("shows the enlarged history chart without hiding valid information when histo
 
 	const text = html.replace(/<[^>]*>/g, "");
 	expect(text).toContain("Symbol");
-	expect(text).toContain("Recommended trading bot settings");
+	expect(text).toContain("Recommended grid step");
 	expect(text).toContain("Daily Range4%");
 	expect(text).toContain("Hourly Range2%");
 	expect(text).toContain("Daily Grid Step2%");
@@ -458,7 +458,7 @@ it("shows unavailable recommendations for canonical insufficient_data without in
 	});
 	const text = analysis.renderText();
 	expect(text).toContain("BTCUSDT");
-	expect(text).toContain("Recommended trading bot settings");
+	expect(text).toContain("Recommended grid step");
 	expect(text).toContain("Daily Grid StepNot enough data");
 	expect(text).toContain("Hourly Grid StepNot enough data");
 	expect(text).toContain("Days available: —");
@@ -498,7 +498,7 @@ it.each([
 	await expect(analysis.query()).rejects.toBeInstanceOf(Error);
 	const text = analysis.renderText();
 	expect(text).not.toContain("Not enough data");
-	expect(text).not.toContain("Recommended trading bot settings");
+	expect(text).not.toContain("Recommended grid step");
 });
 
 it("preserves valid analysis content when a refresh returns insufficient_data", async () => {

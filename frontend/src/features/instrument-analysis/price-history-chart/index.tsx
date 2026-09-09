@@ -20,6 +20,7 @@ import {
 	type ChartCandleSlot,
 	chartPriceResolution,
 	createCandlestickData,
+	formatCandleRange,
 	formatOhlc,
 	formatPrice,
 	formatUtcTimestamp,
@@ -166,7 +167,10 @@ export function InstrumentPriceHistoryChart({
 	return (
 		<Box>
 			<Text aria-live="polite" ff="monospace" mb="xs" size="sm">
-				{formatUtcTimestamp(readoutTime)} · {formatOhlc(readout)}
+				{formatUtcTimestamp(readoutTime)} · {formatOhlc(readout)} ·{" "}
+				<Text c="blue.4" component="span" fw={700} inherit>
+					R {formatCandleRange(readout)}
+				</Text>
 			</Text>
 			<div
 				aria-label={`${symbol}: Up to 30 days of hourly candlestick prices. ${available.length} of ${candles.length} hourly slots contain candles. Candle hours ${window.from} to ${window.to}. The latest 7 days are visible initially.`}

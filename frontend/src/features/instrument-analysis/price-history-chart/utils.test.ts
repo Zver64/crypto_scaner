@@ -5,6 +5,7 @@ import {
 	availableCandles,
 	chartPriceResolution,
 	createCandlestickData,
+	formatCandleRange,
 	formatOhlc,
 	formatPrice,
 	formatUtcTimestamp,
@@ -124,8 +125,14 @@ describe("candlestick chart presentation", () => {
 			"Aug 26, 23:00 UTC",
 		);
 		expect(formatPrice(0.0000123456789)).toBe("0.0000123");
-		expect(
-			formatOhlc({ open: 1, high: 2, low: 0.5, close: 1.5, time: 0 as never }),
-		).toBe("O 1  H 2  L 0.5  C 1.5");
+		const chartCandle = {
+			open: 1,
+			high: 2,
+			low: 0.5,
+			close: 1.5,
+			time: 0 as never,
+		};
+		expect(formatCandleRange(chartCandle)).toBe("150%");
+		expect(formatOhlc(chartCandle)).toBe("O 1  H 2  L 0.5  C 1.5");
 	});
 });

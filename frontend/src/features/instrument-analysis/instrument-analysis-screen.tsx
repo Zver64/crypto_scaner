@@ -216,9 +216,9 @@ export function InstrumentAnalysisScreen({
 							>
 								<Stack gap="md">
 									<Title id="bot-settings-heading" order={2} size="h3">
-										Recommended trading bot settings
+										Recommended grid step
 									</Title>
-									<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+									<SimpleGrid cols={2} spacing="md">
 										{statistics.map(
 											({ key, stepLabel, range, coverage, partial }) => (
 												<Stack gap={4} key={key}>
@@ -235,10 +235,6 @@ export function InstrumentAnalysisScreen({
 											),
 										)}
 									</SimpleGrid>
-									<Text size="sm" c="dimmed">
-										Grid Step is the percentage spacing between adjacent grid
-										orders.
-									</Text>
 								</Stack>
 							</Paper>
 							<SpotGridEstimator

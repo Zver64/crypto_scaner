@@ -3,6 +3,7 @@
 .env.*
 !.env.example
 
+docs/plans
 
 # Editors and operating systems
 .DS_Store

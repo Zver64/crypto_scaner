@@ -1,3 +1,4 @@
+import type { PriceCandle } from "@/api/client";
 import {
 	type ArithmeticSpotGridEstimate,
 	calculateArithmeticSpotGrid,
@@ -6,7 +7,12 @@ import {
 	calculateGeometricSpotGrid,
 	type GeometricSpotGridEstimate,
 } from "@/utils/calculator/geometric-spot-grid";
-import type { SpotGridInput } from "@/utils/calculator/spot-grid";
+import {
+	parseSpotGridCount,
+	parseSpotGridDecimal,
+	SpotGridDecimal,
+	type SpotGridInput,
+} from "@/utils/calculator/spot-grid";
 import { formatNumber } from "@/utils/number-format";
 
 export type SpotGridType = "arithmetic" | "geometric";
@@ -19,14 +25,107 @@ export interface SpotGridCalculation {
 	estimate: SpotGridEstimate | null;
 }
 
+export const DEFAULT_MARKUP_PERCENT = 5;
+export const DEFAULT_GRID_COUNT = "40";
+export const DEFAULT_INVESTMENT = "1000";
+
+function formatCalculatorInput(value: string): string {
+	return formatNumber(value).replaceAll(",", "");
+}
+
+export interface SpotGridRecommendation {
+	input: SpotGridInput;
+	hasHourlyStep: boolean;
+	hasLatestHigh: boolean;
+}
+
+function validPositiveNumber(value: number | undefined): value is number {
+	return typeof value === "number" && Number.isFinite(value) && value > 0;
+}
+
+/** Returns the most recent available candle, including histories with trailing gaps. */
+export function latestAvailableCandle(
+	candles: readonly (PriceCandle | null)[] | undefined,
+): PriceCandle | null {
+	if (!candles) return null;
+	for (let index = candles.length - 1; index >= 0; index -= 1) {
+		if (candles[index]) return candles[index];
+	}
+	return null;
+}
+
+export function recommendedUpperPrice(
+	high: number | undefined,
+	markupPercent: number,
+): string | null {
+	if (
+		!validPositiveNumber(high) ||
+		!Number.isFinite(markupPercent) ||
+		markupPercent < 0
+	)
+		return null;
+	try {
+		const upper = new SpotGridDecimal(high).times(
+			new SpotGridDecimal(1).plus(new SpotGridDecimal(markupPercent).div(100)),
+		);
+		return upper.isFinite() && upper.gt(0)
+			? formatCalculatorInput(upper.toString())
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+export function recommendedLowerPrice(
+	upperPrice: string,
+	hourlyStepPercent: number | undefined,
+	gridCount: string,
+): string | null {
+	if (!validPositiveNumber(hourlyStepPercent)) return null;
+	try {
+		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
+		const count = parseSpotGridCount(gridCount);
+		const ratio = new SpotGridDecimal(1).plus(
+			new SpotGridDecimal(hourlyStepPercent).div(100),
+		);
+		if (!ratio.gt(1)) return null;
+		const lower = upper.div(ratio.pow(count));
+		const rounded = lower.toSignificantDigits(3, SpotGridDecimal.ROUND_DOWN);
+		const formatted = formatCalculatorInput(rounded.toString());
+		const parsed = parseSpotGridDecimal(formatted, "Lower price");
+		return parsed.lt(upper) ? formatted : null;
+	} catch {
+		return null;
+	}
+}
+
+export function spotGridRecommendation(
+	candles: readonly (PriceCandle | null)[] | undefined,
+	hourlyStepPercent: number | undefined,
+	markupPercent = DEFAULT_MARKUP_PERCENT,
+	gridCount = DEFAULT_GRID_COUNT,
+): SpotGridRecommendation {
+	const high = latestAvailableCandle(candles)?.high;
+	const upperPrice = recommendedUpperPrice(high, markupPercent) ?? "";
+	const lowerPrice =
+		recommendedLowerPrice(upperPrice, hourlyStepPercent, gridCount) ?? "";
+	return {
+		input: {
+			lowerPrice,
+			upperPrice,
+			gridCount,
+			investment: DEFAULT_INVESTMENT,
+		},
+		hasHourlyStep: validPositiveNumber(hourlyStepPercent),
+		hasLatestHigh: validPositiveNumber(high),
+	};
+}
+
 export function calculateSpotGridInput(
 	input: SpotGridInput,
 	gridType: SpotGridType = "arithmetic",
 ): SpotGridCalculation | null {
-	if (!Object.values(input).every((value) => value.length > 0)) {
-		return null;
-	}
-
+	if (!Object.values(input).every((value) => value.length > 0)) return null;
 	try {
 		return {
 			estimate:
@@ -52,7 +151,6 @@ export function spotGridEstimateValues(estimate: SpotGridEstimate | null) {
 			profitPerStepPercent: "0%",
 		};
 	}
-
 	const isGeometric = "cycleProfit" in estimate;
 	return {
 		averageEntryPrice: `${formatNumber(estimate.averageEntryPrice.toFixed())} USDT`,

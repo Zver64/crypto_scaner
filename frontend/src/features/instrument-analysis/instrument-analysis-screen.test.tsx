@@ -207,6 +207,33 @@ it("shows the simplified four-input spot grid calculator after the chart", () =>
 	);
 });
 
+it("does not prefill the estimator from a previous symbol's query result", () => {
+	const html = renderAnalysis({
+		evaluations: [
+			{
+				candle_count: 48,
+				from: "2026-08-30T00:00:00Z",
+				key: "hourly_volatility",
+				label: "Hourly Volatility",
+				matched: true,
+				metrics: { range_percent: 2 },
+				name: "volatility",
+				to: "2026-09-01T12:00:00Z",
+			},
+		],
+		matched: true,
+		candle_history: [priceCandle(99, 0)],
+		price_history_window: priceHistoryWindow,
+		symbol: "ETHUSDT",
+		warnings: [],
+	});
+
+	expect(html).not.toContain('value="105"');
+	expect(html).toContain(
+		"Upper price markup needs a valid hourly candle high.",
+	);
+});
+
 it("shows the seven-day change percent from price history", () => {
 	const candleHistory = Array(721).fill(null);
 	candleHistory[552] = priceCandle(100, 552);

@@ -87,6 +87,15 @@ export function InstrumentAnalysisScreen({
 			)
 		: null;
 
+	const recommendationResult = result?.symbol === symbol ? result : undefined;
+	const hourlyRange = recommendationResult?.evaluations.find(
+		(item) => item.key === criterionKeys.hourlyVolatility,
+	)?.metrics[evaluationMetricKeys.rangePercent];
+	const hourlyStepPercent =
+		typeof hourlyRange === "number" && Number.isFinite(hourlyRange)
+			? hourlyRange / 2
+			: undefined;
+
 	const statistics = rangeStatistics.map((statistic) => {
 		const { key } = statistic;
 		const evaluation = result?.evaluations.find((item) => item.key === key);
@@ -233,7 +242,10 @@ export function InstrumentAnalysisScreen({
 								</Paper>
 							) : null}
 							<SpotGridEstimator
-								key={`binance:spot:USDT:${symbol}`}
+								candles={recommendationResult?.candle_history}
+								disabled={query.isFetching}
+								hourlyStepPercent={hourlyStepPercent}
+								key={`binance:spot:USDT:${symbol}:${recommendationResult ? "ready" : "pending"}`}
 								paperPadding={paperPadding}
 							/>
 						</Stack>

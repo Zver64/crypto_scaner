@@ -1,8 +1,11 @@
-import type { CoinmIsolatedLiquidationPriceOptions } from "./types";
+import type Decimal from "decimal.js";
+import type { CoinmIsolatedLiquidationPriceOptions } from "@/utils/calculator/types";
 import {
-	assertMaintenanceMarginRatio,
 	assertPositiveFiniteNumber,
-} from "./validation";
+	CalculatorDecimal,
+	maintenanceMarginRatioDecimal,
+	positiveFiniteDecimal,
+} from "@/utils/calculator/validation";
 
 /**
  * Estimates the unrounded liquidation price for a single isolated COIN-M Position.
@@ -12,30 +15,84 @@ import {
 export function calculateCoinmIsolatedLiquidationPrice({
 	direction,
 	contractCount,
-	contractSize,
-	entryPrice,
-	isolatedWalletBalance,
-	maintenanceMarginRatio,
-}: CoinmIsolatedLiquidationPriceOptions): number {
+	contractSize: contractSizeValue,
+	entryPrice: entryPriceValue,
+	isolatedWalletBalance: isolatedWalletBalanceValue,
+	maintenanceMarginRatio: maintenanceMarginRatioValue,
+}: CoinmIsolatedLiquidationPriceOptions): Decimal {
 	assertPositiveFiniteNumber(contractCount, "Contract count");
-	assertPositiveFiniteNumber(contractSize, "Contract size");
-	assertPositiveFiniteNumber(entryPrice, "Entry Price");
-	assertPositiveFiniteNumber(isolatedWalletBalance, "Isolated wallet balance");
-	assertMaintenanceMarginRatio(maintenanceMarginRatio);
+	const contractSize = new CalculatorDecimal(
+		positiveFiniteDecimal(contractSizeValue, "Contract size"),
+	);
+	const entryPrice = new CalculatorDecimal(
+		positiveFiniteDecimal(entryPriceValue, "Entry Price"),
+	);
+	const isolatedWalletBalance = new CalculatorDecimal(
+		positiveFiniteDecimal(
+			isolatedWalletBalanceValue,
+			"Isolated wallet balance",
+		),
+	);
+	const maintenanceMarginRatio = new CalculatorDecimal(
+		maintenanceMarginRatioDecimal(maintenanceMarginRatioValue),
+	);
+	const positionNotional = contractSize.times(contractCount);
+	if (!positionNotional.isFinite() || !positionNotional.gt(0)) {
+		throw new RangeError("Position notional is outside the supported range");
+	}
 
-	const positionNotional = contractCount * contractSize;
-	const entryBaseAssetValue = positionNotional / entryPrice;
-
-	if (direction === "long") {
-		return (
-			positionNotional /
-			(isolatedWalletBalance / (1 + maintenanceMarginRatio) +
-				entryBaseAssetValue / (1 + maintenanceMarginRatio))
+	const entryBaseAssetValue = positionNotional.div(entryPrice);
+	if (!entryBaseAssetValue.isFinite() || !entryBaseAssetValue.gt(0)) {
+		throw new RangeError(
+			"Entry base-asset value is outside the supported range",
 		);
 	}
 
-	return (
-		((1 - maintenanceMarginRatio) * positionNotional) /
-		(entryBaseAssetValue - isolatedWalletBalance)
-	);
+	const one = new CalculatorDecimal(1);
+	let liquidationPrice: Decimal;
+	if (direction === "long") {
+		const marginAdjustment = one.plus(maintenanceMarginRatio);
+		const adjustedWalletBalance = isolatedWalletBalance.div(marginAdjustment);
+		const adjustedEntryBaseAssetValue =
+			entryBaseAssetValue.div(marginAdjustment);
+		if (!adjustedWalletBalance.isFinite() || !adjustedWalletBalance.gt(0)) {
+			throw new RangeError(
+				"Adjusted wallet balance is outside the supported range",
+			);
+		}
+		if (
+			!adjustedEntryBaseAssetValue.isFinite() ||
+			!adjustedEntryBaseAssetValue.gt(0)
+		) {
+			throw new RangeError(
+				"Adjusted entry base-asset value is outside the supported range",
+			);
+		}
+		const denominator = adjustedWalletBalance.plus(adjustedEntryBaseAssetValue);
+		if (!denominator.isFinite() || !denominator.gt(0)) {
+			throw new RangeError(
+				"Liquidation-price denominator is outside the supported range",
+			);
+		}
+		liquidationPrice = positionNotional.div(denominator);
+	} else {
+		const numerator = one.minus(maintenanceMarginRatio).times(positionNotional);
+		if (!numerator.isFinite() || !numerator.gt(0)) {
+			throw new RangeError(
+				"Liquidation-price numerator is outside the supported range",
+			);
+		}
+		const denominator = entryBaseAssetValue.minus(isolatedWalletBalance);
+		if (!denominator.isFinite() || denominator.isZero()) {
+			throw new RangeError(
+				"Liquidation-price denominator is outside the supported range",
+			);
+		}
+		liquidationPrice = numerator.div(denominator);
+	}
+
+	if (!liquidationPrice.isFinite() || liquidationPrice.isZero()) {
+		throw new RangeError("Liquidation price is outside the supported range");
+	}
+	return liquidationPrice;
 }

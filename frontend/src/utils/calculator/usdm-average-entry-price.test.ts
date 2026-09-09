@@ -1,5 +1,6 @@
+import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
-import { calculateUsdmAverageEntryPrice } from "./usdm-average-entry-price";
+import { calculateUsdmAverageEntryPrice } from "@/utils/calculator/usdm-average-entry-price";
 
 describe("calculateUsdmAverageEntryPrice", () => {
 	const binanceEntries = [
@@ -10,6 +11,7 @@ describe("calculateUsdmAverageEntryPrice", () => {
 	it("matches the Binance Open Price fixture before tick rounding", () => {
 		const average = calculateUsdmAverageEntryPrice(binanceEntries);
 
+		expect(average).toBeInstanceOf(Decimal);
 		expect(average.toSignificantDigits(16).toString()).toBe(
 			"93103.44827586207",
 		);

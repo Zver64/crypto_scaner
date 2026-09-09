@@ -1,8 +1,9 @@
-import Decimal from "decimal.js";
-import type { UsdmAverageEntryPriceFill } from "./types";
-import { positiveFiniteDecimal } from "./validation";
-
-const UsdmDecimal = Decimal.clone({ precision: 40 });
+import type Decimal from "decimal.js";
+import type { UsdmAverageEntryPriceFill } from "@/utils/calculator/types";
+import {
+	CalculatorDecimal,
+	positiveFiniteDecimal,
+} from "@/utils/calculator/validation";
 
 /**
  * Calculates the unrounded USD(S)-M average Entry Price from quote-notional
@@ -15,19 +16,23 @@ export function calculateUsdmAverageEntryPrice(
 		throw new RangeError("At least one entry is required");
 	}
 
-	let totalQuoteNotional = new UsdmDecimal(0);
-	let totalBaseQuantity = new UsdmDecimal(0);
+	let totalQuoteNotional = new CalculatorDecimal(0);
+	let totalBaseQuantity = new CalculatorDecimal(0);
 
 	for (const entry of entries) {
-		const price = new UsdmDecimal(
+		const price = new CalculatorDecimal(
 			positiveFiniteDecimal(entry.price, "Entry Price"),
 		);
-		const quoteNotional = new UsdmDecimal(
+		const quoteNotional = new CalculatorDecimal(
 			positiveFiniteDecimal(entry.quoteNotional, "Quote notional"),
 		);
 		totalQuoteNotional = totalQuoteNotional.plus(quoteNotional);
 		totalBaseQuantity = totalBaseQuantity.plus(quoteNotional.div(price));
 	}
 
-	return totalQuoteNotional.div(totalBaseQuantity);
+	const average = totalQuoteNotional.div(totalBaseQuantity);
+	if (!average.isFinite() || !average.gt(0)) {
+		throw new RangeError("Average entry price is outside the supported range");
+	}
+	return average;
 }

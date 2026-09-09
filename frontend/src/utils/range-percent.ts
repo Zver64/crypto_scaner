@@ -1,7 +1,5 @@
-const rangePercentFormatter = new Intl.NumberFormat("en", {
-	maximumSignificantDigits: 3,
-});
+import { formatNumber } from "@/utils/number-format";
 
 export function formatRangePercent(value: number): string {
-	return `${rangePercentFormatter.format(value)}%`;
+	return `${formatNumber(value)}%`;
 }

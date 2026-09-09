@@ -4,6 +4,7 @@ import type {
 	WhitespaceData,
 } from "lightweight-charts";
 import type { PriceCandle } from "@/api/client";
+import { formatNumber } from "@/utils/number-format";
 
 const dateTimeFormatter = new Intl.DateTimeFormat("en", {
 	day: "numeric",
@@ -12,10 +13,6 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en", {
 	minute: "2-digit",
 	month: "short",
 	timeZone: "UTC",
-});
-
-const priceFormatter = new Intl.NumberFormat("en", {
-	maximumSignificantDigits: 8,
 });
 
 export type ChartCandle = CandlestickData<UTCTimestamp>;
@@ -51,7 +48,7 @@ export function availableCandles(
 }
 
 export function formatPrice(value: number): string {
-	return priceFormatter.format(value);
+	return formatNumber(value);
 }
 
 export function chartPriceResolution(data: readonly ChartCandleSlot[]): {

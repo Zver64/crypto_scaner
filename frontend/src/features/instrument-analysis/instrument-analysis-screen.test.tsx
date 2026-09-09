@@ -181,6 +181,31 @@ it("shows keyed ranges and complete sample coverage with non-default scan settin
 	expect(html).not.toContain("Instrument Analysis");
 });
 
+it("shows the simplified four-input spot grid calculator after the chart", () => {
+	const html = renderAnalysis({
+		evaluations: [],
+		matched: true,
+		symbol: "BTCUSDT",
+		warnings: [],
+	});
+	const text = html.replace(/<[^>]*>/g, "");
+
+	expect(text).toContain("Spot Grid Calculator");
+	expect(text).toContain("Lower price (USDT)");
+	expect(text).toContain("Upper price (USDT)");
+	expect(text).toContain("Grid count");
+	expect(text).toContain("USDT investment");
+	expect(text).toContain("Profit per step0 USDT, 0%");
+	expect(text).not.toContain("Profit per step (%)");
+	expect(text).toContain("Average entry price0 USDT");
+	expect(html.match(/<input/g)).toHaveLength(4);
+	expect(text).not.toContain("Binance");
+	expect(text).not.toContain("all buys fill before any sells");
+	expect(html.indexOf("Seven-day Price History")).toBeLessThan(
+		html.indexOf("Spot Grid Calculator"),
+	);
+});
+
 it("shows the seven-day change percent from price history", () => {
 	const candleHistory = Array(721).fill(null);
 	candleHistory[552] = priceCandle(100, 552);

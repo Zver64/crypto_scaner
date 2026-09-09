@@ -3,11 +3,7 @@ import {
 	evaluationMetricKeys,
 } from "@/api/analysis-identifiers";
 import type { Evaluation } from "@/api/client";
-
-const marketCapFormatter = new Intl.NumberFormat("en", {
-	maximumFractionDigits: 1,
-	notation: "compact",
-});
+import { formatCompactNumber } from "@/utils/number-format";
 
 export interface MarketCapEvaluation {
 	marketCapUsd: number;
@@ -15,7 +11,7 @@ export interface MarketCapEvaluation {
 }
 
 export function formatMarketCapUsd(value: number): string {
-	return `$${marketCapFormatter.format(value)}`;
+	return `$${formatCompactNumber(value)}`;
 }
 
 export function marketCapEvaluation(

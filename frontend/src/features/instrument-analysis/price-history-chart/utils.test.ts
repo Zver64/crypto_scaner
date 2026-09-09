@@ -123,7 +123,7 @@ describe("candlestick chart presentation", () => {
 		expect(formatUtcTimestamp("2026-08-26T23:00:00Z")).toBe(
 			"Aug 26, 23:00 UTC",
 		);
-		expect(formatPrice(0.0000123456789)).toBe("0.000012345679");
+		expect(formatPrice(0.0000123456789)).toBe("0.0000123");
 		expect(
 			formatOhlc({ open: 1, high: 2, low: 0.5, close: 1.5, time: 0 as never }),
 		).toBe("O 1  H 2  L 0.5  C 1.5");

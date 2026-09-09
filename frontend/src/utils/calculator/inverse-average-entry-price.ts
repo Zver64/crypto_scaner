@@ -1,6 +1,10 @@
-import Decimal from "decimal.js";
-import type { InverseAverageEntryPriceFill } from "./types";
-import { assertPositiveFiniteNumber } from "./validation";
+import type Decimal from "decimal.js";
+import type { InverseAverageEntryPriceFill } from "@/utils/calculator/types";
+import {
+	assertPositiveFiniteNumber,
+	CalculatorDecimal,
+	positiveFiniteDecimal,
+} from "@/utils/calculator/validation";
 
 /**
  * Calculates the unrounded contract-notional-weighted entry price for COIN-M
@@ -9,34 +13,37 @@ import { assertPositiveFiniteNumber } from "./validation";
  */
 export function calculateInverseAverageEntryPrice(
 	fills: readonly InverseAverageEntryPriceFill[],
-): number {
+): Decimal {
 	if (fills.length === 0) {
 		throw new RangeError("At least one fill is required");
 	}
 
-	let totalContractNotional = new Decimal(0);
-	let totalBaseQuantity = new Decimal(0);
+	let totalContractNotional = new CalculatorDecimal(0);
+	let totalBaseQuantity = new CalculatorDecimal(0);
 	let direction: InverseAverageEntryPriceFill["direction"];
 
-	for (const {
-		contractCount,
-		contractSize,
-		direction: fillDirection,
-		price,
-	} of fills) {
-		assertPositiveFiniteNumber(contractCount, "Contract count");
-		assertPositiveFiniteNumber(contractSize, "Contract size");
-		assertPositiveFiniteNumber(price, "Price");
+	for (const fill of fills) {
+		assertPositiveFiniteNumber(fill.contractCount, "Contract count");
+		const contractSize = new CalculatorDecimal(
+			positiveFiniteDecimal(fill.contractSize, "Contract size"),
+		);
+		const price = new CalculatorDecimal(
+			positiveFiniteDecimal(fill.price, "Price"),
+		);
 
-		if (direction && fillDirection && direction !== fillDirection) {
+		if (direction && fill.direction && direction !== fill.direction) {
 			throw new RangeError("All fills must have the same position direction");
 		}
-		direction ??= fillDirection;
+		direction ??= fill.direction;
 
-		const contractNotional = new Decimal(contractCount).mul(contractSize);
-		totalContractNotional = totalContractNotional.add(contractNotional);
-		totalBaseQuantity = totalBaseQuantity.add(contractNotional.div(price));
+		const contractNotional = contractSize.times(fill.contractCount);
+		totalContractNotional = totalContractNotional.plus(contractNotional);
+		totalBaseQuantity = totalBaseQuantity.plus(contractNotional.div(price));
 	}
 
-	return totalContractNotional.div(totalBaseQuantity).toNumber();
+	const average = totalContractNotional.div(totalBaseQuantity);
+	if (!average.isFinite() || !average.gt(0)) {
+		throw new RangeError("Average entry price is outside the supported range");
+	}
+	return average;
 }

@@ -3,8 +3,8 @@ import type Decimal from "decimal.js";
 export type PositionDirection = "long" | "short";
 
 export interface LinearAverageEntryPriceFill {
-	quantity: number;
-	price: number;
+	quantity: Decimal.Value;
+	price: Decimal.Value;
 }
 
 export interface UsdmAverageEntryPriceFill {
@@ -14,24 +14,24 @@ export interface UsdmAverageEntryPriceFill {
 
 export interface InverseAverageEntryPriceFill {
 	contractCount: number;
-	contractSize: number;
+	contractSize: Decimal.Value;
 	direction?: PositionDirection;
-	price: number;
+	price: Decimal.Value;
 }
 
 export interface CoinmIsolatedLiquidationPriceOptions {
 	direction: PositionDirection;
 	contractCount: number;
-	contractSize: number;
-	entryPrice: number;
-	isolatedWalletBalance: number;
-	maintenanceMarginRatio: number;
+	contractSize: Decimal.Value;
+	entryPrice: Decimal.Value;
+	isolatedWalletBalance: Decimal.Value;
+	maintenanceMarginRatio: Decimal.Value;
 }
 
 export interface UsdmIsolatedLiquidationPriceInput {
 	direction: PositionDirection;
-	entryPrice: number;
-	leverage: number;
-	maintenanceMarginRatio: number;
-	quantity: number;
+	entryPrice: Decimal.Value;
+	leverage: Decimal.Value;
+	maintenanceMarginRatio: Decimal.Value;
+	quantity: Decimal.Value;
 }

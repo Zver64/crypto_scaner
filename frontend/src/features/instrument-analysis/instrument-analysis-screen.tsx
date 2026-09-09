@@ -24,6 +24,7 @@ import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { InstrumentPriceHistoryChart } from "@/features/instrument-analysis/price-history-chart";
+import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 import { formatRangePercent } from "@/utils/range-percent";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
@@ -231,6 +232,10 @@ export function InstrumentAnalysisScreen({
 									</Stack>
 								</Paper>
 							) : null}
+							<SpotGridEstimator
+								key={`binance:spot:USDT:${symbol}`}
+								paperPadding={paperPadding}
+							/>
 						</Stack>
 					</RefreshingOverlay>
 				) : null}

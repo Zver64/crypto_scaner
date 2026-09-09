@@ -189,7 +189,7 @@ export function SpotGridEstimator({
 						</Text>
 					) : null}
 				</Stack>
-				<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
+				<SimpleGrid cols={2} spacing="md">
 					<TextInput
 						disabled={disabled}
 						inputMode="decimal"

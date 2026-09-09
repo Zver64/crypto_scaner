@@ -191,6 +191,24 @@ export function InstrumentAnalysisScreen({
 									)}
 								</Stack>
 							</Paper>
+							{result ? (
+								<Paper
+									component="section"
+									aria-labelledby="price-history-heading"
+									p={paperPadding}
+								>
+									<Stack gap="md">
+										<Title id="price-history-heading" order={2} size="h3">
+											Seven-day Price History
+										</Title>
+										<InstrumentPriceHistoryChart
+											candles={result.candle_history}
+											symbol={result.symbol}
+											window={result.price_history_window}
+										/>
+									</Stack>
+								</Paper>
+							) : null}
 							<Paper
 								component="section"
 								aria-labelledby="bot-settings-heading"
@@ -223,24 +241,6 @@ export function InstrumentAnalysisScreen({
 									</Text>
 								</Stack>
 							</Paper>
-							{result ? (
-								<Paper
-									component="section"
-									aria-labelledby="price-history-heading"
-									p={paperPadding}
-								>
-									<Stack gap="md">
-										<Title id="price-history-heading" order={2} size="h3">
-											Seven-day Price History
-										</Title>
-										<InstrumentPriceHistoryChart
-											candles={result.candle_history}
-											symbol={result.symbol}
-											window={result.price_history_window}
-										/>
-									</Stack>
-								</Paper>
-							) : null}
 							<SpotGridEstimator
 								candles={recommendationResult?.candle_history}
 								disabled={query.isFetching}

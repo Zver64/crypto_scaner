@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.10.1](https://github.com/Zver64/crypto_scaner/compare/v0.10.0...v0.10.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* decouple market scans from URL updates ([5ded4ea](https://github.com/Zver64/crypto_scaner/commit/5ded4eabb5fd045062ee92b1ebf0332dee6e2d99))
+* make higher volatility percentiles stricter ([8b8e661](https://github.com/Zver64/crypto_scaner/commit/8b8e661e346a2171ea8aeb9002fcb31aaeae3ee5))
+
 ## [0.10.0](https://github.com/Zver64/crypto_scaner/compare/v0.9.0...v0.10.0) (2026-09-09)
 
 

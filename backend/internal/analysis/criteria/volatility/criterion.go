@@ -61,10 +61,7 @@ func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.E
 		}
 		ranges[i] = ((candle.High - candle.Low) / candle.Open) * 100
 	}
-	sort.Float64s(ranges)
-	rank := (c.percentile / 100) * float64(len(ranges)-1)
-	lower, upper := int(math.Floor(rank)), int(math.Ceil(rank))
-	value := ranges[lower] + (rank-float64(lower))*(ranges[upper]-ranges[lower])
+	value := exceedancePercentile(ranges, c.percentile)
 	return analysis.Evaluation{Name: c.Name(), Matched: value >= c.minimum, Metrics: map[string]float64{"range_percent": value}, CandleCount: len(candles), From: candles[len(candles)-1].OpenTime.UTC(), To: candles[0].OpenTime.UTC()}, nil
 }
 

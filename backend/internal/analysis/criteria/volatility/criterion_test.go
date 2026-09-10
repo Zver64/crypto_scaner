@@ -26,16 +26,77 @@ func TestFactoryExposesVolatilityCriterionType(t *testing.T) {
 	}
 }
 
-func TestPercentileEvaluatesTypeSevenRangeAndThreshold(t *testing.T) {
-	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(4), "percentile": float64(75), "minimum_range_percent": float64(5)})
+func TestPercentileRequiresConfiguredShareToMeetThreshold(t *testing.T) {
+	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(4), "percentile": float64(75), "minimum_range_percent": float64(2)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	data := []market.Candle{candle(start, 1), candle(start.AddDate(0, 0, 1), 2), candle(start.AddDate(0, 0, 2), 4), candle(start.AddDate(0, 0, 3), 8)}
+	data := []market.Candle{candle(start, 8), candle(start.AddDate(0, 0, 1), 1), candle(start.AddDate(0, 0, 2), 4), candle(start.AddDate(0, 0, 3), 2)}
 	result, err := c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: data}})
-	if err != nil || result.Metrics["range_percent"] != 5 || !result.Matched {
+	if err != nil || result.Metrics["range_percent"] != 1.75 || result.Matched {
 		t.Fatalf("result=%+v err=%v", result, err)
+	}
+}
+
+func TestPercentileDoesNotDependOnCandleInputOrder(t *testing.T) {
+	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(4), "percentile": float64(75), "minimum_range_percent": float64(0)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	candles := []market.Candle{candle(start, 8), candle(start.AddDate(0, 0, 1), 1), candle(start.AddDate(0, 0, 2), 4), candle(start.AddDate(0, 0, 3), 2)}
+	permuted := []market.Candle{candles[2], candles[0], candles[3], candles[1]}
+
+	var values []float64
+	for _, data := range [][]market.Candle{candles, permuted} {
+		result, err := c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: data}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		values = append(values, result.Metrics["range_percent"])
+	}
+	if values[0] != 1.75 || values[1] != values[0] {
+		t.Fatalf("range percent by input order = %v", values)
+	}
+}
+
+func TestPercentileCalculationIsIdenticalAcrossCandleUnits(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	data := []market.Candle{candle(start, 8), candle(start.Add(time.Hour), 1), candle(start.Add(2*time.Hour), 4), candle(start.Add(3*time.Hour), 2)}
+
+	for _, unit := range []analysis.Unit{analysis.UnitDays, analysis.UnitHours} {
+		c, err := volatility.New().Build(map[string]any{"unit": string(unit), "period": float64(4), "percentile": float64(75), "minimum_range_percent": float64(0)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{unit: data}})
+		if err != nil || result.Metrics["range_percent"] != 1.75 {
+			t.Fatalf("unit=%s result=%+v err=%v", unit, result, err)
+		}
+	}
+}
+
+func TestHigherPercentileIsStricter(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	data := []market.Candle{candle(start, 1), candle(start.AddDate(0, 0, 1), 2), candle(start.AddDate(0, 0, 2), 4), candle(start.AddDate(0, 0, 3), 8)}
+	input := analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: data}}
+
+	for _, test := range []struct {
+		percentile float64
+		matched    bool
+	}{
+		{percentile: 25, matched: true},
+		{percentile: 75, matched: false},
+	} {
+		c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(4), "percentile": test.percentile, "minimum_range_percent": float64(3)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		result, err := c.Evaluate(context.Background(), input)
+		if err != nil || result.Matched != test.matched {
+			t.Fatalf("percentile=%v result=%+v err=%v", test.percentile, result, err)
+		}
 	}
 }
 func TestPercentileUsesAvailableHistoryAndReportsIt(t *testing.T) {

@@ -1,17 +1,14 @@
 import { Button, Paper, Stack, useMatches } from "@mantine/core";
 import { useForm } from "@mantine/form";
+import type { FormEvent } from "react";
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import {
 	analysisCriteriaConstraints,
 	maximumPeriodForUnit,
 } from "@/features/analysis/criteria";
 import { marketScanCriteriaConstraints } from "@/features/market-scan/criteria";
+import { criteriaFromValidDraft } from "@/features/market-scan/form/utils";
 import {
-	criteriaAreEqual,
-	criteriaFromValidDraft,
-} from "@/features/market-scan/form/utils";
-import {
-	defaultMarketScanCriteria,
 	type MarketScanCriteria,
 	type MarketScanDraft,
 	validateMarketScanCriteria,
@@ -29,41 +26,34 @@ function formatMarketCapPreset(value: number) {
 }
 
 interface MarketScanFormProps {
-	committedCriteria: MarketScanCriteria | undefined;
+	initialCriteria: MarketScanCriteria;
 	disabled: boolean;
 	isSubmitting: boolean;
 	onCommit(criteria: MarketScanCriteria): Promise<void>;
-	onRefresh(): Promise<unknown>;
 }
 
 export function MarketScanForm({
-	committedCriteria,
+	initialCriteria,
 	disabled,
 	isSubmitting,
 	onCommit,
-	onRefresh,
 }: MarketScanFormProps) {
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const inputSize = "md";
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const form = useForm<MarketScanDraft>({
-		initialValues: committedCriteria ?? defaultMarketScanCriteria,
+		initialValues: initialCriteria,
 		mode: "controlled",
 		validate: validateMarketScanCriteria,
 		validateInputOnChange: true,
 	});
+	const draftCriteria = criteriaFromValidDraft(form.values);
 
-	const handleSubmit = form.onSubmit(async (values) => {
-		const criteria = criteriaFromValidDraft(values);
-		if (!criteria) return;
-
-		if (committedCriteria && criteriaAreEqual(criteria, committedCriteria)) {
-			await onRefresh();
-			return;
-		}
-
-		await onCommit(criteria);
-	});
+	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+		event.preventDefault();
+		if (!draftCriteria) return;
+		await onCommit(draftCriteria);
+	};
 
 	return (
 		<Paper component="form" onSubmit={handleSubmit} p={paperPadding}>
@@ -195,7 +185,7 @@ export function MarketScanForm({
 					title="Market Cap"
 				/>
 				<Button
-					disabled={disabled || !form.isValid()}
+					disabled={disabled || !draftCriteria}
 					loading={isSubmitting}
 					size={inputSize}
 					type="submit"

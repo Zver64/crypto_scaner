@@ -29,18 +29,6 @@ export const defaultMarketScanCriteria: MarketScanCriteria = {
 	minimumMarketCapMillions: singleVolatilityDefaults.minimumMarketCapMillions,
 };
 
-export function marketScanCriteriaIdentity(criteria: MarketScanCriteria) {
-	return [
-		criteria.period,
-		criteria.hourlyPeriod,
-		criteria.hourlyPercentile,
-		criteria.hourlyMinimumRangePercent,
-		criteria.percentile,
-		criteria.minimumRangePercent,
-		criteria.minimumMarketCapMillions,
-	] as const;
-}
-
 export function validateMarketScanCriteria(values: MarketScanDraft) {
 	const errors: Partial<Record<keyof MarketScanCriteria, string>> =
 		validateSingleVolatility({ ...values, unit: "days" });

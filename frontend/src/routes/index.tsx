@@ -1,34 +1,40 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
 import { MarketScanScreen } from "@/features/market-scan/market-scan-screen";
-import { defaultMarketScanSort } from "@/features/market-scan/sort";
 import {
-	parseOptionalScanCriteriaSearch,
+	marketScanSortFromSearch,
+	parseMarketScanSearch,
+} from "@/routes/-market-scan-search";
+import {
 	scanCriteriaFromSearch,
 	scanCriteriaToSearch,
 } from "@/routes/-scan-criteria-search";
+import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export const Route = createFileRoute("/")({
 	component: Home,
-	validateSearch: parseOptionalScanCriteriaSearch,
+	validateSearch: parseMarketScanSearch,
 });
 
 function Home() {
 	const search = Route.useSearch();
 	const navigate = Route.useNavigate();
-	const committedCriteria = scanCriteriaFromSearch(search);
-	const [sort, setSort] = useState(defaultMarketScanSort);
+	const initialCriteria = scanCriteriaFromSearch(search);
+	const sort = marketScanSortFromSearch(search);
 
 	return (
 		<MarketScanScreen
-			committedCriteria={committedCriteria}
-			onCommit={async (criteria) => {
-				await navigate({
-					search: scanCriteriaToSearch(criteria),
+			initialCriteria={initialCriteria}
+			onCriteriaCommit={(criteria) => {
+				replaceUrlSearch(scanCriteriaToSearch(criteria));
+			}}
+			onSortChange={(nextSort) => {
+				replaceUrlSearch({
+					sort_column: nextSort.column,
+					sort_direction: nextSort.direction,
 				});
 			}}
-			onSortChange={async (nextSort) => {
-				setSort(nextSort);
+			onSymbolFilterChange={(symbolFilter) => {
+				replaceUrlSearch({ symbol_filter: symbolFilter || undefined });
 			}}
 			onSelectInstrument={async (symbol, criteria) => {
 				await navigate({
@@ -38,6 +44,7 @@ function Home() {
 				});
 			}}
 			sort={sort}
+			symbolFilter={search.symbol_filter ?? ""}
 		/>
 	);
 }

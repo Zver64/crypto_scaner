@@ -1,22 +1,14 @@
 import {
 	type MarketScanCriteria,
 	type MarketScanDraft,
-	marketScanCriteriaIdentity,
+	validateMarketScanCriteria,
 } from "@/features/market-scan/pipeline";
-
-export function criteriaAreEqual(
-	left: MarketScanCriteria,
-	right: MarketScanCriteria,
-): boolean {
-	const leftIdentity = marketScanCriteriaIdentity(left);
-	const rightIdentity = marketScanCriteriaIdentity(right);
-	return leftIdentity.every((value, index) => value === rightIdentity[index]);
-}
 
 export function criteriaFromValidDraft(
 	values: MarketScanDraft,
 ): MarketScanCriteria | undefined {
 	if (
+		Object.keys(validateMarketScanCriteria(values)).length > 0 ||
 		typeof values.period !== "number" ||
 		typeof values.percentile !== "number" ||
 		typeof values.minimumMarketCapMillions !== "number" ||

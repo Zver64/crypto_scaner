@@ -7,7 +7,6 @@ import {
 	Title,
 	useMatches,
 } from "@mantine/core";
-import { useState } from "react";
 import type { MarketScanResult } from "@/api/client";
 import { DataTable } from "@/components/data-table";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
@@ -27,9 +26,11 @@ interface MarketScanResultsProps {
 		symbol: string,
 		criteria: MarketScanCriteria,
 	): Promise<void>;
-	onSortChange(sort: MarketScanSort): Promise<void>;
+	onSortChange(sort: MarketScanSort): void;
+	onSymbolFilterChange(symbolFilter: string): void;
 	result: MarketScanResult;
 	sort: MarketScanSort;
+	symbolFilter: string;
 }
 
 export function MarketScanResults({
@@ -37,12 +38,13 @@ export function MarketScanResults({
 	isRefreshing,
 	onSelectInstrument,
 	onSortChange,
+	onSymbolFilterChange,
 	result,
 	sort,
+	symbolFilter,
 }: MarketScanResultsProps) {
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const textSize = useMatches({ base: "xs", sm: "sm" });
-	const [symbolFilter, setSymbolFilter] = useState("");
 	const rows = filterMarketScanRows(
 		toMarketScanRows(result.items),
 		symbolFilter,
@@ -69,7 +71,7 @@ export function MarketScanResults({
 					aria-label="Filter current Scan Result by symbol"
 					label="Symbol filter"
 					size="md"
-					onChange={(event) => setSymbolFilter(event.currentTarget.value)}
+					onChange={(event) => onSymbolFilterChange(event.currentTarget.value)}
 					placeholder="e.g. BTC"
 					value={symbolFilter}
 				/>

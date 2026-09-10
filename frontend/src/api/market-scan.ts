@@ -1,17 +1,9 @@
-import { queryOptions, useQuery } from "@tanstack/react-query";
-import { hasExpectedMarketScanEvaluations } from "@/api/analysis-contract";
+import { queryOptions, useMutation, useQuery } from "@tanstack/react-query";
+import { ApiError, type CriterionSelection } from "@/api/client";
 import {
-	ApiError,
-	type CriterionSelection,
-	fetchMarketScan,
-	type MarketScanSortOption,
-} from "@/api/client";
-import { getTelegramInitData } from "@/app/telegram";
-
-interface MarketScanRequestOptions {
-	limit: number;
-	sort: MarketScanSortOption;
-}
+	type MarketScanRequestOptions,
+	runMarketScan,
+} from "@/api/market-scan/utils";
 
 export function marketScanQueryOptions(
 	criteria: readonly CriterionSelection[] | undefined,
@@ -20,15 +12,7 @@ export function marketScanQueryOptions(
 	return queryOptions({
 		queryFn: async () => {
 			if (!criteria) throw new ApiError("unexpected_error");
-
-			const result = await fetchMarketScan(criteria, {
-				initData: getTelegramInitData(),
-				...requestOptions,
-			});
-			if (!hasExpectedMarketScanEvaluations(result.items, criteria)) {
-				throw new ApiError("unexpected_error");
-			}
-			return result;
+			return runMarketScan(criteria, requestOptions);
 		},
 		queryKey: criteria
 			? requestOptions
@@ -49,5 +33,14 @@ export function useMarketScanQuery(
 	return useQuery({
 		...marketScanQueryOptions(criteria, requestOptions),
 		enabled: criteria !== undefined && enabled,
+	});
+}
+
+export function useMarketScanMutation(
+	requestOptions?: MarketScanRequestOptions,
+) {
+	return useMutation({
+		mutationFn: (criteria: readonly CriterionSelection[]) =>
+			runMarketScan(criteria, requestOptions),
 	});
 }

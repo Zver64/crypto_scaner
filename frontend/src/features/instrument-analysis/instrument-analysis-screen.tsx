@@ -7,6 +7,7 @@ import {
 	Paper,
 	Stack,
 	Text,
+	useMantineTheme,
 	useMatches,
 } from "@mantine/core";
 import {
@@ -51,6 +52,7 @@ export function InstrumentAnalysisScreen({
 	onBack,
 	symbol,
 }: InstrumentAnalysisScreenProps) {
+	const theme = useMantineTheme();
 	const contentSpacing = useMatches({ base: "sm", sm: "md" });
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const textSize = useMatches({ base: "sm", sm: "md" });
@@ -87,9 +89,16 @@ export function InstrumentAnalysisScreen({
 	const hourlyRange = recommendationResult?.evaluations.find(
 		(item) => item.key === criterionKeys.hourlyVolatility,
 	)?.metrics[evaluationMetricKeys.rangePercent];
+	const dailyRange = recommendationResult?.evaluations.find(
+		(item) => item.key === criterionKeys.dailyVolatility,
+	)?.metrics[evaluationMetricKeys.rangePercent];
 	const hourlyVolatilityPercent =
 		typeof hourlyRange === "number" && Number.isFinite(hourlyRange)
 			? hourlyRange
+			: undefined;
+	const dailyVolatilityPercent =
+		typeof dailyRange === "number" && Number.isFinite(dailyRange)
+			? dailyRange
 			: undefined;
 
 	const statistics = rangeStatistics.map((statistic) => {
@@ -179,7 +188,12 @@ export function InstrumentAnalysisScreen({
 									{statistics.map(({ key, label, range }) => (
 										<Group justify="space-between" key={key} wrap="nowrap">
 											<Text size={textSize}>{label}</Text>
-											<Text fw={700} size={textSize} ta="right">
+											<Text
+												c={theme.colors[theme.primaryColor][4]}
+												fw={700}
+												size={textSize}
+												ta="right"
+											>
 												{typeof range === "number" && Number.isFinite(range)
 													? formatRangePercent(range)
 													: "—"}
@@ -202,6 +216,7 @@ export function InstrumentAnalysisScreen({
 							</Paper>
 							<SpotGridEstimator
 								candles={recommendationResult?.candle_history}
+								dailyVolatilityPercent={dailyVolatilityPercent}
 								disabled={query.isFetching}
 								hourlyVolatilityPercent={hourlyVolatilityPercent}
 								key={`binance:spot:USDT:${symbol}:${recommendationResult ? "ready" : "pending"}`}

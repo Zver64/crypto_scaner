@@ -64,6 +64,29 @@ describe("spot grid recommendations", () => {
 		expect(recommendedLowerPrice("105", 1, "40")).toBe("70.5");
 	});
 
+	it("keeps the arithmetic minimum grid step at or above the target", () => {
+		const lowerPrice = recommendedLowerPrice("105", 1, "40", "arithmetic");
+		expect(lowerPrice).toBe("63.4");
+
+		const calculation = calculateSpotGridInput(
+			{
+				lowerPrice: lowerPrice ?? "",
+				upperPrice: "105",
+				gridCount: "40",
+				investment: "1000",
+			},
+			"arithmetic",
+		);
+		expect(calculation?.error).toBeNull();
+		if (calculation?.estimate && "stepPercentMinimum" in calculation.estimate) {
+			expect(calculation.estimate.stepPercentMinimum.gte(1)).toBe(true);
+		}
+	});
+
+	it("rejects arithmetic targets that cannot produce a positive lower price", () => {
+		expect(recommendedLowerPrice("105", 3, "40", "arithmetic")).toBeNull();
+	});
+
 	it("calculates a valid geometric range for a slider commit using grid count 10", () => {
 		const lowerPrice = recommendedLowerPrice("105", 1, "10");
 		expect(lowerPrice).toBe("95");

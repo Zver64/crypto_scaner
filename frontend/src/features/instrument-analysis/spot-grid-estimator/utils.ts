@@ -78,18 +78,26 @@ export function recommendedUpperPrice(
 
 export function recommendedLowerPrice(
 	upperPrice: string,
-	hourlyVolatilityPercent: number | undefined,
+	rangePercent: number | undefined,
 	gridCount: string,
+	gridType: SpotGridType = "geometric",
 ): string | null {
-	if (!validPositiveNumber(hourlyVolatilityPercent)) return null;
+	if (!validPositiveNumber(rangePercent)) return null;
 	try {
 		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
 		const count = parseSpotGridCount(gridCount);
-		const ratio = new SpotGridDecimal(1).plus(
-			new SpotGridDecimal(hourlyVolatilityPercent).div(100),
-		);
-		if (!ratio.gt(1)) return null;
-		const lower = upper.div(ratio.pow(count));
+		const target = new SpotGridDecimal(rangePercent).div(100);
+		const lower =
+			gridType === "arithmetic"
+				? upper
+						.times(
+							new SpotGridDecimal(1).minus(
+								target.times(new SpotGridDecimal(count).minus(1)),
+							),
+						)
+						.div(new SpotGridDecimal(1).plus(target))
+				: upper.div(new SpotGridDecimal(1).plus(target).pow(count));
+		if (!lower.gt(0)) return null;
 		const rounded = lower.toSignificantDigits(3, SpotGridDecimal.ROUND_DOWN);
 		const formatted = formatCalculatorInput(rounded.toString());
 		const parsed = parseSpotGridDecimal(formatted, "Lower price");

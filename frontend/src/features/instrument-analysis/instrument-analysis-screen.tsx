@@ -176,29 +176,28 @@ export function InstrumentAnalysisScreen({
 											</Text>
 										</Group>
 									) : null}
-									{statistics.map(
-										({ key, label, coverageLabel, range, coverage }) => {
-											return (
-												<Stack gap={contentSpacing} key={key}>
-													<Group justify="space-between" wrap="nowrap">
-														<Text size={textSize}>{label}</Text>
-														<Text fw={700} size={textSize} ta="right">
-															{typeof range === "number" &&
-															Number.isFinite(range)
-																? formatRangePercent(range)
-																: "—"}
-														</Text>
-													</Group>
-													<Group justify="space-between" wrap="nowrap">
-														<Text size={textSize}>{`${coverageLabel}: `}</Text>
-														<Text fw={700} size={textSize} ta="right">
-															{coverage}
-														</Text>
-													</Group>
-												</Stack>
-											);
-										},
-									)}
+									{statistics.map(({ key, label, range }) => (
+										<Group justify="space-between" key={key} wrap="nowrap">
+											<Text size={textSize}>{label}</Text>
+											<Text fw={700} size={textSize} ta="right">
+												{typeof range === "number" && Number.isFinite(range)
+													? formatRangePercent(range)
+													: "—"}
+											</Text>
+										</Group>
+									))}
+									{statistics.map(({ key, coverageLabel, coverage }) => (
+										<Group
+											justify="space-between"
+											key={`${key}-coverage`}
+											wrap="nowrap"
+										>
+											<Text size={textSize}>{`${coverageLabel}: `}</Text>
+											<Text fw={700} size={textSize} ta="right">
+												{coverage}
+											</Text>
+										</Group>
+									))}
 								</Stack>
 							</Paper>
 							<SpotGridEstimator

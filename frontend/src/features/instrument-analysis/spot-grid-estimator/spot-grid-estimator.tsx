@@ -29,7 +29,7 @@ import type { SpotGridInput } from "@/utils/calculator/spot-grid";
 interface SpotGridEstimatorProps {
 	candles?: readonly (PriceCandle | null)[];
 	disabled?: boolean;
-	hourlyStepPercent?: number;
+	hourlyVolatilityPercent?: number;
 	paperPadding: string;
 }
 
@@ -51,11 +51,11 @@ function formValues(input: SpotGridInput): SpotGridFormValues {
 export function SpotGridEstimator({
 	candles,
 	disabled = false,
-	hourlyStepPercent,
+	hourlyVolatilityPercent,
 	paperPadding,
 }: SpotGridEstimatorProps) {
 	const [recommendation] = useState(() =>
-		spotGridRecommendation(candles, hourlyStepPercent),
+		spotGridRecommendation(candles, hourlyVolatilityPercent),
 	);
 	const form = useForm<SpotGridFormValues>({
 		initialValues: formValues(recommendation.input),
@@ -70,10 +70,10 @@ export function SpotGridEstimator({
 		typeof latestHigh === "number" &&
 		Number.isFinite(latestHigh) &&
 		latestHigh > 0;
-	const hasHourlyStep =
-		typeof hourlyStepPercent === "number" &&
-		Number.isFinite(hourlyStepPercent) &&
-		hourlyStepPercent > 0;
+	const hasHourlyVolatility =
+		typeof hourlyVolatilityPercent === "number" &&
+		Number.isFinite(hourlyVolatilityPercent) &&
+		hourlyVolatilityPercent > 0;
 	const calculation = useMemo(
 		() => calculateSpotGridInput(committedInput, form.values.gridType),
 		[committedInput, form.values.gridType],
@@ -95,7 +95,7 @@ export function SpotGridEstimator({
 		const lowerPrice =
 			recommendedLowerPrice(
 				upperPrice,
-				hourlyStepPercent,
+				hourlyVolatilityPercent,
 				committedInput.gridCount,
 			) ?? "";
 		form.setValues({ lowerPrice, markup, upperPrice });
@@ -185,9 +185,9 @@ export function SpotGridEstimator({
 							Upper price markup needs a valid hourly candle high.
 						</Text>
 					) : null}
-					{hasLatestHigh && !hasHourlyStep ? (
+					{hasLatestHigh && !hasHourlyVolatility ? (
 						<Text c="dimmed" size="sm">
-							Hourly Grid Step is unavailable, so no lower price recommendation
+							Hourly volatility is unavailable, so no lower price recommendation
 							can be made.
 						</Text>
 					) : null}

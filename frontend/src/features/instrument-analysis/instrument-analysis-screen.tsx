@@ -5,10 +5,8 @@ import {
 	Group,
 	Loader,
 	Paper,
-	SimpleGrid,
 	Stack,
 	Text,
-	Title,
 	useMatches,
 } from "@mantine/core";
 import {
@@ -33,13 +31,11 @@ const rangeStatistics = [
 	{
 		key: criterionKeys.dailyVolatility,
 		label: "Daily Range",
-		stepLabel: "Daily Grid Step",
 		coverageLabel: "Days available",
 	},
 	{
 		key: criterionKeys.hourlyVolatility,
 		label: "Hourly Range",
-		stepLabel: "Hourly Grid Step",
 		coverageLabel: "Hours available",
 	},
 ];
@@ -91,9 +87,9 @@ export function InstrumentAnalysisScreen({
 	const hourlyRange = recommendationResult?.evaluations.find(
 		(item) => item.key === criterionKeys.hourlyVolatility,
 	)?.metrics[evaluationMetricKeys.rangePercent];
-	const hourlyStepPercent =
+	const hourlyVolatilityPercent =
 		typeof hourlyRange === "number" && Number.isFinite(hourlyRange)
-			? hourlyRange / 2
+			? hourlyRange
 			: undefined;
 
 	const statistics = rangeStatistics.map((statistic) => {
@@ -117,7 +113,6 @@ export function InstrumentAnalysisScreen({
 			...statistic,
 			range,
 			coverage,
-			partial: hasCoverage && count < period,
 		};
 	});
 
@@ -206,40 +201,10 @@ export function InstrumentAnalysisScreen({
 									)}
 								</Stack>
 							</Paper>
-							<Paper
-								component="section"
-								aria-labelledby="bot-settings-heading"
-								p={paperPadding}
-							>
-								<Stack gap="md">
-									<Center>
-										<Title id="bot-settings-heading" order={2} size="h3">
-											Recommended grid step
-										</Title>
-									</Center>
-									<SimpleGrid cols={2} spacing="md">
-										{statistics.map(
-											({ key, stepLabel, range, coverage, partial }) => (
-												<Stack gap={4} key={key}>
-													<Text fw={500}>{stepLabel}</Text>
-													<Text fw={700} size="xl">
-														{typeof range === "number" && Number.isFinite(range)
-															? formatRangePercent(range / 2)
-															: "Not enough data"}
-													</Text>
-													{partial ? (
-														<Text size="sm">Incomplete sample: {coverage}</Text>
-													) : null}
-												</Stack>
-											),
-										)}
-									</SimpleGrid>
-								</Stack>
-							</Paper>
 							<SpotGridEstimator
 								candles={recommendationResult?.candle_history}
 								disabled={query.isFetching}
-								hourlyStepPercent={hourlyStepPercent}
+								hourlyVolatilityPercent={hourlyVolatilityPercent}
 								key={`binance:spot:USDT:${symbol}:${recommendationResult ? "ready" : "pending"}`}
 								paperPadding={paperPadding}
 							/>

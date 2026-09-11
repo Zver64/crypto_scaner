@@ -35,7 +35,7 @@ function formatCalculatorInput(value: string): string {
 
 export interface SpotGridRecommendation {
 	input: SpotGridInput;
-	hasHourlyStep: boolean;
+	hasHourlyVolatility: boolean;
 	hasLatestHigh: boolean;
 }
 
@@ -78,15 +78,15 @@ export function recommendedUpperPrice(
 
 export function recommendedLowerPrice(
 	upperPrice: string,
-	hourlyStepPercent: number | undefined,
+	hourlyVolatilityPercent: number | undefined,
 	gridCount: string,
 ): string | null {
-	if (!validPositiveNumber(hourlyStepPercent)) return null;
+	if (!validPositiveNumber(hourlyVolatilityPercent)) return null;
 	try {
 		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
 		const count = parseSpotGridCount(gridCount);
 		const ratio = new SpotGridDecimal(1).plus(
-			new SpotGridDecimal(hourlyStepPercent).div(100),
+			new SpotGridDecimal(hourlyVolatilityPercent).div(100),
 		);
 		if (!ratio.gt(1)) return null;
 		const lower = upper.div(ratio.pow(count));
@@ -101,14 +101,14 @@ export function recommendedLowerPrice(
 
 export function spotGridRecommendation(
 	candles: readonly (PriceCandle | null)[] | undefined,
-	hourlyStepPercent: number | undefined,
+	hourlyVolatilityPercent: number | undefined,
 	markupPercent = DEFAULT_MARKUP_PERCENT,
 	gridCount = DEFAULT_GRID_COUNT,
 ): SpotGridRecommendation {
 	const high = latestAvailableCandle(candles)?.high;
 	const upperPrice = recommendedUpperPrice(high, markupPercent) ?? "";
 	const lowerPrice =
-		recommendedLowerPrice(upperPrice, hourlyStepPercent, gridCount) ?? "";
+		recommendedLowerPrice(upperPrice, hourlyVolatilityPercent, gridCount) ?? "";
 	return {
 		input: {
 			lowerPrice,
@@ -116,7 +116,7 @@ export function spotGridRecommendation(
 			gridCount,
 			investment: DEFAULT_INVESTMENT,
 		},
-		hasHourlyStep: validPositiveNumber(hourlyStepPercent),
+		hasHourlyVolatility: validPositiveNumber(hourlyVolatilityPercent),
 		hasLatestHigh: validPositiveNumber(high),
 	};
 }

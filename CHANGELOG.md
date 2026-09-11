@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.11.0](https://github.com/Zver64/crypto_scaner/compare/v0.10.1...v0.11.0) (2026-09-11)
+
+
+### Features
+
+* add configurable spot grid range ([f31fbc9](https://github.com/Zver64/crypto_scaner/commit/f31fbc9824c694af8f0a688f040f9e8efbb99b2d))
+
+
+### Bug Fixes
+
+* enable top market cap row navigation ([9b838ca](https://github.com/Zver64/crypto_scaner/commit/9b838ca4e96972a7a3f54d6b1b3dc3ae9eee2d1f))
+* reorder instrument analysis statistics ([42f471f](https://github.com/Zver64/crypto_scaner/commit/42f471ff02da7ba684f331fe3e25b952f40e6f26))
+* use hourly volatility for spot grid ([520a7c0](https://github.com/Zver64/crypto_scaner/commit/520a7c0129d7a26fb90457a6ceb53b2738ebb338))
+* use observed volatility percentile thresholds ([b2ac4de](https://github.com/Zver64/crypto_scaner/commit/b2ac4de2182f14b4fee9965e9e206311503d4e8f))
+
 ## [0.10.1](https://github.com/Zver64/crypto_scaner/compare/v0.10.0...v0.10.1) (2026-09-10)
 
 

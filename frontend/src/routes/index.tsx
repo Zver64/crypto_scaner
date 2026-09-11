@@ -17,7 +17,6 @@ export const Route = createFileRoute("/")({
 
 function Home() {
 	const search = Route.useSearch();
-	const navigate = Route.useNavigate();
 	const initialCriteria = scanCriteriaFromSearch(search);
 	const sort = marketScanSortFromSearch(search);
 
@@ -35,13 +34,6 @@ function Home() {
 			}}
 			onSymbolFilterChange={(symbolFilter) => {
 				replaceUrlSearch({ symbol_filter: symbolFilter || undefined });
-			}}
-			onSelectInstrument={async (symbol, criteria) => {
-				await navigate({
-					params: { symbol },
-					search: scanCriteriaToSearch(criteria),
-					to: "/instruments/$symbol",
-				});
 			}}
 			sort={sort}
 			symbolFilter={search.symbol_filter ?? ""}

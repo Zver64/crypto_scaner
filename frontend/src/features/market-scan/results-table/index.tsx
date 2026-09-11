@@ -1,6 +1,8 @@
 import { UnstyledButton } from "@mantine/core";
+import { useNavigate } from "@tanstack/react-router";
 import type { PriceHistoryWindow } from "@/api/client";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
 import { marketScanColumns } from "@/features/market-scan/results-table/columns";
 import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
 import type { MarketScanRow } from "@/features/market-scan/results-table/utils";
@@ -9,22 +11,24 @@ import {
 	nextMarketScanSort,
 	sortMarketScanRows,
 } from "@/features/market-scan/sort";
+import { scanCriteriaToSearch } from "@/routes/-scan-criteria-search";
 
 interface MarketScanResultsTableProps {
+	criteria: MarketScanCriteria;
 	rows: readonly MarketScanRow[];
 	window: PriceHistoryWindow;
 	sort: MarketScanSort;
 	onSortChange(sort: MarketScanSort): void;
-	onSelectInstrument?(symbol: string): void;
 }
 
 export function MarketScanResultsTable({
+	criteria,
 	rows,
 	window,
 	sort,
 	onSortChange,
-	onSelectInstrument,
 }: MarketScanResultsTableProps) {
+	const navigate = useNavigate();
 	const direction = sort.direction === "desc" ? "descending" : "ascending";
 	const columns: DataTableColumn<MarketScanRow>[] = marketScanColumns.map(
 		(column) => {
@@ -58,9 +62,13 @@ export function MarketScanResultsTable({
 			rows={sortMarketScanRows(rows, sort)}
 			getRowKey={(row) => row.symbol}
 			minWidth={900}
-			onRowClick={
-				onSelectInstrument ? (row) => onSelectInstrument(row.symbol) : undefined
-			}
+			onRowClick={(row) => {
+				void navigate({
+					params: { symbol: row.symbol },
+					search: scanCriteriaToSearch(criteria),
+					to: "/instruments/$symbol",
+				});
+			}}
 		/>
 	);
 }

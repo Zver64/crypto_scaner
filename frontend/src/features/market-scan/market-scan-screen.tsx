@@ -20,10 +20,6 @@ interface MarketScanScreenProps {
 	onCriteriaCommit(criteria: MarketScanCriteria): void;
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
-	onSelectInstrument(
-		symbol: string,
-		criteria: MarketScanCriteria,
-	): Promise<void>;
 	sort: MarketScanSort;
 	symbolFilter: string;
 }
@@ -33,7 +29,6 @@ export function MarketScanScreen({
 	onCriteriaCommit,
 	onSortChange,
 	onSymbolFilterChange,
-	onSelectInstrument,
 	sort,
 	symbolFilter,
 }: MarketScanScreenProps) {
@@ -97,7 +92,6 @@ export function MarketScanScreen({
 					<MarketScanResults
 						criteria={displayedScan.criteria}
 						isRefreshing={isPending}
-						onSelectInstrument={onSelectInstrument}
 						onSortChange={onSortChange}
 						onSymbolFilterChange={onSymbolFilterChange}
 						result={displayedScan.result}

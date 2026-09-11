@@ -22,10 +22,6 @@ import type { MarketScanSort } from "@/features/market-scan/sort";
 interface MarketScanResultsProps {
 	criteria: MarketScanCriteria;
 	isRefreshing: boolean;
-	onSelectInstrument(
-		symbol: string,
-		criteria: MarketScanCriteria,
-	): Promise<void>;
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
 	result: MarketScanResult;
@@ -36,7 +32,6 @@ interface MarketScanResultsProps {
 export function MarketScanResults({
 	criteria,
 	isRefreshing,
-	onSelectInstrument,
 	onSortChange,
 	onSymbolFilterChange,
 	result,
@@ -91,13 +86,11 @@ export function MarketScanResults({
 					</Paper>
 				) : (
 					<MarketScanResultsTable
-						rows={rows}
-						window={result.price_history_window}
-						sort={sort}
+						criteria={criteria}
 						onSortChange={onSortChange}
-						onSelectInstrument={(symbol) =>
-							void onSelectInstrument(symbol, criteria)
-						}
+						rows={rows}
+						sort={sort}
+						window={result.price_history_window}
 					/>
 				)}
 				{result.unresolved.length > 0 ? (

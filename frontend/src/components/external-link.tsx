@@ -1,17 +1,21 @@
-import { Anchor, Text, useMatches } from "@mantine/core";
+import { Anchor, useMatches } from "@mantine/core";
 import { openTelegramExternalLink } from "@/app/telegram";
-import { binanceSpotUrl } from "@/features/market-scan/results-table/binance-link/utils";
 
-export function BinanceLink({ symbol }: { symbol: string }) {
+interface ExternalLinkProps {
+	ariaLabel: string;
+	href: string;
+}
+
+export function ExternalLink({ ariaLabel, href }: ExternalLinkProps) {
 	const iconSize = useMatches({ base: 16, sm: 18 });
-	const url = binanceSpotUrl(symbol);
-	return url ? (
+
+	return (
 		<Anchor
-			aria-label={`Open ${symbol} on Binance Spot`}
-			href={url}
+			aria-label={ariaLabel}
+			href={href}
 			onClick={(event) => {
 				event.stopPropagation();
-				if (openTelegramExternalLink(url)) {
+				if (openTelegramExternalLink(href)) {
 					event.preventDefault();
 				}
 			}}
@@ -40,7 +44,5 @@ export function BinanceLink({ symbol }: { symbol: string }) {
 				<path d="M9 6h9v9" />
 			</svg>
 		</Anchor>
-	) : (
-		<Text c="dimmed">—</Text>
 	);
 }

@@ -1,11 +1,12 @@
 import type { ReactNode } from "react";
 import type { PriceHistoryWindow, UnresolvedInstrument } from "@/api/client";
 import type { DataTableColumn } from "@/components/data-table";
+import { ExternalLink } from "@/components/external-link";
 import { PercentChange } from "@/components/percent-change";
 import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
-import { BinanceLink } from "@/features/market-scan/results-table/binance-link";
 import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
 import {
+	binanceSpotUrl,
 	type MarketScanRow,
 	marketCapUnavailableReason,
 } from "@/features/market-scan/results-table/utils";
@@ -72,7 +73,17 @@ export const marketScanColumns = [
 	{
 		key: marketScanColumnKeys.binance,
 		header: "Binance",
-		cell: (row) => <BinanceLink symbol={row.symbol} />,
+		cell: (row) => {
+			const url = binanceSpotUrl(row.symbol);
+			return url ? (
+				<ExternalLink
+					ariaLabel={`Open ${row.symbol} on Binance Spot`}
+					href={url}
+				/>
+			) : (
+				"—"
+			);
+		},
 		textAlign: "center",
 	},
 	{

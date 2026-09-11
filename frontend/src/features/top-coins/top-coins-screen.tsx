@@ -18,6 +18,7 @@ import { defaultMarketScanSort } from "@/features/market-scan/sort";
 import {
 	topCoinsCriteria,
 	topCoinsRequestOptions,
+	topCoinsScanCriteria,
 	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
 
@@ -57,6 +58,7 @@ export function TopCoinsScreen() {
 				{query.data ? (
 					rows.length > 0 ? (
 						<MarketScanResultsTable
+							criteria={topCoinsScanCriteria}
 							onSortChange={setSort}
 							rows={rows}
 							sort={sort}

@@ -4,6 +4,21 @@ import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { marketCapEvaluation } from "@/utils/market-cap";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
 
+const binanceSpotQuoteAsset = "USDT";
+
+export function binanceSpotUrl(symbol: string): string | undefined {
+	const normalizedSymbol = symbol.trim().toUpperCase();
+	if (
+		!normalizedSymbol.endsWith(binanceSpotQuoteAsset) ||
+		normalizedSymbol.length === binanceSpotQuoteAsset.length
+	) {
+		return undefined;
+	}
+
+	const baseAsset = normalizedSymbol.slice(0, -binanceSpotQuoteAsset.length);
+	return `https://www.binance.com/en/trade/${encodeURIComponent(baseAsset)}_${binanceSpotQuoteAsset}?type=spot`;
+}
+
 export interface MarketScanRow {
 	symbol: string;
 	dailyRangePercent: number | null;

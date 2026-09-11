@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.11.1](https://github.com/Zver64/crypto_scaner/compare/v0.11.0...v0.11.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* changed percentile ([4332661](https://github.com/Zver64/crypto_scaner/commit/43326615e3d8bde2aba93d227657af1d295a664d))
+
 ## [0.11.0](https://github.com/Zver64/crypto_scaner/compare/v0.10.1...v0.11.0) (2026-09-11)
 
 

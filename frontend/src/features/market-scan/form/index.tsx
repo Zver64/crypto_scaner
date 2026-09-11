@@ -19,7 +19,7 @@ const hourlyPeriodPresets = [24, 60, 100] as const;
 const dailyMinimumRangePresets = [3, 5, 7, 10] as const;
 const hourlyMinimumRangePresets = [1, 1.5, 2, 3] as const;
 const marketCapPresets = [100, 500, 1000, 5000, 10000] as const;
-const percentilePresets = [60, 75, 80, 90] as const;
+const percentilePresets = [75, 80, 90, 95] as const;
 
 function formatMarketCapPreset(value: number) {
 	return value >= 1000 ? `${value / 1000}B` : `${value}M`;

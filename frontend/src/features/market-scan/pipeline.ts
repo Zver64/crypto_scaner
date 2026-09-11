@@ -22,10 +22,10 @@ export type MarketScanDraft = {
 export const defaultMarketScanCriteria: MarketScanCriteria = {
 	period: 30,
 	percentile: 80,
-	minimumRangePercent: 10,
+	minimumRangePercent: 5,
 	hourlyPeriod: 60,
 	hourlyPercentile: 80,
-	hourlyMinimumRangePercent: 2,
+	hourlyMinimumRangePercent: 1,
 	minimumMarketCapMillions: singleVolatilityDefaults.minimumMarketCapMillions,
 };
 

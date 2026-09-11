@@ -7,11 +7,11 @@ import {
 
 it("defines the Market Scan product defaults", () => {
 	expect(defaultMarketScanCriteria).toEqual({
-		hourlyMinimumRangePercent: 2,
+		hourlyMinimumRangePercent: 1,
 		hourlyPercentile: 80,
 		hourlyPeriod: 60,
 		minimumMarketCapMillions: 500,
-		minimumRangePercent: 10,
+		minimumRangePercent: 5,
 		percentile: 80,
 		period: 30,
 	});

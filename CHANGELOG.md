@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.12.0](https://github.com/Zver64/crypto_scaner/compare/v0.11.1...v0.12.0) (2026-09-15)
+
+
+### Features
+
+* show grid profit fee breakdown ([7840355](https://github.com/Zver64/crypto_scaner/commit/78403558db16d0e2db857ee244166a7e09e4c642))
+
+
+### Bug Fixes
+
+* refine mobile profit split layout ([9ec2285](https://github.com/Zver64/crypto_scaner/commit/9ec2285b63ef3e11f4d34f57c671c57e953cd924))
+
 ## [0.11.1](https://github.com/Zver64/crypto_scaner/compare/v0.11.0...v0.11.1) (2026-09-11)
 
 

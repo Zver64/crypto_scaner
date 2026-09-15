@@ -5,6 +5,7 @@ import {
 	recommendedLowerPrice,
 	recommendedUpperPrice,
 	spotGridEstimateValues,
+	spotGridProfitSplits,
 	spotGridRecommendation,
 } from "@/features/instrument-analysis/spot-grid-estimator/utils";
 
@@ -20,6 +21,19 @@ const zeroValues = {
 	gridStepPercent: "0%",
 	profitPerStep: "0 USDT",
 	profitPerStepPercent: "0%",
+	profitSplits: [
+		{
+			cleanProfit: "0 USDT",
+			cleanSegmentPercent: 0,
+			cleanShareOfGross: "0%",
+			feeCost: "0 USDT",
+			feeSegmentPercent: 0,
+			feeShareOfGross: "0%",
+			grossProfit: "0 USDT",
+			isLoss: false,
+			label: "Every trade",
+		},
+	],
 };
 
 describe("spot grid recommendations", () => {
@@ -154,6 +168,19 @@ describe("calculateSpotGridInput", () => {
 			gridStepPercent: "10%",
 			profitPerStep: "10.8 USDT",
 			profitPerStepPercent: "9.78%",
+			profitSplits: [
+				{
+					cleanProfit: "10.8 USDT",
+					cleanSegmentPercent: 97.8011,
+					cleanShareOfGross: "97.8%",
+					feeCost: "0.242 USDT",
+					feeSegmentPercent: 2.1989,
+					feeShareOfGross: "2.2%",
+					grossProfit: "11 USDT",
+					isLoss: false,
+					label: "Every trade",
+				},
+			],
 		});
 	});
 
@@ -164,6 +191,86 @@ describe("calculateSpotGridInput", () => {
 		expect(
 			spotGridEstimateValues(calculation?.estimate ?? null).gridStepPercent,
 		).toBe("9.09%–10%");
+	});
+
+	it("pairs arithmetic lowest- and highest-profit trade splits", () => {
+		const calculation = calculateSpotGridInput(validInput, "arithmetic");
+		expect(calculation?.estimate).not.toBeNull();
+		if (!calculation?.estimate) return;
+
+		expect(spotGridProfitSplits(calculation.estimate)).toEqual([
+			{
+				cleanProfit: "9.76 USDT",
+				cleanSegmentPercent: 97.6012,
+				cleanShareOfGross: "97.6%",
+				feeCost: "0.24 USDT",
+				feeSegmentPercent: 2.3988,
+				feeShareOfGross: "2.4%",
+				grossProfit: "10 USDT",
+				isLoss: false,
+				label: "Lowest-profit trade",
+			},
+			{
+				cleanProfit: "10.8 USDT",
+				cleanSegmentPercent: 97.8011,
+				cleanShareOfGross: "97.8%",
+				feeCost: "0.242 USDT",
+				feeSegmentPercent: 2.1989,
+				feeShareOfGross: "2.2%",
+				grossProfit: "11 USDT",
+				isLoss: false,
+				label: "Highest-profit trade",
+			},
+		]);
+	});
+
+	it("scales split amounts with investment without changing fee shares", () => {
+		const original = calculateSpotGridInput(validInput, "arithmetic");
+		const doubled = calculateSpotGridInput(
+			{ ...validInput, investment: "440" },
+			"arithmetic",
+		);
+		if (!original?.estimate || !doubled?.estimate) return;
+
+		const originalSplits = spotGridProfitSplits(original.estimate);
+		const doubledSplits = spotGridProfitSplits(doubled.estimate);
+		expect(doubledSplits.map((split) => split.grossProfit)).toEqual([
+			"20 USDT",
+			"22 USDT",
+		]);
+		expect(doubledSplits.map((split) => split.feeShareOfGross)).toEqual(
+			originalSplits.map((split) => split.feeShareOfGross),
+		);
+		expect(doubledSplits.map((split) => split.feeSegmentPercent)).toEqual(
+			originalSplits.map((split) => split.feeSegmentPercent),
+		);
+	});
+
+	it("caps the fee bar and exposes a net loss when fees exceed gross", () => {
+		const calculation = calculateSpotGridInput(
+			{
+				lowerPrice: "100",
+				upperPrice: "100.1",
+				gridCount: "1",
+				investment: "100",
+			},
+			"geometric",
+		);
+		if (!calculation?.estimate) return;
+
+		expect(spotGridProfitSplits(calculation.estimate)).toEqual([
+			{
+				cleanProfit: "-0.1 USDT",
+				cleanSegmentPercent: 0,
+				cleanShareOfGross: "-100%",
+				feeCost: "0.2 USDT",
+				feeSegmentPercent: 100,
+				feeShareOfGross: "200%",
+				grossProfit: "0.1 USDT",
+				isLoss: true,
+				label: "Every trade",
+			},
+		]);
 	});
 
 	it("clears a valid estimate after cleared or invalid input", () => {

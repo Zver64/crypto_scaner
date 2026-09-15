@@ -12,6 +12,7 @@ import {
 import { useForm } from "@mantine/form";
 import { type FocusEvent, type KeyboardEvent, useMemo, useState } from "react";
 import type { PriceCandle } from "@/api/client";
+import { SegmentedValueGroup } from "@/components/segmented-value-group";
 import { SliderField } from "@/components/slider-field";
 import { ValueGroup } from "@/components/value-group";
 import {
@@ -290,6 +291,39 @@ export function SpotGridEstimator({
 						]}
 					/>
 				</SimpleGrid>
+				<SegmentedValueGroup
+					title="Profit split per trade"
+					rows={values.profitSplits.map((split) => ({
+						ariaLabel: `${split.label}: fees ${split.feeCost}, ${split.feeShareOfGross} of gross profit; ${split.isLoss ? "net loss" : "clean profit"} ${split.cleanProfit}`,
+						items: [
+							{
+								color: "orange",
+								label: "Fees",
+								value: `${split.feeCost} · ${split.feeShareOfGross}`,
+							},
+							{
+								color: split.isLoss ? "red" : "green",
+								label: split.isLoss ? "Net loss" : "Profit",
+								value: `${split.cleanProfit} · ${split.cleanShareOfGross}`,
+							},
+						],
+						key: split.label,
+						label: split.label === "Every trade" ? undefined : split.label,
+						segments: [
+							{
+								color: "var(--mantine-color-orange-6)",
+								key: "fees",
+								percentage: split.feeSegmentPercent,
+							},
+							{
+								color: "var(--mantine-color-green-6)",
+								key: "clean-profit",
+								percentage: split.cleanSegmentPercent,
+							},
+						],
+						summary: `Gross profit: ${split.grossProfit}`,
+					}))}
+				/>
 			</Stack>
 		</Paper>
 	);

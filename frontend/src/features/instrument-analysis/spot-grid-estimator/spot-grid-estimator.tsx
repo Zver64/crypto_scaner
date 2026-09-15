@@ -299,12 +299,14 @@ export function SpotGridEstimator({
 							{
 								color: "orange",
 								label: "Fees",
-								value: `${split.feeCost} · ${split.feeShareOfGross}`,
+								secondaryValue: split.feeShareOfGross,
+								value: split.feeCost,
 							},
 							{
 								color: split.isLoss ? "red" : "green",
 								label: split.isLoss ? "Net loss" : "Profit",
-								value: `${split.cleanProfit} · ${split.cleanShareOfGross}`,
+								secondaryValue: split.cleanShareOfGross,
+								value: split.cleanProfit,
 							},
 						],
 						key: split.label,

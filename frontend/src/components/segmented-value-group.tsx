@@ -11,6 +11,7 @@ import {
 interface SegmentedValueGroupItem {
 	color?: string;
 	label: string;
+	secondaryValue?: string;
 	value: string;
 }
 
@@ -70,15 +71,36 @@ export function SegmentedValueGroup({ rows, title }: SegmentedValueGroupProps) {
 								/>
 							))}
 						</Box>
-						<SimpleGrid cols={{ base: 1, xs: row.items.length }} spacing="xs">
+						<SimpleGrid cols={row.items.length} spacing="xs">
 							{row.items.map((item) => (
-								<Stack gap={2} key={item.label}>
-									<Text c={item.color ?? "dimmed"} fw={500} size="sm">
+								<Stack gap={2} key={item.label} miw={0}>
+									<Text
+										c={item.color ?? "dimmed"}
+										fw={500}
+										size="sm"
+										style={{ whiteSpace: "nowrap" }}
+									>
 										{item.label}
 									</Text>
-									<Text c={item.color} fw={700}>
-										{item.value}
-									</Text>
+									<Group gap="xs" style={{ rowGap: 0 }} wrap="wrap">
+										<Text c={item.color} fw={700}>
+											{item.value}
+										</Text>
+										{item.secondaryValue ? (
+											<>
+												<Text c={item.color} fw={700} visibleFrom="xs">
+													·
+												</Text>
+												<Text
+													c={item.color}
+													fw={700}
+													w={{ base: "100%", xs: "auto" }}
+												>
+													{item.secondaryValue}
+												</Text>
+											</>
+										) : null}
+									</Group>
 								</Stack>
 							))}
 						</SimpleGrid>

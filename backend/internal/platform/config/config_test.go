@@ -39,6 +39,18 @@ func TestLoadServerUsesDocumentedDefaults(t *testing.T) {
 	}
 }
 
+func TestLoadServerDefaultsAPIDocsToDisabled(t *testing.T) {
+	setRequiredEnvironment(t)
+
+	cfg, err := config.LoadServer()
+	if err != nil {
+		t.Fatalf("LoadServer() error = %v", err)
+	}
+	if cfg.APIDocsEnabled {
+		t.Error("APIDocsEnabled = true, want false")
+	}
+}
+
 func TestLoadServerRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing.T) {
 	required := []string{
 		"POSTGRES_HOST",
@@ -79,6 +91,7 @@ func TestLoadServerRejectsInvalidSettingsPreciselyAndSafely(t *testing.T) {
 		{name: "retry attempts", variable: "SYNC_RETRY_ATTEMPTS", value: "many", wantError: "SYNC_RETRY_ATTEMPTS must be a positive integer"},
 		{name: "shutdown timeout", variable: "SHUTDOWN_TIMEOUT", value: "later", wantError: "SHUTDOWN_TIMEOUT must be a positive duration"},
 		{name: "administrator Telegram ID", variable: "ADMIN_TELEGRAM_ID", value: "not-an-id", wantError: "ADMIN_TELEGRAM_ID must be a positive base-10 integer"},
+		{name: "API docs", variable: "API_DOCS_ENABLED", value: "sometimes", wantError: "API_DOCS_ENABLED must be a boolean"},
 	}
 
 	for _, tt := range tests {
@@ -105,6 +118,7 @@ func TestLoadServerParsesOptionalSettings(t *testing.T) {
 	t.Setenv("SYNC_WORKERS", "8")
 	t.Setenv("SYNC_RETRY_ATTEMPTS", "7")
 	t.Setenv("SHUTDOWN_TIMEOUT", "3s")
+	t.Setenv("API_DOCS_ENABLED", "true")
 
 	cfg, err := config.LoadServer()
 	if err != nil {
@@ -117,7 +131,8 @@ func TestLoadServerParsesOptionalSettings(t *testing.T) {
 		cfg.SyncWorkers != 8 ||
 		cfg.SyncRetryAttempts != 7 ||
 		cfg.ShutdownTimeout != 3*time.Second ||
-		cfg.AdminTelegramID != 123456789 {
+		cfg.AdminTelegramID != 123456789 ||
+		!cfg.APIDocsEnabled {
 		t.Fatalf("LoadServer() parsed unexpected configuration: %+v", cfg)
 	}
 }
@@ -188,6 +203,7 @@ func setRequiredEnvironment(t *testing.T) {
 		"SYNC_WORKERS",
 		"SYNC_RETRY_ATTEMPTS",
 		"SHUTDOWN_TIMEOUT",
+		"API_DOCS_ENABLED",
 	} {
 		t.Setenv(key, "")
 	}

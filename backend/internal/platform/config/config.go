@@ -33,6 +33,7 @@ type ServerConfig struct {
 	SyncRetryAttempts      int
 	ShutdownTimeout        time.Duration
 	CoinGeckoDemoAPIKey    string
+	APIDocsEnabled         bool
 }
 
 // LoadServer reads and validates server configuration from the environment.
@@ -51,6 +52,9 @@ func LoadServer() (ServerConfig, error) {
 	}
 	cfg.HTTPAddress = valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress)
 	cfg.CoinGeckoDemoAPIKey = os.Getenv("COINGECKO_DEMO_API_KEY")
+	if cfg.APIDocsEnabled, err = boolean("API_DOCS_ENABLED", false); err != nil {
+		return ServerConfig{}, err
+	}
 	if !isHostPort(cfg.HTTPAddress) {
 		return ServerConfig{}, fmt.Errorf("HTTP_ADDRESS must be a valid host:port address")
 	}
@@ -154,6 +158,18 @@ func requiredPositiveDuration(name string) (time.Duration, error) {
 		return 0, fmt.Errorf("%s must be a positive duration", name)
 	}
 	return duration, nil
+}
+
+func boolean(name string, fallback bool) (bool, error) {
+	value := os.Getenv(name)
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := strconv.ParseBool(value)
+	if err != nil {
+		return false, fmt.Errorf("%s must be a boolean", name)
+	}
+	return parsed, nil
 }
 
 func positiveInt(name string, fallback int) (int, error) {

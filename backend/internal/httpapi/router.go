@@ -2,11 +2,18 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
+	"strings"
+	"time"
 
 	"crypto-scanner/internal/analysis"
+	"crypto-scanner/internal/market"
+
+	"github.com/getkin/kin-openapi/openapi3filter"
+	"github.com/oapi-codegen/nethttp-middleware"
 )
 
 // Readiness exposes only the operational checks required by the health route.
@@ -27,51 +34,167 @@ type Analysis interface {
 	Search(context.Context, analysis.SearchRequest) (analysis.SearchResult, error)
 }
 
+const maxAnalysisRequestBody = 1 << 20
+
+type Options struct {
+	APIDocsEnabled bool
+}
+
+type api struct {
+	readiness Readiness
+	analysis  Analysis
+	history   CandleHistory
+}
+
+var _ StrictServerInterface = (*api)(nil)
+
 // New returns the service HTTP handler with process-wide middleware applied.
 func New(logger *slog.Logger, readiness Readiness, service Analysis, history CandleHistory, authenticator Authenticator) http.Handler {
+	return NewWithOptions(logger, readiness, service, history, authenticator, Options{})
+}
+
+// NewWithOptions returns the service HTTP handler with optional development-only API documentation.
+func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, history CandleHistory, authenticator Authenticator, options Options) http.Handler {
+	operations := http.NewServeMux()
+	strict := NewStrictHandlerWithOptions(&api{readiness: readiness, analysis: service, history: history}, nil, StrictHTTPServerOptions{
+		RequestErrorHandlerFunc:  openAPIRequestError,
+		ResponseErrorHandlerFunc: openAPIResponseError,
+	})
+	HandlerWithOptions(strict, StdHTTPServerOptions{BaseRouter: operations, ErrorHandlerFunc: openAPIRequestError})
+
+	validator, err := openAPIValidator()
+	if err != nil {
+		panic(fmt.Sprintf("load OpenAPI contract: %v", err))
+	}
+
 	router := http.NewServeMux()
-	router.HandleFunc("GET /health/live", live)
-	router.HandleFunc("GET /health/ready", ready(readiness))
-	router.Handle("POST /api/v1/analysis/instruments/{symbol}", authenticator.Authenticate(analyzeSymbol(service)))
-	router.Handle("GET /api/v1/instruments/{symbol}/candles", authenticator.Authenticate(listCandles(history)))
-	router.Handle("POST /api/v1/analysis/market", authenticator.Authenticate(searchMarket(service)))
+	router.Handle("/health/", operations)
+	protectedOperations := authenticator.Authenticate(defaultJSONContentType(limitAnalysisRequestBody(validator(operations))))
+	router.Handle("POST /api/v1/analysis/instruments/{symbol}", protectedOperations)
+	router.Handle("POST /api/v1/analysis/market", protectedOperations)
+	router.Handle("GET /api/v1/instruments/{symbol}/candles", protectedOperations)
+	if options.APIDocsEnabled {
+		registerDocs(router)
+	}
 	return requestMiddleware(logger, router)
 }
 
-func live(response http.ResponseWriter, _ *http.Request) {
-	response.Header().Set("Content-Type", "application/json")
-	response.WriteHeader(http.StatusOK)
-	_, _ = response.Write([]byte("{\"status\":\"ok\"}\n"))
+func openAPIValidator() (func(http.Handler) http.Handler, error) {
+	spec, err := GetSpec()
+	if err != nil {
+		return nil, err
+	}
+	spec.Servers = nil
+	return nethttpmiddleware.OapiRequestValidatorWithOptions(spec, &nethttpmiddleware.Options{
+		Options:              openapi3filter.Options{AuthenticationFunc: func(context.Context, *openapi3filter.AuthenticationInput) error { return nil }},
+		ErrorHandlerWithOpts: openAPIValidationError,
+	}), nil
 }
 
-func ready(readiness Readiness) http.HandlerFunc {
-	return func(response http.ResponseWriter, request *http.Request) {
-		checks := map[string]string{
-			"database":    "unavailable",
-			"migrations":  "unavailable",
-			"market_sync": "unavailable",
+func openAPIValidationError(_ context.Context, _ error, response http.ResponseWriter, request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {
+	message := "Invalid request"
+	switch {
+	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
+		message = "Invalid analysis argument"
+	case strings.HasPrefix(request.URL.Path, "/api/v1/instruments/") && strings.HasSuffix(request.URL.Path, "/candles"):
+		message = candleValidationMessage(request, options)
+	}
+	writeAPIError(response, options.StatusCode, "invalid_argument", message, nil)
+}
+
+func candleValidationMessage(request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) string {
+	query := request.URL.Query()
+	if !market.CandleInterval(query.Get("interval")).Valid() {
+		return "Unsupported candle interval"
+	}
+	if values, present := query["limit"]; present {
+		if len(values) != 1 {
+			return "Invalid candle page limit"
 		}
-		status := http.StatusServiceUnavailable
-		state := "not_ready"
-		if readiness.DatabaseReady(request.Context()) {
-			checks["database"] = "ok"
-			if readiness.MigrationsReady(request.Context()) {
-				checks["migrations"] = "ok"
-				if readiness.SuccessfulMarketSyncExists(request.Context()) {
-					checks["market_sync"] = "ok"
-					status = http.StatusOK
-					state = "ready"
-				} else {
-					checks["market_sync"] = "missing"
-				}
+		limit, err := strconv.Atoi(values[0])
+		if err != nil || limit < 1 || limit > maxCandlePageSize {
+			return "Invalid candle page limit"
+		}
+	}
+	if values, present := query["before"]; present {
+		if len(values) != 1 {
+			return "Invalid candle cursor"
+		}
+		if _, err := time.Parse(time.RFC3339, values[0]); err != nil {
+			return "Invalid candle cursor"
+		}
+	}
+	if options.MatchedRoute != nil && strings.TrimSpace(options.MatchedRoute.PathParams["symbol"]) == "" {
+		return "Symbol is required"
+	}
+	return "Invalid request"
+}
+
+func limitAnalysisRequestBody(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost {
+			request.Body = http.MaxBytesReader(response, request.Body, maxAnalysisRequestBody)
+		}
+		next.ServeHTTP(response, request)
+	})
+}
+
+func defaultJSONContentType(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if request.Method == http.MethodPost && request.Header.Get("Content-Type") == "" {
+			request.Header.Set("Content-Type", "application/json")
+		}
+		next.ServeHTTP(response, request)
+	})
+}
+
+func openAPIRequestError(response http.ResponseWriter, request *http.Request, _ error) {
+	message := "Invalid request"
+	switch {
+	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
+		message = "Invalid analysis argument"
+	case strings.HasPrefix(request.URL.Path, "/api/v1/instruments/") && strings.HasSuffix(request.URL.Path, "/candles"):
+		message = candleValidationMessage(request, nethttpmiddleware.ErrorHandlerOpts{})
+	}
+	writeAPIError(response, http.StatusBadRequest, "invalid_argument", message, nil)
+}
+
+func openAPIResponseError(response http.ResponseWriter, _ *http.Request, _ error) {
+	writeAPIError(response, http.StatusInternalServerError, "internal_error", "Internal server error", nil)
+}
+
+func (api *api) GetLiveness(ctx context.Context, _ GetLivenessRequestObject) (GetLivenessResponseObject, error) {
+	return GetLiveness200JSONResponse{
+		Body:    LivenessResponse{Status: LivenessResponseStatusOk},
+		Headers: GetLiveness200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
+	}, nil
+}
+
+func (api *api) GetReadiness(ctx context.Context, _ GetReadinessRequestObject) (GetReadinessResponseObject, error) {
+	checks := struct {
+		Database   ReadinessCheck `json:"database"`
+		MarketSync ReadinessCheck `json:"market_sync"`
+		Migrations ReadinessCheck `json:"migrations"`
+	}{Database: "unavailable", Migrations: "unavailable", MarketSync: "unavailable"}
+	status := http.StatusServiceUnavailable
+	state := NotReady
+	if api.readiness.DatabaseReady(ctx) {
+		checks.Database = "ok"
+		if api.readiness.MigrationsReady(ctx) {
+			checks.Migrations = "ok"
+			if api.readiness.SuccessfulMarketSyncExists(ctx) {
+				checks.MarketSync = "ok"
+				status = http.StatusOK
+				state = Ready
+			} else {
+				checks.MarketSync = "missing"
 			}
 		}
-
-		response.Header().Set("Content-Type", "application/json")
-		response.WriteHeader(status)
-		_ = json.NewEncoder(response).Encode(struct {
-			Status string            `json:"status"`
-			Checks map[string]string `json:"checks"`
-		}{Status: state, Checks: checks})
 	}
+	body := ReadinessResponse{Status: state}
+	body.Checks = checks
+	if status == http.StatusOK {
+		return GetReadiness200JSONResponse{Body: body, Headers: GetReadiness200ResponseHeaders{XRequestID: RequestIdentifier(ctx)}}, nil
+	}
+	return GetReadiness503JSONResponse{Body: body, Headers: GetReadiness503ResponseHeaders{XRequestID: RequestIdentifier(ctx)}}, nil
 }

@@ -16,9 +16,9 @@ type requestIDContextKey struct{}
 
 var fallbackRequestIDCounter atomic.Uint64
 
-// RequestID returns the correlation identifier installed by the HTTP
+// RequestIdentifier returns the correlation identifier installed by the HTTP
 // middleware, or an empty string outside an HTTP request.
-func RequestID(ctx context.Context) string {
+func RequestIdentifier(ctx context.Context) string {
 	requestID, _ := ctx.Value(requestIDContextKey{}).(string)
 	return requestID
 }

@@ -56,7 +56,7 @@ This installs Go and npm dependencies and configures the repository's Git hooks.
 docker compose up
 ```
 
-Docker Compose starts PostgreSQL, applies database migrations, and serves the API at `http://127.0.0.1:8080`.
+Docker Compose starts PostgreSQL, applies database migrations, and serves the API at `http://127.0.0.1:8080`. An embedded Swagger UI API dashboard is available only in development: open `http://127.0.0.1:8080/docs/` in a browser. The raw OpenAPI contract is at `http://127.0.0.1:8080/openapi.yaml`.
 
 ### 4. Start the frontend
 
@@ -73,6 +73,7 @@ Open `http://127.0.0.1:3000`. The development server generates local Telegram au
 | Command | Description |
 | --- | --- |
 | `make check` | Run backend and frontend checks and tests |
+| `make generate-backend` | Regenerate Go API types and strict server bindings from the OpenAPI contract |
 | `npm -C frontend run build` | Create a production frontend build |
 | `make migrate-up` | Apply pending database migrations manually |
 | `make migrate-down` | Roll back one database migration |

@@ -47,19 +47,39 @@ func TestCandleHistoryReturnsChronologicalKeysetPage(t *testing.T) {
 	}
 }
 
-func TestCandleHistoryValidatesIntervalLimitAndCursor(t *testing.T) {
+func TestCandleHistoryValidationPreservesCanonicalErrors(t *testing.T) {
 	history := &candleHistoryStub{}
 	handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, history, passThroughAuthenticator{})
-	for _, target := range []string{
-		"/api/v1/instruments/BTCUSDT/candles?interval=4h",
-		"/api/v1/instruments/BTCUSDT/candles?interval=1d&limit=501",
-		"/api/v1/instruments/BTCUSDT/candles?interval=1M&before=yesterday",
+	for _, test := range []struct {
+		target  string
+		message string
+	}{
+		{target: "/api/v1/instruments/BTCUSDT/candles?interval=4h", message: "Unsupported candle interval"},
+		{target: "/api/v1/instruments/BTCUSDT/candles?interval=1d&limit=501", message: "Invalid candle page limit"},
+		{target: "/api/v1/instruments/BTCUSDT/candles?interval=1M&before=yesterday", message: "Invalid candle cursor"},
+		{target: "/api/v1/instruments/%20/candles?interval=1h", message: "Symbol is required"},
 	} {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, target, nil))
-		if response.Code != http.StatusBadRequest {
-			t.Errorf("%s status = %d", target, response.Code)
-		}
+		t.Run(test.message, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, test.target, nil))
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+			var envelope struct {
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+				t.Fatalf("decode %q: %v", response.Body.String(), err)
+			}
+			if envelope.Error.Message != test.message {
+				t.Fatalf("message = %q, want %q", envelope.Error.Message, test.message)
+			}
+			if history.interval != "" || history.limit != 0 || history.before != nil {
+				t.Fatalf("schema-invalid request reached candle store: %+v", history)
+			}
+		})
 	}
 }
 

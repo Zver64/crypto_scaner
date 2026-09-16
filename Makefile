@@ -1,9 +1,14 @@
-.PHONY: prepare check migrate-up migrate-down
+.PHONY: prepare check generate generate-backend migrate-up migrate-down
 
 prepare:
 	go -C backend mod download
 	npm -C frontend ci
 	go -C .tools tool lefthook install
+
+generate: generate-backend
+
+generate-backend:
+	go -C backend generate ./internal/httpapi/openapi
 
 check:
 	test -z "$$(gofmt -l $$(find backend -type f -name '*.go'))"

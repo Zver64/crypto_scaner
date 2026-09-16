@@ -1,0 +1,590 @@
+openapi: 3.1.0
+info:
+  title: Crypto Scanner API
+  version: 1.0.0
+  description: HTTP API for service health, cryptocurrency market analysis, and candle history.
+servers:
+  - url: /
+tags:
+  - name: Health
+  - name: Analysis
+  - name: Market Data
+paths:
+  /health/live:
+    get:
+      operationId: getLiveness
+      summary: Check whether the process is alive
+      tags: [Health]
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: The process is running.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LivenessResponse"
+  /health/ready:
+    get:
+      operationId: getReadiness
+      summary: Check whether required service dependencies are ready
+      tags: [Health]
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "200":
+          description: All required dependencies are ready.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+        "503":
+          description: One or more required dependencies are unavailable.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReadinessResponse"
+  /api/v1/analysis/instruments/{symbol}:
+    post:
+      operationId: analyzeInstrument
+      summary: Analyze one active instrument
+      tags: [Analysis]
+      security:
+        - telegramInitData: []
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Symbol"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/InstrumentAnalysisRequest"
+      responses:
+        "200":
+          description: Instrument analysis result.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/InstrumentAnalysisResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/SymbolNotFound"
+        "409":
+          $ref: "#/components/responses/InsufficientData"
+        "422":
+          $ref: "#/components/responses/UnprocessableAnalysis"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/AnalysisUnavailable"
+  /api/v1/analysis/market:
+    post:
+      operationId: analyzeMarket
+      summary: Analyze active instruments in the market
+      tags: [Analysis]
+      security:
+        - telegramInitData: []
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MarketAnalysisRequest"
+      responses:
+        "200":
+          description: Market analysis result.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MarketAnalysisResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "422":
+          $ref: "#/components/responses/UnprocessableAnalysis"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/AnalysisUnavailable"
+  /api/v1/instruments/{symbol}/candles:
+    get:
+      operationId: listInstrumentCandles
+      summary: List a chronological page of closed candles
+      tags: [Market Data]
+      security:
+        - telegramInitData: []
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Symbol"
+        - name: interval
+          in: query
+          required: true
+          description: Supported Binance Spot candle interval.
+          schema:
+            $ref: "#/components/schemas/CandleInterval"
+        - name: before
+          in: query
+          required: false
+          description: Return candles whose open time is before this cursor.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of candles to return.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      responses:
+        "200":
+          description: Candle page.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CandlePageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/SymbolNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+components:
+  securitySchemes:
+    telegramInitData:
+      type: apiKey
+      in: header
+      name: Authorization
+      description: Telegram Mini App init data prefixed with `tma `.
+  parameters:
+    RequestID:
+      name: X-Request-ID
+      in: header
+      required: false
+      description: Optional caller-provided correlation ID. Unsafe values are replaced.
+      schema:
+        type: string
+    Symbol:
+      name: symbol
+      in: path
+      required: true
+      description: Active market symbol.
+      schema:
+        type: string
+        minLength: 1
+  headers:
+    RequestID:
+      description: Correlation ID assigned to the request.
+      required: true
+      schema:
+        type: string
+  responses:
+    BadRequest:
+      description: The request is malformed or contains an unsupported argument.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    Unauthenticated:
+      description: Telegram authentication is missing, invalid, or expired.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    AccessDenied:
+      description: The authenticated Telegram user is not enabled.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    SymbolNotFound:
+      description: The symbol is unknown or inactive.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InsufficientData:
+      description: The requested analysis requires more candle history.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    UnprocessableAnalysis:
+      description: An instrument could not be resolved for analysis.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    InternalError:
+      description: An unexpected server error occurred.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+    AnalysisUnavailable:
+      description: Required market data or market-capitalization data is unavailable.
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+  schemas:
+    LivenessResponse:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties:
+        status:
+          type: string
+          const: ok
+    ReadinessResponse:
+      type: object
+      additionalProperties: false
+      required: [status, checks]
+      properties:
+        status:
+          type: string
+          enum: [ready, not_ready]
+        checks:
+          type: object
+          additionalProperties: false
+          required: [database, migrations, market_sync]
+          properties:
+            database:
+              $ref: "#/components/schemas/ReadinessCheck"
+            migrations:
+              $ref: "#/components/schemas/ReadinessCheck"
+            market_sync:
+              $ref: "#/components/schemas/ReadinessCheck"
+    ReadinessCheck:
+      type: string
+      enum: [ok, unavailable, missing]
+    InstrumentAnalysisRequest:
+      x-go-name: InstrumentAnalysisRequest
+      type: object
+      additionalProperties: false
+      required: [criteria]
+      properties:
+        criteria:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CriterionRequest"
+    MarketAnalysisRequest:
+      x-go-name: MarketAnalysisRequest
+      type: object
+      additionalProperties: false
+      required: [criteria]
+      properties:
+        criteria:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/CriterionRequest"
+        limit:
+          description: Maximum instruments to select. Zero or omission means no limit.
+          type: integer
+          minimum: 0
+          maximum: 100
+        sort:
+          $ref: "#/components/schemas/MarketSort"
+    CriterionRequest:
+      type: object
+      additionalProperties: false
+      required: [key, name, label, parameters]
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        label:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+    MarketSort:
+      type: object
+      additionalProperties: false
+      required: [field, direction]
+      properties:
+        field:
+          type: string
+          enum: [market_cap_usd]
+        direction:
+          type: string
+          enum: [asc, desc]
+    Evaluation:
+      type: object
+      additionalProperties: false
+      required: [key, name, label, matched, metrics, candle_count, from, to]
+      properties:
+        key:
+          type: string
+        name:
+          type: string
+        label:
+          type: string
+        matched:
+          type: boolean
+        metrics:
+          type: object
+          additionalProperties:
+            type: number
+            format: double
+        candle_count:
+          type: integer
+          minimum: 0
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+    Warning:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    InstrumentAnalysisResponse:
+      type: object
+      additionalProperties: false
+      required: [symbol, matched, evaluations, warnings]
+      properties:
+        symbol:
+          type: string
+        matched:
+          type: boolean
+        evaluations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evaluation"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+    PriceHistoryWindow:
+      type: object
+      additionalProperties: false
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          format: date-time
+        to:
+          type: string
+          format: date-time
+    MarketAnalysisItem:
+      type: object
+      additionalProperties: false
+      required: [symbol, matched, evaluations, price_history]
+      properties:
+        symbol:
+          type: string
+        matched:
+          type: boolean
+        evaluations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Evaluation"
+        price_history:
+          type: array
+          minItems: 169
+          maxItems: 169
+          items:
+            type: [number, "null"]
+            format: double
+    UnresolvedInstrument:
+      type: object
+      additionalProperties: false
+      required: [symbol, code, message]
+      properties:
+        symbol:
+          type: string
+        code:
+          type: string
+          enum: [mapping_conflict, mapping_not_found, mapping_provider_unavailable, market_cap_missing]
+        message:
+          type: string
+    MarketAnalysisResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - price_history_window
+        - matched_count
+        - analyzed_count
+        - insufficient_data_count
+        - items
+        - unresolved
+        - warnings
+      properties:
+        price_history_window:
+          $ref: "#/components/schemas/PriceHistoryWindow"
+        matched_count:
+          type: integer
+          minimum: 0
+        analyzed_count:
+          type: integer
+          minimum: 0
+        insufficient_data_count:
+          type: integer
+          minimum: 0
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketAnalysisItem"
+        unresolved:
+          type: array
+          items:
+            $ref: "#/components/schemas/UnresolvedInstrument"
+        warnings:
+          type: array
+          items:
+            $ref: "#/components/schemas/Warning"
+    CandleInterval:
+      type: string
+      enum: [1h, 1d, 1w, 1M]
+    Candle:
+      type: object
+      additionalProperties: false
+      required: [open_time, close_time, open, high, low, close, volume, quote_asset_volume, trade_count]
+      properties:
+        open_time:
+          type: string
+          format: date-time
+        close_time:
+          type: string
+          format: date-time
+        open:
+          type: number
+          format: double
+        high:
+          type: number
+          format: double
+        low:
+          type: number
+          format: double
+        close:
+          type: number
+          format: double
+        volume:
+          type: number
+          format: double
+        quote_asset_volume:
+          type: number
+          format: double
+        trade_count:
+          type: integer
+          format: int64
+          minimum: 0
+    CandlePageResponse:
+      type: object
+      additionalProperties: false
+      required: [symbol, interval, candles, has_more]
+      properties:
+        symbol:
+          type: string
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+        candles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candle"
+        has_more:
+          type: boolean
+        next_before:
+          type: [string, "null"]
+          format: date-time
+    APIError:
+      type: object
+      additionalProperties: false
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - access_denied
+            - insufficient_data
+            - internal_error
+            - invalid_argument
+            - mapping_conflict
+            - mapping_not_found
+            - mapping_provider_unavailable
+            - market_cap_missing
+            - market_cap_unavailable
+            - market_data_unavailable
+            - symbol_not_found
+            - unauthenticated
+        message:
+          type: string
+        details: {}
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error, request_id]
+      properties:
+        error:
+          $ref: "#/components/schemas/APIError"
+        request_id:
+          type: string

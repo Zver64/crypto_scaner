@@ -106,7 +106,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.New(logger, store, analysisService, store, authenticator), scheduler, botService, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled}), scheduler, botService, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

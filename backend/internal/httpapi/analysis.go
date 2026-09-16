@@ -1,214 +1,181 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
-	"io"
 	"math"
 	"net/http"
 	"strings"
-	"time"
 
 	"crypto-scanner/internal/analysis"
-	"crypto-scanner/internal/market"
 )
 
-const maxAnalysisRequestBody = 1 << 20
-
-type analysisRequest struct {
-	Criteria []criterionRequest `json:"criteria"`
-	Limit    int                `json:"limit,omitempty"`
-	Sort     *sortRequest       `json:"sort,omitempty"`
-}
-
-type sortRequest struct {
-	Field     string `json:"field"`
-	Direction string `json:"direction"`
-}
-
-type criterionRequest struct {
-	Key        string         `json:"key"`
-	Name       string         `json:"name"`
-	Label      string         `json:"label"`
-	Parameters map[string]any `json:"parameters"`
-}
-
-func (request analysisRequest) searchRequest() analysis.SearchRequest {
-	result := analysis.SearchRequest{Criteria: request.criterionConfigs(), Limit: request.Limit}
+func marketSearchRequest(request MarketAnalysisRequest) analysis.SearchRequest {
+	result := analysis.SearchRequest{Criteria: criterionConfigs(request.Criteria)}
+	if request.Limit != nil {
+		result.Limit = *request.Limit
+	}
 	if request.Sort != nil {
-		result.Sort = &analysis.SearchSort{Field: request.Sort.Field, Direction: request.Sort.Direction}
+		result.Sort = &analysis.SearchSort{Field: string(request.Sort.Field), Direction: string(request.Sort.Direction)}
 	}
 	return result
 }
 
-func (request analysisRequest) criterionConfigs() []analysis.CriterionConfig {
-	configs := make([]analysis.CriterionConfig, len(request.Criteria))
-	for i, criterion := range request.Criteria {
+func criterionConfigs(criteria []CriterionRequest) []analysis.CriterionConfig {
+	configs := make([]analysis.CriterionConfig, len(criteria))
+	for i, criterion := range criteria {
 		configs[i] = analysis.CriterionConfig{Key: criterion.Key, Name: criterion.Name, Label: criterion.Label, Parameters: criterion.Parameters}
 	}
 	return configs
 }
 
-func analyzeSymbol(service Analysis) http.HandlerFunc {
-	return func(response http.ResponseWriter, request *http.Request) {
-		body, ok := decodeAnalysisRequest(response, request)
-		if !ok {
-			return
-		}
-		result, err := service.AnalyzeSymbol(request.Context(), analysis.SymbolRequest{Symbol: request.PathValue("symbol"), Criteria: body.criterionConfigs()})
-		if err != nil {
-			writeAnalysisError(response, err, request.PathValue("symbol"))
-			return
-		}
-		writeJSON(response, http.StatusOK, symbolResponse{Symbol: result.Symbol, Matched: result.Matched, Evaluations: responseEvaluations(result.Evaluations), Warnings: responseWarnings(result.Warnings)})
+func (api *api) AnalyzeInstrument(ctx context.Context, request AnalyzeInstrumentRequestObject) (AnalyzeInstrumentResponseObject, error) {
+	body := InstrumentAnalysisRequest{}
+	if request.Body != nil {
+		body = *request.Body
+	}
+	result, err := api.analysis.AnalyzeSymbol(ctx, analysis.SymbolRequest{Symbol: request.Symbol, Criteria: criterionConfigs(body.Criteria)})
+	if err != nil {
+		return api.analyzeInstrumentError(ctx, err, request.Symbol), nil
+	}
+	return AnalyzeInstrument200JSONResponse{
+		Body: InstrumentAnalysisResponse{
+			Symbol: result.Symbol, Matched: result.Matched,
+			Evaluations: responseEvaluations(result.Evaluations), Warnings: responseWarnings(result.Warnings),
+		},
+		Headers: AnalyzeInstrument200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
+	}, nil
+}
+
+func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestObject) (AnalyzeMarketResponseObject, error) {
+	body := MarketAnalysisRequest{}
+	if request.Body != nil {
+		body = *request.Body
+	}
+	result, err := api.analysis.Search(ctx, marketSearchRequest(body))
+	if err != nil {
+		return api.analyzeMarketError(ctx, err), nil
+	}
+	items := make([]MarketAnalysisItem, len(result.Items))
+	for i, item := range result.Items {
+		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory}
+	}
+	unresolved := make([]UnresolvedInstrument, len(result.Unresolved))
+	for i, item := range result.Unresolved {
+		unresolved[i] = UnresolvedInstrument{Symbol: item.Symbol, Code: UnresolvedInstrumentCode(item.Code), Message: item.Message}
+	}
+	return AnalyzeMarket200JSONResponse{
+		Body: MarketAnalysisResponse{
+			PriceHistoryWindow: PriceHistoryWindow{From: result.PriceHistoryWindow.From, To: result.PriceHistoryWindow.To},
+			MatchedCount:       result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount,
+			Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings),
+		},
+		Headers: AnalyzeMarket200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
+	}, nil
+}
+
+func (api *api) analyzeInstrumentError(ctx context.Context, err error, symbol string) AnalyzeInstrumentResponseObject {
+	body, status := analysisError(ctx, err, symbol)
+	requestID := RequestIdentifier(ctx)
+	switch status {
+	case http.StatusBadRequest:
+		return AnalyzeInstrument400JSONResponse{BadRequestJSONResponse: BadRequestJSONResponse{Body: body, Headers: BadRequestResponseHeaders{XRequestID: requestID}}}
+	case http.StatusNotFound:
+		return AnalyzeInstrument404JSONResponse{SymbolNotFoundJSONResponse: SymbolNotFoundJSONResponse{Body: body, Headers: SymbolNotFoundResponseHeaders{XRequestID: requestID}}}
+	case http.StatusConflict:
+		return AnalyzeInstrument409JSONResponse{InsufficientDataJSONResponse: InsufficientDataJSONResponse{Body: body, Headers: InsufficientDataResponseHeaders{XRequestID: requestID}}}
+	case http.StatusUnprocessableEntity:
+		return AnalyzeInstrument422JSONResponse{UnprocessableAnalysisJSONResponse: UnprocessableAnalysisJSONResponse{Body: body, Headers: UnprocessableAnalysisResponseHeaders{XRequestID: requestID}}}
+	case http.StatusServiceUnavailable:
+		return AnalyzeInstrument503JSONResponse{AnalysisUnavailableJSONResponse: AnalysisUnavailableJSONResponse{Body: body, Headers: AnalysisUnavailableResponseHeaders{XRequestID: requestID}}}
+	default:
+		return AnalyzeInstrument500JSONResponse{InternalErrorJSONResponse: InternalErrorJSONResponse{Body: body, Headers: InternalErrorResponseHeaders{XRequestID: requestID}}}
 	}
 }
 
-func searchMarket(service Analysis) http.HandlerFunc {
-	return func(response http.ResponseWriter, request *http.Request) {
-		body, ok := decodeAnalysisRequest(response, request)
-		if !ok {
-			return
-		}
-		result, err := service.Search(request.Context(), body.searchRequest())
-		if err != nil {
-			writeAnalysisError(response, err, "")
-			return
-		}
-		items := make([]searchItemResponse, len(result.Items))
-		for i, item := range result.Items {
-			items[i] = searchItemResponse{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory}
-		}
-		unresolved := make([]unresolvedResponse, len(result.Unresolved))
-		for i, item := range result.Unresolved {
-			unresolved[i] = unresolvedResponse{Symbol: item.Symbol, Code: item.Code, Message: item.Message}
-		}
-		writeJSON(response, http.StatusOK, searchResponse{PriceHistoryWindow: result.PriceHistoryWindow, MatchedCount: result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount, Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings)})
+func (api *api) analyzeMarketError(ctx context.Context, err error) AnalyzeMarketResponseObject {
+	body, status := analysisError(ctx, err, "")
+	requestID := RequestIdentifier(ctx)
+	switch status {
+	case http.StatusBadRequest:
+		return AnalyzeMarket400JSONResponse{BadRequestJSONResponse: BadRequestJSONResponse{Body: body, Headers: BadRequestResponseHeaders{XRequestID: requestID}}}
+	case http.StatusUnprocessableEntity:
+		return AnalyzeMarket422JSONResponse{UnprocessableAnalysisJSONResponse: UnprocessableAnalysisJSONResponse{Body: body, Headers: UnprocessableAnalysisResponseHeaders{XRequestID: requestID}}}
+	case http.StatusServiceUnavailable:
+		return AnalyzeMarket503JSONResponse{AnalysisUnavailableJSONResponse: AnalysisUnavailableJSONResponse{Body: body, Headers: AnalysisUnavailableResponseHeaders{XRequestID: requestID}}}
+	default:
+		return AnalyzeMarket500JSONResponse{InternalErrorJSONResponse: InternalErrorJSONResponse{Body: body, Headers: InternalErrorResponseHeaders{XRequestID: requestID}}}
 	}
 }
 
-func decodeAnalysisRequest(response http.ResponseWriter, request *http.Request) (analysisRequest, bool) {
-	request.Body = http.MaxBytesReader(response, request.Body, maxAnalysisRequestBody)
-	decoder := json.NewDecoder(request.Body)
-	decoder.DisallowUnknownFields()
-	var body analysisRequest
-	if decoder.Decode(&body) != nil || decoder.Decode(&struct{}{}) != io.EOF {
-		writeAPIError(response, http.StatusBadRequest, "invalid_argument", "Invalid analysis argument", nil)
-		return analysisRequest{}, false
-	}
-	return body, true
-}
-
-func writeAnalysisError(response http.ResponseWriter, err error, symbol string) {
+func analysisError(ctx context.Context, err error, symbol string) (ErrorResponse, int) {
 	var insufficient *analysis.InsufficientHistoryError
 	var unresolved *analysis.UnresolvedError
 	switch {
 	case errors.Is(err, analysis.ErrInvalidArgument):
-		writeAPIError(response, http.StatusBadRequest, "invalid_argument", "Invalid analysis argument", nil)
+		return newErrorResponse(ctx, "invalid_argument", "Invalid analysis argument", nil), http.StatusBadRequest
 	case errors.Is(err, analysis.ErrSymbolNotFound):
-		writeAPIError(response, http.StatusNotFound, "symbol_not_found", "Symbol is unknown or inactive", nil)
+		return newErrorResponse(ctx, "symbol_not_found", "Symbol is unknown or inactive", nil), http.StatusNotFound
 	case errors.As(err, &insufficient):
-		writeAPIError(response, http.StatusConflict, "insufficient_data", "Not enough closed candles for the requested period", map[string]any{"symbol": symbol, "criterion": insufficient.Criterion, "required": insufficient.Required, "available": insufficient.Available})
+		return newErrorResponse(ctx, "insufficient_data", "Not enough closed candles for the requested period", map[string]any{"symbol": symbol, "criterion": insufficient.Criterion, "required": insufficient.Required, "available": insufficient.Available}), http.StatusConflict
 	case errors.Is(err, analysis.ErrMarketDataUnavailable):
-		writeAPIError(response, http.StatusServiceUnavailable, "market_data_unavailable", "Market data is unavailable", nil)
+		return newErrorResponse(ctx, "market_data_unavailable", "Market data is unavailable", nil), http.StatusServiceUnavailable
 	case errors.Is(err, analysis.ErrMarketCapUnavailable):
-		writeAPIError(response, http.StatusServiceUnavailable, "market_cap_unavailable", "Market capitalization data is unavailable", nil)
+		return newErrorResponse(ctx, "market_cap_unavailable", "Market capitalization data is unavailable", nil), http.StatusServiceUnavailable
 	case errors.As(err, &unresolved):
-		writeAPIError(response, http.StatusUnprocessableEntity, unresolved.Code, unresolved.Message, map[string]any{"symbol": symbol})
+		return newErrorResponse(ctx, unresolved.Code, unresolved.Message, map[string]any{"symbol": symbol}), http.StatusUnprocessableEntity
 	default:
-		writeAPIError(response, http.StatusInternalServerError, "internal_error", "Internal server error", nil)
+		return newErrorResponse(ctx, "internal_error", "Internal server error", nil), http.StatusInternalServerError
 	}
 }
 
-func writeAPIError(response http.ResponseWriter, status int, code, message string, details any) {
-	type errorBody struct {
-		Code    string `json:"code"`
-		Message string `json:"message"`
-		Details any    `json:"details,omitempty"`
-	}
-	writeJSON(response, status, struct {
-		Error     errorBody `json:"error"`
-		RequestID string    `json:"request_id"`
-	}{Error: errorBody{Code: code, Message: message, Details: details}, RequestID: response.Header().Get("X-Request-ID")})
+func newErrorResponse(ctx context.Context, code, message string, details any) ErrorResponse {
+	return ErrorResponse{Error: APIError{Code: APIErrorCode(code), Message: message, Details: details}, RequestId: RequestIdentifier(ctx)}
 }
+
+func writeAPIError(response http.ResponseWriter, status int, code, message string, details any) {
+	writeJSON(response, status, ErrorResponse{Error: APIError{Code: APIErrorCode(code), Message: message, Details: details}, RequestId: response.Header().Get("X-Request-ID")})
+}
+
 func writeJSON(response http.ResponseWriter, status int, body any) {
 	response.Header().Set("Content-Type", "application/json")
 	response.WriteHeader(status)
 	_ = json.NewEncoder(response).Encode(body)
 }
+
 func roundPercentage(value float64) float64 { return math.Round(value*10_000) / 10_000 }
 
-func responseEvaluations(evaluations []analysis.Evaluation) []evaluationResponse {
-	items := make([]evaluationResponse, len(evaluations))
+func responseEvaluations(evaluations []analysis.Evaluation) []Evaluation {
+	items := make([]Evaluation, len(evaluations))
 	for i, evaluation := range evaluations {
 		metrics := make(map[string]float64, len(evaluation.Metrics))
 		for name, value := range evaluation.Metrics {
 			metrics[name] = value
 		}
-		items[i] = evaluationResponse{Key: evaluation.Key, Name: evaluation.Name, Label: evaluation.Label, Matched: evaluation.Matched, Metrics: metrics, CandleCount: evaluation.CandleCount, From: evaluation.From.UTC(), To: evaluation.To.UTC()}
+		items[i] = Evaluation{Key: evaluation.Key, Name: evaluation.Name, Label: evaluation.Label, Matched: evaluation.Matched, Metrics: metrics, CandleCount: evaluation.CandleCount, From: evaluation.From.UTC(), To: evaluation.To.UTC()}
 	}
 	return items
 }
 
 // Market Scan retains its presentation rounding. Instrument Analysis carries
 // original metrics so derived recommendations can be calculated before rounding.
-func responseMarketScanEvaluations(evaluations []analysis.Evaluation) []evaluationResponse {
+func responseMarketScanEvaluations(evaluations []analysis.Evaluation) []Evaluation {
 	items := responseEvaluations(evaluations)
-	for _, evaluation := range items {
-		for name, value := range evaluation.Metrics {
+	for index := range items {
+		for name, value := range items[index].Metrics {
 			if strings.HasSuffix(name, "_percent") {
-				evaluation.Metrics[name] = roundPercentage(value)
+				items[index].Metrics[name] = roundPercentage(value)
 			}
 		}
 	}
 	return items
 }
 
-type evaluationResponse struct {
-	Key         string             `json:"key"`
-	Name        string             `json:"name"`
-	Label       string             `json:"label"`
-	Matched     bool               `json:"matched"`
-	Metrics     map[string]float64 `json:"metrics"`
-	CandleCount int                `json:"candle_count"`
-	From        time.Time          `json:"from"`
-	To          time.Time          `json:"to"`
-}
-type symbolResponse struct {
-	Symbol      string               `json:"symbol"`
-	Matched     bool                 `json:"matched"`
-	Evaluations []evaluationResponse `json:"evaluations"`
-	Warnings    []warningResponse    `json:"warnings"`
-}
-type searchItemResponse struct {
-	PriceHistory []*float64           `json:"price_history"`
-	Symbol       string               `json:"symbol"`
-	Matched      bool                 `json:"matched"`
-	Evaluations  []evaluationResponse `json:"evaluations"`
-}
-type searchResponse struct {
-	PriceHistoryWindow    market.PriceHistoryWindow `json:"price_history_window"`
-	MatchedCount          int                       `json:"matched_count"`
-	AnalyzedCount         int                       `json:"analyzed_count"`
-	InsufficientDataCount int                       `json:"insufficient_data_count"`
-	Items                 []searchItemResponse      `json:"items"`
-	Unresolved            []unresolvedResponse      `json:"unresolved"`
-	Warnings              []warningResponse         `json:"warnings"`
-}
-type unresolvedResponse struct {
-	Symbol  string `json:"symbol"`
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-type warningResponse struct {
-	Code    string `json:"code"`
-	Message string `json:"message"`
-}
-
-func responseWarnings(warnings []analysis.Warning) []warningResponse {
-	result := make([]warningResponse, len(warnings))
+func responseWarnings(warnings []analysis.Warning) []Warning {
+	result := make([]Warning, len(warnings))
 	for i, warning := range warnings {
-		result[i] = warningResponse{Code: warning.Code, Message: warning.Message}
+		result[i] = Warning{Code: warning.Code, Message: warning.Message}
 	}
 	return result
 }

@@ -173,6 +173,51 @@ func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *tes
 	}
 }
 
+func TestBusinessRoutesRejectUnsupportedMethodsBeforeAuthentication(t *testing.T) {
+	authenticator := &countingAuthenticator{}
+	handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, nil, authenticator)
+	for _, test := range []struct {
+		name   string
+		method string
+		path   string
+		allow  string
+	}{
+		{name: "market analysis", method: http.MethodGet, path: "/api/v1/analysis/market", allow: http.MethodPost},
+		{name: "instrument analysis", method: http.MethodGet, path: "/api/v1/analysis/instruments/BTCUSDT", allow: http.MethodPost},
+		{name: "candle history", method: http.MethodPost, path: "/api/v1/instruments/BTCUSDT/candles?interval=1h", allow: "GET, HEAD"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, httptest.NewRequest(test.method, test.path, nil))
+			if response.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+			if allow := response.Header().Get("Allow"); allow != test.allow {
+				t.Fatalf("Allow = %q, want %q", allow, test.allow)
+			}
+			if authenticator.calls != 0 {
+				t.Fatalf("unsupported method reached authentication %d times", authenticator.calls)
+			}
+		})
+	}
+}
+
+func TestUnknownAPIRouteReturnsNotFoundBeforeAuthentication(t *testing.T) {
+	authenticator := &countingAuthenticator{}
+	handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, nil, authenticator)
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/unknown", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	if allow := response.Header().Get("Allow"); allow != "" {
+		t.Fatalf("Allow = %q, want empty", allow)
+	}
+	if authenticator.calls != 0 {
+		t.Fatalf("unknown API route reached authentication %d times", authenticator.calls)
+	}
+}
+
 func TestRouterDoesNotExposeTelegramBotEndpoints(t *testing.T) {
 	handler := newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{})
 
@@ -202,3 +247,12 @@ func (unavailableAnalysis) Search(context.Context, analysis.SearchRequest) (anal
 type passThroughAuthenticator struct{}
 
 func (passThroughAuthenticator) Authenticate(next http.Handler) http.Handler { return next }
+
+type countingAuthenticator struct{ calls int }
+
+func (authenticator *countingAuthenticator) Authenticate(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		authenticator.calls++
+		next.ServeHTTP(response, request)
+	})
+}

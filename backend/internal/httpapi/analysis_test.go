@@ -162,8 +162,90 @@ func TestAnalysisRejectsMalformedAndUnknownJSON(t *testing.T) {
 		if res.Code != http.StatusBadRequest {
 			t.Fatalf("body=%s status=%d", body, res.Code)
 		}
+		var envelope struct {
+			Error struct {
+				Message string `json:"message"`
+			} `json:"error"`
+		}
+		if err := json.Unmarshal(res.Body.Bytes(), &envelope); err != nil {
+			t.Fatalf("decode %q: %v", res.Body.String(), err)
+		}
+		if envelope.Error.Message != "Invalid analysis argument" {
+			t.Fatalf("message = %q", envelope.Error.Message)
+		}
 	}
 }
+
+func TestAnalysisSchemaValidationRejectsRequestsBeforeService(t *testing.T) {
+	validCriteria := `[{"key":"volatility","name":"volatility","label":"Volatility","parameters":{}}]`
+	for _, test := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{name: "missing market criteria", path: "/api/v1/analysis/market", body: `{}`},
+		{name: "empty market criteria", path: "/api/v1/analysis/market", body: `{"criteria":[]}`},
+		{name: "missing instrument criteria", path: "/api/v1/analysis/instruments/BTCUSDT", body: `{}`},
+		{name: "empty instrument criteria", path: "/api/v1/analysis/instruments/BTCUSDT", body: `{"criteria":[]}`},
+		{name: "market limit below contract", path: "/api/v1/analysis/market", body: `{"criteria":` + validCriteria + `,"limit":-1}`},
+		{name: "market limit exceeds contract", path: "/api/v1/analysis/market", body: `{"criteria":` + validCriteria + `,"limit":101}`},
+		{name: "instrument rejects market limit", path: "/api/v1/analysis/instruments/BTCUSDT", body: `{"criteria":` + validCriteria + `,"limit":1}`},
+		{name: "instrument rejects market sort", path: "/api/v1/analysis/instruments/BTCUSDT", body: `{"criteria":` + validCriteria + `,"sort":{"field":"market_cap_usd","direction":"desc"}}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := &countingAnalysis{}
+			handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, service, nil, passThroughAuthenticator{})
+			response := analysisRequestTo(t, handler, test.path, test.body)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+			var envelope struct {
+				Error struct {
+					Message string `json:"message"`
+				} `json:"error"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+				t.Fatal(err)
+			}
+			if envelope.Error.Message != "Invalid analysis argument" {
+				t.Fatalf("message = %q", envelope.Error.Message)
+			}
+			if service.symbolCalls != 0 || service.searchCalls != 0 {
+				t.Fatalf("schema-invalid request reached service: %+v", service)
+			}
+		})
+	}
+}
+
+func TestMarketAnalysisPreservesOmittedAndZeroLimitWithOptionalSort(t *testing.T) {
+	criteria := `[{"key":"market_cap","name":"market_cap","label":"Market Cap","parameters":{}}]`
+	for _, test := range []struct {
+		name      string
+		body      string
+		wantLimit int
+		wantSort  *analysis.SearchSort
+	}{
+		{name: "omitted limit and sort", body: `{"criteria":` + criteria + `}`, wantLimit: 0},
+		{name: "zero limit", body: `{"criteria":` + criteria + `,"limit":0}`, wantLimit: 0},
+		{name: "sort without limit", body: `{"criteria":` + criteria + `,"sort":{"field":"market_cap_usd","direction":"desc"}}`, wantLimit: 0, wantSort: &analysis.SearchSort{Field: "market_cap_usd", Direction: "desc"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := &countingAnalysis{}
+			handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, service, nil, passThroughAuthenticator{})
+			response := analysisRequestTo(t, handler, "/api/v1/analysis/market", test.body)
+			if response.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+			if service.searchCalls != 1 || service.symbolCalls != 0 {
+				t.Fatalf("service calls = %+v", service)
+			}
+			if service.searchRequest.Limit != test.wantLimit || !reflect.DeepEqual(service.searchRequest.Sort, test.wantSort) {
+				t.Fatalf("search request = %+v, want limit=%d sort=%+v", service.searchRequest, test.wantLimit, test.wantSort)
+			}
+		})
+	}
+}
+
 func TestAnalysisEndpointsRequireAuthentication(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/analysis/market", bytes.NewBufferString(analysisBody))
 	res := httptest.NewRecorder()
@@ -305,6 +387,23 @@ type marketAnalysisResponse struct {
 }
 
 const fixtureBotToken = "123456789:AAExampleBotTokenForDeterministicTests"
+
+type countingAnalysis struct {
+	symbolCalls   int
+	searchCalls   int
+	searchRequest analysis.SearchRequest
+}
+
+func (service *countingAnalysis) AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error) {
+	service.symbolCalls++
+	return analysis.SymbolResult{}, analysis.ErrInvalidArgument
+}
+
+func (service *countingAnalysis) Search(_ context.Context, request analysis.SearchRequest) (analysis.SearchResult, error) {
+	service.searchCalls++
+	service.searchRequest = request
+	return analysis.SearchResult{}, analysis.ErrInvalidArgument
+}
 
 type enabledUserStore struct{}
 

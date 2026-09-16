@@ -12,6 +12,11 @@ ON CONFLICT (symbol) DO UPDATE SET
     is_active = EXCLUDED.is_active
 RETURNING id, symbol, base_asset, quote_asset, exchange_status, is_active;
 
+-- name: GetActiveInstrumentBySymbol :one
+SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
+FROM binance_spot.instruments
+WHERE symbol = $1 AND is_active = TRUE;
+
 -- name: ListActiveInstruments :many
 SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
 FROM binance_spot.instruments

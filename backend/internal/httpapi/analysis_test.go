@@ -315,7 +315,7 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
 	service, _ := analysis.NewService(store, factories...)
 	authenticator := authtelegram.NewWithOptions(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
-	return httpapi.New(logging.New(io.Discard, "error"), readinessStub{marketSync: true}, service, authenticator)
+	return httpapi.New(logging.New(io.Discard, "error"), readinessStub{marketSync: true}, service, nil, authenticator)
 }
 
 type httpStore struct {
@@ -350,9 +350,6 @@ func (s *httpStore) ListActiveInstrumentsSortedByMarketCap(_ context.Context, li
 		items = items[:min(limit, len(items))]
 	}
 	return items, nil
-}
-func (s httpStore) ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error) {
-	return nil, nil
 }
 func (s httpStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
 	return nil, nil

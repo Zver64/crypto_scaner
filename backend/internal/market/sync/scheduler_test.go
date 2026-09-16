@@ -44,6 +44,17 @@ func TestNextHourlyRunTargetsThirtySecondsAfterUTCClockHour(t *testing.T) {
 	}
 }
 
+func TestNextWeeklyAndMonthlyRunsUseUTCCalendarBoundaries(t *testing.T) {
+	weeklyNow := time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)
+	if got, want := marketsync.NextWeeklyRun(weeklyNow), time.Date(2026, time.August, 10, 0, 0, 30, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("NextWeeklyRun() = %s, want %s", got, want)
+	}
+	monthlyNow := time.Date(2024, time.February, 20, 0, 0, 0, 0, time.UTC)
+	if got, want := marketsync.NextMonthlyRun(monthlyNow), time.Date(2024, time.March, 1, 0, 0, 30, 0, time.UTC); !got.Equal(want) {
+		t.Fatalf("NextMonthlyRun() = %s, want %s", got, want)
+	}
+}
+
 func TestSchedulerStartsCatchUpAsynchronouslyAndCancelsItOnShutdown(t *testing.T) {
 	runner := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
 	scheduler := marketsync.NewScheduler(runner, slog.New(slog.NewTextHandler(io.Discard, nil)))

@@ -2,7 +2,6 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it } from "vitest";
 import {
-	availableCandles,
 	chartPriceResolution,
 	createCandlestickData,
 	formatCandleRange,
@@ -38,35 +37,32 @@ const acceptsBase = runInNewContext(
 function candle(slot: number, close: number) {
 	return {
 		close,
+		close_time: new Date(
+			Date.parse(from) + (slot + 1) * 3_600_000 - 1,
+		).toISOString(),
 		high: close + 1,
 		low: close - 1,
 		open: close - 0.5,
 		open_time: new Date(Date.parse(from) + slot * 3_600_000).toISOString(),
+		quote_asset_volume: 20,
+		trade_count: 4,
+		volume: 10,
 	};
 }
 
 describe("candlestick chart presentation", () => {
-	it("preserves missing hourly slots as TradingView whitespace data", () => {
-		expect(
-			createCandlestickData([candle(0, 10), null, candle(2, 12)], from),
-		).toEqual([
-			{ close: 10, high: 11, low: 9, open: 9.5, time: 1_787_785_200 },
-			{ time: 1_787_788_800 },
-			{ close: 12, high: 13, low: 11, open: 11.5, time: 1_787_792_400 },
-		]);
-	});
-
-	it("returns only available candles without reordering", () => {
-		const first = candle(2, 2);
-		const second = candle(9, 9);
-		expect(availableCandles([null, first, null, second])).toEqual([
-			first,
-			second,
-		]);
+	it("uses each candle timestamp and preserves gaps", () => {
+		expect(createCandlestickData([candle(0, 10), candle(2, 12)], "1h")).toEqual(
+			[
+				{ close: 10, high: 11, low: 9, open: 9.5, time: 1_787_785_200 },
+				{ time: 1_787_788_800 },
+				{ close: 12, high: 13, low: 11, open: 11.5, time: 1_787_792_400 },
+			],
+		);
 	});
 
 	it("uses sufficient chart precision for sub-cent instruments", () => {
-		const data = createCandlestickData([candle(0, 0.00001234)], from);
+		const data = createCandlestickData([candle(0, 0.00001234)], "1h");
 		expect(chartPriceResolution(data)).toEqual({ base: 1e12, minMove: 1e-12 });
 		expect(chartPriceResolution([{ time: 1 as never }])).toEqual({
 			base: 100,

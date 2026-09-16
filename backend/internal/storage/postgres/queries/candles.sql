@@ -22,6 +22,17 @@ WHERE instrument_id = $1
 ORDER BY open_time DESC
 LIMIT $3;
 
+-- name: ListCandlePage :many
+SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
+       volume, quote_asset_volume, trade_count
+FROM binance_spot.candles
+WHERE instrument_id = sqlc.arg(instrument_id)
+  AND interval = sqlc.arg(interval)
+  AND close_time < now()
+  AND (sqlc.narg(before_time)::timestamptz IS NULL OR open_time < sqlc.narg(before_time))
+ORDER BY open_time DESC
+LIMIT sqlc.arg(row_limit);
+
 -- name: ListHourlyPrices :many
 SELECT instrument_id, open_time, close
 FROM binance_spot.candles
@@ -31,13 +42,3 @@ WHERE instrument_id = ANY(sqlc.arg(instrument_ids)::bigint[])
   AND open_time <= sqlc.arg(to_time)
   AND close_time < sqlc.arg(to_time)::timestamptz + INTERVAL '1 hour'
 ORDER BY instrument_id, open_time;
-
--- name: ListHourlyCandles :many
-SELECT instrument_id, open_time, open, high, low, close
-FROM binance_spot.candles
-WHERE instrument_id = sqlc.arg(instrument_id)
-  AND interval = '1h'
-  AND open_time >= sqlc.arg(from_time)
-  AND open_time <= sqlc.arg(to_time)
-  AND close_time < sqlc.arg(to_time)::timestamptz + INTERVAL '1 hour'
-ORDER BY open_time;

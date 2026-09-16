@@ -33,12 +33,14 @@ func TestHourlySyncRepairsExistingShortAndGappedHistory(t *testing.T) {
 				instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
 				all := hourlyCandles(722)
 				stored := append([]market.Candle(nil), all[661:721]...)
-				want := 721
+				want := 60
 				switch scenario {
 				case "internal gap":
 					stored = append(append([]market.Candle(nil), all[:350]...), all[351:721]...)
+					want = 721
 				case "stale":
 					stored = append([]market.Candle(nil), all[10:50]...)
+					want = 711
 				case "new listing":
 					all = all[672:]
 					stored = nil

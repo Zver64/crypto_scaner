@@ -5,6 +5,7 @@ sql:
       - migrations/000001_initial.up.sql
       - migrations/000002_hourly_candles.up.sql
       - migrations/000003_market_cap.up.sql
+      - migrations/000004_weekly_monthly_candles.up.sql
     queries: internal/storage/postgres/queries
     gen:
       go:

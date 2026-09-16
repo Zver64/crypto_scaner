@@ -11,48 +11,51 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const listHourlyCandles = `-- name: ListHourlyCandles :many
-SELECT instrument_id, open_time, open, high, low, close
+const listCandlePage = `-- name: ListCandlePage :many
+SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
+       volume, quote_asset_volume, trade_count
 FROM binance_spot.candles
 WHERE instrument_id = $1
-  AND interval = '1h'
-  AND open_time >= $2
-  AND open_time <= $3
-  AND close_time < $3::timestamptz + INTERVAL '1 hour'
-ORDER BY open_time
+  AND interval = $2
+  AND close_time < now()
+  AND ($3::timestamptz IS NULL OR open_time < $3)
+ORDER BY open_time DESC
+LIMIT $4
 `
 
-type ListHourlyCandlesParams struct {
+type ListCandlePageParams struct {
 	InstrumentID int64
-	FromTime     pgtype.Timestamptz
-	ToTime       pgtype.Timestamptz
+	Interval     string
+	BeforeTime   pgtype.Timestamptz
+	RowLimit     int32
 }
 
-type ListHourlyCandlesRow struct {
-	InstrumentID int64
-	OpenTime     pgtype.Timestamptz
-	Open         string
-	High         string
-	Low          string
-	Close        string
-}
-
-func (q *Queries) ListHourlyCandles(ctx context.Context, arg ListHourlyCandlesParams) ([]ListHourlyCandlesRow, error) {
-	rows, err := q.db.Query(ctx, listHourlyCandles, arg.InstrumentID, arg.FromTime, arg.ToTime)
+func (q *Queries) ListCandlePage(ctx context.Context, arg ListCandlePageParams) ([]BinanceSpotCandle, error) {
+	rows, err := q.db.Query(ctx, listCandlePage,
+		arg.InstrumentID,
+		arg.Interval,
+		arg.BeforeTime,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListHourlyCandlesRow
+	var items []BinanceSpotCandle
 	for rows.Next() {
-		var i ListHourlyCandlesRow
+		var i BinanceSpotCandle
 		if err := rows.Scan(
 			&i.InstrumentID,
+			&i.Interval,
 			&i.OpenTime,
+			&i.CloseTime,
 			&i.Open,
 			&i.High,
 			&i.Low,
 			&i.Close,
+			&i.Volume,
+			&i.QuoteAssetVolume,
+			&i.TradeCount,
 		); err != nil {
 			return nil, err
 		}

@@ -17,9 +17,6 @@ import (
 
 const spotPermission = "SPOT"
 
-const dailyInterval = "1d"
-const hourlyInterval = "1h"
-
 // Exchange adapts the official Binance connector to market domain values.
 // Connector request and response types do not leave this package.
 type Exchange struct {
@@ -151,7 +148,7 @@ func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.
 	if symbol == "" {
 		return nil, fmt.Errorf("list Binance candles: symbol is required")
 	}
-	if request.Interval != dailyInterval && request.Interval != hourlyInterval {
+	if !request.Interval.Valid() {
 		return nil, fmt.Errorf("list Binance candles for %s: unsupported interval %q", symbol, request.Interval)
 	}
 	if request.Limit <= 0 || request.Limit > 1000 {
@@ -160,18 +157,14 @@ func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.
 	if request.ClosedBefore.IsZero() || request.ClosedBefore.UnixMilli() <= 0 {
 		return nil, fmt.Errorf("list Binance candles for %s: closed-before cutoff is required", symbol)
 	}
-	cutoffUTC := request.ClosedBefore.UTC()
-	boundary := time.Date(cutoffUTC.Year(), cutoffUTC.Month(), cutoffUTC.Day(), 0, 0, 0, 0, time.UTC)
-	if request.Interval == hourlyInterval {
-		boundary = time.Date(cutoffUTC.Year(), cutoffUTC.Month(), cutoffUTC.Day(), cutoffUTC.Hour(), 0, 0, 0, time.UTC)
-	}
+	boundary := request.Interval.OpenTime(request.ClosedBefore)
 	if boundary.UnixMilli() <= 0 {
 		return nil, fmt.Errorf("list Binance candles for %s: closed-before cutoff must follow the Unix epoch", symbol)
 	}
 
 	service := exchange.client.NewKlinesService().
 		Symbol(symbol).
-		Interval(request.Interval).
+		Interval(string(request.Interval)).
 		Limit(request.Limit).
 		EndTime(uint64(boundary.UnixMilli() - 1))
 	if request.AfterOpenTime != nil {

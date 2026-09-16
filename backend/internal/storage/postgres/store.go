@@ -185,6 +185,17 @@ func (store *Store) ApplyInstrumentSnapshot(ctx context.Context, items []market.
 	return nil
 }
 
+func (store *Store) GetActiveInstrumentBySymbol(ctx context.Context, symbol string) (market.Instrument, error) {
+	row, err := store.queries.GetActiveInstrumentBySymbol(ctx, symbol)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return market.Instrument{}, market.ErrInstrumentNotFound
+	}
+	if err != nil {
+		return market.Instrument{}, fmt.Errorf("get active instrument by symbol: %w", err)
+	}
+	return market.Instrument{ID: row.ID, Symbol: row.Symbol, BaseAsset: row.BaseAsset, QuoteAsset: row.QuoteAsset, Status: row.ExchangeStatus, Active: row.IsActive}, nil
+}
+
 func (store *Store) ListActiveInstruments(ctx context.Context) ([]market.Instrument, error) {
 	rows, err := store.queries.ListActiveInstruments(ctx)
 	if err != nil {
@@ -274,6 +285,31 @@ func (store *Store) ListLatestCandlesByInterval(ctx context.Context, instrumentI
 	return items, nil
 }
 
+func (store *Store) ListCandlePage(ctx context.Context, instrumentID int64, interval market.CandleInterval, before *time.Time, limit int) (market.CandlePage, error) {
+	if instrumentID <= 0 || !interval.Valid() || limit <= 0 || int64(limit) >= math.MaxInt32 {
+		return market.CandlePage{}, fmt.Errorf("invalid candle page")
+	}
+	rows, err := store.queries.ListCandlePage(ctx, generated.ListCandlePageParams{
+		InstrumentID: instrumentID, Interval: string(interval), BeforeTime: timestamptz(before), RowLimit: int32(limit + 1),
+	})
+	if err != nil {
+		return market.CandlePage{}, fmt.Errorf("list candle page: %w", err)
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	candles := make([]market.Candle, len(rows))
+	for index, row := range rows {
+		candle, convertErr := candleFromRow(row)
+		if convertErr != nil {
+			return market.CandlePage{}, fmt.Errorf("convert candle opened at %s: %w", row.OpenTime.Time, convertErr)
+		}
+		candles[len(rows)-1-index] = candle
+	}
+	return market.CandlePage{Candles: candles, HasMore: hasMore}, nil
+}
+
 func (store *Store) GetSyncState(ctx context.Context, profile market.SyncProfile) (market.SyncState, error) {
 	row, err := store.queries.GetSyncState(ctx, profile.Key())
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -286,32 +322,6 @@ func (store *Store) GetSyncState(ctx context.Context, profile market.SyncProfile
 		Profile: profile, LastStartedAt: timePointer(row.LastStartedAt), LastSucceededAt: timePointer(row.LastSucceededAt),
 		LastClosedOpenTime: timePointer(row.LastClosedOpenTime), Status: market.SyncStatus(row.Status), ErrorMessage: row.ErrorMessage.String,
 	}, nil
-}
-
-func (store *Store) ListHourlyCandles(ctx context.Context, instrumentID int64, from, to time.Time) ([]market.HourlyCandle, error) {
-	rows, err := store.queries.ListHourlyCandles(ctx, generated.ListHourlyCandlesParams{InstrumentID: instrumentID, FromTime: timestamptz(&from), ToTime: timestamptz(&to)})
-	if err != nil {
-		return nil, fmt.Errorf("list hourly candles: %w", err)
-	}
-	candles := make([]market.HourlyCandle, 0, len(rows))
-	for _, row := range rows {
-		fields := []struct{ name, value string }{
-			{"open", row.Open}, {"high", row.High}, {"low", row.Low}, {"close", row.Close},
-		}
-		values := make([]float64, len(fields))
-		for index, field := range fields {
-			value, parseErr := strconv.ParseFloat(field.value, 64)
-			if parseErr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
-				return nil, fmt.Errorf("invalid hourly %s for instrument %d at %s", field.name, row.InstrumentID, row.OpenTime.Time)
-			}
-			values[index] = value
-		}
-		candles = append(candles, market.HourlyCandle{
-			InstrumentID: row.InstrumentID, OpenTime: row.OpenTime.Time.UTC(),
-			Open: values[0], High: values[1], Low: values[2], Close: values[3],
-		})
-	}
-	return candles, nil
 }
 
 func (store *Store) ListHourlyPrices(ctx context.Context, instrumentIDs []int64, from, to time.Time) ([]market.HourlyPrice, error) {
@@ -360,7 +370,7 @@ func candleParams(item market.Candle) (generated.UpsertCandleParams, error) {
 		}
 	}
 	return generated.UpsertCandleParams{
-		InstrumentID: item.InstrumentID, Interval: item.Interval,
+		InstrumentID: item.InstrumentID, Interval: string(item.Interval),
 		OpenTime: pgtype.Timestamptz{Time: item.OpenTime, Valid: true}, CloseTime: pgtype.Timestamptz{Time: item.CloseTime, Valid: true},
 		Open: decimal(item.Open), High: decimal(item.High), Low: decimal(item.Low), Close: decimal(item.Close),
 		Volume: decimal(item.Volume), QuoteAssetVolume: decimal(item.QuoteAssetVolume), TradeCount: item.TradeCount,
@@ -381,7 +391,7 @@ func candleFromRow(row generated.BinanceSpotCandle) (market.Candle, error) {
 		converted[index] = value
 	}
 	return market.Candle{
-		InstrumentID: row.InstrumentID, Interval: row.Interval, OpenTime: row.OpenTime.Time, CloseTime: row.CloseTime.Time,
+		InstrumentID: row.InstrumentID, Interval: market.CandleInterval(row.Interval), OpenTime: row.OpenTime.Time, CloseTime: row.CloseTime.Time,
 		Open: converted[0], High: converted[1], Low: converted[2], Close: converted[3], Volume: converted[4], QuoteAssetVolume: converted[5], TradeCount: row.TradeCount,
 	}, nil
 }

@@ -16,6 +16,7 @@ import (
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/httpapi"
+	"crypto-scanner/internal/market"
 	marketsync "crypto-scanner/internal/market/sync"
 	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/platform/config"
@@ -72,9 +73,12 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		return err
 	}
 	exchange := binance.NewWithOptions(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
-	dailySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.MVPProfile())
-	hourlySynchronizer := marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, marketsync.HourlyProfile())
-	scheduler := marketsync.NewSchedulerWithHourly(dailySynchronizer, hourlySynchronizer, logger)
+	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
+	for _, interval := range market.CandleIntervals() {
+		profile := marketsync.Profile(interval)
+		synchronizers[interval] = marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, profile)
+	}
+	scheduler := marketsync.NewSchedulerWithProfiles(synchronizers, logger)
 	marketCapResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
 	criterionFactories := []analysis.Factory{volatility.New(), marketcapcriterion.New(marketCapResolver)}
 	analysisService, err := analysis.NewService(store, criterionFactories...)
@@ -102,7 +106,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.New(logger, store, analysisService, authenticator), scheduler, botService, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.New(logger, store, analysisService, store, authenticator), scheduler, botService, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

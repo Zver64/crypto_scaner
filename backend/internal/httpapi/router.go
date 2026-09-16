@@ -28,11 +28,12 @@ type Analysis interface {
 }
 
 // New returns the service HTTP handler with process-wide middleware applied.
-func New(logger *slog.Logger, readiness Readiness, service Analysis, authenticator Authenticator) http.Handler {
+func New(logger *slog.Logger, readiness Readiness, service Analysis, history CandleHistory, authenticator Authenticator) http.Handler {
 	router := http.NewServeMux()
 	router.HandleFunc("GET /health/live", live)
 	router.HandleFunc("GET /health/ready", ready(readiness))
 	router.Handle("POST /api/v1/analysis/instruments/{symbol}", authenticator.Authenticate(analyzeSymbol(service)))
+	router.Handle("GET /api/v1/instruments/{symbol}/candles", authenticator.Authenticate(listCandles(history)))
 	router.Handle("POST /api/v1/analysis/market", authenticator.Authenticate(searchMarket(service)))
 	return requestMiddleware(logger, router)
 }

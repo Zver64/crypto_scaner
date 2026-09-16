@@ -15,7 +15,7 @@ type Instrument struct {
 // Candle is a closed market interval represented for analysis.
 type Candle struct {
 	InstrumentID     int64
-	Interval         string
+	Interval         CandleInterval
 	OpenTime         time.Time
 	CloseTime        time.Time
 	Open             float64
@@ -29,9 +29,16 @@ type Candle struct {
 
 // CandleRequest describes one bounded closed-candle query at the exchange
 // boundary. ClosedBefore is the synchronization start and is exclusive.
+// CandlePage is a chronological page of closed candles. HasMore reports that
+// an older page exists before Candles[0].OpenTime.
+type CandlePage struct {
+	Candles []Candle
+	HasMore bool
+}
+
 type CandleRequest struct {
 	Symbol        string
-	Interval      string
+	Interval      CandleInterval
 	Limit         int
 	ClosedBefore  time.Time
 	AfterOpenTime *time.Time
@@ -42,24 +49,24 @@ type SyncProfile struct {
 	Exchange   string
 	Market     string
 	QuoteAsset string
-	Interval   string
+	Interval   CandleInterval
 	TimeZone   string
 }
 
 // Key returns the stable persistence identity for a synchronization profile.
 func (profile SyncProfile) Key() string {
-	return profile.Exchange + ":" + profile.Market + ":" + profile.QuoteAsset + ":" + profile.Interval + ":" + profile.TimeZone
+	return profile.Exchange + ":" + profile.Market + ":" + profile.QuoteAsset + ":" + string(profile.Interval) + ":" + profile.TimeZone
 }
 
-// DailySyncProfile returns the code-owned Binance Spot daily synchronization profile.
-func DailySyncProfile() SyncProfile {
-	return SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1d", TimeZone: "UTC"}
+// BinanceSpotSyncProfile returns the code-owned synchronization profile for an interval.
+func BinanceSpotSyncProfile(interval CandleInterval) SyncProfile {
+	return SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: interval, TimeZone: "UTC"}
 }
 
-// HourlySyncProfile returns the code-owned Binance Spot hourly synchronization profile.
-func HourlySyncProfile() SyncProfile {
-	return SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC"}
-}
+func DailySyncProfile() SyncProfile   { return BinanceSpotSyncProfile(IntervalDay) }
+func HourlySyncProfile() SyncProfile  { return BinanceSpotSyncProfile(IntervalHour) }
+func WeeklySyncProfile() SyncProfile  { return BinanceSpotSyncProfile(IntervalWeek) }
+func MonthlySyncProfile() SyncProfile { return BinanceSpotSyncProfile(IntervalMonth) }
 
 // SyncStatus is the durable outcome of market synchronization.
 type SyncStatus string

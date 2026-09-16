@@ -271,12 +271,15 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if len(prices) != 2 || !prices[0].OpenTime.Equal(start) || !prices[1].OpenTime.Equal(end) || prices[0].Close != 10.12345678 || prices[1].InstrumentID != instruments[0].ID {
 			t.Fatalf("wrong bounded prices: %+v", prices)
 		}
-		candles, err := store.ListHourlyCandles(ctx, instruments[0].ID, start, end)
-		if err != nil {
-			t.Fatal(err)
+		before := end.Add(time.Hour)
+		page, err := store.ListCandlePage(ctx, instruments[0].ID, market.IntervalHour, &before, 2)
+		if err != nil || !page.HasMore || len(page.Candles) != 2 || !page.Candles[0].OpenTime.Equal(start) || !page.Candles[1].OpenTime.Equal(end) {
+			t.Fatalf("first candle page = %+v / %v", page, err)
 		}
-		if len(candles) != 2 || !candles[0].OpenTime.Equal(start) || candles[0].Open != 10 || candles[0].High != 12 || candles[0].Low != 9 || candles[0].Close != 10.12345678 {
-			t.Fatalf("wrong bounded candles: %+v", candles)
+		before = page.Candles[0].OpenTime
+		page, err = store.ListCandlePage(ctx, instruments[0].ID, market.IntervalHour, &before, 2)
+		if err != nil || page.HasMore || len(page.Candles) != 1 || !page.Candles[0].OpenTime.Equal(start.Add(-time.Hour)) {
+			t.Fatalf("older candle page = %+v / %v", page, err)
 		}
 		empty, err := store.ListHourlyPrices(ctx, nil, start, end)
 		if err != nil || len(empty) != 0 {
@@ -335,8 +338,8 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if got.Status != market.SyncStatusSucceeded || got.LastSucceededAt == nil || !got.LastSucceededAt.Equal(succeeded) {
 			t.Fatalf("sync state = %#v", got)
 		}
-		// Readiness requires both independently synchronized datasets. A daily
-		// success alone must not make the market ready.
+		// Readiness requires all four independently synchronized datasets. A
+		// partial set of successful profiles must not make the market ready.
 		if _, err := db.Exec(ctx, `DELETE FROM binance_spot.sync_state WHERE profile_key = $1`, market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1h", TimeZone: "UTC"}.Key()); err != nil {
 			t.Fatalf("clear hourly state: %v", err)
 		}
@@ -347,8 +350,22 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if err := store.SaveSyncState(ctx, market.SyncState{Profile: hourly, LastSucceededAt: &succeeded, Status: market.SyncStatusSucceeded}); err != nil {
 			t.Fatalf("save hourly success: %v", err)
 		}
+		if store.SuccessfulMarketSyncExists(ctx) {
+			t.Fatal("SuccessfulMarketSyncExists() = true after only two profile syncs")
+		}
+		weekly := market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1w", TimeZone: "UTC"}
+		if err := store.SaveSyncState(ctx, market.SyncState{Profile: weekly, LastSucceededAt: &succeeded, Status: market.SyncStatusSucceeded}); err != nil {
+			t.Fatalf("save weekly success: %v", err)
+		}
+		if store.SuccessfulMarketSyncExists(ctx) {
+			t.Fatal("SuccessfulMarketSyncExists() = true after only three profile syncs")
+		}
+		monthly := market.SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: "1M", TimeZone: "UTC"}
+		if err := store.SaveSyncState(ctx, market.SyncState{Profile: monthly, LastSucceededAt: &succeeded, Status: market.SyncStatusSucceeded}); err != nil {
+			t.Fatalf("save monthly success: %v", err)
+		}
 		if !store.SuccessfulMarketSyncExists(ctx) {
-			t.Fatal("SuccessfulMarketSyncExists() = false after both profile syncs succeeded")
+			t.Fatal("SuccessfulMarketSyncExists() = false after all four profile syncs succeeded")
 		}
 		failureMessage := "temporary exchange failure"
 		state.Status = market.SyncStatusFailed

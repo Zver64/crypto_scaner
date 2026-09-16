@@ -28,15 +28,14 @@ type Store interface {
 	UpsertCandles(context.Context, []market.Candle) error
 }
 
-// MVPProfile returns the canonical market daily synchronization profile.
-func MVPProfile() market.SyncProfile {
-	return market.DailySyncProfile()
+// Profile returns the canonical market synchronization profile for interval.
+func Profile(interval market.CandleInterval) market.SyncProfile {
+	return market.BinanceSpotSyncProfile(interval)
 }
 
-// HourlyProfile returns the canonical market hourly synchronization profile.
-func HourlyProfile() market.SyncProfile {
-	return market.HourlySyncProfile()
-}
+// MVPProfile and HourlyProfile remain compatibility names for existing callers.
+func MVPProfile() market.SyncProfile    { return Profile(market.IntervalDay) }
+func HourlyProfile() market.SyncProfile { return Profile(market.IntervalHour) }
 
 // Synchronizer coordinates instrument discovery, backfill, and incremental loading.
 type Synchronizer struct {
@@ -50,21 +49,20 @@ type Synchronizer struct {
 
 const defaultWorkerCount = 4
 
+const exchangePageLimit = 1000
+
 type intervalPolicy struct {
+	interval        market.CandleInterval
 	inspectionLimit int
 	initialLimit    int
 	repairGaps      bool
 }
 
-func policyForInterval(interval string) intervalPolicy {
-	if interval == "1h" {
-		return intervalPolicy{
-			inspectionLimit: market.ThirtyDayPriceSlots,
-			initialLimit:    market.ThirtyDayPriceSlots,
-			repairGaps:      true,
-		}
+func policyForInterval(interval market.CandleInterval) intervalPolicy {
+	return intervalPolicy{
+		interval: interval, inspectionLimit: exchangePageLimit,
+		initialLimit: exchangePageLimit, repairGaps: interval.Valid(),
 	}
-	return intervalPolicy{inspectionLimit: 1, initialLimit: 30}
 }
 
 // ErrSyncInProgress reports that another process-local synchronization owns the run lock.
@@ -118,8 +116,10 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 			"module", "market_sync", "operation", "sync", "profile", profile.Key(),
 			"duration", time.Since(operationStartedAt), "outcome", outcome,
 			"instruments_total", stats.instrumentsTotal, "instruments_succeeded", stats.instrumentsSucceeded,
-			"instruments_failed", stats.instrumentsFailed, "candle_rows_written", stats.candleRowsWritten,
-			"retry_count", stats.retryCount,
+			"instruments_failed", stats.instrumentsFailed,
+			"exchange_requests", stats.exchangeRequests, "candle_rows_requested", stats.candleRowsRequested,
+			"candle_rows_written", stats.candleRowsWritten, "gap_ranges_repaired", stats.gapRangesRepaired,
+			"lag_intervals", stats.lagIntervals, "retry_count", stats.retryCount,
 		)
 	}()
 	state, err := synchronizer.store.GetSyncState(ctx, profile)
@@ -159,9 +159,17 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 			continue
 		}
 		stats.instrumentsSucceeded++
+		stats.exchangeRequests += result.exchangeRequests
+		stats.candleRowsRequested += result.rowsRequested
 		stats.candleRowsWritten += result.rowsWritten
+		stats.gapRangesRepaired += result.gapRangesRepaired
 		if result.latestOpenTime != nil && (state.LastClosedOpenTime == nil || result.latestOpenTime.After(*state.LastClosedOpenTime)) {
 			state.LastClosedOpenTime = result.latestOpenTime
+		}
+	}
+	if state.LastClosedOpenTime != nil {
+		for open := state.LastClosedOpenTime.UTC(); open.Before(profile.Interval.LastClosedOpenTime(startedAt)); open = profile.Interval.NextOpenTime(open) {
+			stats.lagIntervals++
 		}
 	}
 	if len(instrumentFailures) > 0 {
@@ -180,9 +188,12 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 }
 
 type instrumentResult struct {
-	err            error
-	rowsWritten    int
-	latestOpenTime *time.Time
+	err               error
+	exchangeRequests  int
+	rowsRequested     int
+	rowsWritten       int
+	gapRangesRepaired int
+	latestOpenTime    *time.Time
 }
 
 func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instruments []market.Instrument, profile market.SyncProfile, startedAt time.Time) <-chan instrumentResult {
@@ -218,70 +229,120 @@ func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instrumen
 
 func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument market.Instrument, profile market.SyncProfile, startedAt time.Time) instrumentResult {
 	policy := policyForInterval(profile.Interval)
-	existing, err := synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, profile.Interval, policy.inspectionLimit)
+	existing, err := synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(profile.Interval), policy.inspectionLimit)
 	if err != nil {
 		return instrumentResult{err: fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)}
 	}
-	request := market.CandleRequest{Symbol: instrument.Symbol, Interval: profile.Interval, Limit: policy.initialLimit, ClosedBefore: startedAt}
-	if len(existing) > 0 {
-		latest := existing[0].OpenTime
-		request.AfterOpenTime = &latest
-		request.Limit = 1000
+	if len(existing) == 0 {
+		return synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+			Symbol: instrument.Symbol, Interval: profile.Interval,
+			Limit: policy.initialLimit, ClosedBefore: startedAt,
+		}, false)
 	}
+
+	latest := existing[0].OpenTime.UTC()
+	result := instrumentResult{latestOpenTime: &latest}
 	if policy.repairGaps {
-		window := market.ThirtyDayWindow(startedAt)
-		present := make(map[time.Time]bool, len(existing))
-		for _, candle := range existing {
-			present[candle.OpenTime.UTC()] = true
-		}
-		for hour := window.From; !hour.After(window.To); hour = hour.Add(time.Hour) {
-			if !present[hour] {
-				beforeGap := hour.Add(-time.Millisecond)
-				if request.AfterOpenTime == nil || beforeGap.Before(*request.AfterOpenTime) {
-					request.AfterOpenTime = &beforeGap
-				}
-				request.Limit = 1000
-				break
+		for _, gap := range missingRanges(existing, profile.Interval) {
+			after := gap.from.Add(-time.Millisecond)
+			loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+				Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
+				ClosedBefore: gap.to, AfterOpenTime: &after,
+			}, true)
+			loaded.gapRangesRepaired = 1
+			result = mergeInstrumentResults(result, loaded)
+			if result.err != nil {
+				return result
 			}
 		}
 	}
+	if latest.Before(profile.Interval.LastClosedOpenTime(startedAt)) {
+		loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
+			ClosedBefore: startedAt, AfterOpenTime: &latest,
+		}, true)
+		result = mergeInstrumentResults(result, loaded)
+	}
+	return result
+}
+
+type missingRange struct{ from, to time.Time }
+
+// missingRanges finds internal holes only. Absence before the oldest row may be
+// the instrument's pre-listing period and is deliberately not inferred as a gap.
+func missingRanges(candles []market.Candle, interval market.CandleInterval) []missingRange {
+	var ranges []missingRange
+	for index := len(candles) - 1; index > 0; index-- {
+		older := candles[index].OpenTime.UTC()
+		newer := candles[index-1].OpenTime.UTC()
+		firstMissing := interval.NextOpenTime(older)
+		if firstMissing.Before(newer) {
+			ranges = append(ranges, missingRange{from: firstMissing, to: newer})
+		}
+	}
+	return ranges
+}
+
+func (synchronizer *Synchronizer) loadRange(ctx context.Context, instrument market.Instrument, request market.CandleRequest, paginate bool) instrumentResult {
 	result := instrumentResult{}
 	for {
+		result.exchangeRequests++
 		candles, err := synchronizer.exchange.ListClosedCandles(ctx, request)
 		if err != nil {
 			return instrumentResult{err: fmt.Errorf("load candles for %s: %w", instrument.Symbol, err)}
 		}
+		result.rowsRequested += len(candles)
 		closed := make([]market.Candle, 0, len(candles))
+		var pageLatest *time.Time
 		for _, candle := range candles {
-			if !candle.CloseTime.Before(startedAt) || request.AfterOpenTime != nil && !candle.OpenTime.After(*request.AfterOpenTime) {
+			if !candle.CloseTime.Before(request.ClosedBefore) || request.AfterOpenTime != nil && !candle.OpenTime.After(*request.AfterOpenTime) {
 				continue
 			}
 			candle.InstrumentID = instrument.ID
-			candle.Interval = profile.Interval
+			candle.Interval = request.Interval
 			closed = append(closed, candle)
+			if pageLatest == nil || candle.OpenTime.After(*pageLatest) {
+				openTime := candle.OpenTime.UTC()
+				pageLatest = &openTime
+			}
 		}
 		if err := synchronizer.store.UpsertCandles(ctx, closed); err != nil {
 			return instrumentResult{err: fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)}
 		}
 		result.rowsWritten += len(closed)
-		for _, candle := range closed {
-			if result.latestOpenTime == nil || candle.OpenTime.After(*result.latestOpenTime) {
-				openTime := candle.OpenTime
-				result.latestOpenTime = &openTime
-			}
+		if pageLatest != nil && (result.latestOpenTime == nil || pageLatest.After(*result.latestOpenTime)) {
+			result.latestOpenTime = pageLatest
 		}
-		if request.AfterOpenTime == nil || len(candles) < request.Limit || result.latestOpenTime == nil {
+		if !paginate || len(candles) < request.Limit || pageLatest == nil {
 			return result
 		}
-		request.AfterOpenTime = result.latestOpenTime
+		request.AfterOpenTime = pageLatest
 	}
+}
+
+func mergeInstrumentResults(current, addition instrumentResult) instrumentResult {
+	current.exchangeRequests += addition.exchangeRequests
+	current.rowsRequested += addition.rowsRequested
+	current.rowsWritten += addition.rowsWritten
+	current.gapRangesRepaired += addition.gapRangesRepaired
+	if addition.err != nil {
+		current.err = addition.err
+	}
+	if addition.latestOpenTime != nil && (current.latestOpenTime == nil || addition.latestOpenTime.After(*current.latestOpenTime)) {
+		current.latestOpenTime = addition.latestOpenTime
+	}
+	return current
 }
 
 type runStats struct {
 	instrumentsTotal     int
 	instrumentsSucceeded int
 	instrumentsFailed    int
+	exchangeRequests     int
+	candleRowsRequested  int
 	candleRowsWritten    int
+	gapRangesRepaired    int
+	lagIntervals         int
 	retryCount           uint64
 }
 

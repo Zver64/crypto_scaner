@@ -18,6 +18,26 @@ func (q *Queries) DeactivateAllInstruments(ctx context.Context) error {
 	return err
 }
 
+const getActiveInstrumentBySymbol = `-- name: GetActiveInstrumentBySymbol :one
+SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
+FROM binance_spot.instruments
+WHERE symbol = $1 AND is_active = TRUE
+`
+
+func (q *Queries) GetActiveInstrumentBySymbol(ctx context.Context, symbol string) (BinanceSpotInstrument, error) {
+	row := q.db.QueryRow(ctx, getActiveInstrumentBySymbol, symbol)
+	var i BinanceSpotInstrument
+	err := row.Scan(
+		&i.ID,
+		&i.Symbol,
+		&i.BaseAsset,
+		&i.QuoteAsset,
+		&i.ExchangeStatus,
+		&i.IsActive,
+	)
+	return i, err
+}
+
 const listActiveInstruments = `-- name: ListActiveInstruments :many
 SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
 FROM binance_spot.instruments

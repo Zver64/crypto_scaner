@@ -31,11 +31,11 @@ const (
 	UnitHours Unit = "hours"
 )
 
-func (unit Unit) Interval() string {
+func (unit Unit) Interval() market.CandleInterval {
 	if unit == UnitDays {
-		return "1d"
+		return market.IntervalDay
 	}
-	return "1h"
+	return market.IntervalHour
 }
 
 // CandleRequirement declares candle data a criterion needs.

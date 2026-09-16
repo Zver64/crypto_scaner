@@ -1,4 +1,4 @@
-import type { PriceCandle } from "@/api/client";
+import type { PriceCandle } from "@/api/candle-history";
 import {
 	type ArithmeticSpotGridEstimate,
 	calculateArithmeticSpotGrid,

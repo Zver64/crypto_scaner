@@ -16,19 +16,9 @@ export interface Evaluation {
 	to: string;
 }
 
-export interface PriceCandle {
-	close: number;
-	high: number;
-	low: number;
-	open: number;
-	open_time: string;
-}
-
 export interface InstrumentAnalysisResult {
-	candle_history: (PriceCandle | null)[];
 	evaluations: Evaluation[];
 	matched: boolean;
-	price_history_window: PriceHistoryWindow;
 	symbol: string;
 	warnings: Warning[];
 }
@@ -186,7 +176,7 @@ async function fetchAnalysisResult<Result>(
 		});
 		const payload: unknown = await response.json();
 		if (!response.ok) {
-			throw backendError(payload, response.status);
+			throw parseBackendError(payload, response.status);
 		}
 
 		return parse(payload);
@@ -214,22 +204,15 @@ function parseInstrumentAnalysisResult(
 		throw new ApiError("unexpected_error");
 	}
 
-	const window = parsePriceHistoryWindow(
-		payload.price_history_window,
-		undefined,
-		720,
-	);
 	return {
-		candle_history: parseCandleHistory(payload.candle_history, window),
 		evaluations: payload.evaluations.map(parseEvaluation),
 		matched: payload.matched,
-		price_history_window: window,
 		symbol: payload.symbol,
 		warnings: payload.warnings.map(parseWarning),
 	};
 }
 
-function backendError(payload: unknown, status: number) {
+export function parseBackendError(payload: unknown, status: number) {
 	if (!isRecord(payload) || !isRecord(payload.error)) {
 		return new ApiError("unexpected_error", { status });
 	}
@@ -347,40 +330,6 @@ function parseMarketScanItem(payload: unknown): MarketScanItem {
 		price_history: parsePriceHistory(payload.price_history),
 		symbol: payload.symbol,
 	};
-}
-
-function parseCandleHistory(
-	payload: unknown,
-	window: PriceHistoryWindow,
-): (PriceCandle | null)[] {
-	const from = Date.parse(window.from);
-	const expectedSlots = (Date.parse(window.to) - from) / 3_600_000 + 1;
-	if (!Array.isArray(payload) || payload.length !== expectedSlots) {
-		throw new ApiError("unexpected_error");
-	}
-	return payload.map((candle: unknown, index) => {
-		if (candle === null) return null;
-		if (
-			!isRecord(candle) ||
-			!isRfc3339UtcDateTime(candle.open_time) ||
-			Date.parse(candle.open_time) !== from + index * 3_600_000 ||
-			!isFiniteNumber(candle.open) ||
-			!isFiniteNumber(candle.high) ||
-			!isFiniteNumber(candle.low) ||
-			!isFiniteNumber(candle.close) ||
-			candle.low > Math.min(candle.open, candle.close) ||
-			candle.high < Math.max(candle.open, candle.close)
-		) {
-			throw new ApiError("unexpected_error");
-		}
-		return {
-			close: candle.close,
-			high: candle.high,
-			low: candle.low,
-			open: candle.open,
-			open_time: candle.open_time,
-		};
-	});
 }
 
 function parsePriceHistory(payload: unknown): (number | null)[] {

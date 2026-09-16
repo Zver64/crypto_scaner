@@ -187,7 +187,7 @@ func TestRouterDoesNotExposeTelegramBotEndpoints(t *testing.T) {
 }
 
 func newTestHTTPHandler(logger *slog.Logger, readiness httpapi.Readiness) http.Handler {
-	return httpapi.New(logger, readiness, unavailableAnalysis{}, passThroughAuthenticator{})
+	return httpapi.New(logger, readiness, unavailableAnalysis{}, nil, passThroughAuthenticator{})
 }
 
 type unavailableAnalysis struct{}

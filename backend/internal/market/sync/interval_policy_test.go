@@ -2,34 +2,35 @@ package sync
 
 import (
 	"testing"
+	"time"
 
 	"crypto-scanner/internal/market"
 )
 
-func TestPolicyForInterval(t *testing.T) {
-	tests := []struct {
-		name     string
-		interval string
-		want     intervalPolicy
-	}{
-		{
-			name:     "hourly",
-			interval: "1h",
-			want: intervalPolicy{
-				inspectionLimit: market.ThirtyDayPriceSlots,
-				initialLimit:    market.ThirtyDayPriceSlots,
-				repairGaps:      true,
-			},
-		},
-		{name: "daily", interval: "1d", want: intervalPolicy{inspectionLimit: 1, initialLimit: 30}},
-		{name: "other interval falls back", interval: "4h", want: intervalPolicy{inspectionLimit: 1, initialLimit: 30}},
+func TestPolicyForSupportedIntervals(t *testing.T) {
+	for _, interval := range market.CandleIntervals() {
+		policy := policyForInterval(interval)
+		if policy.interval != interval || policy.inspectionLimit != 1000 || policy.initialLimit != 1000 || !policy.repairGaps {
+			t.Fatalf("policyForInterval(%q) = %+v", interval, policy)
+		}
 	}
+}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			if got := policyForInterval(test.interval); got != test.want {
-				t.Fatalf("policyForInterval(%q) = %+v, want %+v", test.interval, got, test.want)
-			}
-		})
+func TestPolicyRejectsUnknownIntervalForGapRepair(t *testing.T) {
+	policy := policyForInterval("4h")
+	if policy.repairGaps {
+		t.Fatalf("unexpected gap repair policy: %+v", policy)
+	}
+}
+
+func TestMissingRangesGroupsCalendarLengthMonthlyGap(t *testing.T) {
+	candles := []market.Candle{
+		{OpenTime: time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)},
+		{OpenTime: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)},
+		{OpenTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+	}
+	got := missingRanges(candles, market.IntervalMonth)
+	if len(got) != 1 || !got[0].from.Equal(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)) || !got[0].to.Equal(time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("missingRanges() = %#v", got)
 	}
 }

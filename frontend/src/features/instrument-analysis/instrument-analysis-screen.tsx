@@ -5,15 +5,21 @@ import {
 	Group,
 	Loader,
 	Paper,
+	SegmentedControl,
 	Stack,
 	Text,
 	useMantineTheme,
 	useMatches,
 } from "@mantine/core";
+import { useMemo, useState } from "react";
 import {
 	criterionKeys,
 	evaluationMetricKeys,
 } from "@/api/analysis-identifiers";
+import {
+	type CandleInterval,
+	useCandleHistoryQuery,
+} from "@/api/candle-history";
 import { ApiError, type CriterionSelection } from "@/api/client";
 import { useInstrumentAnalysisQuery } from "@/api/instrument-analysis";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
@@ -22,6 +28,7 @@ import { PercentChange } from "@/components/percent-change";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
+import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
 import { InstrumentPriceHistoryChart } from "@/features/instrument-analysis/price-history-chart";
 import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
@@ -57,6 +64,31 @@ export function InstrumentAnalysisScreen({
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const textSize = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
+	const [chartInterval, setChartInterval] = useState<CandleInterval>("1h");
+	const chartQuery = useCandleHistoryQuery(
+		symbol,
+		chartInterval,
+		permission.allowed,
+	);
+	const hourlyHistoryQuery = useCandleHistoryQuery(
+		symbol,
+		"1h",
+		permission.allowed && chartInterval !== "1h",
+	);
+	const chartCandles = useMemo(
+		() =>
+			chartQuery.data
+				? [...chartQuery.data.pages].reverse().flatMap((page) => page.candles)
+				: [],
+		[chartQuery.data],
+	);
+	const hourlyCandles = useMemo(() => {
+		const data =
+			chartInterval === "1h" ? chartQuery.data : hourlyHistoryQuery.data;
+		return data
+			? [...data.pages].reverse().flatMap((page) => page.candles)
+			: [];
+	}, [chartInterval, chartQuery.data, hourlyHistoryQuery.data]);
 	const hasNativeBackButton = useTelegramBackButton(onBack);
 	const query = useInstrumentAnalysisQuery(
 		symbol,
@@ -70,6 +102,11 @@ export function InstrumentAnalysisScreen({
 		insufficientHistory ? null : query.error,
 		"Instrument Analysis failed",
 	);
+	useAnalysisErrorNotification(chartQuery.error, "Price history failed");
+	useAnalysisErrorNotification(
+		hourlyHistoryQuery.error,
+		"Hourly price history failed",
+	);
 	useAnalysisWarningNotification(
 		query.data?.warnings,
 		"Instrument Analysis warning",
@@ -78,14 +115,16 @@ export function InstrumentAnalysisScreen({
 	const result = query.data;
 	const marketCap = result && marketCapEvaluation(result.evaluations);
 	const sevenDayChange = result
-		? sevenDayChangePercent(
-				result.candle_history
-					.slice(-169)
-					.map((candle) => candle?.close ?? null),
-			)
+		? sevenDayChangePercent(currentSevenDayHourlyCloses(hourlyCandles))
 		: null;
 
 	const recommendationResult = result?.symbol === symbol ? result : undefined;
+	const hourlyHistoryPending =
+		chartInterval === "1h"
+			? chartQuery.isPending
+			: hourlyHistoryQuery.isPending;
+	const recommendationReady =
+		recommendationResult !== undefined && !hourlyHistoryPending;
 	const hourlyRange = recommendationResult?.evaluations.find(
 		(item) => item.key === criterionKeys.hourlyVolatility,
 	)?.metrics[evaluationMetricKeys.rangePercent];
@@ -153,10 +192,28 @@ export function InstrumentAnalysisScreen({
 									p={paperPadding}
 								>
 									<Stack gap="md">
+										<SegmentedControl
+											data={[
+												{ label: "Hourly", value: "1h" },
+												{ label: "Daily", value: "1d" },
+												{ label: "Weekly", value: "1w" },
+												{ label: "Monthly", value: "1M" },
+											]}
+											fullWidth
+											onChange={(value) =>
+												setChartInterval(value as CandleInterval)
+											}
+											value={chartInterval}
+										/>
 										<InstrumentPriceHistoryChart
-											candles={result.candle_history}
+											candles={chartCandles}
+											hasMore={chartQuery.hasNextPage}
+											interval={chartInterval}
+											isLoading={chartQuery.isPending}
+											isLoadingMore={chartQuery.isFetchingNextPage}
+											key={chartInterval}
+											onLoadOlder={() => void chartQuery.fetchNextPage()}
 											symbol={result.symbol}
-											window={result.price_history_window}
 										/>
 									</Stack>
 								</Paper>
@@ -215,11 +272,11 @@ export function InstrumentAnalysisScreen({
 								</Stack>
 							</Paper>
 							<SpotGridEstimator
-								candles={recommendationResult?.candle_history}
+								candles={recommendationReady ? hourlyCandles : undefined}
 								dailyVolatilityPercent={dailyVolatilityPercent}
-								disabled={query.isFetching}
+								disabled={query.isFetching || hourlyHistoryPending}
 								hourlyVolatilityPercent={hourlyVolatilityPercent}
-								key={`binance:spot:USDT:${symbol}:${recommendationResult ? "ready" : "pending"}`}
+								key={`binance:spot:USDT:${symbol}:${recommendationReady ? "ready" : "pending"}`}
 								paperPadding={paperPadding}
 							/>
 						</Stack>

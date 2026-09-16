@@ -3,7 +3,7 @@ import type {
 	UTCTimestamp,
 	WhitespaceData,
 } from "lightweight-charts";
-import type { PriceCandle } from "@/api/client";
+import type { CandleInterval, PriceCandle } from "@/api/candle-history";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
@@ -24,28 +24,54 @@ export function toUtcTimestamp(value: string): UTCTimestamp {
 }
 
 export function createCandlestickData(
-	candles: readonly (PriceCandle | null)[],
-	windowFrom: string,
+	candles: readonly PriceCandle[],
+	interval: CandleInterval,
 ): ChartCandleSlot[] {
-	const from = Date.parse(windowFrom);
-	return candles.map((candle, index) => {
-		const time = ((from + index * 3_600_000) / 1_000) as UTCTimestamp;
-		return candle === null
-			? { time }
-			: {
-					close: candle.close,
-					high: candle.high,
-					low: candle.low,
-					open: candle.open,
-					time,
-				};
-	});
+	const data: ChartCandleSlot[] = [];
+	for (let index = 0; index < candles.length; index++) {
+		const candle = candles[index];
+		if (!candle) continue;
+		if (index > 0) {
+			let missing = nextCandleOpen(
+				candles[index - 1]?.open_time ?? "",
+				interval,
+			);
+			for (let count = 0; missing < candle.open_time && count < 500; count++) {
+				data.push({ time: toUtcTimestamp(missing) });
+				missing = nextCandleOpen(missing, interval);
+			}
+		}
+		data.push({
+			close: candle.close,
+			high: candle.high,
+			low: candle.low,
+			open: candle.open,
+			time: toUtcTimestamp(candle.open_time),
+		});
+	}
+	return data;
 }
 
-export function availableCandles(
-	candles: readonly (PriceCandle | null)[],
-): PriceCandle[] {
-	return candles.filter((candle): candle is PriceCandle => candle !== null);
+export function nextCandleOpen(
+	value: string,
+	interval: CandleInterval,
+): string {
+	const date = new Date(value);
+	switch (interval) {
+		case "1h":
+			date.setUTCHours(date.getUTCHours() + 1);
+			break;
+		case "1d":
+			date.setUTCDate(date.getUTCDate() + 1);
+			break;
+		case "1w":
+			date.setUTCDate(date.getUTCDate() + 7);
+			break;
+		case "1M":
+			date.setUTCMonth(date.getUTCMonth() + 1);
+			break;
+	}
+	return date.toISOString();
 }
 
 export function formatPrice(value: number): string {
@@ -69,10 +95,24 @@ export function chartPriceResolution(data: readonly ChartCandleSlot[]): {
 	return { base: 10 ** exponent, minMove: 10 ** -exponent };
 }
 
-export function formatUtcTimestamp(value: string | number): string {
+export function formatUtcTimestamp(
+	value: string | number,
+	interval: CandleInterval = "1h",
+): string {
 	const timestamp =
 		typeof value === "number" ? value * 1_000 : Date.parse(value);
-	return `${dateTimeFormatter.format(new Date(timestamp))} UTC`;
+	const date = new Date(timestamp);
+	if (interval === "1h") return `${dateTimeFormatter.format(date)} UTC`;
+	if (interval === "1M") {
+		return `${new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: "UTC" }).format(date)} UTC`;
+	}
+	const day = new Intl.DateTimeFormat("en", {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		timeZone: "UTC",
+	}).format(date);
+	return interval === "1w" ? `Week of ${day} UTC` : `${day} UTC`;
 }
 
 export function formatCandleRange(candle: PriceCandle | ChartCandle): string {

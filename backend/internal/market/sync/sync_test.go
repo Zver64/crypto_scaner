@@ -82,8 +82,8 @@ func TestSynchronizerBackfillsLatestClosedCandlesForInstrumentWithoutHistory(t *
 		t.Fatalf("candle requests = %#v, want one", exchange.candleRequests)
 	}
 	request := exchange.candleRequests[0]
-	if request.Symbol != "BTCUSDT" || request.Interval != "1d" || request.Limit != 30 || request.ClosedBefore.IsZero() {
-		t.Fatalf("candle request = %#v, want latest 30 daily candles at synchronization cutoff", request)
+	if request.Symbol != "BTCUSDT" || request.Interval != "1d" || request.Limit != 1000 || request.ClosedBefore.IsZero() {
+		t.Fatalf("candle request = %#v, want latest 1000 daily candles at synchronization cutoff", request)
 	}
 	if len(store.upserted) != 1 || len(store.upserted[0]) != 1 {
 		t.Fatalf("upserted batches = %#v, want one candle", store.upserted)
@@ -95,7 +95,7 @@ func TestSynchronizerBackfillsLatestClosedCandlesForInstrumentWithoutHistory(t *
 	if len(store.saved) != 2 || store.saved[1].Status != market.SyncStatusSucceeded || store.saved[1].LastClosedOpenTime == nil || !store.saved[1].LastClosedOpenTime.Equal(closed.OpenTime) {
 		t.Fatalf("saved states = %#v, want successful candle progress", store.saved)
 	}
-	for _, field := range []string{`"outcome":"succeeded"`, `"instruments_total":1`, `"instruments_succeeded":1`, `"instruments_failed":0`, `"candle_rows_written":1`, `"retry_count":0`} {
+	for _, field := range []string{`"outcome":"succeeded"`, `"instruments_total":1`, `"instruments_succeeded":1`, `"instruments_failed":0`, `"exchange_requests":1`, `"candle_rows_requested":2`, `"candle_rows_written":1`, `"gap_ranges_repaired":0`, `"lag_intervals":`, `"retry_count":0`} {
 		if !strings.Contains(logs.String(), field) {
 			t.Fatalf("structured log %s missing %s", logs.String(), field)
 		}
@@ -105,13 +105,13 @@ func TestSynchronizerBackfillsLatestClosedCandlesForInstrumentWithoutHistory(t *
 func TestSynchronizerUsesPolicyForInitialRequests(t *testing.T) {
 	instrument := market.Instrument{ID: 41, Symbol: "BTCUSDT", QuoteAsset: "USDT", Status: "TRADING", Active: true}
 	tests := []struct {
-		name       string
-		profile    market.SyncProfile
-		wantLimit  int
-		wantGapFix bool
+		name    string
+		profile market.SyncProfile
 	}{
-		{name: "daily", profile: marketsync.MVPProfile(), wantLimit: 30},
-		{name: "hourly empty history repairs seven day gap", profile: marketsync.HourlyProfile(), wantLimit: 1000, wantGapFix: true},
+		{name: "daily", profile: marketsync.MVPProfile()},
+		{name: "hourly", profile: marketsync.HourlyProfile()},
+		{name: "weekly", profile: marketsync.Profile(market.IntervalWeek)},
+		{name: "monthly", profile: marketsync.Profile(market.IntervalMonth)},
 	}
 
 	for _, test := range tests {
@@ -129,20 +129,29 @@ func TestSynchronizerUsesPolicyForInitialRequests(t *testing.T) {
 				t.Fatalf("candle requests = %#v, want one", exchange.candleRequests)
 			}
 			request := exchange.candleRequests[0]
-			if request.Limit != test.wantLimit {
-				t.Fatalf("request limit = %d, want %d", request.Limit, test.wantLimit)
-			}
-			if test.wantGapFix {
-				wantAfter := market.ThirtyDayWindow(request.ClosedBefore).From.Add(-time.Millisecond)
-				if request.AfterOpenTime == nil || !request.AfterOpenTime.Equal(wantAfter) {
-					t.Fatalf("hourly gap repair request = %#v, want after %s", request, wantAfter)
-				}
-				return
+			if request.Limit != 1000 {
+				t.Fatalf("request limit = %d, want 1000", request.Limit)
 			}
 			if request.AfterOpenTime != nil {
-				t.Fatalf("daily initial request = %#v, want no after-open-time", request)
+				t.Fatalf("initial request = %#v, want no after-open-time", request)
 			}
 		})
+	}
+}
+
+func TestSynchronizerSkipsCandleRequestWhenLatestClosedIntervalIsStored(t *testing.T) {
+	instrument := market.Instrument{ID: 41, Symbol: "BTCUSDT", Active: true}
+	latest := market.Candle{InstrumentID: instrument.ID, Interval: market.IntervalHour, OpenTime: market.IntervalHour.LastClosedOpenTime(time.Now())}
+	exchange := &fakeExchange{items: []market.Instrument{instrument}}
+	store := &fakeMarketStore{
+		state:  market.SyncState{Profile: marketsync.HourlyProfile(), Status: market.SyncStatusSucceeded},
+		active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{instrument.ID: {latest}},
+	}
+	if err := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.HourlyProfile()).Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(exchange.candleRequests) != 0 {
+		t.Fatalf("candle requests = %#v, want none", exchange.candleRequests)
 	}
 }
 

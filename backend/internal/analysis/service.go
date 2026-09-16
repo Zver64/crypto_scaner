@@ -18,7 +18,6 @@ type Store interface {
 	GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error)
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
 	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
-	ListHourlyCandles(context.Context, int64, time.Time, time.Time) ([]market.HourlyCandle, error)
 	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
 }
 
@@ -32,12 +31,10 @@ type SymbolRequest struct {
 	Criteria []CriterionConfig
 }
 type SymbolResult struct {
-	CandleHistory      []*market.HourlyCandle
-	PriceHistoryWindow market.PriceHistoryWindow
-	Symbol             string
-	Matched            bool
-	Evaluations        []Evaluation
-	Warnings           []Warning
+	Symbol      string
+	Matched     bool
+	Evaluations []Evaluation
+	Warnings    []Warning
 }
 type SearchRequest struct {
 	Criteria []CriterionConfig
@@ -95,7 +92,6 @@ func NewService(store Store, factories ...Factory) (*Service, error) {
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
-	window := market.ThirtyDayWindow(time.Now())
 	criteria, requirements, err := service.prepare(request.Criteria)
 	if err != nil {
 		return SymbolResult{}, err
@@ -113,12 +109,6 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 			if err != nil {
 				return SymbolResult{}, fmt.Errorf("analyze %s: %w", request.Symbol, err)
 			}
-			history, err := service.candleHistory(ctx, instrument, window)
-			if err != nil {
-				return SymbolResult{}, err
-			}
-			result.CandleHistory = history
-			result.PriceHistoryWindow = window
 			return result, nil
 		}
 	}
@@ -336,7 +326,7 @@ func (service *Service) evaluateCriterionWithData(ctx context.Context, instrumen
 		if existing, ok := data[requirement.Unit]; ok && len(existing) >= requirement.Count {
 			continue
 		}
-		candles, err := service.store.ListLatestCandlesByInterval(ctx, instrument.ID, requirement.Unit.Interval(), requirement.Count)
+		candles, err := service.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(requirement.Unit.Interval()), requirement.Count)
 		if err != nil {
 			return SymbolResult{}, fmt.Errorf("list latest candles for %s: %w", instrument.Symbol, err)
 		}

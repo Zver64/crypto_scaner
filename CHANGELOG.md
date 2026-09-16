@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.13.0](https://github.com/Zver64/crypto_scaner/compare/v0.12.0...v0.13.0) (2026-09-16)
+
+
+### Features
+
+* add multi-interval candle history ([791bfc8](https://github.com/Zver64/crypto_scaner/commit/791bfc89b9cb17fa9138dd6b89fd14c47891dc98))
+
 ## [0.12.0](https://github.com/Zver64/crypto_scaner/compare/v0.11.1...v0.12.0) (2026-09-15)
 
 

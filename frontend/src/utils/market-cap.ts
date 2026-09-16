@@ -1,8 +1,8 @@
+import type { Evaluation } from "@/api/generated/models";
 import {
 	criterionKeys,
 	evaluationMetricKeys,
-} from "@/api/analysis-identifiers";
-import type { Evaluation } from "@/api/client";
+} from "@/features/analysis/identifiers";
 import { formatCompactNumber } from "@/utils/number-format";
 
 export interface MarketCapEvaluation {

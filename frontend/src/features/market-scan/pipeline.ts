@@ -1,5 +1,5 @@
-import { criterionKeys } from "@/api/analysis-identifiers";
-import type { CriterionSelection } from "@/api/client";
+import type { CriterionRequest } from "@/api/generated/models";
+import { criterionKeys } from "@/features/analysis/identifiers";
 import {
 	type MarketScanCriteria as SingleVolatilityCriteria,
 	defaultMarketScanCriteria as singleVolatilityDefaults,
@@ -49,7 +49,7 @@ export function validateMarketScanCriteria(values: MarketScanDraft) {
 
 export function criterionSelections(
 	criteria: MarketScanCriteria,
-): CriterionSelection[] {
+): CriterionRequest[] {
 	const [daily, ...existingCriteria] = singleVolatilitySelections({
 		...criteria,
 		unit: "days",

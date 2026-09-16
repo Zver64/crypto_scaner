@@ -1,4 +1,4 @@
-import type { PriceCandle } from "@/api/candle-history";
+import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 
 const hourMilliseconds = 60 * 60 * 1_000;
 const sevenDaysInHours = 7 * 24;

@@ -1,5 +1,8 @@
-import { criterionKeys } from "@/api/analysis-identifiers";
-import type { MarketScanItem, UnresolvedInstrumentCode } from "@/api/client";
+import type {
+	MarketAnalysisItem,
+	UnresolvedInstrumentCode,
+} from "@/api/generated/models";
+import { criterionKeys } from "@/features/analysis/identifiers";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { marketCapEvaluation } from "@/utils/market-cap";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
@@ -33,7 +36,7 @@ export interface MarketScanRow {
 // Required evaluations are validated by the query. Presentation preserves every
 // item, including unavailable optional metrics, without applying criteria again.
 export function toMarketScanRows(
-	items: readonly MarketScanItem[],
+	items: readonly MarketAnalysisItem[],
 ): MarketScanRow[] {
 	return items.map((item) => {
 		const daily = volatilityEvaluation(

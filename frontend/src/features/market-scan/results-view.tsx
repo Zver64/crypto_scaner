@@ -7,7 +7,7 @@ import {
 	Title,
 	useMatches,
 } from "@mantine/core";
-import type { MarketScanResult } from "@/api/client";
+import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { DataTable } from "@/components/data-table";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
@@ -24,7 +24,7 @@ interface MarketScanResultsProps {
 	isRefreshing: boolean;
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
-	result: MarketScanResult;
+	result: MarketAnalysisResponse;
 	sort: MarketScanSort;
 	symbolFilter: string;
 }

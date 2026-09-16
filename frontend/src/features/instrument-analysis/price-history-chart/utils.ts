@@ -3,7 +3,8 @@ import type {
 	UTCTimestamp,
 	WhitespaceData,
 } from "lightweight-charts";
-import type { CandleInterval, PriceCandle } from "@/api/candle-history";
+import type { CandleInterval } from "@/api/generated/models";
+import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
@@ -36,7 +37,11 @@ export function createCandlestickData(
 				candles[index - 1]?.open_time ?? "",
 				interval,
 			);
-			for (let count = 0; missing < candle.open_time && count < 500; count++) {
+			for (
+				let count = 0;
+				Date.parse(missing) < Date.parse(candle.open_time) && count < 500;
+				count++
+			) {
 				data.push({ time: toUtcTimestamp(missing) });
 				missing = nextCandleOpen(missing, interval);
 			}

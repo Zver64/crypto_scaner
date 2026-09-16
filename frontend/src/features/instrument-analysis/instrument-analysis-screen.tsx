@@ -11,23 +11,38 @@ import {
 	useMantineTheme,
 	useMatches,
 } from "@mantine/core";
-import { useMemo, useState } from "react";
+import { notifications } from "@mantine/notifications";
+import { type InfiniteData, keepPreviousData } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import {
+	useAnalyzeInstrument,
+	useListInstrumentCandlesInfinite,
+} from "@/api/generated/api";
+import type {
+	CandleInterval,
+	CandlePageResponse,
+	CriterionRequest,
+	InstrumentAnalysisResponse,
+} from "@/api/generated/models";
+import { useBusinessRequestPermission } from "@/app/business-request-context";
+import { telegramRequestOptions, useTelegramBackButton } from "@/app/telegram";
+import { PercentChange } from "@/components/percent-change";
+import { RefreshingOverlay } from "@/components/refreshing-overlay";
+import {
+	apiErrorCode,
+	apiErrorMessage,
+	unexpectedApiError,
+} from "@/features/analysis/api-error";
 import {
 	criterionKeys,
 	evaluationMetricKeys,
-} from "@/api/analysis-identifiers";
-import {
-	type CandleInterval,
-	useCandleHistoryQuery,
-} from "@/api/candle-history";
-import { ApiError, type CriterionSelection } from "@/api/client";
-import { useInstrumentAnalysisQuery } from "@/api/instrument-analysis";
-import { useBusinessRequestPermission } from "@/app/business-request-context";
-import { useTelegramBackButton } from "@/app/telegram";
-import { PercentChange } from "@/components/percent-change";
-import { RefreshingOverlay } from "@/components/refreshing-overlay";
-import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
+} from "@/features/analysis/identifiers";
+import { hasExpectedInstrumentAnalysisEvaluations } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
+import {
+	nextCandlePageParam,
+	validateCandlePage,
+} from "@/features/instrument-analysis/candle-page";
 import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
 import { InstrumentPriceHistoryChart } from "@/features/instrument-analysis/price-history-chart";
 import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
@@ -49,7 +64,7 @@ const rangeStatistics = [
 ];
 
 interface InstrumentAnalysisScreenProps {
-	criterionSelections: readonly CriterionSelection[];
+	criterionSelections: readonly CriterionRequest[];
 	onBack(): void;
 	symbol: string;
 }
@@ -65,15 +80,49 @@ export function InstrumentAnalysisScreen({
 	const textSize = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
 	const [chartInterval, setChartInterval] = useState<CandleInterval>("1h");
-	const chartQuery = useCandleHistoryQuery(
+	const chartQuery = useListInstrumentCandlesInfinite<
+		InfiniteData<CandlePageResponse, string | undefined>
+	>(
 		symbol,
-		chartInterval,
-		permission.allowed,
+		{ interval: chartInterval, limit: 200 },
+		{
+			fetch: telegramRequestOptions(),
+			query: {
+				enabled: permission.allowed,
+				getNextPageParam: nextCandlePageParam,
+				initialPageParam: undefined,
+				retry: false,
+				staleTime: Number.POSITIVE_INFINITY,
+				select: (history) => ({
+					...history,
+					pages: history.pages.map((page) =>
+						validateCandlePage(page, symbol, chartInterval),
+					),
+				}),
+			},
+		},
 	);
-	const hourlyHistoryQuery = useCandleHistoryQuery(
+	const hourlyHistoryQuery = useListInstrumentCandlesInfinite<
+		InfiniteData<CandlePageResponse, string | undefined>
+	>(
 		symbol,
-		"1h",
-		permission.allowed && chartInterval !== "1h",
+		{ interval: "1h", limit: 200 },
+		{
+			fetch: telegramRequestOptions(),
+			query: {
+				enabled: permission.allowed && chartInterval !== "1h",
+				getNextPageParam: nextCandlePageParam,
+				initialPageParam: undefined,
+				retry: false,
+				staleTime: Number.POSITIVE_INFINITY,
+				select: (history) => ({
+					...history,
+					pages: history.pages.map((page) =>
+						validateCandlePage(page, symbol, "1h"),
+					),
+				}),
+			},
+		},
 	);
 	const chartCandles = useMemo(
 		() =>
@@ -90,23 +139,65 @@ export function InstrumentAnalysisScreen({
 			: [];
 	}, [chartInterval, chartQuery.data, hourlyHistoryQuery.data]);
 	const hasNativeBackButton = useTelegramBackButton(onBack);
-	const query = useInstrumentAnalysisQuery(
+	const query = useAnalyzeInstrument<InstrumentAnalysisResponse>(
 		symbol,
-		criterionSelections,
-		permission.allowed,
+		{ criteria: [...criterionSelections] },
+		{
+			fetch: telegramRequestOptions(),
+			query: {
+				enabled: permission.allowed,
+				placeholderData: keepPreviousData,
+				retry: false,
+				select: (response) => {
+					if (
+						!hasExpectedInstrumentAnalysisEvaluations(
+							response.data.evaluations,
+							criterionSelections,
+						)
+					) {
+						throw unexpectedApiError();
+					}
+					return response.data;
+				},
+			},
+		},
 	);
 
 	const insufficientHistory =
-		query.error instanceof ApiError && query.error.code === "insufficient_data";
-	useAnalysisErrorNotification(
-		insufficientHistory ? null : query.error,
-		"Instrument Analysis failed",
-	);
-	useAnalysisErrorNotification(chartQuery.error, "Price history failed");
-	useAnalysisErrorNotification(
-		hourlyHistoryQuery.error,
-		"Hourly price history failed",
-	);
+		query.isError && apiErrorCode(query.error) === "insufficient_data";
+	useEffect(() => {
+		if (query.isError && apiErrorCode(query.error) !== "insufficient_data") {
+			notifications.show({
+				id: `instrument-analysis-${symbol}-error`,
+				autoClose: 5000,
+				color: "red",
+				message: apiErrorMessage(query.error),
+				title: "Instrument Analysis failed",
+			});
+		}
+	}, [query.error, query.isError, symbol]);
+	useEffect(() => {
+		if (chartQuery.isError) {
+			notifications.show({
+				id: `price-history-${symbol}-${chartInterval}-error`,
+				autoClose: 5000,
+				color: "red",
+				message: apiErrorMessage(chartQuery.error),
+				title: "Price history failed",
+			});
+		}
+	}, [chartInterval, chartQuery.error, chartQuery.isError, symbol]);
+	useEffect(() => {
+		if (hourlyHistoryQuery.isError) {
+			notifications.show({
+				id: `hourly-price-history-${symbol}-error`,
+				autoClose: 5000,
+				color: "red",
+				message: apiErrorMessage(hourlyHistoryQuery.error),
+				title: "Hourly price history failed",
+			});
+		}
+	}, [hourlyHistoryQuery.error, hourlyHistoryQuery.isError, symbol]);
 	useAnalysisWarningNotification(
 		query.data?.warnings,
 		"Instrument Analysis warning",

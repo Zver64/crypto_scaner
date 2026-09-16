@@ -1,4 +1,7 @@
-import type { CriterionSelection, MarketScanItem } from "@/api/client";
+import type {
+	CriterionRequest,
+	MarketAnalysisItem,
+} from "@/api/generated/models";
 import {
 	criterionSelections,
 	defaultMarketScanCriteria,
@@ -15,7 +18,7 @@ export const topCoinsScanCriteria = {
 	minimumRangePercent: 0,
 };
 
-export const topCoinsCriteria: readonly CriterionSelection[] =
+export const topCoinsCriteria: readonly CriterionRequest[] =
 	criterionSelections(topCoinsScanCriteria);
 
 export const topCoinsRequestOptions = {
@@ -27,7 +30,7 @@ export const topCoinsRequestOptions = {
 } as const;
 
 export function toTopCoinRows(
-	items: readonly MarketScanItem[],
+	items: readonly MarketAnalysisItem[],
 ): MarketScanRow[] {
 	return toMarketScanRows(items);
 }

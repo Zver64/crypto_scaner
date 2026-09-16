@@ -1,10 +1,19 @@
 import { Center, Container, Loader, Stack, useMatches } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MarketScanResult } from "@/api/client";
-import { useMarketScanMutation } from "@/api/market-scan";
+import {
+	getAnalyzeMarketQueryKey,
+	useAnalyzeMarket,
+} from "@/api/generated/api";
+import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
-import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
+import { telegramRequestOptions } from "@/app/telegram";
+import {
+	apiErrorMessage,
+	unexpectedApiError,
+} from "@/features/analysis/api-error";
+import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanForm } from "@/features/market-scan/form";
 import {
@@ -34,37 +43,67 @@ export function MarketScanScreen({
 }: MarketScanScreenProps) {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
-	const { error, isPending, mutateAsync } = useMarketScanMutation();
 	const initialScanPending = useRef(initialCriteria);
+	const [requestedCriteria, setRequestedCriteria] = useState<
+		MarketScanCriteria | undefined
+	>();
+	const [submissionId, setSubmissionId] = useState(0);
 	const [displayedScan, setDisplayedScan] = useState<
 		| {
 				criteria: MarketScanCriteria;
-				result: MarketScanResult;
+				result: MarketAnalysisResponse;
 		  }
 		| undefined
 	>();
-
-	const runScan = useCallback(
-		async (criteria: MarketScanCriteria) => {
-			try {
-				const result = await mutateAsync(criterionSelections(criteria));
-				setDisplayedScan({ criteria, result });
-			} catch {
-				// The mutation state is rendered through the shared error notification.
-			}
+	const selections = requestedCriteria
+		? criterionSelections(requestedCriteria)
+		: [];
+	const request = { criteria: selections };
+	const query = useAnalyzeMarket<MarketAnalysisResponse>(request, {
+		fetch: telegramRequestOptions(),
+		query: {
+			enabled: permission.allowed && requestedCriteria !== undefined,
+			queryKey: [...getAnalyzeMarketQueryKey(request), submissionId],
+			retry: false,
+			select: (response) => {
+				if (!hasExpectedMarketScanResult(response.data, selections)) {
+					throw unexpectedApiError();
+				}
+				return response.data;
+			},
 		},
-		[mutateAsync],
-	);
+	});
+
+	const runScan = useCallback((criteria: MarketScanCriteria) => {
+		setRequestedCriteria(criteria);
+		setSubmissionId((current) => current + 1);
+	}, []);
 
 	useEffect(() => {
 		if (!permission.allowed || !initialScanPending.current) return;
-
 		const criteria = initialScanPending.current;
 		initialScanPending.current = undefined;
-		void runScan(criteria);
+		runScan(criteria);
 	}, [permission.allowed, runScan]);
 
-	useAnalysisErrorNotification(error, "Market Scan failed");
+	useEffect(() => {
+		if (requestedCriteria && query.data) {
+			setDisplayedScan({ criteria: requestedCriteria, result: query.data });
+		}
+	}, [query.data, requestedCriteria]);
+
+	useEffect(() => {
+		if (query.isError) {
+			notifications.show({
+				id: "market-scan-error",
+				autoClose: 5000,
+				color: "red",
+				message: apiErrorMessage(query.error),
+				title: "Market Scan failed",
+			});
+		}
+	}, [query.error, query.isError]);
+
 	useAnalysisWarningNotification(
 		displayedScan?.result.warnings,
 		"Market Scan warning",
@@ -76,14 +115,14 @@ export function MarketScanScreen({
 				<PageNavigation current="market-scan" title="Market Scan" />
 				<MarketScanForm
 					initialCriteria={initialCriteria ?? defaultMarketScanCriteria}
-					disabled={!permission.allowed || isPending}
-					isSubmitting={isPending}
+					disabled={!permission.allowed || query.isFetching}
+					isSubmitting={query.isFetching}
 					onCommit={async (criteria) => {
 						onCriteriaCommit(criteria);
-						await runScan(criteria);
+						runScan(criteria);
 					}}
 				/>
-				{isPending && !displayedScan ? (
+				{query.isFetching && !displayedScan ? (
 					<Center mih={180}>
 						<Loader aria-label="Loading Market Scan" />
 					</Center>
@@ -91,7 +130,7 @@ export function MarketScanScreen({
 				{displayedScan ? (
 					<MarketScanResults
 						criteria={displayedScan.criteria}
-						isRefreshing={isPending}
+						isRefreshing={query.isFetching}
 						onSortChange={onSortChange}
 						onSymbolFilterChange={onSymbolFilterChange}
 						result={displayedScan.result}

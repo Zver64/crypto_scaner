@@ -26,6 +26,7 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm -C frontend ci
-      - run: make generate-backend
+      - run: make generate
       - run: git diff --exit-code
+      - run: test -z "$(git status --porcelain)"
       - run: make check

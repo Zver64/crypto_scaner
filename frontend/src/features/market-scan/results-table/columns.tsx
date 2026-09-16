@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
-import type { PriceHistoryWindow, UnresolvedInstrument } from "@/api/client";
+import type {
+	PriceHistoryWindow,
+	UnresolvedInstrument,
+} from "@/api/generated/models";
 import type { DataTableColumn } from "@/components/data-table";
 import { ExternalLink } from "@/components/external-link";
 import { PercentChange } from "@/components/percent-change";

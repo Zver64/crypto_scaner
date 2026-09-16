@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { PriceCandle } from "@/api/candle-history";
+import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
 
 const hour = 60 * 60 * 1_000;

@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { MarketScanItem } from "@/api/client";
+import type { MarketAnalysisItem } from "@/api/generated/models";
 import {
 	topCoinsCriteria,
 	topCoinsRequestOptions,
 	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
 
-function item(symbol: string): MarketScanItem {
+function item(symbol: string): MarketAnalysisItem {
 	return {
 		evaluations: [],
 		matched: true,

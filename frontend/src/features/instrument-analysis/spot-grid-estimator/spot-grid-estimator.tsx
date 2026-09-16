@@ -11,10 +11,10 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { type FocusEvent, type KeyboardEvent, useMemo, useState } from "react";
-import type { PriceCandle } from "@/api/candle-history";
 import { SegmentedValueGroup } from "@/components/segmented-value-group";
 import { SliderField } from "@/components/slider-field";
 import { ValueGroup } from "@/components/value-group";
+import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	calculateSpotGridInput,
 	latestAvailableCandle,

@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
 	initializeTelegramMiniApp,
 	openTelegramExternalLink,
+	telegramRequestOptions,
 } from "@/app/telegram";
 
 afterEach(() => {
@@ -21,6 +22,22 @@ it("does not initialize the same Telegram Mini App twice", () => {
 	initializeTelegramMiniApp(webApp);
 
 	expect(webApp.disableVerticalSwipes).toHaveBeenCalledOnce();
+});
+
+it("provides Telegram authorization to generated request options", () => {
+	vi.stubGlobal("window", {
+		Telegram: { WebApp: { initData: " signed-init-data " } },
+	});
+
+	expect(telegramRequestOptions()).toEqual({
+		headers: { Authorization: "tma signed-init-data" },
+	});
+});
+
+it("omits authorization when Telegram init data is unavailable", () => {
+	vi.stubGlobal("window", {});
+
+	expect(telegramRequestOptions()).toBeUndefined();
 });
 
 it("opens external links with the Telegram client when available", () => {

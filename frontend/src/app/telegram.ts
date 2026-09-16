@@ -105,6 +105,13 @@ export function getTelegramInitData() {
 	return window.Telegram?.WebApp?.initData;
 }
 
+export function telegramRequestOptions(): RequestInit | undefined {
+	const initData = getTelegramInitData()?.trim();
+	return initData
+		? { headers: { Authorization: `tma ${initData}` } }
+		: undefined;
+}
+
 export function openTelegramExternalLink(url: string): boolean {
 	if (typeof window === "undefined") {
 		return false;

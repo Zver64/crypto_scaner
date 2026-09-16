@@ -1,5 +1,5 @@
 import { Sparkline } from "@microcharts/react/sparkline";
-import type { PriceHistoryWindow } from "@/api/client";
+import type { PriceHistoryWindow } from "@/api/generated/models";
 
 interface PriceHistoryChartProps {
 	height?: number;

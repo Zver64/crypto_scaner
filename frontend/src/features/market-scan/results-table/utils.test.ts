@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { UnresolvedInstrumentCode } from "@/api/client";
+import type { UnresolvedInstrumentCode } from "@/api/generated/models";
 import {
 	binanceSpotUrl,
 	filterMarketScanRows,

@@ -1,15 +1,15 @@
-import {
-	criterionKeys,
-	criterionNames,
-	evaluationMetricKeys,
-} from "@/api/analysis-identifiers";
-import type { CriterionSelection, Evaluation } from "@/api/client";
+import type { CriterionRequest, Evaluation } from "@/api/generated/models";
 import {
 	type AnalysisCriteria,
 	type AnalysisDraft,
 	defaultAnalysisCriteria,
 	validateAnalysisCriteria,
 } from "@/features/analysis/criteria";
+import {
+	criterionKeys,
+	criterionNames,
+	evaluationMetricKeys,
+} from "@/features/analysis/identifiers";
 
 const usdPerMillion = 1_000_000;
 
@@ -75,7 +75,7 @@ function validateNonNegativeNumber(
 
 export function volatilityCriterionSelection(
 	criteria: MarketScanCriteria,
-): CriterionSelection {
+): CriterionRequest {
 	return {
 		key: criterionKeys.volatility,
 		label: "Volatility",
@@ -91,7 +91,7 @@ export function volatilityCriterionSelection(
 
 export function criterionSelections(
 	criteria: MarketScanCriteria,
-): CriterionSelection[] {
+): CriterionRequest[] {
 	return [
 		volatilityCriterionSelection(criteria),
 		{

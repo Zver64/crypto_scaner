@@ -61,6 +61,17 @@ describe("candlestick chart presentation", () => {
 		);
 	});
 
+	it("does not create duplicate slots for equivalent ISO timestamp formats", () => {
+		const first = candle(0, 10);
+		const second = candle(1, 11);
+		first.open_time = first.open_time.replace(".000Z", "Z");
+		second.open_time = second.open_time.replace(".000Z", "Z");
+
+		expect(
+			createCandlestickData([first, second], "1h").map(({ time }) => time),
+		).toEqual([1_787_785_200, 1_787_788_800]);
+	});
+
 	it("uses sufficient chart precision for sub-cent instruments", () => {
 		const data = createCandlestickData([candle(0, 0.00001234)], "1h");
 		expect(chartPriceResolution(data)).toEqual({ base: 1e12, minMove: 1e-12 });

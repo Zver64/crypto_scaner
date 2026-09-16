@@ -1,6 +1,6 @@
 import { UnstyledButton } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
-import type { PriceHistoryWindow } from "@/api/client";
+import type { PriceHistoryWindow } from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
 import { marketScanColumns } from "@/features/market-scan/results-table/columns";

@@ -7,11 +7,18 @@ import {
 	Text,
 	useMatches,
 } from "@mantine/core";
-import { useState } from "react";
-import { useMarketScanQuery } from "@/api/market-scan";
+import { notifications } from "@mantine/notifications";
+import { useEffect, useState } from "react";
+import { useAnalyzeMarket } from "@/api/generated/api";
+import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
-import { useAnalysisErrorNotification } from "@/features/analysis/use-analysis-error-notification";
+import { telegramRequestOptions } from "@/app/telegram";
+import {
+	apiErrorMessage,
+	unexpectedApiError,
+} from "@/features/analysis/api-error";
+import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import { defaultMarketScanSort } from "@/features/market-scan/sort";
@@ -25,14 +32,37 @@ import {
 export function TopCoinsScreen() {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
-	const query = useMarketScanQuery(
-		topCoinsCriteria,
-		permission.allowed,
-		topCoinsRequestOptions,
+	const query = useAnalyzeMarket<MarketAnalysisResponse>(
+		{ criteria: [...topCoinsCriteria], ...topCoinsRequestOptions },
+		{
+			fetch: telegramRequestOptions(),
+			query: {
+				enabled: permission.allowed,
+				gcTime: Number.POSITIVE_INFINITY,
+				retry: false,
+				staleTime: Number.POSITIVE_INFINITY,
+				select: (response) => {
+					if (!hasExpectedMarketScanResult(response.data, topCoinsCriteria)) {
+						throw unexpectedApiError();
+					}
+					return response.data;
+				},
+			},
+		},
 	);
 	const [sort, setSort] = useState(defaultMarketScanSort);
 	const rows = toTopCoinRows(query.data?.items ?? []);
-	useAnalysisErrorNotification(query.error, "Top Market Cap failed");
+	useEffect(() => {
+		if (query.isError) {
+			notifications.show({
+				id: "top-market-cap-error",
+				autoClose: 5000,
+				color: "red",
+				message: apiErrorMessage(query.error),
+				title: "Top Market Cap failed",
+			});
+		}
+	}, [query.error, query.isError]);
 	useAnalysisWarningNotification(
 		query.data?.warnings,
 		"Top Market Cap warning",

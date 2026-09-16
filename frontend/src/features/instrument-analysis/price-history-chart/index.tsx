@@ -18,7 +18,8 @@ import {
 	type TimeChartOptions,
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CandleInterval, PriceCandle } from "@/api/candle-history";
+import type { CandleInterval } from "@/api/generated/models";
+import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	type ChartCandle,
 	chartPriceResolution,

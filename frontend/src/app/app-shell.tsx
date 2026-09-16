@@ -7,9 +7,8 @@ import {
 	Text,
 	Title,
 } from "@mantine/core";
-import { useQuery } from "@tanstack/react-query";
 import { Outlet } from "@tanstack/react-router";
-import { fetchReadiness, readinessQueryKey } from "@/api/readiness";
+import { useGetReadiness } from "@/api/generated/api";
 import { ShellContentCenter } from "@/components/shell-content-center";
 import { getAppVersion } from "@/utils/app-version";
 import { getBusinessRequestPermission } from "@/utils/business-request-permission";
@@ -29,11 +28,12 @@ const readinessPresentation = {
 export function MiniAppShell() {
 	const { webApp } = useTelegramMiniApp();
 	const appVersion = getAppVersion(import.meta.env.VITE_APP_VERSION);
-	const readiness = useQuery({
-		queryFn: () => fetchReadiness(),
-		queryKey: readinessQueryKey,
-		refetchInterval: 30_000,
-		retry: false,
+	const readiness = useGetReadiness({
+		query: {
+			refetchInterval: 30_000,
+			retry: false,
+			select: (response) => response.status === 200,
+		},
 	});
 	const backendReady = readiness.data === true;
 	const permission = getBusinessRequestPermission({

@@ -5,10 +5,15 @@ body {
 	);
 }
 
+.content-sized-column {
+	width: 0;
+}
+
 .sticky-first-column {
 	position: sticky;
 	inset-inline-start: 0;
 	z-index: 1;
+	white-space: nowrap;
 	background-color: var(--mantine-color-body);
 	box-shadow: 1px 0 0 var(--table-border-color);
 }

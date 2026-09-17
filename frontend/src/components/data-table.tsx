@@ -35,6 +35,14 @@ export function DataTable<Row>({
 					horizontalSpacing={spacing}
 					verticalSpacing={spacing}
 				>
+					<colgroup>
+						{columns.map((column, index) => (
+							<col
+								className={index === 0 ? "content-sized-column" : undefined}
+								key={column.key}
+							/>
+						))}
+					</colgroup>
 					<Table.Thead>
 						<Table.Tr>
 							{columns.map((column, index) => (

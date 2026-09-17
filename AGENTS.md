@@ -31,6 +31,8 @@ In a separate terminal, run `npm -C frontend run dev` to serve the frontend on t
 
 The Compose development stack starts PostgreSQL, applies migrations, and starts the backend on `127.0.0.1:8080`. The frontend is not included in development Compose. Use `docker compose up --watch` for automatic backend rebuilds on file changes. On normal backend startup, the configured `ADMIN_TELEGRAM_ID` is inserted only when absent; all existing administrator rows remain untouched.
 
+Before any Compose lifecycle command, inspect the current state with `docker compose ps` and, when relevant, logs or health checks. Prefer read-only diagnosis with `docker compose ps` and `docker compose logs`. Reuse required services that are already running and healthy; do not run `docker compose up`, `start`, `restart`, `stop`, or `down` unless services are absent or unhealthy, or the task verifiably requires a rebuild or restart. Avoid conflicting with the user's existing Compose process or tab, and never stop, recreate, or start Compose-managed containers with raw `docker start` or `docker stop`. If a lifecycle change is necessary, state the concrete reason and use Docker Compose.
+
 Use `make migrate-up` and `make migrate-down` for manual migration control.
 
 ## Verification

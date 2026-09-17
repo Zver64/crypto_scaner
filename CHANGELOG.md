@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.14.0](https://github.com/Zver64/crypto_scaner/compare/v0.13.0...v0.14.0) (2026-09-17)
+
+
+### Features
+
+* add backend OpenAPI contract ([aaa5dfa](https://github.com/Zver64/crypto_scaner/commit/aaa5dfa54756c8786556bad12fc86ae63f15567a))
+* add database-first market selection ([2ed90b0](https://github.com/Zver64/crypto_scaner/commit/2ed90b064808abdcf4655ee7e9311f2ee0aef9b2))
+* configure top market cap volatility ([ffce828](https://github.com/Zver64/crypto_scaner/commit/ffce8288d7add24f599ddf9e04a641b4e472892b))
+* generate frontend API client ([a08efff](https://github.com/Zver64/crypto_scaner/commit/a08efff9a1a616991e0d99e93c13aa002f16a800))
+
+
+### Bug Fixes
+
+* accept large market cap thresholds ([3d8bebb](https://github.com/Zver64/crypto_scaner/commit/3d8bebb8debd2987c66c715db9d86b9898be8ff6))
+* correct analysis query caching ([f516ba0](https://github.com/Zver64/crypto_scaner/commit/f516ba057a8499ec81c2a1864e08b72992153e2b))
+* persist top market cap table sort in URL ([49df270](https://github.com/Zver64/crypto_scaner/commit/49df2708522c5dfb85c55185cf76863e64e42d1b))
+* require complete filter history ([8f5c848](https://github.com/Zver64/crypto_scaner/commit/8f5c84847b397d4777785b2262a32c3aba76a4a6))
+
 ## [0.13.0](https://github.com/Zver64/crypto_scaner/compare/v0.12.0...v0.13.0) (2026-09-16)
 
 

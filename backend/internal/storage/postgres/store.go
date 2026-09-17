@@ -254,7 +254,7 @@ func selectionParams(selection analysis.Selection) (generated.SelectActiveInstru
 		case constraint.Fact == analysis.SelectionFactStablecoin && constraint.Operator == analysis.SelectionEqual && !constraint.Boolean:
 			params.ExcludeStablecoins = true
 		case constraint.Fact == analysis.SelectionFactMarketCapUSD && constraint.Operator == analysis.SelectionAtLeast && constraint.Number >= 0 && !math.IsNaN(constraint.Number) && !math.IsInf(constraint.Number, 0):
-			if err := params.MinimumMarketCapUsd.Scan(decimal(constraint.Number)); err != nil {
+			if err := params.MinimumMarketCapUsd.ScanScientific(decimal(constraint.Number)); err != nil {
 				return generated.SelectActiveInstrumentsParams{}, fmt.Errorf("invalid minimum market cap: %w", err)
 			}
 		default:

@@ -426,14 +426,12 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 }
 
 type httpStore struct {
-	candlesByInterval  map[int64]map[string][]market.Candle
-	instruments        []market.Instrument
-	rankedInstruments  []market.Instrument
-	candles            map[int64][]market.Candle
-	syncState          *market.SyncState
-	selectionLimit     int
-	selectionDirection string
-	selected           *analysis.Selection
+	candlesByInterval map[int64]map[string][]market.Candle
+	instruments       []market.Instrument
+	rankedInstruments []market.Instrument
+	candles           map[int64][]market.Candle
+	syncState         *market.SyncState
+	selected          *analysis.Selection
 }
 
 func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
@@ -456,19 +454,6 @@ func (s httpStore) SelectActiveInstruments(_ context.Context, selection analysis
 	}
 	if selection.Limit > 0 {
 		items = items[:min(selection.Limit, len(items))]
-	}
-	return items, nil
-}
-func (s *httpStore) ListActiveInstrumentsLimited(_ context.Context, limit int) ([]market.Instrument, error) {
-	s.selectionLimit = limit
-	return s.instruments[:min(limit, len(s.instruments))], nil
-}
-func (s *httpStore) ListActiveInstrumentsSortedByMarketCap(_ context.Context, limit int, direction string) ([]market.Instrument, error) {
-	s.selectionLimit = limit
-	s.selectionDirection = direction
-	items := s.rankedInstruments
-	if limit > 0 {
-		items = items[:min(limit, len(items))]
 	}
 	return items, nil
 }

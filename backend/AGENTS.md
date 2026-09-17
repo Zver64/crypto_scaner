@@ -7,4 +7,5 @@
 - Generator configuration lives in `internal/httpapi/openapi/oapi-codegen.yaml`; the pinned tool declaration lives in `tools.go`.
 - After changing the contract or generator configuration, run `make generate-backend` from the repository root.
 - When a contract change affects frontend consumers, run `make generate` so both backend bindings and the frontend client are regenerated from the same contract.
+- After changing sqlc queries or configuration, run `make generate-sqlc` from the repository root. SQL bindings are committed and must not be edited manually.
 - Commit the contract and all resulting generated files together. CI regenerates them and rejects drift.

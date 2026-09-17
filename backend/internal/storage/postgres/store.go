@@ -264,31 +264,6 @@ func selectionParams(selection analysis.Selection) (generated.SelectActiveInstru
 	return params, nil
 }
 
-func (store *Store) ListActiveInstrumentsLimited(ctx context.Context, limit int) ([]market.Instrument, error) {
-	if limit < 0 || int64(limit) > math.MaxInt32 {
-		return nil, fmt.Errorf("instrument limit must be between 0 and %d", math.MaxInt32)
-	}
-	rows, err := store.queries.ListActiveInstrumentsLimited(ctx, int32(limit))
-	if err != nil {
-		return nil, fmt.Errorf("list limited active instruments: %w", err)
-	}
-	return marketInstruments(rows), nil
-}
-
-func (store *Store) ListActiveInstrumentsSortedByMarketCap(ctx context.Context, limit int, direction string) ([]market.Instrument, error) {
-	if limit < 0 || int64(limit) > math.MaxInt32 {
-		return nil, fmt.Errorf("instrument limit must be between 0 and %d", math.MaxInt32)
-	}
-	if direction != "asc" && direction != "desc" {
-		return nil, fmt.Errorf("market cap sort direction must be asc or desc")
-	}
-	rows, err := store.queries.ListActiveInstrumentsSortedByMarketCap(ctx, generated.ListActiveInstrumentsSortedByMarketCapParams{SortDirection: direction, ResultLimit: int32(limit)})
-	if err != nil {
-		return nil, fmt.Errorf("list active instruments sorted by market cap: %w", err)
-	}
-	return marketInstruments(rows), nil
-}
-
 func marketInstruments(rows []generated.BinanceSpotInstrument) []market.Instrument {
 	items := make([]market.Instrument, 0, len(rows))
 	for _, row := range rows {

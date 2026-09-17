@@ -73,14 +73,15 @@ Open `http://127.0.0.1:3000`. The development server generates local Telegram au
 | Command | Description |
 | --- | --- |
 | `make check` | Run backend and frontend checks and tests |
-| `make generate` | Regenerate backend bindings and the frontend API client from the OpenAPI contract |
+| `make generate` | Regenerate OpenAPI bindings, sqlc SQL bindings, and the frontend API client |
 | `make generate-backend` | Regenerate Go API types and strict server bindings from the OpenAPI contract |
+| `make generate-sqlc` | Regenerate Go SQL bindings from sqlc queries |
 | `make generate-frontend` | Regenerate the Orval React Query client and TypeScript DTOs |
 | `npm -C frontend run build` | Create a production frontend build |
 | `make migrate-up` | Apply pending database migrations manually |
 | `make migrate-down` | Roll back one database migration |
 
-Generated API artifacts are committed. After changing `backend/internal/httpapi/openapi/openapi.yaml`, run `make generate`; CI regenerates the artifacts and rejects stale output. Generation reads the committed contract and does not require a running backend.
+Generated API and SQL artifacts are committed. After changing `backend/internal/httpapi/openapi/openapi.yaml` or sqlc queries, run `make generate`; CI regenerates the artifacts and rejects stale output. Generation reads committed inputs and does not require a running backend.
 
 ## Project structure
 

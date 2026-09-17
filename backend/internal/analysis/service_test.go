@@ -470,21 +470,6 @@ func (s *storeStub) ListActiveInstruments(context.Context) ([]market.Instrument,
 	s.activeListCalls++
 	return s.instruments, nil
 }
-func (s *storeStub) ListActiveInstrumentsLimited(_ context.Context, limit int) ([]market.Instrument, error) {
-	s.reads++
-	s.selectionLimit = limit
-	return s.instruments[:min(limit, len(s.instruments))], nil
-}
-func (s *storeStub) ListActiveInstrumentsSortedByMarketCap(_ context.Context, limit int, direction string) ([]market.Instrument, error) {
-	s.reads++
-	s.selectionLimit = limit
-	s.selectionDirection = direction
-	items := s.rankedInstruments
-	if limit > 0 {
-		items = items[:min(limit, len(items))]
-	}
-	return items, nil
-}
 func (s *storeStub) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, interval string, _ int) ([]market.Candle, error) {
 	s.reads++
 	if s.loads == nil {

@@ -1,14 +1,17 @@
-.PHONY: prepare check generate generate-backend generate-frontend migrate-up migrate-down
+.PHONY: prepare check generate generate-backend generate-frontend generate-sqlc migrate-up migrate-down
 
 prepare:
 	go -C backend mod download
 	npm -C frontend ci
 	go -C .tools tool lefthook install
 
-generate: generate-backend generate-frontend
+generate: generate-backend generate-frontend generate-sqlc
 
 generate-backend:
 	go -C backend generate ./internal/httpapi/openapi
+
+generate-sqlc:
+	go -C backend generate ./internal/storage/postgres
 
 generate-frontend:
 	npm -C frontend run generate-api

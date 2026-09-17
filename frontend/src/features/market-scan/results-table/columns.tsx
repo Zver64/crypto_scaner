@@ -32,6 +32,13 @@ export const marketScanColumns = [
 		cell: (row) => row.symbol,
 	},
 	{
+		key: marketScanColumnKeys.marketCap,
+		header: "Market Cap USD",
+		cell: (row) =>
+			row.marketCapUsd === null ? "—" : formatMarketCapUsd(row.marketCapUsd),
+		sortable: true,
+	},
+	{
 		key: marketScanColumnKeys.dailyRange,
 		header: "Daily Range",
 		cell: (row) =>
@@ -47,13 +54,6 @@ export const marketScanColumns = [
 			row.hourlyRangePercent === null
 				? "—"
 				: formatRangePercent(row.hourlyRangePercent),
-		sortable: true,
-	},
-	{
-		key: marketScanColumnKeys.marketCap,
-		header: "Market Cap USD",
-		cell: (row) =>
-			row.marketCapUsd === null ? "—" : formatMarketCapUsd(row.marketCapUsd),
 		sortable: true,
 	},
 	{

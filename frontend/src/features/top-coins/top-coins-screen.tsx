@@ -8,7 +8,7 @@ import {
 	useMatches,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useAnalyzeMarket } from "@/api/generated/api";
 import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
@@ -21,7 +21,7 @@ import {
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
-import { defaultMarketScanSort } from "@/features/market-scan/sort";
+import type { MarketScanSort } from "@/features/market-scan/sort";
 import {
 	topCoinsCriteria,
 	topCoinsRequestOptions,
@@ -29,7 +29,12 @@ import {
 	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
 
-export function TopCoinsScreen() {
+interface TopCoinsScreenProps {
+	onSortChange(sort: MarketScanSort): void;
+	sort: MarketScanSort;
+}
+
+export function TopCoinsScreen({ onSortChange, sort }: TopCoinsScreenProps) {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
 	const query = useAnalyzeMarket<MarketAnalysisResponse>(
@@ -50,7 +55,6 @@ export function TopCoinsScreen() {
 			},
 		},
 	);
-	const [sort, setSort] = useState(defaultMarketScanSort);
 	const rows = toTopCoinRows(query.data?.items ?? []);
 	useEffect(() => {
 		if (query.isError) {
@@ -89,7 +93,7 @@ export function TopCoinsScreen() {
 					rows.length > 0 ? (
 						<MarketScanResultsTable
 							criteria={topCoinsScanCriteria}
-							onSortChange={setSort}
+							onSortChange={onSortChange}
 							rows={rows}
 							sort={sort}
 							window={query.data.price_history_window}

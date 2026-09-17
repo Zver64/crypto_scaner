@@ -3,7 +3,29 @@ import { defaultMarketScanSort } from "@/features/market-scan/sort";
 import {
 	marketScanSortFromSearch,
 	parseMarketScanSearch,
+	parseMarketScanSortSearch,
 } from "@/routes/-market-scan-search";
+
+describe("parseMarketScanSortSearch", () => {
+	it("keeps valid sort state and drops unrelated search parameters", () => {
+		expect(
+			parseMarketScanSortSearch({
+				sort_column: "marketCapUsd",
+				sort_direction: "asc",
+				symbol_filter: "BTC",
+			}),
+		).toEqual({
+			sort_column: "marketCapUsd",
+			sort_direction: "asc",
+		});
+	});
+
+	it("drops incomplete sort state", () => {
+		expect(parseMarketScanSortSearch({ sort_column: "marketCapUsd" })).toEqual(
+			{},
+		);
+	});
+});
 
 describe("parseMarketScanSearch", () => {
 	it("keeps valid table filter and sort state", () => {

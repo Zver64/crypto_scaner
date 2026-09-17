@@ -10,9 +10,14 @@ import {
 	type ScanCriteriaSearch,
 } from "@/routes/-scan-criteria-search";
 
-export interface MarketScanSearch extends ScanCriteriaSearch {
+export interface MarketScanSortSearch {
 	sort_column?: MarketScanSortColumn;
 	sort_direction?: MarketScanSortDirection;
+}
+
+export interface MarketScanSearch
+	extends ScanCriteriaSearch,
+		MarketScanSortSearch {
 	symbol_filter?: string;
 }
 
@@ -23,15 +28,9 @@ const sortColumns = new Set<MarketScanSortColumn>([
 	marketScanColumnKeys.sevenDayChangePercent,
 ]);
 
-export function parseMarketScanSearch(
+export function parseMarketScanSortSearch(
 	search: Record<string, unknown>,
-): MarketScanSearch {
-	const parsed: MarketScanSearch = parseOptionalScanCriteriaSearch(search);
-	const symbolFilter = search.symbol_filter;
-	if (typeof symbolFilter === "string" && symbolFilter.length > 0) {
-		parsed.symbol_filter = symbolFilter;
-	}
-
+): MarketScanSortSearch {
 	const sortColumn = search.sort_column;
 	const sortDirection = search.sort_direction;
 	if (
@@ -39,15 +38,32 @@ export function parseMarketScanSearch(
 		sortColumns.has(sortColumn as MarketScanSortColumn) &&
 		(sortDirection === "asc" || sortDirection === "desc")
 	) {
-		parsed.sort_column = sortColumn as MarketScanSortColumn;
-		parsed.sort_direction = sortDirection;
+		return {
+			sort_column: sortColumn as MarketScanSortColumn,
+			sort_direction: sortDirection,
+		};
+	}
+
+	return {};
+}
+
+export function parseMarketScanSearch(
+	search: Record<string, unknown>,
+): MarketScanSearch {
+	const parsed: MarketScanSearch = {
+		...parseOptionalScanCriteriaSearch(search),
+		...parseMarketScanSortSearch(search),
+	};
+	const symbolFilter = search.symbol_filter;
+	if (typeof symbolFilter === "string" && symbolFilter.length > 0) {
+		parsed.symbol_filter = symbolFilter;
 	}
 
 	return parsed;
 }
 
 export function marketScanSortFromSearch(
-	search: MarketScanSearch,
+	search: MarketScanSortSearch,
 ): MarketScanSort {
 	return search.sort_column && search.sort_direction
 		? { column: search.sort_column, direction: search.sort_direction }

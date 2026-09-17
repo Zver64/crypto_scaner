@@ -147,7 +147,9 @@ export function InstrumentAnalysisScreen({
 			query: {
 				enabled: permission.allowed,
 				placeholderData: keepPreviousData,
+				refetchOnMount: "always",
 				retry: false,
+				staleTime: 0,
 				select: (response) => {
 					if (
 						!hasExpectedInstrumentAnalysisEvaluations(

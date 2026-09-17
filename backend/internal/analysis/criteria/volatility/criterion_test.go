@@ -98,26 +98,76 @@ func TestHigherPercentileReturnsLowerRange(t *testing.T) {
 		t.Fatalf("range percent by percentile = %v", values)
 	}
 }
-func TestPercentileUsesAvailableHistoryAndReportsIt(t *testing.T) {
+func TestPercentileUsesNewestConfiguredHistoryAndReportsIt(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+
+	for _, test := range []struct {
+		unit analysis.Unit
+		step time.Duration
+	}{
+		{unit: analysis.UnitDays, step: 24 * time.Hour},
+		{unit: analysis.UnitHours, step: time.Hour},
+	} {
+		t.Run(string(test.unit), func(t *testing.T) {
+			c, err := volatility.New().Build(map[string]any{"unit": string(test.unit), "period": float64(2), "percentile": float64(50), "minimum_range_percent": float64(0)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := []market.Candle{
+				candle(start, 99),
+				candle(start.Add(test.step), 1),
+				candle(start.Add(2*test.step), 3),
+			}
+			result, err := c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{test.unit: data}})
+			if err != nil || result.Metrics["range_percent"] != 3 || result.CandleCount != 2 || !result.From.Equal(start.Add(test.step)) || !result.To.Equal(start.Add(2*test.step)) {
+				t.Fatalf("result=%+v err=%v", result, err)
+			}
+		})
+	}
+}
+
+func TestPercentileRejectsInsufficientHistory(t *testing.T) {
+	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name      string
+		unit      analysis.Unit
+		period    int
+		available int
+	}{
+		{name: "zero daily history", unit: analysis.UnitDays, period: 2, available: 0},
+		{name: "partial daily history", unit: analysis.UnitDays, period: 30, available: 13},
+		{name: "partial hourly history", unit: analysis.UnitHours, period: 30, available: 13},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c, err := volatility.New().Build(map[string]any{"unit": string(test.unit), "period": float64(test.period), "percentile": float64(50), "minimum_range_percent": float64(0)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			data := make([]market.Candle, test.available)
+			for i := range data {
+				data[i] = candle(start.Add(time.Duration(i)*time.Hour), 1)
+			}
+			_, err = c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{test.unit: data}})
+			var insufficient *analysis.InsufficientHistoryError
+			if !errors.As(err, &insufficient) || insufficient.Criterion != "volatility" || insufficient.Required != test.period || insufficient.Available != test.available {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestPercentileRejectsInvalidCandleWithSufficientHistory(t *testing.T) {
 	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(2), "percentile": float64(50), "minimum_range_percent": float64(0)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	result, err := c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: {candle(start, 1.23456)}}})
-	if err != nil || math.Abs(result.Metrics["range_percent"]-1.23456) > 1e-12 || result.CandleCount != 1 || !result.From.Equal(start) || !result.To.Equal(start) {
-		t.Fatalf("result=%+v err=%v", result, err)
-	}
-}
-
-func TestPercentileRejectsZeroHistory(t *testing.T) {
-	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(2), "percentile": float64(50), "minimum_range_percent": float64(0)})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: {}}})
-	var insufficient *analysis.InsufficientHistoryError
-	if !errors.As(err, &insufficient) || insufficient.Criterion != "volatility" || insufficient.Required != 2 || insufficient.Available != 0 {
+	data := []market.Candle{candle(start, 1), candle(start.AddDate(0, 0, 1), 2)}
+	data[0].Open = 0
+	_, err = c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: data}})
+	if !errors.Is(err, analysis.ErrInvalidCandleData) {
 		t.Fatalf("err=%v", err)
 	}
 }

@@ -140,19 +140,16 @@ func TestServiceSearchCombinesCriteriaAndPreservesStoreOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Search() error = %v", err)
 	}
-	if result.MatchedCount != 3 || result.AnalyzedCount != 5 || result.InsufficientDataCount != 1 {
+	if result.MatchedCount != 2 || result.AnalyzedCount != 4 || result.InsufficientDataCount != 2 {
 		t.Fatalf("Search() counts = %+v", result)
 	}
-	if len(result.Items) != 3 || result.Items[0].Symbol != "ZZZUSDT" || result.Items[1].Symbol != "AAAUSDT" || result.Items[2].Symbol != "NEWUSDT" {
+	if len(result.Items) != 2 || result.Items[0].Symbol != "ZZZUSDT" || result.Items[1].Symbol != "AAAUSDT" {
 		t.Fatalf("Search() items = %+v", result.Items)
 	}
 	for _, item := range result.Items {
 		if !item.Matched || len(item.Evaluations) != 2 || !item.Evaluations[0].Matched || !item.Evaluations[1].Matched {
 			t.Fatalf("Search() item = %+v", item)
 		}
-	}
-	if result.Items[2].Evaluations[0].CandleCount != 1 {
-		t.Fatalf("NEWUSDT evaluation = %+v", result.Items[2].Evaluations[0])
 	}
 }
 func TestSearchRefreshesMarketCapsBeforeDatabaseRanking(t *testing.T) {

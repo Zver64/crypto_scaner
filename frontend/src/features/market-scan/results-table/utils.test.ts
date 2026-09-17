@@ -102,8 +102,6 @@ it("preserves rows with absent metrics instead of silently dropping instruments"
 		symbol: "ZZZUSDT",
 		dailyRangePercent: null,
 		hourlyRangePercent: null,
-		dailyCandleCount: null,
-		hourlyCandleCount: null,
 		marketCapUsd: null,
 		priceHistory: Array(169).fill(null),
 		sevenDayChangePercent: null,

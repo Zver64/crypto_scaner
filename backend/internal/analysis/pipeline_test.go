@@ -40,8 +40,8 @@ func TestMarketScanPipelineRetainsOnlySequentialSurvivors(t *testing.T) {
 				t.Fatal(err)
 			}
 			criteria := []analysis.CriterionConfig{
-				{Key: "daily_volatility", Label: "Daily Volatility", Name: "volatility", Parameters: map[string]any{"unit": "days", "period": float64(30), "percentile": float64(80), "minimum_range_percent": float64(5)}},
-				{Key: "hourly_volatility", Label: "Hourly Volatility", Name: "volatility", Parameters: map[string]any{"unit": "hours", "period": float64(60), "percentile": float64(80), "minimum_range_percent": float64(2)}},
+				{Key: "daily_volatility", Label: "Daily Volatility", Name: "volatility", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(80), "minimum_range_percent": float64(5)}},
+				{Key: "hourly_volatility", Label: "Hourly Volatility", Name: "volatility", Parameters: map[string]any{"unit": "hours", "period": float64(1), "percentile": float64(80), "minimum_range_percent": float64(2)}},
 			}
 			if enabled {
 				criteria = append(criteria, analysis.CriterionConfig{Key: "market_cap", Label: "Market Cap", Name: "market_cap", Parameters: map[string]any{"min_market_cap_usd": float64(500_000_000)}})
@@ -73,7 +73,7 @@ func TestMarketScanPipelineRetainsOnlySequentialSurvivors(t *testing.T) {
 				t.Fatalf("result=%+v", result)
 			}
 			daily, hourly := result.Items[0].Evaluations[0], result.Items[0].Evaluations[1]
-			if daily.Metrics["range_percent"] != 8 || daily.CandleCount != 1 || hourly.Metrics["range_percent"] != 3 || hourly.CandleCount != 2 {
+			if daily.Metrics["range_percent"] != 8 || daily.CandleCount != 1 || hourly.Metrics["range_percent"] != 3 || hourly.CandleCount != 1 {
 				t.Fatalf("daily=%+v hourly=%+v", daily, hourly)
 			}
 			if enabled {
@@ -91,6 +91,40 @@ func TestMarketScanPipelineRetainsOnlySequentialSurvivors(t *testing.T) {
 				t.Fatalf("disabled Market Cap was evaluated: result=%+v requests=%v", result, caps.requested)
 			}
 		})
+	}
+}
+
+func TestMarketScanExcludesInstrumentWithInsufficientVolatilityHistory(t *testing.T) {
+	store := &storeStub{
+		instruments: []market.Instrument{
+			{ID: 1, Symbol: "SHORTUSDT"},
+			{ID: 2, Symbol: "FULLUSDT"},
+		},
+		candlesByInstrument: map[int64]map[string][]market.Candle{
+			1: {"1d": {testCandle(6)}, "1h": {testCandle(3), testCandle(3)}},
+			2: {"1d": {testCandle(6)}, "1h": {testCandle(3), testCandle(3), testCandle(3)}},
+		},
+	}
+	service, err := analysis.NewService(store, volatility.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{
+		{Key: "daily_volatility", Label: "Daily Volatility", Name: "volatility", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(5)}},
+		{Key: "hourly_volatility", Label: "Hourly Volatility", Name: "volatility", Parameters: map[string]any{"unit": "hours", "period": float64(3), "percentile": float64(50), "minimum_range_percent": float64(2)}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.MatchedCount != 1 || result.AnalyzedCount != 1 || result.InsufficientDataCount != 1 {
+		t.Fatalf("result counts = %+v", result)
+	}
+	if len(result.Items) != 1 || result.Items[0].Symbol != "FULLUSDT" {
+		t.Fatalf("items = %+v", result.Items)
+	}
+	if evaluations := result.Items[0].Evaluations; len(evaluations) != 2 || !evaluations[0].Matched || !evaluations[1].Matched {
+		t.Fatalf("evaluations = %+v", evaluations)
 	}
 }
 

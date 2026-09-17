@@ -17,7 +17,7 @@ func TestMarketAPIIncludesFixedSevenDayWindowAndClosedPrices(t *testing.T) {
 		// synctest starts at 2000-01-01 00:00 UTC, crossing a day/year boundary.
 		store := priceHistoryHTTPStore{httpStore: httpStore{
 			instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}},
-			candles:     map[int64][]market.Candle{1: {httpCandle(time.Now().Add(-24*time.Hour), 2)}},
+			candles:     map[int64][]market.Candle{1: httpCandles(time.Now().Add(-24*time.Hour), 2, 24*time.Hour, 2)},
 		}, prices: completeSevenDayPrices(time.Now(), 1)}
 		response := analysisRequestTo(t, newAnalysisHTTPHandler(store), "/api/v1/analysis/market", analysisBody)
 		if response.Code != http.StatusOK {
@@ -89,7 +89,11 @@ func TestMarketAPIKeepsMissingHistoryAndFreezesWindowBeforeSlowAnalysis(t *testi
 	synctest.Test(t, func(t *testing.T) {
 		store := priceHistoryHTTPStore{httpStore: httpStore{
 			instruments: []market.Instrument{{ID: 1, Symbol: "PARTIAL"}, {ID: 2, Symbol: "EMPTY"}, {ID: 3, Symbol: "SINGLE"}},
-			candles:     map[int64][]market.Candle{1: {httpCandle(time.Now(), 2)}, 2: {httpCandle(time.Now(), 2)}, 3: {httpCandle(time.Now(), 2)}},
+			candles: map[int64][]market.Candle{
+				1: httpCandles(time.Now().Add(-24*time.Hour), 2, 24*time.Hour, 2),
+				2: httpCandles(time.Now().Add(-24*time.Hour), 2, 24*time.Hour, 2),
+				3: httpCandles(time.Now().Add(-24*time.Hour), 2, 24*time.Hour, 2),
+			},
 		}, delay: 2 * time.Hour, prices: []market.HourlyPrice{
 			{InstrumentID: 1, OpenTime: time.Now().Add(-73 * time.Hour), Close: 10.00000001},
 			{InstrumentID: 1, OpenTime: time.Now().Add(-71 * time.Hour), Close: 9.99999999},

@@ -48,12 +48,12 @@ func (criterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warni
 
 func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	candles := input.Candles[c.unit]
-	if len(candles) == 0 {
+	if len(candles) < c.period {
 		return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Criterion: c.Name(), Required: c.period, Available: len(candles)}
 	}
 	candles = append([]market.Candle(nil), candles...)
 	sort.Slice(candles, func(i, j int) bool { return candles[i].OpenTime.After(candles[j].OpenTime) })
-	candles = candles[:min(c.period, len(candles))]
+	candles = candles[:c.period]
 	ranges := make([]float64, len(candles))
 	for i, candle := range candles {
 		if !(candle.Open > 0) {

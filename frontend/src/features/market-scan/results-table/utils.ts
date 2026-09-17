@@ -26,8 +26,6 @@ export interface MarketScanRow {
 	symbol: string;
 	dailyRangePercent: number | null;
 	hourlyRangePercent: number | null;
-	dailyCandleCount: number | null;
-	hourlyCandleCount: number | null;
 	marketCapUsd: number | null;
 	priceHistory: readonly (number | null)[];
 	sevenDayChangePercent: number | null;
@@ -51,8 +49,6 @@ export function toMarketScanRows(
 			symbol: item.symbol,
 			dailyRangePercent: daily?.rangePercent ?? null,
 			hourlyRangePercent: hourly?.rangePercent ?? null,
-			dailyCandleCount: daily?.candleCount ?? null,
-			hourlyCandleCount: hourly?.candleCount ?? null,
 			marketCapUsd: marketCapEvaluation(item.evaluations)?.marketCapUsd ?? null,
 			priceHistory: item.price_history,
 			sevenDayChangePercent: sevenDayChangePercent(item.price_history),

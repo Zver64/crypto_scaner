@@ -26,7 +26,7 @@ const analysisBody = `{"criteria":[{"key":"daily_volatility","name":"volatility"
 
 func TestAuthenticatedUserCanAnalyzeOneInstrument(t *testing.T) {
 	start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
-	store := httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {httpCandle(start, 2)}}}
+	store := httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: httpCandles(start, 2, 24*time.Hour, 2)}}
 	response := analysisRequestTo(t, newAnalysisHTTPHandler(store), "/api/v1/analysis/instruments/BTCUSDT", analysisBody)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
@@ -39,7 +39,7 @@ func TestAuthenticatedUserCanAnalyzeOneInstrument(t *testing.T) {
 		t.Fatalf("response = %+v", body)
 	}
 	evaluation := body.Evaluations[0]
-	if evaluation.Key != "daily_volatility" || evaluation.Name != "volatility" || evaluation.Label != "Daily Volatility" || !evaluation.Matched || evaluation.CandleCount != 1 || evaluation.Metrics["range_percent"] != 2 || !evaluation.From.Equal(start) || !evaluation.To.Equal(start) {
+	if evaluation.Key != "daily_volatility" || evaluation.Name != "volatility" || evaluation.Label != "Daily Volatility" || !evaluation.Matched || evaluation.CandleCount != 2 || evaluation.Metrics["range_percent"] != 2 || !evaluation.From.Equal(start.Add(-24*time.Hour)) || !evaluation.To.Equal(start) {
 		t.Fatalf("evaluation = %+v", evaluation)
 	}
 }
@@ -57,7 +57,7 @@ func TestInstrumentAnalysisPreservesRangePrecisionForGridSteps(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
-			store := httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: {httpCandle(start, test.rangePercent)}}}
+			store := httpStore{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[int64][]market.Candle{1: httpCandles(start, 2, 24*time.Hour, test.rangePercent)}}
 			handler := newAnalysisHTTPHandler(store)
 			response := analysisRequestTo(t, handler, "/api/v1/analysis/instruments/BTCUSDT", analysisBody)
 			if response.Code != http.StatusOK {
@@ -111,7 +111,9 @@ func TestAuthenticatedUserCanSearchMarket(t *testing.T) {
 	store := httpStore{
 		instruments: []market.Instrument{{ID: 1, Symbol: "ZZZUSDT"}, {ID: 2, Symbol: "AAAUSDT"}, {ID: 3, Symbol: "NEWUSDT"}},
 		candles: map[int64][]market.Candle{
-			1: {httpCandle(start, 9.43814)}, 2: {httpCandle(start, 4)}, 3: {},
+			1: httpCandles(start, 2, 24*time.Hour, 9.43814),
+			2: httpCandles(start, 2, 24*time.Hour, 4),
+			3: {},
 		},
 	}
 	bodyRequest := `{"criteria":[{"key":"volatility","name":"volatility","label":"Volatility","parameters":{"unit":"days","period":2,"percentile":75,"minimum_range_percent":4}}]}`
@@ -133,7 +135,7 @@ func TestAuthenticatedUserCanSearchMarket(t *testing.T) {
 		t.Fatalf("items = %+v", body.Items)
 	}
 	first, second := body.Items[0].Evaluations[0], body.Items[1].Evaluations[0]
-	if first.Key != "volatility" || first.Name != "volatility" || first.Label != "Volatility" || !first.Matched || first.CandleCount != 1 || first.Metrics["range_percent"] != 9.4381 || second.Key != "volatility" || second.Name != "volatility" || second.Label != "Volatility" || !second.Matched || second.CandleCount != 1 || second.Metrics["range_percent"] != 4 {
+	if first.Key != "volatility" || first.Name != "volatility" || first.Label != "Volatility" || !first.Matched || first.CandleCount != 2 || first.Metrics["range_percent"] != 9.4381 || second.Key != "volatility" || second.Name != "volatility" || second.Label != "Volatility" || !second.Matched || second.CandleCount != 2 || second.Metrics["range_percent"] != 4 {
 		t.Fatalf("evaluations = %+v", body.Items)
 	}
 }
@@ -476,6 +478,14 @@ func (httpMarketCapCriterion) Prepare(context.Context, []market.Instrument) ([]a
 }
 func (httpMarketCapCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
 	return analysis.Evaluation{Matched: true, Metrics: map[string]float64{"market_cap_usd": 1}}, nil
+}
+
+func httpCandles(end time.Time, count int, step time.Duration, rangePercent float64) []market.Candle {
+	candles := make([]market.Candle, count)
+	for i := range candles {
+		candles[i] = httpCandle(end.Add(time.Duration(i-count+1)*step), rangePercent)
+	}
+	return candles
 }
 
 func httpCandle(openTime time.Time, rangePercent float64) market.Candle {

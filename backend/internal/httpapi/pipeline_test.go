@@ -20,8 +20,8 @@ func TestMarketAPIExecutesUnifiedPipeline(t *testing.T) {
 	store := httpStore{
 		instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT", BaseAsset: "BTC"}, {ID: 2, Symbol: "DROPUSDT", BaseAsset: "DROP"}},
 		candlesByInterval: map[int64]map[string][]market.Candle{
-			1: {"1d": {httpCandle(start, 6)}, "1h": {httpCandle(start, 3), httpCandle(start.Add(time.Hour), 3)}},
-			2: {"1d": {httpCandle(start, 4)}},
+			1: {"1d": httpCandles(start, 30, 24*time.Hour, 6), "1h": httpCandles(start, 60, time.Hour, 3)},
+			2: {"1d": httpCandles(start, 30, 24*time.Hour, 4)},
 		},
 	}
 	response := analysisRequestTo(t, newAnalysisHTTPHandler(store, market_cap.New(marketcap.New(apiCapStore{}, nil))), "/api/v1/analysis/market", pipelineBody)
@@ -44,8 +44,8 @@ func TestMarketAPIExecutesUnifiedPipeline(t *testing.T) {
 		value                    float64
 		candles                  int
 	}{
-		{"daily_volatility", "volatility", "Daily Volatility", "range_percent", 6, 1},
-		{"hourly_volatility", "volatility", "Hourly Volatility", "range_percent", 3, 2},
+		{"daily_volatility", "volatility", "Daily Volatility", "range_percent", 6, 30},
+		{"hourly_volatility", "volatility", "Hourly Volatility", "range_percent", 3, 60},
 		{"market_cap", "market_cap", "Market Cap", "market_cap_usd", 500_000_000, 0},
 	} {
 		got := evaluations[i]

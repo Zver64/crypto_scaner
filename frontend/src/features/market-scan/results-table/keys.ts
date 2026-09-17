@@ -3,8 +3,6 @@ export const marketScanColumnKeys = {
 	symbol: "symbol",
 	dailyRange: "dailyRangePercent",
 	hourlyRange: "hourlyRangePercent",
-	hourlyCandleCount: "hourlyCandleCount",
-	dailyCandleCount: "dailyCandleCount",
 	marketCap: "marketCapUsd",
 	priceHistory: "priceHistory",
 	sevenDayChangePercent: "sevenDayChangePercent",

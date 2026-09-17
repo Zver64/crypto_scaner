@@ -8,7 +8,7 @@ import {
 	useMatches,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAnalyzeMarket } from "@/api/generated/api";
 import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
@@ -22,23 +22,35 @@ import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import type { MarketScanSort } from "@/features/market-scan/sort";
+import { TopCoinsSettingsForm } from "@/features/top-coins/settings-form";
+import type { TopCoinsSettings } from "@/features/top-coins/settings-form/types";
 import {
-	topCoinsCriteria,
+	buildTopCoinsCriteria,
+	buildTopCoinsScanCriteria,
 	topCoinsRequestOptions,
-	topCoinsScanCriteria,
 	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
 
 interface TopCoinsScreenProps {
+	initialSettings: TopCoinsSettings;
+	onSettingsCommit(settings: TopCoinsSettings): void;
 	onSortChange(sort: MarketScanSort): void;
 	sort: MarketScanSort;
 }
 
-export function TopCoinsScreen({ onSortChange, sort }: TopCoinsScreenProps) {
+export function TopCoinsScreen({
+	initialSettings,
+	onSettingsCommit,
+	onSortChange,
+	sort,
+}: TopCoinsScreenProps) {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
+	const [settings, setSettings] = useState(initialSettings);
+	const scanCriteria = buildTopCoinsScanCriteria(settings);
+	const criteria = buildTopCoinsCriteria(settings);
 	const query = useAnalyzeMarket<MarketAnalysisResponse>(
-		{ criteria: [...topCoinsCriteria], ...topCoinsRequestOptions },
+		{ criteria, ...topCoinsRequestOptions },
 		{
 			fetch: telegramRequestOptions(),
 			query: {
@@ -47,7 +59,7 @@ export function TopCoinsScreen({ onSortChange, sort }: TopCoinsScreenProps) {
 				retry: false,
 				staleTime: Number.POSITIVE_INFINITY,
 				select: (response) => {
-					if (!hasExpectedMarketScanResult(response.data, topCoinsCriteria)) {
+					if (!hasExpectedMarketScanResult(response.data, criteria)) {
 						throw unexpectedApiError();
 					}
 					return response.data;
@@ -76,6 +88,14 @@ export function TopCoinsScreen({ onSortChange, sort }: TopCoinsScreenProps) {
 		<Container maw={880} px={0} size="md">
 			<Stack gap={pageGap}>
 				<PageNavigation current="top-coins" title="Top Market Cap" />
+				<TopCoinsSettingsForm
+					disabled={!permission.allowed}
+					initialSettings={initialSettings}
+					onCommit={(nextSettings) => {
+						setSettings(nextSettings);
+						onSettingsCommit(nextSettings);
+					}}
+				/>
 				{query.isFetching && !query.data ? (
 					<Center mih={180}>
 						<Loader aria-label="Loading Top Market Cap" />
@@ -92,7 +112,7 @@ export function TopCoinsScreen({ onSortChange, sort }: TopCoinsScreenProps) {
 				{query.data ? (
 					rows.length > 0 ? (
 						<MarketScanResultsTable
-							criteria={topCoinsScanCriteria}
+							criteria={scanCriteria}
 							onSortChange={onSortChange}
 							rows={rows}
 							sort={sort}

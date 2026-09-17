@@ -1,21 +1,28 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { TopCoinsScreen } from "@/features/top-coins/top-coins-screen";
+import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
 import {
-	marketScanSortFromSearch,
-	parseMarketScanSortSearch,
-} from "@/routes/-market-scan-search";
+	parseTopCoinsSearch,
+	topCoinsSettingsFromSearch,
+	topCoinsSettingsToSearch,
+} from "@/routes/-top-coins-search";
 import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export const Route = createFileRoute("/top-coins")({
 	component: TopCoinsPage,
-	validateSearch: parseMarketScanSortSearch,
+	validateSearch: parseTopCoinsSearch,
 });
 
 function TopCoinsPage() {
-	const sort = marketScanSortFromSearch(Route.useSearch());
+	const search = Route.useSearch();
+	const sort = marketScanSortFromSearch(search);
 
 	return (
 		<TopCoinsScreen
+			initialSettings={topCoinsSettingsFromSearch(search)}
+			onSettingsCommit={(settings) => {
+				replaceUrlSearch({ ...topCoinsSettingsToSearch(settings) });
+			}}
 			onSortChange={(nextSort) => {
 				replaceUrlSearch({
 					sort_column: nextSort.column,

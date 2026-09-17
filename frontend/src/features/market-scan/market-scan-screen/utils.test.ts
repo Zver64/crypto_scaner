@@ -6,6 +6,7 @@ import {
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { getAnalyzeMarketQueryKey } from "@/api/generated/api";
 import type { MarketAnalysisResponse } from "@/api/generated/models";
+import { applicationConfig } from "@/config";
 import {
 	fetchFreshMarketScan,
 	marketScanMutationOptions,
@@ -17,7 +18,7 @@ import {
 	type MarketScanCriteria,
 } from "@/features/market-scan/pipeline";
 import {
-	topCoinsCriteria,
+	buildTopCoinsCriteria,
 	topCoinsRequestOptions,
 } from "@/features/top-coins/top-coins";
 
@@ -211,7 +212,11 @@ describe("market scan query policy", () => {
 		const queryClient = client();
 		clients.push(queryClient);
 		const topRequest = {
-			criteria: [...topCoinsCriteria],
+			criteria: [
+				...buildTopCoinsCriteria(
+					applicationConfig.topMarketCap.defaultSettings,
+				),
+			],
 			...topCoinsRequestOptions,
 		};
 		const topData = { data: response(10), headers: new Headers(), status: 200 };

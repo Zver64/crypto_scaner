@@ -4,22 +4,30 @@ import type {
 } from "@/api/generated/models";
 import {
 	criterionSelections,
-	defaultMarketScanCriteria,
+	type MarketScanCriteria,
 } from "@/features/market-scan/pipeline";
 import {
 	type MarketScanRow,
 	toMarketScanRows,
 } from "@/features/market-scan/results-table/utils";
+import type { TopCoinsSettings } from "@/features/top-coins/settings-form/types";
 
-export const topCoinsScanCriteria = {
-	...defaultMarketScanCriteria,
-	hourlyMinimumRangePercent: 0,
-	minimumMarketCapMillions: 0,
-	minimumRangePercent: 0,
-};
+export function buildTopCoinsScanCriteria(
+	settings: TopCoinsSettings,
+): MarketScanCriteria {
+	return {
+		...settings,
+		hourlyMinimumRangePercent: 0,
+		minimumMarketCapMillions: 0,
+		minimumRangePercent: 0,
+	};
+}
 
-export const topCoinsCriteria: readonly CriterionRequest[] =
-	criterionSelections(topCoinsScanCriteria);
+export function buildTopCoinsCriteria(
+	settings: TopCoinsSettings,
+): CriterionRequest[] {
+	return criterionSelections(buildTopCoinsScanCriteria(settings));
+}
 
 export const topCoinsRequestOptions = {
 	limit: 10,

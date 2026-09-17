@@ -83,6 +83,8 @@ tanstackIntent:
 
 ## Testing
 
+- Add tests only when they verify meaningful behavior, transformations, validation, branching, edge cases, or regression-prone contracts. Do not add a test merely because a source file was added or changed.
+- Do not test static configuration or constants by duplicating their values in assertions. Exercise configuration indirectly through behavioral tests when doing so protects real behavior.
 - Do not test React components, JSX/TSX output, rendered markup, styles, layout, accessibility attributes, or any other visual/UI behavior with Vitest.
 - Vitest tests must cover only ordinary non-visual functions and modules that do not depend on JSX/TSX rendering.
 - Do not add `.test.tsx` or `.spec.tsx` files, component render tests, snapshots, DOM assertions, or `react-dom`/Testing Library render helpers to Vitest tests.
@@ -93,4 +95,6 @@ tanstackIntent:
 - Place UI- and feature-independent utility functions in `src/utils/`, not in components, app-shell modules, routes, or feature modules.
 - Co-locate a utility's unit tests with that utility in `src/utils/`.
 - Use the `@/` alias for imports; do not add relative imports.
-- Keep component-specific helpers and their tests in the component directory as `utils.ts` and `utils.test.ts`. Do not use `<component>-utils.ts` files at the feature root.
+- Keep component-specific utility functions and their tests in the component directory as `utils.ts` and `utils.test.ts`. A `utils.ts` file must contain only functions or methods—never configuration objects, constants, or type declarations.
+- Keep `src/config.ts` limited to meaningful application-wide product-tuning values, such as shared presets and defaults. Keep presentation metadata, component behavior, domain constraints, and arbitrary constants with their owning modules. Put component-specific type declarations in the component directory's `types.ts`.
+- Do not use `<component>-utils.ts` files at the feature root.

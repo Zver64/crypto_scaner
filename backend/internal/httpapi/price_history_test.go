@@ -9,6 +9,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/market"
 )
 
@@ -83,6 +84,10 @@ func (failingHistoryHTTPStore) ListHourlyPrices(context.Context, []int64, time.T
 func (s priceHistoryHTTPStore) ListActiveInstruments(ctx context.Context) ([]market.Instrument, error) {
 	time.Sleep(s.delay)
 	return s.httpStore.ListActiveInstruments(ctx)
+}
+func (s priceHistoryHTTPStore) SelectActiveInstruments(ctx context.Context, selection analysis.Selection) ([]market.Instrument, error) {
+	time.Sleep(s.delay)
+	return s.httpStore.SelectActiveInstruments(ctx, selection)
 }
 
 func TestMarketAPIKeepsMissingHistoryAndFreezesWindowBeforeSlowAnalysis(t *testing.T) {

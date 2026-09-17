@@ -268,6 +268,7 @@ func (s *fakeStore) BootstrapCompleted(context.Context) (bool, error) { return s
 func (s *fakeStore) ReplaceSnapshot(_ context.Context, mappings []Mapping) error {
 	s.replacements++
 	s.snapshot = append([]Mapping(nil), mappings...)
+	s.done = true
 	return nil
 }
 func (s *fakeStore) GetMapping(_ context.Context, b string) (Mapping, error) {

@@ -175,7 +175,7 @@ func TestRunServicesWaitsForInFlightHTTPRequest(t *testing.T) {
 			close(entered)
 			<-release
 			w.WriteHeader(http.StatusNoContent)
-		}), scheduler, bot, slog.New(slog.NewTextHandler(io.Discard, nil)), 5*time.Second)
+		}), scheduler, bot, idleService{}, slog.New(slog.NewTextHandler(io.Discard, nil)), 5*time.Second)
 	}()
 	waitForStart(t, scheduler.started, "scheduler")
 	waitForStart(t, bot.started, "bot")
@@ -207,7 +207,7 @@ func TestRunServicesWaitsForInFlightHTTPRequest(t *testing.T) {
 func startServices(ctx context.Context, listener net.Listener, scheduler, bot scheduledService) <-chan error {
 	result := make(chan error, 1)
 	go func() {
-		result <- runServices(ctx, listener, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), scheduler, bot, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Second)
+		result <- runServices(ctx, listener, http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}), scheduler, bot, idleService{}, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Second)
 	}()
 	return result
 }

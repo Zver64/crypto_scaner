@@ -10,6 +10,8 @@ type Instrument struct {
 	QuoteAsset string
 	Status     string
 	Active     bool
+	// MarketCapUSD is populated by persisted market selection queries.
+	MarketCapUSD *float64
 }
 
 // Candle is a closed market interval represented for analysis.
@@ -67,6 +69,11 @@ func DailySyncProfile() SyncProfile   { return BinanceSpotSyncProfile(IntervalDa
 func HourlySyncProfile() SyncProfile  { return BinanceSpotSyncProfile(IntervalHour) }
 func WeeklySyncProfile() SyncProfile  { return BinanceSpotSyncProfile(IntervalWeek) }
 func MonthlySyncProfile() SyncProfile { return BinanceSpotSyncProfile(IntervalMonth) }
+
+// MarketCapSyncProfile identifies persisted CoinGecko market-cap refresh state.
+func MarketCapSyncProfile() SyncProfile {
+	return SyncProfile{Exchange: "coingecko", Market: "market_cap", QuoteAsset: "USD", Interval: IntervalHour, TimeZone: "UTC"}
+}
 
 // SyncStatus is the durable outcome of market synchronization.
 type SyncStatus string

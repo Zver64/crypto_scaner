@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/marketcap"
@@ -202,6 +203,65 @@ func (store *Store) ListActiveInstruments(ctx context.Context) ([]market.Instrum
 		return nil, fmt.Errorf("list active instruments: %w", err)
 	}
 	return marketInstruments(rows), nil
+}
+
+func (store *Store) SelectActiveInstruments(ctx context.Context, selection analysis.Selection) ([]market.Instrument, error) {
+	params, err := selectionParams(selection)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := store.queries.SelectActiveInstruments(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("select active instruments: %w", err)
+	}
+	items := make([]market.Instrument, 0, len(rows))
+	for _, row := range rows {
+		item := market.Instrument{ID: row.ID, Symbol: row.Symbol, BaseAsset: row.BaseAsset, QuoteAsset: row.QuoteAsset, Status: row.ExchangeStatus, Active: row.IsActive}
+		available, ok := row.MarketCapAvailable.(bool)
+		if !ok {
+			return nil, fmt.Errorf("invalid persisted market cap availability for %s", item.Symbol)
+		}
+		if available {
+			capText, ok := row.MarketCapUsd.(string)
+			if !ok {
+				return nil, fmt.Errorf("invalid persisted market cap for %s", item.Symbol)
+			}
+			value, parseErr := strconv.ParseFloat(capText, 64)
+			if parseErr != nil || math.IsNaN(value) || math.IsInf(value, 0) {
+				return nil, fmt.Errorf("invalid persisted market cap for %s", item.Symbol)
+			}
+			item.MarketCapUSD = &value
+		}
+		items = append(items, item)
+	}
+	return items, nil
+}
+
+func selectionParams(selection analysis.Selection) (generated.SelectActiveInstrumentsParams, error) {
+	if selection.Limit < 0 || int64(selection.Limit) > math.MaxInt32 ||
+		(selection.SortDirection != "" && selection.SortDirection != "asc" && selection.SortDirection != "desc") ||
+		(selection.SortFact != 0 && selection.SortFact != analysis.SelectionFactMarketCapUSD) {
+		return generated.SelectActiveInstrumentsParams{}, fmt.Errorf("invalid instrument selection")
+	}
+	params := generated.SelectActiveInstrumentsParams{
+		MinimumMarketCapUsd: pgtype.Numeric{},
+		MarketCapSort:       selection.SortDirection,
+		ResultLimit:         int32(selection.Limit),
+		Symbol:              selection.Symbol,
+	}
+	for _, constraint := range selection.Constraints {
+		switch {
+		case constraint.Fact == analysis.SelectionFactStablecoin && constraint.Operator == analysis.SelectionEqual && !constraint.Boolean:
+			params.ExcludeStablecoins = true
+		case constraint.Fact == analysis.SelectionFactMarketCapUSD && constraint.Operator == analysis.SelectionAtLeast && constraint.Number >= 0 && !math.IsNaN(constraint.Number) && !math.IsInf(constraint.Number, 0):
+			if err := params.MinimumMarketCapUsd.Scan(decimal(constraint.Number)); err != nil {
+				return generated.SelectActiveInstrumentsParams{}, fmt.Errorf("invalid minimum market cap: %w", err)
+			}
+		default:
+			return generated.SelectActiveInstrumentsParams{}, fmt.Errorf("unsupported instrument selection constraint")
+		}
+	}
+	return params, nil
 }
 
 func (store *Store) ListActiveInstrumentsLimited(ctx context.Context, limit int) ([]market.Instrument, error) {

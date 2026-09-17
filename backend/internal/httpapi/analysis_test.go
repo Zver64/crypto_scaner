@@ -141,22 +141,28 @@ func TestAuthenticatedUserCanSearchMarket(t *testing.T) {
 }
 func TestAuthenticatedUserCanRequestSortedLimitedMarketScan(t *testing.T) {
 	start := time.Date(2026, time.August, 1, 0, 0, 0, 0, time.UTC)
+	selected := analysis.Selection{}
 	store := &httpStore{
 		rankedInstruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}},
 		candles:           map[int64][]market.Candle{1: {httpCandle(start, 2)}},
+		selected:          &selected,
 	}
 	body := `{"criteria":[{"key":"daily_volatility","name":"volatility","label":"Daily Volatility","parameters":{"unit":"days","period":1,"percentile":50,"minimum_range_percent":0}},{"key":"market_cap","name":"market_cap","label":"Market Cap","parameters":{}}],"limit":10,"sort":{"field":"market_cap_usd","direction":"desc"}}`
 	response := analysisRequestTo(t, newAnalysisHTTPHandler(store, httpMarketCapFactory{}), "/api/v1/analysis/market", body)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d; body = %s", response.Code, response.Body.String())
 	}
-	if store.selectionLimit != 10 || store.selectionDirection != "desc" {
-		t.Fatalf("selection limit=%d direction=%q", store.selectionLimit, store.selectionDirection)
+	var result marketAnalysisResponse
+	if err := json.NewDecoder(response.Body).Decode(&result); err != nil {
+		t.Fatal(err)
+	}
+	if selected.Limit != 10 || selected.SortFact != analysis.SelectionFactMarketCapUSD || selected.SortDirection != "desc" || len(result.Items) != 1 || result.Items[0].Symbol != "BTCUSDT" {
+		t.Fatalf("selection=%+v result=%+v", selected, result)
 	}
 }
 
 func TestAnalysisRejectsMalformedAndUnknownJSON(t *testing.T) {
-	for _, body := range []string{"{", `{"criteria":[],"extra":true}`, `{"criteria":[{"key":"volatility","name":"volatility","label":"Volatility","parameters":{},"extra":true}]}`, `{"criteria":[],"sort":{"field":"market_cap_usd","direction":"desc","extra":true}}`} {
+	for _, body := range []string{"{", `{"criteria":[],"extra":true}`, `{"criteria":[],"exclude_stablecoins":false}`, `{"criteria":[{"key":"volatility","name":"volatility","label":"Volatility","parameters":{},"extra":true}]}`, `{"criteria":[],"sort":{"field":"market_cap_usd","direction":"desc","extra":true}}`} {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/analysis/market", bytes.NewBufferString(body))
 		req.Header.Set("Authorization", "tma "+analysisInitData)
 		res := httptest.NewRecorder()
@@ -427,6 +433,7 @@ type httpStore struct {
 	syncState          *market.SyncState
 	selectionLimit     int
 	selectionDirection string
+	selected           *analysis.Selection
 }
 
 func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
@@ -438,6 +445,19 @@ func (s httpStore) GetSyncState(context.Context, market.SyncProfile) (market.Syn
 }
 func (s httpStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
 	return s.instruments, nil
+}
+func (s httpStore) SelectActiveInstruments(_ context.Context, selection analysis.Selection) ([]market.Instrument, error) {
+	if s.selected != nil {
+		*s.selected = selection
+	}
+	items := s.instruments
+	if selection.SortFact == analysis.SelectionFactMarketCapUSD && s.rankedInstruments != nil {
+		items = s.rankedInstruments
+	}
+	if selection.Limit > 0 {
+		items = items[:min(selection.Limit, len(items))]
+	}
+	return items, nil
 }
 func (s *httpStore) ListActiveInstrumentsLimited(_ context.Context, limit int) ([]market.Instrument, error) {
 	s.selectionLimit = limit
@@ -473,6 +493,7 @@ type httpMarketCapCriterion struct{}
 
 func (httpMarketCapCriterion) Name() string                               { return "market_cap" }
 func (httpMarketCapCriterion) Requirements() []analysis.CandleRequirement { return nil }
+func (httpMarketCapCriterion) MinimumMarketCapUSD() float64               { return 0 }
 func (httpMarketCapCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
 	return nil, nil
 }

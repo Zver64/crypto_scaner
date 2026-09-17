@@ -22,6 +22,7 @@ func runServices(
 	handler http.Handler,
 	scheduler scheduledService,
 	botService scheduledService,
+	marketCapService scheduledService,
 	logger *slog.Logger,
 	shutdownTimeout time.Duration,
 ) error {
@@ -47,6 +48,9 @@ func runServices(
 	botCtx, stopBot := context.WithCancel(context.Background())
 	botResult := make(chan error, 1)
 	go func() { botResult <- botService.Run(botCtx) }()
+	marketCapCtx, stopMarketCap := context.WithCancel(context.Background())
+	marketCapResult := make(chan error, 1)
+	go func() { marketCapResult <- marketCapService.Run(marketCapCtx) }()
 
 	type stopReason uint8
 	const (
@@ -54,11 +58,12 @@ func runServices(
 		httpStopped
 		schedulerStopped
 		botStopped
+		marketCapStopped
 	)
 
 	reason := parentCancelled
-	var schedulerErr, botErr, httpErr error
-	awaitScheduler, awaitBot, awaitHTTP := schedulerResult, botResult, httpResult
+	var schedulerErr, botErr, marketCapErr, httpErr error
+	awaitScheduler, awaitBot, awaitMarketCap, awaitHTTP := schedulerResult, botResult, marketCapResult, httpResult
 	select {
 	case <-ctx.Done():
 	case httpErr = <-httpResult:
@@ -70,14 +75,20 @@ func runServices(
 	case botErr = <-botResult:
 		awaitBot = nil
 		reason = botStopped
+	case marketCapErr = <-marketCapResult:
+		awaitMarketCap = nil
+		reason = marketCapStopped
 	}
 
-	stoppedSchedulerErr, stoppedBotErr, stoppedHTTPErr := stopAndWaitServices(stopScheduler, stopBot, stopHTTP, awaitScheduler, awaitBot, awaitHTTP)
+	stoppedSchedulerErr, stoppedBotErr, stoppedMarketCapErr, stoppedHTTPErr := stopAndWaitServices(stopScheduler, stopBot, stopMarketCap, stopHTTP, awaitScheduler, awaitBot, awaitMarketCap, awaitHTTP)
 	if awaitScheduler != nil {
 		schedulerErr = stoppedSchedulerErr
 	}
 	if awaitBot != nil {
 		botErr = stoppedBotErr
+	}
+	if awaitMarketCap != nil {
+		marketCapErr = stoppedMarketCapErr
 	}
 	if awaitHTTP != nil {
 		httpErr = stoppedHTTPErr
@@ -85,24 +96,27 @@ func runServices(
 
 	switch reason {
 	case parentCancelled:
-		return parentCancellationResult(schedulerErr, botErr, httpErr)
+		return parentCancellationResult(schedulerErr, botErr, marketCapErr, httpErr)
 	case httpStopped:
 		return httpErr
 	case schedulerStopped:
 		return schedulerResultError(schedulerErr)
 	case botStopped:
 		return botResultError(botErr)
+	case marketCapStopped:
+		return marketCapResultError(marketCapErr)
 	default:
 		panic("unknown service stop reason")
 	}
 }
 
 func stopAndWaitServices(
-	stopScheduler, stopBot, stopHTTP context.CancelFunc,
-	schedulerResult, botResult, httpResult <-chan error,
-) (schedulerErr, botErr, httpErr error) {
+	stopScheduler, stopBot, stopMarketCap, stopHTTP context.CancelFunc,
+	schedulerResult, botResult, marketCapResult, httpResult <-chan error,
+) (schedulerErr, botErr, marketCapErr, httpErr error) {
 	stopScheduler()
 	stopBot()
+	stopMarketCap()
 	stopHTTP()
 	if schedulerResult != nil {
 		schedulerErr = <-schedulerResult
@@ -110,18 +124,24 @@ func stopAndWaitServices(
 	if botResult != nil {
 		botErr = <-botResult
 	}
+	if marketCapResult != nil {
+		marketCapErr = <-marketCapResult
+	}
 	if httpResult != nil {
 		httpErr = <-httpResult
 	}
-	return schedulerErr, botErr, httpErr
+	return schedulerErr, botErr, marketCapErr, httpErr
 }
 
-func parentCancellationResult(schedulerErr, botErr, httpErr error) error {
+func parentCancellationResult(schedulerErr, botErr, marketCapErr, httpErr error) error {
 	if schedulerErr != nil {
 		return fmt.Errorf("stop market scheduler: %w", schedulerErr)
 	}
 	if botErr != nil {
 		return fmt.Errorf("stop Telegram bot: %w", botErr)
+	}
+	if marketCapErr != nil {
+		return fmt.Errorf("stop market cap synchronizer: %w", marketCapErr)
 	}
 	return httpErr
 }
@@ -138,6 +158,13 @@ func botResultError(err error) error {
 		return fmt.Errorf("run Telegram bot: %w", err)
 	}
 	return fmt.Errorf("Telegram bot stopped unexpectedly")
+}
+
+func marketCapResultError(err error) error {
+	if err != nil {
+		return fmt.Errorf("run market cap synchronizer: %w", err)
+	}
+	return fmt.Errorf("market cap synchronizer stopped unexpectedly")
 }
 
 type acceptSignalingListener struct {

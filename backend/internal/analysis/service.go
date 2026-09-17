@@ -21,11 +21,6 @@ type Store interface {
 	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
 }
 
-type instrumentSelectionStore interface {
-	ListActiveInstrumentsLimited(context.Context, int) ([]market.Instrument, error)
-	ListActiveInstrumentsSortedByMarketCap(context.Context, int, string) ([]market.Instrument, error)
-}
-
 type SymbolRequest struct {
 	Symbol   string
 	Criteria []CriterionConfig
@@ -63,8 +58,10 @@ type SearchResult struct {
 type UnresolvedItem struct{ Symbol, Code, Message string }
 
 type Service struct {
-	store     Store
-	factories map[string]Factory
+	store                Store
+	factories            map[string]Factory
+	selectionFilters     map[string]SelectionFilter
+	selectionSortFilters map[string]SelectionFilter
 }
 
 type criterionInstance struct {
@@ -88,7 +85,22 @@ func NewService(store Store, factories ...Factory) (*Service, error) {
 		}
 		registry[factory.Name()] = factory
 	}
-	return &Service{store: store, factories: registry}, nil
+	selectionFilters := selectionFilterModules()
+	selectionRegistry := make(map[string]SelectionFilter, len(selectionFilters))
+	sortRegistry := make(map[string]SelectionFilter, len(selectionFilters))
+	for _, filter := range selectionFilters {
+		if filter == nil || filter.Name() == "" || selectionRegistry[filter.Name()] != nil {
+			return nil, fmt.Errorf("selection filter: %w", ErrInvalidArgument)
+		}
+		selectionRegistry[filter.Name()] = filter
+		if field := filter.SortField(); field != "" {
+			if sortRegistry[field] != nil {
+				return nil, fmt.Errorf("selection sort filter: %w", ErrInvalidArgument)
+			}
+			sortRegistry[field] = filter
+		}
+	}
+	return &Service{store: store, factories: registry, selectionFilters: selectionRegistry, selectionSortFilters: sortRegistry}, nil
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
@@ -99,9 +111,15 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 	if err := service.requireMarketData(ctx, requirements); err != nil {
 		return SymbolResult{}, err
 	}
-	instruments, err := service.store.ListActiveInstruments(ctx)
+	selectionStore, ok := service.store.(SelectionStore)
+	if !ok {
+		return SymbolResult{}, fmt.Errorf("instrument selection is unsupported")
+	}
+	// Direct symbol analysis intentionally does not activate market-wide backend
+	// defaults such as stablecoin exclusion.
+	instruments, err := selectionStore.SelectActiveInstruments(ctx, Selection{Symbol: request.Symbol})
 	if err != nil {
-		return SymbolResult{}, fmt.Errorf("list active instruments: %w", err)
+		return SymbolResult{}, fmt.Errorf("select active instrument: %w", err)
 	}
 	for _, instrument := range instruments {
 		if instrument.Symbol == request.Symbol {
@@ -121,49 +139,22 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	if err != nil {
 		return SearchResult{}, err
 	}
-	if err := validateSearchOptions(request, criteria); err != nil {
+	selection, err := service.selection(request, criteria)
+	if err != nil {
 		return SearchResult{}, err
 	}
 	if err := service.requireMarketData(ctx, requirements); err != nil {
 		return SearchResult{}, err
 	}
-	preselectionWarnings := make([]Warning, 0)
-	if request.Sort != nil {
-		universe, listErr := service.store.ListActiveInstruments(ctx)
-		if listErr != nil {
-			return SearchResult{}, fmt.Errorf("list active instruments for sorting: %w", listErr)
-		}
-		for _, criterion := range criteria {
-			if criterion.Name() != "market_cap" {
-				continue
-			}
-			warnings, prepareErr := criterion.Prepare(ctx, universe)
-			if prepareErr != nil {
-				return SearchResult{}, fmt.Errorf("prepare Market Cap sorting: %w", prepareErr)
-			}
-			preselectionWarnings = append(preselectionWarnings, warnings...)
-			break
-		}
+	selectionStore, ok := service.store.(SelectionStore)
+	if !ok {
+		return SearchResult{}, fmt.Errorf("instrument selection is unsupported")
 	}
-	var instruments []market.Instrument
-	switch {
-	case request.Sort != nil || request.Limit > 0:
-		selectionStore, ok := service.store.(instrumentSelectionStore)
-		if !ok {
-			return SearchResult{}, fmt.Errorf("instrument selection is unsupported")
-		}
-		if request.Sort != nil {
-			instruments, err = selectionStore.ListActiveInstrumentsSortedByMarketCap(ctx, request.Limit, request.Sort.Direction)
-		} else {
-			instruments, err = selectionStore.ListActiveInstrumentsLimited(ctx, request.Limit)
-		}
-	default:
-		instruments, err = service.store.ListActiveInstruments(ctx)
-	}
+	instruments, err := selectionStore.SelectActiveInstruments(ctx, selection)
 	if err != nil {
-		return SearchResult{}, fmt.Errorf("list active instruments: %w", err)
+		return SearchResult{}, fmt.Errorf("select active instruments: %w", err)
 	}
-	result := SearchResult{PriceHistoryWindow: window, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0), Warnings: preselectionWarnings}
+	result := SearchResult{PriceHistoryWindow: window, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
 	candidates := append([]market.Instrument(nil), instruments...)
 	results := make(map[int64]SymbolResult, len(candidates))
 	for _, criterion := range criteria {
@@ -231,22 +222,39 @@ func appendUniqueWarnings(existing, additions []Warning) []Warning {
 	return existing
 }
 
-func validateSearchOptions(request SearchRequest, criteria []criterionInstance) error {
+func (service *Service) selection(request SearchRequest, criteria []criterionInstance) (Selection, error) {
 	if request.Limit < 0 || request.Limit > 100 {
-		return ErrInvalidArgument
+		return Selection{}, ErrInvalidArgument
 	}
-	if request.Sort == nil {
-		return nil
-	}
-	if request.Sort.Field != "market_cap_usd" || (request.Sort.Direction != "asc" && request.Sort.Direction != "desc") {
-		return ErrInvalidArgument
-	}
-	for _, criterion := range criteria {
-		if criterion.Name() == "market_cap" {
-			return nil
+	selection := Selection{Limit: request.Limit}
+	for _, filter := range service.selectionFilters {
+		if filter.BackendDefault() {
+			if err := filter.Apply(nil, &selection); err != nil {
+				return Selection{}, err
+			}
 		}
 	}
-	return ErrInvalidArgument
+	for _, criterion := range criteria {
+		if filter := service.selectionFilters[criterion.Name()]; filter != nil {
+			if err := filter.Apply(criterion.Criterion, &selection); err != nil {
+				return Selection{}, err
+			}
+		}
+	}
+	if request.Sort == nil {
+		return selection, nil
+	}
+	if request.Sort.Direction != "asc" && request.Sort.Direction != "desc" {
+		return Selection{}, ErrInvalidArgument
+	}
+	filter := service.selectionSortFilters[request.Sort.Field]
+	if filter == nil {
+		return Selection{}, ErrInvalidArgument
+	}
+	if err := filter.ApplySort(request.Sort.Direction, &selection); err != nil {
+		return Selection{}, err
+	}
+	return selection, nil
 }
 
 func (service *Service) prepare(configs []CriterionConfig) ([]criterionInstance, map[Unit]int, error) {

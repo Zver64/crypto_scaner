@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/migrate"
@@ -235,6 +236,51 @@ func TestPostgresStoreContracts(t *testing.T) {
 		ascending, err := store.ListActiveInstrumentsSortedByMarketCap(ctx, 0, "asc")
 		if err != nil || len(ascending) != 2 || ascending[0].Symbol != "BTCUSDT" || ascending[1].Symbol != "ETHUSDT" {
 			t.Fatalf("ascending instruments = %+v, %v", ascending, err)
+		}
+	})
+
+	t.Run("database selection excludes stablecoins before ranking and limit", func(t *testing.T) {
+		now := time.Now().UTC()
+		if err := store.ApplyInstrumentSnapshot(ctx, []market.Instrument{
+			{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING", Active: true},
+			{Symbol: "ETHUSDT", BaseAsset: "ETH", QuoteAsset: "USDT", Status: "TRADING", Active: true},
+			{Symbol: "USDCUSDT", BaseAsset: "USDC", QuoteAsset: "USDT", Status: "TRADING", Active: true},
+			{Symbol: "MISSINGUSDT", BaseAsset: "MISSING", QuoteAsset: "USDT", Status: "TRADING", Active: true},
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for _, fixture := range []struct {
+			base, coin string
+			cap        int
+		}{{"BTC", "bitcoin", 200}, {"ETH", "ethereum", 200}, {"USDC", "usd-coin", 1_000}} {
+			if _, err := db.Exec(ctx, `INSERT INTO app.coingecko_asset_mappings (base_asset, coin_id, quote_asset, source_symbol, status, observed_at)
+				VALUES ($1, $2, 'USDT', $1, 'resolved', $3) ON CONFLICT (base_asset) DO UPDATE SET coin_id = EXCLUDED.coin_id, status = EXCLUDED.status, observed_at = EXCLUDED.observed_at`, fixture.base, fixture.coin, now); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec(ctx, `INSERT INTO app.coingecko_market_caps (coin_id, market_cap_usd, fetched_at, observed_at)
+				VALUES ($1, $2, $3, $3) ON CONFLICT (coin_id) DO UPDATE SET market_cap_usd = EXCLUDED.market_cap_usd, fetched_at = EXCLUDED.fetched_at, observed_at = EXCLUDED.observed_at`, fixture.coin, fixture.cap, now); err != nil {
+				t.Fatal(err)
+			}
+		}
+		stablecoinDefault := []analysis.SelectionConstraint{{Fact: analysis.SelectionFactStablecoin, Operator: analysis.SelectionEqual, Boolean: false}}
+		onlyOne, err := store.SelectActiveInstruments(ctx, analysis.Selection{Constraints: stablecoinDefault, Limit: 1, SortFact: analysis.SelectionFactMarketCapUSD, SortDirection: "desc"})
+		if err != nil || len(onlyOne) != 1 || onlyOne[0].Symbol != "BTCUSDT" || onlyOne[0].MarketCapUSD == nil || *onlyOne[0].MarketCapUSD != 200 {
+			t.Fatalf("stablecoin exclusion before limit = %+v, %v", onlyOne, err)
+		}
+		ascending, err := store.SelectActiveInstruments(ctx, analysis.Selection{Constraints: stablecoinDefault, SortFact: analysis.SelectionFactMarketCapUSD, SortDirection: "asc"})
+		if err != nil || len(ascending) != 3 || ascending[0].Symbol != "BTCUSDT" || ascending[1].Symbol != "ETHUSDT" || ascending[2].Symbol != "MISSINGUSDT" {
+			t.Fatalf("ascending NULLS LAST/ties = %+v, %v", ascending, err)
+		}
+		filtered, err := store.SelectActiveInstruments(ctx, analysis.Selection{Constraints: []analysis.SelectionConstraint{
+			{Fact: analysis.SelectionFactStablecoin, Operator: analysis.SelectionEqual, Boolean: false},
+			{Fact: analysis.SelectionFactMarketCapUSD, Operator: analysis.SelectionAtLeast, Number: 200},
+		}, SortFact: analysis.SelectionFactMarketCapUSD, SortDirection: "desc"})
+		if err != nil || len(filtered) != 2 || filtered[0].Symbol != "BTCUSDT" || filtered[1].Symbol != "ETHUSDT" {
+			t.Fatalf("persisted cap filtering/ties = %+v, %v", filtered, err)
+		}
+		active, err := store.ListActiveInstruments(ctx)
+		if err != nil || len(active) != 4 {
+			t.Fatalf("stablecoin instruments must remain exchange-active: %+v, %v", active, err)
 		}
 	})
 

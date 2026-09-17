@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"crypto-scanner/internal/analysis"
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/market_cap"
@@ -80,7 +81,11 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	}
 	scheduler := marketsync.NewSchedulerWithProfiles(synchronizers, logger)
 	marketCapResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
-	criterionFactories := []analysis.Factory{volatility.New(), marketcapcriterion.New(marketCapResolver)}
+	marketCapSynchronizer, err := marketcap.NewSynchronizer(marketCapResolver, store, logger, time.Hour, time.Minute)
+	if err != nil {
+		return fmt.Errorf("initialize market cap synchronizer: %w", err)
+	}
+	criterionFactories := []analysis.Factory{volatility.New(), marketcapcriterion.New()}
 	analysisService, err := analysis.NewService(store, criterionFactories...)
 	if err != nil {
 		return fmt.Errorf("initialize analysis service: %w", err)
@@ -90,12 +95,6 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	if err != nil {
 		return fmt.Errorf("initialize Telegram bot: %w", err)
 	}
-	go func() {
-		if err := marketCapResolver.BootstrapUntilComplete(ctx); err != nil && ctx.Err() == nil {
-			logger.Warn("CoinGecko mapping bootstrap failed", "module", "market_cap", "error", err.Error())
-		}
-	}()
-
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
 		return fmt.Errorf("listen for HTTP: %w", err)
@@ -106,7 +105,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled}), scheduler, botService, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled}), scheduler, botService, marketCapSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

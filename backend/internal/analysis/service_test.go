@@ -3,7 +3,6 @@ package analysis_test
 import (
 	"context"
 	"errors"
-	"sort"
 	"testing"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/market_cap"
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	"crypto-scanner/internal/market"
-	"crypto-scanner/internal/marketcap"
 )
 
 func TestServiceCombinesCriteriaAndLoadsMergedRequirementsOnce(t *testing.T) {
@@ -152,46 +150,16 @@ func TestServiceSearchCombinesCriteriaAndPreservesStoreOrder(t *testing.T) {
 		}
 	}
 }
-func TestSearchRefreshesMarketCapsBeforeDatabaseRanking(t *testing.T) {
-	for _, test := range []struct {
-		name string
-		caps map[string]marketcap.Cap
-	}{
-		{name: "cold cache", caps: map[string]marketcap.Cap{}},
-		{name: "stale cache", caps: map[string]marketcap.Cap{
-			"a": {CoinID: "a", USD: 100, Available: true, FetchedAt: time.Now().Add(-2 * time.Hour)},
-			"b": {CoinID: "b", USD: 90, Available: true, FetchedAt: time.Now().Add(-2 * time.Hour)},
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			store := &rankingStore{
-				instruments: []market.Instrument{{ID: 1, Symbol: "AUSDT", BaseAsset: "A"}, {ID: 2, Symbol: "BUSDT", BaseAsset: "B"}},
-				mappings: map[string]marketcap.Mapping{
-					"A": {BaseAsset: "A", CoinID: "a", Status: "resolved"},
-					"B": {BaseAsset: "B", CoinID: "b", Status: "resolved"},
-				},
-				caps: test.caps,
-			}
-			provider := &rankingProvider{caps: []marketcap.Cap{
-				{CoinID: "a", USD: 80, Available: true},
-				{CoinID: "b", USD: 110, Available: true},
-			}}
-			service, err := analysis.NewService(store, marketcapcriterion.New(marketcap.New(store, provider)))
-			if err != nil {
-				t.Fatal(err)
-			}
-			result, err := service.Search(context.Background(), analysis.SearchRequest{
-				Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{"min_market_cap_usd": float64(0)}}},
-				Limit:    1,
-				Sort:     &analysis.SearchSort{Field: "market_cap_usd", Direction: "desc"},
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if provider.calls != 1 || len(result.Items) != 1 || result.Items[0].Symbol != "BUSDT" {
-				t.Fatalf("provider calls=%d items=%+v", provider.calls, result.Items)
-			}
-		})
+func TestSearchDoesNotPrepareMarketCapsOnRequest(t *testing.T) {
+	cap := 100.0
+	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT", BaseAsset: "BTC", MarketCapUSD: &cap}}}
+	service, err := analysis.NewService(store, marketcapcriterion.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{"min_market_cap_usd": float64(100)}}}})
+	if err != nil || result.MatchedCount != 1 || result.Items[0].Evaluations[0].Metrics["market_cap_usd"] != 100 || store.activeListCalls != 0 {
+		t.Fatalf("result=%+v err=%v active lists=%d", result, err, store.activeListCalls)
 	}
 }
 
@@ -217,7 +185,7 @@ func TestSearchUsesBackendMarketCapSortAndLimit(t *testing.T) {
 	if len(result.Items) != 1 || result.Items[0].Symbol != "BTCUSDT" {
 		t.Fatalf("items = %+v", result.Items)
 	}
-	if store.selectionLimit != 1 || store.selectionDirection != "desc" || store.activeListCalls != 1 {
+	if store.selectionLimit != 1 || store.selectionDirection != "desc" || store.activeListCalls != 0 {
 		t.Fatalf("selection limit=%d direction=%q active calls=%d", store.selectionLimit, store.selectionDirection, store.activeListCalls)
 	}
 }
@@ -406,6 +374,7 @@ type marketCapTestCriterion struct{}
 
 func (marketCapTestCriterion) Name() string                               { return "market_cap" }
 func (marketCapTestCriterion) Requirements() []analysis.CandleRequirement { return nil }
+func (marketCapTestCriterion) MinimumMarketCapUSD() float64               { return 0 }
 func (marketCapTestCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
 	return nil, nil
 }
@@ -460,71 +429,6 @@ func (fakeCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis
 	return analysis.Evaluation{Matched: false, Metrics: map[string]float64{}, CandleCount: 1}, nil
 }
 
-type rankingStore struct {
-	instruments []market.Instrument
-	mappings    map[string]marketcap.Mapping
-	caps        map[string]marketcap.Cap
-}
-
-func (*rankingStore) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
-	return market.SyncState{}, nil
-}
-func (s *rankingStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
-	return s.instruments, nil
-}
-func (s *rankingStore) ListActiveInstrumentsLimited(_ context.Context, limit int) ([]market.Instrument, error) {
-	return s.instruments[:min(limit, len(s.instruments))], nil
-}
-func (s *rankingStore) ListActiveInstrumentsSortedByMarketCap(_ context.Context, limit int, direction string) ([]market.Instrument, error) {
-	items := append([]market.Instrument(nil), s.instruments...)
-	sort.Slice(items, func(i, j int) bool {
-		left := s.caps[s.mappings[items[i].BaseAsset].CoinID].USD
-		right := s.caps[s.mappings[items[j].BaseAsset].CoinID].USD
-		if direction == "asc" {
-			return left < right
-		}
-		return left > right
-	})
-	if limit > 0 {
-		items = items[:min(limit, len(items))]
-	}
-	return items, nil
-}
-func (*rankingStore) ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error) {
-	return nil, nil
-}
-func (*rankingStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
-	return nil, nil
-}
-func (*rankingStore) BootstrapCompleted(context.Context) (bool, error)           { return true, nil }
-func (*rankingStore) ReplaceSnapshot(context.Context, []marketcap.Mapping) error { return nil }
-func (s *rankingStore) GetMapping(_ context.Context, base string) (marketcap.Mapping, error) {
-	return s.mappings[base], nil
-}
-func (*rankingStore) SaveMapping(context.Context, marketcap.Mapping) error { return nil }
-func (s *rankingStore) GetCap(_ context.Context, id string) (marketcap.Cap, error) {
-	cap, ok := s.caps[id]
-	if !ok {
-		return marketcap.Cap{}, errors.New("missing cap")
-	}
-	return cap, nil
-}
-func (s *rankingStore) SaveCap(_ context.Context, cap marketcap.Cap) error {
-	s.caps[cap.CoinID] = cap
-	return nil
-}
-
-type rankingProvider struct {
-	caps  []marketcap.Cap
-	calls int
-}
-
-func (*rankingProvider) Tickers(context.Context, int) ([]marketcap.Ticker, error) { return nil, nil }
-func (p *rankingProvider) Markets(context.Context, []string) ([]marketcap.Cap, error) {
-	p.calls++
-	return p.caps, nil
-}
-
 type storeStub struct {
 	instruments         []market.Instrument
 	rankedInstruments   []market.Instrument
@@ -536,6 +440,20 @@ type storeStub struct {
 	activeListCalls     int
 	selectionLimit      int
 	selectionDirection  string
+}
+
+func (s *storeStub) SelectActiveInstruments(_ context.Context, selection analysis.Selection) ([]market.Instrument, error) {
+	s.reads++
+	s.selectionLimit = selection.Limit
+	s.selectionDirection = selection.SortDirection
+	items := s.instruments
+	if selection.SortFact == analysis.SelectionFactMarketCapUSD && s.rankedInstruments != nil {
+		items = s.rankedInstruments
+	}
+	if selection.Limit > 0 {
+		items = items[:min(selection.Limit, len(items))]
+	}
+	return items, nil
 }
 
 func (s *storeStub) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {

@@ -8,6 +8,12 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AppAssetClassification struct {
+	BaseAsset    string
+	IsStablecoin bool
+	PolicySource string
+}
+
 type AppCoingeckoAssetMapping struct {
 	BaseAsset    string
 	CoinID       pgtype.Text

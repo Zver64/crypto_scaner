@@ -1,7 +1,6 @@
 package httpapi_test
 
 import (
-	"context"
 	"encoding/json"
 	"net/http"
 	"strings"
@@ -10,21 +9,21 @@ import (
 
 	"crypto-scanner/internal/analysis/criteria/market_cap"
 	"crypto-scanner/internal/market"
-	"crypto-scanner/internal/marketcap"
 )
 
 const pipelineBody = `{"criteria":[{"key":"daily_volatility","name":"volatility","label":"Daily Volatility","parameters":{"unit":"days","period":30,"percentile":80,"minimum_range_percent":5}},{"key":"hourly_volatility","name":"volatility","label":"Hourly Volatility","parameters":{"unit":"hours","period":60,"percentile":80,"minimum_range_percent":2}},{"key":"market_cap","name":"market_cap","label":"Market Cap","parameters":{"min_market_cap_usd":500000000}}]}`
 
 func TestMarketAPIExecutesUnifiedPipeline(t *testing.T) {
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
+	cap := 500_000_000.0
 	store := httpStore{
-		instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT", BaseAsset: "BTC"}, {ID: 2, Symbol: "DROPUSDT", BaseAsset: "DROP"}},
+		instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT", BaseAsset: "BTC", MarketCapUSD: &cap}, {ID: 2, Symbol: "DROPUSDT", BaseAsset: "DROP", MarketCapUSD: &cap}},
 		candlesByInterval: map[int64]map[string][]market.Candle{
 			1: {"1d": httpCandles(start, 30, 24*time.Hour, 6), "1h": httpCandles(start, 60, time.Hour, 3)},
 			2: {"1d": httpCandles(start, 30, 24*time.Hour, 4)},
 		},
 	}
-	response := analysisRequestTo(t, newAnalysisHTTPHandler(store, market_cap.New(marketcap.New(apiCapStore{}, nil))), "/api/v1/analysis/market", pipelineBody)
+	response := analysisRequestTo(t, newAnalysisHTTPHandler(store, market_cap.New()), "/api/v1/analysis/market", pipelineBody)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -59,23 +58,10 @@ func TestMarketAPIValidatesEachVolatilityInstance(t *testing.T) {
 	for _, period := range []string{`"period":30`, `"period":60`} {
 		t.Run(period, func(t *testing.T) {
 			body := strings.Replace(pipelineBody, period, `"period":0`, 1)
-			response := analysisRequestTo(t, newAnalysisHTTPHandler(httpStore{}, market_cap.New(marketcap.New(apiCapStore{}, nil))), "/api/v1/analysis/market", body)
+			response := analysisRequestTo(t, newAnalysisHTTPHandler(httpStore{}, market_cap.New()), "/api/v1/analysis/market", body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 			}
 		})
 	}
 }
-
-type apiCapStore struct{}
-
-func (apiCapStore) BootstrapCompleted(context.Context) (bool, error)           { return true, nil }
-func (apiCapStore) ReplaceSnapshot(context.Context, []marketcap.Mapping) error { return nil }
-func (apiCapStore) GetMapping(_ context.Context, base string) (marketcap.Mapping, error) {
-	return marketcap.Mapping{BaseAsset: base, CoinID: "bitcoin", Status: "resolved"}, nil
-}
-func (apiCapStore) SaveMapping(context.Context, marketcap.Mapping) error { return nil }
-func (apiCapStore) GetCap(context.Context, string) (marketcap.Cap, error) {
-	return marketcap.Cap{CoinID: "bitcoin", USD: 500_000_000, Available: true, FetchedAt: time.Now()}, nil
-}
-func (apiCapStore) SaveCap(context.Context, marketcap.Cap) error { return nil }

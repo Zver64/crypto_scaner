@@ -11,7 +11,7 @@ func TestValidateLegacyMigrationVersion(t *testing.T) {
 			t.Fatalf("validateLegacyMigrationVersion(%d) error = %v", version, err)
 		}
 	}
-	for _, version := range []int64{0, -1, 5} {
+	for _, version := range []int64{0, -1, 6} {
 		err := validateLegacyMigrationVersion(version)
 		if err == nil || !strings.Contains(err.Error(), "legacy migration version") {
 			t.Errorf("validateLegacyMigrationVersion(%d) error = %v, want clear rejection", version, err)

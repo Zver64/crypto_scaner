@@ -7,6 +7,8 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deactivateAllInstruments = `-- name: DeactivateAllInstruments :exec
@@ -116,8 +118,8 @@ JOIN app.coingecko_market_caps AS market_cap
   ON market_cap.coin_id = mapping.coin_id
 WHERE instrument.is_active = TRUE
 ORDER BY
-  CASE WHEN $1::text = 'asc' THEN market_cap.market_cap_usd END ASC,
-  CASE WHEN $1::text = 'desc' THEN market_cap.market_cap_usd END DESC,
+  CASE WHEN $1::text = 'asc' THEN market_cap.market_cap_usd END ASC NULLS LAST,
+  CASE WHEN $1::text = 'desc' THEN market_cap.market_cap_usd END DESC NULLS LAST,
   instrument.symbol ASC
 LIMIT NULLIF($2::int, 0)
 `
@@ -143,6 +145,84 @@ func (q *Queries) ListActiveInstrumentsSortedByMarketCap(ctx context.Context, ar
 			&i.QuoteAsset,
 			&i.ExchangeStatus,
 			&i.IsActive,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const selectActiveInstruments = `-- name: SelectActiveInstruments :many
+SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset,
+       instrument.exchange_status, instrument.is_active,
+       market_cap.coin_id IS NOT NULL AS market_cap_available,
+       COALESCE(market_cap.market_cap_usd::text, ''::text) AS market_cap_usd
+FROM binance_spot.instruments AS instrument
+LEFT JOIN app.asset_classifications AS classification
+  ON classification.base_asset = instrument.base_asset
+LEFT JOIN app.coingecko_asset_mappings AS mapping
+  ON mapping.base_asset = instrument.base_asset
+ AND mapping.status = 'resolved'
+LEFT JOIN app.coingecko_market_caps AS market_cap
+  ON market_cap.coin_id = mapping.coin_id
+WHERE instrument.is_active = TRUE
+  AND ($1::text = '' OR instrument.symbol = $1::text)
+  AND (NOT $2::boolean OR COALESCE(classification.is_stablecoin, FALSE) = FALSE)
+  AND ($3::numeric IS NULL OR market_cap.market_cap_usd >= $3::numeric)
+ORDER BY
+  CASE WHEN $4::text = 'asc' THEN market_cap.market_cap_usd END ASC NULLS LAST,
+  CASE WHEN $4::text = 'desc' THEN market_cap.market_cap_usd END DESC NULLS LAST,
+  CASE WHEN $4::text <> '' THEN instrument.symbol END ASC
+LIMIT NULLIF($5::int, 0)
+`
+
+type SelectActiveInstrumentsParams struct {
+	Symbol              string
+	ExcludeStablecoins  bool
+	MinimumMarketCapUsd pgtype.Numeric
+	MarketCapSort       string
+	ResultLimit         int32
+}
+
+type SelectActiveInstrumentsRow struct {
+	ID                 int64
+	Symbol             string
+	BaseAsset          string
+	QuoteAsset         string
+	ExchangeStatus     string
+	IsActive           bool
+	MarketCapAvailable interface{}
+	MarketCapUsd       interface{}
+}
+
+func (q *Queries) SelectActiveInstruments(ctx context.Context, arg SelectActiveInstrumentsParams) ([]SelectActiveInstrumentsRow, error) {
+	rows, err := q.db.Query(ctx, selectActiveInstruments,
+		arg.Symbol,
+		arg.ExcludeStablecoins,
+		arg.MinimumMarketCapUsd,
+		arg.MarketCapSort,
+		arg.ResultLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SelectActiveInstrumentsRow
+	for rows.Next() {
+		var i SelectActiveInstrumentsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Symbol,
+			&i.BaseAsset,
+			&i.QuoteAsset,
+			&i.ExchangeStatus,
+			&i.IsActive,
+			&i.MarketCapAvailable,
+			&i.MarketCapUsd,
 		); err != nil {
 			return nil, err
 		}

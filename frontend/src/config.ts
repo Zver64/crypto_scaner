@@ -13,10 +13,12 @@ export const applicationConfig = {
 	},
 	volatility: {
 		days: {
+			defaultCandleRange: 3,
 			candleRangePresets: [3, 5, 7, 10],
 			periodPresets: [15, 30, 60],
 		},
 		hours: {
+			defaultCandleRange: 1,
 			candleRangePresets: [0.7, 1, 1.5, 2, 3],
 			periodPresets: [24, 60, 100],
 		},

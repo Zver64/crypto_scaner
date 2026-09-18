@@ -1,4 +1,5 @@
 import type { CriterionRequest } from "@/api/generated/models";
+import { applicationConfig } from "@/config";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import {
 	type MarketScanCriteria as SingleVolatilityCriteria,
@@ -22,10 +23,11 @@ export type MarketScanDraft = {
 export const defaultMarketScanCriteria: MarketScanCriteria = {
 	period: 30,
 	percentile: 80,
-	minimumRangePercent: 5,
+	minimumRangePercent: applicationConfig.volatility.days.defaultCandleRange,
 	hourlyPeriod: 60,
 	hourlyPercentile: 80,
-	hourlyMinimumRangePercent: 1,
+	hourlyMinimumRangePercent:
+		applicationConfig.volatility.hours.defaultCandleRange,
 	minimumMarketCapMillions: singleVolatilityDefaults.minimumMarketCapMillions,
 };
 

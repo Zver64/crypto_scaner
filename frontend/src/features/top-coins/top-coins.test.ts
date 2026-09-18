@@ -88,9 +88,9 @@ describe("Top Market Cap criteria", () => {
 });
 
 describe("topCoinsRequestOptions", () => {
-	it("asks the backend for the ten largest market caps", () => {
+	it("asks the backend for the configured number of largest market caps", () => {
 		expect(topCoinsRequestOptions).toEqual({
-			limit: 10,
+			limit: 50,
 			sort: { direction: "desc", field: "market_cap_usd" },
 		});
 	});

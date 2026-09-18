@@ -2,6 +2,7 @@ import type {
 	CriterionRequest,
 	MarketAnalysisItem,
 } from "@/api/generated/models";
+import { applicationConfig } from "@/config";
 import {
 	criterionSelections,
 	type MarketScanCriteria,
@@ -30,7 +31,7 @@ export function buildTopCoinsCriteria(
 }
 
 export const topCoinsRequestOptions = {
-	limit: 10,
+	limit: applicationConfig.topMarketCap.resultLimit,
 	sort: {
 		direction: "desc",
 		field: "market_cap_usd",

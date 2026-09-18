@@ -3,6 +3,7 @@ export const applicationConfig = {
 		presets: [100, 500, 1000, 5000, 10000],
 	},
 	topMarketCap: {
+		resultLimit: 50,
 		defaultSettings: {
 			hourlyPercentile: 80,
 			hourlyPeriod: 60,
@@ -16,7 +17,7 @@ export const applicationConfig = {
 			periodPresets: [15, 30, 60],
 		},
 		hours: {
-			candleRangePresets: [1, 1.5, 2, 3],
+			candleRangePresets: [0.7, 1, 1.5, 2, 3],
 			periodPresets: [24, 60, 100],
 		},
 		percentilePresets: [75, 80, 90, 95],

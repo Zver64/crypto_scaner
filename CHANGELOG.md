@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.15.0](https://github.com/Zver64/crypto_scaner/compare/v0.14.0...v0.15.0) (2026-09-18)
+
+
+### Features
+
+* configure top market cap result limit ([74c9adf](https://github.com/Zver64/crypto_scaner/commit/74c9adfd34eed9cfd2e304f63dc727a4e25d7fe8))
+* sync coin metadata and retain page searches ([944561a](https://github.com/Zver64/crypto_scaner/commit/944561a6be6847a40a247ce8d618a998d252ffd9))
+
+
+### Bug Fixes
+
+* size symbol column to content ([c83797c](https://github.com/Zver64/crypto_scaner/commit/c83797c4c9c80959a360d53c5a1a6977b1262e85))
+
 ## [0.14.0](https://github.com/Zver64/crypto_scaner/compare/v0.13.0...v0.14.0) (2026-09-17)
 
 

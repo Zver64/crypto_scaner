@@ -43,11 +43,7 @@ func (api *api) ListInstrumentCandles(ctx context.Context, request ListInstrumen
 	}
 	candles := make([]Candle, len(page.Candles))
 	for index, candle := range page.Candles {
-		candles[index] = Candle{
-			OpenTime: candle.OpenTime.UTC(), CloseTime: candle.CloseTime.UTC(),
-			Open: candle.Open, High: candle.High, Low: candle.Low, Close: candle.Close,
-			Volume: candle.Volume, QuoteAssetVolume: candle.QuoteAssetVolume, TradeCount: candle.TradeCount,
-		}
+		candles[index] = candleResponse(candle)
 	}
 	var nextBefore *time.Time
 	if page.HasMore && len(page.Candles) > 0 {

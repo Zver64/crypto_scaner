@@ -30,6 +30,9 @@ import type {
   AnalysisUnavailableResponse,
   BadRequestResponse,
   CandlePageResponse,
+  ChartPageResponse,
+  ChartRequest,
+  GetInstrumentChartParams,
   InstrumentAnalysisRequest,
   InstrumentAnalysisResponse,
   InsufficientDataResponse,
@@ -830,6 +833,194 @@ export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<Re
  ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListInstrumentCandlesInfiniteQueryOptions(symbol,params,options)
+
+  const query = useInfiniteQuery(queryOptions, queryClient) as  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getInstrumentChartResponse200 = {
+  data: ChartPageResponse
+  status: 200
+}
+
+export type getInstrumentChartResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getInstrumentChartResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type getInstrumentChartResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type getInstrumentChartResponse404 = {
+  data: SymbolNotFoundResponse
+  status: 404
+}
+
+export type getInstrumentChartResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type getInstrumentChartResponseSuccess = (getInstrumentChartResponse200) & {
+  headers: Headers;
+};
+export type getInstrumentChartResponseError = (getInstrumentChartResponse400 | getInstrumentChartResponse401 | getInstrumentChartResponse403 | getInstrumentChartResponse404 | getInstrumentChartResponse500) & {
+  headers: Headers;
+};
+
+export const getGetInstrumentChartUrl = (symbol: string,
+    params: GetInstrumentChartParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/instruments/${encodeURIComponent(String(symbol))}/chart?${stringifiedParams}` : `/api/v1/instruments/${encodeURIComponent(String(symbol))}/chart`
+}
+
+/**
+ * @summary Get a chronological candle page with aligned technical indicators
+ */
+export const getInstrumentChart = async (symbol: string,
+    chartRequest: ChartRequest,
+    params: GetInstrumentChartParams, options?: RequestInit): Promise<getInstrumentChartResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getGetInstrumentChartUrl(symbol,params),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(chartRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: getInstrumentChartResponseError['data'], status?: number} = new globalThis.Error();
+    const data : getInstrumentChartResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: getInstrumentChartResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getInstrumentChartResponseSuccess
+}
+
+
+
+
+
+export const getGetInstrumentChartInfiniteQueryKey = (symbol: string,
+    chartRequest?: ChartRequest,
+    params?: GetInstrumentChartParams,) => {
+    return [
+    'infinite', 'POST', `/api/v1/instruments/${symbol}/chart`, ...(params ? [params] : []), chartRequest
+    ] as const;
+    }
+
+
+export const getGetInstrumentChartInfiniteQueryOptions = <TData = InfiniteData<Awaited<ReturnType<typeof getInstrumentChart>>, GetInstrumentChartParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(symbol: string,
+    chartRequest: ChartRequest,
+    params: GetInstrumentChartParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof getInstrumentChart>>, TError, TData, QueryKey, GetInstrumentChartParams['before']>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInstrumentChartInfiniteQueryKey(symbol,chartRequest,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInstrumentChart>>, QueryKey, GetInstrumentChartParams['before']> = ({ signal, pageParam }) => getInstrumentChart(symbol,chartRequest,{...params, 'before': pageParam ?? params?.['before']}, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: symbol !== null && symbol !== undefined, ...queryOptions} as UseInfiniteQueryOptions<Awaited<ReturnType<typeof getInstrumentChart>>, TError, TData, QueryKey, GetInstrumentChartParams['before']> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetInstrumentChartInfiniteQueryResult = NonNullable<Awaited<ReturnType<typeof getInstrumentChart>>>
+export type GetInstrumentChartInfiniteQueryError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }
+
+
+export function useGetInstrumentChartInfinite<TData = InfiniteData<Awaited<ReturnType<typeof getInstrumentChart>>, GetInstrumentChartParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(
+ symbol: string,
+    chartRequest: ChartRequest,
+    params: GetInstrumentChartParams, options: { query:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof getInstrumentChart>>, TError, TData, QueryKey, GetInstrumentChartParams['before']>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstrumentChart>>,
+          TError,
+          Awaited<ReturnType<typeof getInstrumentChart>>, QueryKey
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstrumentChartInfinite<TData = InfiniteData<Awaited<ReturnType<typeof getInstrumentChart>>, GetInstrumentChartParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(
+ symbol: string,
+    chartRequest: ChartRequest,
+    params: GetInstrumentChartParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof getInstrumentChart>>, TError, TData, QueryKey, GetInstrumentChartParams['before']>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstrumentChart>>,
+          TError,
+          Awaited<ReturnType<typeof getInstrumentChart>>, QueryKey
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstrumentChartInfinite<TData = InfiniteData<Awaited<ReturnType<typeof getInstrumentChart>>, GetInstrumentChartParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(
+ symbol: string,
+    chartRequest: ChartRequest,
+    params: GetInstrumentChartParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof getInstrumentChart>>, TError, TData, QueryKey, GetInstrumentChartParams['before']>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get a chronological candle page with aligned technical indicators
+ */
+
+export function useGetInstrumentChartInfinite<TData = InfiniteData<Awaited<ReturnType<typeof getInstrumentChart>>, GetInstrumentChartParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(
+ symbol: string,
+    chartRequest: ChartRequest,
+    params: GetInstrumentChartParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof getInstrumentChart>>, TError, TData, QueryKey, GetInstrumentChartParams['before']>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetInstrumentChartInfiniteQueryOptions(symbol,chartRequest,params,options)
 
   const query = useInfiniteQuery(queryOptions, queryClient) as  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

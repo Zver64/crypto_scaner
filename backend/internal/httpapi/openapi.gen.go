@@ -241,6 +241,28 @@ type CandlePageResponse struct {
 	Symbol     string         `json:"symbol"`
 }
 
+// ChartIndicatorResult defines model for ChartIndicatorResult.
+type ChartIndicatorResult struct {
+	Parameters map[string]interface{} `json:"parameters"`
+	Series     []IndicatorSeries      `json:"series"`
+	Type       string                 `json:"type"`
+}
+
+// ChartPageResponse defines model for ChartPageResponse.
+type ChartPageResponse struct {
+	Candles    []Candle               `json:"candles"`
+	HasMore    bool                   `json:"has_more"`
+	Indicators []ChartIndicatorResult `json:"indicators"`
+	Interval   CandleInterval         `json:"interval"`
+	NextBefore *time.Time             `json:"next_before,omitempty"`
+	Symbol     string                 `json:"symbol"`
+}
+
+// ChartRequest defines model for ChartRequest.
+type ChartRequest struct {
+	Indicators []IndicatorConfig `json:"indicators"`
+}
+
 // CriterionRequest defines model for CriterionRequest.
 type CriterionRequest struct {
 	Key        string                 `json:"key"`
@@ -265,6 +287,24 @@ type Evaluation struct {
 	Metrics     map[string]float64 `json:"metrics"`
 	Name        string             `json:"name"`
 	To          time.Time          `json:"to"`
+}
+
+// IndicatorConfig defines model for IndicatorConfig.
+type IndicatorConfig struct {
+	Parameters map[string]interface{} `json:"parameters"`
+	Type       string                 `json:"type"`
+}
+
+// IndicatorPoint defines model for IndicatorPoint.
+type IndicatorPoint struct {
+	Time  time.Time `json:"time"`
+	Value float64   `json:"value"`
+}
+
+// IndicatorSeries defines model for IndicatorSeries.
+type IndicatorSeries struct {
+	Name   string           `json:"name"`
+	Points []IndicatorPoint `json:"points"`
 }
 
 // InstrumentAnalysisRequest defines model for InstrumentAnalysisRequest.
@@ -423,6 +463,18 @@ type ListInstrumentCandlesParams struct {
 	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
 }
 
+// GetInstrumentChartParams defines parameters for GetInstrumentChart.
+type GetInstrumentChartParams struct {
+	Interval CandleInterval `form:"interval" json:"interval"`
+
+	// Before Return visible candles whose open time is before this cursor.
+	Before *time.Time `form:"before,omitempty" json:"before,omitempty"`
+	Limit  *int       `form:"limit,omitempty" json:"limit,omitempty"`
+
+	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
+	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
+}
+
 // GetLivenessParams defines parameters for GetLiveness.
 type GetLivenessParams struct {
 	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
@@ -441,6 +493,9 @@ type AnalyzeInstrumentJSONRequestBody = InstrumentAnalysisRequest
 // AnalyzeMarketJSONRequestBody defines body for AnalyzeMarket for application/json ContentType.
 type AnalyzeMarketJSONRequestBody = MarketAnalysisRequest
 
+// GetInstrumentChartJSONRequestBody defines body for GetInstrumentChart for application/json ContentType.
+type GetInstrumentChartJSONRequestBody = ChartRequest
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// AnalyzeInstrument Analyze one active instrument
@@ -452,6 +507,9 @@ type ServerInterface interface {
 	// ListInstrumentCandles List a chronological page of closed candles
 	// (GET /api/v1/instruments/{symbol}/candles)
 	ListInstrumentCandles(w http.ResponseWriter, r *http.Request, symbol Symbol, params ListInstrumentCandlesParams)
+	// GetInstrumentChart Get a chronological candle page with aligned technical indicators
+	// (POST /api/v1/instruments/{symbol}/chart)
+	GetInstrumentChart(w http.ResponseWriter, r *http.Request, symbol Symbol, params GetInstrumentChartParams)
 	// GetLiveness Check whether the process is alive
 	// (GET /health/live)
 	GetLiveness(w http.ResponseWriter, r *http.Request, params GetLivenessParams)
@@ -640,6 +698,95 @@ func (siw *ServerInterfaceWrapper) ListInstrumentCandles(w http.ResponseWriter, 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ListInstrumentCandles(w, r, symbol, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetInstrumentChart operation middleware
+func (siw *ServerInterfaceWrapper) GetInstrumentChart(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "symbol" -------------
+	var symbol Symbol
+
+	err = runtime.BindStyledParameterWithOptions("simple", "symbol", r.PathValue("symbol"), &symbol, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "symbol", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params GetInstrumentChartParams
+
+	// ------------- Required query parameter "interval" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "interval", r.URL.Query(), &params.Interval, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "interval"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "interval", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "X-Request-ID" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
+		var XRequestID RequestID
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
+			return
+		}
+
+		params.XRequestID = &XRequestID
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetInstrumentChart(w, r, symbol, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -856,6 +1003,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/analysis/instruments/{symbol}", wrapper.AnalyzeInstrument)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/analysis/market", wrapper.AnalyzeMarket)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instruments/{symbol}/candles", wrapper.ListInstrumentCandles)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instruments/{symbol}/chart", wrapper.GetInstrumentChart)
 
 	return m
 }
@@ -1319,6 +1467,113 @@ func (response ListInstrumentCandles500JSONResponse) VisitListInstrumentCandlesR
 	return err
 }
 
+type GetInstrumentChartRequestObject struct {
+	Symbol Symbol `json:"symbol"`
+	Params GetInstrumentChartParams
+	Body   *GetInstrumentChartJSONRequestBody
+}
+
+type GetInstrumentChartResponseObject interface {
+	VisitGetInstrumentChartResponse(w http.ResponseWriter) error
+}
+
+type GetInstrumentChart200ResponseHeaders struct {
+	XRequestID string
+}
+
+type GetInstrumentChart200JSONResponse struct {
+	Body    ChartPageResponse
+	Headers GetInstrumentChart200ResponseHeaders
+}
+
+func (response GetInstrumentChart200JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstrumentChart400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response GetInstrumentChart400JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstrumentChart401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetInstrumentChart401JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstrumentChart403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response GetInstrumentChart403JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstrumentChart404JSONResponse struct{ SymbolNotFoundJSONResponse }
+
+func (response GetInstrumentChart404JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetInstrumentChart500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetInstrumentChart500JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetLivenessRequestObject struct {
 	Params GetLivenessParams
 }
@@ -1412,6 +1667,9 @@ type StrictServerInterface interface {
 	// ListInstrumentCandles List a chronological page of closed candles
 	// (GET /api/v1/instruments/{symbol}/candles)
 	ListInstrumentCandles(ctx context.Context, request ListInstrumentCandlesRequestObject) (ListInstrumentCandlesResponseObject, error)
+	// GetInstrumentChart Get a chronological candle page with aligned technical indicators
+	// (POST /api/v1/instruments/{symbol}/chart)
+	GetInstrumentChart(ctx context.Context, request GetInstrumentChartRequestObject) (GetInstrumentChartResponseObject, error)
 	// GetLiveness Check whether the process is alive
 	// (GET /health/live)
 	GetLiveness(ctx context.Context, request GetLivenessRequestObject) (GetLivenessResponseObject, error)
@@ -1553,6 +1811,40 @@ func (sh *strictHandler) ListInstrumentCandles(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// GetInstrumentChart operation middleware
+func (sh *strictHandler) GetInstrumentChart(w http.ResponseWriter, r *http.Request, symbol Symbol, params GetInstrumentChartParams) {
+	var request GetInstrumentChartRequestObject
+
+	request.Symbol = symbol
+	request.Params = params
+
+	var body GetInstrumentChartJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetInstrumentChart(ctx, request.(GetInstrumentChartRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetInstrumentChart")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetInstrumentChartResponseObject); ok {
+		if err := validResponse.VisitGetInstrumentChartResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetLiveness operation middleware
 func (sh *strictHandler) GetLiveness(w http.ResponseWriter, r *http.Request, params GetLivenessParams) {
 	var request GetLivenessRequestObject
@@ -1610,47 +1902,51 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

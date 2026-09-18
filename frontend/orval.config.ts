@@ -37,6 +37,14 @@ export default defineConfig({
 							useQuery: false,
 						},
 					},
+					getInstrumentChart: {
+						query: {
+							useInfinite: true,
+							useInfiniteQueryParam: "before",
+							useMutation: false,
+							useQuery: false,
+						},
+					},
 				},
 			},
 		},

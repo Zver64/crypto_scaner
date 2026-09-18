@@ -13,17 +13,20 @@ import {
 	type DeepPartial,
 	type IChartApi,
 	type ISeriesApi,
+	LineSeries,
+	LineStyle,
 	type LogicalRange,
 	type Time,
 	type TimeChartOptions,
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CandleInterval } from "@/api/generated/models";
+import type { CandleInterval, IndicatorPoint } from "@/api/generated/models";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	type ChartCandle,
 	chartPriceResolution,
 	createCandlestickData,
+	createRsiData,
 	formatCandleRange,
 	formatOhlc,
 	formatPrice,
@@ -38,6 +41,7 @@ interface InstrumentPriceHistoryChartProps {
 	isLoading: boolean;
 	isLoadingMore: boolean;
 	onLoadOlder(): void;
+	rsi: readonly IndicatorPoint[];
 	symbol: string;
 }
 
@@ -59,11 +63,13 @@ export function InstrumentPriceHistoryChart({
 	isLoading,
 	isLoadingMore,
 	onLoadOlder,
+	rsi,
 	symbol,
 }: InstrumentPriceHistoryChartProps) {
 	const containerRef = useRef<HTMLDivElement>(null);
 	const chartRef = useRef<IChartApi | null>(null);
 	const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+	const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 	const previousLengthRef = useRef(0);
 	const loadStateRef = useRef({ hasMore, isLoadingMore, onLoadOlder });
 	const theme = useMantineTheme();
@@ -71,6 +77,10 @@ export function InstrumentPriceHistoryChart({
 	const data = useMemo(
 		() => createCandlestickData(candles, interval),
 		[candles, interval],
+	);
+	const rsiData = useMemo(
+		() => createRsiData(candles, rsi, interval),
+		[candles, interval, rsi],
 	);
 	const last = candles.at(-1) ?? null;
 	const [active, setActive] = useState<ChartCandle | null>(null);
@@ -91,7 +101,7 @@ export function InstrumentPriceHistoryChart({
 		};
 		const options: DeepPartial<TimeChartOptions> = {
 			autoSize: true,
-			height: 300,
+			height: 440,
 			layout: {
 				background: { color: colors.background, type: ColorType.Solid },
 				textColor: colors.text,
@@ -129,8 +139,43 @@ export function InstrumentPriceHistoryChart({
 			wickDownColor: colors.down,
 			wickUpColor: colors.up,
 		});
+		const rsiSeries = chart.addSeries(
+			LineSeries,
+			{
+				autoscaleInfoProvider: () => ({
+					priceRange: { maxValue: 100, minValue: 0 },
+				}),
+				color: theme.colors.blue[5],
+				lastValueVisible: true,
+				lineWidth: 2,
+				priceFormat: {
+					formatter: (value: number) => value.toFixed(1),
+					minMove: 0.1,
+					type: "custom",
+				},
+				priceLineVisible: false,
+			},
+			1,
+		);
+		for (const price of [30, 70]) {
+			rsiSeries.createPriceLine({
+				axisLabelVisible: true,
+				color: colors.grid,
+				lineStyle: LineStyle.Dashed,
+				lineWidth: 1,
+				price,
+				title: `RSI ${price}`,
+			});
+		}
+		chart.priceScale("right", 1).applyOptions({
+			autoScale: true,
+			scaleMargins: { bottom: 0, top: 0 },
+		});
+		chart.panes()[0]?.setStretchFactor(3);
+		chart.panes()[1]?.setStretchFactor(1);
 		chartRef.current = chart;
 		seriesRef.current = series;
+		rsiSeriesRef.current = rsiSeries;
 		previousLengthRef.current = 0;
 		const handleCrosshairMove: Parameters<
 			typeof chart.subscribeCrosshairMove
@@ -156,6 +201,7 @@ export function InstrumentPriceHistoryChart({
 			chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleRange);
 			chartRef.current = null;
 			seriesRef.current = null;
+			rsiSeriesRef.current = null;
 			chart.remove();
 		};
 	}, [colorScheme, interval, theme]);
@@ -163,8 +209,10 @@ export function InstrumentPriceHistoryChart({
 	useEffect(() => {
 		const chart = chartRef.current;
 		const series = seriesRef.current;
+		const rsiSeries = rsiSeriesRef.current;
 		const container = containerRef.current;
-		if (!chart || !series || !container || data.length === 0) return;
+		if (!chart || !series || !rsiSeries || !container || data.length === 0)
+			return;
 		const previousLength = previousLengthRef.current;
 		const previousRange = chart.timeScale().getVisibleLogicalRange();
 		series.applyOptions({
@@ -175,6 +223,7 @@ export function InstrumentPriceHistoryChart({
 			},
 		});
 		series.setData(data);
+		rsiSeries.setData(rsiData);
 		if (previousLength === 0) {
 			const visibleBars = Math.max(
 				24,
@@ -192,7 +241,7 @@ export function InstrumentPriceHistoryChart({
 			});
 		}
 		previousLengthRef.current = data.length;
-	}, [data]);
+	}, [data, rsiData]);
 
 	const readout = active ?? last;
 	const readoutTime =
@@ -215,7 +264,7 @@ export function InstrumentPriceHistoryChart({
 				aria-label={`${symbol}: ${interval} closed candlestick history. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
 				ref={containerRef}
 				role="img"
-				style={{ height: 300, width: "100%" }}
+				style={{ height: 440, width: "100%" }}
 			/>
 			{isLoading && last === null ? (
 				<Center inset={0} pos="absolute">

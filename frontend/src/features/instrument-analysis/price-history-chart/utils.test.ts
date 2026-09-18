@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
 	chartPriceResolution,
 	createCandlestickData,
+	createRsiData,
 	formatCandleRange,
 	formatOhlc,
 	formatPrice,
@@ -59,6 +60,25 @@ describe("candlestick chart presentation", () => {
 				{ close: 12, high: 13, low: 11, open: 11.5, time: 1_787_792_400 },
 			],
 		);
+	});
+
+	it("aligns RSI to candle time and preserves missing candle and warm-up slots", () => {
+		const candles = [candle(0, 10), candle(2, 12), candle(3, 13)];
+		expect(
+			createRsiData(
+				candles,
+				[
+					{ time: candles[1].open_time, value: 45 },
+					{ time: candles[2].open_time, value: 55 },
+				],
+				"1h",
+			),
+		).toEqual([
+			{ time: 1_787_785_200 },
+			{ time: 1_787_788_800 },
+			{ time: 1_787_792_400, value: 45 },
+			{ time: 1_787_796_000, value: 55 },
+		]);
 	});
 
 	it("does not create duplicate slots for equivalent ISO timestamp formats", () => {

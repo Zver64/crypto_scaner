@@ -38,12 +38,14 @@ const maxAnalysisRequestBody = 1 << 20
 
 type Options struct {
 	APIDocsEnabled bool
+	Chart          ChartService
 }
 
 type api struct {
 	readiness Readiness
 	analysis  Analysis
 	history   CandleHistory
+	chart     ChartService
 }
 
 var _ StrictServerInterface = (*api)(nil)
@@ -56,7 +58,7 @@ func New(logger *slog.Logger, readiness Readiness, service Analysis, history Can
 // NewWithOptions returns the service HTTP handler with optional development-only API documentation.
 func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, history CandleHistory, authenticator Authenticator, options Options) http.Handler {
 	operations := http.NewServeMux()
-	strict := NewStrictHandlerWithOptions(&api{readiness: readiness, analysis: service, history: history}, nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(&api{readiness: readiness, analysis: service, history: history, chart: options.Chart}, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  openAPIRequestError,
 		ResponseErrorHandlerFunc: openAPIResponseError,
 	})
@@ -73,6 +75,7 @@ func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, 
 	router.Handle("POST /api/v1/analysis/instruments/{symbol}", protectedOperations)
 	router.Handle("POST /api/v1/analysis/market", protectedOperations)
 	router.Handle("GET /api/v1/instruments/{symbol}/candles", protectedOperations)
+	router.Handle("POST /api/v1/instruments/{symbol}/chart", protectedOperations)
 	if options.APIDocsEnabled {
 		registerDocs(router)
 	}
@@ -96,10 +99,14 @@ func openAPIValidationError(_ context.Context, _ error, response http.ResponseWr
 	switch {
 	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
 		message = "Invalid analysis argument"
-	case strings.HasPrefix(request.URL.Path, "/api/v1/instruments/") && strings.HasSuffix(request.URL.Path, "/candles"):
+	case isChartDataPath(request.URL.Path):
 		message = candleValidationMessage(request, options)
 	}
 	writeAPIError(response, options.StatusCode, "invalid_argument", message, nil)
+}
+
+func isChartDataPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/instruments/") && (strings.HasSuffix(path, "/candles") || strings.HasSuffix(path, "/chart"))
 }
 
 func candleValidationMessage(request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) string {
@@ -153,7 +160,7 @@ func openAPIRequestError(response http.ResponseWriter, request *http.Request, _ 
 	switch {
 	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
 		message = "Invalid analysis argument"
-	case strings.HasPrefix(request.URL.Path, "/api/v1/instruments/") && strings.HasSuffix(request.URL.Path, "/candles"):
+	case isChartDataPath(request.URL.Path):
 		message = candleValidationMessage(request, nethttpmiddleware.ErrorHandlerOpts{})
 	}
 	writeAPIError(response, http.StatusBadRequest, "invalid_argument", message, nil)

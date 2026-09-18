@@ -15,8 +15,11 @@ import (
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/market_cap"
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	authtelegram "crypto-scanner/internal/auth/telegram"
+	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/httpapi"
+	"crypto-scanner/internal/indicator"
+	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 	marketsync "crypto-scanner/internal/market/sync"
 	"crypto-scanner/internal/marketcap"
@@ -90,6 +93,14 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	if err != nil {
 		return fmt.Errorf("initialize analysis service: %w", err)
 	}
+	indicatorRegistry, err := indicator.NewRegistry(indicatortalib.NewRSI())
+	if err != nil {
+		return fmt.Errorf("initialize indicator registry: %w", err)
+	}
+	chartService, err := chart.NewService(store, indicatorRegistry)
+	if err != nil {
+		return fmt.Errorf("initialize chart service: %w", err)
+	}
 	authenticator := authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge)
 	botService, err := telegrambot.New(cfg.TelegramBotToken, cfg.AdminTelegramID, store, telegrambot.Options{Logger: logger})
 	if err != nil {
@@ -105,7 +116,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled}), scheduler, botService, coinMetadataSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled, Chart: chartService}), scheduler, botService, coinMetadataSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

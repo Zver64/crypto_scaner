@@ -1,9 +1,10 @@
 import type {
 	CandlestickData,
+	LineData,
 	UTCTimestamp,
 	WhitespaceData,
 } from "lightweight-charts";
-import type { CandleInterval } from "@/api/generated/models";
+import type { CandleInterval, IndicatorPoint } from "@/api/generated/models";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
@@ -19,6 +20,9 @@ const dateTimeFormatter = new Intl.DateTimeFormat("en", {
 
 export type ChartCandle = CandlestickData<UTCTimestamp>;
 export type ChartCandleSlot = ChartCandle | WhitespaceData<UTCTimestamp>;
+export type ChartIndicatorSlot =
+	| LineData<UTCTimestamp>
+	| WhitespaceData<UTCTimestamp>;
 
 export function toUtcTimestamp(value: string): UTCTimestamp {
 	return (Date.parse(value) / 1_000) as UTCTimestamp;
@@ -55,6 +59,20 @@ export function createCandlestickData(
 		});
 	}
 	return data;
+}
+
+export function createRsiData(
+	candles: readonly PriceCandle[],
+	points: readonly IndicatorPoint[],
+	interval: CandleInterval,
+): ChartIndicatorSlot[] {
+	const values = new Map(
+		points.map((point) => [toUtcTimestamp(point.time), point.value]),
+	);
+	return createCandlestickData(candles, interval).map(({ time }) => {
+		const value = values.get(time);
+		return value === undefined ? { time } : { time, value };
+	});
 }
 
 export function nextCandleOpen(

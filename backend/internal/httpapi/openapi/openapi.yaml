@@ -184,6 +184,62 @@ paths:
           $ref: "#/components/responses/SymbolNotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/v1/instruments/{symbol}/chart:
+    post:
+      operationId: getInstrumentChart
+      summary: Get a chronological candle page with aligned technical indicators
+      tags: [Market Data]
+      security:
+        - telegramInitData: []
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Symbol"
+        - name: interval
+          in: query
+          required: true
+          schema:
+            $ref: "#/components/schemas/CandleInterval"
+        - name: before
+          in: query
+          required: false
+          description: Return visible candles whose open time is before this cursor.
+          schema:
+            type: string
+            format: date-time
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 200
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ChartRequest"
+      responses:
+        "200":
+          description: Candle page and aligned indicator series.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChartPageResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/SymbolNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   securitySchemes:
     telegramInitData:
@@ -551,6 +607,86 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Candle"
+        has_more:
+          type: boolean
+        next_before:
+          type: [string, "null"]
+          format: date-time
+    ChartRequest:
+      type: object
+      additionalProperties: false
+      required: [indicators]
+      properties:
+        indicators:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/IndicatorConfig"
+    IndicatorConfig:
+      type: object
+      additionalProperties: false
+      required: [type, parameters]
+      properties:
+        type:
+          type: string
+          minLength: 1
+        parameters:
+          type: object
+          additionalProperties: true
+    IndicatorPoint:
+      type: object
+      additionalProperties: false
+      required: [time, value]
+      properties:
+        time:
+          type: string
+          format: date-time
+        value:
+          type: number
+          format: double
+    IndicatorSeries:
+      type: object
+      additionalProperties: false
+      required: [name, points]
+      properties:
+        name:
+          type: string
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndicatorPoint"
+    ChartIndicatorResult:
+      type: object
+      additionalProperties: false
+      required: [type, parameters, series]
+      properties:
+        type:
+          type: string
+        parameters:
+          type: object
+          additionalProperties: true
+        series:
+          type: array
+          items:
+            $ref: "#/components/schemas/IndicatorSeries"
+    ChartPageResponse:
+      type: object
+      additionalProperties: false
+      required: [symbol, interval, candles, indicators, has_more]
+      properties:
+        symbol:
+          type: string
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+        candles:
+          type: array
+          items:
+            $ref: "#/components/schemas/Candle"
+        indicators:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChartIndicatorResult"
         has_more:
           type: boolean
         next_before:

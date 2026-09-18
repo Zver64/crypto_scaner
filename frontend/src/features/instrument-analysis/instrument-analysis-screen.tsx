@@ -16,11 +16,13 @@ import { type InfiniteData, keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
 import {
 	useAnalyzeInstrument,
+	useGetInstrumentChartInfinite,
 	useListInstrumentCandlesInfinite,
 } from "@/api/generated/api";
 import type {
 	CandleInterval,
 	CandlePageResponse,
+	ChartPageResponse,
 	CriterionRequest,
 	InstrumentAnalysisResponse,
 } from "@/api/generated/models";
@@ -43,6 +45,12 @@ import {
 	nextCandlePageParam,
 	validateCandlePage,
 } from "@/features/instrument-analysis/candle-page";
+import {
+	nextChartPageParam,
+	rsiChartRequest,
+	rsiPoints,
+	validateChartPage,
+} from "@/features/instrument-analysis/chart-page";
 import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
 import { InstrumentPriceHistoryChart } from "@/features/instrument-analysis/price-history-chart";
 import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
@@ -80,23 +88,24 @@ export function InstrumentAnalysisScreen({
 	const textSize = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
 	const [chartInterval, setChartInterval] = useState<CandleInterval>("1h");
-	const chartQuery = useListInstrumentCandlesInfinite<
-		InfiniteData<CandlePageResponse, string | undefined>
+	const chartQuery = useGetInstrumentChartInfinite<
+		InfiniteData<ChartPageResponse, string | undefined>
 	>(
 		symbol,
+		rsiChartRequest,
 		{ interval: chartInterval, limit: 200 },
 		{
 			fetch: telegramRequestOptions(),
 			query: {
 				enabled: permission.allowed,
-				getNextPageParam: nextCandlePageParam,
+				getNextPageParam: nextChartPageParam,
 				initialPageParam: undefined,
 				retry: false,
 				staleTime: Number.POSITIVE_INFINITY,
 				select: (history) => ({
 					...history,
 					pages: history.pages.map((page) =>
-						validateCandlePage(page, symbol, chartInterval),
+						validateChartPage(page, symbol, chartInterval),
 					),
 				}),
 			},
@@ -128,6 +137,13 @@ export function InstrumentAnalysisScreen({
 		() =>
 			chartQuery.data
 				? [...chartQuery.data.pages].reverse().flatMap((page) => page.candles)
+				: [],
+		[chartQuery.data],
+	);
+	const chartRsi = useMemo(
+		() =>
+			chartQuery.data
+				? [...chartQuery.data.pages].reverse().flatMap(rsiPoints)
 				: [],
 		[chartQuery.data],
 	);
@@ -306,6 +322,7 @@ export function InstrumentAnalysisScreen({
 											isLoadingMore={chartQuery.isFetchingNextPage}
 											key={chartInterval}
 											onLoadOlder={() => void chartQuery.fetchNextPage()}
+											rsi={chartRsi}
 											symbol={result.symbol}
 										/>
 									</Stack>

@@ -33,8 +33,21 @@ export function validateCandlePage(
 	) {
 		throw unexpectedApiError();
 	}
-	for (let index = 0; index < page.candles.length; index++) {
-		const candle = page.candles[index];
+	validateCandles(page.candles);
+	if (
+		page.next_before &&
+		(!Number.isFinite(Date.parse(page.next_before)) ||
+			page.candles.length === 0 ||
+			page.next_before !== page.candles[0].open_time)
+	) {
+		throw unexpectedApiError();
+	}
+	return page;
+}
+
+export function validateCandles(candles: readonly Candle[]): void {
+	for (let index = 0; index < candles.length; index++) {
+		const candle = candles[index];
 		const openTime = Date.parse(candle.open_time);
 		const closeTime = Date.parse(candle.close_time);
 		if (
@@ -53,18 +66,9 @@ export function validateCandlePage(
 			candle.low > Math.min(candle.open, candle.close) ||
 			!Number.isInteger(candle.trade_count) ||
 			candle.trade_count < 0 ||
-			(index > 0 && Date.parse(page.candles[index - 1].open_time) >= openTime)
+			(index > 0 && Date.parse(candles[index - 1].open_time) >= openTime)
 		) {
 			throw unexpectedApiError();
 		}
 	}
-	if (
-		page.next_before &&
-		(!Number.isFinite(Date.parse(page.next_before)) ||
-			page.candles.length === 0 ||
-			page.next_before !== page.candles[0].open_time)
-	) {
-		throw unexpectedApiError();
-	}
-	return page;
 }

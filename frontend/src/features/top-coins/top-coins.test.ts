@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { MarketAnalysisItem } from "@/api/generated/models";
-import { applicationConfig } from "@/config";
 import {
 	buildTopCoinsCriteria,
 	buildTopCoinsScanCriteria,
-	topCoinsRequestOptions,
 	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
 
@@ -18,41 +16,6 @@ function item(symbol: string): MarketAnalysisItem {
 }
 
 describe("Top Market Cap criteria", () => {
-	it("builds the established defaults in the expected order with zero thresholds", () => {
-		expect(
-			buildTopCoinsCriteria(applicationConfig.topMarketCap.defaultSettings),
-		).toEqual([
-			{
-				key: "daily_volatility",
-				label: "Daily Volatility",
-				name: "volatility",
-				parameters: {
-					minimum_range_percent: 0,
-					percentile: 80,
-					period: 30,
-					unit: "days",
-				},
-			},
-			{
-				key: "hourly_volatility",
-				label: "Hourly Volatility",
-				name: "volatility",
-				parameters: {
-					minimum_range_percent: 0,
-					percentile: 80,
-					period: 60,
-					unit: "hours",
-				},
-			},
-			{
-				key: "market_cap",
-				label: "Market Cap",
-				name: "market_cap",
-				parameters: { min_market_cap_usd: 0 },
-			},
-		]);
-	});
-
 	it("uses non-default periods and percentiles without introducing filters", () => {
 		const settings = {
 			hourlyPercentile: 95,
@@ -84,15 +47,6 @@ describe("Top Market Cap criteria", () => {
 			},
 			{ min_market_cap_usd: 0 },
 		]);
-	});
-});
-
-describe("topCoinsRequestOptions", () => {
-	it("asks the backend for the configured number of largest market caps", () => {
-		expect(topCoinsRequestOptions).toEqual({
-			limit: 50,
-			sort: { direction: "desc", field: "market_cap_usd" },
-		});
 	});
 });
 

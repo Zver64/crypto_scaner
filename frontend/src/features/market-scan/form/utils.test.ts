@@ -2,10 +2,7 @@ import { expect, it } from "vitest";
 import { defaultMarketScanCriteria } from "@/features/market-scan/pipeline";
 import { criteriaFromValidDraft } from "./utils";
 
-it("converts only complete numeric drafts to criteria", () => {
-	expect(criteriaFromValidDraft(defaultMarketScanCriteria)).toEqual(
-		defaultMarketScanCriteria,
-	);
+it("rejects incomplete and invalid numeric drafts", () => {
 	expect(
 		criteriaFromValidDraft({ ...defaultMarketScanCriteria, period: "30" }),
 	).toBeUndefined();

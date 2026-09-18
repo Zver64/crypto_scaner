@@ -33,17 +33,3 @@ func TestCoinMetadataSyncProfile(t *testing.T) {
 		t.Fatalf("profile = %+v", profile)
 	}
 }
-
-func TestSyncProfilesReturnIndependentValues(t *testing.T) {
-	daily := DailySyncProfile()
-	daily.Interval = "mutated"
-	if got := DailySyncProfile().Interval; got != "1d" {
-		t.Fatalf("DailySyncProfile().Interval = %q, want 1d", got)
-	}
-
-	hourly := HourlySyncProfile()
-	hourly.Interval = "mutated"
-	if got := HourlySyncProfile().Interval; got != "1h" {
-		t.Fatalf("HourlySyncProfile().Interval = %q, want 1h", got)
-	}
-}

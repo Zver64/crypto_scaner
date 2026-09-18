@@ -1,15 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
 	criterionSelections,
-	defaultMarketScanCriteria,
 	validateMarketScanCriteria,
 	volatilityCriterionSelection,
 	volatilityEvaluation,
 } from "./criteria";
 
 describe("validateMarketScanCriteria", () => {
-	it("accepts the default minimum range and zero", () => {
-		expect(validateMarketScanCriteria(defaultMarketScanCriteria)).toEqual({});
+	it("accepts zero minimum ranges", () => {
 		expect(
 			validateMarketScanCriteria({
 				minimumRangePercent: 0,

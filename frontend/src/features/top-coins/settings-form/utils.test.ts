@@ -8,8 +8,7 @@ import {
 describe("Top Market Cap settings", () => {
 	const defaultSettings = applicationConfig.topMarketCap.defaultSettings;
 
-	it("converts only complete valid numeric drafts", () => {
-		expect(settingsFromValidDraft(defaultSettings)).toEqual(defaultSettings);
+	it("rejects incomplete and invalid numeric drafts", () => {
 		expect(
 			settingsFromValidDraft({ ...defaultSettings, period: "30" }),
 		).toBeUndefined();

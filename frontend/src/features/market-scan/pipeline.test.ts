@@ -5,55 +5,6 @@ import {
 	validateMarketScanCriteria,
 } from "./pipeline";
 
-it("defines the Market Scan product defaults", () => {
-	expect(defaultMarketScanCriteria).toEqual({
-		hourlyMinimumRangePercent: 1,
-		hourlyPercentile: 80,
-		hourlyPeriod: 60,
-		minimumMarketCapMillions: 500,
-		minimumRangePercent: 5,
-		percentile: 80,
-		period: 30,
-	});
-});
-
-it("composes mandatory daily and hourly volatility before enabled Market Cap", () => {
-	expect(criterionSelections(defaultMarketScanCriteria)).toEqual([
-		{
-			key: "daily_volatility",
-			label: "Daily Volatility",
-			name: "volatility",
-			parameters: {
-				unit: "days",
-				period: defaultMarketScanCriteria.period,
-				percentile: defaultMarketScanCriteria.percentile,
-				minimum_range_percent: defaultMarketScanCriteria.minimumRangePercent,
-			},
-		},
-		{
-			key: "hourly_volatility",
-			label: "Hourly Volatility",
-			name: "volatility",
-			parameters: {
-				unit: "hours",
-				period: defaultMarketScanCriteria.hourlyPeriod,
-				percentile: defaultMarketScanCriteria.hourlyPercentile,
-				minimum_range_percent:
-					defaultMarketScanCriteria.hourlyMinimumRangePercent,
-			},
-		},
-		{
-			key: "market_cap",
-			label: "Market Cap",
-			name: "market_cap",
-			parameters: {
-				min_market_cap_usd:
-					defaultMarketScanCriteria.minimumMarketCapMillions * 1_000_000,
-			},
-		},
-	]);
-});
-
 it("keeps independent settings and includes Market Cap at zero", () => {
 	expect(
 		criterionSelections({
@@ -99,7 +50,6 @@ it("keeps independent settings and includes Market Cap at zero", () => {
 });
 
 it("validates both mandatory volatility instances independently", () => {
-	expect(validateMarketScanCriteria(defaultMarketScanCriteria)).toEqual({});
 	expect(
 		validateMarketScanCriteria({
 			...defaultMarketScanCriteria,

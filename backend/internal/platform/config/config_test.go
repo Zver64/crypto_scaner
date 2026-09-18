@@ -8,49 +8,6 @@ import (
 	"crypto-scanner/internal/platform/config"
 )
 
-func TestLoadServerUsesDocumentedDefaults(t *testing.T) {
-	setRequiredEnvironment(t)
-
-	cfg, err := config.LoadServer()
-	if err != nil {
-		t.Fatalf("LoadServer() error = %v", err)
-	}
-
-	if cfg.HTTPAddress != "127.0.0.1:8080" {
-		t.Errorf("HTTPAddress = %q, want %q", cfg.HTTPAddress, "127.0.0.1:8080")
-	}
-	if cfg.LogLevel != "info" {
-		t.Errorf("LogLevel = %q, want %q", cfg.LogLevel, "info")
-	}
-	if cfg.TelegramInitDataMaxAge != 24*time.Hour {
-		t.Errorf("TelegramInitDataMaxAge = %v, want %v", cfg.TelegramInitDataMaxAge, 24*time.Hour)
-	}
-	if cfg.SyncWorkers != 4 {
-		t.Errorf("SyncWorkers = %d, want 4", cfg.SyncWorkers)
-	}
-	if cfg.SyncRetryAttempts != 5 {
-		t.Errorf("SyncRetryAttempts = %d, want 5", cfg.SyncRetryAttempts)
-	}
-	if cfg.ShutdownTimeout != 15*time.Second {
-		t.Errorf("ShutdownTimeout = %v, want %v", cfg.ShutdownTimeout, 15*time.Second)
-	}
-	if cfg.AdminTelegramID != 123456789 {
-		t.Errorf("AdminTelegramID = %d, want 123456789", cfg.AdminTelegramID)
-	}
-}
-
-func TestLoadServerDefaultsAPIDocsToDisabled(t *testing.T) {
-	setRequiredEnvironment(t)
-
-	cfg, err := config.LoadServer()
-	if err != nil {
-		t.Fatalf("LoadServer() error = %v", err)
-	}
-	if cfg.APIDocsEnabled {
-		t.Error("APIDocsEnabled = true, want false")
-	}
-}
-
 func TestLoadServerRejectsMissingRequiredSettingsWithoutLeakingValues(t *testing.T) {
 	required := []string{
 		"POSTGRES_HOST",

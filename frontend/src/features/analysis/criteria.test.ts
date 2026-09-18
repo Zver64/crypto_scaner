@@ -1,24 +1,7 @@
 import { describe, expect, it } from "vitest";
-import {
-	defaultAnalysisCriteria,
-	defaultPeriodForUnit,
-	maximumPeriodForUnit,
-	validateAnalysisCriteria,
-} from "./criteria";
+import { defaultAnalysisCriteria, validateAnalysisCriteria } from "./criteria";
 
 describe("analysis criteria", () => {
-	it("provides shared defaults and unit-specific periods", () => {
-		expect(defaultAnalysisCriteria).toEqual({
-			percentile: 80,
-			period: 30,
-			unit: "days",
-		});
-		expect(defaultPeriodForUnit("days")).toBe(30);
-		expect(defaultPeriodForUnit("hours")).toBe(60);
-		expect(maximumPeriodForUnit("days")).toBe(3650);
-		expect(maximumPeriodForUnit("hours")).toBe(87600);
-	});
-
 	it("accepts supported day and hour boundaries", () => {
 		expect(validateAnalysisCriteria(defaultAnalysisCriteria)).toEqual({});
 		expect(

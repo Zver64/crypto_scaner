@@ -22,7 +22,7 @@ func runServices(
 	handler http.Handler,
 	scheduler scheduledService,
 	botService scheduledService,
-	marketCapService scheduledService,
+	coinMetadataService scheduledService,
 	logger *slog.Logger,
 	shutdownTimeout time.Duration,
 ) error {
@@ -48,9 +48,9 @@ func runServices(
 	botCtx, stopBot := context.WithCancel(context.Background())
 	botResult := make(chan error, 1)
 	go func() { botResult <- botService.Run(botCtx) }()
-	marketCapCtx, stopMarketCap := context.WithCancel(context.Background())
-	marketCapResult := make(chan error, 1)
-	go func() { marketCapResult <- marketCapService.Run(marketCapCtx) }()
+	coinMetadataCtx, stopCoinMetadata := context.WithCancel(context.Background())
+	coinMetadataResult := make(chan error, 1)
+	go func() { coinMetadataResult <- coinMetadataService.Run(coinMetadataCtx) }()
 
 	type stopReason uint8
 	const (
@@ -58,12 +58,12 @@ func runServices(
 		httpStopped
 		schedulerStopped
 		botStopped
-		marketCapStopped
+		coinMetadataStopped
 	)
 
 	reason := parentCancelled
-	var schedulerErr, botErr, marketCapErr, httpErr error
-	awaitScheduler, awaitBot, awaitMarketCap, awaitHTTP := schedulerResult, botResult, marketCapResult, httpResult
+	var schedulerErr, botErr, coinMetadataErr, httpErr error
+	awaitScheduler, awaitBot, awaitCoinMetadata, awaitHTTP := schedulerResult, botResult, coinMetadataResult, httpResult
 	select {
 	case <-ctx.Done():
 	case httpErr = <-httpResult:
@@ -75,20 +75,20 @@ func runServices(
 	case botErr = <-botResult:
 		awaitBot = nil
 		reason = botStopped
-	case marketCapErr = <-marketCapResult:
-		awaitMarketCap = nil
-		reason = marketCapStopped
+	case coinMetadataErr = <-coinMetadataResult:
+		awaitCoinMetadata = nil
+		reason = coinMetadataStopped
 	}
 
-	stoppedSchedulerErr, stoppedBotErr, stoppedMarketCapErr, stoppedHTTPErr := stopAndWaitServices(stopScheduler, stopBot, stopMarketCap, stopHTTP, awaitScheduler, awaitBot, awaitMarketCap, awaitHTTP)
+	stoppedSchedulerErr, stoppedBotErr, stoppedCoinMetadataErr, stoppedHTTPErr := stopAndWaitServices(stopScheduler, stopBot, stopCoinMetadata, stopHTTP, awaitScheduler, awaitBot, awaitCoinMetadata, awaitHTTP)
 	if awaitScheduler != nil {
 		schedulerErr = stoppedSchedulerErr
 	}
 	if awaitBot != nil {
 		botErr = stoppedBotErr
 	}
-	if awaitMarketCap != nil {
-		marketCapErr = stoppedMarketCapErr
+	if awaitCoinMetadata != nil {
+		coinMetadataErr = stoppedCoinMetadataErr
 	}
 	if awaitHTTP != nil {
 		httpErr = stoppedHTTPErr
@@ -96,27 +96,27 @@ func runServices(
 
 	switch reason {
 	case parentCancelled:
-		return parentCancellationResult(schedulerErr, botErr, marketCapErr, httpErr)
+		return parentCancellationResult(schedulerErr, botErr, coinMetadataErr, httpErr)
 	case httpStopped:
 		return httpErr
 	case schedulerStopped:
 		return schedulerResultError(schedulerErr)
 	case botStopped:
 		return botResultError(botErr)
-	case marketCapStopped:
-		return marketCapResultError(marketCapErr)
+	case coinMetadataStopped:
+		return coinMetadataResultError(coinMetadataErr)
 	default:
 		panic("unknown service stop reason")
 	}
 }
 
 func stopAndWaitServices(
-	stopScheduler, stopBot, stopMarketCap, stopHTTP context.CancelFunc,
-	schedulerResult, botResult, marketCapResult, httpResult <-chan error,
-) (schedulerErr, botErr, marketCapErr, httpErr error) {
+	stopScheduler, stopBot, stopCoinMetadata, stopHTTP context.CancelFunc,
+	schedulerResult, botResult, coinMetadataResult, httpResult <-chan error,
+) (schedulerErr, botErr, coinMetadataErr, httpErr error) {
 	stopScheduler()
 	stopBot()
-	stopMarketCap()
+	stopCoinMetadata()
 	stopHTTP()
 	if schedulerResult != nil {
 		schedulerErr = <-schedulerResult
@@ -124,24 +124,24 @@ func stopAndWaitServices(
 	if botResult != nil {
 		botErr = <-botResult
 	}
-	if marketCapResult != nil {
-		marketCapErr = <-marketCapResult
+	if coinMetadataResult != nil {
+		coinMetadataErr = <-coinMetadataResult
 	}
 	if httpResult != nil {
 		httpErr = <-httpResult
 	}
-	return schedulerErr, botErr, marketCapErr, httpErr
+	return schedulerErr, botErr, coinMetadataErr, httpErr
 }
 
-func parentCancellationResult(schedulerErr, botErr, marketCapErr, httpErr error) error {
+func parentCancellationResult(schedulerErr, botErr, coinMetadataErr, httpErr error) error {
 	if schedulerErr != nil {
 		return fmt.Errorf("stop market scheduler: %w", schedulerErr)
 	}
 	if botErr != nil {
 		return fmt.Errorf("stop Telegram bot: %w", botErr)
 	}
-	if marketCapErr != nil {
-		return fmt.Errorf("stop market cap synchronizer: %w", marketCapErr)
+	if coinMetadataErr != nil {
+		return fmt.Errorf("stop coin metadata synchronizer: %w", coinMetadataErr)
 	}
 	return httpErr
 }
@@ -160,11 +160,11 @@ func botResultError(err error) error {
 	return fmt.Errorf("Telegram bot stopped unexpectedly")
 }
 
-func marketCapResultError(err error) error {
+func coinMetadataResultError(err error) error {
 	if err != nil {
-		return fmt.Errorf("run market cap synchronizer: %w", err)
+		return fmt.Errorf("run coin metadata synchronizer: %w", err)
 	}
-	return fmt.Errorf("market cap synchronizer stopped unexpectedly")
+	return fmt.Errorf("coin metadata synchronizer stopped unexpectedly")
 }
 
 type acceptSignalingListener struct {

@@ -28,8 +28,6 @@ SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote
        market_cap.coin_id IS NOT NULL AS market_cap_available,
        COALESCE(market_cap.market_cap_usd::text, ''::text) AS market_cap_usd
 FROM binance_spot.instruments AS instrument
-LEFT JOIN app.asset_classifications AS classification
-  ON classification.base_asset = instrument.base_asset
 LEFT JOIN app.coingecko_asset_mappings AS mapping
   ON mapping.base_asset = instrument.base_asset
  AND mapping.status = 'resolved'
@@ -37,7 +35,7 @@ LEFT JOIN app.coingecko_market_caps AS market_cap
   ON market_cap.coin_id = mapping.coin_id
 WHERE instrument.is_active = TRUE
   AND (sqlc.arg(symbol)::text = '' OR instrument.symbol = sqlc.arg(symbol)::text)
-  AND (NOT sqlc.arg(exclude_stablecoins)::boolean OR COALESCE(classification.is_stablecoin, FALSE) = FALSE)
+  AND (NOT sqlc.arg(exclude_stablecoins)::boolean OR COALESCE(mapping.is_stablecoin, FALSE) = FALSE)
   AND (sqlc.narg(minimum_market_cap_usd)::numeric IS NULL OR market_cap.market_cap_usd >= sqlc.narg(minimum_market_cap_usd)::numeric)
 ORDER BY
   CASE WHEN sqlc.arg(market_cap_sort)::text = 'asc' THEN market_cap.market_cap_usd END ASC NULLS LAST,

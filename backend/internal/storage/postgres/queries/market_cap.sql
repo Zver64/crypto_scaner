@@ -12,6 +12,13 @@ INSERT INTO app.coingecko_asset_mappings (base_asset, coin_id, quote_asset, sour
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (base_asset) DO UPDATE SET coin_id=EXCLUDED.coin_id, quote_asset=EXCLUDED.quote_asset, source_symbol=EXCLUDED.source_symbol, status=EXCLUDED.status, reason=EXCLUDED.reason, observed_at=EXCLUDED.observed_at, expires_at=EXCLUDED.expires_at;
 
+-- name: ReplaceStablecoinClassifications :exec
+UPDATE app.coingecko_asset_mappings
+SET is_stablecoin = CASE
+    WHEN status = 'resolved' THEN coin_id = ANY(sqlc.arg(stablecoin_ids)::text[])
+    ELSE NULL
+END;
+
 -- name: GetCoinGeckoMapping :one
 SELECT base_asset, coin_id, quote_asset, source_symbol, status, reason, observed_at, expires_at FROM app.coingecko_asset_mappings WHERE base_asset = $1;
 

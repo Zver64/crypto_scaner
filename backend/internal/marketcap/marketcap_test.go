@@ -2,6 +2,7 @@ package marketcap
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -123,6 +124,52 @@ func TestAllMappingsDoesNotHideConflictBehindUSDTPreference(t *testing.T) {
 		t.Fatalf("mappings=%+v", mappings)
 	}
 }
+func TestRefreshStablecoinClassificationsPersistsCompleteSnapshot(t *testing.T) {
+	store := &fakeStore{}
+	resolver := New(store, &fakeProvider{stablecoinIDs: []string{"usd-coin", "usds"}})
+	if err := resolver.RefreshStablecoinClassifications(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fmt.Sprint(store.stablecoinIDs) != "[usd-coin usds]" {
+		t.Fatalf("stablecoin IDs=%v", store.stablecoinIDs)
+	}
+}
+
+func TestRefreshStablecoinClassificationsRejectsEmptySnapshot(t *testing.T) {
+	store := &fakeStore{}
+	resolver := New(store, &fakeProvider{stablecoinIDs: []string{}})
+	if err := resolver.RefreshStablecoinClassifications(context.Background()); err == nil || store.stablecoinIDs != nil {
+		t.Fatalf("error=%v stablecoin IDs=%v", err, store.stablecoinIDs)
+	}
+}
+
+func TestClientStablecoinIDsFetchesCategoryByPageInsteadOfAsset(t *testing.T) {
+	calls := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		query := r.URL.Query()
+		if query.Get("category") != "stablecoins" || query.Get("per_page") != "250" || query.Get("page") != fmt.Sprint(calls) {
+			t.Errorf("query=%s", r.URL.RawQuery)
+		}
+		values := make([]map[string]string, 250)
+		if calls == 1 {
+			for index := range values {
+				values[index] = map[string]string{"id": fmt.Sprintf("stable-%d", index)}
+			}
+		} else {
+			values = []map[string]string{{"id": "usds"}}
+		}
+		if err := json.NewEncoder(w).Encode(values); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer server.Close()
+	ids, err := NewClient(server.URL, "").StablecoinIDs(context.Background())
+	if err != nil || len(ids) != 251 || ids[250] != "usds" || calls != 2 {
+		t.Fatalf("IDs=%v calls=%d err=%v", ids, calls, err)
+	}
+}
+
 func TestClientMarketsSendsCompletePaginationAndRejectsPartialNullableResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
@@ -256,12 +303,13 @@ func TestMissingCapIsCooledPerIDWithoutGlobalWarning(t *testing.T) {
 }
 
 type fakeStore struct {
-	done         bool
-	getMapping   func(string) (Mapping, error)
-	replacements int
-	snapshot     []Mapping
-	mappings     map[string]Mapping
-	caps         map[string]Cap
+	done          bool
+	getMapping    func(string) (Mapping, error)
+	replacements  int
+	snapshot      []Mapping
+	mappings      map[string]Mapping
+	caps          map[string]Cap
+	stablecoinIDs []string
 }
 
 func (s *fakeStore) BootstrapCompleted(context.Context) (bool, error) { return s.done, nil }
@@ -269,6 +317,10 @@ func (s *fakeStore) ReplaceSnapshot(_ context.Context, mappings []Mapping) error
 	s.replacements++
 	s.snapshot = append([]Mapping(nil), mappings...)
 	s.done = true
+	return nil
+}
+func (s *fakeStore) ReplaceStablecoinClassifications(_ context.Context, ids []string) error {
+	s.stablecoinIDs = append([]string(nil), ids...)
 	return nil
 }
 func (s *fakeStore) GetMapping(_ context.Context, b string) (Mapping, error) {
@@ -299,8 +351,10 @@ type fakeProvider struct {
 	marketCalls, tickerCalls int
 	marketErr                error
 	tickerErr                error
+	stablecoinErr            error
 	tickers                  []Ticker
 	marketValues             []Cap
+	stablecoinIDs            []string
 	marketDelay              time.Duration
 }
 
@@ -309,6 +363,14 @@ func (p *fakeProvider) Tickers(context.Context, int) ([]Ticker, error) {
 	defer p.mu.Unlock()
 	p.tickerCalls++
 	return p.tickers, p.tickerErr
+}
+func (p *fakeProvider) StablecoinIDs(context.Context) ([]string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stablecoinIDs == nil && p.stablecoinErr == nil {
+		return []string{"tether"}, nil
+	}
+	return append([]string(nil), p.stablecoinIDs...), p.stablecoinErr
 }
 func (p *fakeProvider) Markets(_ context.Context, _ []string) ([]Cap, error) {
 	p.mu.Lock()

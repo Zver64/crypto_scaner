@@ -80,10 +80,10 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		synchronizers[interval] = marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, profile)
 	}
 	scheduler := marketsync.NewSchedulerWithProfiles(synchronizers, logger)
-	marketCapResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
-	marketCapSynchronizer, err := marketcap.NewSynchronizer(marketCapResolver, store, logger, time.Hour, time.Minute)
+	coinMetadataResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
+	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(coinMetadataResolver, store, logger, time.Hour, time.Minute)
 	if err != nil {
-		return fmt.Errorf("initialize market cap synchronizer: %w", err)
+		return fmt.Errorf("initialize coin metadata synchronizer: %w", err)
 	}
 	criterionFactories := []analysis.Factory{volatility.New(), marketcapcriterion.New()}
 	analysisService, err := analysis.NewService(store, criterionFactories...)
@@ -105,7 +105,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled}), scheduler, botService, marketCapSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled}), scheduler, botService, coinMetadataSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

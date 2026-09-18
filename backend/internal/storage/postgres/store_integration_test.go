@@ -203,6 +203,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 			{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING", Active: true},
 			{Symbol: "ETHUSDT", BaseAsset: "ETH", QuoteAsset: "USDT", Status: "TRADING", Active: true},
 			{Symbol: "USDCUSDT", BaseAsset: "USDC", QuoteAsset: "USDT", Status: "TRADING", Active: true},
+			{Symbol: "USDSUSDT", BaseAsset: "USDS", QuoteAsset: "USDT", Status: "TRADING", Active: true},
 			{Symbol: "MISSINGUSDT", BaseAsset: "MISSING", QuoteAsset: "USDT", Status: "TRADING", Active: true},
 		}); err != nil {
 			t.Fatal(err)
@@ -210,7 +211,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		for _, fixture := range []struct {
 			base, coin string
 			cap        int
-		}{{"BTC", "bitcoin", 200}, {"ETH", "ethereum", 200}, {"USDC", "usd-coin", 1_000}} {
+		}{{"BTC", "bitcoin", 200}, {"ETH", "ethereum", 200}, {"USDC", "usd-coin", 1_000}, {"USDS", "usds", 1_000}} {
 			if _, err := db.Exec(ctx, `INSERT INTO app.coingecko_asset_mappings (base_asset, coin_id, quote_asset, source_symbol, status, observed_at)
 				VALUES ($1, $2, 'USDT', $1, 'resolved', $3) ON CONFLICT (base_asset) DO UPDATE SET coin_id = EXCLUDED.coin_id, status = EXCLUDED.status, observed_at = EXCLUDED.observed_at`, fixture.base, fixture.coin, now); err != nil {
 				t.Fatal(err)
@@ -219,6 +220,9 @@ func TestPostgresStoreContracts(t *testing.T) {
 				VALUES ($1, $2, $3, $3) ON CONFLICT (coin_id) DO UPDATE SET market_cap_usd = EXCLUDED.market_cap_usd, fetched_at = EXCLUDED.fetched_at, observed_at = EXCLUDED.observed_at`, fixture.coin, fixture.cap, now); err != nil {
 				t.Fatal(err)
 			}
+		}
+		if err := store.ReplaceStablecoinClassifications(ctx, []string{"usd-coin", "usds"}); err != nil {
+			t.Fatal(err)
 		}
 		stablecoinDefault := []analysis.SelectionConstraint{{Fact: analysis.SelectionFactStablecoin, Operator: analysis.SelectionEqual, Boolean: false}}
 		onlyOne, err := store.SelectActiveInstruments(ctx, analysis.Selection{Constraints: stablecoinDefault, Limit: 1, SortFact: analysis.SelectionFactMarketCapUSD, SortDirection: "desc"})
@@ -237,7 +241,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 			t.Fatalf("persisted cap filtering/ties = %+v, %v", filtered, err)
 		}
 		active, err := store.ListActiveInstruments(ctx)
-		if err != nil || len(active) != 4 {
+		if err != nil || len(active) != 5 {
 			t.Fatalf("stablecoin instruments must remain exchange-active: %+v, %v", active, err)
 		}
 	})

@@ -24,9 +24,20 @@ const getCoinGeckoMapping = `-- name: GetCoinGeckoMapping :one
 SELECT base_asset, coin_id, quote_asset, source_symbol, status, reason, observed_at, expires_at FROM app.coingecko_asset_mappings WHERE base_asset = $1
 `
 
-func (q *Queries) GetCoinGeckoMapping(ctx context.Context, baseAsset string) (AppCoingeckoAssetMapping, error) {
+type GetCoinGeckoMappingRow struct {
+	BaseAsset    string
+	CoinID       pgtype.Text
+	QuoteAsset   string
+	SourceSymbol string
+	Status       string
+	Reason       pgtype.Text
+	ObservedAt   pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+}
+
+func (q *Queries) GetCoinGeckoMapping(ctx context.Context, baseAsset string) (GetCoinGeckoMappingRow, error) {
 	row := q.db.QueryRow(ctx, getCoinGeckoMapping, baseAsset)
-	var i AppCoingeckoAssetMapping
+	var i GetCoinGeckoMappingRow
 	err := row.Scan(
 		&i.BaseAsset,
 		&i.CoinID,
@@ -73,6 +84,19 @@ UPDATE app.coingecko_mapping_bootstrap SET completed_at = now() WHERE id = TRUE
 
 func (q *Queries) ReplaceMappingsAndCompleteBootstrap(ctx context.Context) error {
 	_, err := q.db.Exec(ctx, replaceMappingsAndCompleteBootstrap)
+	return err
+}
+
+const replaceStablecoinClassifications = `-- name: ReplaceStablecoinClassifications :exec
+UPDATE app.coingecko_asset_mappings
+SET is_stablecoin = CASE
+    WHEN status = 'resolved' THEN coin_id = ANY($1::text[])
+    ELSE NULL
+END
+`
+
+func (q *Queries) ReplaceStablecoinClassifications(ctx context.Context, stablecoinIds []string) error {
+	_, err := q.db.Exec(ctx, replaceStablecoinClassifications, stablecoinIds)
 	return err
 }
 

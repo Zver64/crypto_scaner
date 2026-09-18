@@ -31,6 +31,7 @@ type Cap struct {
 type Store interface {
 	BootstrapCompleted(context.Context) (bool, error)
 	ReplaceSnapshot(context.Context, []Mapping) error
+	ReplaceStablecoinClassifications(context.Context, []string) error
 	GetMapping(context.Context, string) (Mapping, error)
 	SaveMapping(context.Context, Mapping) error
 	GetCap(context.Context, string) (Cap, error)
@@ -39,6 +40,7 @@ type Store interface {
 type Provider interface {
 	Tickers(context.Context, int) ([]Ticker, error)
 	Markets(context.Context, []string) ([]Cap, error)
+	StablecoinIDs(context.Context) ([]string, error)
 }
 type Ticker struct {
 	Base         string `json:"base"`
@@ -109,6 +111,19 @@ func (r *Resolver) Bootstrap(ctx context.Context) error {
 		return err
 	}
 	return r.store.ReplaceSnapshot(ctx, mappings)
+}
+
+// RefreshStablecoinClassifications fetches one complete stablecoin category
+// snapshot and classifies every persisted CoinGecko mapping from that snapshot.
+func (r *Resolver) RefreshStablecoinClassifications(ctx context.Context) error {
+	ids, err := r.provider.StablecoinIDs(ctx)
+	if err != nil {
+		return err
+	}
+	if len(ids) == 0 {
+		return fmt.Errorf("empty CoinGecko stablecoin snapshot")
+	}
+	return r.store.ReplaceStablecoinClassifications(ctx, ids)
 }
 
 // ResolveBatch performs at most one mapping scan and one market request per 250 IDs.
@@ -355,6 +370,44 @@ func (c *Client) Tickers(ctx context.Context, page int) ([]Ticker, error) {
 	}
 	return result, nil
 }
+
+// StablecoinIDs returns a complete snapshot of CoinGecko IDs in the stablecoins
+// category. The category is fetched once per page instead of once per asset.
+func (c *Client) StablecoinIDs(ctx context.Context) ([]string, error) {
+	const pageSize = 250
+	ids := make([]string, 0, pageSize)
+	seen := make(map[string]struct{})
+	for page := 1; page <= 100; page++ {
+		var values *[]struct {
+			ID string `json:"id"`
+		}
+		path := "/api/v3/coins/markets?vs_currency=usd&category=stablecoins&order=market_cap_desc&per_page=250&page=" + fmt.Sprint(page) + "&sparkline=false"
+		if err := c.get(ctx, path, &values); err != nil {
+			return nil, err
+		}
+		if values == nil {
+			return nil, fmt.Errorf("invalid CoinGecko stablecoin response")
+		}
+		for _, value := range *values {
+			if value.ID == "" {
+				return nil, fmt.Errorf("invalid CoinGecko stablecoin response")
+			}
+			if _, duplicate := seen[value.ID]; duplicate {
+				return nil, fmt.Errorf("duplicate CoinGecko stablecoin ID %q", value.ID)
+			}
+			seen[value.ID] = struct{}{}
+			ids = append(ids, value.ID)
+		}
+		if len(*values) < pageSize {
+			if len(ids) == 0 {
+				return nil, fmt.Errorf("empty CoinGecko stablecoin response")
+			}
+			return ids, nil
+		}
+	}
+	return nil, fmt.Errorf("CoinGecko stablecoin response exceeded pagination limit")
+}
+
 func (c *Client) Markets(ctx context.Context, ids []string) ([]Cap, error) {
 	if len(ids) == 0 || len(ids) > 250 {
 		return nil, fmt.Errorf("CoinGecko market ID batch must contain 1 to 250 IDs")

@@ -27,6 +27,13 @@ func TestSyncProfilesPreserveFieldsAndKeys(t *testing.T) {
 	}
 }
 
+func TestCoinMetadataSyncProfile(t *testing.T) {
+	profile := CoinMetadataSyncProfile()
+	if profile.Key() != "coingecko:coin_metadata:USD:1h:UTC" {
+		t.Fatalf("profile = %+v", profile)
+	}
+}
+
 func TestSyncProfilesReturnIndependentValues(t *testing.T) {
 	daily := DailySyncProfile()
 	daily.Interval = "mutated"

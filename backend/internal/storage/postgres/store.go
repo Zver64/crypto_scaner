@@ -62,6 +62,13 @@ func (store *Store) ReplaceSnapshot(ctx context.Context, mappings []marketcap.Ma
 	}
 	return tx.Commit(ctx)
 }
+func (store *Store) ReplaceStablecoinClassifications(ctx context.Context, stablecoinIDs []string) error {
+	if len(stablecoinIDs) == 0 {
+		return fmt.Errorf("stablecoin classification snapshot is empty")
+	}
+	return store.queries.ReplaceStablecoinClassifications(ctx, stablecoinIDs)
+}
+
 func (store *Store) GetMapping(ctx context.Context, base string) (marketcap.Mapping, error) {
 	row, err := store.queries.GetCoinGeckoMapping(ctx, base)
 	if err != nil {

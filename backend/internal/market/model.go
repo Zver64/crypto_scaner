@@ -70,9 +70,9 @@ func HourlySyncProfile() SyncProfile  { return BinanceSpotSyncProfile(IntervalHo
 func WeeklySyncProfile() SyncProfile  { return BinanceSpotSyncProfile(IntervalWeek) }
 func MonthlySyncProfile() SyncProfile { return BinanceSpotSyncProfile(IntervalMonth) }
 
-// MarketCapSyncProfile identifies persisted CoinGecko market-cap refresh state.
-func MarketCapSyncProfile() SyncProfile {
-	return SyncProfile{Exchange: "coingecko", Market: "market_cap", QuoteAsset: "USD", Interval: IntervalHour, TimeZone: "UTC"}
+// CoinMetadataSyncProfile identifies persisted CoinGecko metadata refresh state.
+func CoinMetadataSyncProfile() SyncProfile {
+	return SyncProfile{Exchange: "coingecko", Market: "coin_metadata", QuoteAsset: "USD", Interval: IntervalHour, TimeZone: "UTC"}
 }
 
 // SyncStatus is the durable outcome of market synchronization.

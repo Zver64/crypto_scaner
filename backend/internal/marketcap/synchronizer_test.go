@@ -17,7 +17,7 @@ func TestSynchronizerRefreshesPersistedFactsAndRecordsStatus(t *testing.T) {
 	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{}}
 	provider := &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", USD: 100, Available: true, ObservedAt: time.Now()}}}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
-	synchronizer, err := NewSynchronizer(New(store, provider), source, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Hour, time.Minute)
+	synchronizer, err := NewCoinMetadataSynchronizer(New(store, provider), source, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Hour, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -31,12 +31,15 @@ func TestSynchronizerRefreshesPersistedFactsAndRecordsStatus(t *testing.T) {
 	if cap, ok := store.caps["bitcoin"]; !ok || cap.USD != 100 {
 		t.Fatalf("persisted cap=%+v", cap)
 	}
+	if len(store.stablecoinIDs) != 1 || store.stablecoinIDs[0] != "tether" {
+		t.Fatalf("stablecoin IDs=%v", store.stablecoinIDs)
+	}
 }
 
 func TestSynchronizerFirstFailureHasNoSuccessfulTimestamp(t *testing.T) {
 	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{}}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
-	synchronizer, _ := NewSynchronizer(New(store, &fakeProvider{marketErr: io.ErrUnexpectedEOF}), source, nil, time.Hour, time.Minute)
+	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, &fakeProvider{marketErr: io.ErrUnexpectedEOF}), source, nil, time.Hour, time.Minute)
 	if err := synchronizer.runRefresh(context.Background()); err == nil {
 		t.Fatal("provider failure unexpectedly succeeded")
 	}
@@ -52,7 +55,7 @@ func TestSynchronizerFailurePreservesPriorSuccessfulTimestampAndCap(t *testing.T
 	provider := &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", USD: 100, Available: true, ObservedAt: time.Now()}}}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
 	resolver := New(store, provider)
-	synchronizer, _ := NewSynchronizer(resolver, source, nil, time.Hour, time.Minute)
+	synchronizer, _ := NewCoinMetadataSynchronizer(resolver, source, nil, time.Hour, time.Minute)
 	if err := synchronizer.runRefresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +75,7 @@ func TestSynchronizerRetriesObservableBootstrapThenRefreshes(t *testing.T) {
 	store := &fakeStore{mappings: map[string]Mapping{}, caps: map[string]Cap{}}
 	provider := &bootstrapRetryProvider{firstErr: errors.New("temporary bootstrap failure"), refreshed: make(chan struct{})}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
-	synchronizer, _ := NewSynchronizer(New(store, provider), source, nil, time.Hour, time.Millisecond)
+	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, nil, time.Hour, time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- synchronizer.Run(ctx) }()
@@ -97,7 +100,7 @@ func TestSynchronizerRetriesEmptyCatalogBeforeRefreshInterval(t *testing.T) {
 		provider := &catalogProvider{refreshed: make(chan struct{})}
 		source := newDelayedCatalogSource()
 		const retryDelay = 40 * time.Millisecond
-		synchronizer, _ := NewSynchronizer(New(store, provider), source, nil, time.Hour, retryDelay)
+		synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, nil, time.Hour, retryDelay)
 		ctx, cancel := context.WithCancel(context.Background())
 		result := make(chan error, 1)
 		go func() { result <- synchronizer.Run(ctx) }()
@@ -132,7 +135,7 @@ func TestSynchronizerCancellationResultPersistenceIsBounded(t *testing.T) {
 	store := &fakeStore{mappings: map[string]Mapping{}, caps: map[string]Cap{}}
 	provider := &blockingBootstrapProvider{started: make(chan struct{})}
 	source := &blockingStateSource{resultSaveStarted: make(chan struct{})}
-	synchronizer, _ := NewSynchronizer(New(store, provider), source, nil, time.Hour, time.Hour)
+	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, nil, time.Hour, time.Hour)
 	synchronizer.stateSaveTimeout = 20 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
@@ -158,7 +161,7 @@ func TestSynchronizerCancellationDuringBootstrapIsRecorded(t *testing.T) {
 	store := &fakeStore{mappings: map[string]Mapping{}, caps: map[string]Cap{}}
 	provider := &blockingBootstrapProvider{started: make(chan struct{})}
 	source := &syncSource{}
-	synchronizer, _ := NewSynchronizer(New(store, provider), source, nil, time.Hour, time.Hour)
+	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, nil, time.Hour, time.Hour)
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- synchronizer.Run(ctx) }()
@@ -294,6 +297,9 @@ func (p *bootstrapRetryProvider) Tickers(context.Context, int) ([]Ticker, error)
 	}
 	return []Ticker{{Base: "BTC", Target: "USDT", CoinID: "bitcoin"}}, nil
 }
+func (*bootstrapRetryProvider) StablecoinIDs(context.Context) ([]string, error) {
+	return []string{"tether"}, nil
+}
 func (p *bootstrapRetryProvider) Markets(context.Context, []string) ([]Cap, error) {
 	p.once.Do(func() { close(p.refreshed) })
 	return []Cap{{CoinID: "bitcoin", USD: 100, Available: true, ObservedAt: time.Now()}}, nil
@@ -308,6 +314,9 @@ type catalogProvider struct {
 
 func (*catalogProvider) Tickers(context.Context, int) ([]Ticker, error) {
 	return nil, errors.New("unexpected ticker call")
+}
+func (*catalogProvider) StablecoinIDs(context.Context) ([]string, error) {
+	return []string{"tether"}, nil
 }
 func (p *catalogProvider) Markets(context.Context, []string) ([]Cap, error) {
 	p.mu.Lock()
@@ -331,6 +340,9 @@ func (p *blockingBootstrapProvider) Tickers(ctx context.Context, _ int) ([]Ticke
 	p.once.Do(func() { close(p.started) })
 	<-ctx.Done()
 	return nil, ctx.Err()
+}
+func (*blockingBootstrapProvider) StablecoinIDs(context.Context) ([]string, error) {
+	return nil, errors.New("unexpected stablecoin call")
 }
 func (*blockingBootstrapProvider) Markets(context.Context, []string) ([]Cap, error) {
 	return nil, errors.New("unexpected markets call")

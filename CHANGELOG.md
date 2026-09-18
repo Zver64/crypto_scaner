@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.0](https://github.com/Zver64/crypto_scaner/compare/v0.15.0...v0.16.0) (2026-09-18)
+
+
+### Features
+
+* add RSI chart indicator ([7102ec6](https://github.com/Zver64/crypto_scaner/commit/7102ec6e71d5ad552e9b89b699b46c85bcff5d13))
+
 ## [0.15.0](https://github.com/Zver64/crypto_scaner/compare/v0.14.0...v0.15.0) (2026-09-18)
 
 

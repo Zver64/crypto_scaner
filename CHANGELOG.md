@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.16.0](https://github.com/Zver64/crypto_scaner/compare/v0.15.0...v0.16.0) (2026-09-20)
+
+
+### Features
+
+* add RSI chart indicator ([7102ec6](https://github.com/Zver64/crypto_scaner/commit/7102ec6e71d5ad552e9b89b699b46c85bcff5d13))
+
+
+### Bug Fixes
+
+* refine market scan table columns ([cf47a96](https://github.com/Zver64/crypto_scaner/commit/cf47a96f7d3b8211e6219a2589469dec581862a6))
+* size table columns to content ([769db93](https://github.com/Zver64/crypto_scaner/commit/769db9352e1a75e441cd8c4e329abd6414f4dd29))
+
 ## [0.15.0](https://github.com/Zver64/crypto_scaner/compare/v0.14.0...v0.15.0) (2026-09-18)
 
 

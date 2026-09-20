@@ -19,7 +19,7 @@ export const applicationConfig = {
 		},
 		hours: {
 			defaultCandleRange: 1,
-			candleRangePresets: [0.7, 1, 1.5, 2, 3],
+			candleRangePresets: [0.7, 1, 1.5, 2],
 			periodPresets: [24, 60, 100],
 		},
 		percentilePresets: [75, 80, 90, 95],

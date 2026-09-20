@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.1](https://github.com/Zver64/crypto_scaner/compare/v0.16.0...v0.16.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* ui ([a790e56](https://github.com/Zver64/crypto_scaner/commit/a790e56fda918beeecc03af281e2315d48a90624))
+
 ## [0.16.0](https://github.com/Zver64/crypto_scaner/compare/v0.15.0...v0.16.0) (2026-09-20)
 
 

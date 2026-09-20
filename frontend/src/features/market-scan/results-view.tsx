@@ -101,7 +101,6 @@ export function MarketScanResults({
 						<DataTable
 							columns={unresolvedInstrumentColumns}
 							getRowKey={(item) => `${item.symbol}-${item.code}`}
-							minWidth={420}
 							rows={result.unresolved}
 						/>
 					</Stack>

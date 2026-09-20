@@ -12,7 +12,6 @@ export interface DataTableColumn<Row> {
 interface DataTableProps<Row> {
 	columns: readonly DataTableColumn<Row>[];
 	getRowKey(row: Row): string;
-	minWidth: number;
 	onRowClick?(row: Row): void;
 	rows: readonly Row[];
 }
@@ -20,29 +19,20 @@ interface DataTableProps<Row> {
 export function DataTable<Row>({
 	columns,
 	getRowKey,
-	minWidth,
 	onRowClick,
 	rows,
 }: DataTableProps<Row>) {
 	const fontSize = useMatches({ base: "xs", sm: "sm" });
-	const spacing = useMatches({ base: "4px", sm: "xs" });
+	const horizontalSpacing = useMatches({ base: "xs", sm: "sm" });
 	return (
 		<Paper p="xs">
-			<Table.ScrollContainer minWidth={minWidth}>
+			<Table.ScrollContainer minWidth="max-content">
 				<Table
 					fz={fontSize}
 					highlightOnHover
-					horizontalSpacing={spacing}
-					verticalSpacing={spacing}
+					horizontalSpacing={horizontalSpacing}
+					verticalSpacing="xs"
 				>
-					<colgroup>
-						{columns.map((column, index) => (
-							<col
-								className={index === 0 ? "content-sized-column" : undefined}
-								key={column.key}
-							/>
-						))}
-					</colgroup>
 					<Table.Thead>
 						<Table.Tr>
 							{columns.map((column, index) => (

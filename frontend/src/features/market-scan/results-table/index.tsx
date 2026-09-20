@@ -61,7 +61,6 @@ export function MarketScanResultsTable({
 			columns={columns}
 			rows={sortMarketScanRows(rows, sort)}
 			getRowKey={(row) => row.symbol}
-			minWidth={900}
 			onRowClick={(row) => {
 				void navigate({
 					params: { symbol: row.symbol },

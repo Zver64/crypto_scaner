@@ -33,7 +33,7 @@ export const marketScanColumns = [
 	},
 	{
 		key: marketScanColumnKeys.marketCap,
-		header: "Market Cap USD",
+		header: "MCap",
 		cell: (row) =>
 			row.marketCapUsd === null ? "—" : formatMarketCapUsd(row.marketCapUsd),
 		sortable: true,

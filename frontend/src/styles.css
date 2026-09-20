@@ -5,10 +5,6 @@ body {
 	);
 }
 
-.content-sized-column {
-	width: 0;
-}
-
 .sticky-first-column {
 	position: sticky;
 	inset-inline-start: 0;

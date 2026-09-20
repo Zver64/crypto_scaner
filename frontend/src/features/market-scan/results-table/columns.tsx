@@ -40,7 +40,7 @@ export const marketScanColumns = [
 	},
 	{
 		key: marketScanColumnKeys.dailyRange,
-		header: "Daily Range",
+		header: "D Range",
 		cell: (row) =>
 			row.dailyRangePercent === null
 				? "—"
@@ -49,11 +49,17 @@ export const marketScanColumns = [
 	},
 	{
 		key: marketScanColumnKeys.hourlyRange,
-		header: "Hourly Range",
+		header: "H Range",
 		cell: (row) =>
 			row.hourlyRangePercent === null
 				? "—"
 				: formatRangePercent(row.hourlyRangePercent),
+		sortable: true,
+	},
+	{
+		key: marketScanColumnKeys.sevenDayChangePercent,
+		header: "7d %",
+		cell: (row) => <PercentChange value={row.sevenDayChangePercent} />,
 		sortable: true,
 	},
 	{
@@ -66,12 +72,6 @@ export const marketScanColumns = [
 				window={window}
 			/>
 		),
-	},
-	{
-		key: marketScanColumnKeys.sevenDayChangePercent,
-		header: "7d change",
-		cell: (row) => <PercentChange value={row.sevenDayChangePercent} />,
-		sortable: true,
 	},
 	{
 		key: marketScanColumnKeys.binance,

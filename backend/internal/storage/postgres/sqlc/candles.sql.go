@@ -11,6 +11,32 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const getCandleHistoryCoverage = `-- name: GetCandleHistoryCoverage :one
+SELECT instrument_id, interval, verified_oldest_open_time, target_depth,
+       policy_version, retry_after
+FROM binance_spot.candle_history_coverage
+WHERE instrument_id = $1 AND interval = $2
+`
+
+type GetCandleHistoryCoverageParams struct {
+	InstrumentID int64
+	Interval     string
+}
+
+func (q *Queries) GetCandleHistoryCoverage(ctx context.Context, arg GetCandleHistoryCoverageParams) (BinanceSpotCandleHistoryCoverage, error) {
+	row := q.db.QueryRow(ctx, getCandleHistoryCoverage, arg.InstrumentID, arg.Interval)
+	var i BinanceSpotCandleHistoryCoverage
+	err := row.Scan(
+		&i.InstrumentID,
+		&i.Interval,
+		&i.VerifiedOldestOpenTime,
+		&i.TargetDepth,
+		&i.PolicyVersion,
+		&i.RetryAfter,
+	)
+	return i, err
+}
+
 const listCandlePage = `-- name: ListCandlePage :many
 SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
        volume, quote_asset_volume, trade_count
@@ -156,6 +182,39 @@ func (q *Queries) ListLatestCandles(ctx context.Context, arg ListLatestCandlesPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const saveCandleHistoryCoverage = `-- name: SaveCandleHistoryCoverage :exec
+INSERT INTO binance_spot.candle_history_coverage (
+    instrument_id, interval, verified_oldest_open_time, target_depth,
+    policy_version, retry_after
+) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (instrument_id, interval) DO UPDATE SET
+    verified_oldest_open_time = EXCLUDED.verified_oldest_open_time,
+    target_depth = EXCLUDED.target_depth,
+    policy_version = EXCLUDED.policy_version,
+    retry_after = EXCLUDED.retry_after
+`
+
+type SaveCandleHistoryCoverageParams struct {
+	InstrumentID           int64
+	Interval               string
+	VerifiedOldestOpenTime pgtype.Timestamptz
+	TargetDepth            int32
+	PolicyVersion          int32
+	RetryAfter             pgtype.Timestamptz
+}
+
+func (q *Queries) SaveCandleHistoryCoverage(ctx context.Context, arg SaveCandleHistoryCoverageParams) error {
+	_, err := q.db.Exec(ctx, saveCandleHistoryCoverage,
+		arg.InstrumentID,
+		arg.Interval,
+		arg.VerifiedOldestOpenTime,
+		arg.TargetDepth,
+		arg.PolicyVersion,
+		arg.RetryAfter,
+	)
+	return err
 }
 
 const upsertCandle = `-- name: UpsertCandle :exec

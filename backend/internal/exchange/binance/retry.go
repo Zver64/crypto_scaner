@@ -12,12 +12,15 @@ import (
 	"golang.org/x/time/rate"
 )
 
+type historyRepairContextKey struct{}
+
 type retryTransport struct {
-	base       http.RoundTripper
-	limiter    *rate.Limiter
-	attempts   int
-	baseDelay  time.Duration
-	retryCount atomic.Uint64
+	base          http.RoundTripper
+	limiter       *rate.Limiter
+	repairLimiter *rate.Limiter
+	attempts      int
+	baseDelay     time.Duration
+	retryCount    atomic.Uint64
 }
 
 func (transport *retryTransport) RoundTrip(request *http.Request) (*http.Response, error) {
@@ -26,6 +29,11 @@ func (transport *retryTransport) RoundTrip(request *http.Request) (*http.Respons
 	for attempt := 0; attempt < transport.attempts; attempt++ {
 		if err := transport.limiter.Wait(request.Context()); err != nil {
 			return nil, err
+		}
+		if request.Context().Value(historyRepairContextKey{}) == true {
+			if err := transport.repairLimiter.Wait(request.Context()); err != nil {
+				return nil, err
+			}
 		}
 		response, err = transport.base.RoundTrip(request.Clone(request.Context()))
 		if !retryable(response, err) || attempt == transport.attempts-1 {

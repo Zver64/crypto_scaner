@@ -27,11 +27,12 @@ type Exchange struct {
 
 // Options configures the shared public Binance HTTP policy.
 type Options struct {
-	BaseURL        string
-	HTTPClient     *http.Client
-	RetryAttempts  int
-	RetryBaseDelay time.Duration
-	Limiter        *rate.Limiter
+	BaseURL              string
+	HTTPClient           *http.Client
+	RetryAttempts        int
+	RetryBaseDelay       time.Duration
+	Limiter              *rate.Limiter
+	HistoryRepairLimiter *rate.Limiter
 }
 
 // New creates a public Binance Spot exchange adapter for the official endpoint.
@@ -63,6 +64,11 @@ func NewWithOptions(options Options) *Exchange {
 	if options.Limiter == nil {
 		options.Limiter = rate.NewLimiter(rate.Limit(10), 4)
 	}
+	if options.HistoryRepairLimiter == nil {
+		// Historical prefix repair is deliberately conservative and shared by
+		// every profile and worker using this Exchange instance.
+		options.HistoryRepairLimiter = rate.NewLimiter(rate.Limit(1), 1)
+	}
 	client := connector.NewClient("", "", options.BaseURL)
 	httpClient := *options.HTTPClient
 	baseTransport := options.HTTPClient.Transport
@@ -70,7 +76,8 @@ func NewWithOptions(options Options) *Exchange {
 		baseTransport = http.DefaultTransport
 	}
 	transport := &retryTransport{
-		base: baseTransport, limiter: options.Limiter, attempts: options.RetryAttempts, baseDelay: options.RetryBaseDelay,
+		base: baseTransport, limiter: options.Limiter, repairLimiter: options.HistoryRepairLimiter,
+		attempts: options.RetryAttempts, baseDelay: options.RetryBaseDelay,
 	}
 	httpClient.Transport = transport
 	client.HTTPClient = &httpClient
@@ -173,6 +180,9 @@ func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.
 			return nil, fmt.Errorf("list Binance candles for %s: after-open-time must precede the current UTC interval", symbol)
 		}
 		service.StartTime(uint64(start))
+	}
+	if request.HistoryRepair {
+		ctx = context.WithValue(ctx, historyRepairContextKey{}, true)
 	}
 	response, err := service.Do(ctx)
 	if err != nil {

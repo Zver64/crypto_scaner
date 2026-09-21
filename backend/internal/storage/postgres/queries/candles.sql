@@ -33,6 +33,23 @@ WHERE instrument_id = sqlc.arg(instrument_id)
 ORDER BY open_time DESC
 LIMIT sqlc.arg(row_limit);
 
+-- name: GetCandleHistoryCoverage :one
+SELECT instrument_id, interval, verified_oldest_open_time, target_depth,
+       policy_version, retry_after
+FROM binance_spot.candle_history_coverage
+WHERE instrument_id = $1 AND interval = $2;
+
+-- name: SaveCandleHistoryCoverage :exec
+INSERT INTO binance_spot.candle_history_coverage (
+    instrument_id, interval, verified_oldest_open_time, target_depth,
+    policy_version, retry_after
+) VALUES ($1, $2, $3, $4, $5, $6)
+ON CONFLICT (instrument_id, interval) DO UPDATE SET
+    verified_oldest_open_time = EXCLUDED.verified_oldest_open_time,
+    target_depth = EXCLUDED.target_depth,
+    policy_version = EXCLUDED.policy_version,
+    retry_after = EXCLUDED.retry_after;
+
 -- name: ListHourlyPrices :many
 SELECT instrument_id, open_time, close
 FROM binance_spot.candles

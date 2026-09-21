@@ -63,6 +63,15 @@ type BinanceSpotCandle struct {
 	TradeCount       int64
 }
 
+type BinanceSpotCandleHistoryCoverage struct {
+	InstrumentID           int64
+	Interval               string
+	VerifiedOldestOpenTime pgtype.Timestamptz
+	TargetDepth            int32
+	PolicyVersion          int32
+	RetryAfter             pgtype.Timestamptz
+}
+
 type BinanceSpotInstrument struct {
 	ID             int64
 	Symbol         string

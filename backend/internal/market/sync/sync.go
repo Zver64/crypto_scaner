@@ -26,6 +26,8 @@ type Store interface {
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
 	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
 	UpsertCandles(context.Context, []market.Candle) error
+	GetCandleHistoryCoverage(context.Context, int64, market.CandleInterval) (market.HistoryCoverage, bool, error)
+	SaveCandleHistoryCoverage(context.Context, market.HistoryCoverage) error
 }
 
 // Profile returns the canonical market synchronization profile for interval.
@@ -49,7 +51,11 @@ type Synchronizer struct {
 
 const defaultWorkerCount = 4
 
-const exchangePageLimit = 1000
+const (
+	exchangePageLimit           = 1000
+	historyDepthPolicyVersion   = 1
+	historyExhaustionRetryDelay = 7 * 24 * time.Hour
+)
 
 type intervalPolicy struct {
 	interval        market.CandleInterval
@@ -194,6 +200,7 @@ type instrumentResult struct {
 	rowsWritten       int
 	gapRangesRepaired int
 	latestOpenTime    *time.Time
+	oldestOpenTime    *time.Time
 }
 
 func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instruments []market.Instrument, profile market.SyncProfile, startedAt time.Time) <-chan instrumentResult {
@@ -233,15 +240,60 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	if err != nil {
 		return instrumentResult{err: fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)}
 	}
+
+	result := instrumentResult{}
 	if len(existing) == 0 {
-		return synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+		coverage, found, err := synchronizer.store.GetCandleHistoryCoverage(ctx, instrument.ID, profile.Interval)
+		if err != nil {
+			result.err = fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
+			return result
+		}
+		if found && coverage.TargetDepth == policy.initialLimit && coverage.PolicyVersion == historyDepthPolicyVersion && startedAt.Before(coverage.RetryAfter) {
+			return result
+		}
+		result = synchronizer.loadRange(ctx, instrument, market.CandleRequest{
 			Symbol: instrument.Symbol, Interval: profile.Interval,
 			Limit: policy.initialLimit, ClosedBefore: startedAt,
 		}, false)
+		if result.err != nil {
+			return result
+		}
+		existing, err = synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(profile.Interval), policy.inspectionLimit)
+		if err != nil {
+			result.err = fmt.Errorf("reinspect candle history for %s: %w", instrument.Symbol, err)
+			return result
+		}
+		if len(existing) == 0 {
+			verifiedOldest := profile.Interval.LastClosedOpenTime(startedAt)
+			err := synchronizer.store.SaveCandleHistoryCoverage(ctx, market.HistoryCoverage{
+				InstrumentID: instrument.ID, Interval: profile.Interval, VerifiedOldestOpenTime: verifiedOldest,
+				TargetDepth: policy.initialLimit, PolicyVersion: historyDepthPolicyVersion,
+				RetryAfter: startedAt.Add(historyExhaustionRetryDelay),
+			})
+			if err != nil {
+				result.err = fmt.Errorf("save candle history coverage for %s: %w", instrument.Symbol, err)
+			}
+			return result
+		}
 	}
 
 	latest := existing[0].OpenTime.UTC()
-	result := instrumentResult{latestOpenTime: &latest}
+	if result.latestOpenTime == nil || latest.After(*result.latestOpenTime) {
+		result.latestOpenTime = &latest
+	}
+
+	// Keep current data ahead of historical repair so an old prefix can never
+	// delay the newest closed candle for an instrument.
+	if latest.Before(profile.Interval.LastClosedOpenTime(startedAt)) {
+		loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
+			ClosedBefore: startedAt, AfterOpenTime: &latest,
+		}, true)
+		result = mergeInstrumentResults(result, loaded)
+		if result.err != nil {
+			return result
+		}
+	}
 	if policy.repairGaps {
 		for _, gap := range missingRanges(existing, profile.Interval) {
 			after := gap.from.Add(-time.Millisecond)
@@ -256,12 +308,51 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 			}
 		}
 	}
-	if latest.Before(profile.Interval.LastClosedOpenTime(startedAt)) {
-		loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
-			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
-			ClosedBefore: startedAt, AfterOpenTime: &latest,
-		}, true)
-		result = mergeInstrumentResults(result, loaded)
+
+	// Forward and gap writes can change both the count and boundaries. The
+	// persisted rows are the durable repair cursor, so always decide depth from
+	// a fresh read rather than from responses held in memory.
+	existing, err = synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(profile.Interval), policy.inspectionLimit)
+	if err != nil {
+		result.err = fmt.Errorf("reinspect repaired candle history for %s: %w", instrument.Symbol, err)
+		return result
+	}
+	if len(existing) >= policy.initialLimit || len(existing) == 0 {
+		return result
+	}
+	oldest := existing[len(existing)-1].OpenTime.UTC()
+	coverage, found, err := synchronizer.store.GetCandleHistoryCoverage(ctx, instrument.ID, profile.Interval)
+	if err != nil {
+		result.err = fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
+		return result
+	}
+	if found && coverage.TargetDepth == policy.initialLimit && coverage.PolicyVersion == historyDepthPolicyVersion &&
+		coverage.VerifiedOldestOpenTime.Equal(oldest) && startedAt.Before(coverage.RetryAfter) {
+		return result
+	}
+
+	remaining := policy.initialLimit - len(existing)
+	loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+		Symbol: instrument.Symbol, Interval: profile.Interval, Limit: remaining,
+		ClosedBefore: oldest, HistoryRepair: true,
+	}, false)
+	result = mergeInstrumentResults(result, loaded)
+	if result.err != nil {
+		return result
+	}
+	if loaded.rowsRequested < remaining {
+		verifiedOldest := oldest
+		if loaded.oldestOpenTime != nil && loaded.oldestOpenTime.Before(verifiedOldest) {
+			verifiedOldest = *loaded.oldestOpenTime
+		}
+		err := synchronizer.store.SaveCandleHistoryCoverage(ctx, market.HistoryCoverage{
+			InstrumentID: instrument.ID, Interval: profile.Interval, VerifiedOldestOpenTime: verifiedOldest,
+			TargetDepth: policy.initialLimit, PolicyVersion: historyDepthPolicyVersion,
+			RetryAfter: startedAt.Add(historyExhaustionRetryDelay),
+		})
+		if err != nil {
+			result.err = fmt.Errorf("save candle history coverage for %s: %w", instrument.Symbol, err)
+		}
 	}
 	return result
 }
@@ -289,11 +380,12 @@ func (synchronizer *Synchronizer) loadRange(ctx context.Context, instrument mark
 		result.exchangeRequests++
 		candles, err := synchronizer.exchange.ListClosedCandles(ctx, request)
 		if err != nil {
-			return instrumentResult{err: fmt.Errorf("load candles for %s: %w", instrument.Symbol, err)}
+			result.err = fmt.Errorf("load candles for %s: %w", instrument.Symbol, err)
+			return result
 		}
 		result.rowsRequested += len(candles)
 		closed := make([]market.Candle, 0, len(candles))
-		var pageLatest *time.Time
+		var pageLatest, pageOldest *time.Time
 		for _, candle := range candles {
 			if !candle.CloseTime.Before(request.ClosedBefore) || request.AfterOpenTime != nil && !candle.OpenTime.After(*request.AfterOpenTime) {
 				continue
@@ -301,17 +393,26 @@ func (synchronizer *Synchronizer) loadRange(ctx context.Context, instrument mark
 			candle.InstrumentID = instrument.ID
 			candle.Interval = request.Interval
 			closed = append(closed, candle)
-			if pageLatest == nil || candle.OpenTime.After(*pageLatest) {
-				openTime := candle.OpenTime.UTC()
-				pageLatest = &openTime
+			openTime := candle.OpenTime.UTC()
+			if pageLatest == nil || openTime.After(*pageLatest) {
+				latest := openTime
+				pageLatest = &latest
+			}
+			if pageOldest == nil || openTime.Before(*pageOldest) {
+				oldest := openTime
+				pageOldest = &oldest
 			}
 		}
 		if err := synchronizer.store.UpsertCandles(ctx, closed); err != nil {
-			return instrumentResult{err: fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)}
+			result.err = fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)
+			return result
 		}
 		result.rowsWritten += len(closed)
 		if pageLatest != nil && (result.latestOpenTime == nil || pageLatest.After(*result.latestOpenTime)) {
 			result.latestOpenTime = pageLatest
+		}
+		if pageOldest != nil && (result.oldestOpenTime == nil || pageOldest.Before(*result.oldestOpenTime)) {
+			result.oldestOpenTime = pageOldest
 		}
 		if !paginate || len(candles) < request.Limit || pageLatest == nil {
 			return result
@@ -330,6 +431,9 @@ func mergeInstrumentResults(current, addition instrumentResult) instrumentResult
 	}
 	if addition.latestOpenTime != nil && (current.latestOpenTime == nil || addition.latestOpenTime.After(*current.latestOpenTime)) {
 		current.latestOpenTime = addition.latestOpenTime
+	}
+	if addition.oldestOpenTime != nil && (current.oldestOpenTime == nil || addition.oldestOpenTime.Before(*current.oldestOpenTime)) {
+		current.oldestOpenTime = addition.oldestOpenTime
 	}
 	return current
 }

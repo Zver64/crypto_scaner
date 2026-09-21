@@ -327,6 +327,35 @@ func (store *Store) ListLatestCandlesByInterval(ctx context.Context, instrumentI
 	return items, nil
 }
 
+func (store *Store) GetCandleHistoryCoverage(ctx context.Context, instrumentID int64, interval market.CandleInterval) (market.HistoryCoverage, bool, error) {
+	row, err := store.queries.GetCandleHistoryCoverage(ctx, generated.GetCandleHistoryCoverageParams{InstrumentID: instrumentID, Interval: string(interval)})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return market.HistoryCoverage{}, false, nil
+	}
+	if err != nil {
+		return market.HistoryCoverage{}, false, fmt.Errorf("get candle history coverage: %w", err)
+	}
+	return market.HistoryCoverage{
+		InstrumentID: row.InstrumentID, Interval: market.CandleInterval(row.Interval),
+		VerifiedOldestOpenTime: row.VerifiedOldestOpenTime.Time.UTC(), TargetDepth: int(row.TargetDepth),
+		PolicyVersion: int(row.PolicyVersion), RetryAfter: row.RetryAfter.Time.UTC(),
+	}, true, nil
+}
+
+func (store *Store) SaveCandleHistoryCoverage(ctx context.Context, coverage market.HistoryCoverage) error {
+	if coverage.InstrumentID <= 0 || !coverage.Interval.Valid() || coverage.TargetDepth <= 0 || coverage.PolicyVersion <= 0 || coverage.VerifiedOldestOpenTime.IsZero() || coverage.RetryAfter.IsZero() {
+		return fmt.Errorf("invalid candle history coverage")
+	}
+	if err := store.queries.SaveCandleHistoryCoverage(ctx, generated.SaveCandleHistoryCoverageParams{
+		InstrumentID: coverage.InstrumentID, Interval: string(coverage.Interval),
+		VerifiedOldestOpenTime: timestamptz(&coverage.VerifiedOldestOpenTime), TargetDepth: int32(coverage.TargetDepth),
+		PolicyVersion: int32(coverage.PolicyVersion), RetryAfter: timestamptz(&coverage.RetryAfter),
+	}); err != nil {
+		return fmt.Errorf("save candle history coverage: %w", err)
+	}
+	return nil
+}
+
 func (store *Store) ListCandlePage(ctx context.Context, instrumentID int64, interval market.CandleInterval, before *time.Time, limit int) (market.CandlePage, error) {
 	if instrumentID <= 0 || !interval.Valid() || limit <= 0 || int64(limit) >= math.MaxInt32 {
 		return market.CandlePage{}, fmt.Errorf("invalid candle page")

@@ -44,6 +44,21 @@ type CandleRequest struct {
 	Limit         int
 	ClosedBefore  time.Time
 	AfterOpenTime *time.Time
+	// HistoryRepair marks a request that extends an existing history backwards.
+	// Adapters may apply stricter shared rate limiting to these requests.
+	HistoryRepair bool
+}
+
+// HistoryCoverage records a confirmed exchange boundary for a history-depth
+// policy. It suppresses futile prefix requests without treating API failures as
+// proof that no older history exists.
+type HistoryCoverage struct {
+	InstrumentID           int64
+	Interval               CandleInterval
+	VerifiedOldestOpenTime time.Time
+	TargetDepth            int
+	PolicyVersion          int
+	RetryAfter             time.Time
 }
 
 // SyncProfile identifies one independently synchronized market dataset.

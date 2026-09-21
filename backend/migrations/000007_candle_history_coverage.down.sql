@@ -1,0 +1,1 @@
+DROP TABLE binance_spot.candle_history_coverage;

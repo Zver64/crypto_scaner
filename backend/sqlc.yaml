@@ -8,6 +8,7 @@ sql:
       - migrations/000004_weekly_monthly_candles.up.sql
       - migrations/000005_market_selection.up.sql
       - migrations/000006_coin_metadata.up.sql
+      - migrations/000007_candle_history_coverage.up.sql
     queries: internal/storage/postgres/queries
     gen:
       go:

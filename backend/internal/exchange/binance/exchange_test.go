@@ -267,6 +267,33 @@ func TestExchangeListClosedCandlesStartsAfterLatestStoredOpenTime(t *testing.T) 
 	}
 }
 
+func TestExchangeHistoryRepairLimiterAppliesToEveryRetryAttempt(t *testing.T) {
+	calls := 0
+	repairLimiter := rate.NewLimiter(rate.Limit(20), 1)
+	exchange := binance.NewWithOptions(binance.Options{
+		BaseURL: "https://fixture.invalid", RetryAttempts: 2, RetryBaseDelay: time.Millisecond,
+		Limiter: rate.NewLimiter(rate.Inf, 1), HistoryRepairLimiter: repairLimiter,
+		HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+			calls++
+			if calls == 1 {
+				return statusResponse(http.StatusInternalServerError, `{"code":-1,"msg":"temporary"}`), nil
+			}
+			return jsonResponse(`[]`), nil
+		})},
+	})
+	started := time.Now()
+	_, err := exchange.ListClosedCandles(context.Background(), market.CandleRequest{
+		Symbol: "BTCUSDT", Interval: market.IntervalDay, Limit: 10,
+		ClosedBefore: time.Date(2026, time.August, 5, 0, 0, 0, 0, time.UTC), HistoryRepair: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if calls != 2 || time.Since(started) < 40*time.Millisecond {
+		t.Fatalf("repair retries = %d in %s, want every HTTP attempt rate-limited without burst", calls, time.Since(started))
+	}
+}
+
 func TestExchangeRetriesServerFailuresButNotPermanentClientFailures(t *testing.T) {
 	t.Run("server failure", func(t *testing.T) {
 		calls := 0

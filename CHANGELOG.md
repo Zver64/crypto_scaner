@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.1](https://github.com/Zver64/crypto_scaner/compare/v0.17.0...v0.17.1) (2026-09-22)
+
+
+### Bug Fixes
+
+* cache after new release ([074f1b1](https://github.com/Zver64/crypto_scaner/commit/074f1b16484064b855da1ac2ad1f4f1d0703510d))
+
 ## [0.17.0](https://github.com/Zver64/crypto_scaner/compare/v0.16.1...v0.17.0) (2026-09-22)
 
 

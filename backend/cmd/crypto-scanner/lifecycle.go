@@ -16,6 +16,31 @@ type scheduledService interface {
 	Run(context.Context) error
 }
 
+type parallelServices struct{ services []scheduledService }
+
+func (group parallelServices) Run(ctx context.Context) error {
+	groupCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	results := make(chan error, len(group.services))
+	for _, service := range group.services {
+		go func(service scheduledService) { results <- service.Run(groupCtx) }(service)
+	}
+	var first error
+	for range group.services {
+		err := <-results
+		if ctx.Err() == nil && first == nil {
+			if err == nil {
+				err = fmt.Errorf("service stopped unexpectedly")
+			}
+			first = err
+			cancel()
+		} else if err != nil && first == nil {
+			first = err
+		}
+	}
+	return first
+}
+
 func runServices(
 	ctx context.Context,
 	listener net.Listener,

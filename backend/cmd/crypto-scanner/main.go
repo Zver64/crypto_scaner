@@ -21,6 +21,7 @@ import (
 	"crypto-scanner/internal/indicator"
 	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
+	marketlive "crypto-scanner/internal/market/live"
 	marketsync "crypto-scanner/internal/market/sync"
 	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/platform/config"
@@ -83,6 +84,9 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		synchronizers[interval] = marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, profile)
 	}
 	scheduler := marketsync.NewSchedulerWithProfiles(synchronizers, logger)
+	liveStream := binance.NewKlineStream(logger)
+	liveService := marketlive.New(liveStream, store, logger)
+	marketServices := parallelServices{services: []scheduledService{scheduler, liveStream, liveService}}
 	coinMetadataResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
 	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(coinMetadataResolver, store, logger, time.Hour, time.Minute)
 	if err != nil {
@@ -116,7 +120,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled, Chart: chartService}), scheduler, botService, coinMetadataSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled, Chart: chartService, LiveAuthenticator: authenticator, LiveCandles: liveService}), marketServices, botService, coinMetadataSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

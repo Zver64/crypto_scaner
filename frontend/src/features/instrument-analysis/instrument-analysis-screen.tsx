@@ -13,8 +13,9 @@ import {
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { type InfiniteData, keepPreviousData } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+	getInstrumentChart,
 	useAnalyzeInstrument,
 	useGetInstrumentChartInfinite,
 	useListInstrumentCandlesInfinite,
@@ -46,14 +47,17 @@ import {
 	validateCandlePage,
 } from "@/features/instrument-analysis/candle-page";
 import {
+	mergeChartCandlePages,
+	mergeChartRsiPages,
 	nextChartPageParam,
 	rsiChartRequest,
-	rsiPoints,
 	validateChartPage,
 } from "@/features/instrument-analysis/chart-page";
 import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
+import { mergeHistoryAndLiveCandles } from "@/features/instrument-analysis/live-candle-merge";
 import { InstrumentPriceHistoryChart } from "@/features/instrument-analysis/price-history-chart";
 import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
+import { useLiveCandles } from "@/features/instrument-analysis/use-live-candles";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 import { formatRangePercent } from "@/utils/range-percent";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
@@ -133,19 +137,35 @@ export function InstrumentAnalysisScreen({
 			},
 		},
 	);
+	const liveCandles = useLiveCandles(permission.allowed, symbol, chartInterval);
+	const [latestChartPage, setLatestChartPage] = useState<ChartPageResponse>();
+	const currentLatestChartPage =
+		latestChartPage?.symbol === symbol.toUpperCase() &&
+		latestChartPage.interval === chartInterval
+			? latestChartPage
+			: undefined;
+	const historicalChartCandles = useMemo(
+		() =>
+			mergeChartCandlePages(
+				chartQuery.data?.pages ?? [],
+				currentLatestChartPage,
+			),
+		[chartQuery.data, currentLatestChartPage],
+	);
 	const chartCandles = useMemo(
 		() =>
 			chartQuery.data
-				? [...chartQuery.data.pages].reverse().flatMap((page) => page.candles)
+				? mergeHistoryAndLiveCandles(
+						historicalChartCandles,
+						liveCandles.candles,
+					)
 				: [],
-		[chartQuery.data],
+		[chartQuery.data, historicalChartCandles, liveCandles.candles],
 	);
 	const chartRsi = useMemo(
 		() =>
-			chartQuery.data
-				? [...chartQuery.data.pages].reverse().flatMap(rsiPoints)
-				: [],
-		[chartQuery.data],
+			mergeChartRsiPages(chartQuery.data?.pages ?? [], currentLatestChartPage),
+		[chartQuery.data, currentLatestChartPage],
 	);
 	const hourlyCandles = useMemo(() => {
 		const data =
@@ -205,6 +225,62 @@ export function InstrumentAnalysisScreen({
 			});
 		}
 	}, [chartInterval, chartQuery.error, chartQuery.isError, symbol]);
+	const latestLiveClosure = [...liveCandles.candles]
+		.reverse()
+		.find((state) => state.final)?.candle.open_time;
+	const previousLiveFreshness = useRef(liveCandles.freshness);
+	const headRequestSequence = useRef(0);
+	const refreshChartHead = useCallback(
+		async (isCancelled: () => boolean) => {
+			const requestSequence = ++headRequestSequence.current;
+			try {
+				const response = await getInstrumentChart(
+					symbol,
+					rsiChartRequest,
+					{ interval: chartInterval, limit: 200 },
+					telegramRequestOptions(),
+				);
+				if (!isCancelled() && requestSequence === headRequestSequence.current) {
+					setLatestChartPage(
+						validateChartPage(response, symbol, chartInterval),
+					);
+				}
+			} catch {
+				// The infinite query remains the authoritative fallback.
+			}
+		},
+		[chartInterval, symbol],
+	);
+	useEffect(() => {
+		if (!latestLiveClosure) return;
+		let cancelled = false;
+		void refreshChartHead(() => cancelled);
+		return () => {
+			cancelled = true;
+		};
+	}, [latestLiveClosure, refreshChartHead]);
+	useEffect(() => {
+		if (liveCandles.freshness !== "recovering") return;
+		let cancelled = false;
+		const timers = [0, 1_000, 2_000, 4_000, 8_000].map((delay) =>
+			setTimeout(() => void refreshChartHead(() => cancelled), delay),
+		);
+		return () => {
+			cancelled = true;
+			for (const timer of timers) clearTimeout(timer);
+		};
+	}, [liveCandles.freshness, refreshChartHead]);
+	useEffect(() => {
+		const previous = previousLiveFreshness.current;
+		previousLiveFreshness.current = liveCandles.freshness;
+		if (previous !== "recovering" || liveCandles.freshness === "recovering")
+			return;
+		let cancelled = false;
+		void refreshChartHead(() => cancelled);
+		return () => {
+			cancelled = true;
+		};
+	}, [liveCandles.freshness, refreshChartHead]);
 	useEffect(() => {
 		if (hourlyHistoryQuery.isError) {
 			notifications.show({
@@ -320,7 +396,10 @@ export function InstrumentAnalysisScreen({
 											interval={chartInterval}
 											isLoading={chartQuery.isPending}
 											isLoadingMore={chartQuery.isFetchingNextPage}
-											key={chartInterval}
+											key={`${symbol}:${chartInterval}`}
+											liveConnection={liveCandles.connection}
+											liveError={liveCandles.error}
+											liveFreshness={liveCandles.freshness}
 											onLoadOlder={() => void chartQuery.fetchNextPage()}
 											rsi={chartRsi}
 											symbol={result.symbol}

@@ -20,8 +20,13 @@ import {
 	type TimeChartOptions,
 } from "lightweight-charts";
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { CandleInterval, IndicatorPoint } from "@/api/generated/models";
+import type {
+	CandleInterval,
+	IndicatorPoint,
+	LiveCandleServerMessageFreshness,
+} from "@/api/generated/models";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
+import { LiveStatus } from "@/features/instrument-analysis/price-history-chart/live-status";
 import {
 	type ChartCandle,
 	chartPriceResolution,
@@ -40,6 +45,9 @@ interface InstrumentPriceHistoryChartProps {
 	interval: CandleInterval;
 	isLoading: boolean;
 	isLoadingMore: boolean;
+	liveConnection: "connecting" | "connected" | "disconnected";
+	liveFreshness: LiveCandleServerMessageFreshness;
+	liveError?: string;
 	onLoadOlder(): void;
 	rsi: readonly IndicatorPoint[];
 	symbol: string;
@@ -62,6 +70,9 @@ export function InstrumentPriceHistoryChart({
 	interval,
 	isLoading,
 	isLoadingMore,
+	liveConnection,
+	liveFreshness,
+	liveError,
 	onLoadOlder,
 	rsi,
 	symbol,
@@ -71,6 +82,7 @@ export function InstrumentPriceHistoryChart({
 	const seriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
 	const rsiSeriesRef = useRef<ISeriesApi<"Line"> | null>(null);
 	const previousLengthRef = useRef(0);
+	const previousFirstTimeRef = useRef<Time | undefined>(undefined);
 	const loadStateRef = useRef({ hasMore, isLoadingMore, onLoadOlder });
 	const theme = useMantineTheme();
 	const colorScheme = useComputedColorScheme("dark");
@@ -177,6 +189,7 @@ export function InstrumentPriceHistoryChart({
 		seriesRef.current = series;
 		rsiSeriesRef.current = rsiSeries;
 		previousLengthRef.current = 0;
+		previousFirstTimeRef.current = undefined;
 		const handleCrosshairMove: Parameters<
 			typeof chart.subscribeCrosshairMove
 		>[0] = (parameter) => {
@@ -234,13 +247,24 @@ export function InstrumentPriceHistoryChart({
 				to: data.length - 1,
 			});
 		} else if (previousRange && data.length > previousLength) {
-			const prepended = data.length - previousLength;
+			const previousFirst = previousFirstTimeRef.current;
+			const prepended =
+				previousFirst === undefined
+					? 0
+					: Math.max(
+							0,
+							data.findIndex((item) => item.time === previousFirst),
+						);
+			const appended = Math.max(0, data.length - previousLength - prepended);
+			const followingLatest = previousRange.to >= previousLength - 1.5;
+			const shift = prepended + (followingLatest ? appended : 0);
 			chart.timeScale().setVisibleLogicalRange({
-				from: previousRange.from + prepended,
-				to: previousRange.to + prepended,
+				from: previousRange.from + shift,
+				to: previousRange.to + shift,
 			});
 		}
 		previousLengthRef.current = data.length;
+		previousFirstTimeRef.current = data[0]?.time;
 	}, [data, rsiData]);
 
 	const readout = active ?? last;
@@ -249,6 +273,11 @@ export function InstrumentPriceHistoryChart({
 		(last ? Math.floor(Date.parse(last.open_time) / 1_000) : null);
 	return (
 		<Box pos="relative">
+			<LiveStatus
+				connection={liveConnection}
+				error={liveError}
+				freshness={liveFreshness}
+			/>
 			{readout && readoutTime !== null ? (
 				<Text aria-live="polite" ff="monospace" mb="xs" size="sm">
 					{formatUtcTimestamp(readoutTime, interval)} · {formatOhlc(readout)} ·{" "}
@@ -261,7 +290,7 @@ export function InstrumentPriceHistoryChart({
 				<Text c="dimmed">No closed candles are available.</Text>
 			) : null}
 			<div
-				aria-label={`${symbol}: ${interval} closed candlestick history. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
+				aria-label={`${symbol}: ${interval} candlestick history with the current live candle. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
 				ref={containerRef}
 				role="img"
 				style={{ height: 440, width: "100%" }}

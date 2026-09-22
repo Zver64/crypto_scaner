@@ -12,6 +12,7 @@ require (
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-telegram/bot v1.25.0
 	github.com/golang-migrate/migrate/v4 v4.18.3
+	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
 	github.com/markcheno/go-talib v0.0.0-20260617004048-4ff5e103edd9
@@ -37,7 +38,6 @@ require (
 	github.com/google/cel-go v0.28.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
-	github.com/gorilla/websocket v1.5.3 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect

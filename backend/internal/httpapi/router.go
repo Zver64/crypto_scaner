@@ -37,8 +37,10 @@ type Analysis interface {
 const maxAnalysisRequestBody = 1 << 20
 
 type Options struct {
-	APIDocsEnabled bool
-	Chart          ChartService
+	APIDocsEnabled    bool
+	Chart             ChartService
+	LiveAuthenticator LiveAuthenticator
+	LiveCandles       LiveCandles
 }
 
 type api struct {
@@ -76,6 +78,9 @@ func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, 
 	router.Handle("POST /api/v1/analysis/market", protectedOperations)
 	router.Handle("GET /api/v1/instruments/{symbol}/candles", protectedOperations)
 	router.Handle("POST /api/v1/instruments/{symbol}/chart", protectedOperations)
+	if options.LiveAuthenticator != nil && options.LiveCandles != nil {
+		router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(options.LiveAuthenticator, options.LiveCandles, logger))
+	}
 	if options.APIDocsEnabled {
 		registerDocs(router)
 	}

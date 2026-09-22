@@ -19,6 +19,11 @@ import (
 
 type userContextKey struct{}
 
+var (
+	ErrUnauthenticated = errors.New("Telegram authentication is invalid or expired")
+	ErrAccessDenied    = errors.New("Telegram user is not allowed")
+)
+
 // Options exposes the time boundary used to validate init-data age.
 type Options struct {
 	Now func() time.Time
@@ -55,14 +60,13 @@ func (middleware *Middleware) Authenticate(next http.Handler) http.Handler {
 			writeError(response, http.StatusUnauthorized, "unauthenticated", "Telegram authentication is required")
 			return
 		}
-		telegramID, ok := middleware.validate(rawInitData)
-		if !ok {
-			writeError(response, http.StatusUnauthorized, "unauthenticated", "Telegram authentication is invalid or expired")
+		user, err := middleware.AuthenticateInitData(request.Context(), rawInitData)
+		if errors.Is(err, ErrUnauthenticated) {
+			writeError(response, http.StatusUnauthorized, "unauthenticated", ErrUnauthenticated.Error())
 			return
 		}
-		user, err := middleware.store.FindEnabledByTelegramID(request.Context(), telegramID)
-		if errors.Is(err, auth.ErrUserNotFound) || err == nil && !user.Enabled {
-			writeError(response, http.StatusForbidden, "access_denied", "Telegram user is not allowed")
+		if errors.Is(err, ErrAccessDenied) {
+			writeError(response, http.StatusForbidden, "access_denied", ErrAccessDenied.Error())
 			return
 		}
 		if err != nil {
@@ -72,6 +76,23 @@ func (middleware *Middleware) Authenticate(next http.Handler) http.Handler {
 		ctx := context.WithValue(request.Context(), userContextKey{}, user)
 		next.ServeHTTP(response, request.WithContext(ctx))
 	})
+}
+
+// AuthenticateInitData verifies an initial WebSocket authentication message
+// without requiring credentials in the URL or unsupported browser headers.
+func (middleware *Middleware) AuthenticateInitData(ctx context.Context, rawInitData string) (auth.User, error) {
+	telegramID, ok := middleware.validate(rawInitData)
+	if !ok {
+		return auth.User{}, ErrUnauthenticated
+	}
+	user, err := middleware.store.FindEnabledByTelegramID(ctx, telegramID)
+	if errors.Is(err, auth.ErrUserNotFound) || err == nil && !user.Enabled {
+		return auth.User{}, ErrAccessDenied
+	}
+	if err != nil {
+		return auth.User{}, err
+	}
+	return user, nil
 }
 
 // UserFromContext returns the enabled user attached by Authenticate.

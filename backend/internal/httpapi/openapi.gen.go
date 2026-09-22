@@ -95,6 +95,123 @@ func (e CandleInterval) Valid() bool {
 	}
 }
 
+// Defines values for LiveCandleClientMessageType.
+const (
+	Authenticate LiveCandleClientMessageType = "authenticate"
+	Subscribe    LiveCandleClientMessageType = "subscribe"
+	Unsubscribe  LiveCandleClientMessageType = "unsubscribe"
+)
+
+// Valid indicates whether the value is a known member of the LiveCandleClientMessageType enum.
+func (e LiveCandleClientMessageType) Valid() bool {
+	switch e {
+	case Authenticate:
+		return true
+	case Subscribe:
+		return true
+	case Unsubscribe:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LiveCandleServerMessageCode.
+const (
+	LiveCandleServerMessageCodeAccessDenied      LiveCandleServerMessageCode = "access_denied"
+	LiveCandleServerMessageCodeInvalidArgument   LiveCandleServerMessageCode = "invalid_argument"
+	LiveCandleServerMessageCodeInvalidMessage    LiveCandleServerMessageCode = "invalid_message"
+	LiveCandleServerMessageCodeRateLimited       LiveCandleServerMessageCode = "rate_limited"
+	LiveCandleServerMessageCodeSlowClient        LiveCandleServerMessageCode = "slow_client"
+	LiveCandleServerMessageCodeSubscriptionLimit LiveCandleServerMessageCode = "subscription_limit"
+	LiveCandleServerMessageCodeSymbolNotFound    LiveCandleServerMessageCode = "symbol_not_found"
+	LiveCandleServerMessageCodeUnauthenticated   LiveCandleServerMessageCode = "unauthenticated"
+	LiveCandleServerMessageCodeUnavailable       LiveCandleServerMessageCode = "unavailable"
+)
+
+// Valid indicates whether the value is a known member of the LiveCandleServerMessageCode enum.
+func (e LiveCandleServerMessageCode) Valid() bool {
+	switch e {
+	case LiveCandleServerMessageCodeAccessDenied:
+		return true
+	case LiveCandleServerMessageCodeInvalidArgument:
+		return true
+	case LiveCandleServerMessageCodeInvalidMessage:
+		return true
+	case LiveCandleServerMessageCodeRateLimited:
+		return true
+	case LiveCandleServerMessageCodeSlowClient:
+		return true
+	case LiveCandleServerMessageCodeSubscriptionLimit:
+		return true
+	case LiveCandleServerMessageCodeSymbolNotFound:
+		return true
+	case LiveCandleServerMessageCodeUnauthenticated:
+		return true
+	case LiveCandleServerMessageCodeUnavailable:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LiveCandleServerMessageFreshness.
+const (
+	Fresh      LiveCandleServerMessageFreshness = "fresh"
+	Recovering LiveCandleServerMessageFreshness = "recovering"
+	Stale      LiveCandleServerMessageFreshness = "stale"
+	Waiting    LiveCandleServerMessageFreshness = "waiting"
+)
+
+// Valid indicates whether the value is a known member of the LiveCandleServerMessageFreshness enum.
+func (e LiveCandleServerMessageFreshness) Valid() bool {
+	switch e {
+	case Fresh:
+		return true
+	case Recovering:
+		return true
+	case Stale:
+		return true
+	case Waiting:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for LiveCandleServerMessageType.
+const (
+	Authenticated LiveCandleServerMessageType = "authenticated"
+	Error         LiveCandleServerMessageType = "error"
+	Snapshot      LiveCandleServerMessageType = "snapshot"
+	Status        LiveCandleServerMessageType = "status"
+	Subscribed    LiveCandleServerMessageType = "subscribed"
+	Unsubscribed  LiveCandleServerMessageType = "unsubscribed"
+	Update        LiveCandleServerMessageType = "update"
+)
+
+// Valid indicates whether the value is a known member of the LiveCandleServerMessageType enum.
+func (e LiveCandleServerMessageType) Valid() bool {
+	switch e {
+	case Authenticated:
+		return true
+	case Error:
+		return true
+	case Snapshot:
+		return true
+	case Status:
+		return true
+	case Subscribed:
+		return true
+	case Unsubscribed:
+		return true
+	case Update:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for LivenessResponseStatus.
 const (
 	LivenessResponseStatusOk LivenessResponseStatus = "ok"
@@ -318,6 +435,44 @@ type InstrumentAnalysisResponse struct {
 	Matched     bool         `json:"matched"`
 	Symbol      string       `json:"symbol"`
 	Warnings    []Warning    `json:"warnings"`
+}
+
+// LiveCandleClientMessage defines model for LiveCandleClientMessage.
+type LiveCandleClientMessage struct {
+	InitData *string                     `json:"init_data,omitempty"`
+	Interval *CandleInterval             `json:"interval,omitempty"`
+	Symbol   *string                     `json:"symbol,omitempty"`
+	Type     LiveCandleClientMessageType `json:"type"`
+}
+
+// LiveCandleClientMessageType defines model for LiveCandleClientMessage.Type.
+type LiveCandleClientMessageType string
+
+// LiveCandleServerMessage defines model for LiveCandleServerMessage.
+type LiveCandleServerMessage struct {
+	Candle    *LiveCandleState                  `json:"candle,omitempty"`
+	Candles   *[]LiveCandleState                `json:"candles,omitempty"`
+	Code      *LiveCandleServerMessageCode      `json:"code,omitempty"`
+	Freshness *LiveCandleServerMessageFreshness `json:"freshness,omitempty"`
+	Interval  *CandleInterval                   `json:"interval,omitempty"`
+	Message   *string                           `json:"message,omitempty"`
+	Symbol    *string                           `json:"symbol,omitempty"`
+	Type      LiveCandleServerMessageType       `json:"type"`
+}
+
+// LiveCandleServerMessageCode defines model for LiveCandleServerMessage.Code.
+type LiveCandleServerMessageCode string
+
+// LiveCandleServerMessageFreshness defines model for LiveCandleServerMessage.Freshness.
+type LiveCandleServerMessageFreshness string
+
+// LiveCandleServerMessageType defines model for LiveCandleServerMessage.Type.
+type LiveCandleServerMessageType string
+
+// LiveCandleState defines model for LiveCandleState.
+type LiveCandleState struct {
+	Candle Candle `json:"candle"`
+	Final  bool   `json:"final"`
 }
 
 // LivenessResponse defines model for LivenessResponse.
@@ -1902,51 +2057,59 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"7Fvdb9s4Ev9XCN49KnHc/cBt3tL0rg2uvQ2aFnu4IPAy1NjihiJVknLiLfy/H0jq06YsyXXcLnbfbEmj",
-	"+eRvhsPRZ0xlmkkBwmh8/hknQGJQ7ud7+JSDNlev7J8YNFUsM0wKfI4vpVLAif2Hrl4hojVbCIiRkcgk",
-	"gJSnPMURtj+ZghifG5VDhDVNICX2jWaVAT7H2igmFni9Xkc4I4qkYPr5/+x+EI4o4RzUSabkksUQI9oS",
-	"7BR9FJrMAS0Jz0EjoqxsGScUYiscs+/yGuMIC5Jagf57UjA+uXqFdwkc4ZtVei/5tngX1LAloJSoBzBI",
-	"u6cqfhkxSc3N39xpqJSJtyAWJsHn0yhkNgU6k0KDs9oFpaD1KxDMvsu6VxgQxv4kWcYZdcaZ/KatpJ8b",
-	"bP6uYI7P8d8mdUBM/F09+adSUr0v2HimbY0/JIBIbhIQxnKAGH0ADgtFUpRrUIhpJKRBIMg997ZvBFrL",
-	"4h2SFI9P6qBwUlwIwlea6Y+CLAnj9u3HU/p94bLS0TExBElV/D2hJGOGcPa7D0d3l2mU16Iezg4vSVxc",
-	"Oa7Pi5Vu9UoJn0uVQmxNYCUgTGhEBMqFzrNMKhsVRC3yFIQ5nOZXQufzOaMMhHlFDPkq+lvNikhExULW",
-	"KJUKECUi5oASpo1Uq0OqbUAJwp2Ux9P5wroTnjKgVmcNagkKgaVCktJcqUMubg+v/5HmXzIXRwYzj8t+",
-	"vT4I+ShsVDNBHLIfTsWPooWaR9SxhOcGf4tSdiEzrZlYRIiJJeEsjqzq8JSxgzr3o8iUtKnKAmEJ40cN",
-	"ZCa0UQ6NEJU5j12GurdrWku+hBjNpaqW9aEUX5eZ3Sfr66tqAZM4Zr6quVYyA2WYTehzwjVEOGtcsiaK",
-	"XZoDkaf4/BYTl/NnsU/6ts6oMXFm84675gFj5laru+C8OyshGUc4JVnGxGJGpZhzRpuXhDSzuVuG9bWi",
-	"6lKzRkpzt236m1GSzYpQal8MPm2l3Ljjl2CLc76xXO626iHrZ0MYt3ZaRzi1AbaAcPlWl1y33qT18/WL",
-	"5f1vQI198aWD8rGu4lI7GpsbicHnOJa5169gIPL0HpRl4J6dGZZuEBADJ+5qQNuELZKBr+fyceCTMgMx",
-	"4tGRIn/KpYEZ0RrMbCl5ng61j1EkhhmVuUeHioIJ8+P31nlMsNSuiLOK2Eb9wlOPYLURG7WOLR8Vdip8",
-	"4O1bPIArdkF126p0x5pL8kvCm2t9allN7WKYWnbTd8FF4OmvyQIqEBwZt+4F7iczkOo+wC0Wx7qShShF",
-	"Vi5CiZ7ZUqixBu+l5ECEvcsaKva/vzLIOsICnszsHubFq3fE3m1pmAiLnHN8ty7BpR8Xqv1ZJWhU2aah",
-	"W9CHCVHmSsQWq1wyyrkZ6YX2hjhM6LeLW9w1KDbCf5WcN54u4Ej/v89g7m5rK1/J0mmkP0ScFvYZwSrk",
-	"/wDjP/YSaBhmyHpo7FJHeHkP61eGv5RizhwopuTpypP+wyWL4s900yUb+jeYB9VSzIBiUuyn2gOsAi6I",
-	"MCf3wIN3fOcocGNvtNhQ2IpUsCnlaL08ZIV2wT3OBFCWwLv8WZXKhbCgzYzF/dFblrsNmqD8S8Jz4jcH",
-	"ewBQXZXsLkLmSqbDK6XxsZESQxOIwxiWglGM7giOYVXYpuk649HIoaoOCcBStVqPqG38wrqOb8jFm4hw",
-	"tFRcJs7djdy+NLpTpWvJxFjkGVe1uxb6PtVz8UJPv1OJm6pkGaFFNxpak+yRL7wp1z1JoQjOgklYrbK9",
-	"UHY39ksQ1OcXMrzu2ExI6zHZrmK3pVOEn04W8qQ4uOhWr0P3/VJDBcvDPdmA8kC1tRMhO0uiCD8SJZhY",
-	"DBfjF0/QG0lVeVUDXFPrBudQlL1lSxCg97WvNsTkZdvNhiaWD73wXBCFxHnnujml023IfdsOzxSjMCu6",
-	"8y2GXTB3W+Jco5KuC8vpjz+1Fpv9uynQ6Lq7KzDawve749vEnwhzljKzfYr6jjzZSqrRp9XISKSBAzWn",
-	"6H+gJJIKSddklAKlQIRGQiL3vlNnuCdfi03PzvraQ1oq06eZN+eNfXJf2Ax7JOCqvZaz61b/DvHQcnSr",
-	"UTyYsAyEQRERQIXuhTpUhFb0zx6ZiH1/c5cg15bmjSf5xVOsI5yLsuU/WKOPFUmd6kI6PVvWCGq/acNo",
-	"MyC6PV66tGWNntzTWA7jwjRmCmi516oOMTTF/pQm2NGcM+Bx8/nmiYIOHQVsWMy/IGowD+kUiJBxuo3b",
-	"4e29Rdq91XkPJGa2LLhMgD40rebS+8YJTHFIE7J69aJ923OW/9iS3oblPfG8dq2VDS3X1WGSXgm6BzFb",
-	"qLryGEO74ZtK/tY729KFvFYXY6W3FJDYbYWlmfnfdwOLs6g0fYhREL2+7Ajy2Y4OQ1HZfaq3R3U14OSv",
-	"BOX9TDRC/LGHkq7PT3PFzOrGxmaxsS/O9q8Eq0ZiOk7/3zHB0EWWISZYMcCUKZizJ4jRIzMJ+tWkBP3a",
-	"OSx3kZtEqmLEqQYtkrF/w8qfuzMxl9sSvPnw4RpdXF+5Q3YNaskooAQIN0mEqFplRrpxEkFX5XhVeRQf",
-	"ISLiwGCNYYZb5peOGt1QIgQoywRHeAlKe87T07PTs/LokmQMn+PvTqenZ67bYhJnwQnJ2GQ5nZQsJ40a",
-	"dPLZh87adYWkr6et350NrmI3XOCybmNxtZuzt2F4qR9pzgxEvQ8XY4jru6rL+VLGq4PNUuzY6bcD1qgc",
-	"NscRX5ydPasg3RMe9dPN2Syd8wMOn33vtQtRVFaYNGbzHMm0n2RzLMjRfddP1xr+dETf9xNtjFk5sp/6",
-	"ybYG7yzhixdDlAtN/qwj/MMQa7YH3xzVEMME5kSb6OnW5DZu3t7ZRaXzNCVqVS9sJAUgPwrW2J1aCCK2",
-	"1L+txlLxnWWyhSYe0Hrxw9fXX4Idz4QIHZvY46JBx4Y5gATv2vnjz4cCf5JVubUiNWLCfZCQlitp9wIN",
-	"ZflJY8JgAYHF+pZpU+eay+pg/AgJP9qsqm6qQeuXTBBBAd1k0pS1Unl+X1Vzn3JQq7qYa5zvd3+NMGZC",
-	"YVvA92ByJQqBNHpMpAZkCzFkd72IaeTHGZBJmEY0V1qqLnGLwYemcMM20l2NRt/YRXJeyWckUk7iLhl8",
-	"67IpQgxz4gZ9XrieY9mB/KHVgZxuN7Q8Vj8TVgbGwQI46Z9CGVnAXyVST4m0DyqORzaLLYggmigpJJcL",
-	"Rgl3/nFByqWGciOkG+BW5Dv3ygH4lhC1oxZ5DU10c88eC9u+LkYtmWb3HL46Vh0Ddg5fIraGvY5cGW7P",
-	"FO4GO9dPINx/wlhNeyE/tfgXEn4TSPgatoGQNlzomlWlDw3QRLhHWtOJ3fjoG08TzpbQWee9BlMetn/x",
-	"luyZAn9rGKDj46ai0rcQpnIhmFgc8vOWymeuO44eEzAJKFeHNxgTZ+zaKW+cC9r+8C3vHQ6pGvHfqke2",
-	"z09C3yJxXn41GKMYMhAxCMqqD5ZJfMAPB4uN2fG0+1mA+yhWKtih5TN8FbsjFis5ys5z2OrB8PSz9csy",
-	"znLF8TmeuDAqHi6H0koim8XLfnm9sa6uNeFofbf+fwAAAP//",
+	"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",
+	"x/X/AgAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -3,6 +3,14 @@
  * Do not edit manually.
  * Crypto Scanner API
  * HTTP API for service health, cryptocurrency market analysis, and candle history.
+ *
+ * Live candles use the same-origin WebSocket endpoint `/api/v1/live/candles`.
+ * The client first sends `LiveCandleClientMessage` with type `authenticate`; the
+ * Telegram init data is never placed in the URL. After `authenticated`, the
+ * connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
+ * `LiveCandleServerMessage` snapshots, updates, freshness changes, acknowledgements,
+ * and bounded errors. One connection may switch subscriptions without reconnecting.
+ *
  * OpenAPI spec version: 1.0.0
  */
 
@@ -33,6 +41,13 @@ export * from './instrumentAnalysisResponse.ts';
 export * from './insufficientDataResponse.ts';
 export * from './internalErrorResponse.ts';
 export * from './listInstrumentCandlesParams.ts';
+export * from './liveCandleClientMessage.ts';
+export * from './liveCandleClientMessageType.ts';
+export * from './liveCandleServerMessage.ts';
+export * from './liveCandleServerMessageCode.ts';
+export * from './liveCandleServerMessageFreshness.ts';
+export * from './liveCandleServerMessageType.ts';
+export * from './liveCandleState.ts';
 export * from './livenessResponse.ts';
 export * from './marketAnalysisItem.ts';
 export * from './marketAnalysisRequest.ts';

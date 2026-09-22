@@ -2,7 +2,15 @@ openapi: 3.1.0
 info:
   title: Crypto Scanner API
   version: 1.0.0
-  description: HTTP API for service health, cryptocurrency market analysis, and candle history.
+  description: |
+    HTTP API for service health, cryptocurrency market analysis, and candle history.
+
+    Live candles use the same-origin WebSocket endpoint `/api/v1/live/candles`.
+    The client first sends `LiveCandleClientMessage` with type `authenticate`; the
+    Telegram init data is never placed in the URL. After `authenticated`, the
+    connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
+    `LiveCandleServerMessage` snapshots, updates, freshness changes, acknowledgements,
+    and bounded errors. One connection may switch subscriptions without reconnecting.
 servers:
   - url: /
 tags:
@@ -692,6 +700,59 @@ components:
         next_before:
           type: [string, "null"]
           format: date-time
+    LiveCandleClientMessage:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [authenticate, subscribe, unsubscribe]
+        init_data:
+          type: string
+          minLength: 1
+        symbol:
+          type: string
+          minLength: 1
+          maxLength: 32
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+    LiveCandleState:
+      type: object
+      additionalProperties: false
+      required: [candle, final]
+      properties:
+        candle:
+          $ref: "#/components/schemas/Candle"
+        final:
+          type: boolean
+    LiveCandleServerMessage:
+      type: object
+      additionalProperties: false
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [authenticated, subscribed, unsubscribed, snapshot, update, status, error]
+        symbol:
+          type: string
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+        candle:
+          $ref: "#/components/schemas/LiveCandleState"
+        candles:
+          type: array
+          maxItems: 16
+          items:
+            $ref: "#/components/schemas/LiveCandleState"
+        freshness:
+          type: string
+          enum: [waiting, fresh, stale, recovering]
+        code:
+          type: string
+          enum: [unauthenticated, access_denied, invalid_message, invalid_argument, symbol_not_found, rate_limited, subscription_limit, unavailable, slow_client]
+        message:
+          type: string
     APIError:
       type: object
       additionalProperties: false

@@ -6,20 +6,12 @@ import { defineConfig, loadEnv } from "vite";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
-export function developmentAuthorizationHeader(initData: string | undefined) {
-	const value = initData?.trim();
-	return value ? `tma ${value}` : undefined;
-}
-
 const config = defineConfig(({ mode }) => {
 	const env = loadEnv(mode, repositoryRoot, "");
 	const apiTarget =
 		process.env.VITE_API_PROXY_TARGET ||
 		env.VITE_API_PROXY_TARGET ||
 		"http://127.0.0.1:8080";
-	const developmentAuthorization = developmentAuthorizationHeader(
-		env.TELEGRAM_DEV_INIT_DATA,
-	);
 
 	return {
 		optimizeDeps: {
@@ -30,24 +22,24 @@ const config = defineConfig(({ mode }) => {
 			devtools(),
 			tanstackRouter({ target: "react", autoCodeSplitting: true }),
 			viteReact(),
+			mode === "development" && {
+				name: "telegram-development-init-data",
+				transformIndexHtml() {
+					return [
+						{
+							children: `window.location.hash = ${JSON.stringify(`tgWebAppData=${encodeURIComponent(env.TELEGRAM_DEV_INIT_DATA.trim())}`)};`,
+							injectTo: "head-prepend",
+							tag: "script",
+						},
+					];
+				},
+			},
 		],
 		server: {
 			proxy: {
 				"/api": {
 					target: apiTarget,
-					configure(proxy) {
-						proxy.on("proxyReq", (proxyRequest) => {
-							if (
-								developmentAuthorization &&
-								!proxyRequest.hasHeader("authorization")
-							) {
-								proxyRequest.setHeader(
-									"authorization",
-									developmentAuthorization,
-								);
-							}
-						});
-					},
+					ws: true,
 				},
 				"/health": {
 					target: apiTarget,

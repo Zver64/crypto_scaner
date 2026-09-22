@@ -9,9 +9,10 @@ When `npm run dev` starts Vite locally, the frontend generates fresh Telegram de
 data from the root `TELEGRAM_BOT_TOKEN` and `ADMIN_TELEGRAM_ID` values. The
 generator writes `TELEGRAM_DEV_INIT_DATA` to the gitignored root `.env.local`
 before Vite starts. It does not print the bot token or generated credential.
-During development, the proxy adds the stored credential to proxied API requests
-that do not already have an `Authorization` header. A real Telegram
-`Authorization` header therefore takes precedence.
+During development, Vite places the stored credential in the launch hash before
+the Telegram SDK loads. The SDK then exposes it through
+`Telegram.WebApp.initData`, so HTTP requests and WebSocket authentication use
+the same frontend path as they do inside Telegram.
 
 The init data can still be refreshed without starting Vite:
 
@@ -19,8 +20,8 @@ The init data can still be refreshed without starting Vite:
 npm run generate:dev-init-data
 ```
 
-Restart Vite after manually refreshing the init data so its proxy loads the new
-private credential.
+Restart Vite after manually refreshing the init data so it loads the new private
+credential.
 
 The backend accepts the generated value for the duration configured by the
 required root `TELEGRAM_INIT_DATA_MAX_AGE` environment variable. The local

@@ -1,5 +1,6 @@
 import type { getInstrumentChartResponseSuccess } from "@/api/generated/api";
 import type {
+	Candle,
 	CandleInterval,
 	ChartPageResponse,
 	ChartRequest,
@@ -75,4 +76,32 @@ export function validateChartPage(
 
 export function rsiPoints(page: ChartPageResponse): readonly IndicatorPoint[] {
 	return page.indicators[0]?.series[0]?.points ?? [];
+}
+
+export function mergeChartCandlePages(
+	pages: readonly ChartPageResponse[],
+	latest?: ChartPageResponse,
+): Candle[] {
+	const stored = [...pages].reverse().flatMap((page) => page.candles);
+	if (!latest) return stored;
+	const candles = new Map(stored.map((candle) => [candle.open_time, candle]));
+	for (const candle of latest.candles) candles.set(candle.open_time, candle);
+	return [...candles.values()].sort(
+		(left, right) => Date.parse(left.open_time) - Date.parse(right.open_time),
+	);
+}
+
+export function mergeChartRsiPages(
+	pages: readonly ChartPageResponse[],
+	latest?: ChartPageResponse,
+): IndicatorPoint[] {
+	const stored = [...pages].reverse().flatMap(rsiPoints);
+	if (!latest) return stored;
+	const points = new Map(stored.map((point) => [point.time, point]));
+	for (const point of rsiPoints(latest)) {
+		points.set(point.time, point);
+	}
+	return [...points.values()].sort(
+		(left, right) => Date.parse(left.time) - Date.parse(right.time),
+	);
 }

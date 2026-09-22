@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.17.0](https://github.com/Zver64/crypto_scaner/compare/v0.16.1...v0.17.0) (2026-09-22)
+
+
+### Features
+
+* add real-time candle streaming ([741fd3f](https://github.com/Zver64/crypto_scaner/commit/741fd3f8efeb334864b9ef160f8b905a54df78e0))
+
+
+### Bug Fixes
+
+* repair candle history depth ([33bea8e](https://github.com/Zver64/crypto_scaner/commit/33bea8e6d55e762469d7ed46c40bf896abb21bfa))
+
 ## [0.16.1](https://github.com/Zver64/crypto_scaner/compare/v0.16.0...v0.16.1) (2026-09-20)
 
 

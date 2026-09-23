@@ -20,7 +20,14 @@ const config = defineConfig(({ mode }) => {
 		resolve: { tsconfigPaths: true },
 		plugins: [
 			devtools(),
-			tanstackRouter({ target: "react", autoCodeSplitting: true }),
+			tanstackRouter({
+				target: "react",
+				autoCodeSplitting: true,
+				codeSplittingOptions: {
+					splitBehavior: ({ routeId }) =>
+						routeId === "/instruments/$symbol" ? [] : undefined,
+				},
+			}),
 			viteReact(),
 			mode === "development" && {
 				name: "telegram-development-init-data",

@@ -8,13 +8,16 @@ import (
 	"strconv"
 	"time"
 
+	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/auth"
+	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/marketcap"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -28,10 +31,13 @@ type Store struct {
 func NewStore(db *DB) *Store { return &Store{db: db, queries: generated.New(db)} }
 
 var (
-	_ auth.UserStore     = (*Store)(nil)
-	_ auth.AccessStore   = (*Store)(nil)
-	_ market.MarketStore = (*Store)(nil)
-	_ marketcap.Store    = (*Store)(nil)
+	_ auth.UserStore      = (*Store)(nil)
+	_ auth.AccessStore    = (*Store)(nil)
+	_ favorites.Store     = (*Store)(nil)
+	_ alerts.CRUDStore    = (*Store)(nil)
+	_ alerts.MonitorStore = (*Store)(nil)
+	_ market.MarketStore  = (*Store)(nil)
+	_ marketcap.Store     = (*Store)(nil)
 )
 
 func (store *Store) BootstrapCompleted(ctx context.Context) (bool, error) {
@@ -146,10 +152,10 @@ func (store *Store) ListNonAdministratorUsers(ctx context.Context, administrator
 	return users, nil
 }
 
-// DeleteUser hard-deletes precisely the selected database record. Matching the
-// stable record ID prevents a stale deletion from removing a later re-add.
+// DeleteUser preserves the account and its user-owned data while revoking access.
+// The historical name remains on AccessStore for compatibility with the bot use case.
 func (store *Store) DeleteUser(ctx context.Context, id, telegramID int64) (bool, error) {
-	_, err := store.queries.DeleteUserByID(ctx, generated.DeleteUserByIDParams{ID: id, TelegramID: telegramID})
+	_, err := store.queries.DisableUserByID(ctx, generated.DisableUserByIDParams{ID: id, TelegramID: telegramID})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
@@ -255,6 +261,7 @@ func selectionParams(selection analysis.Selection) (generated.SelectActiveInstru
 		MarketCapSort:       selection.SortDirection,
 		ResultLimit:         int32(selection.Limit),
 		Symbol:              selection.Symbol,
+		Symbols:             selection.Symbols,
 	}
 	for _, constraint := range selection.Constraints {
 		switch {
@@ -323,6 +330,32 @@ func (store *Store) ListLatestCandlesByInterval(ctx context.Context, instrumentI
 			return nil, fmt.Errorf("convert candle opened at %s: %w", row.OpenTime.Time, err)
 		}
 		items = append(items, item)
+	}
+	return items, nil
+}
+
+func (store *Store) ListLatestCandlesByIntervalBatch(ctx context.Context, instrumentIDs []int64, interval string, limit int) (map[int64][]market.Candle, error) {
+	if len(instrumentIDs) == 0 {
+		return map[int64][]market.Candle{}, nil
+	}
+	if limit <= 0 || int64(limit) > math.MaxInt32 {
+		return nil, fmt.Errorf("candle limit must be between 1 and %d", math.MaxInt32)
+	}
+	rows, err := store.queries.ListLatestCandlesBatch(ctx, generated.ListLatestCandlesBatchParams{
+		InstrumentIds: instrumentIDs,
+		Interval:      interval,
+		RowLimit:      int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list latest candles batch: %w", err)
+	}
+	items := make(map[int64][]market.Candle, len(instrumentIDs))
+	for _, row := range rows {
+		item, err := candleFromRow(row)
+		if err != nil {
+			return nil, fmt.Errorf("convert candle opened at %s: %w", row.OpenTime.Time, err)
+		}
+		items[row.InstrumentID] = append(items[row.InstrumentID], item)
 	}
 	return items, nil
 }
@@ -482,4 +515,253 @@ func timePointer(value pgtype.Timestamptz) *time.Time {
 	}
 	result := value.Time
 	return &result
+}
+
+// ListFavorites returns saved instruments even after delisting.
+func (store *Store) ListFavorites(ctx context.Context, userID int64) ([]favorites.Favorite, error) {
+	rows, err := store.queries.ListFavorites(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list favorites: %w", err)
+	}
+	items := make([]favorites.Favorite, 0, len(rows))
+	for _, r := range rows {
+		items = append(items, favorites.Favorite{InstrumentID: r.InstrumentID, Symbol: r.Symbol, BaseAsset: r.BaseAsset, QuoteAsset: r.QuoteAsset, Active: r.IsActive, AlertCount: int(r.AlertCount), CreatedAt: r.CreatedAt.Time.UTC()})
+	}
+	return items, nil
+}
+
+func (store *Store) ListFavoriteSymbols(ctx context.Context, userID int64) ([]string, error) {
+	symbols, err := store.queries.ListFavoriteSymbols(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list favorite symbols: %w", err)
+	}
+	return symbols, nil
+}
+
+func (store *Store) AddFavorite(ctx context.Context, userID int64, symbol string) (favorites.Favorite, error) {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return favorites.Favorite{}, err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	var locked int64
+	if err = tx.QueryRow(ctx, `SELECT id FROM app.users WHERE id=$1 AND is_enabled FOR UPDATE`, userID).Scan(&locked); err != nil {
+		return favorites.Favorite{}, err
+	}
+	var instrumentID int64
+	if err = tx.QueryRow(ctx, `SELECT id FROM binance_spot.instruments WHERE symbol=$1 AND is_active`, symbol).Scan(&instrumentID); errors.Is(err, pgx.ErrNoRows) {
+		return favorites.Favorite{}, market.ErrInstrumentNotFound
+	} else if err != nil {
+		return favorites.Favorite{}, err
+	}
+	q := store.queries.WithTx(tx)
+	if err = q.AddFavorite(ctx, generated.AddFavoriteParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
+		return favorites.Favorite{}, err
+	}
+	row, err := q.GetFavorite(ctx, generated.GetFavoriteParams{UserID: userID, Symbol: symbol})
+	if err != nil {
+		return favorites.Favorite{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return favorites.Favorite{}, err
+	}
+	return favoriteFromRow(row), nil
+}
+
+func favoriteFromRow(r generated.GetFavoriteRow) favorites.Favorite {
+	return favorites.Favorite{InstrumentID: r.InstrumentID, Symbol: r.Symbol, BaseAsset: r.BaseAsset, QuoteAsset: r.QuoteAsset, Active: r.IsActive, AlertCount: int(r.AlertCount), CreatedAt: r.CreatedAt.Time.UTC()}
+}
+
+func (store *Store) RemoveFavorite(ctx context.Context, userID int64, symbol string, confirm bool) (int, error) {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err = lockUser(ctx, tx, userID); err != nil {
+		return 0, err
+	}
+	var instrumentID int64
+	if err = tx.QueryRow(ctx, `SELECT i.id FROM app.favorites f JOIN binance_spot.instruments i ON i.id=f.instrument_id WHERE f.user_id=$1 AND i.symbol=$2 FOR UPDATE OF f`, userID, symbol).Scan(&instrumentID); errors.Is(err, pgx.ErrNoRows) {
+		return 0, favorites.ErrNotFound
+	} else if err != nil {
+		return 0, err
+	}
+	q := store.queries.WithTx(tx)
+	count, err := q.CountFavoriteAlerts(ctx, generated.CountFavoriteAlertsParams{UserID: userID, InstrumentID: instrumentID})
+	if err != nil {
+		return 0, err
+	}
+	if count > 0 && !confirm {
+		return int(count), favorites.ErrAlertsExist
+	}
+	rows, err := q.DeleteFavorite(ctx, generated.DeleteFavoriteParams{UserID: userID, InstrumentID: instrumentID})
+	if err != nil {
+		return 0, err
+	}
+	if rows == 0 {
+		return 0, favorites.ErrNotFound
+	}
+	return int(count), tx.Commit(ctx)
+}
+
+func (store *Store) ListAlerts(ctx context.Context, userID int64, symbol string) ([]alerts.Alert, error) {
+	rows, err := store.queries.ListPriceAlerts(ctx, generated.ListPriceAlertsParams{UserID: userID, Symbol: symbol})
+	if err != nil {
+		return nil, err
+	}
+	items := make([]alerts.Alert, 0, len(rows))
+	for _, r := range rows {
+		target, normalizeErr := alerts.NormalizeTarget(r.Target)
+		if normalizeErr != nil {
+			return nil, fmt.Errorf("invalid persisted alert target: %w", normalizeErr)
+		}
+		items = append(items, alerts.Alert{ID: r.ID, UserID: r.UserID, InstrumentID: r.InstrumentID, Symbol: r.Symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()})
+	}
+	return items, nil
+}
+
+func (store *Store) CreateAlert(ctx context.Context, userID int64, symbol, target string) (alerts.Alert, error) {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return alerts.Alert{}, err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	telegramID, err := lockUser(ctx, tx, userID)
+	if err != nil {
+		return alerts.Alert{}, err
+	}
+	var instrumentID int64
+	if err = tx.QueryRow(ctx, `SELECT id FROM binance_spot.instruments WHERE symbol=$1 AND is_active`, symbol).Scan(&instrumentID); errors.Is(err, pgx.ErrNoRows) {
+		return alerts.Alert{}, market.ErrInstrumentNotFound
+	} else if err != nil {
+		return alerts.Alert{}, err
+	}
+	q := store.queries.WithTx(tx)
+	if err = q.AddFavorite(ctx, generated.AddFavoriteParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
+		return alerts.Alert{}, err
+	}
+	count, err := q.CountFavoriteAlerts(ctx, generated.CountFavoriteAlertsParams{UserID: userID, InstrumentID: instrumentID})
+	if err != nil {
+		return alerts.Alert{}, err
+	}
+	if count >= alerts.MaxPerInstrument {
+		return alerts.Alert{}, alerts.ErrLimit
+	}
+	r, err := q.InsertPriceAlert(ctx, generated.InsertPriceAlertParams{UserID: userID, InstrumentID: instrumentID, Target: target})
+	if duplicateViolation(err) {
+		return alerts.Alert{}, alerts.ErrDuplicate
+	}
+	if err != nil {
+		return alerts.Alert{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return alerts.Alert{}, err
+	}
+	return alertFromInsert(r, symbol, target, telegramID), nil
+}
+
+func (store *Store) UpdateAlert(ctx context.Context, userID, id int64, target string) (alerts.Alert, error) {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return alerts.Alert{}, err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	telegramID, err := lockUser(ctx, tx, userID)
+	if err != nil {
+		return alerts.Alert{}, err
+	}
+	var symbol string
+	if err = tx.QueryRow(ctx, `SELECT i.symbol FROM app.price_alerts a JOIN binance_spot.instruments i ON i.id=a.instrument_id WHERE a.id=$1 AND a.user_id=$2 FOR UPDATE OF a`, id, userID).Scan(&symbol); errors.Is(err, pgx.ErrNoRows) {
+		return alerts.Alert{}, alerts.ErrNotFound
+	} else if err != nil {
+		return alerts.Alert{}, err
+	}
+	r, err := store.queries.WithTx(tx).UpdatePriceAlert(ctx, generated.UpdatePriceAlertParams{ID: id, UserID: userID, Target: target})
+	if duplicateViolation(err) {
+		return alerts.Alert{}, alerts.ErrDuplicate
+	}
+	if err != nil {
+		return alerts.Alert{}, err
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return alerts.Alert{}, err
+	}
+	return alerts.Alert{ID: r.ID, UserID: r.UserID, TelegramID: telegramID, InstrumentID: r.InstrumentID, Symbol: symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()}, nil
+}
+func (store *Store) DeleteAlert(ctx context.Context, userID, id int64) error {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	if _, err = lockUser(ctx, tx, userID); err != nil {
+		return err
+	}
+	rows, err := store.queries.WithTx(tx).DeletePriceAlert(ctx, generated.DeletePriceAlertParams{ID: id, UserID: userID})
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return alerts.ErrNotFound
+	}
+	return tx.Commit(ctx)
+}
+func (store *Store) ListEnabledAlerts(ctx context.Context) ([]alerts.Alert, error) {
+	rows, err := store.queries.ListEnabledPriceAlerts(ctx)
+	if err != nil {
+		return nil, err
+	}
+	items := make([]alerts.Alert, 0, len(rows))
+	for _, r := range rows {
+		target, normalizeErr := alerts.NormalizeTarget(r.Target)
+		if normalizeErr != nil {
+			return nil, fmt.Errorf("invalid persisted alert target: %w", normalizeErr)
+		}
+		items = append(items, alerts.Alert{ID: r.ID, UserID: r.UserID, TelegramID: r.TelegramID, InstrumentID: r.InstrumentID, Symbol: r.Symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()})
+	}
+	return items, nil
+}
+func (store *Store) FireAlert(ctx context.Context, id, version int64) (bool, error) {
+	_, err := store.queries.FirePriceAlert(ctx, generated.FirePriceAlertParams{ID: id, Version: version})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+func (store *Store) ListMonitoredSymbols(ctx context.Context) ([]string, error) {
+	return store.queries.ListMonitoredSymbols(ctx)
+}
+func lockUser(ctx context.Context, tx pgx.Tx, userID int64) (int64, error) {
+	var telegramID int64
+	err := tx.QueryRow(ctx, `SELECT telegram_id FROM app.users WHERE id=$1 AND is_enabled FOR UPDATE`, userID).Scan(&telegramID)
+	return telegramID, err
+}
+func duplicateViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
+}
+func alertFromInsert(r generated.InsertPriceAlertRow, symbol, target string, telegramID int64) alerts.Alert {
+	return alerts.Alert{ID: r.ID, UserID: r.UserID, TelegramID: telegramID, InstrumentID: r.InstrumentID, Symbol: symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()}
+}
+
+func (store *Store) ListTopSymbols(ctx context.Context, limit int) ([]string, error) {
+	if limit <= 0 || limit > 100 {
+		return nil, fmt.Errorf("top symbol limit must be between 1 and 100")
+	}
+	instruments, err := store.SelectActiveInstruments(ctx, analysis.Selection{
+		Constraints: []analysis.SelectionConstraint{
+			{Fact: analysis.SelectionFactStablecoin, Operator: analysis.SelectionEqual, Boolean: false},
+			{Fact: analysis.SelectionFactMarketCapUSD, Operator: analysis.SelectionAtLeast, Number: 0},
+		},
+		Limit: limit, SortFact: analysis.SelectionFactMarketCapUSD, SortDirection: "desc",
+	})
+	if err != nil {
+		return nil, err
+	}
+	result := make([]string, len(instruments))
+	for index, instrument := range instruments {
+		result[index] = instrument.Symbol
+	}
+	return result, nil
 }

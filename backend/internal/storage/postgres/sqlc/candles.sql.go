@@ -184,6 +184,61 @@ func (q *Queries) ListLatestCandles(ctx context.Context, arg ListLatestCandlesPa
 	return items, nil
 }
 
+const listLatestCandlesBatch = `-- name: ListLatestCandlesBatch :many
+SELECT candle.instrument_id, candle.interval, candle.open_time, candle.close_time,
+       candle.open, candle.high, candle.low, candle.close,
+       candle.volume, candle.quote_asset_volume, candle.trade_count
+FROM unnest($1::bigint[]) AS selected(instrument_id)
+CROSS JOIN LATERAL (
+    SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
+           volume, quote_asset_volume, trade_count
+    FROM binance_spot.candles
+    WHERE instrument_id = selected.instrument_id
+      AND interval = $2
+    ORDER BY open_time DESC
+    LIMIT $3
+) AS candle
+ORDER BY candle.instrument_id, candle.open_time DESC
+`
+
+type ListLatestCandlesBatchParams struct {
+	InstrumentIds []int64
+	Interval      string
+	RowLimit      int32
+}
+
+func (q *Queries) ListLatestCandlesBatch(ctx context.Context, arg ListLatestCandlesBatchParams) ([]BinanceSpotCandle, error) {
+	rows, err := q.db.Query(ctx, listLatestCandlesBatch, arg.InstrumentIds, arg.Interval, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []BinanceSpotCandle
+	for rows.Next() {
+		var i BinanceSpotCandle
+		if err := rows.Scan(
+			&i.InstrumentID,
+			&i.Interval,
+			&i.OpenTime,
+			&i.CloseTime,
+			&i.Open,
+			&i.High,
+			&i.Low,
+			&i.Close,
+			&i.Volume,
+			&i.QuoteAssetVolume,
+			&i.TradeCount,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const saveCandleHistoryCoverage = `-- name: SaveCandleHistoryCoverage :exec
 INSERT INTO binance_spot.candle_history_coverage (
     instrument_id, interval, verified_oldest_open_time, target_depth,

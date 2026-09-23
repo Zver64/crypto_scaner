@@ -19,7 +19,7 @@ import { formatRangePercent } from "@/utils/range-percent";
 interface MarketScanColumn {
 	key: (typeof marketScanColumnKeys)[keyof typeof marketScanColumnKeys];
 	header: string;
-	cell(row: MarketScanRow, window: PriceHistoryWindow): ReactNode;
+	cell(row: MarketScanRow, window: PriceHistoryWindow | undefined): ReactNode;
 	sortable?: boolean;
 	textAlign?: DataTableColumn<MarketScanRow>["textAlign"];
 }
@@ -65,13 +65,16 @@ export const marketScanColumns = [
 	{
 		key: marketScanColumnKeys.priceHistory,
 		header: "7d chart",
-		cell: (row, window) => (
-			<PriceHistoryChart
-				prices={row.priceHistory}
-				symbol={row.symbol}
-				window={window}
-			/>
-		),
+		cell: (row, window) =>
+			window ? (
+				<PriceHistoryChart
+					prices={row.priceHistory}
+					symbol={row.symbol}
+					window={window}
+				/>
+			) : (
+				"—"
+			),
 	},
 	{
 		key: marketScanColumnKeys.binance,

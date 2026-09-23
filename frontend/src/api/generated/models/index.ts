@@ -15,6 +15,8 @@
  */
 
 export * from './accessDeniedResponse.ts';
+export * from './alertConflictResponse.ts';
+export * from './alertNotFoundResponse.ts';
 export * from './analysisUnavailableResponse.ts';
 export * from './aPIError.ts';
 export * from './aPIErrorCode.ts';
@@ -31,6 +33,10 @@ export * from './criterionRequestParameters.ts';
 export * from './errorResponse.ts';
 export * from './evaluation.ts';
 export * from './evaluationMetrics.ts';
+export * from './favorite.ts';
+export * from './favoriteAlertsConflictResponse.ts';
+export * from './favoriteNotFoundResponse.ts';
+export * from './favoritesResponse.ts';
 export * from './getInstrumentChartParams.ts';
 export * from './indicatorConfig.ts';
 export * from './indicatorConfigParameters.ts';
@@ -55,11 +61,15 @@ export * from './marketAnalysisResponse.ts';
 export * from './marketSort.ts';
 export * from './marketSortDirection.ts';
 export * from './marketSortField.ts';
+export * from './priceAlert.ts';
+export * from './priceAlertInput.ts';
+export * from './priceAlertsResponse.ts';
 export * from './priceHistoryWindow.ts';
 export * from './readinessCheck.ts';
 export * from './readinessResponse.ts';
 export * from './readinessResponseChecks.ts';
 export * from './readinessResponseStatus.ts';
+export * from './removeFavoriteParams.ts';
 export * from './requestIDParameter.ts';
 export * from './symbolNotFoundResponse.ts';
 export * from './unauthenticatedResponse.ts';

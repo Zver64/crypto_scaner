@@ -11,7 +11,9 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/telegrambot"
 
@@ -21,14 +23,15 @@ import (
 func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{}
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	accessChanges := 0
+	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true, AccessChanged: func() { accessChanges++ }})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
 
 	service.ProcessUpdate(context.Background(), messageUpdate(100, "/start"))
 	start := transport.lastSendMessage(t)
-	if start.Text != "Administrator menu:" || start.ReplyMarkup.Keyboard[0][0].Text != "List users" || start.ReplyMarkup.Keyboard[1][0].Text != "Add user" || start.ReplyMarkup.Keyboard[2][0].Text != "Delete user" {
+	if start.Text != "Administrator menu:" || start.ReplyMarkup.Keyboard[0][0].Text != "List users" || start.ReplyMarkup.Keyboard[1][0].Text != "Add user" || start.ReplyMarkup.Keyboard[2][0].Text != "Revoke access" {
 		t.Fatalf("unexpected administrator menu: %#v", start)
 	}
 
@@ -61,6 +64,9 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 	success := transport.lastSendMessage(t)
 	if success.Text != "Scanner Access granted to Ada (@ada, ID 200)." {
 		t.Fatalf("success message = %q", success.Text)
+	}
+	if accessChanges != 1 {
+		t.Fatalf("access change notifications = %d, want 1", accessChanges)
 	}
 	assertReplyKeyboardRemoved(t, success)
 
@@ -192,14 +198,14 @@ func TestAdministratorCanConfirmUserDeletion(t *testing.T) {
 		t.Fatalf("create bot service: %v", err)
 	}
 
-	service.ProcessUpdate(context.Background(), messageUpdate(100, "Delete user"))
+	service.ProcessUpdate(context.Background(), messageUpdate(100, "Revoke access"))
 	selection := transport.lastSendMessage(t)
-	if selection.Text != "Choose a user to remove from Scanner Access." || len(selection.Inline.InlineKeyboard) != 1 || selection.Inline.InlineKeyboard[0][0].Text != "Taylor (ID 200)" {
+	if selection.Text != "Choose a user whose Scanner Access should be revoked." || len(selection.Inline.InlineKeyboard) != 1 || selection.Inline.InlineKeyboard[0][0].Text != "Taylor (ID 200)" {
 		t.Fatalf("unexpected deletion selection: %#v", selection)
 	}
 	service.ProcessUpdate(context.Background(), callbackUpdate(100, selection.Inline.InlineKeyboard[0][0].CallbackData))
 	confirmation := transport.lastSendMessage(t)
-	if confirmation.Text != "Remove Scanner Access from Taylor (ID 200)?" {
+	if confirmation.Text != "Revoke Scanner Access for Taylor (ID 200)?" {
 		t.Fatalf("unexpected deletion confirmation: %#v", confirmation)
 	}
 	confirm := confirmation.Inline.InlineKeyboard[0][0].CallbackData
@@ -207,7 +213,7 @@ func TestAdministratorCanConfirmUserDeletion(t *testing.T) {
 	if _, err := store.FindEnabledByTelegramID(context.Background(), 200); err != auth.ErrUserNotFound {
 		t.Fatalf("deleted user still has access: %v", err)
 	}
-	if got := transport.lastSendMessage(t).Text; got != "Scanner Access removed from Taylor (ID 200)." {
+	if got := transport.lastSendMessage(t).Text; got != "Scanner Access revoked for Taylor (ID 200). Favorites and alerts were preserved." {
 		t.Fatalf("deletion success message = %q", got)
 	}
 	service.ProcessUpdate(context.Background(), callbackUpdate(100, confirm))
@@ -236,7 +242,7 @@ func TestDeletionInvalidatesOlderAddConfirmation(t *testing.T) {
 	staleAddConfirmation := transport.lastSendMessage(t).Inline.InlineKeyboard[0][0].CallbackData
 
 	service.ProcessUpdate(context.Background(), callbackUpdate(100, "scanner-access:delete-page:8"))
-	service.ProcessUpdate(context.Background(), messageUpdate(100, "Delete user"))
+	service.ProcessUpdate(context.Background(), messageUpdate(100, "Revoke access"))
 	deleteSelection := transport.lastSendMessage(t).Inline.InlineKeyboard[0][0].CallbackData
 	service.ProcessUpdate(context.Background(), callbackUpdate(100, deleteSelection))
 	deleteConfirmation := transport.lastSendMessage(t).Inline.InlineKeyboard[0][0].CallbackData
@@ -286,6 +292,63 @@ func TestAdministratorCanNavigateLongUserList(t *testing.T) {
 	if !strings.Contains(secondPage.Text, "User 9") || secondPage.Inline.InlineKeyboard[0][0].Text != "Previous" {
 		t.Fatalf("unexpected second page: %#v", secondPage)
 	}
+}
+
+func TestPriceAlertRechecksAccessAfterRateLimitWait(t *testing.T) {
+	transport := newTelegramTransport(t)
+	store := &synchronizedAccessStore{user: auth.User{ID: 1, TelegramID: 200, Enabled: true}}
+	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fired := alerts.Fired{Alert: alerts.Alert{ID: 1, TelegramID: 200, Symbol: "BTCUSDT", Target: "100"}, Price: "100", EventTime: time.Now()}
+	if err := service.SendPriceAlert(context.Background(), fired); err != nil {
+		t.Fatalf("first SendPriceAlert: %v", err)
+	}
+	result := make(chan error, 1)
+	go func() { result <- service.SendPriceAlert(context.Background(), fired) }()
+	time.Sleep(100 * time.Millisecond)
+	store.disable()
+	select {
+	case err := <-result:
+		if err == nil {
+			t.Fatal("notification sent after access was revoked during limiter wait")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("SendPriceAlert did not finish after limiter wait")
+	}
+	if got := transport.messageCount(); got != 1 {
+		t.Fatalf("Telegram sendMessage requests = %d, want 1", got)
+	}
+}
+
+type synchronizedAccessStore struct {
+	mu   sync.Mutex
+	user auth.User
+}
+
+func (store *synchronizedAccessStore) FindEnabledByTelegramID(_ context.Context, telegramID int64) (auth.User, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if !store.user.Enabled || store.user.TelegramID != telegramID {
+		return auth.User{}, auth.ErrUserNotFound
+	}
+	return store.user, nil
+}
+func (store *synchronizedAccessStore) GrantAccess(context.Context, int64, string, string) (auth.User, bool, error) {
+	return auth.User{}, false, nil
+}
+func (store *synchronizedAccessStore) ListNonAdministratorUsers(context.Context, int64, int, int) ([]auth.User, error) {
+	return nil, nil
+}
+func (store *synchronizedAccessStore) DeleteUser(context.Context, int64, int64) (bool, error) {
+	store.disable()
+	return true, nil
+}
+func (store *synchronizedAccessStore) disable() {
+	store.mu.Lock()
+	store.user.Enabled = false
+	store.mu.Unlock()
 }
 
 type accessStore struct {

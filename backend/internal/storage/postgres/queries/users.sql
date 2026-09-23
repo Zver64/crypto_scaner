@@ -20,9 +20,10 @@ WHERE is_enabled = TRUE AND telegram_id <> $1
 ORDER BY telegram_id ASC
 LIMIT $2 OFFSET $3;
 
--- name: DeleteUserByID :one
-DELETE FROM app.users
-WHERE id = $1 AND telegram_id = $2
+-- name: DisableUserByID :one
+UPDATE app.users
+SET is_enabled = FALSE, updated_at = now()
+WHERE id = $1 AND telegram_id = $2 AND is_enabled = TRUE
 RETURNING id;
 
 -- name: BootstrapAdministrator :exec

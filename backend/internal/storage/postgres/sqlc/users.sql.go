@@ -22,19 +22,20 @@ func (q *Queries) BootstrapAdministrator(ctx context.Context, telegramID int64) 
 	return err
 }
 
-const deleteUserByID = `-- name: DeleteUserByID :one
-DELETE FROM app.users
-WHERE id = $1 AND telegram_id = $2
+const disableUserByID = `-- name: DisableUserByID :one
+UPDATE app.users
+SET is_enabled = FALSE, updated_at = now()
+WHERE id = $1 AND telegram_id = $2 AND is_enabled = TRUE
 RETURNING id
 `
 
-type DeleteUserByIDParams struct {
+type DisableUserByIDParams struct {
 	ID         int64
 	TelegramID int64
 }
 
-func (q *Queries) DeleteUserByID(ctx context.Context, arg DeleteUserByIDParams) (int64, error) {
-	row := q.db.QueryRow(ctx, deleteUserByID, arg.ID, arg.TelegramID)
+func (q *Queries) DisableUserByID(ctx context.Context, arg DisableUserByIDParams) (int64, error) {
+	row := q.db.QueryRow(ctx, disableUserByID, arg.ID, arg.TelegramID)
 	var id int64
 	err := row.Scan(&id)
 	return id, err

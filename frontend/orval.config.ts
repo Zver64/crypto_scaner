@@ -30,6 +30,12 @@ export default defineConfig({
 							useQuery: true,
 						},
 					},
+					analyzeFavorites: {
+						query: {
+							useMutation: false,
+							useQuery: true,
+						},
+					},
 					listInstrumentCandles: {
 						query: {
 							useInfinite: true,

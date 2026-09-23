@@ -22,6 +22,22 @@ WHERE instrument_id = $1
 ORDER BY open_time DESC
 LIMIT $3;
 
+-- name: ListLatestCandlesBatch :many
+SELECT candle.instrument_id, candle.interval, candle.open_time, candle.close_time,
+       candle.open, candle.high, candle.low, candle.close,
+       candle.volume, candle.quote_asset_volume, candle.trade_count
+FROM unnest(sqlc.arg(instrument_ids)::bigint[]) AS selected(instrument_id)
+CROSS JOIN LATERAL (
+    SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
+           volume, quote_asset_volume, trade_count
+    FROM binance_spot.candles
+    WHERE instrument_id = selected.instrument_id
+      AND interval = sqlc.arg(interval)
+    ORDER BY open_time DESC
+    LIMIT sqlc.arg(row_limit)
+) AS candle
+ORDER BY candle.instrument_id, candle.open_time DESC;
+
 -- name: ListCandlePage :many
 SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
        volume, quote_asset_volume, trade_count

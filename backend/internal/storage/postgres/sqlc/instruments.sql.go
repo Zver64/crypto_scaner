@@ -86,17 +86,19 @@ LEFT JOIN app.coingecko_market_caps AS market_cap
   ON market_cap.coin_id = mapping.coin_id
 WHERE instrument.is_active = TRUE
   AND ($1::text = '' OR instrument.symbol = $1::text)
-  AND (NOT $2::boolean OR COALESCE(mapping.is_stablecoin, FALSE) = FALSE)
-  AND ($3::numeric IS NULL OR market_cap.market_cap_usd >= $3::numeric)
+  AND (COALESCE(cardinality($2::text[]), 0) = 0 OR instrument.symbol = ANY($2::text[]))
+  AND (NOT $3::boolean OR COALESCE(mapping.is_stablecoin, FALSE) = FALSE)
+  AND ($4::numeric IS NULL OR market_cap.market_cap_usd >= $4::numeric)
 ORDER BY
-  CASE WHEN $4::text = 'asc' THEN market_cap.market_cap_usd END ASC NULLS LAST,
-  CASE WHEN $4::text = 'desc' THEN market_cap.market_cap_usd END DESC NULLS LAST,
-  CASE WHEN $4::text <> '' THEN instrument.symbol END ASC
-LIMIT NULLIF($5::int, 0)
+  CASE WHEN $5::text = 'asc' THEN market_cap.market_cap_usd END ASC NULLS LAST,
+  CASE WHEN $5::text = 'desc' THEN market_cap.market_cap_usd END DESC NULLS LAST,
+  CASE WHEN $5::text <> '' THEN instrument.symbol END ASC
+LIMIT NULLIF($6::int, 0)
 `
 
 type SelectActiveInstrumentsParams struct {
 	Symbol              string
+	Symbols             []string
 	ExcludeStablecoins  bool
 	MinimumMarketCapUsd pgtype.Numeric
 	MarketCapSort       string
@@ -117,6 +119,7 @@ type SelectActiveInstrumentsRow struct {
 func (q *Queries) SelectActiveInstruments(ctx context.Context, arg SelectActiveInstrumentsParams) ([]SelectActiveInstrumentsRow, error) {
 	rows, err := q.db.Query(ctx, selectActiveInstruments,
 		arg.Symbol,
+		arg.Symbols,
 		arg.ExcludeStablecoins,
 		arg.MinimumMarketCapUsd,
 		arg.MarketCapSort,

@@ -8,6 +8,9 @@ import (
 )
 
 // SelectionFact is a closed set of persisted facts supported by candidate SQL.
+// TopMarketCapLimit is the canonical server-side size of the Top Market Cap universe.
+const TopMarketCapLimit = 50
+
 type SelectionFact uint8
 
 const (
@@ -40,6 +43,7 @@ type Selection struct {
 	SortFact      SelectionFact
 	SortDirection string
 	Symbol        string
+	Symbols       []string
 }
 
 // ConstrainBoolean composes an equality predicate over a supported boolean fact.

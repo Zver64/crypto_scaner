@@ -12,16 +12,18 @@ import (
 	"sync"
 	"time"
 
+	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/auth"
 
 	telegram "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
+	"golang.org/x/time/rate"
 )
 
 const (
 	menuListUsers   = "List users"
 	menuAddUser     = "Add user"
-	menuDeleteUser  = "Delete user"
+	menuDeleteUser  = "Revoke access"
 	pageSize        = 8
 	callbackPrefix  = "scanner-access:"
 	callbackConfirm = "confirm"
@@ -31,11 +33,12 @@ const (
 // Options makes the bot boundary testable without changing its production
 // transport. ServerURL is only useful for a fake Telegram endpoint in tests.
 type Options struct {
-	ServerURL   string
-	HTTPClient  telegram.HttpClient
-	PollTimeout time.Duration
-	Synchronous bool
-	Logger      *slog.Logger
+	ServerURL     string
+	HTTPClient    telegram.HttpClient
+	PollTimeout   time.Duration
+	Synchronous   bool
+	Logger        *slog.Logger
+	AccessChanged func()
 }
 
 // Service owns one long-polling Telegram Bot API consumer and its ephemeral
@@ -47,9 +50,12 @@ type Service struct {
 	administratorID int64
 	logger          *slog.Logger
 
-	mu         sync.Mutex
-	nextPicker int32
-	operations map[string]*operation
+	mu            sync.Mutex
+	nextPicker    int32
+	operations    map[string]*operation
+	sendLimiter   *rate.Limiter
+	userLimiters  [4096]*rate.Limiter
+	accessChanged func()
 }
 
 type operationKind string
@@ -86,7 +92,7 @@ func New(token string, administratorID int64, store auth.AccessStore, options Op
 	if logger == nil {
 		logger = slog.Default()
 	}
-	service := &Service{store: store, administratorID: administratorID, logger: logger, operations: map[string]*operation{}}
+	service := &Service{store: store, administratorID: administratorID, logger: logger, operations: map[string]*operation{}, sendLimiter: rate.NewLimiter(rate.Limit(25), 25), accessChanged: options.AccessChanged}
 	botOptions := []telegram.Option{
 		telegram.WithAllowedUpdates(telegram.AllowedUpdates{"message", "callback_query"}),
 		telegram.WithDefaultHandler(service.handleUpdate),
@@ -282,7 +288,7 @@ func (service *Service) selectUserForDeletion(ctx context.Context, client *teleg
 		buttons = append(buttons, []models.InlineKeyboardButton{{Text: formatUser(user), CallbackData: callbackPrefix + "delete:" + token}})
 	}
 	if len(buttons) == 0 {
-		service.send(ctx, client, chatID, "No other users can be removed.", nil)
+		service.send(ctx, client, chatID, "No other users have active access to revoke.", nil)
 		return
 	}
 	navigation := []models.InlineKeyboardButton{}
@@ -295,7 +301,7 @@ func (service *Service) selectUserForDeletion(ctx context.Context, client *teleg
 	if len(navigation) > 0 {
 		buttons = append(buttons, navigation)
 	}
-	service.send(ctx, client, chatID, "Choose a user to remove from Scanner Access.", &models.InlineKeyboardMarkup{InlineKeyboard: buttons})
+	service.send(ctx, client, chatID, "Choose a user whose Scanner Access should be revoked.", &models.InlineKeyboardMarkup{InlineKeyboard: buttons})
 }
 
 func (service *Service) nonAdministratorPage(ctx context.Context, offset int) (userPage, error) {
@@ -411,6 +417,9 @@ func (service *Service) confirmOrCancel(ctx context.Context, client *telegram.Bo
 		return
 	}
 	service.answer(ctx, client, callback.ID, "")
+	if service.accessChanged != nil && (created || deleted) {
+		service.accessChanged()
+	}
 	if kind == operationAdd && !created {
 		service.sendWithoutReplyKeyboard(ctx, client, chatID, formatUser(operation.user)+" already has Scanner Access.")
 		return
@@ -419,13 +428,13 @@ func (service *Service) confirmOrCancel(ctx context.Context, client *telegram.Bo
 		service.sendWithoutReplyKeyboard(ctx, client, chatID, "Scanner Access granted to "+formatUser(operation.user)+".")
 		return
 	}
-	service.send(ctx, client, chatID, "Scanner Access removed from "+formatUser(operation.user)+".", nil)
+	service.send(ctx, client, chatID, "Scanner Access revoked for "+formatUser(operation.user)+". Favorites and alerts were preserved.", nil)
 }
 
 func (service *Service) sendConfirmation(ctx context.Context, client *telegram.Bot, chatID int64, operation *operation, token string) {
 	verb := "Grant Scanner Access to "
 	if operation.kind == operationDelete {
-		verb = "Remove Scanner Access from "
+		verb = "Revoke Scanner Access for "
 	}
 	service.send(ctx, client, chatID, verb+formatUser(operation.user)+"?", &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
 		{Text: "Confirm", CallbackData: fmt.Sprintf("%s%s:%s:%s", callbackPrefix, operation.kind, callbackConfirm, token)},
@@ -512,4 +521,32 @@ func max(left, right int) int {
 		return left
 	}
 	return right
+}
+
+// SendPriceAlert performs one best-effort Telegram API request. It rechecks
+// access immediately before sending and intentionally has no retry.
+func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) error {
+	service.mu.Lock()
+	// A fixed shard set keeps limiter memory bounded. Hash collisions only make
+	// delivery more conservative; they can never let one user exceed the limit.
+	shard := uint64(fired.Alert.TelegramID) % uint64(len(service.userLimiters))
+	limiter := service.userLimiters[shard]
+	if limiter == nil {
+		limiter = rate.NewLimiter(rate.Every(time.Second), 1)
+		service.userLimiters[shard] = limiter
+	}
+	service.mu.Unlock()
+	if err := service.sendLimiter.Wait(ctx); err != nil {
+		return err
+	}
+	if err := limiter.Wait(ctx); err != nil {
+		return err
+	}
+	user, err := service.store.FindEnabledByTelegramID(ctx, fired.Alert.TelegramID)
+	if err != nil || !user.Enabled {
+		return fmt.Errorf("alert owner is no longer enabled")
+	}
+	text := fmt.Sprintf("Price alert: %s reached %s USDT (observed %s at %s).", fired.Alert.Symbol, fired.Alert.Target, fired.Price, fired.EventTime.UTC().Format(time.RFC3339))
+	_, err = service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: fired.Alert.TelegramID, Text: text})
+	return err
 }

@@ -65,8 +65,11 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 		"app.coingecko_asset_mappings",
 		"app.coingecko_mapping_bootstrap",
 		"app.coingecko_market_caps",
+		"app.favorites",
+		"app.price_alerts",
 		"app.schema_migrations",
 		"app.users",
+		"binance_spot.candle_history_coverage",
 		"binance_spot.candles",
 		"binance_spot.instruments",
 		"binance_spot.sync_state",
@@ -99,16 +102,20 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	}
 
 	wantConstraints := []string{
-		"candles_high_valid", "candles_instrument_id_fkey", "candles_low_valid",
-		"candles_open_positive", "candles_pkey", "candles_quote_volume_nonnegative",
+		"candle_history_coverage_instrument_id_fkey", "candle_history_coverage_pkey",
+		"candle_history_coverage_policy_positive", "candle_history_coverage_supported_interval",
+		"candle_history_coverage_target_positive", "candles_high_valid", "candles_instrument_id_fkey",
+		"candles_low_valid", "candles_open_positive", "candles_pkey", "candles_quote_volume_nonnegative",
 		"candles_supported_interval", "candles_time_order", "candles_trade_count_nonnegative",
 		"candles_volume_nonnegative", "coingecko_asset_mappings_pkey",
 		"coingecko_asset_mappings_status_check", "coingecko_mapping_bootstrap_id_check",
 		"coingecko_mapping_bootstrap_pkey", "coingecko_market_caps_market_cap_usd_check",
-		"coingecko_market_caps_pkey", "instruments_base_nonempty", "instruments_pkey",
+		"coingecko_market_caps_pkey", "favorites_instrument_id_fkey", "favorites_pkey",
+		"favorites_user_id_fkey", "instruments_base_nonempty", "instruments_pkey",
 		"instruments_quote_nonempty", "instruments_symbol_key", "instruments_symbol_nonempty",
-		"schema_migrations_pkey", "sync_state_pkey", "sync_state_status", "users_pkey",
-		"users_telegram_id_key",
+		"price_alerts_favorite_fk", "price_alerts_pkey", "price_alerts_target_positive",
+		"price_alerts_unique_target", "schema_migrations_pkey", "sync_state_pkey",
+		"sync_state_status", "users_pkey", "users_telegram_id_key",
 	}
 	constraintRows, err := db.Query(ctx, `
 		SELECT con.conname
@@ -157,7 +164,16 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 		}
 	})
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
-		t.Fatalf("migrate down: %v", err)
+		t.Fatalf("migrate v8 to v7 down: %v", err)
+	}
+	var alertTables bool
+	if err := db.QueryRow(ctx, `SELECT to_regclass('app.favorites') IS NOT NULL OR to_regclass('app.price_alerts') IS NOT NULL`).Scan(&alertTables); err != nil || alertTables {
+		t.Fatalf("v8 rollback left favorites/alerts tables = %t, error = %v", alertTables, err)
+	}
+	for version := 7; version > 2; version-- {
+		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+			t.Fatalf("migrate v%d to v%d down: %v", version, version-1, err)
+		}
 	}
 
 	var operatorTable, usersTable, remainingBinanceSchema, marketCapTables bool
@@ -199,14 +215,10 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate absent schemas up: %v", err)
 	}
-	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
-		t.Fatalf("migrate absent schemas down: %v", err)
-	}
-	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
-		t.Fatalf("migrate absent schemas v2 down: %v", err)
-	}
-	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
-		t.Fatalf("migrate absent schemas initial down: %v", err)
+	for version := 8; version >= 1; version-- {
+		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+			t.Fatalf("migrate absent schemas v%d down: %v", version, err)
+		}
 	}
 	if err := db.QueryRow(ctx, `SELECT to_regnamespace('app') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&appSchema, &binanceSchema); err != nil {
 		t.Fatalf("inspect migration-owned schemas: %v", err)
@@ -230,13 +242,13 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate pre-existing schemas up: %v", err)
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 4 WHERE version = 3"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 9 WHERE version = 8"); err != nil {
 		t.Fatalf("create future migration metadata: %v", err)
 	}
 	if err := postgres.VerifySchema(ctx, db, databaseURL); err == nil {
 		t.Fatal("VerifySchema() accepted future migration metadata")
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 3 WHERE version = 4"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 8 WHERE version = 9"); err != nil {
 		t.Fatalf("restore current migration metadata: %v", err)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
@@ -248,11 +260,10 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if !appSchema || !binanceSchema {
 		t.Fatalf("pre-existing schemas removed on down: app=%t binance_spot=%t", appSchema, binanceSchema)
 	}
-	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
-		t.Fatalf("migrate pre-existing schemas v2 down: %v", err)
-	}
-	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
-		t.Fatalf("migrate pre-existing schemas initial down: %v", err)
+	for version := 7; version >= 1; version-- {
+		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+			t.Fatalf("migrate pre-existing schemas v%d down: %v", version, err)
+		}
 	}
 	var appUsers, instruments bool
 	if err := db.QueryRow(ctx, `SELECT to_regclass('app.users') IS NOT NULL, to_regclass('binance_spot.instruments') IS NOT NULL, to_regnamespace('app') IS NOT NULL, to_regnamespace('binance_spot') IS NOT NULL`).Scan(&appUsers, &instruments, &appSchema, &binanceSchema); err != nil {

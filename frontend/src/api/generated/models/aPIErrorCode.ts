@@ -19,6 +19,11 @@ export type APIErrorCode = typeof APIErrorCode[keyof typeof APIErrorCode];
 
 export const APIErrorCode = {
   access_denied: 'access_denied',
+  alert_limit: 'alert_limit',
+  alert_not_found: 'alert_not_found',
+  duplicate_target: 'duplicate_target',
+  favorite_has_alerts: 'favorite_has_alerts',
+  favorite_not_found: 'favorite_not_found',
   insufficient_data: 'insufficient_data',
   internal_error: 'internal_error',
   invalid_argument: 'invalid_argument',

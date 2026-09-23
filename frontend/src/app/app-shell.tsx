@@ -10,6 +10,7 @@ import {
 import { Outlet } from "@tanstack/react-router";
 import { useGetReadiness } from "@/api/generated/api";
 import { ShellContentCenter } from "@/components/shell-content-center";
+import { FavoritesProvider } from "@/features/favorites/favorites-provider";
 import { getAppVersion } from "@/utils/app-version";
 import { getBusinessRequestPermission } from "@/utils/business-request-permission";
 import { BusinessRequestContext } from "./business-request-context";
@@ -72,7 +73,13 @@ export function MiniAppShell() {
 					</Group>
 				</AppShell.Header>
 				<AppShell.Main>
-					{permission.authenticated ? <Outlet /> : <OpenInTelegram />}
+					{permission.authenticated ? (
+						<FavoritesProvider enabled={permission.allowed}>
+							<Outlet />
+						</FavoritesProvider>
+					) : (
+						<OpenInTelegram />
+					)}
 				</AppShell.Main>
 			</AppShell>
 		</BusinessRequestContext>

@@ -1,7 +1,7 @@
 import { Box, Group, Paper, Title, VisuallyHidden } from "@mantine/core";
 import { Link } from "@tanstack/react-router";
 
-type Page = "market-scan" | "top-coins";
+type Page = "favorites" | "market-scan" | "top-coins";
 
 interface PageNavigationProps {
 	current: Page;
@@ -16,15 +16,17 @@ export function PageNavigation({ current, title }: PageNavigationProps) {
 			</VisuallyHidden>
 			<Paper radius="sm" w="100%" withBorder>
 				<Group aria-label="Pages" component="nav" gap={0} grow wrap="nowrap">
-					<PageLink
-						active={current === "market-scan"}
-						label="Market Scan"
-						to="/"
-					/>
+					<PageLink active={current === "market-scan"} label="Scan" to="/" />
 					<PageLink
 						active={current === "top-coins"}
-						label="Top Market Cap"
+						label="Top"
 						to="/top-coins"
+						withDivider
+					/>
+					<PageLink
+						active={current === "favorites"}
+						label="Favorites"
+						to="/favorites"
 						withDivider
 					/>
 				</Group>
@@ -36,7 +38,7 @@ export function PageNavigation({ current, title }: PageNavigationProps) {
 interface PageLinkProps {
 	active: boolean;
 	label: string;
-	to: "/" | "/top-coins";
+	to: "/" | "/favorites" | "/top-coins";
 	withDivider?: boolean;
 }
 

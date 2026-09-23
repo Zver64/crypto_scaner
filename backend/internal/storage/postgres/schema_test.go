@@ -30,7 +30,7 @@ func TestVerifySchemaRejectsAnOutdatedDatabase(t *testing.T) {
 
 	err := postgres.VerifySchema(context.Background(), queries, "postgres://localhost/test")
 
-	if err == nil || !strings.Contains(err.Error(), "version 0") || !strings.Contains(err.Error(), "version 7") {
+	if err == nil || !strings.Contains(err.Error(), "version 0") || !strings.Contains(err.Error(), "version 8") {
 		t.Fatalf("VerifySchema() error = %v, want current and required versions", err)
 	}
 }
@@ -38,7 +38,7 @@ func TestVerifySchemaRejectsAnOutdatedDatabase(t *testing.T) {
 func TestVerifySchemaAcceptsTheCurrentVersion(t *testing.T) {
 	queries := &querySequence{rows: []*stubRow{
 		{values: []any{true}},
-		{values: []any{int64(7), false}},
+		{values: []any{int64(8), false}},
 	}}
 
 	if err := postgres.VerifySchema(context.Background(), queries, "postgres://localhost/test"); err != nil {

@@ -26,6 +26,11 @@ import (
 // Defines values for APIErrorCode.
 const (
 	APIErrorCodeAccessDenied               APIErrorCode = "access_denied"
+	APIErrorCodeAlertLimit                 APIErrorCode = "alert_limit"
+	APIErrorCodeAlertNotFound              APIErrorCode = "alert_not_found"
+	APIErrorCodeDuplicateTarget            APIErrorCode = "duplicate_target"
+	APIErrorCodeFavoriteHasAlerts          APIErrorCode = "favorite_has_alerts"
+	APIErrorCodeFavoriteNotFound           APIErrorCode = "favorite_not_found"
 	APIErrorCodeInsufficientData           APIErrorCode = "insufficient_data"
 	APIErrorCodeInternalError              APIErrorCode = "internal_error"
 	APIErrorCodeInvalidArgument            APIErrorCode = "invalid_argument"
@@ -43,6 +48,16 @@ const (
 func (e APIErrorCode) Valid() bool {
 	switch e {
 	case APIErrorCodeAccessDenied:
+		return true
+	case APIErrorCodeAlertLimit:
+		return true
+	case APIErrorCodeAlertNotFound:
+		return true
+	case APIErrorCodeDuplicateTarget:
+		return true
+	case APIErrorCodeFavoriteHasAlerts:
+		return true
+	case APIErrorCodeFavoriteNotFound:
 		return true
 	case APIErrorCodeInsufficientData:
 		return true
@@ -260,6 +275,21 @@ func (e MarketSortField) Valid() bool {
 	}
 }
 
+// Defines values for PriceAlertsResponseLimit.
+const (
+	N10 PriceAlertsResponseLimit = 10
+)
+
+// Valid indicates whether the value is a known member of the PriceAlertsResponseLimit enum.
+func (e PriceAlertsResponseLimit) Valid() bool {
+	switch e {
+	case N10:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ReadinessCheck.
 const (
 	ReadinessCheckMissing     ReadinessCheck = "missing"
@@ -406,6 +436,21 @@ type Evaluation struct {
 	To          time.Time          `json:"to"`
 }
 
+// Favorite defines model for Favorite.
+type Favorite struct {
+	Active     bool      `json:"active"`
+	AlertCount int       `json:"alert_count"`
+	BaseAsset  string    `json:"base_asset"`
+	CreatedAt  time.Time `json:"created_at"`
+	QuoteAsset string    `json:"quote_asset"`
+	Symbol     string    `json:"symbol"`
+}
+
+// FavoritesResponse defines model for FavoritesResponse.
+type FavoritesResponse struct {
+	Items []Favorite `json:"items"`
+}
+
 // IndicatorConfig defines model for IndicatorConfig.
 type IndicatorConfig struct {
 	Parameters map[string]interface{} `json:"parameters"`
@@ -523,6 +568,31 @@ type MarketSortDirection string
 // MarketSortField defines model for MarketSort.Field.
 type MarketSortField string
 
+// PriceAlert defines model for PriceAlert.
+type PriceAlert struct {
+	CreatedAt time.Time `json:"created_at"`
+	Id        int64     `json:"id"`
+	Symbol    string    `json:"symbol"`
+	Target    string    `json:"target"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Version   int64     `json:"version"`
+}
+
+// PriceAlertInput defines model for PriceAlertInput.
+type PriceAlertInput struct {
+	Target string `json:"target"`
+}
+
+// PriceAlertsResponse defines model for PriceAlertsResponse.
+type PriceAlertsResponse struct {
+	Count int                      `json:"count"`
+	Items []PriceAlert             `json:"items"`
+	Limit PriceAlertsResponseLimit `json:"limit"`
+}
+
+// PriceAlertsResponseLimit defines model for PriceAlertsResponse.Limit.
+type PriceAlertsResponseLimit int
+
 // PriceHistoryWindow defines model for PriceHistoryWindow.
 type PriceHistoryWindow struct {
 	From time.Time `json:"from"`
@@ -561,6 +631,9 @@ type Warning struct {
 	Message string `json:"message"`
 }
 
+// AlertID defines model for AlertID.
+type AlertID = int64
+
 // RequestID defines model for RequestID.
 type RequestID = string
 
@@ -570,11 +643,23 @@ type Symbol = string
 // AccessDenied defines model for AccessDenied.
 type AccessDenied = ErrorResponse
 
+// AlertConflict defines model for AlertConflict.
+type AlertConflict = ErrorResponse
+
+// AlertNotFound defines model for AlertNotFound.
+type AlertNotFound = ErrorResponse
+
 // AnalysisUnavailable defines model for AnalysisUnavailable.
 type AnalysisUnavailable = ErrorResponse
 
 // BadRequest defines model for BadRequest.
 type BadRequest = ErrorResponse
+
+// FavoriteAlertsConflict defines model for FavoriteAlertsConflict.
+type FavoriteAlertsConflict = ErrorResponse
+
+// FavoriteNotFound defines model for FavoriteNotFound.
+type FavoriteNotFound = ErrorResponse
 
 // InsufficientData defines model for InsufficientData.
 type InsufficientData = ErrorResponse
@@ -601,6 +686,11 @@ type AnalyzeInstrumentParams struct {
 type AnalyzeMarketParams struct {
 	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
 	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
+}
+
+// RemoveFavoriteParams defines parameters for RemoveFavorite.
+type RemoveFavoriteParams struct {
+	ConfirmAlerts *bool `form:"confirm_alerts,omitempty" json:"confirm_alerts,omitempty"`
 }
 
 // ListInstrumentCandlesParams defines parameters for ListInstrumentCandles.
@@ -642,23 +732,56 @@ type GetReadinessParams struct {
 	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
 }
 
+// UpdatePriceAlertJSONRequestBody defines body for UpdatePriceAlert for application/json ContentType.
+type UpdatePriceAlertJSONRequestBody = PriceAlertInput
+
 // AnalyzeInstrumentJSONRequestBody defines body for AnalyzeInstrument for application/json ContentType.
 type AnalyzeInstrumentJSONRequestBody = InstrumentAnalysisRequest
 
 // AnalyzeMarketJSONRequestBody defines body for AnalyzeMarket for application/json ContentType.
 type AnalyzeMarketJSONRequestBody = MarketAnalysisRequest
 
+// AnalyzeFavoritesJSONRequestBody defines body for AnalyzeFavorites for application/json ContentType.
+type AnalyzeFavoritesJSONRequestBody = MarketAnalysisRequest
+
+// CreatePriceAlertJSONRequestBody defines body for CreatePriceAlert for application/json ContentType.
+type CreatePriceAlertJSONRequestBody = PriceAlertInput
+
 // GetInstrumentChartJSONRequestBody defines body for GetInstrumentChart for application/json ContentType.
 type GetInstrumentChartJSONRequestBody = ChartRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+
+	// (DELETE /api/v1/alerts/{alert_id})
+	DeletePriceAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
+
+	// (PATCH /api/v1/alerts/{alert_id})
+	UpdatePriceAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
 	// AnalyzeInstrument Analyze one active instrument
 	// (POST /api/v1/analysis/instruments/{symbol})
 	AnalyzeInstrument(w http.ResponseWriter, r *http.Request, symbol Symbol, params AnalyzeInstrumentParams)
 	// AnalyzeMarket Analyze active instruments in the market
 	// (POST /api/v1/analysis/market)
 	AnalyzeMarket(w http.ResponseWriter, r *http.Request, params AnalyzeMarketParams)
+
+	// (GET /api/v1/favorites)
+	ListFavorites(w http.ResponseWriter, r *http.Request)
+	// AnalyzeFavorites Analyze the current user's active favorite instruments
+	// (POST /api/v1/favorites/analysis)
+	AnalyzeFavorites(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /api/v1/favorites/{symbol})
+	RemoveFavorite(w http.ResponseWriter, r *http.Request, symbol Symbol, params RemoveFavoriteParams)
+
+	// (PUT /api/v1/favorites/{symbol})
+	AddFavorite(w http.ResponseWriter, r *http.Request, symbol Symbol)
+
+	// (GET /api/v1/instruments/{symbol}/alerts)
+	ListPriceAlerts(w http.ResponseWriter, r *http.Request, symbol Symbol)
+
+	// (POST /api/v1/instruments/{symbol}/alerts)
+	CreatePriceAlert(w http.ResponseWriter, r *http.Request, symbol Symbol)
 	// ListInstrumentCandles List a chronological page of closed candles
 	// (GET /api/v1/instruments/{symbol}/candles)
 	ListInstrumentCandles(w http.ResponseWriter, r *http.Request, symbol Symbol, params ListInstrumentCandlesParams)
@@ -681,6 +804,58 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// DeletePriceAlert operation middleware
+func (siw *ServerInterfaceWrapper) DeletePriceAlert(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "alert_id" -------------
+	var alertId AlertID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "alert_id", r.PathValue("alert_id"), &alertId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "alert_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeletePriceAlert(w, r, alertId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePriceAlert operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePriceAlert(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "alert_id" -------------
+	var alertId AlertID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "alert_id", r.PathValue("alert_id"), &alertId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "alert_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePriceAlert(w, r, alertId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // AnalyzeInstrument operation middleware
 func (siw *ServerInterfaceWrapper) AnalyzeInstrument(w http.ResponseWriter, r *http.Request) {
@@ -764,6 +939,154 @@ func (siw *ServerInterfaceWrapper) AnalyzeMarket(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AnalyzeMarket(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListFavorites operation middleware
+func (siw *ServerInterfaceWrapper) ListFavorites(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListFavorites(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AnalyzeFavorites operation middleware
+func (siw *ServerInterfaceWrapper) AnalyzeFavorites(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AnalyzeFavorites(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveFavorite operation middleware
+func (siw *ServerInterfaceWrapper) RemoveFavorite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "symbol" -------------
+	var symbol Symbol
+
+	err = runtime.BindStyledParameterWithOptions("simple", "symbol", r.PathValue("symbol"), &symbol, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "symbol", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RemoveFavoriteParams
+
+	// ------------- Optional query parameter "confirm_alerts" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "confirm_alerts", r.URL.Query(), &params.ConfirmAlerts, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "confirm_alerts"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "confirm_alerts", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveFavorite(w, r, symbol, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AddFavorite operation middleware
+func (siw *ServerInterfaceWrapper) AddFavorite(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "symbol" -------------
+	var symbol Symbol
+
+	err = runtime.BindStyledParameterWithOptions("simple", "symbol", r.PathValue("symbol"), &symbol, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "symbol", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AddFavorite(w, r, symbol)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListPriceAlerts operation middleware
+func (siw *ServerInterfaceWrapper) ListPriceAlerts(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "symbol" -------------
+	var symbol Symbol
+
+	err = runtime.BindStyledParameterWithOptions("simple", "symbol", r.PathValue("symbol"), &symbol, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "symbol", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListPriceAlerts(w, r, symbol)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreatePriceAlert operation middleware
+func (siw *ServerInterfaceWrapper) CreatePriceAlert(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "symbol" -------------
+	var symbol Symbol
+
+	err = runtime.BindStyledParameterWithOptions("simple", "symbol", r.PathValue("symbol"), &symbol, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "symbol", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreatePriceAlert(w, r, symbol)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1159,6 +1482,14 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/analysis/market", wrapper.AnalyzeMarket)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instruments/{symbol}/candles", wrapper.ListInstrumentCandles)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instruments/{symbol}/chart", wrapper.GetInstrumentChart)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/favorites", wrapper.ListFavorites)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/favorites/{symbol}", wrapper.RemoveFavorite)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/favorites/{symbol}", wrapper.AddFavorite)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/favorites/analysis", wrapper.AnalyzeFavorites)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instruments/{symbol}/alerts", wrapper.ListPriceAlerts)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instruments/{symbol}/alerts", wrapper.CreatePriceAlert)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/alerts/{alert_id}", wrapper.DeletePriceAlert)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/alerts/{alert_id}", wrapper.UpdatePriceAlert)
 
 	return m
 }
@@ -1171,6 +1502,10 @@ type AccessDeniedJSONResponse struct {
 
 	Headers AccessDeniedResponseHeaders
 }
+
+type AlertConflictJSONResponse ErrorResponse
+
+type AlertNotFoundJSONResponse ErrorResponse
 
 type AnalysisUnavailableResponseHeaders struct {
 	XRequestID string
@@ -1189,6 +1524,10 @@ type BadRequestJSONResponse struct {
 
 	Headers BadRequestResponseHeaders
 }
+
+type FavoriteAlertsConflictJSONResponse ErrorResponse
+
+type FavoriteNotFoundJSONResponse ErrorResponse
 
 type InsufficientDataResponseHeaders struct {
 	XRequestID string
@@ -1233,6 +1572,192 @@ type UnprocessableAnalysisJSONResponse struct {
 	Body ErrorResponse
 
 	Headers UnprocessableAnalysisResponseHeaders
+}
+
+type DeletePriceAlertRequestObject struct {
+	AlertId AlertID `json:"alert_id"`
+}
+
+type DeletePriceAlertResponseObject interface {
+	VisitDeletePriceAlertResponse(w http.ResponseWriter) error
+}
+
+type DeletePriceAlert204Response struct {
+}
+
+func (response DeletePriceAlert204Response) VisitDeletePriceAlertResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeletePriceAlert401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeletePriceAlert401JSONResponse) VisitDeletePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePriceAlert403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response DeletePriceAlert403JSONResponse) VisitDeletePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePriceAlert404JSONResponse struct{ AlertNotFoundJSONResponse }
+
+func (response DeletePriceAlert404JSONResponse) VisitDeletePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeletePriceAlert500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeletePriceAlert500JSONResponse) VisitDeletePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePriceAlertRequestObject struct {
+	AlertId AlertID `json:"alert_id"`
+	Body    *UpdatePriceAlertJSONRequestBody
+}
+
+type UpdatePriceAlertResponseObject interface {
+	VisitUpdatePriceAlertResponse(w http.ResponseWriter) error
+}
+
+type UpdatePriceAlert200JSONResponse PriceAlert
+
+func (response UpdatePriceAlert200JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePriceAlert400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdatePriceAlert400JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePriceAlert401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdatePriceAlert401JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePriceAlert403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response UpdatePriceAlert403JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePriceAlert404JSONResponse struct{ AlertNotFoundJSONResponse }
+
+func (response UpdatePriceAlert404JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePriceAlert409JSONResponse struct{ AlertConflictJSONResponse }
+
+func (response UpdatePriceAlert409JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdatePriceAlert500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdatePriceAlert500JSONResponse) VisitUpdatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type AnalyzeInstrumentRequestObject struct {
@@ -1512,6 +2037,541 @@ func (response AnalyzeMarket503JSONResponse) VisitAnalyzeMarketResponse(w http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFavoritesRequestObject struct {
+}
+
+type ListFavoritesResponseObject interface {
+	VisitListFavoritesResponse(w http.ResponseWriter) error
+}
+
+type ListFavorites200JSONResponse FavoritesResponse
+
+func (response ListFavorites200JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFavorites401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListFavorites401JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFavorites403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response ListFavorites403JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListFavorites500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListFavorites500JSONResponse) VisitListFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnalyzeFavoritesRequestObject struct {
+	Body *AnalyzeFavoritesJSONRequestBody
+}
+
+type AnalyzeFavoritesResponseObject interface {
+	VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error
+}
+
+type AnalyzeFavorites200JSONResponse MarketAnalysisResponse
+
+func (response AnalyzeFavorites200JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnalyzeFavorites400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response AnalyzeFavorites400JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnalyzeFavorites401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AnalyzeFavorites401JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnalyzeFavorites403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response AnalyzeFavorites403JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnalyzeFavorites422JSONResponse struct {
+	UnprocessableAnalysisJSONResponse
+}
+
+func (response AnalyzeFavorites422JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(422)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnalyzeFavorites500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response AnalyzeFavorites500JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AnalyzeFavorites503JSONResponse struct {
+	AnalysisUnavailableJSONResponse
+}
+
+func (response AnalyzeFavorites503JSONResponse) VisitAnalyzeFavoritesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(503)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveFavoriteRequestObject struct {
+	Symbol Symbol `json:"symbol"`
+	Params RemoveFavoriteParams
+}
+
+type RemoveFavoriteResponseObject interface {
+	VisitRemoveFavoriteResponse(w http.ResponseWriter) error
+}
+
+type RemoveFavorite204Response struct {
+}
+
+func (response RemoveFavorite204Response) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveFavorite401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response RemoveFavorite401JSONResponse) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveFavorite403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response RemoveFavorite403JSONResponse) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveFavorite404JSONResponse struct{ FavoriteNotFoundJSONResponse }
+
+func (response RemoveFavorite404JSONResponse) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveFavorite409JSONResponse struct {
+	FavoriteAlertsConflictJSONResponse
+}
+
+func (response RemoveFavorite409JSONResponse) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveFavorite500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response RemoveFavorite500JSONResponse) VisitRemoveFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddFavoriteRequestObject struct {
+	Symbol Symbol `json:"symbol"`
+}
+
+type AddFavoriteResponseObject interface {
+	VisitAddFavoriteResponse(w http.ResponseWriter) error
+}
+
+type AddFavorite200JSONResponse Favorite
+
+func (response AddFavorite200JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddFavorite401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response AddFavorite401JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddFavorite403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response AddFavorite403JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddFavorite404JSONResponse struct{ SymbolNotFoundJSONResponse }
+
+func (response AddFavorite404JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AddFavorite500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response AddFavorite500JSONResponse) VisitAddFavoriteResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPriceAlertsRequestObject struct {
+	Symbol Symbol `json:"symbol"`
+}
+
+type ListPriceAlertsResponseObject interface {
+	VisitListPriceAlertsResponse(w http.ResponseWriter) error
+}
+
+type ListPriceAlerts200JSONResponse PriceAlertsResponse
+
+func (response ListPriceAlerts200JSONResponse) VisitListPriceAlertsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPriceAlerts401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListPriceAlerts401JSONResponse) VisitListPriceAlertsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPriceAlerts403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response ListPriceAlerts403JSONResponse) VisitListPriceAlertsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListPriceAlerts500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListPriceAlerts500JSONResponse) VisitListPriceAlertsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePriceAlertRequestObject struct {
+	Symbol Symbol `json:"symbol"`
+	Body   *CreatePriceAlertJSONRequestBody
+}
+
+type CreatePriceAlertResponseObject interface {
+	VisitCreatePriceAlertResponse(w http.ResponseWriter) error
+}
+
+type CreatePriceAlert201JSONResponse PriceAlert
+
+func (response CreatePriceAlert201JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePriceAlert400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreatePriceAlert400JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePriceAlert401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreatePriceAlert401JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePriceAlert403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response CreatePriceAlert403JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePriceAlert404JSONResponse struct{ SymbolNotFoundJSONResponse }
+
+func (response CreatePriceAlert404JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePriceAlert409JSONResponse struct{ AlertConflictJSONResponse }
+
+func (response CreatePriceAlert409JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreatePriceAlert500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreatePriceAlert500JSONResponse) VisitCreatePriceAlertResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -1813,12 +2873,36 @@ func (response GetReadiness503JSONResponse) VisitGetReadinessResponse(w http.Res
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+
+	// (DELETE /api/v1/alerts/{alert_id})
+	DeletePriceAlert(ctx context.Context, request DeletePriceAlertRequestObject) (DeletePriceAlertResponseObject, error)
+
+	// (PATCH /api/v1/alerts/{alert_id})
+	UpdatePriceAlert(ctx context.Context, request UpdatePriceAlertRequestObject) (UpdatePriceAlertResponseObject, error)
 	// AnalyzeInstrument Analyze one active instrument
 	// (POST /api/v1/analysis/instruments/{symbol})
 	AnalyzeInstrument(ctx context.Context, request AnalyzeInstrumentRequestObject) (AnalyzeInstrumentResponseObject, error)
 	// AnalyzeMarket Analyze active instruments in the market
 	// (POST /api/v1/analysis/market)
 	AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestObject) (AnalyzeMarketResponseObject, error)
+
+	// (GET /api/v1/favorites)
+	ListFavorites(ctx context.Context, request ListFavoritesRequestObject) (ListFavoritesResponseObject, error)
+	// AnalyzeFavorites Analyze the current user's active favorite instruments
+	// (POST /api/v1/favorites/analysis)
+	AnalyzeFavorites(ctx context.Context, request AnalyzeFavoritesRequestObject) (AnalyzeFavoritesResponseObject, error)
+
+	// (DELETE /api/v1/favorites/{symbol})
+	RemoveFavorite(ctx context.Context, request RemoveFavoriteRequestObject) (RemoveFavoriteResponseObject, error)
+
+	// (PUT /api/v1/favorites/{symbol})
+	AddFavorite(ctx context.Context, request AddFavoriteRequestObject) (AddFavoriteResponseObject, error)
+
+	// (GET /api/v1/instruments/{symbol}/alerts)
+	ListPriceAlerts(ctx context.Context, request ListPriceAlertsRequestObject) (ListPriceAlertsResponseObject, error)
+
+	// (POST /api/v1/instruments/{symbol}/alerts)
+	CreatePriceAlert(ctx context.Context, request CreatePriceAlertRequestObject) (CreatePriceAlertResponseObject, error)
 	// ListInstrumentCandles List a chronological page of closed candles
 	// (GET /api/v1/instruments/{symbol}/candles)
 	ListInstrumentCandles(ctx context.Context, request ListInstrumentCandlesRequestObject) (ListInstrumentCandlesResponseObject, error)
@@ -1870,6 +2954,65 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// DeletePriceAlert operation middleware
+func (sh *strictHandler) DeletePriceAlert(w http.ResponseWriter, r *http.Request, alertId AlertID) {
+	var request DeletePriceAlertRequestObject
+
+	request.AlertId = alertId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeletePriceAlert(ctx, request.(DeletePriceAlertRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeletePriceAlert")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeletePriceAlertResponseObject); ok {
+		if err := validResponse.VisitDeletePriceAlertResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdatePriceAlert operation middleware
+func (sh *strictHandler) UpdatePriceAlert(w http.ResponseWriter, r *http.Request, alertId AlertID) {
+	var request UpdatePriceAlertRequestObject
+
+	request.AlertId = alertId
+
+	var body UpdatePriceAlertJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdatePriceAlert(ctx, request.(UpdatePriceAlertRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdatePriceAlert")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdatePriceAlertResponseObject); ok {
+		if err := validResponse.VisitUpdatePriceAlertResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // AnalyzeInstrument operation middleware
@@ -1932,6 +3075,173 @@ func (sh *strictHandler) AnalyzeMarket(w http.ResponseWriter, r *http.Request, p
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AnalyzeMarketResponseObject); ok {
 		if err := validResponse.VisitAnalyzeMarketResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListFavorites operation middleware
+func (sh *strictHandler) ListFavorites(w http.ResponseWriter, r *http.Request) {
+	var request ListFavoritesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListFavorites(ctx, request.(ListFavoritesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListFavorites")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListFavoritesResponseObject); ok {
+		if err := validResponse.VisitListFavoritesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AnalyzeFavorites operation middleware
+func (sh *strictHandler) AnalyzeFavorites(w http.ResponseWriter, r *http.Request) {
+	var request AnalyzeFavoritesRequestObject
+
+	var body AnalyzeFavoritesJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AnalyzeFavorites(ctx, request.(AnalyzeFavoritesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AnalyzeFavorites")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AnalyzeFavoritesResponseObject); ok {
+		if err := validResponse.VisitAnalyzeFavoritesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveFavorite operation middleware
+func (sh *strictHandler) RemoveFavorite(w http.ResponseWriter, r *http.Request, symbol Symbol, params RemoveFavoriteParams) {
+	var request RemoveFavoriteRequestObject
+
+	request.Symbol = symbol
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveFavorite(ctx, request.(RemoveFavoriteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveFavorite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveFavoriteResponseObject); ok {
+		if err := validResponse.VisitRemoveFavoriteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AddFavorite operation middleware
+func (sh *strictHandler) AddFavorite(w http.ResponseWriter, r *http.Request, symbol Symbol) {
+	var request AddFavoriteRequestObject
+
+	request.Symbol = symbol
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AddFavorite(ctx, request.(AddFavoriteRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AddFavorite")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AddFavoriteResponseObject); ok {
+		if err := validResponse.VisitAddFavoriteResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListPriceAlerts operation middleware
+func (sh *strictHandler) ListPriceAlerts(w http.ResponseWriter, r *http.Request, symbol Symbol) {
+	var request ListPriceAlertsRequestObject
+
+	request.Symbol = symbol
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListPriceAlerts(ctx, request.(ListPriceAlertsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListPriceAlerts")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListPriceAlertsResponseObject); ok {
+		if err := validResponse.VisitListPriceAlertsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreatePriceAlert operation middleware
+func (sh *strictHandler) CreatePriceAlert(w http.ResponseWriter, r *http.Request, symbol Symbol) {
+	var request CreatePriceAlertRequestObject
+
+	request.Symbol = symbol
+
+	var body CreatePriceAlertJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreatePriceAlert(ctx, request.(CreatePriceAlertRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreatePriceAlert")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreatePriceAlertResponseObject); ok {
+		if err := validResponse.VisitCreatePriceAlertResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2057,59 +3367,72 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"x/X/AgAA//8=",
+	"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",
+	"h63YdXW9+m8AAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -4,11 +4,15 @@ import (
 	"context"
 	"errors"
 	"os"
+	"strconv"
+	"sync"
 	"testing"
 	"time"
 
+	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/auth"
+	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/migrate"
 	"crypto-scanner/internal/storage/postgres"
@@ -113,7 +117,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("access management grants lists and hard-deletes users", func(t *testing.T) {
+	t.Run("access management grants lists and deactivates users", func(t *testing.T) {
 		granted, changed, err := store.GrantAccess(ctx, 201, "ada", "Ada")
 		if err != nil || !changed || granted.TelegramID != 201 || !granted.Enabled {
 			t.Fatalf("GrantAccess() = %#v, %t, %v", granted, changed, err)
@@ -134,14 +138,19 @@ func TestPostgresStoreContracts(t *testing.T) {
 			t.Fatalf("DeleteUser() = %t, %v", deleted, err)
 		}
 		if _, err := store.FindEnabledByTelegramID(ctx, 201); !errors.Is(err, auth.ErrUserNotFound) {
-			t.Fatalf("deleted user still has access: %v", err)
+			t.Fatalf("deactivated user still has access: %v", err)
+		}
+		var persistedID int64
+		var enabled bool
+		if err := db.QueryRow(ctx, `SELECT id, is_enabled FROM app.users WHERE telegram_id = 201`).Scan(&persistedID, &enabled); err != nil || persistedID != granted.ID || enabled {
+			t.Fatalf("deactivated row = id %d enabled %t, error = %v", persistedID, enabled, err)
 		}
 		fresh, changed, err := store.GrantAccess(ctx, 201, "ada", "Ada")
-		if err != nil || !changed || fresh.ID == granted.ID {
-			t.Fatalf("re-add after deletion = %#v, %t, %v", fresh, changed, err)
+		if err != nil || !changed || fresh.ID != granted.ID {
+			t.Fatalf("restore after deactivation = %#v, %t, %v", fresh, changed, err)
 		}
-		if deleted, err := store.DeleteUser(ctx, granted.ID, granted.TelegramID); err != nil || deleted {
-			t.Fatalf("stale DeleteUser() = %t, %v", deleted, err)
+		if deactivated, err := store.DeleteUser(ctx, granted.ID, granted.TelegramID); err != nil || !deactivated {
+			t.Fatalf("second deactivation = %t, %v", deactivated, err)
 		}
 	})
 
@@ -194,6 +203,99 @@ func TestPostgresStoreContracts(t *testing.T) {
 		active, err = store.ListActiveInstruments(ctx)
 		if err != nil || len(active) != 2 || active[0].ID != originalIDs[active[0].Symbol] || active[1].ID != originalIDs[active[1].Symbol] {
 			t.Fatalf("reactivated instruments = %#v, error = %v", active, err)
+		}
+	})
+
+	t.Run("favorites and alerts preserve ownership and transactional invariants", func(t *testing.T) {
+		owner, err := store.FindEnabledByTelegramID(ctx, 202)
+		if err != nil {
+			t.Fatalf("find alert owner: %v", err)
+		}
+		favorite, err := store.AddFavorite(ctx, owner.ID, "BTCUSDT")
+		if err != nil || favorite.Symbol != "BTCUSDT" || favorite.AlertCount != 0 {
+			t.Fatalf("AddFavorite() = %#v, %v", favorite, err)
+		}
+		symbols, err := store.ListFavoriteSymbols(ctx, owner.ID)
+		if err != nil || len(symbols) != 1 || symbols[0] != "BTCUSDT" {
+			t.Fatalf("ListFavoriteSymbols() = %v, %v", symbols, err)
+		}
+		first, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "1")
+		if err != nil || first.Target != "1" || first.Version != 1 || first.TelegramID != owner.TelegramID {
+			t.Fatalf("CreateAlert() = %#v, %v", first, err)
+		}
+		updated, err := store.UpdateAlert(ctx, owner.ID, first.ID, "1.5")
+		if err != nil || updated.TelegramID != owner.TelegramID || updated.Target != "1.5" || updated.Version != 2 {
+			t.Fatalf("UpdateAlert() = %#v, %v", updated, err)
+		}
+		if _, err := store.UpdateAlert(ctx, owner.ID, first.ID, "1"); err != nil {
+			t.Fatalf("restore first alert target: %v", err)
+		}
+		if _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "1.0"); !errors.Is(err, alerts.ErrDuplicate) {
+			t.Fatalf("numeric duplicate error = %v", err)
+		}
+		for target := 2; target <= alerts.MaxPerInstrument; target++ {
+			if _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", strconv.Itoa(target)); err != nil {
+				t.Fatalf("create alert %d: %v", target, err)
+			}
+		}
+		if _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "11"); !errors.Is(err, alerts.ErrLimit) {
+			t.Fatalf("eleventh alert error = %v", err)
+		}
+		if count, err := store.RemoveFavorite(ctx, owner.ID, "BTCUSDT", false); !errors.Is(err, favorites.ErrAlertsExist) || count != alerts.MaxPerInstrument {
+			t.Fatalf("unconfirmed RemoveFavorite() = %d, %v", count, err)
+		}
+		items, err := store.ListAlerts(ctx, owner.ID, "BTCUSDT")
+		if err != nil || len(items) != alerts.MaxPerInstrument {
+			t.Fatalf("alerts after rejected removal = %d, %v", len(items), err)
+		}
+		if count, err := store.RemoveFavorite(ctx, owner.ID, "BTCUSDT", true); err != nil || count != alerts.MaxPerInstrument {
+			t.Fatalf("confirmed RemoveFavorite() = %d, %v", count, err)
+		}
+		if items, err = store.ListAlerts(ctx, owner.ID, "BTCUSDT"); err != nil || len(items) != 0 {
+			t.Fatalf("alerts after cascade = %d, %v", len(items), err)
+		}
+
+		if _, err := store.CreateAlert(ctx, owner.ID, "ETHUSDT", "999999999999999999999"); err == nil {
+			t.Fatal("oversized target unexpectedly succeeded")
+		}
+		favoritesList, err := store.ListFavorites(ctx, owner.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, item := range favoritesList {
+			if item.Symbol == "ETHUSDT" {
+				t.Fatal("failed alert creation left an auto-added favorite")
+			}
+		}
+
+		var wait sync.WaitGroup
+		results := make(chan error, alerts.MaxPerInstrument+1)
+		for target := 1; target <= alerts.MaxPerInstrument+1; target++ {
+			wait.Add(1)
+			go func(target int) {
+				defer wait.Done()
+				_, createErr := store.CreateAlert(ctx, owner.ID, "ETHUSDT", strconv.Itoa(target))
+				results <- createErr
+			}(target)
+		}
+		wait.Wait()
+		close(results)
+		var succeeded, limited int
+		for createErr := range results {
+			switch {
+			case createErr == nil:
+				succeeded++
+			case errors.Is(createErr, alerts.ErrLimit):
+				limited++
+			default:
+				t.Fatalf("concurrent create error = %v", createErr)
+			}
+		}
+		if succeeded != alerts.MaxPerInstrument || limited != 1 {
+			t.Fatalf("concurrent creates succeeded=%d limited=%d", succeeded, limited)
+		}
+		if _, err := store.RemoveFavorite(ctx, owner.ID, "ETHUSDT", true); err != nil {
+			t.Fatalf("clean concurrent alerts: %v", err)
 		}
 	})
 
@@ -316,6 +418,10 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 		if len(candles) != 1 || candles[0].Close != 106.25 || candles[0].Open != 100.125 {
 			t.Fatalf("candles = %#v, want one updated precision-preserving value", candles)
+		}
+		batch, err := store.ListLatestCandlesByIntervalBatch(ctx, []int64{instrumentID}, "1d", 30)
+		if err != nil || len(batch[instrumentID]) != 1 || batch[instrumentID][0].Close != 106.25 {
+			t.Fatalf("ListLatestCandlesByIntervalBatch() = %#v, %v", batch, err)
 		}
 
 		if _, err := db.Exec(ctx, `UPDATE binance_spot.candles SET high = 1e10000 WHERE instrument_id = $1`, instrumentID); err != nil {

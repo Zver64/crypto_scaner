@@ -21,6 +21,10 @@ type Store interface {
 	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
 }
 
+type CandleBatchStore interface {
+	ListLatestCandlesByIntervalBatch(context.Context, []int64, string, int) (map[int64][]market.Candle, error)
+}
+
 type SymbolRequest struct {
 	Symbol   string
 	Criteria []CriterionConfig
@@ -134,6 +138,17 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 }
 
 func (service *Service) Search(ctx context.Context, request SearchRequest) (SearchResult, error) {
+	return service.search(ctx, request, nil, false)
+}
+
+// SearchSymbols runs the existing market-analysis pipeline over only the
+// supplied symbols. Selection constraints, ordering, and limits still execute
+// in PostgreSQL before criterion evaluation.
+func (service *Service) SearchSymbols(ctx context.Context, request SearchRequest, symbols []string) (SearchResult, error) {
+	return service.search(ctx, request, symbols, true)
+}
+
+func (service *Service) search(ctx context.Context, request SearchRequest, symbols []string, restrictSymbols bool) (SearchResult, error) {
 	window := market.SevenDayWindow(time.Now())
 	criteria, requirements, err := service.prepare(request.Criteria)
 	if err != nil {
@@ -142,6 +157,15 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	selection, err := service.selection(request, criteria)
 	if err != nil {
 		return SearchResult{}, err
+	}
+	if restrictSymbols {
+		selection.Symbols = append([]string(nil), symbols...)
+		// Favorites are not a Top-N search: all selected active instruments must
+		// reach the analysis pipeline regardless of the caller's table limit.
+		selection.Limit = 0
+	}
+	if restrictSymbols && len(symbols) == 0 {
+		return SearchResult{PriceHistoryWindow: window, Items: []SearchItem{}, Unresolved: []UnresolvedItem{}}, nil
 	}
 	if err := service.requireMarketData(ctx, requirements); err != nil {
 		return SearchResult{}, err
@@ -156,19 +180,26 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	}
 	result := SearchResult{PriceHistoryWindow: window, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
 	candidates := append([]market.Instrument(nil), instruments...)
+	candleData := make(map[int64]map[Unit][]market.Candle, len(candidates))
+	for _, instrument := range candidates {
+		candleData[instrument.ID] = map[Unit][]market.Candle{}
+	}
 	results := make(map[int64]SymbolResult, len(candidates))
 	for _, criterion := range criteria {
 		if len(candidates) == 0 {
 			break
 		}
 		next := make([]market.Instrument, 0, len(candidates))
+		if err := service.loadCandleData(ctx, candidates, criterion.Requirements(), candleData); err != nil {
+			return SearchResult{}, err
+		}
 		warnings, prepareErr := criterion.Prepare(ctx, candidates)
 		if prepareErr != nil {
 			return SearchResult{}, fmt.Errorf("prepare criterion %s: %w", criterion.Name(), prepareErr)
 		}
 		result.Warnings = appendUniqueWarnings(result.Warnings, warnings)
 		for _, instrument := range candidates {
-			item, evaluateErr := service.evaluateCriterion(ctx, instrument, criterion)
+			item, evaluateErr := service.evaluateCriterionWithData(ctx, instrument, criterion, candleData[instrument.ID], false)
 			var insufficient *InsufficientHistoryError
 			if errors.As(evaluateErr, &insufficient) {
 				result.InsufficientDataCount++
@@ -204,6 +235,41 @@ func (service *Service) Search(ctx context.Context, request SearchRequest) (Sear
 	}
 	result.MatchedCount = len(result.Items)
 	return result, nil
+}
+
+func (service *Service) loadCandleData(ctx context.Context, instruments []market.Instrument, requirements []CandleRequirement, data map[int64]map[Unit][]market.Candle) error {
+	for _, requirement := range requirements {
+		pending := make([]market.Instrument, 0, len(instruments))
+		ids := make([]int64, 0, len(instruments))
+		for _, instrument := range instruments {
+			if len(data[instrument.ID][requirement.Unit]) >= requirement.Count {
+				continue
+			}
+			pending = append(pending, instrument)
+			ids = append(ids, instrument.ID)
+		}
+		if len(ids) == 0 {
+			continue
+		}
+		if batchStore, ok := service.store.(CandleBatchStore); ok {
+			candles, err := batchStore.ListLatestCandlesByIntervalBatch(ctx, ids, string(requirement.Unit.Interval()), requirement.Count)
+			if err != nil {
+				return fmt.Errorf("list latest %s candles: %w", requirement.Unit, err)
+			}
+			for _, instrument := range pending {
+				data[instrument.ID][requirement.Unit] = candles[instrument.ID]
+			}
+			continue
+		}
+		for _, instrument := range pending {
+			candles, err := service.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(requirement.Unit.Interval()), requirement.Count)
+			if err != nil {
+				return fmt.Errorf("list latest candles for %s: %w", instrument.Symbol, err)
+			}
+			data[instrument.ID][requirement.Unit] = candles
+		}
+	}
+	return nil
 }
 
 func appendUniqueWarnings(existing, additions []Warning) []Warning {
@@ -302,7 +368,7 @@ func (service *Service) evaluate(ctx context.Context, instrument market.Instrume
 			return SymbolResult{}, fmt.Errorf("prepare criterion %s: %w", criterion.Name(), err)
 		}
 		result.Warnings = append(result.Warnings, warnings...)
-		item, err := service.evaluateCriterionWithData(ctx, instrument, criterion, data)
+		item, err := service.evaluateCriterionWithData(ctx, instrument, criterion, data, true)
 		if err != nil {
 			var insufficient *InsufficientHistoryError
 			if errors.As(err, &insufficient) && insufficient.Criterion == "" {
@@ -325,13 +391,14 @@ type UnresolvedError struct{ Code, Message string }
 
 func (e *UnresolvedError) Error() string { return e.Message }
 
-func (service *Service) evaluateCriterion(ctx context.Context, instrument market.Instrument, criterion criterionInstance) (SymbolResult, error) {
-	data := make(map[Unit][]market.Candle)
-	return service.evaluateCriterionWithData(ctx, instrument, criterion, data)
-}
-func (service *Service) evaluateCriterionWithData(ctx context.Context, instrument market.Instrument, criterion criterionInstance, data map[Unit][]market.Candle) (SymbolResult, error) {
+func (service *Service) evaluateCriterionWithData(ctx context.Context, instrument market.Instrument, criterion criterionInstance, data map[Unit][]market.Candle, loadMissing bool) (SymbolResult, error) {
 	for _, requirement := range criterion.Requirements() {
 		if existing, ok := data[requirement.Unit]; ok && len(existing) >= requirement.Count {
+			continue
+		}
+		// Search preloads each requirement in batches, including empty/short
+		// results. Never turn insufficient history into per-instrument retries.
+		if !loadMissing {
 			continue
 		}
 		candles, err := service.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(requirement.Unit.Interval()), requirement.Count)

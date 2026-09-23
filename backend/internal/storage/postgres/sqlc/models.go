@@ -32,6 +32,22 @@ type AppCoingeckoMarketCap struct {
 	ObservedAt   pgtype.Timestamptz
 }
 
+type AppFavorite struct {
+	UserID       int64
+	InstrumentID int64
+	CreatedAt    pgtype.Timestamptz
+}
+
+type AppPriceAlert struct {
+	ID           int64
+	UserID       int64
+	InstrumentID int64
+	Target       string
+	Version      int64
+	CreatedAt    pgtype.Timestamptz
+	UpdatedAt    pgtype.Timestamptz
+}
+
 type AppSchemaMigration struct {
 	Version                  int64
 	AppliedAt                pgtype.Timestamptz

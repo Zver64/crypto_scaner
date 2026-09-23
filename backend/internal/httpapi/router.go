@@ -9,7 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/analysis"
+	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/market"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
@@ -34,6 +36,20 @@ type Analysis interface {
 	Search(context.Context, analysis.SearchRequest) (analysis.SearchResult, error)
 }
 
+type Favorites interface {
+	List(context.Context, int64) ([]favorites.Favorite, error)
+	Add(context.Context, int64, string) (favorites.Favorite, error)
+	Remove(context.Context, int64, string, bool) (int, error)
+	Analyze(context.Context, int64, analysis.SearchRequest) (analysis.SearchResult, error)
+}
+
+type PriceAlerts interface {
+	List(context.Context, int64, string) ([]alerts.Alert, error)
+	Create(context.Context, int64, string, string) (alerts.Alert, error)
+	Update(context.Context, int64, int64, string) (alerts.Alert, error)
+	Delete(context.Context, int64, int64) error
+}
+
 const maxAnalysisRequestBody = 1 << 20
 
 type Options struct {
@@ -41,6 +57,8 @@ type Options struct {
 	Chart             ChartService
 	LiveAuthenticator LiveAuthenticator
 	LiveCandles       LiveCandles
+	Favorites         Favorites
+	Alerts            PriceAlerts
 }
 
 type api struct {
@@ -48,6 +66,8 @@ type api struct {
 	analysis  Analysis
 	history   CandleHistory
 	chart     ChartService
+	favorites Favorites
+	alerts    PriceAlerts
 }
 
 var _ StrictServerInterface = (*api)(nil)
@@ -60,7 +80,7 @@ func New(logger *slog.Logger, readiness Readiness, service Analysis, history Can
 // NewWithOptions returns the service HTTP handler with optional development-only API documentation.
 func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, history CandleHistory, authenticator Authenticator, options Options) http.Handler {
 	operations := http.NewServeMux()
-	strict := NewStrictHandlerWithOptions(&api{readiness: readiness, analysis: service, history: history, chart: options.Chart}, nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(&api{readiness: readiness, analysis: service, history: history, chart: options.Chart, favorites: options.Favorites, alerts: options.Alerts}, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  openAPIRequestError,
 		ResponseErrorHandlerFunc: openAPIResponseError,
 	})
@@ -78,6 +98,18 @@ func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, 
 	router.Handle("POST /api/v1/analysis/market", protectedOperations)
 	router.Handle("GET /api/v1/instruments/{symbol}/candles", protectedOperations)
 	router.Handle("POST /api/v1/instruments/{symbol}/chart", protectedOperations)
+	if options.Favorites != nil {
+		router.Handle("GET /api/v1/favorites", protectedOperations)
+		router.Handle("PUT /api/v1/favorites/{symbol}", protectedOperations)
+		router.Handle("DELETE /api/v1/favorites/{symbol}", protectedOperations)
+		router.Handle("POST /api/v1/favorites/analysis", protectedOperations)
+	}
+	if options.Alerts != nil {
+		router.Handle("GET /api/v1/instruments/{symbol}/alerts", protectedOperations)
+		router.Handle("POST /api/v1/instruments/{symbol}/alerts", protectedOperations)
+		router.Handle("PATCH /api/v1/alerts/{alert_id}", protectedOperations)
+		router.Handle("DELETE /api/v1/alerts/{alert_id}", protectedOperations)
+	}
 	if options.LiveAuthenticator != nil && options.LiveCandles != nil {
 		router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(options.LiveAuthenticator, options.LiveCandles, logger))
 	}

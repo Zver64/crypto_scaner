@@ -58,6 +58,7 @@ import { mergeHistoryAndLiveCandles } from "@/features/instrument-analysis/live-
 import { InstrumentPriceHistoryChart } from "@/features/instrument-analysis/price-history-chart";
 import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
 import { useLiveCandles } from "@/features/instrument-analysis/use-live-candles";
+import { PriceAlertsPanel } from "@/features/price-alerts/price-alerts-panel";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 import { formatRangePercent } from "@/utils/range-percent";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
@@ -471,6 +472,7 @@ export function InstrumentAnalysisScreen({
 						</Stack>
 					</RefreshingOverlay>
 				) : null}
+				{permission.allowed ? <PriceAlertsPanel symbol={symbol} /> : null}
 			</Stack>
 		</Container>
 	);

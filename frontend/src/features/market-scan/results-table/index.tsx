@@ -2,6 +2,7 @@ import { UnstyledButton } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
 import type { PriceHistoryWindow } from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { FavoriteToggle } from "@/features/favorites/favorite-toggle";
 import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
 import { marketScanColumns } from "@/features/market-scan/results-table/columns";
 import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
@@ -16,7 +17,8 @@ import { scanCriteriaToSearch } from "@/routes/-scan-criteria-search";
 interface MarketScanResultsTableProps {
 	criteria: MarketScanCriteria;
 	rows: readonly MarketScanRow[];
-	window: PriceHistoryWindow;
+	window?: PriceHistoryWindow;
+	alertCounts?: ReadonlyMap<string, number>;
 	sort: MarketScanSort;
 	onSortChange(sort: MarketScanSort): void;
 }
@@ -25,6 +27,7 @@ export function MarketScanResultsTable({
 	criteria,
 	rows,
 	window,
+	alertCounts,
 	sort,
 	onSortChange,
 }: MarketScanResultsTableProps) {
@@ -55,6 +58,20 @@ export function MarketScanResultsTable({
 			};
 		},
 	);
+	columns.push({
+		key: "favorite",
+		header: "Favorite",
+		textAlign: "center",
+		cell: (row) => <FavoriteToggle symbol={row.symbol} />,
+	});
+	if (alertCounts) {
+		columns.push({
+			key: "alertCount",
+			header: "Alerts",
+			textAlign: "center",
+			cell: (row) => alertCounts.get(row.symbol) ?? 0,
+		});
+	}
 
 	return (
 		<DataTable

@@ -35,6 +35,7 @@ LEFT JOIN app.coingecko_market_caps AS market_cap
   ON market_cap.coin_id = mapping.coin_id
 WHERE instrument.is_active = TRUE
   AND (sqlc.arg(symbol)::text = '' OR instrument.symbol = sqlc.arg(symbol)::text)
+  AND (COALESCE(cardinality(sqlc.arg(symbols)::text[]), 0) = 0 OR instrument.symbol = ANY(sqlc.arg(symbols)::text[]))
   AND (NOT sqlc.arg(exclude_stablecoins)::boolean OR COALESCE(mapping.is_stablecoin, FALSE) = FALSE)
   AND (sqlc.narg(minimum_market_cap_usd)::numeric IS NULL OR market_cap.market_cap_usd >= sqlc.narg(minimum_market_cap_usd)::numeric)
 ORDER BY

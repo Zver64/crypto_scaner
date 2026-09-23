@@ -57,6 +57,13 @@ func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestO
 	if err != nil {
 		return api.analyzeMarketError(ctx, err), nil
 	}
+	return AnalyzeMarket200JSONResponse{
+		Body:    marketAnalysisResponse(result),
+		Headers: AnalyzeMarket200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
+	}, nil
+}
+
+func marketAnalysisResponse(result analysis.SearchResult) MarketAnalysisResponse {
 	items := make([]MarketAnalysisItem, len(result.Items))
 	for i, item := range result.Items {
 		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory}
@@ -65,14 +72,11 @@ func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestO
 	for i, item := range result.Unresolved {
 		unresolved[i] = UnresolvedInstrument{Symbol: item.Symbol, Code: UnresolvedInstrumentCode(item.Code), Message: item.Message}
 	}
-	return AnalyzeMarket200JSONResponse{
-		Body: MarketAnalysisResponse{
-			PriceHistoryWindow: PriceHistoryWindow{From: result.PriceHistoryWindow.From, To: result.PriceHistoryWindow.To},
-			MatchedCount:       result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount,
-			Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings),
-		},
-		Headers: AnalyzeMarket200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
-	}, nil
+	return MarketAnalysisResponse{
+		PriceHistoryWindow: PriceHistoryWindow{From: result.PriceHistoryWindow.From, To: result.PriceHistoryWindow.To},
+		MatchedCount:       result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount,
+		Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings),
+	}
 }
 
 func (api *api) analyzeInstrumentError(ctx context.Context, err error, symbol string) AnalyzeInstrumentResponseObject {

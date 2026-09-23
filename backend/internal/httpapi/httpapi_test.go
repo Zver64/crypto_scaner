@@ -218,6 +218,21 @@ func TestUnknownAPIRouteReturnsNotFoundBeforeAuthentication(t *testing.T) {
 	}
 }
 
+func TestRouterDoesNotRegisterOptionalFavoritesAndAlertRoutesWithoutServices(t *testing.T) {
+	handler := newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{})
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodGet, "/api/v1/favorites", nil),
+		httptest.NewRequest(http.MethodPost, "/api/v1/favorites/analysis", strings.NewReader(`{"criteria":[]}`)),
+		httptest.NewRequest(http.MethodGet, "/api/v1/instruments/BTCUSDT/alerts", nil),
+	} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusNotFound {
+			t.Errorf("%s %s status = %d, want 404", request.Method, request.URL.Path, response.Code)
+		}
+	}
+}
+
 func TestRouterDoesNotExposeTelegramBotEndpoints(t *testing.T) {
 	handler := newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{})
 

@@ -190,6 +190,44 @@ func TestSearchUsesBackendMarketCapSortAndLimit(t *testing.T) {
 	}
 }
 
+func TestSearchSymbolsReturnsValidatedEmptyResultWithoutMarketReadiness(t *testing.T) {
+	store := &storeStub{syncUnavailable: true}
+	service, err := analysis.NewService(store, fakeFactory{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.SearchSymbols(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "fake", Name: "fake", Label: "Fake"}}}, nil)
+	if err != nil || len(result.Items) != 0 || result.PriceHistoryWindow.From.IsZero() {
+		t.Fatalf("empty favorite result = %+v, %v", result, err)
+	}
+	if store.reads != 0 {
+		t.Fatalf("empty favorite analysis performed %d store reads", store.reads)
+	}
+}
+
+func TestSearchSymbolsRestrictsPipelineAndIgnoresMarketLimit(t *testing.T) {
+	store := &storeStub{instruments: []market.Instrument{
+		{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"},
+	}}
+	service, err := analysis.NewService(store, marketCapTestFactory{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := service.SearchSymbols(context.Background(), analysis.SearchRequest{
+		Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{}}},
+		Limit:    1,
+	}, []string{"BTCUSDT", "SOLUSDT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Items) != 2 || result.Items[0].Symbol != "BTCUSDT" || result.Items[1].Symbol != "SOLUSDT" {
+		t.Fatalf("favorite analysis items = %+v", result.Items)
+	}
+	if store.selectionLimit != 0 || len(store.selectionSymbols) != 2 || store.activeListCalls != 0 {
+		t.Fatalf("selection limit=%d symbols=%v active calls=%d", store.selectionLimit, store.selectionSymbols, store.activeListCalls)
+	}
+}
+
 func TestSearchUsesBackendLimitWithoutChangingStoreOrder(t *testing.T) {
 	store := &storeStub{
 		instruments: []market.Instrument{
@@ -440,15 +478,31 @@ type storeStub struct {
 	activeListCalls     int
 	selectionLimit      int
 	selectionDirection  string
+	selectionSymbols    []string
+	syncUnavailable     bool
 }
 
 func (s *storeStub) SelectActiveInstruments(_ context.Context, selection analysis.Selection) ([]market.Instrument, error) {
 	s.reads++
 	s.selectionLimit = selection.Limit
 	s.selectionDirection = selection.SortDirection
+	s.selectionSymbols = append([]string(nil), selection.Symbols...)
 	items := s.instruments
 	if selection.SortFact == analysis.SelectionFactMarketCapUSD && s.rankedInstruments != nil {
 		items = s.rankedInstruments
+	}
+	if len(selection.Symbols) > 0 {
+		allowed := make(map[string]bool, len(selection.Symbols))
+		for _, symbol := range selection.Symbols {
+			allowed[symbol] = true
+		}
+		filtered := make([]market.Instrument, 0, len(items))
+		for _, item := range items {
+			if allowed[item.Symbol] {
+				filtered = append(filtered, item)
+			}
+		}
+		items = filtered
 	}
 	if selection.Limit > 0 {
 		items = items[:min(selection.Limit, len(items))]
@@ -462,6 +516,9 @@ func (s *storeStub) ListHourlyPrices(context.Context, []int64, time.Time, time.T
 
 func (s *storeStub) GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error) {
 	s.reads++
+	if s.syncUnavailable {
+		return market.SyncState{}, nil
+	}
 	now := time.Now()
 	return market.SyncState{LastSucceededAt: &now}, nil
 }

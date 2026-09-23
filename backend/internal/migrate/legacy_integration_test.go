@@ -100,7 +100,7 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
 			t.Fatalf("adopt legacy v1 and migrate up: %v", err)
 		}
-		assertLibraryVersion(t, 3)
+		assertLibraryVersion(t, 8)
 		assertRows(t)
 		if _, err := db.Exec(ctx, `INSERT INTO binance_spot.candles (instrument_id, interval, open_time, close_time, open, high, low, close, volume, quote_asset_volume, trade_count) SELECT id, '1h', '2026-01-02T00:00:00Z', '2026-01-02T00:59:00Z', 100, 110, 90, 105, 1, 100, 1 FROM binance_spot.instruments WHERE symbol = 'LEGACYUSDT'`); err != nil {
 			t.Fatalf("hourly constraint rejected migrated schema: %v", err)
@@ -108,7 +108,7 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
 			t.Fatalf("repeated migrate up: %v", err)
 		}
-		assertLibraryVersion(t, 3)
+		assertLibraryVersion(t, 8)
 		assertRows(t)
 		reset(t)
 	})
@@ -126,7 +126,7 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
 			t.Fatalf("adopt legacy v2: %v", err)
 		}
-		assertLibraryVersion(t, 3)
+		assertLibraryVersion(t, 8)
 		assertRows(t)
 		var hourly int
 		if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM binance_spot.candles WHERE interval = '1h'").Scan(&hourly); err != nil || hourly != 1 {
@@ -147,6 +147,12 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 		}
 		assertReady(t, true)
 
+		for version := int64(8); version > 3; version-- {
+			if err := migrate.Run(ctx, []string{"down"}, loadURL); err != nil {
+				t.Fatalf("down from v%d to v%d: %v", version, version-1, err)
+			}
+		}
+		assertLibraryVersion(t, 3)
 		if err := migrate.Run(ctx, []string{"down"}, loadURL); err != nil {
 			t.Fatalf("down from adopted v3 to v2: %v", err)
 		}
@@ -170,7 +176,7 @@ func TestPostgresLegacyMigrationAdoptionPreservesDataAndSupportsOneStepRollback(
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
 			t.Fatalf("up after v2 to v1 down: %v", err)
 		}
-		assertLibraryVersion(t, 3)
+		assertLibraryVersion(t, 8)
 		assertRows(t)
 		if err := db.QueryRow(ctx, "SELECT COUNT(*) FROM binance_spot.candles WHERE interval = '1h'").Scan(&hourly); err != nil || hourly != 0 {
 			t.Fatalf("hourly rows after returning to v3 = %d, error = %v", hourly, err)

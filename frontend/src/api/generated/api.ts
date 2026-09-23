@@ -15,6 +15,7 @@
  */
 import {
   useInfiniteQuery,
+  useMutation,
   useQuery
 } from '@tanstack/react-query';
 import type {
@@ -23,23 +24,32 @@ import type {
   DefinedUseInfiniteQueryResult,
   DefinedUseQueryResult,
   InfiniteData,
+  MutationFunction,
   QueryClient,
   QueryFunction,
   QueryKey,
   UndefinedInitialDataOptions,
   UseInfiniteQueryOptions,
   UseInfiniteQueryResult,
+  UseMutationOptions,
+  UseMutationResult,
   UseQueryOptions,
   UseQueryResult
 } from '@tanstack/react-query';
 
 import type {
   AccessDeniedResponse,
+  AlertConflictResponse,
+  AlertNotFoundResponse,
   AnalysisUnavailableResponse,
   BadRequestResponse,
   CandlePageResponse,
   ChartPageResponse,
   ChartRequest,
+  Favorite,
+  FavoriteAlertsConflictResponse,
+  FavoriteNotFoundResponse,
+  FavoritesResponse,
   GetInstrumentChartParams,
   InstrumentAnalysisRequest,
   InstrumentAnalysisResponse,
@@ -49,7 +59,11 @@ import type {
   LivenessResponse,
   MarketAnalysisRequest,
   MarketAnalysisResponse,
+  PriceAlert,
+  PriceAlertInput,
+  PriceAlertsResponse,
   ReadinessResponse,
+  RemoveFavoriteParams,
   SymbolNotFoundResponse,
   UnauthenticatedResponse,
   UnprocessableAnalysisResponse
@@ -1034,3 +1048,1086 @@ export function useGetInstrumentChartInfinite<TData = InfiniteData<Awaited<Retur
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
+export type listFavoritesResponse200 = {
+  data: FavoritesResponse
+  status: 200
+}
+
+export type listFavoritesResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listFavoritesResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type listFavoritesResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listFavoritesResponseSuccess = (listFavoritesResponse200) & {
+  headers: Headers;
+};
+export type listFavoritesResponseError = (listFavoritesResponse401 | listFavoritesResponse403 | listFavoritesResponse500) & {
+  headers: Headers;
+};
+
+export const getListFavoritesUrl = () => {
+
+
+
+
+  return `/api/v1/favorites`
+}
+
+export const listFavorites = async ( options?: RequestInit): Promise<listFavoritesResponseSuccess> => {
+
+  const res = await fetch(getListFavoritesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: listFavoritesResponseError['data'], status?: number} = new globalThis.Error();
+    const data : listFavoritesResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: listFavoritesResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listFavoritesResponseSuccess
+}
+
+
+
+
+
+export const getListFavoritesQueryKey = () => {
+    return [
+    `/api/v1/favorites`
+    ] as const;
+    }
+
+
+export const getListFavoritesQueryOptions = <TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListFavoritesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFavorites>>> = ({ signal }) => listFavorites({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListFavoritesQueryResult = NonNullable<Awaited<ReturnType<typeof listFavorites>>>
+export type ListFavoritesQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }
+
+
+export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listFavorites>>,
+          TError,
+          Awaited<ReturnType<typeof listFavorites>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listFavorites>>,
+          TError,
+          Awaited<ReturnType<typeof listFavorites>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListFavoritesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type addFavoriteResponse200 = {
+  data: Favorite
+  status: 200
+}
+
+export type addFavoriteResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type addFavoriteResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type addFavoriteResponse404 = {
+  data: SymbolNotFoundResponse
+  status: 404
+}
+
+export type addFavoriteResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type addFavoriteResponseSuccess = (addFavoriteResponse200) & {
+  headers: Headers;
+};
+export type addFavoriteResponseError = (addFavoriteResponse401 | addFavoriteResponse403 | addFavoriteResponse404 | addFavoriteResponse500) & {
+  headers: Headers;
+};
+
+export const getAddFavoriteUrl = (symbol: string,) => {
+
+
+
+
+  return `/api/v1/favorites/${encodeURIComponent(String(symbol))}`
+}
+
+export const addFavorite = async (symbol: string, options?: RequestInit): Promise<addFavoriteResponseSuccess> => {
+
+  const res = await fetch(getAddFavoriteUrl(symbol),
+  {
+    ...options,
+    method: 'PUT'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: addFavoriteResponseError['data'], status?: number} = new globalThis.Error();
+    const data : addFavoriteResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: addFavoriteResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as addFavoriteResponseSuccess
+}
+
+
+
+
+
+export const getAddFavoriteMutationKey = () => ['addFavorite'] as const;
+
+export const getAddFavoriteMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addFavorite>>, TError,AddFavoriteMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof addFavorite>>, TError,AddFavoriteMutationVariables, TContext> => {
+
+const mutationKey = getAddFavoriteMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof addFavorite>>, AddFavoriteMutationVariables> = (props) => {
+          const {symbol} = props ?? {};
+
+          return  addFavorite(symbol,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type AddFavoriteMutationResult = NonNullable<Awaited<ReturnType<typeof addFavorite>>>
+
+    export type AddFavoriteMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }
+    export type AddFavoriteMutationVariables = {symbol: string}
+
+    export const useAddFavorite = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addFavorite>>, TError,AddFavoriteMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof addFavorite>>,
+        TError,
+        AddFavoriteMutationVariables,
+        TContext
+      > => {
+      return useMutation(getAddFavoriteMutationOptions(options), queryClient);
+    }
+
+export type removeFavoriteResponse204 = {
+  data: void
+  status: 204
+}
+
+export type removeFavoriteResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type removeFavoriteResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type removeFavoriteResponse404 = {
+  data: FavoriteNotFoundResponse
+  status: 404
+}
+
+export type removeFavoriteResponse409 = {
+  data: FavoriteAlertsConflictResponse
+  status: 409
+}
+
+export type removeFavoriteResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type removeFavoriteResponseSuccess = (removeFavoriteResponse204) & {
+  headers: Headers;
+};
+export type removeFavoriteResponseError = (removeFavoriteResponse401 | removeFavoriteResponse403 | removeFavoriteResponse404 | removeFavoriteResponse409 | removeFavoriteResponse500) & {
+  headers: Headers;
+};
+
+export const getRemoveFavoriteUrl = (symbol: string,
+    params?: RemoveFavoriteParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/favorites/${encodeURIComponent(String(symbol))}?${stringifiedParams}` : `/api/v1/favorites/${encodeURIComponent(String(symbol))}`
+}
+
+export const removeFavorite = async (symbol: string,
+    params?: RemoveFavoriteParams, options?: RequestInit): Promise<removeFavoriteResponseSuccess> => {
+
+  const res = await fetch(getRemoveFavoriteUrl(symbol,params),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: removeFavoriteResponseError['data'], status?: number} = new globalThis.Error();
+    const data : removeFavoriteResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: removeFavoriteResponseSuccess['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as removeFavoriteResponseSuccess
+}
+
+
+
+
+
+export const getRemoveFavoriteMutationKey = () => ['removeFavorite'] as const;
+
+export const getRemoveFavoriteMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext> => {
+
+const mutationKey = getRemoveFavoriteMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeFavorite>>, RemoveFavoriteMutationVariables> = (props) => {
+          const {symbol,params} = props ?? {};
+
+          return  removeFavorite(symbol,params,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type RemoveFavoriteMutationResult = NonNullable<Awaited<ReturnType<typeof removeFavorite>>>
+
+    export type RemoveFavoriteMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse; status?: number }
+    export type RemoveFavoriteMutationVariables = {symbol: string;params?: RemoveFavoriteParams}
+
+    export const useRemoveFavorite = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof removeFavorite>>,
+        TError,
+        RemoveFavoriteMutationVariables,
+        TContext
+      > => {
+      return useMutation(getRemoveFavoriteMutationOptions(options), queryClient);
+    }
+
+export type analyzeFavoritesResponse200 = {
+  data: MarketAnalysisResponse
+  status: 200
+}
+
+export type analyzeFavoritesResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type analyzeFavoritesResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type analyzeFavoritesResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type analyzeFavoritesResponse422 = {
+  data: UnprocessableAnalysisResponse
+  status: 422
+}
+
+export type analyzeFavoritesResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type analyzeFavoritesResponse503 = {
+  data: AnalysisUnavailableResponse
+  status: 503
+}
+
+export type analyzeFavoritesResponseSuccess = (analyzeFavoritesResponse200) & {
+  headers: Headers;
+};
+export type analyzeFavoritesResponseError = (analyzeFavoritesResponse400 | analyzeFavoritesResponse401 | analyzeFavoritesResponse403 | analyzeFavoritesResponse422 | analyzeFavoritesResponse500 | analyzeFavoritesResponse503) & {
+  headers: Headers;
+};
+
+export const getAnalyzeFavoritesUrl = () => {
+
+
+
+
+  return `/api/v1/favorites/analysis`
+}
+
+/**
+ * @summary Analyze the current user's active favorite instruments
+ */
+export const analyzeFavorites = async (marketAnalysisRequest: MarketAnalysisRequest, options?: RequestInit): Promise<analyzeFavoritesResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getAnalyzeFavoritesUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(marketAnalysisRequest)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: analyzeFavoritesResponseError['data'], status?: number} = new globalThis.Error();
+    const data : analyzeFavoritesResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: analyzeFavoritesResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as analyzeFavoritesResponseSuccess
+}
+
+
+
+
+
+export const getAnalyzeFavoritesQueryKey = (marketAnalysisRequest?: MarketAnalysisRequest,) => {
+    return [
+    'POST', `/api/v1/favorites/analysis`, marketAnalysisRequest
+    ] as const;
+    }
+
+
+export const getAnalyzeFavoritesQueryOptions = <TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getAnalyzeFavoritesQueryKey(marketAnalysisRequest);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof analyzeFavorites>>> = ({ signal }) => analyzeFavorites(marketAnalysisRequest, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type AnalyzeFavoritesQueryResult = NonNullable<Awaited<ReturnType<typeof analyzeFavorites>>>
+export type AnalyzeFavoritesQueryError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }
+
+
+export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+ marketAnalysisRequest: MarketAnalysisRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof analyzeFavorites>>,
+          TError,
+          Awaited<ReturnType<typeof analyzeFavorites>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+ marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof analyzeFavorites>>,
+          TError,
+          Awaited<ReturnType<typeof analyzeFavorites>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+ marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Analyze the current user's active favorite instruments
+ */
+
+export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+ marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getAnalyzeFavoritesQueryOptions(marketAnalysisRequest,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listPriceAlertsResponse200 = {
+  data: PriceAlertsResponse
+  status: 200
+}
+
+export type listPriceAlertsResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listPriceAlertsResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type listPriceAlertsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listPriceAlertsResponseSuccess = (listPriceAlertsResponse200) & {
+  headers: Headers;
+};
+export type listPriceAlertsResponseError = (listPriceAlertsResponse401 | listPriceAlertsResponse403 | listPriceAlertsResponse500) & {
+  headers: Headers;
+};
+
+export const getListPriceAlertsUrl = (symbol: string,) => {
+
+
+
+
+  return `/api/v1/instruments/${encodeURIComponent(String(symbol))}/alerts`
+}
+
+export const listPriceAlerts = async (symbol: string, options?: RequestInit): Promise<listPriceAlertsResponseSuccess> => {
+
+  const res = await fetch(getListPriceAlertsUrl(symbol),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: listPriceAlertsResponseError['data'], status?: number} = new globalThis.Error();
+    const data : listPriceAlertsResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: listPriceAlertsResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listPriceAlertsResponseSuccess
+}
+
+
+
+
+
+export const getListPriceAlertsQueryKey = (symbol: string,) => {
+    return [
+    `/api/v1/instruments/${symbol}/alerts`
+    ] as const;
+    }
+
+
+export const getListPriceAlertsQueryOptions = <TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListPriceAlertsQueryKey(symbol);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPriceAlerts>>> = ({ signal }) => listPriceAlerts(symbol, { signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: symbol !== null && symbol !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListPriceAlertsQueryResult = NonNullable<Awaited<ReturnType<typeof listPriceAlerts>>>
+export type ListPriceAlertsQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }
+
+
+export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+ symbol: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPriceAlerts>>,
+          TError,
+          Awaited<ReturnType<typeof listPriceAlerts>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+ symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listPriceAlerts>>,
+          TError,
+          Awaited<ReturnType<typeof listPriceAlerts>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+ symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+
+export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+ symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListPriceAlertsQueryOptions(symbol,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type createPriceAlertResponse201 = {
+  data: PriceAlert
+  status: 201
+}
+
+export type createPriceAlertResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createPriceAlertResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type createPriceAlertResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type createPriceAlertResponse404 = {
+  data: SymbolNotFoundResponse
+  status: 404
+}
+
+export type createPriceAlertResponse409 = {
+  data: AlertConflictResponse
+  status: 409
+}
+
+export type createPriceAlertResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createPriceAlertResponseSuccess = (createPriceAlertResponse201) & {
+  headers: Headers;
+};
+export type createPriceAlertResponseError = (createPriceAlertResponse400 | createPriceAlertResponse401 | createPriceAlertResponse403 | createPriceAlertResponse404 | createPriceAlertResponse409 | createPriceAlertResponse500) & {
+  headers: Headers;
+};
+
+export const getCreatePriceAlertUrl = (symbol: string,) => {
+
+
+
+
+  return `/api/v1/instruments/${encodeURIComponent(String(symbol))}/alerts`
+}
+
+export const createPriceAlert = async (symbol: string,
+    priceAlertInput: PriceAlertInput, options?: RequestInit): Promise<createPriceAlertResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreatePriceAlertUrl(symbol),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(priceAlertInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: createPriceAlertResponseError['data'], status?: number} = new globalThis.Error();
+    const data : createPriceAlertResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: createPriceAlertResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createPriceAlertResponseSuccess
+}
+
+
+
+
+
+export const getCreatePriceAlertMutationKey = () => ['createPriceAlert'] as const;
+
+export const getCreatePriceAlertMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPriceAlert>>, TError,CreatePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof createPriceAlert>>, TError,CreatePriceAlertMutationVariables, TContext> => {
+
+const mutationKey = getCreatePriceAlertMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPriceAlert>>, CreatePriceAlertMutationVariables> = (props) => {
+          const {symbol,data} = props ?? {};
+
+          return  createPriceAlert(symbol,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreatePriceAlertMutationResult = NonNullable<Awaited<ReturnType<typeof createPriceAlert>>>
+    export type CreatePriceAlertMutationBody = PriceAlertInput
+    export type CreatePriceAlertMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number }
+    export type CreatePriceAlertMutationVariables = {symbol: string;data: PriceAlertInput}
+
+    export const useCreatePriceAlert = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPriceAlert>>, TError,CreatePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createPriceAlert>>,
+        TError,
+        CreatePriceAlertMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreatePriceAlertMutationOptions(options), queryClient);
+    }
+
+export type updatePriceAlertResponse200 = {
+  data: PriceAlert
+  status: 200
+}
+
+export type updatePriceAlertResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updatePriceAlertResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type updatePriceAlertResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type updatePriceAlertResponse404 = {
+  data: AlertNotFoundResponse
+  status: 404
+}
+
+export type updatePriceAlertResponse409 = {
+  data: AlertConflictResponse
+  status: 409
+}
+
+export type updatePriceAlertResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type updatePriceAlertResponseSuccess = (updatePriceAlertResponse200) & {
+  headers: Headers;
+};
+export type updatePriceAlertResponseError = (updatePriceAlertResponse400 | updatePriceAlertResponse401 | updatePriceAlertResponse403 | updatePriceAlertResponse404 | updatePriceAlertResponse409 | updatePriceAlertResponse500) & {
+  headers: Headers;
+};
+
+export const getUpdatePriceAlertUrl = (alertId: number,) => {
+
+
+
+
+  return `/api/v1/alerts/${encodeURIComponent(String(alertId))}`
+}
+
+export const updatePriceAlert = async (alertId: number,
+    priceAlertInput: PriceAlertInput, options?: RequestInit): Promise<updatePriceAlertResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getUpdatePriceAlertUrl(alertId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(priceAlertInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: updatePriceAlertResponseError['data'], status?: number} = new globalThis.Error();
+    const data : updatePriceAlertResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: updatePriceAlertResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updatePriceAlertResponseSuccess
+}
+
+
+
+
+
+export const getUpdatePriceAlertMutationKey = () => ['updatePriceAlert'] as const;
+
+export const getUpdatePriceAlertMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePriceAlert>>, TError,UpdatePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof updatePriceAlert>>, TError,UpdatePriceAlertMutationVariables, TContext> => {
+
+const mutationKey = getUpdatePriceAlertMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePriceAlert>>, UpdatePriceAlertMutationVariables> = (props) => {
+          const {alertId,data} = props ?? {};
+
+          return  updatePriceAlert(alertId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdatePriceAlertMutationResult = NonNullable<Awaited<ReturnType<typeof updatePriceAlert>>>
+    export type UpdatePriceAlertMutationBody = PriceAlertInput
+    export type UpdatePriceAlertMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number }
+    export type UpdatePriceAlertMutationVariables = {alertId: number;data: PriceAlertInput}
+
+    export const useUpdatePriceAlert = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePriceAlert>>, TError,UpdatePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updatePriceAlert>>,
+        TError,
+        UpdatePriceAlertMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdatePriceAlertMutationOptions(options), queryClient);
+    }
+
+export type deletePriceAlertResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deletePriceAlertResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type deletePriceAlertResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type deletePriceAlertResponse404 = {
+  data: AlertNotFoundResponse
+  status: 404
+}
+
+export type deletePriceAlertResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type deletePriceAlertResponseSuccess = (deletePriceAlertResponse204) & {
+  headers: Headers;
+};
+export type deletePriceAlertResponseError = (deletePriceAlertResponse401 | deletePriceAlertResponse403 | deletePriceAlertResponse404 | deletePriceAlertResponse500) & {
+  headers: Headers;
+};
+
+export const getDeletePriceAlertUrl = (alertId: number,) => {
+
+
+
+
+  return `/api/v1/alerts/${encodeURIComponent(String(alertId))}`
+}
+
+export const deletePriceAlert = async (alertId: number, options?: RequestInit): Promise<deletePriceAlertResponseSuccess> => {
+
+  const res = await fetch(getDeletePriceAlertUrl(alertId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: deletePriceAlertResponseError['data'], status?: number} = new globalThis.Error();
+    const data : deletePriceAlertResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: deletePriceAlertResponseSuccess['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deletePriceAlertResponseSuccess
+}
+
+
+
+
+
+export const getDeletePriceAlertMutationKey = () => ['deletePriceAlert'] as const;
+
+export const getDeletePriceAlertMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePriceAlert>>, TError,DeletePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof deletePriceAlert>>, TError,DeletePriceAlertMutationVariables, TContext> => {
+
+const mutationKey = getDeletePriceAlertMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePriceAlert>>, DeletePriceAlertMutationVariables> = (props) => {
+          const {alertId} = props ?? {};
+
+          return  deletePriceAlert(alertId,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeletePriceAlertMutationResult = NonNullable<Awaited<ReturnType<typeof deletePriceAlert>>>
+
+    export type DeletePriceAlertMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse; status?: number }
+    export type DeletePriceAlertMutationVariables = {alertId: number}
+
+    export const useDeletePriceAlert = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePriceAlert>>, TError,DeletePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deletePriceAlert>>,
+        TError,
+        DeletePriceAlertMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeletePriceAlertMutationOptions(options), queryClient);
+    }

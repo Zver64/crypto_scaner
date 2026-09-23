@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"math/rand/v2"
-	"net/http"
 	"sort"
 	"strconv"
 	"strings"
@@ -78,7 +76,7 @@ func newKlineStream(url string, dialer *websocket.Dialer, logger *slog.Logger) *
 	return &KlineStream{
 		url: url, dialer: dialer, logger: logger,
 		events: make(chan KlineEvent, 256), statuses: make(chan StreamStatus, 32),
-		dialLimiter: rate.NewLimiter(rate.Every(1200*time.Millisecond), 5),
+		dialLimiter: sharedDialLimiter,
 	}
 }
 
@@ -200,68 +198,23 @@ func (worker *streamWorker) keys() []KlineKey {
 }
 
 func (worker *streamWorker) run(ctx context.Context) {
-	backoff := time.Second
-	for ctx.Err() == nil {
-		if len(worker.keys()) == 0 {
-			select {
-			case <-ctx.Done():
-				return
-			case <-worker.changes:
-				continue
-			}
-		}
-		connectedAt := time.Now()
-		err := worker.connect(ctx)
-		if ctx.Err() != nil {
-			return
-		}
-		if errors.Is(err, errStreamWorkerIdle) {
-			backoff = time.Second
-			continue
-		}
-		if time.Since(connectedAt) >= time.Minute {
-			backoff = time.Second
-		}
-		worker.publishStatus(false, err)
-		worker.logger.Warn("Binance kline WebSocket reconnecting", "module", "binance_live", "operation", "reconnect", "error", err)
-		delay := backoff + time.Duration(rand.Int64N(int64(backoff/2+1)))
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
-		}
-		if backoff < 30*time.Second {
-			backoff *= 2
-		}
-	}
+	runDynamicStreamWorker(ctx, func() bool { return len(worker.keys()) > 0 }, worker.changes, worker.connect,
+		func(err error) { worker.publishStatus(false, err) }, worker.logger, "binance_live", "kline")
 }
 
 func (worker *streamWorker) connect(ctx context.Context) error {
-	if err := worker.dialLimiter.Wait(ctx); err != nil {
+	conn, err := dialBinanceStream(ctx, worker.url, worker.dialer, worker.dialLimiter, "kline")
+	if err != nil {
 		return err
 	}
-	conn, response, err := worker.dialer.DialContext(ctx, worker.url, http.Header{})
-	if err != nil {
-		if response != nil {
-			return fmt.Errorf("dial Binance stream: HTTP %d: %w", response.StatusCode, err)
-		}
-		return fmt.Errorf("dial Binance stream: %w", err)
-	}
 	defer conn.Close()
-	conn.SetReadLimit(1 << 20)
-	_ = conn.SetReadDeadline(time.Now().Add(70 * time.Second))
-	conn.SetPongHandler(func(string) error { return conn.SetReadDeadline(time.Now().Add(70 * time.Second)) })
-	conn.SetPingHandler(func(data string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(70 * time.Second))
-		return conn.WriteControl(websocket.PongMessage, []byte(data), time.Now().Add(5*time.Second))
-	})
 
 	readResult := make(chan error, 1)
 	acks := make(chan controlReply, 16)
 	go func() { readResult <- worker.readLoop(ctx, conn, acks) }()
 	active := make(map[KlineKey]struct{})
 	limiter := rate.NewLimiter(rate.Every(250*time.Millisecond), 1) // reserve capacity below Binance's 5 msg/s limit.
-	rotation := time.NewTimer(23*time.Hour + 55*time.Minute)
+	rotation := time.NewTimer(streamRotation)
 	defer rotation.Stop()
 	if err := worker.reconcile(ctx, conn, limiter, active, acks); err != nil {
 		return err
@@ -287,13 +240,6 @@ func (worker *streamWorker) connect(ctx context.Context) error {
 			}
 		}
 	}
-}
-
-type controlReply struct {
-	ID     int64           `json:"id"`
-	Result json.RawMessage `json:"result"`
-	Code   *int            `json:"code,omitempty"`
-	Msg    string          `json:"msg,omitempty"`
 }
 
 type wireDecimal string
@@ -360,49 +306,11 @@ func (worker *streamWorker) reconcile(ctx context.Context, conn *websocket.Conn,
 }
 
 func (worker *streamWorker) control(ctx context.Context, conn *websocket.Conn, limiter *rate.Limiter, method string, keys []KlineKey, acks <-chan controlReply) error {
-	for start := 0; start < len(keys); start += maxStreamsPerCommand {
-		end := min(start+maxStreamsPerCommand, len(keys))
-		params := make([]string, 0, end-start)
-		for _, key := range keys[start:end] {
-			params = append(params, key.StreamName())
-		}
-		if err := limiter.Wait(ctx); err != nil {
-			return err
-		}
-		id := worker.request.Add(1)
-		_ = conn.SetWriteDeadline(time.Now().Add(5 * time.Second))
-		if err := conn.WriteJSON(struct {
-			Method string   `json:"method"`
-			Params []string `json:"params"`
-			ID     int64    `json:"id"`
-		}{method, params, id}); err != nil {
-			return fmt.Errorf("write %s: %w", method, err)
-		}
-		timer := time.NewTimer(10 * time.Second)
-		for {
-			select {
-			case <-ctx.Done():
-				timer.Stop()
-				return ctx.Err()
-			case <-timer.C:
-				return fmt.Errorf("Binance %s acknowledgement timeout", method)
-			case reply := <-acks:
-				if reply.ID != id {
-					continue
-				}
-				timer.Stop()
-				if reply.Code != nil {
-					return fmt.Errorf("Binance %s rejected: code %d: %s", method, *reply.Code, reply.Msg)
-				}
-				if string(reply.Result) != "null" {
-					return fmt.Errorf("Binance %s unexpected acknowledgement", method)
-				}
-				goto acknowledged
-			}
-		}
-	acknowledged:
+	names := make([]string, len(keys))
+	for index, key := range keys {
+		names[index] = key.StreamName()
 	}
-	return nil
+	return controlBinanceStreams(ctx, conn, limiter, &worker.request, "kline", method, names, acks)
 }
 
 func (worker *streamWorker) readLoop(ctx context.Context, conn *websocket.Conn, acks chan<- controlReply) error {

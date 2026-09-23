@@ -11,12 +11,14 @@ import (
 	"syscall"
 	"time"
 
+	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/analysis"
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/market_cap"
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/exchange/binance"
+	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/httpapi"
 	"crypto-scanner/internal/indicator"
 	indicatortalib "crypto-scanner/internal/indicator/talib"
@@ -86,7 +88,6 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	scheduler := marketsync.NewSchedulerWithProfiles(synchronizers, logger)
 	liveStream := binance.NewKlineStream(logger)
 	liveService := marketlive.New(liveStream, store, logger)
-	marketServices := parallelServices{services: []scheduledService{scheduler, liveStream, liveService}}
 	coinMetadataResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
 	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(coinMetadataResolver, store, logger, time.Hour, time.Minute)
 	if err != nil {
@@ -106,10 +107,23 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		return fmt.Errorf("initialize chart service: %w", err)
 	}
 	authenticator := authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge)
-	botService, err := telegrambot.New(cfg.TelegramBotToken, cfg.AdminTelegramID, store, telegrambot.Options{Logger: logger})
+	var alertMonitor *alerts.Monitor
+	botService, err := telegrambot.New(cfg.TelegramBotToken, cfg.AdminTelegramID, store, telegrambot.Options{
+		Logger: logger,
+		AccessChanged: func() {
+			if alertMonitor != nil {
+				alertMonitor.Changed()
+			}
+		},
+	})
 	if err != nil {
 		return fmt.Errorf("initialize Telegram bot: %w", err)
 	}
+	tradeStream := binance.NewTradeStream(logger)
+	alertMonitor = alerts.NewMonitor(store, tradeStream, botService, logger)
+	favoriteService := favorites.New(store, alertMonitor.Changed, analysisService)
+	alertService := alerts.New(store, alertMonitor)
+	marketServices := parallelServices{services: []scheduledService{scheduler, liveStream, liveService, tradeStream, alertMonitor}}
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
 		return fmt.Errorf("listen for HTTP: %w", err)
@@ -120,7 +134,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
-	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled, Chart: chartService, LiveAuthenticator: authenticator, LiveCandles: liveService}), marketServices, botService, coinMetadataSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
+	if err := runServices(ctx, listener, httpapi.NewWithOptions(logger, store, analysisService, store, authenticator, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled, Chart: chartService, LiveAuthenticator: authenticator, LiveCandles: liveService, Favorites: favoriteService, Alerts: alertService}), marketServices, botService, coinMetadataSynchronizer, logger, cfg.ShutdownTimeout); err != nil {
 		return err
 	}
 	logger.Info("HTTP server stopped",

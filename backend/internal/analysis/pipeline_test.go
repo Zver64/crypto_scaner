@@ -40,6 +40,24 @@ func TestSearchUsesPersistedSelectionBeforeLimitWithoutProviderPreparation(t *te
 	}
 }
 
+func TestSearchBatchLoadsCandlesForAllCandidates(t *testing.T) {
+	store := &selectionStore{
+		items:   []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"}},
+		candles: map[int64][]market.Candle{1: {testCandle(8)}, 2: {testCandle(8)}},
+	}
+	service, err := analysis.NewService(store, volatility.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.SearchSymbols(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "daily", Name: "volatility", Label: "Daily", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}}}}, []string{"BTCUSDT", "ETHUSDT", "SOLUSDT"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.batchCalls != 1 || store.singleCalls != 0 {
+		t.Fatalf("candle queries: batch=%d single=%d, want 1/0", store.batchCalls, store.singleCalls)
+	}
+}
+
 func TestRepeatedMarketCapConstraintsUseMaximumBeforeAscendingLimit(t *testing.T) {
 	for _, minimums := range [][2]float64{{100, 500}, {500, 100}} {
 		t.Run(fmt.Sprintf("%v_then_%v", minimums[0], minimums[1]), func(t *testing.T) {
@@ -89,9 +107,11 @@ func TestSearchRejectsMarketCapSortWithoutPersistedMarketCapConstraint(t *testin
 }
 
 type selectionStore struct {
-	items     []market.Instrument
-	candles   map[int64][]market.Candle
-	selection analysis.Selection
+	items       []market.Instrument
+	candles     map[int64][]market.Candle
+	selection   analysis.Selection
+	batchCalls  int
+	singleCalls int
 }
 
 func (s *selectionStore) SelectActiveInstruments(_ context.Context, selection analysis.Selection) ([]market.Instrument, error) {
@@ -106,7 +126,16 @@ func (*selectionStore) GetSyncState(context.Context, market.SyncProfile) (market
 	return market.SyncState{LastSucceededAt: &now}, nil
 }
 func (s *selectionStore) ListLatestCandlesByInterval(_ context.Context, id int64, _ string, _ int) ([]market.Candle, error) {
+	s.singleCalls++
 	return s.candles[id], nil
+}
+func (s *selectionStore) ListLatestCandlesByIntervalBatch(_ context.Context, ids []int64, _ string, _ int) (map[int64][]market.Candle, error) {
+	s.batchCalls++
+	result := make(map[int64][]market.Candle, len(ids))
+	for _, id := range ids {
+		result[id] = s.candles[id]
+	}
+	return result, nil
 }
 func (*selectionStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
 	return nil, nil

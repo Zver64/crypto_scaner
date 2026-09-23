@@ -1,4 +1,5 @@
 import type {
+	AnalyzeFavoritesQueryError,
 	AnalyzeInstrumentQueryError,
 	AnalyzeMarketQueryError,
 	GetInstrumentChartInfiniteQueryError,
@@ -7,6 +8,7 @@ import type {
 import type { ErrorResponse } from "@/api/generated/models";
 
 export type ApiError =
+	| AnalyzeFavoritesQueryError
 	| AnalyzeInstrumentQueryError
 	| AnalyzeMarketQueryError
 	| GetInstrumentChartInfiniteQueryError

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.18.0](https://github.com/Zver64/crypto_scaner/compare/v0.17.1...v0.18.0) (2026-09-23)
+
+
+### Features
+
+* add favorites and price alerts ([5721ccb](https://github.com/Zver64/crypto_scaner/commit/5721ccb5f26b13a67afb9786b5168c0a7e29c634))
+
+
+### Bug Fixes
+
+* load instrument route eagerly ([56a6ad9](https://github.com/Zver64/crypto_scaner/commit/56a6ad9ef66b237baa45ae53634c05823365ea92))
+
 ## [0.17.1](https://github.com/Zver64/crypto_scaner/compare/v0.17.0...v0.17.1) (2026-09-22)
 
 

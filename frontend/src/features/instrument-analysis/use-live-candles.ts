@@ -69,6 +69,9 @@ export function useLiveCandles(
 				setState((current) => ({
 					...current,
 					connection,
+					// An error from the previous socket must not remain visible while
+					// a new connection is authenticating or loading its snapshot.
+					error: connection === "disconnected" ? current.error : undefined,
 					freshness:
 						connection === "connected"
 							? current.freshness

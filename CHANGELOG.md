@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.18.1](https://github.com/Zver64/crypto_scaner/compare/v0.18.0...v0.18.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* better chart performance and isolation ([acb92fe](https://github.com/Zver64/crypto_scaner/commit/acb92fe1a5e360b95f31349da1962fb00761cf36))
+* clear stale live candle errors on reconnect ([5de3318](https://github.com/Zver64/crypto_scaner/commit/5de331836c94c91b6b16eebc6e152f065316820b))
+
 ## [0.18.0](https://github.com/Zver64/crypto_scaner/compare/v0.17.1...v0.18.0) (2026-09-23)
 
 

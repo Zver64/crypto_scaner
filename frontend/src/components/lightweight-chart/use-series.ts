@@ -53,11 +53,13 @@ export function useSeries<T extends SeriesType>({
 	const beforeDataChangeRef = useRef(onBeforeDataChange);
 	const crosshairRef = useRef(onCrosshairMove);
 	const hasCrosshairHandler = onCrosshairMove !== undefined;
-	definitionRef.current = definition;
-	optionsRef.current = options;
-	paneRef.current = pane;
-	beforeDataChangeRef.current = onBeforeDataChange;
-	crosshairRef.current = onCrosshairMove;
+	useLayoutEffect(() => {
+		definitionRef.current = definition;
+		optionsRef.current = options;
+		paneRef.current = pane;
+		beforeDataChangeRef.current = onBeforeDataChange;
+		crosshairRef.current = onCrosshairMove;
+	}, [definition, options, pane, onBeforeDataChange, onCrosshairMove]);
 
 	const bindingRef = useRef<SeriesBinding<T> | null>(null);
 	if (bindingRef.current === null) {

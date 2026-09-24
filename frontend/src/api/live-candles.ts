@@ -23,7 +23,7 @@ export class LiveCandlesClient {
 	private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 	private socket: WebSocket | undefined;
 	private stopped = true;
-	private subscription: LiveCandleSubscription | undefined;
+	private subscriptions: readonly LiveCandleSubscription[] = [];
 
 	constructor(private readonly options: LiveCandlesClientOptions) {}
 
@@ -34,12 +34,20 @@ export class LiveCandlesClient {
 		this.open();
 	}
 
-	setSubscription(subscription: LiveCandleSubscription): void {
-		const previous = this.subscription;
-		this.subscription = subscription;
-		if (!this.authenticated || sameSubscription(previous, subscription)) return;
-		if (previous) this.send({ type: "unsubscribe", ...previous });
-		this.send({ type: "subscribe", ...subscription });
+	setSubscriptions(subscriptions: readonly LiveCandleSubscription[]): void {
+		const previous = this.subscriptions;
+		this.subscriptions = subscriptions;
+		if (!this.authenticated) return;
+		for (const subscription of previous) {
+			if (!subscriptions.some((next) => sameSubscription(subscription, next))) {
+				this.send({ type: "unsubscribe", ...subscription });
+			}
+		}
+		for (const subscription of subscriptions) {
+			if (!previous.some((old) => sameSubscription(old, subscription))) {
+				this.send({ type: "subscribe", ...subscription });
+			}
+		}
 	}
 
 	disconnect(): void {
@@ -47,8 +55,10 @@ export class LiveCandlesClient {
 		this.stopped = true;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = undefined;
-		if (this.authenticated && this.subscription) {
-			this.send({ type: "unsubscribe", ...this.subscription });
+		if (this.authenticated) {
+			for (const subscription of this.subscriptions) {
+				this.send({ type: "unsubscribe", ...subscription });
+			}
 		}
 		this.authenticated = false;
 		const socket = this.socket;
@@ -78,8 +88,8 @@ export class LiveCandlesClient {
 				this.authenticated = true;
 				this.reconnectAttempt = 0;
 				this.options.onConnectionChange("connected");
-				if (this.subscription) {
-					this.send({ type: "subscribe", ...this.subscription });
+				for (const subscription of this.subscriptions) {
+					this.send({ type: "subscribe", ...subscription });
 				}
 				return;
 			}
@@ -123,7 +133,7 @@ function parseLiveMessage(value: unknown): LiveCandleServerMessage | undefined {
 }
 
 function sameSubscription(
-	left: LiveCandleSubscription | undefined,
+	left: LiveCandleSubscription,
 	right: LiveCandleSubscription,
 ): boolean {
 	return left?.symbol === right.symbol && left.interval === right.interval;

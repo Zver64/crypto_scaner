@@ -1,19 +1,27 @@
-import type { CreatePriceLineOptions, IPriceLine } from "lightweight-charts";
+import { type IPriceLine, LineStyle } from "lightweight-charts";
 import { useLayoutEffect, useRef } from "react";
 import { useSeriesLifecycle } from "@/components/lightweight-chart/context";
+import type { ChartPriceLineOptions } from "@/components/lightweight-chart/types";
 
 interface PriceLineProps {
-	options: CreatePriceLineOptions;
+	options: ChartPriceLineOptions;
 }
 
 export function PriceLine({ options }: PriceLineProps) {
 	const parent = useSeriesLifecycle();
 	const optionsRef = useRef(options);
 	const priceLineRef = useRef<IPriceLine | null>(null);
-	optionsRef.current = options;
+	useLayoutEffect(() => {
+		optionsRef.current = options;
+	}, [options]);
 
 	useLayoutEffect(() => {
-		priceLineRef.current = parent.api().createPriceLine(optionsRef.current);
+		priceLineRef.current = parent.api().createPriceLine({
+			...optionsRef.current,
+			axisLabelVisible: true,
+			lineStyle: LineStyle.Dashed,
+			lineWidth: 1,
+		});
 		return () => {
 			const priceLine = priceLineRef.current;
 			priceLineRef.current = null;

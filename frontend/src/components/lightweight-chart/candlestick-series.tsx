@@ -1,27 +1,22 @@
 import {
-	type CandlestickData,
 	CandlestickSeries as CandlestickSeriesDefinition,
-	type CandlestickSeriesPartialOptions,
-	type DeepPartial,
-	type PriceScaleOptions,
-	type Time,
-	type WhitespaceData,
+	type UTCTimestamp,
 } from "lightweight-charts";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { SeriesContext } from "@/components/lightweight-chart/context";
-import {
-	type SeriesCrosshairHandler,
-	useSeries,
-} from "@/components/lightweight-chart/use-series";
+import type {
+	ChartCandleSlot,
+	ChartCandlestick,
+	ChartCandlestickOptions,
+} from "@/components/lightweight-chart/types";
+import { useSeries } from "@/components/lightweight-chart/use-series";
 
 interface CandlestickSeriesProps {
 	children?: ReactNode;
-	data: readonly (CandlestickData<Time> | WhitespaceData<Time>)[];
+	data: readonly ChartCandleSlot[];
 	onBeforeDataChange?(): void;
-	onCrosshairMove?: SeriesCrosshairHandler<"Candlestick">;
-	options?: CandlestickSeriesPartialOptions;
-	pane?: number;
-	priceScaleOptions?: DeepPartial<PriceScaleOptions>;
+	onCrosshairMove?(value: ChartCandlestick | undefined): void;
+	options: ChartCandlestickOptions;
 }
 
 export function CandlestickSeries({
@@ -30,17 +25,41 @@ export function CandlestickSeries({
 	onBeforeDataChange,
 	onCrosshairMove,
 	options,
-	pane = 0,
-	priceScaleOptions,
 }: CandlestickSeriesProps) {
+	const seriesData = useMemo(
+		() => data.map((item) => ({ ...item, time: item.time as UTCTimestamp })),
+		[data],
+	);
+	const seriesOptions = useMemo(
+		() => ({
+			borderVisible: false,
+			downColor: options.downColor,
+			upColor: options.upColor,
+			wickDownColor: options.downColor,
+			wickUpColor: options.upColor,
+			priceFormat: {
+				type: "custom" as const,
+				formatter: options.formatPrice,
+				base: options.base,
+				minMove: options.minMove,
+			},
+		}),
+		[options],
+	);
 	const binding = useSeries({
-		data,
+		data: seriesData,
 		definition: CandlestickSeriesDefinition,
 		onBeforeDataChange,
-		onCrosshairMove,
-		options,
-		pane,
-		priceScaleOptions,
+		onCrosshairMove: onCrosshairMove
+			? (value) =>
+					onCrosshairMove(
+						value && "open" in value && typeof value.time === "number"
+							? { ...value, time: value.time }
+							: undefined,
+					)
+			: undefined,
+		options: seriesOptions,
+		pane: 0,
 	});
 	return (
 		<SeriesContext.Provider value={binding.context}>

@@ -9,7 +9,8 @@ import { createContext, useContext } from "react";
 export interface ChartLifecycle {
 	readonly isRemoved: boolean;
 	api(): IChartApi;
-	applyPaneStretchFactors(): void;
+	generation(): number;
+	applyPaneStretchFactors(factors: readonly number[]): void;
 	destroy(): void;
 	removeSeries(series: ISeriesApi<SeriesType>): void;
 }
@@ -27,9 +28,7 @@ export const SeriesContext = createContext<SeriesLifecycle | null>(null);
 export function useChartLifecycle(): ChartLifecycle {
 	const lifecycle = useContext(ChartContext);
 	if (lifecycle === null) {
-		throw new Error(
-			"A Lightweight Charts series must be inside LightweightChart",
-		);
+		throw new Error("A Lightweight Charts series must be inside ChartCanvas");
 	}
 	return lifecycle;
 }

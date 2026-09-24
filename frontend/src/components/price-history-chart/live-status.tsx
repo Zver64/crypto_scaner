@@ -1,11 +1,10 @@
 import { Group, Loader, Text } from "@mantine/core";
-import type { LiveCandleServerMessageFreshness } from "@/api/generated/models";
+import type { PriceHistorySnapshot } from "@/components/price-history-chart/types";
 
-interface LiveStatusProps {
-	connection: "connecting" | "connected" | "disconnected";
-	freshness: LiveCandleServerMessageFreshness;
-	error?: string;
-}
+type LiveStatusProps = Pick<
+	PriceHistorySnapshot,
+	"connection" | "freshness" | "error"
+>;
 
 export function LiveStatus({ connection, freshness, error }: LiveStatusProps) {
 	if (!error && connection === "connected" && freshness === "fresh")
@@ -15,7 +14,7 @@ export function LiveStatus({ connection, freshness, error }: LiveStatusProps) {
 		(connection === "disconnected"
 			? "Backend connection lost — showing the last live candle"
 			: freshness === "stale"
-				? "Binance stream interrupted — showing stale live data"
+				? "Live stream interrupted — showing stale data"
 				: freshness === "recovering"
 					? "Recovering missed candle history…"
 					: "Waiting for the current live candle…");

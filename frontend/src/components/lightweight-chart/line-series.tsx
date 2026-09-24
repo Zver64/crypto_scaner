@@ -1,44 +1,61 @@
 import {
-	type DeepPartial,
-	type LineData,
 	LineSeries as LineSeriesDefinition,
-	type LineSeriesPartialOptions,
-	type PriceScaleOptions,
-	type Time,
-	type WhitespaceData,
+	type UTCTimestamp,
 } from "lightweight-charts";
-import type { ReactNode } from "react";
+import { type ReactNode, useMemo } from "react";
 import { SeriesContext } from "@/components/lightweight-chart/context";
-import {
-	type SeriesCrosshairHandler,
-	useSeries,
-} from "@/components/lightweight-chart/use-series";
+import type {
+	ChartIndicatorSlot,
+	ChartLineOptions,
+} from "@/components/lightweight-chart/types";
+import { useSeries } from "@/components/lightweight-chart/use-series";
+
+const priceScaleOptions = {
+	autoScale: true,
+	scaleMargins: { bottom: 0, top: 0 },
+};
 
 interface LineSeriesProps {
 	children?: ReactNode;
-	data: readonly (LineData<Time> | WhitespaceData<Time>)[];
-	onBeforeDataChange?(): void;
-	onCrosshairMove?: SeriesCrosshairHandler<"Line">;
-	options?: LineSeriesPartialOptions;
+	data: readonly ChartIndicatorSlot[];
+	options: ChartLineOptions;
 	pane?: number;
-	priceScaleOptions?: DeepPartial<PriceScaleOptions>;
 }
 
 export function LineSeries({
 	children,
 	data,
-	onBeforeDataChange,
-	onCrosshairMove,
 	options,
 	pane = 0,
-	priceScaleOptions,
 }: LineSeriesProps) {
+	const seriesData = useMemo(
+		() => data.map((item) => ({ ...item, time: item.time as UTCTimestamp })),
+		[data],
+	);
+	const seriesOptions = useMemo(
+		() => ({
+			autoscaleInfoProvider: () => ({
+				priceRange: {
+					maxValue: options.bounds.max,
+					minValue: options.bounds.min,
+				},
+			}),
+			color: options.color,
+			lastValueVisible: true,
+			lineWidth: 2 as const,
+			priceFormat: {
+				formatter: options.formatValue,
+				minMove: options.minMove,
+				type: "custom" as const,
+			},
+			priceLineVisible: false,
+		}),
+		[options],
+	);
 	const binding = useSeries({
-		data,
+		data: seriesData,
 		definition: LineSeriesDefinition,
-		onBeforeDataChange,
-		onCrosshairMove,
-		options,
+		options: seriesOptions,
 		pane,
 		priceScaleOptions,
 	});

@@ -83,7 +83,8 @@ tanstackIntent:
 
 ## Testing
 
-- Add tests only when they verify meaningful behavior, transformations, validation, branching, edge cases, or regression-prone contracts. Do not add a test merely because a source file was added or changed.
+- Write new tests only when the user explicitly requests them. Do not add new tests proactively for features, fixes, refactors, or code review findings. Update existing tests as needed to reflect functionality changes; no separate user request is required. Running existing tests is allowed.
+- When explicitly requested, add tests only when they verify meaningful behavior, transformations, validation, branching, edge cases, or regression-prone contracts. Do not add a test merely because a source file was added or changed.
 - Do not test static configuration or constants by duplicating their values in assertions. Exercise configuration indirectly through behavioral tests when doing so protects real behavior.
 - Do not test React components, JSX/TSX output, rendered markup, styles, layout, accessibility attributes, or any other visual/UI behavior with Vitest.
 - Vitest tests must cover only ordinary non-visual functions and modules that do not depend on JSX/TSX rendering.

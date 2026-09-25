@@ -2,6 +2,7 @@ import type {
 	ChartCandleSlot,
 	ChartCandlestick,
 	ChartIndicatorSlot,
+	ChartLogicalRange,
 } from "@/components/lightweight-chart";
 import type {
 	ChartInterval,
@@ -56,6 +57,24 @@ export function createIndicatorData(
 		const value = values.get(time);
 		return value === undefined ? { time } : { time, value };
 	});
+}
+
+export function getVisibleMinMax(
+	data: readonly ChartCandleSlot[],
+	range: ChartLogicalRange | null,
+): { min: number; max: number } | null {
+	if (range === null) return null;
+	const from = Math.max(0, Math.floor(range.from));
+	const to = Math.min(data.length - 1, Math.ceil(range.to));
+	let min = Number.POSITIVE_INFINITY;
+	let max = Number.NEGATIVE_INFINITY;
+	for (let index = from; index <= to; index++) {
+		const candle = data[index];
+		if (!candle || !("low" in candle)) continue;
+		min = Math.min(min, candle.low);
+		max = Math.max(max, candle.high);
+	}
+	return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
 }
 
 export function formatPrice(value: number): string {

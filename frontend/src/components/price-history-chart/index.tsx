@@ -49,6 +49,7 @@ import {
 	createIndicatorData,
 	formatOhlc,
 	formatPrice,
+	getVisibleMinMax,
 	isChartCandle,
 } from "@/components/price-history-chart/utils";
 
@@ -160,16 +161,24 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		() => source.loadOlder(interval),
 		[source, interval],
 	);
-	const { chartRef, onBeforeDataChange, onVisibleLogicalRangeChange } =
-		useChartViewport({
-			barWidth: candleWidth,
-			data,
-			hasMore,
-			isLoadingMore,
-			minVisibleBars: 24,
-			onLoadOlder,
-			threshold: leftLoadThreshold,
-		});
+	const {
+		chartRef,
+		onBeforeDataChange,
+		onVisibleLogicalRangeChange,
+		visibleRange,
+	} = useChartViewport({
+		barWidth: candleWidth,
+		data,
+		hasMore,
+		isLoadingMore,
+		minVisibleBars: 24,
+		onLoadOlder,
+		threshold: leftLoadThreshold,
+	});
+	const minMax = useMemo(
+		() => getVisibleMinMax(data, visibleRange),
+		[data, visibleRange],
+	);
 	const handleCrosshairMove = useCallback((value: unknown) => {
 		setActive(isChartCandle(value) ? value : null);
 	}, []);
@@ -228,7 +237,30 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 							onBeforeDataChange={onBeforeDataChange}
 							onCrosshairMove={handleCrosshairMove}
 							options={candleOptions}
-						/>
+						>
+							{minMax && (
+								<>
+									<PriceLine
+										options={{
+											price: minMax.min,
+											title: minMax.min === minMax.max ? "Min / Max" : "Min",
+											color: colors.text,
+											lineVisible: false,
+										}}
+									/>
+									{minMax.min !== minMax.max && (
+										<PriceLine
+											options={{
+												price: minMax.max,
+												title: "Max",
+												color: colors.text,
+												lineVisible: false,
+											}}
+										/>
+									)}
+								</>
+							)}
+						</CandlestickSeries>
 						{indicatorOptions ? (
 							<LineSeries
 								data={indicatorData}

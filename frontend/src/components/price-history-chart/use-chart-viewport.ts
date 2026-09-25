@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import type {
 	ChartCanvasHandle,
 	ChartLogicalRange,
@@ -26,6 +26,9 @@ export function useChartViewport({
 	threshold,
 }: ViewportOptions) {
 	const chartRef = useRef<ChartCanvasHandle>(null);
+	const [visibleRange, setVisibleRange] = useState<ChartLogicalRange | null>(
+		null,
+	);
 	const chartInstanceRef = useRef<{
 		handle: ChartCanvasHandle;
 		generation: number;
@@ -43,6 +46,7 @@ export function useChartViewport({
 	}, []);
 	const onVisibleLogicalRangeChange = useCallback(
 		(range: ChartLogicalRange | null) => {
+			setVisibleRange(range);
 			if (
 				range !== null &&
 				range.from < threshold &&
@@ -108,5 +112,10 @@ export function useChartViewport({
 		previousFirstTimeRef.current = data[0]?.time;
 	}, [barWidth, data, minVisibleBars]);
 
-	return { chartRef, onBeforeDataChange, onVisibleLogicalRangeChange };
+	return {
+		chartRef,
+		onBeforeDataChange,
+		onVisibleLogicalRangeChange,
+		visibleRange,
+	};
 }

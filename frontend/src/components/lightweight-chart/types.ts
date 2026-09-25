@@ -59,6 +59,7 @@ export interface ChartLineOptions {
 	minMove: number;
 }
 export interface ChartPriceLineOptions {
+	lineVisible?: boolean;
 	color: string;
 	price: number;
 	title: string;

@@ -3,6 +3,7 @@ import type {
 	MarketAnalysisItem,
 } from "@/api/generated/models";
 import { applicationConfig } from "@/config";
+import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import {
 	criterionSelections,
 	type MarketScanCriteria,
@@ -11,10 +12,9 @@ import {
 	type MarketScanRow,
 	toMarketScanRows,
 } from "@/features/market-scan/results-table/utils";
-import type { TopCoinsSettings } from "@/features/top-coins/settings-form/types";
 
 export function buildTopCoinsScanCriteria(
-	settings: TopCoinsSettings,
+	settings: VolatilitySettings,
 ): MarketScanCriteria {
 	return {
 		...settings,
@@ -25,7 +25,7 @@ export function buildTopCoinsScanCriteria(
 }
 
 export function buildTopCoinsCriteria(
-	settings: TopCoinsSettings,
+	settings: VolatilitySettings,
 ): CriterionRequest[] {
 	return criterionSelections(buildTopCoinsScanCriteria(settings));
 }

@@ -14,16 +14,17 @@ import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
 import { telegramRequestOptions } from "@/app/telegram";
+import { SettingsForm } from "@/components/settings-form";
 import {
 	apiErrorMessage,
 	unexpectedApiError,
 } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
+import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
+import { useVolatilitySettingsForm } from "@/features/analysis/volatility-settings-form/use-volatility-settings-form";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import type { MarketScanSort } from "@/features/market-scan/sort";
-import { TopCoinsSettingsForm } from "@/features/top-coins/settings-form";
-import type { TopCoinsSettings } from "@/features/top-coins/settings-form/types";
 import {
 	buildTopCoinsCriteria,
 	buildTopCoinsScanCriteria,
@@ -32,8 +33,8 @@ import {
 } from "@/features/top-coins/top-coins";
 
 interface TopCoinsScreenProps {
-	initialSettings: TopCoinsSettings;
-	onSettingsCommit(settings: TopCoinsSettings): void;
+	initialSettings: VolatilitySettings;
+	onSettingsCommit(settings: VolatilitySettings): void;
 	onSortChange(sort: MarketScanSort): void;
 	sort: MarketScanSort;
 }
@@ -47,6 +48,14 @@ export function TopCoinsScreen({
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
 	const [settings, setSettings] = useState(initialSettings);
+	const settingsForm = useVolatilitySettingsForm({
+		disabled: !permission.allowed,
+		initialSettings,
+		onCommit: (nextSettings) => {
+			setSettings(nextSettings);
+			onSettingsCommit(nextSettings);
+		},
+	});
 	const scanCriteria = buildTopCoinsScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
 	const query = useAnalyzeMarket<MarketAnalysisResponse>(
@@ -88,14 +97,7 @@ export function TopCoinsScreen({
 		<Container maw={880} px={0} size="md">
 			<Stack gap={pageGap}>
 				<PageNavigation current="top-coins" title="Top Market Cap" />
-				<TopCoinsSettingsForm
-					disabled={!permission.allowed}
-					initialSettings={initialSettings}
-					onCommit={(nextSettings) => {
-						setSettings(nextSettings);
-						onSettingsCommit(nextSettings);
-					}}
-				/>
+				<SettingsForm {...settingsForm} />
 				{query.isFetching && !query.data ? (
 					<Center mih={180}>
 						<Loader aria-label="Loading Top Market Cap" />

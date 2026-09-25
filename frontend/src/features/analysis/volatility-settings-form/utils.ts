@@ -3,15 +3,15 @@ import {
 	validateAnalysisCriteria,
 } from "@/features/analysis/criteria";
 import type {
-	TopCoinsSettings,
-	TopCoinsSettingsDraft,
-	TopCoinsSettingsValidationErrors,
-} from "@/features/top-coins/settings-form/types";
+	VolatilitySettings,
+	VolatilitySettingsDraft,
+	VolatilitySettingsValidationErrors,
+} from "@/features/analysis/volatility-settings-form/types";
 
-export function validateTopCoinsSettings(
-	values: TopCoinsSettingsDraft,
-): TopCoinsSettingsValidationErrors {
-	const errors: TopCoinsSettingsValidationErrors = validateAnalysisCriteria({
+export function validateVolatilitySettings(
+	values: VolatilitySettingsDraft,
+): VolatilitySettingsValidationErrors {
+	const errors: VolatilitySettingsValidationErrors = validateAnalysisCriteria({
 		percentile: values.percentile,
 		period: values.period,
 		unit: "days",
@@ -30,10 +30,10 @@ export function validateTopCoinsSettings(
 }
 
 export function settingsFromValidDraft(
-	values: TopCoinsSettingsDraft,
-): TopCoinsSettings | undefined {
+	values: VolatilitySettingsDraft,
+): VolatilitySettings | undefined {
 	if (
-		Object.keys(validateTopCoinsSettings(values)).length > 0 ||
+		Object.keys(validateVolatilitySettings(values)).length > 0 ||
 		typeof values.period !== "number" ||
 		typeof values.percentile !== "number" ||
 		typeof values.hourlyPeriod !== "number" ||

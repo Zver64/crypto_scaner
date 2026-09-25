@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { applicationConfig } from "@/config";
 import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
 import {
-	parseTopCoinsSearch,
-	topCoinsSettingsFromSearch,
-	topCoinsSettingsToSearch,
-} from "@/routes/-top-coins-search";
+	parseVolatilitySettingsSearch,
+	volatilitySettingsFromSearch,
+	volatilitySettingsToSearch,
+} from "@/routes/-volatility-settings-search";
 
 const defaultSearch = {
 	hourly_percentile: 80,
@@ -23,17 +23,17 @@ const customSearch = {
 
 describe("Top Market Cap URL state", () => {
 	it("uses all default settings when search is absent", () => {
-		expect(parseTopCoinsSearch({})).toEqual(defaultSearch);
-		expect(topCoinsSettingsFromSearch(parseTopCoinsSearch({}))).toEqual(
-			applicationConfig.topMarketCap.defaultSettings,
-		);
+		expect(parseVolatilitySettingsSearch({})).toEqual(defaultSearch);
+		expect(
+			volatilitySettingsFromSearch(parseVolatilitySettingsSearch({})),
+		).toEqual(applicationConfig.topMarketCap.defaultSettings);
 	});
 
 	it("accepts a complete valid settings group", () => {
-		const parsed = parseTopCoinsSearch(customSearch);
+		const parsed = parseVolatilitySettingsSearch(customSearch);
 
 		expect(parsed).toEqual(customSearch);
-		expect(topCoinsSettingsFromSearch(parsed)).toEqual({
+		expect(volatilitySettingsFromSearch(parsed)).toEqual({
 			hourlyPercentile: 95,
 			hourlyPeriod: 72,
 			percentile: 90,
@@ -54,11 +54,11 @@ describe("Top Market Cap URL state", () => {
 		["nonnumeric", { ...customSearch, hourly_period: "72" }],
 		["invalid", { ...customSearch, percentile: 101 }],
 	] as const)("atomically replaces a %s settings group with defaults", (_, search) => {
-		expect(parseTopCoinsSearch(search)).toEqual(defaultSearch);
+		expect(parseVolatilitySettingsSearch(search)).toEqual(defaultSearch);
 	});
 
 	it("keeps valid sort when settings are invalid", () => {
-		const parsed = parseTopCoinsSearch({
+		const parsed = parseVolatilitySettingsSearch({
 			...customSearch,
 			period: 0,
 			sort_column: "hourlyRangePercent",
@@ -77,12 +77,12 @@ describe("Top Market Cap URL state", () => {
 	});
 
 	it("serializes all four committed settings without overwriting sort", () => {
-		const currentSearch = parseTopCoinsSearch({
+		const currentSearch = parseVolatilitySettingsSearch({
 			...defaultSearch,
 			sort_column: "marketCapUsd",
 			sort_direction: "desc",
 		});
-		const settingsUpdate = topCoinsSettingsToSearch({
+		const settingsUpdate = volatilitySettingsToSearch({
 			hourlyPercentile: 95,
 			hourlyPeriod: 72,
 			percentile: 90,
@@ -98,7 +98,7 @@ describe("Top Market Cap URL state", () => {
 	});
 
 	it("preserves settings when sort is updated key-wise", () => {
-		const currentSearch = parseTopCoinsSearch(customSearch);
+		const currentSearch = parseVolatilitySettingsSearch(customSearch);
 		const sortUpdate = {
 			sort_column: "dailyRangePercent" as const,
 			sort_direction: "asc" as const,

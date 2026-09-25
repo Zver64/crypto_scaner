@@ -1,36 +1,36 @@
 import { applicationConfig } from "@/config";
-import type { TopCoinsSettings } from "@/features/top-coins/settings-form/types";
-import { settingsFromValidDraft } from "@/features/top-coins/settings-form/utils";
+import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
+import { settingsFromValidDraft } from "@/features/analysis/volatility-settings-form/utils";
 import type { MarketScanSortSearch } from "@/routes/-market-scan-search";
 import { parseMarketScanSortSearch } from "@/routes/-market-scan-search";
 
-export interface TopCoinsSettingsSearch {
+export interface VolatilitySettingsSearch {
 	hourly_percentile: number;
 	hourly_period: number;
 	percentile: number;
 	period: number;
 }
 
-export interface TopCoinsSearch
-	extends TopCoinsSettingsSearch,
+export interface VolatilitySettingsSearchWithSort
+	extends VolatilitySettingsSearch,
 		MarketScanSortSearch {}
 
-export function parseTopCoinsSearch(
+export function parseVolatilitySettingsSearch(
 	search: Record<string, unknown>,
-): TopCoinsSearch {
-	const settings = topCoinsSettingsFromUnknownSearch(search);
+): VolatilitySettingsSearchWithSort {
+	const settings = volatilitySettingsFromUnknownSearch(search);
 
 	return {
-		...topCoinsSettingsToSearch(
+		...volatilitySettingsToSearch(
 			settings ?? applicationConfig.topMarketCap.defaultSettings,
 		),
 		...parseMarketScanSortSearch(search),
 	};
 }
 
-export function topCoinsSettingsFromSearch(
-	search: TopCoinsSettingsSearch,
-): TopCoinsSettings {
+export function volatilitySettingsFromSearch(
+	search: VolatilitySettingsSearch,
+): VolatilitySettings {
 	return {
 		hourlyPercentile: search.hourly_percentile,
 		hourlyPeriod: search.hourly_period,
@@ -39,9 +39,9 @@ export function topCoinsSettingsFromSearch(
 	};
 }
 
-export function topCoinsSettingsToSearch(
-	settings: TopCoinsSettings,
-): TopCoinsSettingsSearch {
+export function volatilitySettingsToSearch(
+	settings: VolatilitySettings,
+): VolatilitySettingsSearch {
 	return {
 		hourly_percentile: settings.hourlyPercentile,
 		hourly_period: settings.hourlyPeriod,
@@ -50,9 +50,9 @@ export function topCoinsSettingsToSearch(
 	};
 }
 
-function topCoinsSettingsFromUnknownSearch(
+function volatilitySettingsFromUnknownSearch(
 	search: Record<string, unknown>,
-): TopCoinsSettings | undefined {
+): VolatilitySettings | undefined {
 	const { hourly_percentile, hourly_period, percentile, period } = search;
 	if (
 		typeof period !== "number" ||

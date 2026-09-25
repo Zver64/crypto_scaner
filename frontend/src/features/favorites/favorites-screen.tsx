@@ -1,6 +1,6 @@
 import { Center, Container, Loader, Paper, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
 	getAnalyzeFavoritesQueryKey,
 	useAnalyzeFavorites,
@@ -9,10 +9,12 @@ import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
 import { telegramRequestOptions } from "@/app/telegram";
-import { applicationConfig } from "@/config";
+import { SettingsForm } from "@/components/settings-form";
 import { apiErrorMessage } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
+import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
+import { useVolatilitySettingsForm } from "@/features/analysis/volatility-settings-form/use-volatility-settings-form";
 import { useFavorites } from "@/features/favorites/favorites-provider";
 import {
 	scopedUserQueryKey,
@@ -31,16 +33,28 @@ import {
 } from "@/features/top-coins/top-coins";
 
 export function FavoritesScreen({
+	initialSettings,
+	onSettingsCommit,
 	onSortChange,
 	sort,
 }: {
+	initialSettings: VolatilitySettings;
+	onSettingsCommit(settings: VolatilitySettings): void;
 	onSortChange(sort: MarketScanSort): void;
 	sort: MarketScanSort;
 }) {
 	const permission = useBusinessRequestPermission();
 	const { favorites, handleAccessError, isError, isLoading } = useFavorites();
 	const favoriteItems = [...favorites.values()];
-	const settings = applicationConfig.topMarketCap.defaultSettings;
+	const [settings, setSettings] = useState(initialSettings);
+	const settingsForm = useVolatilitySettingsForm({
+		disabled: !permission.allowed,
+		initialSettings,
+		onCommit: (nextSettings) => {
+			setSettings(nextSettings);
+			onSettingsCommit(nextSettings);
+		},
+	});
 	const scanCriteria = buildTopCoinsScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
 	const request = { criteria, ...topCoinsRequestOptions };
@@ -81,6 +95,7 @@ export function FavoritesScreen({
 		<Container maw={880} px={0} size="md">
 			<Stack gap="md">
 				<PageNavigation current="favorites" title="Favorites" />
+				<SettingsForm {...settingsForm} />
 				{isLoading || (query.isPending && favoriteItems.length > 0) ? (
 					<Center mih={180}>
 						<Loader aria-label="Loading favorites" />

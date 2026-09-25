@@ -2,15 +2,15 @@ import { createFileRoute } from "@tanstack/react-router";
 import { TopCoinsScreen } from "@/features/top-coins/top-coins-screen";
 import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
 import {
-	parseTopCoinsSearch,
-	topCoinsSettingsFromSearch,
-	topCoinsSettingsToSearch,
-} from "@/routes/-top-coins-search";
+	parseVolatilitySettingsSearch,
+	volatilitySettingsFromSearch,
+	volatilitySettingsToSearch,
+} from "@/routes/-volatility-settings-search";
 import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export const Route = createFileRoute("/top-coins")({
 	component: TopCoinsPage,
-	validateSearch: parseTopCoinsSearch,
+	validateSearch: parseVolatilitySettingsSearch,
 });
 
 function TopCoinsPage() {
@@ -19,9 +19,9 @@ function TopCoinsPage() {
 
 	return (
 		<TopCoinsScreen
-			initialSettings={topCoinsSettingsFromSearch(search)}
+			initialSettings={volatilitySettingsFromSearch(search)}
 			onSettingsCommit={(settings) => {
-				replaceUrlSearch({ ...topCoinsSettingsToSearch(settings) });
+				replaceUrlSearch({ ...volatilitySettingsToSearch(settings) });
 			}}
 			onSortChange={(nextSort) => {
 				replaceUrlSearch({

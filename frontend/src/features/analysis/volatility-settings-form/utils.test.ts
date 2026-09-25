@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { applicationConfig } from "@/config";
 import {
 	settingsFromValidDraft,
-	validateTopCoinsSettings,
-} from "@/features/top-coins/settings-form/utils";
+	validateVolatilitySettings,
+} from "@/features/analysis/volatility-settings-form/utils";
 
 describe("Top Market Cap settings", () => {
 	const defaultSettings = applicationConfig.topMarketCap.defaultSettings;
@@ -22,7 +22,7 @@ describe("Top Market Cap settings", () => {
 
 	it("validates daily and hourly fields with analysis constraints", () => {
 		expect(
-			validateTopCoinsSettings({
+			validateVolatilitySettings({
 				...defaultSettings,
 				hourlyPeriod: 0,
 				percentile: 1.5,

@@ -250,20 +250,6 @@ export function InstrumentAnalysisScreen({
 						visible={query.isFetching}
 					>
 						<Stack gap={contentSpacing}>
-							{result ? (
-								<PriceHistoryChart
-									enabled={permission.allowed}
-									intervals={coinChartIntervals}
-									indicator={rsiIndicator}
-									formatTime={formatCoinChartTime}
-									nextOpen={nextCoinCandleOpen}
-									extraReadout={rangeReadout}
-									key={symbol}
-									paperPadding={paperPadding}
-									source={chartSource}
-									symbol={symbol}
-								/>
-							) : null}
 							<Paper p={paperPadding}>
 								<Stack gap={contentSpacing}>
 									<Group justify="space-between" wrap="nowrap">
@@ -317,6 +303,20 @@ export function InstrumentAnalysisScreen({
 									))}
 								</Stack>
 							</Paper>
+							{result ? (
+								<PriceHistoryChart
+									enabled={permission.allowed}
+									intervals={coinChartIntervals}
+									indicator={rsiIndicator}
+									formatTime={formatCoinChartTime}
+									nextOpen={nextCoinCandleOpen}
+									extraReadout={rangeReadout}
+									key={symbol}
+									paperPadding={paperPadding}
+									source={chartSource}
+									symbol={symbol}
+								/>
+							) : null}
 							<SpotGridEstimator
 								candles={recommendationReady ? hourlyCandles : undefined}
 								dailyVolatilityPercent={dailyVolatilityPercent}

@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	"log/slog"
 	"sort"
 	"sync"
 	"time"
@@ -12,11 +13,18 @@ import (
 	marketlive "crypto-scanner/internal/market/live"
 )
 
+const (
+	maxChartRange = 5000
+	// A failed chart build is retried on trades no more often than this.
+	chartRetryDelay = 10 * time.Second
+)
+
 // chartClient serializes per-connection chart calculations outside the Binance
 // reader. Its bounded mailbox cannot exert backpressure on the market stream.
 type chartClient struct {
 	socket   *liveSocketClient
 	charts   ChartService
+	logger   *slog.Logger
 	events   chan marketlive.Message
 	done     chan struct{}
 	once     sync.Once
@@ -30,11 +38,12 @@ type chartClient struct {
 // the current candle using the same indicator engine.
 type ChartService interface {
 	Build(context.Context, chart.Request) (chart.Page, error)
+	Validate([]chart.IndicatorConfig) error
 	Extend(chart.Page, market.CandleInterval, *market.Candle, []chart.IndicatorConfig) (chart.Page, error)
 }
 
-func newChartClient(socket *liveSocketClient, charts ChartService) *chartClient {
-	c := &chartClient{socket: socket, charts: charts, events: make(chan marketlive.Message, 32), done: make(chan struct{}), limits: map[binance.KlineKey]int{}, configs: map[binance.KlineKey][]chart.IndicatorConfig{}, versions: map[binance.KlineKey]int64{}}
+func newChartClient(socket *liveSocketClient, charts ChartService, logger *slog.Logger) *chartClient {
+	c := &chartClient{socket: socket, charts: charts, logger: logger, events: make(chan marketlive.Message, 32), done: make(chan struct{}), limits: map[binance.KlineKey]int{}, configs: map[binance.KlineKey][]chart.IndicatorConfig{}, versions: map[binance.KlineKey]int64{}}
 	go c.run()
 	return c
 }
@@ -67,6 +76,7 @@ func (c *chartClient) run() {
 	states := map[binance.KlineKey]map[time.Time]marketlive.CandleState{}
 	closed := map[binance.KlineKey]chart.Page{}
 	freshness := map[binance.KlineKey]marketlive.Freshness{}
+	retryAt := map[binance.KlineKey]time.Time{}
 	for {
 		select {
 		case <-c.done:
@@ -102,23 +112,29 @@ func (c *chartClient) run() {
 			configs := c.configs[message.Key]
 			c.mu.Unlock()
 			if limit == 0 {
+				delete(closed, message.Key)
+				delete(retryAt, message.Key)
 				continue
 			}
 			page, cached := closed[message.Key]
 			// Only a trade on the current candle leaves the closed range intact;
 			// everything else rebuilds it and is delivered as a full snapshot.
-			rebuild := !cached || message.Kind != "update" || message.Candle == nil || message.Candle.Final
+			trade := message.Kind == "update" && message.Candle != nil && !message.Candle.Final
+			rebuild := !cached || !trade
+			if !cached && trade && time.Now().Before(retryAt[message.Key]) {
+				continue
+			}
 			if rebuild {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				effectiveLimit := limit
-				if cached && limit > 200 && len(page.Candles) > effectiveLimit {
-					effectiveLimit = len(page.Candles)
+				if cached && limit > defaultCandlePageSize && len(page.Candles) > effectiveLimit {
+					effectiveLimit = min(len(page.Candles), maxChartRange)
 				}
 				loaded, err := c.charts.Build(ctx, chart.Request{Symbol: message.Key.Symbol, Interval: message.Key.Interval, Limit: effectiveLimit, Indicators: configs})
-				if err == nil && cached && limit > 200 && len(page.Candles) > 0 && len(loaded.Candles) > 0 && loaded.HasMore {
+				if err == nil && cached && limit > defaultCandlePageSize && len(page.Candles) > 0 && len(loaded.Candles) > 0 && loaded.HasMore {
 					oldest := page.Candles[0].OpenTime
 					cursor := oldest
-					for cursor.Before(loaded.Candles[0].OpenTime) && effectiveLimit < 5000 {
+					for cursor.Before(loaded.Candles[0].OpenTime) && effectiveLimit < maxChartRange {
 						effectiveLimit++
 						cursor = message.Key.Interval.NextOpenTime(cursor)
 					}
@@ -128,13 +144,23 @@ func (c *chartClient) run() {
 				}
 				cancel()
 				if err != nil {
+					failing := !retryAt[message.Key].IsZero()
+					retryAt[message.Key] = time.Now().Add(chartRetryDelay)
+					if !failing {
+						c.logger.Warn("chart history build failed", "module", "httpapi_live", "symbol", message.Key.Symbol, "interval", message.Key.Interval, "error", err)
+					}
 					if !cached || message.Kind == "refresh" {
-						c.socket.enqueueKeyError(message.Key, "unavailable", "Chart history is unavailable")
+						// Report once per failure, and always for a range request.
+						if !failing || message.Kind == "refresh" {
+							c.socket.enqueueKeyError(message.Key, "unavailable", "Chart history is unavailable")
+						}
 						continue
 					}
 					// Keep the last closed range; final WS candles below still
 					// advance it, and the result is delivered as a snapshot.
 					loaded = page
+				} else {
+					delete(retryAt, message.Key)
 				}
 				page = loaded
 			}
@@ -157,8 +183,11 @@ func (c *chartClient) run() {
 					}
 					if pending != nil && value.OpenTime.After(pending.OpenTime) {
 						// Do not advance the open time until the previous
-						// candle's final event has actually arrived.
+						// candle's final event has actually arrived; keep the
+						// candle valid as the newer price leaves its range.
 						pending.Close = value.Close
+						pending.High = max(pending.High, value.High)
+						pending.Low = min(pending.Low, value.Low)
 					} else if pending == nil {
 						pending = &value
 					}
@@ -173,8 +202,14 @@ func (c *chartClient) run() {
 					pending = nil
 				}
 			}
-			if len(candles) > limit && limit == 200 {
-				candles = candles[len(candles)-limit:]
+			// The initial range stays fixed; an extended one keeps its oldest
+			// candle but never exceeds the maximum chart range.
+			keep := maxChartRange
+			if limit == defaultCandlePageSize {
+				keep = limit
+			}
+			if len(candles) > keep {
+				candles = candles[len(candles)-keep:]
 				page.HasMore = true
 			}
 			page.Candles = candles

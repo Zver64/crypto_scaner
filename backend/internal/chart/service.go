@@ -56,14 +56,11 @@ func (service *Service) Build(ctx context.Context, request Request) (Page, error
 	if service == nil || symbol == "" || !request.Interval.Valid() || request.Limit <= 0 || len(request.Indicators) == 0 {
 		return Page{}, fmt.Errorf("%w: symbol, interval, limit, and indicators are required", ErrInvalidRequest)
 	}
-	if len(request.Indicators) > maxIndicatorConfigs || request.Limit > maxChartLookback {
-		return Page{}, fmt.Errorf("%w: chart range or indicator count exceeds limit", ErrInvalidRequest)
+	if request.Limit > maxChartLookback {
+		return Page{}, fmt.Errorf("%w: chart range exceeds limit", ErrInvalidRequest)
 	}
-	for _, config := range request.Indicators {
-		value, err := service.engine.Lookback(config.Type, config.Parameters)
-		if err != nil || value > maxChartLookback {
-			return Page{}, fmt.Errorf("%w: lookback for %q: %v", ErrInvalidRequest, config.Type, err)
-		}
+	if err := service.Validate(request.Indicators); err != nil {
+		return Page{}, err
 	}
 	instrument, err := service.store.GetActiveInstrumentBySymbol(ctx, symbol)
 	if err != nil {
@@ -83,6 +80,20 @@ func (service *Service) Build(ctx context.Context, request Request) (Page, error
 		nextBefore = &value
 	}
 	return Page{Symbol: instrument.Symbol, Candles: stored.Candles, Indicators: results, HasMore: stored.HasMore, NextBefore: nextBefore}, nil
+}
+
+// Validate checks an indicator selection before any history is loaded.
+func (service *Service) Validate(configs []IndicatorConfig) error {
+	if len(configs) == 0 || len(configs) > maxIndicatorConfigs {
+		return fmt.Errorf("%w: indicator count must be between 1 and %d", ErrInvalidRequest, maxIndicatorConfigs)
+	}
+	for _, config := range configs {
+		value, err := service.engine.Lookback(config.Type, config.Parameters)
+		if err != nil || value > maxChartLookback {
+			return fmt.Errorf("%w: lookback for %q: %v", ErrInvalidRequest, config.Type, err)
+		}
+	}
+	return nil
 }
 
 // Extend calculates a private live context. It never mutates closed history.

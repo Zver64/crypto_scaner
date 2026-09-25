@@ -87,7 +87,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 		return
 	}
 	client := newLiveSocketClient(newRequestID(), connection)
-	subscriber := newChartClient(client, handler.charts)
+	subscriber := newChartClient(client, handler.charts, handler.logger)
 	defer func() { handler.service.RemoveClient(client.ID()); subscriber.Close() }()
 	connection.SetReadLimit(maxClientMessage)
 	_ = connection.SetReadDeadline(time.Now().Add(clientAuthTimeout))
@@ -145,7 +145,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			if message.Limit != nil {
 				limit = *message.Limit
 			}
-			if limit < 1 || limit > 5000 {
+			if limit < 1 || limit > maxChartRange {
 				client.enqueueKeyError(key, "invalid_argument", "Invalid chart range")
 				continue
 			}
@@ -156,6 +156,10 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			configs := make([]chart.IndicatorConfig, len(*message.Indicators))
 			for i, item := range *message.Indicators {
 				configs[i] = chart.IndicatorConfig{Type: indicator.Type(item.Type), Parameters: indicator.Parameters(item.Parameters)}
+			}
+			if handler.charts.Validate(configs) != nil {
+				client.enqueueKeyError(key, "invalid_argument", "Invalid indicator selection")
+				continue
 			}
 			// Subscribing again to the same key only changes the chart range.
 			err := handler.service.Subscribe(request.Context(), subscriber, key.Symbol, key.Interval)

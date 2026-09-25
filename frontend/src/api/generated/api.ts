@@ -921,7 +921,7 @@ export const getGetInstrumentChartUrl = (symbol: string,
 }
 
 /**
- * @summary Get a chronological candle page with aligned technical indicators
+ * @summary Get a closed-candle range with indicators recalculated over the entire range
  */
 export const getInstrumentChart = async (symbol: string,
     chartRequest: ChartRequest,
@@ -1032,7 +1032,7 @@ export function useGetInstrumentChartInfinite<TData = InfiniteData<Awaited<Retur
  , queryClient?: QueryClient
   ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Get a chronological candle page with aligned technical indicators
+ * @summary Get a closed-candle range with indicators recalculated over the entire range
  */
 
 export function useGetInstrumentChartInfinite<TData = InfiniteData<Awaited<ReturnType<typeof getInstrumentChart>>, GetInstrumentChartParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(

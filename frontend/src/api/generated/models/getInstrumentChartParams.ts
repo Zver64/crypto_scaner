@@ -18,12 +18,13 @@ import type { CandleInterval } from './candleInterval.ts';
 export type GetInstrumentChartParams = {
 interval: CandleInterval;
 /**
- * Return visible candles whose open time is before this cursor.
+ * Optional exclusive upper bound for the closed-candle range.
  */
 before?: string;
 /**
+ * Number of closed candles in the calculation range; increase to load older history and replace all indicator points.
  * @minimum 1
- * @maximum 500
+ * @maximum 5000
  */
 limit?: number;
 };

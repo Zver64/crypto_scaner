@@ -28,22 +28,38 @@ afterEach(() => {
 	FakeSocket.current = undefined;
 });
 
-function stubChartTransport() {
+function stubChartTransport(extendHourly = false) {
 	vi.stubGlobal("window", { location: { href: "https://example.com/coin" } });
 	vi.stubGlobal("WebSocket", FakeSocket);
 	const requested: string[] = [];
 	vi.stubGlobal(
 		"fetch",
 		vi.fn(async (url: string) => {
-			const interval =
-				new URL(url, "https://example.com").searchParams.get("interval") ??
-				"1h";
+			const params = new URL(url, "https://example.com").searchParams;
+			const interval = params.get("interval") ?? "1h";
+			const expanded =
+				extendHourly && interval === "1h" && params.get("limit") === "400";
 			requested.push(interval);
 			return new Response(
 				JSON.stringify({
 					symbol: "BTCUSDT",
 					interval,
 					candles: [
+						...(expanded
+							? [
+									{
+										open_time: "2026-08-26T23:00:00Z",
+										close_time: "2026-08-26T23:59:59.999Z",
+										open: 10,
+										high: 13,
+										low: 9,
+										close: 11,
+										volume: 10,
+										quote_asset_volume: 20,
+										trade_count: 4,
+									},
+								]
+							: []),
 						{
 							open_time: "2026-08-27T00:00:00Z",
 							close_time: "2026-08-27T00:59:59.999Z",
@@ -56,7 +72,11 @@ function stubChartTransport() {
 							trade_count: 4,
 						},
 					],
-					has_more: false,
+					has_more: extendHourly && interval === "1h" && !expanded,
+					next_before:
+						extendHourly && interval === "1h" && !expanded
+							? "2026-08-27T00:00:00Z"
+							: null,
 					indicators: [
 						{
 							type: "rsi",
@@ -64,7 +84,12 @@ function stubChartTransport() {
 							series: [
 								{
 									name: "rsi",
-									points: [{ time: "2026-08-27T00:00:00Z", value: 62.5 }],
+									points: expanded
+										? [
+												{ time: "2026-08-26T23:00:00Z", value: 55 },
+												{ time: "2026-08-27T00:00:00Z", value: 70 },
+											]
+										: [{ time: "2026-08-27T00:00:00Z", value: 62.5 }],
 								},
 							],
 						},
@@ -78,7 +103,7 @@ function stubChartTransport() {
 }
 
 it("loads the visible interval first, then prepares the other intervals without updating its snapshot", async () => {
-	const requested = stubChartTransport();
+	const requested = stubChartTransport(true);
 	const queryClient = new QueryClient();
 	const source = createCoinChartData("BTCUSDT", queryClient);
 	try {
@@ -94,6 +119,94 @@ it("loads the visible interval first, then prepares the other intervals without 
 		await vi.waitFor(() =>
 			expect(source.getSnapshot("1d").candles).toHaveLength(1),
 		);
+		source.loadOlder("1h");
+		await vi.waitFor(() =>
+			expect(source.getSnapshot("1h").candles).toHaveLength(2),
+		);
+		expect(
+			source.getSnapshot("1h").indicator.map((point) => point.value),
+		).toEqual([55, 70]);
+		expect(source.getSnapshot("1d").candles).toHaveLength(1);
+		const limits: string[] = [];
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async (url: string) => {
+				const limit =
+					new URL(url, "https://example.com").searchParams.get("limit") ?? "";
+				limits.push(limit);
+				const older = limit === "401";
+				const times = older
+					? [
+							"2026-08-26T23:00:00Z",
+							"2026-08-27T00:00:00Z",
+							"2026-08-27T01:00:00Z",
+						]
+					: ["2026-08-27T00:00:00Z", "2026-08-27T01:00:00Z"];
+				return new Response(
+					JSON.stringify({
+						symbol: "BTCUSDT",
+						interval: "1h",
+						candles: times.map((time) => ({
+							open_time: time,
+							close_time: new Date(
+								Date.parse(time) + 3600000 - 1,
+							).toISOString(),
+							open: 10,
+							high: 13,
+							low: 9,
+							close: 12,
+							volume: 10,
+							quote_asset_volume: 20,
+							trade_count: 4,
+						})),
+						has_more: !older,
+						next_before: older ? null : times[0],
+						indicators: [
+							{
+								type: "rsi",
+								parameters: { period: 14 },
+								series: [
+									{
+										name: "rsi",
+										points: times.map((time) => ({ time, value: 71 })),
+									},
+								],
+							},
+						],
+					}),
+					{ status: 200 },
+				);
+			}),
+		);
+		FakeSocket.current?.emitMessage({
+			type: "update",
+			symbol: "BTCUSDT",
+			interval: "1h",
+			candle: {
+				final: true,
+				candle: {
+					open_time: "2026-08-27T01:00:00Z",
+					close_time: "2026-08-27T01:59:59.999Z",
+					open: 10,
+					high: 13,
+					low: 9,
+					close: 12,
+					volume: 10,
+					quote_asset_volume: 20,
+					trade_count: 4,
+				},
+			},
+		});
+		await vi.waitFor(() => expect(limits).toEqual(["400", "401"]));
+		await vi.waitFor(() =>
+			expect(source.getSnapshot("1h").indicator).toHaveLength(3),
+		);
+		expect(source.getSnapshot("1h").candles[0]?.open_time).toBe(
+			"2026-08-26T23:00:00Z",
+		);
+		expect(
+			source.getSnapshot("1h").indicator.map((point) => point.value),
+		).toEqual([71, 71, 71]);
 	} finally {
 		source.stop();
 		queryClient.clear();

@@ -12,9 +12,6 @@ import type {
 } from "@/components/price-history-chart";
 import { apiErrorMessage } from "@/features/analysis/api-error";
 import {
-	mergeChartCandlePages,
-	mergeChartRsiPages,
-	nextChartPageParam,
 	rsiChartRequest,
 	validateChartPage,
 } from "@/features/instrument-analysis/chart-page";
@@ -39,7 +36,7 @@ export function createCoinChartData(
 					fetch: telegramRequestOptions(),
 					query: {
 						initialPageParam: undefined,
-						getNextPageParam: nextChartPageParam,
+						getNextPageParam: () => undefined,
 						retry: false,
 						staleTime: Number.POSITIVE_INFINITY,
 					},
@@ -49,8 +46,7 @@ export function createCoinChartData(
 	const listeners = new Set<() => void>();
 	const live = createLiveStore(symbol.toUpperCase());
 	type SnapshotInputs = {
-		historical?: readonly ChartPageResponse[];
-		head?: ChartPageResponse;
+		historical?: ChartPageResponse;
 		live: ReturnType<typeof live.getSnapshot>;
 		isLoading: boolean;
 		isLoadingMore: boolean;
@@ -60,8 +56,11 @@ export function createCoinChartData(
 	type IntervalState = {
 		snapshot?: PriceHistorySnapshot;
 		observer?: ReturnType<typeof createObserver>;
-		pages?: readonly ChartPageResponse[];
-		head?: ChartPageResponse;
+		page?: ChartPageResponse;
+		limit: number;
+		loadingMore?: boolean;
+		pendingRefresh?: boolean;
+		generation: number;
 		queryError?: string;
 		controller?: AbortController;
 		timers?: ReturnType<typeof setTimeout>[];
@@ -74,7 +73,7 @@ export function createCoinChartData(
 	const forInterval = (interval: CandleInterval): IntervalState => {
 		let state = intervals.get(interval);
 		if (!state) {
-			state = {};
+			state = { limit: 200, generation: 0 };
 			intervals.set(interval, state);
 		}
 		return state;
@@ -84,24 +83,21 @@ export function createCoinChartData(
 	const cleanups: (() => void)[] = [];
 	const recompute = (interval: CandleInterval) => {
 		const current = forInterval(interval);
-		const historical = current.pages;
-		const head = current.head;
+		const historical = current.page;
 		const state = live.getSnapshot(interval);
 		const query = current.observer?.getCurrentResult();
 		const input = {
 			historical,
-			head,
 			live: state,
 			isLoading: query?.isPending ?? true,
-			isLoadingMore: query?.isFetchingNextPage ?? false,
-			hasMore: query?.hasNextPage ?? false,
+			isLoadingMore: current.loadingMore ?? false,
+			hasMore: (historical?.has_more ?? false) && current.limit < 5000,
 			error: current.queryError ?? state.error,
 		};
 		const previous = current.lastInput;
 		if (
 			previous &&
 			previous.historical === input.historical &&
-			previous.head === input.head &&
 			previous.live === input.live &&
 			previous.isLoading === input.isLoading &&
 			previous.isLoadingMore === input.isLoadingMore &&
@@ -111,12 +107,9 @@ export function createCoinChartData(
 			return;
 		current.lastInput = input;
 		const candles = historical
-			? mergeHistoryAndLiveCandles(
-					mergeChartCandlePages(historical, head),
-					state.candles,
-				)
+			? mergeHistoryAndLiveCandles(historical.candles, state.candles)
 			: [];
-		const indicator = mergeChartRsiPages(historical ?? [], head);
+		const indicator = historical?.indicators[0]?.series[0]?.points ?? [];
 		const next: PriceHistorySnapshot = {
 			candles,
 			indicator,
@@ -130,27 +123,85 @@ export function createCoinChartData(
 		current.snapshot = next;
 		for (const listener of listeners) listener();
 	};
-	const refresh = (interval: CandleInterval) => {
+	// An initial chart stays at 200 closed candles. Once extended, retain its
+	// oldest candle across closures (up to the bounded 5000-candle range).
+	// Each response replaces the entire range, including all RSI points.
+	const fetchRange = (
+		interval: CandleInterval,
+		requestedLimit: number,
+		older: boolean,
+	) => {
 		const current = forInterval(interval);
 		current.controller?.abort();
+		const generation = ++current.generation;
 		const controller = new AbortController();
 		current.controller = controller;
-		void getInstrumentChart(
-			symbol,
-			rsiChartRequest,
-			{ interval, limit: 200 },
-			{
-				...telegramRequestOptions(),
-				signal: controller.signal,
-			},
-		)
-			.then((response) => {
-				if (controller.signal.aborted) return;
+		const oldest = current.page?.candles[0]?.open_time;
+		const newest = current.page?.candles.at(-1)?.open_time;
+		if (older) current.loadingMore = true;
+		recompute(interval);
+		void (async () => {
+			let limit = requestedLimit;
+			while (true) {
+				const response = await getInstrumentChart(
+					symbol,
+					rsiChartRequest,
+					{ interval, limit },
+					{
+						...telegramRequestOptions(),
+						signal: controller.signal,
+					},
+				);
+				if (controller.signal.aborted || generation !== current.generation)
+					return;
 				const page = validateChartPage(response, symbol, interval);
-				current.head = page;
-				recompute(interval);
+				if (
+					!oldest ||
+					!page.candles.length ||
+					(!older && current.limit === 200) ||
+					(older
+						? page.candles[0].open_time < oldest
+						: page.candles[0].open_time <= oldest) ||
+					!page.has_more ||
+					limit === 5000
+				) {
+					current.page = page;
+					current.limit = limit;
+					current.queryError = undefined;
+					return;
+				}
+				// Count newly closed candles rather than adding another whole page
+				// of older history on every refresh. If the old head fell outside
+				// the response, grow in bounded steps until it becomes visible.
+				const oldHeadIndex = page.candles.findIndex(
+					(candle) => candle.open_time === newest,
+				);
+				const newCandles =
+					oldHeadIndex < 0 ? 200 : page.candles.length - oldHeadIndex - 1;
+				limit = Math.min(5000, limit + Math.max(1, newCandles));
+			}
+		})()
+			.catch((error) => {
+				if (!controller.signal.aborted && generation === current.generation)
+					current.queryError = apiErrorMessage(error);
 			})
-			.catch(() => {});
+			.finally(() => {
+				if (generation !== current.generation) return;
+				current.loadingMore = false;
+				recompute(interval);
+				if (current.pendingRefresh) {
+					current.pendingRefresh = false;
+					refresh(interval);
+				}
+			});
+	};
+	const refresh = (interval: CandleInterval) => {
+		const current = forInterval(interval);
+		if (current.loadingMore) {
+			current.pendingRefresh = true;
+			return;
+		}
+		fetchRange(interval, current.limit, false);
 	};
 	const scheduleRecovery = (interval: CandleInterval, recovering: boolean) => {
 		const current = forInterval(interval);
@@ -179,18 +230,25 @@ export function createCoinChartData(
 				validationError = undefined;
 				if (result.data) {
 					try {
-						current.pages = result.data.pages.map((page) =>
-							validateChartPage(page, symbol, interval),
-						);
+						if (current.limit === 200 && !current.page) {
+							current.page = validateChartPage(
+								result.data.pages[0],
+								symbol,
+								interval,
+							);
+							current.queryError = undefined;
+						}
 					} catch {
 						validationError = "Price history is unavailable";
 					}
 				}
 			}
-			const error = result.isError
-				? apiErrorMessage(result.error)
-				: validationError;
-			current.queryError = error;
+			// A late initial-query failure cannot replace the status of a newer
+			// successfully loaded range (or a later range-fetch error).
+			if (!current.page)
+				current.queryError = result.isError
+					? apiErrorMessage(result.error)
+					: validationError;
 			recompute(interval);
 			if (result.data && interval === initialInterval && !warmed) {
 				warmed = true;
@@ -279,18 +337,24 @@ export function createCoinChartData(
 				current.lastInput = undefined;
 				current.controller?.abort();
 				current.controller = undefined;
+				current.generation++;
+				current.loadingMore = false;
+				current.pendingRefresh = false;
 				for (const timer of current.timers ?? []) clearTimeout(timer);
 				current.timers = undefined;
 			}
 		},
 		loadOlder(interval) {
 			const selected = resolveInterval(interval);
-			const observer = selected ? intervals.get(selected)?.observer : undefined;
+			if (!selected) return;
+			const current = forInterval(selected);
 			if (
-				observer?.getCurrentResult().hasNextPage &&
-				!observer.getCurrentResult().isFetchingNextPage
+				!current.page?.has_more ||
+				current.loadingMore ||
+				current.limit >= 5000
 			)
-				void observer.fetchNextPage();
+				return;
+			fetchRange(selected, Math.min(5000, current.limit + 200), true);
 		},
 	};
 }

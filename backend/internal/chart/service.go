@@ -74,8 +74,8 @@ func NewService(store Store, calculator indicator.Calculator) (*Service, error) 
 	return &Service{store: store, calculator: calculator}, nil
 }
 
-// Build loads candles exactly once, using the largest requested indicator
-// lookback as hidden context, and returns only the visible page.
+// Build calculates indicators over exactly the requested closed-candle range.
+// A larger limit extends the range and replaces all previous indicator points.
 func (service *Service) Build(ctx context.Context, request Request) (Page, error) {
 	symbol := strings.ToUpper(strings.TrimSpace(request.Symbol))
 	if service == nil || symbol == "" || !request.Interval.Valid() || request.Limit <= 0 || len(request.Indicators) == 0 {
@@ -85,7 +85,9 @@ func (service *Service) Build(ctx context.Context, request Request) (Page, error
 		return Page{}, fmt.Errorf("%w: at most %d indicators are allowed", ErrInvalidRequest, maxIndicatorConfigs)
 	}
 
-	lookback := 0
+	if request.Limit > maxChartLookback {
+		return Page{}, fmt.Errorf("%w: candle limit exceeds %d", ErrInvalidRequest, maxChartLookback)
+	}
 	for _, config := range request.Indicators {
 		value, err := service.calculator.Lookback(config.Type, config.Parameters)
 		if err != nil {
@@ -94,69 +96,70 @@ func (service *Service) Build(ctx context.Context, request Request) (Page, error
 		if value > maxChartLookback {
 			return Page{}, fmt.Errorf("%w: lookback for %q exceeds %d candles", ErrInvalidRequest, config.Type, maxChartLookback)
 		}
-		if value > lookback {
-			lookback = value
-		}
-	}
-	if lookback > int(^uint(0)>>1)-request.Limit {
-		return Page{}, fmt.Errorf("%w: candle limit is too large", ErrInvalidRequest)
 	}
 
 	instrument, err := service.store.GetActiveInstrumentBySymbol(ctx, symbol)
 	if err != nil {
 		return Page{}, fmt.Errorf("resolve chart instrument: %w", err)
 	}
-	stored, err := service.store.ListCandlePage(ctx, instrument.ID, request.Interval, request.Before, request.Limit+lookback)
+	stored, err := service.store.ListCandlePage(ctx, instrument.ID, request.Interval, request.Before, request.Limit)
 	if err != nil {
 		return Page{}, fmt.Errorf("list chart candles: %w", err)
 	}
 
-	hidden := len(stored.Candles) - request.Limit
-	if hidden < 0 {
-		hidden = 0
-	}
-	visible := append([]market.Candle(nil), stored.Candles[hidden:]...)
 	results := make([]IndicatorResult, 0, len(request.Indicators))
-	closeValues := make([]float64, len(stored.Candles))
-	for index, candle := range stored.Candles {
-		closeValues[index] = candle.Close
-	}
-	for _, config := range request.Indicators {
-		calculated, calculateErr := service.calculator.Calculate(indicator.Request{
-			Type: config.Type, Parameters: config.Parameters, Inputs: indicator.Inputs{"close": closeValues},
-		})
-		if calculateErr != nil {
-			return Page{}, fmt.Errorf("%w: calculate %q: %v", ErrInvalidRequest, config.Type, calculateErr)
+	// Calculate each continuous run independently. A missing candle cannot be
+	// treated as an adjacent close when warming up an indicator.
+	starts := []int{0}
+	for index := 1; index < len(stored.Candles); index++ {
+		if !request.Interval.NextOpenTime(stored.Candles[index-1].OpenTime).Equal(stored.Candles[index].OpenTime) {
+			starts = append(starts, index)
 		}
-		names := make([]string, 0, len(calculated.Outputs))
-		for name := range calculated.Outputs {
+	}
+	starts = append(starts, len(stored.Candles))
+	for _, config := range request.Indicators {
+		byName := make(map[string][]Point)
+		for run := 0; run+1 < len(starts); run++ {
+			start, end := starts[run], starts[run+1]
+			closes := make([]float64, end-start)
+			for index := start; index < end; index++ {
+				closes[index-start] = stored.Candles[index].Close
+			}
+			calculated, calculateErr := service.calculator.Calculate(indicator.Request{
+				Type: config.Type, Parameters: config.Parameters, Inputs: indicator.Inputs{"close": closes},
+			})
+			if calculateErr != nil {
+				return Page{}, fmt.Errorf("%w: calculate %q: %v", ErrInvalidRequest, config.Type, calculateErr)
+			}
+			for name, output := range calculated.Outputs {
+				if _, exists := byName[name]; !exists {
+					byName[name] = []Point{}
+				}
+				if len(output.Values) > 0 && (output.Offset >= end-start || len(output.Values) > end-start-output.Offset) {
+					return Page{}, fmt.Errorf("indicator %q output %q exceeds candle input", config.Type, name)
+				}
+				for index, value := range output.Values {
+					byName[name] = append(byName[name], Point{Time: stored.Candles[start+output.Offset+index].OpenTime.UTC(), Value: value})
+				}
+			}
+		}
+		names := make([]string, 0, len(byName))
+		for name := range byName {
 			names = append(names, name)
 		}
 		sort.Strings(names)
 		series := make([]Series, 0, len(names))
 		for _, name := range names {
-			output := calculated.Outputs[name]
-			if len(output.Values) > 0 && (output.Offset >= len(stored.Candles) || len(output.Values) > len(stored.Candles)-output.Offset) {
-				return Page{}, fmt.Errorf("indicator %q output %q exceeds candle input", config.Type, name)
-			}
-			points := make([]Point, 0, len(output.Values))
-			for valueIndex, value := range output.Values {
-				candleIndex := output.Offset + valueIndex
-				if candleIndex < hidden {
-					continue
-				}
-				points = append(points, Point{Time: stored.Candles[candleIndex].OpenTime.UTC(), Value: value})
-			}
-			series = append(series, Series{Name: name, Points: points})
+			series = append(series, Series{Name: name, Points: byName[name]})
 		}
 		results = append(results, IndicatorResult{Type: config.Type, Parameters: config.Parameters, Series: series})
 	}
 
-	hasMore := stored.HasMore || hidden > 0
+	hasMore := stored.HasMore
 	var nextBefore *time.Time
-	if hasMore && len(visible) > 0 {
-		value := visible[0].OpenTime.UTC()
+	if hasMore && len(stored.Candles) > 0 {
+		value := stored.Candles[0].OpenTime.UTC()
 		nextBefore = &value
 	}
-	return Page{Symbol: instrument.Symbol, Candles: visible, Indicators: results, HasMore: hasMore, NextBefore: nextBefore}, nil
+	return Page{Symbol: instrument.Symbol, Candles: stored.Candles, Indicators: results, HasMore: hasMore, NextBefore: nextBefore}, nil
 }

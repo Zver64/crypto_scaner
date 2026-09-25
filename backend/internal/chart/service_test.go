@@ -33,9 +33,9 @@ func (store *storeStub) ListCandlePage(_ context.Context, _ int64, _ market.Cand
 	return store.page, nil
 }
 
-func TestServiceUsesOneReadAndKeepsLookbackHidden(t *testing.T) {
+func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	candles := testCandles(start, 340)
+	candles := testCandles(start, 200)
 	store := &storeStub{page: market.CandlePage{Candles: candles, HasMore: true}}
 	registry, err := indicator.NewRegistry(indicatortalib.NewRSI())
 	if err != nil {
@@ -53,18 +53,35 @@ func TestServiceUsesOneReadAndKeepsLookbackHidden(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	if store.resolveCalls != 1 || store.listCalls != 1 || store.limit != 340 || store.before != &cursor {
-		t.Fatalf("store resolve calls=%d list calls=%d limit=%d before=%p, want one lookup and one candle read with limit 340 and cursor", store.resolveCalls, store.listCalls, store.limit, store.before)
+	if store.resolveCalls != 1 || store.listCalls != 1 || store.limit != 200 || store.before != &cursor {
+		t.Fatalf("store resolve calls=%d list calls=%d limit=%d before=%p, want one lookup and one candle read with limit 200 and cursor", store.resolveCalls, store.listCalls, store.limit, store.before)
 	}
 	if page.Symbol != "BTCUSDT" {
 		t.Fatalf("page symbol = %q, want BTCUSDT", page.Symbol)
 	}
-	if len(page.Candles) != 200 || !page.Candles[0].OpenTime.Equal(start.Add(140*time.Hour)) || !page.HasMore || page.NextBefore == nil || !page.NextBefore.Equal(page.Candles[0].OpenTime) {
+	if len(page.Candles) != 200 || !page.Candles[0].OpenTime.Equal(start) || !page.HasMore || page.NextBefore == nil || !page.NextBefore.Equal(page.Candles[0].OpenTime) {
 		t.Fatalf("page boundaries = candles %d, first %v, hasMore %v, next %v", len(page.Candles), page.Candles[0].OpenTime, page.HasMore, page.NextBefore)
 	}
 	points := page.Indicators[0].Series[0].Points
-	if len(points) != 200 || !points[0].Time.Equal(page.Candles[0].OpenTime) {
-		t.Fatalf("RSI points = %d starting %v, want 200 aligned visible points", len(points), points[0].Time)
+	if len(points) != 186 || !points[0].Time.Equal(start.Add(14*time.Hour)) {
+		t.Fatalf("RSI points = %d starting %v, want 186 points after warmup", len(points), points[0].Time)
+	}
+
+	// Extending the same chart range changes the warmup and recalculates
+	// every point, including those already present in the initial range.
+	store.page = market.CandlePage{Candles: testCandles(start.Add(-200*time.Hour), 400)}
+	extended, err := service.Build(context.Background(), chart.Request{
+		Symbol: "BTCUSDT", Interval: market.IntervalHour, Limit: 400,
+		Indicators: []chart.IndicatorConfig{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	extendedPoints := extended.Indicators[0].Series[0].Points
+	if store.limit != 400 || len(extended.Candles) != 400 || len(extendedPoints) != 386 ||
+		!extendedPoints[0].Time.Equal(start.Add(-186*time.Hour)) ||
+		!extendedPoints[len(extendedPoints)-1].Time.Equal(points[len(points)-1].Time) {
+		t.Fatalf("extended range: limit=%d candles=%d points=%d", store.limit, len(extended.Candles), len(extendedPoints))
 	}
 }
 
@@ -130,7 +147,7 @@ func TestServiceAlignsShortHistoryAfterWarmup(t *testing.T) {
 	registry, _ := indicator.NewRegistry(indicatortalib.NewRSI())
 	service, _ := chart.NewService(store, registry)
 	page, err := service.Build(context.Background(), chart.Request{
-		Symbol: "BTCUSDT", Interval: market.IntervalDay, Limit: 200,
+		Symbol: "BTCUSDT", Interval: market.IntervalHour, Limit: 200,
 		Indicators: []chart.IndicatorConfig{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": float64(14)}}},
 	})
 	if err != nil {
@@ -142,6 +159,27 @@ func TestServiceAlignsShortHistoryAfterWarmup(t *testing.T) {
 	}
 	if !points[0].Time.Equal(start.Add(14 * time.Hour)) {
 		t.Fatalf("first point time = %v, want candle 14", points[0].Time)
+	}
+}
+
+func TestServiceRestartsWarmupAfterHistoryGap(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	candles := testCandles(start, 40)
+	// Lose one closed candle in the middle of the returned range.
+	candles = append(candles[:20:20], candles[21:]...)
+	store := &storeStub{page: market.CandlePage{Candles: candles}}
+	registry, _ := indicator.NewRegistry(indicatortalib.NewRSI())
+	service, _ := chart.NewService(store, registry)
+	page, err := service.Build(context.Background(), chart.Request{
+		Symbol: "BTCUSDT", Interval: market.IntervalHour, Limit: 200,
+		Indicators: []chart.IndicatorConfig{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	points := page.Indicators[0].Series[0].Points
+	if len(points) != 11 || !points[5].Time.Equal(start.Add(19*time.Hour)) || !points[6].Time.Equal(start.Add(35*time.Hour)) {
+		t.Fatalf("RSI across a gap: %+v", points)
 	}
 }
 

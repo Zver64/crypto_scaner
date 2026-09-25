@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
 )
 
@@ -19,6 +20,12 @@ type Store interface {
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
 	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
 	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
+}
+
+// ClosedIndicators supplies indicator values at the latest closed candle.
+type ClosedIndicators interface {
+	// Latest never fails: unavailable values have no outputs.
+	Latest(context.Context, []int64) map[int64][]closedindicator.Value
 }
 
 type CandleBatchStore interface {
@@ -45,10 +52,11 @@ type SearchSort struct {
 	Direction string
 }
 type SearchItem struct {
-	PriceHistory []*float64
-	Symbol       string
-	Matched      bool
-	Evaluations  []Evaluation
+	PriceHistory     []*float64
+	Symbol           string
+	Matched          bool
+	Evaluations      []Evaluation
+	ClosedIndicators []closedindicator.Value
 }
 type SearchResult struct {
 	PriceHistoryWindow    market.PriceHistoryWindow
@@ -63,6 +71,7 @@ type UnresolvedItem struct{ Symbol, Code, Message string }
 
 type Service struct {
 	store                Store
+	closed               ClosedIndicators
 	factories            map[string]Factory
 	selectionFilters     map[string]SelectionFilter
 	selectionSortFilters map[string]SelectionFilter
@@ -105,6 +114,11 @@ func NewService(store Store, factories ...Factory) (*Service, error) {
 		}
 	}
 	return &Service{store: store, factories: registry, selectionFilters: selectionRegistry, selectionSortFilters: sortRegistry}, nil
+}
+
+// SetClosedIndicators attaches closed indicator values to every search item.
+func (service *Service) SetClosedIndicators(provider ClosedIndicators) {
+	service.closed = provider
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
@@ -229,9 +243,17 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	if err != nil {
 		return SearchResult{}, err
 	}
+	closed := map[int64][]closedindicator.Value{}
+	if service.closed != nil && len(candidates) > 0 {
+		ids := make([]int64, len(candidates))
+		for index, instrument := range candidates {
+			ids[index] = instrument.ID
+		}
+		closed = service.closed.Latest(ctx, ids)
+	}
 	for _, instrument := range candidates {
 		item := results[instrument.ID]
-		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID]})
+		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID], ClosedIndicators: closed[instrument.ID]})
 	}
 	result.MatchedCount = len(result.Items)
 	return result, nil

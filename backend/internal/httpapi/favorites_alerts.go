@@ -15,7 +15,7 @@ func currentUserID(ctx context.Context) int64 {
 	return user.ID
 }
 func favoriteDTO(v favorites.Favorite) Favorite {
-	return Favorite{Symbol: v.Symbol, BaseAsset: v.BaseAsset, QuoteAsset: v.QuoteAsset, Active: v.Active, AlertCount: v.AlertCount, CreatedAt: v.CreatedAt}
+	return Favorite{Symbol: v.Symbol, BaseAsset: v.BaseAsset, QuoteAsset: v.QuoteAsset, Active: v.Active, AlertCount: v.AlertCount, CreatedAt: v.CreatedAt, ClosedIndicators: closedIndicatorsResponse(v.ClosedIndicators)}
 }
 func alertDTO(v alerts.Alert) PriceAlert {
 	return PriceAlert{Id: v.ID, Symbol: v.Symbol, Target: v.Target, Version: v.Version, CreatedAt: v.CreatedAt, UpdatedAt: v.UpdatedAt}

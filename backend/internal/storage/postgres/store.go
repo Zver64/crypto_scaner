@@ -743,6 +743,11 @@ func (store *Store) FireAlert(ctx context.Context, id, version int64) (bool, err
 func (store *Store) ListMonitoredSymbols(ctx context.Context) ([]string, error) {
 	return store.queries.ListMonitoredSymbols(ctx)
 }
+
+// ListMonitoredInstrumentIDs returns active instruments favorited by enabled users.
+func (store *Store) ListMonitoredInstrumentIDs(ctx context.Context) ([]int64, error) {
+	return store.queries.ListMonitoredInstrumentIDs(ctx)
+}
 func lockUser(ctx context.Context, tx pgx.Tx, userID int64) (int64, error) {
 	var telegramID int64
 	err := tx.QueryRow(ctx, `SELECT telegram_id FROM app.users WHERE id=$1 AND is_enabled FOR UPDATE`, userID).Scan(&telegramID)

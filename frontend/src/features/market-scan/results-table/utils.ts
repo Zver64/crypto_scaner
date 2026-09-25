@@ -3,6 +3,10 @@ import type {
 	UnresolvedInstrumentCode,
 } from "@/api/generated/models";
 import { criterionKeys } from "@/features/analysis/identifiers";
+import {
+	closedIndicatorValue,
+	dailyRsi14,
+} from "@/features/market-scan/closed-indicators";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { marketCapEvaluation } from "@/utils/market-cap";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
@@ -26,6 +30,7 @@ export interface MarketScanRow {
 	symbol: string;
 	dailyRangePercent: number | null;
 	hourlyRangePercent: number | null;
+	dailyRsi14: number | null;
 	marketCapUsd: number | null;
 	priceHistory: readonly (number | null)[];
 	sevenDayChangePercent: number | null;
@@ -49,11 +54,18 @@ export function toMarketScanRows(
 			symbol: item.symbol,
 			dailyRangePercent: daily?.rangePercent ?? null,
 			hourlyRangePercent: hourly?.rangePercent ?? null,
+			dailyRsi14: closedIndicatorValue(item.closed_indicators, dailyRsi14),
 			marketCapUsd: marketCapEvaluation(item.evaluations)?.marketCapUsd ?? null,
 			priceHistory: item.price_history,
 			sevenDayChangePercent: sevenDayChangePercent(item.price_history),
 		};
 	});
+}
+
+// Blends the positive and negative theme colors: 0 is fully green, 100 red.
+export function oscillatorColor(value: number): string {
+	const red = Math.min(100, Math.max(0, value));
+	return `color-mix(in oklch, var(--mantine-color-red-6) ${red}%, var(--mantine-color-green-6))`;
 }
 
 export function filterMarketScanRows(

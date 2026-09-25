@@ -10,18 +10,21 @@ import {
 const items = toMarketScanRows([
 	{
 		evaluations: [],
+		closed_indicators: [],
 		matched: true,
 		symbol: "ZZZUSDT",
 		price_history: Array(169).fill(null),
 	},
 	{
 		evaluations: [],
+		closed_indicators: [],
 		matched: true,
 		symbol: "AdaUsdt",
 		price_history: Array(169).fill(null),
 	},
 	{
 		evaluations: [],
+		closed_indicators: [],
 		matched: true,
 		symbol: "AAAUSDT",
 		price_history: Array(169).fill(null),
@@ -101,6 +104,7 @@ it("preserves rows with absent metrics instead of silently dropping instruments"
 	expect(items[0]).toEqual({
 		symbol: "ZZZUSDT",
 		dailyRangePercent: null,
+		dailyRsi14: null,
 		hourlyRangePercent: null,
 		marketCapUsd: null,
 		priceHistory: Array(169).fill(null),

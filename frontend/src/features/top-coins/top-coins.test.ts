@@ -9,6 +9,7 @@ import {
 function item(symbol: string): MarketAnalysisItem {
 	return {
 		evaluations: [],
+		closed_indicators: [],
 		matched: true,
 		price_history: [],
 		symbol,

@@ -1,5 +1,9 @@
 import type { Favorite, MarketAnalysisItem } from "@/api/generated/models";
 import {
+	closedIndicatorValue,
+	dailyRsi14,
+} from "@/features/market-scan/closed-indicators";
+import {
 	type MarketScanRow,
 	toMarketScanRows,
 } from "@/features/market-scan/results-table/utils";
@@ -17,6 +21,10 @@ export function mergeFavoriteRows(
 				symbol: favorite.symbol,
 				dailyRangePercent: null,
 				hourlyRangePercent: null,
+				dailyRsi14: closedIndicatorValue(
+					favorite.closed_indicators,
+					dailyRsi14,
+				),
 				marketCapUsd: null,
 				priceHistory: [],
 				sevenDayChangePercent: null,

@@ -179,6 +179,34 @@ func (q *Queries) ListFavorites(ctx context.Context, userID int64) ([]ListFavori
 	return items, nil
 }
 
+const listMonitoredInstrumentIDs = `-- name: ListMonitoredInstrumentIDs :many
+SELECT DISTINCT i.id
+FROM app.favorites f
+JOIN app.users u ON u.id = f.user_id AND u.is_enabled
+JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
+ORDER BY i.id
+`
+
+func (q *Queries) ListMonitoredInstrumentIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listMonitoredInstrumentIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listMonitoredSymbols = `-- name: ListMonitoredSymbols :many
 SELECT DISTINCT i.symbol
 FROM app.favorites f

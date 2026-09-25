@@ -27,7 +27,7 @@ func (stub *analyzerStub) SearchSymbols(_ context.Context, _ analysis.SearchRequ
 
 func TestAnalyzeOrchestratesFavoriteSelectionOutsideHTTP(t *testing.T) {
 	analyzer := &analyzerStub{}
-	service := New(storeStub{}, nil, analyzer)
+	service := New(storeStub{}, nil, analyzer, nil)
 	if _, err := service.Analyze(context.Background(), 42, analysis.SearchRequest{}); err != nil {
 		t.Fatal(err)
 	}

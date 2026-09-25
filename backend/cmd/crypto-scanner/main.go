@@ -17,6 +17,7 @@ import (
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/chart"
+	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/httpapi"
@@ -82,7 +83,24 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	exchange := binance.NewWithOptions(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
 	liveStream := binance.NewKlineStream(logger)
 	liveService := marketlive.New(liveStream, store, logger)
-	syncStore := marketsync.ObservableStore{Store: store, Changed: liveService.HistoryChanged}
+	indicatorRegistry, err := indicator.NewRegistry(indicatortalib.NewRSI())
+	if err != nil {
+		return fmt.Errorf("initialize indicator registry: %w", err)
+	}
+	// Values shown in tables; favorites keep them current without clients.
+	closedTargets := []closedindicator.Target{{
+		Interval:  market.IntervalDay,
+		Selection: indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}},
+	}}
+	closedIndicators, err := closedindicator.New(store, indicatorRegistry, closedTargets, logger,
+		closedindicator.InstrumentSource{List: store.ListMonitoredInstrumentIDs, Targets: closedTargets})
+	if err != nil {
+		return fmt.Errorf("initialize closed indicator tracker: %w", err)
+	}
+	syncStore := marketsync.ObservableStore{Store: store, Changed: func(candles []market.Candle) {
+		liveService.HistoryChanged(candles)
+		closedIndicators.HistoryChanged(candles)
+	}}
 	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
 	for _, interval := range market.CandleIntervals() {
 		profile := marketsync.Profile(interval)
@@ -99,10 +117,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	if err != nil {
 		return fmt.Errorf("initialize analysis service: %w", err)
 	}
-	indicatorRegistry, err := indicator.NewRegistry(indicatortalib.NewRSI())
-	if err != nil {
-		return fmt.Errorf("initialize indicator registry: %w", err)
-	}
+	analysisService.SetClosedIndicators(closedIndicators)
 	chartService, err := chart.NewService(store, indicatorRegistry)
 	if err != nil {
 		return fmt.Errorf("initialize chart service: %w", err)
@@ -115,6 +130,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 			if alertMonitor != nil {
 				alertMonitor.Changed()
 			}
+			closedIndicators.Refresh()
 		},
 	})
 	if err != nil {
@@ -122,9 +138,12 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	}
 	tradeStream := binance.NewTradeStream(logger)
 	alertMonitor = alerts.NewMonitor(store, tradeStream, botService, logger)
-	favoriteService := favorites.New(store, alertMonitor.Changed, analysisService)
+	favoriteService := favorites.New(store, func() {
+		alertMonitor.Changed()
+		closedIndicators.Refresh()
+	}, analysisService, closedIndicators)
 	alertService := alerts.New(store, alertMonitor)
-	marketServices := parallelServices{services: []scheduledService{scheduler, liveStream, liveService, tradeStream, alertMonitor}}
+	marketServices := parallelServices{services: []scheduledService{scheduler, liveStream, liveService, tradeStream, alertMonitor, closedIndicators}}
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
 		return fmt.Errorf("listen for HTTP: %w", err)

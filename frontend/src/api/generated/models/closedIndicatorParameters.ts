@@ -13,16 +13,5 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ClosedIndicator } from './closedIndicator.ts';
 
-export interface Favorite {
-  symbol: string;
-  base_asset: string;
-  quote_asset: string;
-  active: boolean;
-  /** @minimum 0 */
-  alert_count: number;
-  created_at: string;
-  /** Indicator values at the latest closed candle, independent of analysis criteria. */
-  closed_indicators: ClosedIndicator[];
-}
+export type ClosedIndicatorParameters = { [key: string]: unknown };

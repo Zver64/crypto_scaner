@@ -7,8 +7,10 @@ import (
 	"math"
 	"net/http"
 	"strings"
+	"time"
 
 	"crypto-scanner/internal/analysis"
+	"crypto-scanner/internal/closedindicator"
 )
 
 func marketSearchRequest(request MarketAnalysisRequest) analysis.SearchRequest {
@@ -66,7 +68,7 @@ func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestO
 func marketAnalysisResponse(result analysis.SearchResult) MarketAnalysisResponse {
 	items := make([]MarketAnalysisItem, len(result.Items))
 	for i, item := range result.Items {
-		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory}
+		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory, ClosedIndicators: closedIndicatorsResponse(item.ClosedIndicators)}
 	}
 	unresolved := make([]UnresolvedInstrument, len(result.Unresolved))
 	for i, item := range result.Unresolved {
@@ -77,6 +79,30 @@ func marketAnalysisResponse(result analysis.SearchResult) MarketAnalysisResponse
 		MatchedCount:       result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount,
 		Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings),
 	}
+}
+
+func closedIndicatorsResponse(values []closedindicator.Value) []ClosedIndicator {
+	result := make([]ClosedIndicator, len(values))
+	for i, value := range values {
+		outputs := make([]ClosedIndicatorOutput, len(value.Outputs))
+		for j, output := range value.Outputs {
+			outputs[j] = ClosedIndicatorOutput{Name: output.Name, Value: output.Value}
+		}
+		var openTime *time.Time
+		if !value.OpenTime.IsZero() {
+			opened := value.OpenTime.UTC()
+			openTime = &opened
+		}
+		parameters := map[string]interface{}{}
+		for key, parameter := range value.Target.Selection.Parameters {
+			parameters[key] = parameter
+		}
+		result[i] = ClosedIndicator{
+			Type: string(value.Target.Selection.Type), Interval: CandleInterval(value.Target.Interval),
+			Parameters: parameters, OpenTime: openTime, Outputs: outputs,
+		}
+	}
+	return result
 }
 
 func (api *api) analyzeInstrumentError(ctx context.Context, err error, symbol string) AnalyzeInstrumentResponseObject {

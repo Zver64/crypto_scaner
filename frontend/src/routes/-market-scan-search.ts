@@ -24,6 +24,7 @@ export interface MarketScanSearch
 const sortColumns = new Set<MarketScanSortColumn>([
 	marketScanColumnKeys.dailyRange,
 	marketScanColumnKeys.hourlyRange,
+	marketScanColumnKeys.dailyRsi14,
 	marketScanColumnKeys.marketCap,
 	marketScanColumnKeys.sevenDayChangePercent,
 ]);

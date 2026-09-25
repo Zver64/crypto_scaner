@@ -53,9 +53,19 @@ describe("sortMarketScanRows", () => {
 		metrics: { market_cap_usd: 400 },
 		name: "market_cap",
 	};
+	const rsi = (value: number) => [
+		{
+			type: "rsi",
+			interval: "1d" as const,
+			parameters: { period: 14 },
+			open_time: "2026-08-01T00:00:00Z",
+			outputs: [{ name: "rsi", value }],
+		},
+	];
 	const sortableItems = [
 		{
 			evaluations: [daily, hourly, marketCap],
+			closed_indicators: rsi(50),
 			matched: true,
 			symbol: "ZEBRAUSDT",
 			price_history: Array(169).fill(null),
@@ -66,6 +76,7 @@ describe("sortMarketScanRows", () => {
 				{ ...hourly, metrics: { range_percent: 1 } },
 				{ ...marketCap, metrics: { market_cap_usd: 900 } },
 			],
+			closed_indicators: rsi(70),
 			matched: true,
 			symbol: "ALPHAUSDT",
 			price_history: Array(169).fill(null),
@@ -76,6 +87,7 @@ describe("sortMarketScanRows", () => {
 				{ ...hourly, metrics: { range_percent: 3 } },
 				{ ...marketCap, metrics: { market_cap_usd: 100 } },
 			],
+			closed_indicators: [],
 			matched: true,
 			symbol: "BRAVOUSDT",
 			price_history: Array(169).fill(null),
@@ -86,6 +98,7 @@ describe("sortMarketScanRows", () => {
 				{ ...hourly, metrics: { range_percent: 3 } },
 				{ ...marketCap, metrics: { market_cap_usd: 100 } },
 			],
+			closed_indicators: rsi(30),
 			matched: true,
 			symbol: "CHARLIEUSDT",
 			price_history: Array(169).fill(null),
@@ -114,6 +127,16 @@ describe("sortMarketScanRows", () => {
 			["ALPHAUSDT", "ZEBRAUSDT", "BRAVOUSDT", "CHARLIEUSDT"],
 		],
 		[
+			marketScanColumnKeys.dailyRsi14,
+			"desc",
+			["ALPHAUSDT", "ZEBRAUSDT", "CHARLIEUSDT", "BRAVOUSDT"],
+		],
+		[
+			marketScanColumnKeys.dailyRsi14,
+			"asc",
+			["CHARLIEUSDT", "ZEBRAUSDT", "ALPHAUSDT", "BRAVOUSDT"],
+		],
+		[
 			defaultMarketScanSort.column,
 			defaultMarketScanSort.direction,
 			["ALPHAUSDT", "ZEBRAUSDT", "BRAVOUSDT", "CHARLIEUSDT"],
@@ -138,7 +161,13 @@ it.each([
 	"desc",
 ] as const)("sorts seven-day change percent last when unavailable (%s)", (direction) => {
 	const base = toMarketScanRows([
-		{ symbol: "BASEUSDT", evaluations: [], matched: true, price_history: [] },
+		{
+			symbol: "BASEUSDT",
+			evaluations: [],
+			matched: true,
+			price_history: [],
+			closed_indicators: [],
+		},
 	])[0];
 	const rows = [
 		{ ...base, symbol: "B", sevenDayChangePercent: null },
@@ -164,7 +193,13 @@ it.each([
 	"desc",
 ] as const)("sorts unavailable Market Cap last (%s), separately from zero", (direction) => {
 	const base = toMarketScanRows([
-		{ symbol: "BASEUSDT", evaluations: [], matched: true, price_history: [] },
+		{
+			symbol: "BASEUSDT",
+			evaluations: [],
+			matched: true,
+			price_history: [],
+			closed_indicators: [],
+		},
 	])[0];
 	const rows = [
 		{ ...base, symbol: "B", marketCapUsd: null },

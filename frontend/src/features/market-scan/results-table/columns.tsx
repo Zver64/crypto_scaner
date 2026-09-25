@@ -12,6 +12,7 @@ import {
 	binanceSpotUrl,
 	type MarketScanRow,
 	marketCapUnavailableReason,
+	oscillatorColor,
 } from "@/features/market-scan/results-table/utils";
 import { formatMarketCapUsd } from "@/utils/market-cap";
 import { formatRangePercent } from "@/utils/range-percent";
@@ -54,6 +55,19 @@ export const marketScanColumns = [
 			row.hourlyRangePercent === null
 				? "—"
 				: formatRangePercent(row.hourlyRangePercent),
+		sortable: true,
+	},
+	{
+		key: marketScanColumnKeys.dailyRsi14,
+		header: "d-rsi-14",
+		cell: (row) =>
+			row.dailyRsi14 === null ? (
+				"—"
+			) : (
+				<span style={{ color: oscillatorColor(row.dailyRsi14) }}>
+					{row.dailyRsi14.toFixed(1)}
+				</span>
+			),
 		sortable: true,
 	},
 	{

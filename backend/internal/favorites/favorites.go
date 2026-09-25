@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/analysis"
+	"crypto-scanner/internal/closedindicator"
 )
 
 var (
@@ -23,6 +24,8 @@ type Favorite struct {
 	Active       bool
 	AlertCount   int
 	CreatedAt    time.Time
+	// ClosedIndicators is filled regardless of analysis criteria outcomes.
+	ClosedIndicators []closedindicator.Value
 }
 
 type Store interface {
@@ -40,13 +43,26 @@ type Service struct {
 	store    Store
 	changed  func()
 	analyzer Analyzer
+	closed   analysis.ClosedIndicators
 }
 
-func New(store Store, changed func(), analyzer Analyzer) *Service {
-	return &Service{store: store, changed: changed, analyzer: analyzer}
+func New(store Store, changed func(), analyzer Analyzer, closed analysis.ClosedIndicators) *Service {
+	return &Service{store: store, changed: changed, analyzer: analyzer, closed: closed}
 }
 func (s *Service) List(ctx context.Context, userID int64) ([]Favorite, error) {
-	return s.store.ListFavorites(ctx, userID)
+	items, err := s.store.ListFavorites(ctx, userID)
+	if err != nil || s.closed == nil || len(items) == 0 {
+		return items, err
+	}
+	ids := make([]int64, len(items))
+	for index, item := range items {
+		ids[index] = item.InstrumentID
+	}
+	values := s.closed.Latest(ctx, ids)
+	for index := range items {
+		items[index].ClosedIndicators = values[items[index].InstrumentID]
+	}
+	return items, nil
 }
 func (s *Service) Analyze(ctx context.Context, userID int64, request analysis.SearchRequest) (analysis.SearchResult, error) {
 	symbols, err := s.store.ListFavoriteSymbols(ctx, userID)

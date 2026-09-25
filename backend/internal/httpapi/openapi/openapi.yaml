@@ -446,7 +446,7 @@ components:
     Favorite:
       type: object
       additionalProperties: false
-      required: [symbol, base_asset, quote_asset, active, alert_count, created_at]
+      required: [symbol, base_asset, quote_asset, active, alert_count, created_at, closed_indicators]
       properties:
         symbol: { type: string }
         base_asset: { type: string }
@@ -454,6 +454,10 @@ components:
         active: { type: boolean }
         alert_count: { type: integer, minimum: 0 }
         created_at: { type: string, format: date-time }
+        closed_indicators:
+          type: array
+          description: Indicator values at the latest closed candle, independent of analysis criteria.
+          items: { $ref: "#/components/schemas/ClosedIndicator" }
     FavoritesResponse:
       type: object
       additionalProperties: false
@@ -639,7 +643,7 @@ components:
     MarketAnalysisItem:
       type: object
       additionalProperties: false
-      required: [symbol, matched, evaluations, price_history]
+      required: [symbol, matched, evaluations, price_history, closed_indicators]
       properties:
         symbol:
           type: string
@@ -649,6 +653,11 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Evaluation"
+        closed_indicators:
+          type: array
+          description: Indicator values at the latest closed candle.
+          items:
+            $ref: "#/components/schemas/ClosedIndicator"
         price_history:
           type: array
           minItems: 169
@@ -656,6 +665,37 @@ components:
           items:
             type: [number, "null"]
             format: double
+    ClosedIndicator:
+      type: object
+      additionalProperties: false
+      required: [type, interval, parameters, open_time, outputs]
+      properties:
+        type:
+          type: string
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+        parameters:
+          type: object
+          additionalProperties: true
+        open_time:
+          type: [string, "null"]
+          format: date-time
+          description: Open time of the latest stored closed candle; null without any history.
+        outputs:
+          type: array
+          description: Named outputs at that candle; empty when its continuous history is insufficient.
+          items:
+            $ref: "#/components/schemas/ClosedIndicatorOutput"
+    ClosedIndicatorOutput:
+      type: object
+      additionalProperties: false
+      required: [name, value]
+      properties:
+        name:
+          type: string
+        value:
+          type: number
+          format: double
     UnresolvedInstrument:
       type: object
       additionalProperties: false

@@ -13,12 +13,15 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { ClosedIndicator } from './closedIndicator.ts';
 import type { Evaluation } from './evaluation.ts';
 
 export interface MarketAnalysisItem {
   symbol: string;
   matched: boolean;
   evaluations: Evaluation[];
+  /** Indicator values at the latest closed candle. */
+  closed_indicators: ClosedIndicator[];
   /**
      * @minItems 169
      * @maxItems 169

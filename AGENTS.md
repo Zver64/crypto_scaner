@@ -2,6 +2,8 @@
 
 Telegram Mini App for scanning cryptocurrency markets and analyzing instruments.
 
+Agent and subagent orchestration is done via herdr.
+
 ## Project structure
 
 - `backend/`: Go HTTP API, Telegram authentication, market synchronization, analysis criteria, PostgreSQL storage, migrations, and service commands.

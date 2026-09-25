@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"sort"
 	"testing"
 	"testing/synctest"
@@ -64,8 +65,12 @@ func TestSyncEnsuresHistoryDepthForEverySupportedInterval(t *testing.T) {
 						t.Fatal(err)
 					}
 					assertContinuousHistory(t, store, interval, want)
-					if len(exchange.requests) != requestsAfterRepair {
-						t.Fatalf("completed repair made %d repeated requests", len(exchange.requests)-requestsAfterRepair)
+					wantRecheck := 1
+					if scenario == "no closed history" {
+						wantRecheck = 0
+					}
+					if len(exchange.requests)-requestsAfterRepair != wantRecheck {
+						t.Fatalf("completed repair made %d requests, want %d latest-close recheck", len(exchange.requests)-requestsAfterRepair, wantRecheck)
 					}
 					if scenario == "short" {
 						last := exchange.requests[requestsAfterRepair-1]
@@ -94,8 +99,8 @@ func TestForwardPaginationResumesFromPersistedProgressAfterFailure(t *testing.T)
 		if err := synchronizer.Sync(t.Context()); !errors.Is(err, exchangeErr) {
 			t.Fatalf("Sync() error = %v, want pagination failure", err)
 		}
-		if len(store.candles) != 1001 {
-			t.Fatalf("persisted progress = %d candles, want first page retained", len(store.candles))
+		if len(store.candles) != 1000 {
+			t.Fatalf("persisted progress = %d candles, want first page retained including overlap", len(store.candles))
 		}
 		exchange.failAtRequest = 0
 		if err := synchronizer.Sync(t.Context()); err != nil {
@@ -226,6 +231,30 @@ func (s *historyStore) ListLatestCandlesByInterval(_ context.Context, _ int64, _
 	result := cloneCandles(s.candles)
 	sort.Slice(result, func(i, j int) bool { return result[i].OpenTime.After(result[j].OpenTime) })
 	return result[:min(len(result), limit)], nil
+}
+
+func (s *historyStore) UpsertCandlesWithChanges(ctx context.Context, candles []market.Candle) ([]market.Candle, error) {
+	previous := cloneCandles(s.candles)
+	if err := s.UpsertCandles(ctx, candles); err != nil {
+		return nil, err
+	}
+	changed := make([]market.Candle, 0, len(candles))
+	for _, candle := range candles {
+		found := false
+		for _, old := range previous {
+			if old.Interval == candle.Interval && old.OpenTime.Equal(candle.OpenTime) {
+				found = true
+				if !reflect.DeepEqual(old, candle) {
+					changed = append(changed, candle)
+				}
+				break
+			}
+		}
+		if !found {
+			changed = append(changed, candle)
+		}
+	}
+	return changed, nil
 }
 
 func (s *historyStore) UpsertCandles(_ context.Context, candles []market.Candle) error {

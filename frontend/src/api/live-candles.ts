@@ -1,5 +1,6 @@
 import type {
 	CandleInterval,
+	IndicatorConfig,
 	LiveCandleClientMessage,
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
@@ -9,6 +10,8 @@ export type LiveCandleConnection = "connecting" | "connected" | "disconnected";
 export interface LiveCandleSubscription {
 	interval: CandleInterval;
 	symbol: string;
+	limit?: number;
+	indicators?: IndicatorConfig[];
 }
 
 interface LiveCandlesClientOptions {
@@ -44,7 +47,15 @@ export class LiveCandlesClient {
 			}
 		}
 		for (const subscription of subscriptions) {
-			if (!previous.some((old) => sameSubscription(old, subscription))) {
+			if (
+				!previous.some(
+					(old) =>
+						sameSubscription(old, subscription) &&
+						old.limit === subscription.limit &&
+						JSON.stringify(old.indicators) ===
+							JSON.stringify(subscription.indicators),
+				)
+			) {
 				this.send({ type: "subscribe", ...subscription });
 			}
 		}

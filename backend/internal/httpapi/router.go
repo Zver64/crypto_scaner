@@ -65,7 +65,6 @@ type api struct {
 	readiness Readiness
 	analysis  Analysis
 	history   CandleHistory
-	chart     ChartService
 	favorites Favorites
 	alerts    PriceAlerts
 }
@@ -80,7 +79,7 @@ func New(logger *slog.Logger, readiness Readiness, service Analysis, history Can
 // NewWithOptions returns the service HTTP handler with optional development-only API documentation.
 func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, history CandleHistory, authenticator Authenticator, options Options) http.Handler {
 	operations := http.NewServeMux()
-	strict := NewStrictHandlerWithOptions(&api{readiness: readiness, analysis: service, history: history, chart: options.Chart, favorites: options.Favorites, alerts: options.Alerts}, nil, StrictHTTPServerOptions{
+	strict := NewStrictHandlerWithOptions(&api{readiness: readiness, analysis: service, history: history, favorites: options.Favorites, alerts: options.Alerts}, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc:  openAPIRequestError,
 		ResponseErrorHandlerFunc: openAPIResponseError,
 	})
@@ -97,7 +96,6 @@ func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, 
 	router.Handle("POST /api/v1/analysis/instruments/{symbol}", protectedOperations)
 	router.Handle("POST /api/v1/analysis/market", protectedOperations)
 	router.Handle("GET /api/v1/instruments/{symbol}/candles", protectedOperations)
-	router.Handle("POST /api/v1/instruments/{symbol}/chart", protectedOperations)
 	if options.Favorites != nil {
 		router.Handle("GET /api/v1/favorites", protectedOperations)
 		router.Handle("PUT /api/v1/favorites/{symbol}", protectedOperations)
@@ -110,8 +108,8 @@ func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, 
 		router.Handle("PATCH /api/v1/alerts/{alert_id}", protectedOperations)
 		router.Handle("DELETE /api/v1/alerts/{alert_id}", protectedOperations)
 	}
-	if options.LiveAuthenticator != nil && options.LiveCandles != nil {
-		router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(options.LiveAuthenticator, options.LiveCandles, logger))
+	if options.LiveAuthenticator != nil && options.LiveCandles != nil && options.Chart != nil {
+		router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(options.LiveAuthenticator, options.LiveCandles, options.Chart, logger))
 	}
 	if options.APIDocsEnabled {
 		registerDocs(router)
@@ -136,14 +134,14 @@ func openAPIValidationError(_ context.Context, _ error, response http.ResponseWr
 	switch {
 	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
 		message = "Invalid analysis argument"
-	case isChartDataPath(request.URL.Path):
+	case isCandleHistoryPath(request.URL.Path):
 		message = candleValidationMessage(request, options)
 	}
 	writeAPIError(response, options.StatusCode, "invalid_argument", message, nil)
 }
 
-func isChartDataPath(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/instruments/") && (strings.HasSuffix(path, "/candles") || strings.HasSuffix(path, "/chart"))
+func isCandleHistoryPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/instruments/") && strings.HasSuffix(path, "/candles")
 }
 
 func candleValidationMessage(request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) string {
@@ -197,7 +195,7 @@ func openAPIRequestError(response http.ResponseWriter, request *http.Request, _ 
 	switch {
 	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
 		message = "Invalid analysis argument"
-	case isChartDataPath(request.URL.Path):
+	case isCandleHistoryPath(request.URL.Path):
 		message = candleValidationMessage(request, nethttpmiddleware.ErrorHandlerOpts{})
 	}
 	writeAPIError(response, http.StatusBadRequest, "invalid_argument", message, nil)

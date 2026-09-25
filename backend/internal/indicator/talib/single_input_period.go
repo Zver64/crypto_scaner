@@ -40,6 +40,8 @@ func (adapter *singleInputPeriod) Type() indicator.Type {
 	return adapter.spec.indicatorType
 }
 
+func (adapter *singleInputPeriod) Inputs() []string { return []string{adapter.spec.inputName} }
+
 func (adapter *singleInputPeriod) Lookback(parameters indicator.Parameters) (int, error) {
 	period, err := adapter.period(parameters)
 	if err != nil {

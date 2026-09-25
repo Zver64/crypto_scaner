@@ -2,7 +2,6 @@ import type {
 	AnalyzeFavoritesQueryError,
 	AnalyzeInstrumentQueryError,
 	AnalyzeMarketQueryError,
-	GetInstrumentChartInfiniteQueryError,
 	ListInstrumentCandlesInfiniteQueryError,
 } from "@/api/generated/api";
 import type { ErrorResponse } from "@/api/generated/models";
@@ -11,7 +10,6 @@ export type ApiError =
 	| AnalyzeFavoritesQueryError
 	| AnalyzeInstrumentQueryError
 	| AnalyzeMarketQueryError
-	| GetInstrumentChartInfiniteQueryError
 	| ListInstrumentCandlesInfiniteQueryError;
 
 export type ApiErrorCode =

@@ -48,6 +48,8 @@ type Result struct {
 // implementation, while Registry validates the common result contract.
 type Implementation interface {
 	Type() Type
+	// Inputs names the candle fields consumed by this implementation.
+	Inputs() []string
 	Lookback(parameters Parameters) (int, error)
 	Calculate(parameters Parameters, inputs Inputs) (Result, error)
 }
@@ -55,5 +57,6 @@ type Implementation interface {
 // Calculator is the consumer-facing indicator calculation contract.
 type Calculator interface {
 	Lookback(indicatorType Type, parameters Parameters) (int, error)
+	Inputs(indicatorType Type) ([]string, error)
 	Calculate(request Request) (Result, error)
 }

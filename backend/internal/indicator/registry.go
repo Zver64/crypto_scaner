@@ -74,6 +74,15 @@ func (r *Registry) Lookback(indicatorType Type, parameters Parameters) (int, err
 	return lookback, nil
 }
 
+// Inputs returns the named candle fields required by the selected module.
+func (r *Registry) Inputs(indicatorType Type) ([]string, error) {
+	implementation, err := r.implementation(indicatorType)
+	if err != nil {
+		return nil, err
+	}
+	return append([]string(nil), implementation.Inputs()...), nil
+}
+
 // Calculate dispatches a request and validates the implementation's result.
 func (r *Registry) Calculate(request Request) (Result, error) {
 	implementation, err := r.implementation(request.Type)

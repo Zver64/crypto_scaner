@@ -192,6 +192,42 @@ func TestServiceDoesNotRollFinalCandleBack(t *testing.T) {
 	}
 }
 
+func TestHistoryCorrectionRefreshesActiveGraph(t *testing.T) {
+	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	client := &clientStub{id: "graph", messages: make(chan Message, 16)}
+	ctx := context.Background()
+	if err := service.Subscribe(ctx, client, "BTCUSDT", market.IntervalDay); err != nil {
+		t.Fatal(err)
+	}
+	open := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	key := binance.KlineKey{Symbol: "BTCUSDT", Interval: market.IntervalDay}
+	service.apply(binance.KlineEvent{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: open, Close: 10}, Final: true})
+	for len(client.messages) > 0 {
+		<-client.messages
+	}
+	service.HistoryChanged([]market.Candle{{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: open, Close: 12}})
+	// Exchange and server clocks need not agree: a final packet with a future
+	// event time cannot undo a REST-confirmed candle either.
+	service.apply(binance.KlineEvent{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: open, Close: 10}, Final: true, EventTime: time.Now().Add(time.Hour)})
+	// A REST-confirmed candle outside the live buffer is protected as well.
+	yesterday := open.AddDate(0, 0, -1)
+	service.HistoryChanged([]market.Candle{{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: yesterday, Close: 20}})
+	service.apply(binance.KlineEvent{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: yesterday, Close: 9}, Final: true, EventTime: time.Now().Add(time.Hour)})
+	corrected := false
+	for len(client.messages) > 0 {
+		message := <-client.messages
+		if message.Kind == "update" && message.Candle != nil {
+			t.Fatal("delayed WS final was published")
+		}
+		if message.Kind == "snapshot" && len(message.Candles) > 0 && message.Candles[0].Candle.Close == 12 {
+			corrected = true
+		}
+	}
+	if !corrected {
+		t.Fatal("committed correction was not published to the active graph")
+	}
+}
+
 func TestReconnectRestoresMissedFinalBeforeFresh(t *testing.T) {
 	upstream := newUpstreamStub()
 	open := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)

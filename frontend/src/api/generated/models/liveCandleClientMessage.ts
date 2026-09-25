@@ -14,6 +14,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { CandleInterval } from './candleInterval.ts';
+import type { IndicatorConfig } from './indicatorConfig.ts';
 import type { LiveCandleClientMessageType } from './liveCandleClientMessageType.ts';
 
 export interface LiveCandleClientMessage {
@@ -26,4 +27,15 @@ export interface LiveCandleClientMessage {
      */
   symbol?: string;
   interval?: CandleInterval;
+  /**
+     * Closed-candle range for this chart subscription; subscribing again with a larger value extends the range.
+     * @minimum 1
+     * @maximum 5000
+     */
+  limit?: number;
+  /**
+     * @minItems 1
+     * @maxItems 8
+     */
+  indicators?: IndicatorConfig[];
 }

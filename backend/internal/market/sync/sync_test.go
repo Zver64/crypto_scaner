@@ -98,7 +98,7 @@ func TestSynchronizerBackfillsLatestClosedCandlesForInstrumentWithoutHistory(t *
 	if len(store.saved) != 2 || store.saved[1].Status != market.SyncStatusSucceeded || store.saved[1].LastClosedOpenTime == nil || !store.saved[1].LastClosedOpenTime.Equal(closed.OpenTime) {
 		t.Fatalf("saved states = %#v, want successful candle progress", store.saved)
 	}
-	for _, field := range []string{`"outcome":"succeeded"`, `"instruments_total":1`, `"instruments_succeeded":1`, `"instruments_failed":0`, `"exchange_requests":3`, `"candle_rows_requested":6`, `"candle_rows_written":1`, `"gap_ranges_repaired":0`, `"lag_intervals":`, `"retry_count":0`} {
+	for _, field := range []string{`"outcome":"succeeded"`, `"instruments_total":1`, `"instruments_succeeded":1`, `"instruments_failed":0`, `"exchange_requests":2`, `"candle_rows_requested":4`, `"candle_rows_written":1`, `"gap_ranges_repaired":0`, `"lag_intervals":`, `"retry_count":0`} {
 		if !strings.Contains(logs.String(), field) {
 			t.Fatalf("structured log %s missing %s", logs.String(), field)
 		}
@@ -153,12 +153,30 @@ func TestSynchronizerRepairsDepthWhenLatestClosedIntervalIsStored(t *testing.T) 
 	if err := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.HourlyProfile()).Sync(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if len(exchange.candleRequests) != 1 || !exchange.candleRequests[0].HistoryRepair || exchange.candleRequests[0].AfterOpenTime != nil {
-		t.Fatalf("candle requests = %#v, want one backward depth repair", exchange.candleRequests)
+	if len(exchange.candleRequests) != 2 || exchange.candleRequests[0].AfterOpenTime == nil ||
+		!exchange.candleRequests[0].AfterOpenTime.Equal(marketsync.HourlyProfile().Interval.PreviousOpenTime(latest.OpenTime)) ||
+		!exchange.candleRequests[1].HistoryRepair || exchange.candleRequests[1].AfterOpenTime != nil {
+		t.Fatalf("candle requests = %#v, want latest-close recheck and backward depth repair", exchange.candleRequests)
 	}
 }
 
-func TestSynchronizerRequestsOnlyCandlesAfterLatestStoredOpenTime(t *testing.T) {
+func TestSynchronizerPersistsCorrectedLatestClose(t *testing.T) {
+	instrument := market.Instrument{ID: 41, Symbol: "BTCUSDT", Active: true}
+	open := market.IntervalDay.LastClosedOpenTime(time.Now())
+	stored := market.Candle{InstrumentID: instrument.ID, Interval: market.IntervalDay, OpenTime: open, CloseTime: market.IntervalDay.NextOpenTime(open).Add(-time.Millisecond), Close: 10}
+	corrected := stored
+	corrected.Close = 12
+	exchange := &fakeExchange{items: []market.Instrument{instrument}, candles: map[string][]market.Candle{instrument.Symbol: {corrected}}}
+	store := &fakeMarketStore{active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{instrument.ID: {stored}}}
+	if err := marketsync.New(exchange, store).Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(store.latest[instrument.ID]) == 0 || store.latest[instrument.ID][0].Close != 12 {
+		t.Fatalf("corrected close not persisted: %#v", store.latest[instrument.ID])
+	}
+}
+
+func TestSynchronizerRechecksLatestStoredOpenTime(t *testing.T) {
 	instrument := market.Instrument{ID: 41, Symbol: "BTCUSDT", QuoteAsset: "USDT", Status: "TRADING", Active: true}
 	latest := market.Candle{InstrumentID: instrument.ID, Interval: "1d", OpenTime: time.Date(2026, time.August, 2, 0, 0, 0, 0, time.UTC)}
 	missing := market.Candle{
@@ -179,8 +197,8 @@ func TestSynchronizerRequestsOnlyCandlesAfterLatestStoredOpenTime(t *testing.T) 
 		t.Fatalf("candle requests = %#v, want incremental and depth-repair requests", exchange.candleRequests)
 	}
 	request := exchange.candleRequests[0]
-	if request.AfterOpenTime == nil || !request.AfterOpenTime.Equal(latest.OpenTime) || request.Limit != 1000 {
-		t.Fatalf("incremental request = %#v, want candles after %s with page limit 1000", request, latest.OpenTime)
+	if request.AfterOpenTime == nil || !request.AfterOpenTime.Equal(marketsync.MVPProfile().Interval.PreviousOpenTime(latest.OpenTime)) || request.Limit != 1000 {
+		t.Fatalf("incremental request = %#v, want overlap of latest close %s with page limit 1000", request, latest.OpenTime)
 	}
 	written := flattenedCandles(store.upserted)
 	if len(written) != 1 || written[0].OpenTime != missing.OpenTime {
@@ -467,6 +485,35 @@ func (store *fakeMarketStore) ListLatestCandlesByInterval(_ context.Context, ins
 		}
 	}
 	return append([]market.Candle(nil), result[:min(len(result), limit)]...), nil
+}
+
+func (store *fakeMarketStore) UpsertCandlesWithChanges(ctx context.Context, items []market.Candle) ([]market.Candle, error) {
+	store.mu.Lock()
+	existing := make(map[int64][]market.Candle, len(store.latest))
+	for id, candles := range store.latest {
+		existing[id] = append([]market.Candle(nil), candles...)
+	}
+	store.mu.Unlock()
+	if err := store.UpsertCandles(ctx, items); err != nil {
+		return nil, err
+	}
+	changed := make([]market.Candle, 0, len(items))
+	for _, item := range items {
+		found := false
+		for _, old := range existing[item.InstrumentID] {
+			if old.Interval == item.Interval && old.OpenTime.Equal(item.OpenTime) {
+				found = true
+				if !reflect.DeepEqual(old, item) {
+					changed = append(changed, item)
+				}
+				break
+			}
+		}
+		if !found {
+			changed = append(changed, item)
+		}
+	}
+	return changed, nil
 }
 
 func (store *fakeMarketStore) UpsertCandles(_ context.Context, items []market.Candle) error {

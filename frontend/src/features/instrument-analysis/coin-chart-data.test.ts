@@ -1,19 +1,25 @@
-import { QueryClient } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
-import { getGetInstrumentChartInfiniteQueryKey } from "@/api/generated/api";
-import { rsiChartRequest } from "@/features/instrument-analysis/chart-page";
+import type {
+	Candle,
+	ChartPageResponse,
+	LiveCandleClientMessage,
+} from "@/api/generated/models";
 import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 
 class FakeSocket {
 	static OPEN = 1;
 	static current: FakeSocket | undefined;
 	readyState = FakeSocket.OPEN;
+	sent: LiveCandleClientMessage[] = [];
 	private onMessage?: (event: { data: string }) => void;
 	constructor() {
 		FakeSocket.current = this;
 	}
 	addEventListener(type: string, callback: (event: { data: string }) => void) {
 		if (type === "message") this.onMessage = callback;
+	}
+	send(data: string) {
+		this.sent.push(JSON.parse(data));
 	}
 	emitMessage(message: unknown) {
 		this.onMessage?.({ data: JSON.stringify(message) });
@@ -28,328 +34,125 @@ afterEach(() => {
 	FakeSocket.current = undefined;
 });
 
-function stubChartTransport(extendHourly = false) {
-	vi.stubGlobal("window", { location: { href: "https://example.com/coin" } });
-	vi.stubGlobal("WebSocket", FakeSocket);
-	const requested: string[] = [];
-	vi.stubGlobal(
-		"fetch",
-		vi.fn(async (url: string) => {
-			const params = new URL(url, "https://example.com").searchParams;
-			const interval = params.get("interval") ?? "1h";
-			const expanded =
-				extendHourly && interval === "1h" && params.get("limit") === "400";
-			requested.push(interval);
-			return new Response(
-				JSON.stringify({
-					symbol: "BTCUSDT",
-					interval,
-					candles: [
-						...(expanded
-							? [
-									{
-										open_time: "2026-08-26T23:00:00Z",
-										close_time: "2026-08-26T23:59:59.999Z",
-										open: 10,
-										high: 13,
-										low: 9,
-										close: 11,
-										volume: 10,
-										quote_asset_volume: 20,
-										trade_count: 4,
-									},
-								]
-							: []),
-						{
-							open_time: "2026-08-27T00:00:00Z",
-							close_time: "2026-08-27T00:59:59.999Z",
-							open: 10,
-							high: 13,
-							low: 9,
-							close: 12,
-							volume: 10,
-							quote_asset_volume: 20,
-							trade_count: 4,
-						},
-					],
-					has_more: extendHourly && interval === "1h" && !expanded,
-					next_before:
-						extendHourly && interval === "1h" && !expanded
-							? "2026-08-27T00:00:00Z"
-							: null,
-					indicators: [
-						{
-							type: "rsi",
-							parameters: { period: 14 },
-							series: [
-								{
-									name: "rsi",
-									points: expanded
-										? [
-												{ time: "2026-08-26T23:00:00Z", value: 55 },
-												{ time: "2026-08-27T00:00:00Z", value: 70 },
-											]
-										: [{ time: "2026-08-27T00:00:00Z", value: 62.5 }],
-								},
-							],
-						},
-					],
-				}),
-				{ status: 200 },
-			);
-		}),
-	);
-	return requested;
+function candle(hour: number, close = 12): Candle {
+	const open = new Date(Date.UTC(2026, 7, 27, hour));
+	return {
+		open_time: open.toISOString().replace(".000Z", "Z"),
+		close_time: new Date(open.getTime() + 3_599_999).toISOString(),
+		open: 10,
+		high: 100,
+		low: 9,
+		close,
+		volume: 10,
+		quote_asset_volume: 20,
+		trade_count: 4,
+	};
 }
 
-it("loads the visible interval first, then prepares the other intervals without updating its snapshot", async () => {
-	const requested = stubChartTransport(true);
-	const queryClient = new QueryClient();
-	const source = createCoinChartData("BTCUSDT", queryClient);
-	try {
-		source.start("1h");
-		expect(requested).toEqual(["1h"]);
-		await vi.waitFor(() =>
-			expect(source.getSnapshot("1h").candles).toHaveLength(1),
-		);
-		const hourly = source.getSnapshot("1h");
-		await vi.waitFor(() => expect(requested).toHaveLength(4));
-		expect(requested.sort()).toEqual(["1M", "1d", "1h", "1w"]);
-		expect(source.getSnapshot("1h")).toBe(hourly);
-		await vi.waitFor(() =>
-			expect(source.getSnapshot("1d").candles).toHaveLength(1),
-		);
-		source.loadOlder("1h");
-		await vi.waitFor(() =>
-			expect(source.getSnapshot("1h").candles).toHaveLength(2),
-		);
-		expect(
-			source.getSnapshot("1h").indicator.map((point) => point.value),
-		).toEqual([55, 70]);
-		expect(source.getSnapshot("1d").candles).toHaveLength(1);
-		const limits: string[] = [];
-		vi.stubGlobal(
-			"fetch",
-			vi.fn(async (url: string) => {
-				const limit =
-					new URL(url, "https://example.com").searchParams.get("limit") ?? "";
-				limits.push(limit);
-				const older = limit === "401";
-				const times = older
-					? [
-							"2026-08-26T23:00:00Z",
-							"2026-08-27T00:00:00Z",
-							"2026-08-27T01:00:00Z",
-						]
-					: ["2026-08-27T00:00:00Z", "2026-08-27T01:00:00Z"];
-				return new Response(
-					JSON.stringify({
-						symbol: "BTCUSDT",
-						interval: "1h",
-						candles: times.map((time) => ({
-							open_time: time,
-							close_time: new Date(
-								Date.parse(time) + 3600000 - 1,
-							).toISOString(),
-							open: 10,
-							high: 13,
-							low: 9,
-							close: 12,
-							volume: 10,
-							quote_asset_volume: 20,
-							trade_count: 4,
+function chart(
+	candles: Candle[],
+	values: number[],
+	hasMore: boolean,
+): ChartPageResponse {
+	return {
+		symbol: "BTCUSDT",
+		interval: "1h",
+		candles,
+		has_more: hasMore,
+		next_before: hasMore ? (candles[0]?.open_time ?? null) : null,
+		indicators: [
+			{
+				type: "rsi",
+				parameters: { period: 14 },
+				series: [
+					{
+						name: "rsi",
+						points: values.map((value, index) => ({
+							time: candles[candles.length - values.length + index]
+								?.open_time as string,
+							value,
 						})),
-						has_more: !older,
-						next_before: older ? null : times[0],
-						indicators: [
-							{
-								type: "rsi",
-								parameters: { period: 14 },
-								series: [
-									{
-										name: "rsi",
-										points: times.map((time) => ({ time, value: 71 })),
-									},
-								],
-							},
-						],
-					}),
-					{ status: 200 },
-				);
-			}),
-		);
-		FakeSocket.current?.emitMessage({
-			type: "update",
-			symbol: "BTCUSDT",
-			interval: "1h",
-			candle: {
-				final: true,
-				candle: {
-					open_time: "2026-08-27T01:00:00Z",
-					close_time: "2026-08-27T01:59:59.999Z",
-					open: 10,
-					high: 13,
-					low: 9,
-					close: 12,
-					volume: 10,
-					quote_asset_volume: 20,
-					trade_count: 4,
-				},
+					},
+				],
 			},
-		});
-		await vi.waitFor(() => expect(limits).toEqual(["400", "401"]));
-		await vi.waitFor(() =>
-			expect(source.getSnapshot("1h").indicator).toHaveLength(3),
-		);
-		expect(source.getSnapshot("1h").candles[0]?.open_time).toBe(
-			"2026-08-26T23:00:00Z",
-		);
+		],
+	};
+}
+
+it("renders backend snapshots, merges current-candle tails, and extends the range over WebSocket", () => {
+	vi.stubGlobal("window", { location: { href: "https://example.com/coin" } });
+	vi.stubGlobal("WebSocket", FakeSocket);
+	const fetch = vi.fn();
+	vi.stubGlobal("fetch", fetch);
+	const source = createCoinChartData("btcusdt");
+	try {
+		source.start();
+		const socket = FakeSocket.current;
+		if (!socket) throw new Error("Missing socket");
+		socket.emitMessage({ type: "authenticated" });
 		expect(
-			source.getSnapshot("1h").indicator.map((point) => point.value),
-		).toEqual([71, 71, 71]);
-	} finally {
-		source.stop();
-		queryClient.clear();
-	}
-});
+			socket.sent.map(({ type, interval, limit }) => [type, interval, limit]),
+		).toEqual([
+			["subscribe", "1h", 200],
+			["subscribe", "1d", 200],
+			["subscribe", "1w", 200],
+			["subscribe", "1M", 200],
+		]);
+		expect(source.getSnapshot("1h").isLoading).toBe(true);
 
-it("keeps the visible snapshot stable when query status changes without new data", async () => {
-	stubChartTransport();
-	const queryClient = new QueryClient();
-	const source = createCoinChartData("BTCUSDT", queryClient);
-	try {
-		source.start("1h");
-		await vi.waitFor(() =>
-			expect(source.getSnapshot("1M").candles).toHaveLength(1),
-		);
-		const hourly = source.getSnapshot("1h");
-		const query = queryClient.getQueryCache().find({
-			queryKey: getGetInstrumentChartInfiniteQueryKey(
-				"BTCUSDT",
-				rsiChartRequest,
-				{ interval: "1h", limit: 200 },
-			),
+		const base = { type: "snapshot", symbol: "BTCUSDT", interval: "1h" };
+		socket.emitMessage({
+			...base,
+			version: 1,
+			chart: chart([candle(1), candle(2, 14)], [60, 70], true),
 		});
-		expect(query).toBeDefined();
-		query?.setState({ fetchStatus: "fetching" });
-		query?.setState({ fetchStatus: "idle" });
-		expect(source.getSnapshot("1h")).toBe(hourly);
-	} finally {
-		source.stop();
-		queryClient.clear();
-	}
-});
+		const daily = source.getSnapshot("1d");
+		expect(source.getSnapshot("1h").indicator.map((p) => p.value)).toEqual([
+			60, 70,
+		]);
 
-it("aborts pending history on stop and starts a fresh observer on restart", () => {
-	stubChartTransport();
-	const signals: AbortSignal[] = [];
-	vi.stubGlobal(
-		"fetch",
-		vi.fn((_url: string, options: RequestInit) => {
-			const signal = options.signal;
-			if (!signal) throw new Error("Missing request signal");
-			signals.push(signal);
-			return new Promise<Response>((_resolve, reject) => {
-				signal.addEventListener("abort", () =>
-					reject(new DOMException("Aborted", "AbortError")),
-				);
-			});
-		}),
-	);
-	const queryClient = new QueryClient();
-	const source = createCoinChartData("BTCUSDT", queryClient);
-	try {
-		source.start("1h");
-		expect(signals).toHaveLength(1);
-		source.stop();
-		expect(signals[0]?.aborted).toBe(true);
-		source.start("1h");
-		expect(signals).toHaveLength(2);
-		expect(signals[1]?.aborted).toBe(false);
-	} finally {
-		source.stop();
-		queryClient.clear();
-	}
-	expect(signals[1]?.aborted).toBe(true);
-});
-
-it("aborts an in-flight head refresh on stop and ignores a late response", async () => {
-	stubChartTransport();
-	const queryClient = new QueryClient();
-	const source = createCoinChartData("BTCUSDT", queryClient);
-	try {
-		source.start("1h");
-		await vi.waitFor(() =>
-			expect(source.getSnapshot("1M").candles).toHaveLength(1),
-		);
-		let headSignal: AbortSignal | undefined;
-		let resolveHead: ((value: Response) => void) | undefined;
-		vi.stubGlobal(
-			"fetch",
-			vi.fn((_url: string, options: RequestInit) => {
-				headSignal = options.signal ?? undefined;
-				return new Promise<Response>((resolve) => {
-					resolveHead = resolve;
-				});
-			}),
-		);
-		FakeSocket.current?.emitMessage({
+		// A trade replaces only the current candle and its RSI point.
+		socket.emitMessage({
+			...base,
 			type: "update",
-			symbol: "BTCUSDT",
-			interval: "1h",
-			candle: {
-				candle: {
-					open_time: "2026-08-27T00:00:00Z",
-					close_time: "2026-08-27T00:59:59.999Z",
-					open: 10,
-					high: 13,
-					low: 9,
-					close: 12,
-					volume: 10,
-					quote_asset_volume: 20,
-					trade_count: 4,
-				},
-				final: true,
-			},
+			version: 2,
+			chart: chart([candle(2, 15)], [72], true),
 		});
-		await vi.waitFor(() => expect(headSignal).toBeDefined());
-		source.stop();
-		const stopped = source.getSnapshot("1h");
-		expect(headSignal?.aborted).toBe(true);
-		resolveHead?.(new Response("{}", { status: 200 }));
-		await new Promise((resolve) => setTimeout(resolve, 0));
-		expect(source.getSnapshot("1h")).toBe(stopped);
+		expect(source.getSnapshot("1h").candles.map((c) => c.close)).toEqual([
+			12, 15,
+		]);
+		expect(source.getSnapshot("1h").indicator.map((p) => p.value)).toEqual([
+			60, 72,
+		]);
+		// An update without its preceding version is never applied.
+		socket.emitMessage({
+			...base,
+			type: "update",
+			version: 4,
+			chart: chart([candle(2, 99)], [99], true),
+		});
+		expect(source.getSnapshot("1h").indicator.at(-1)?.value).toBe(72);
+
+		source.loadOlder("1h");
+		expect(socket.sent.at(-1)).toMatchObject({
+			type: "subscribe",
+			interval: "1h",
+			limit: 400,
+		});
+		expect(source.getSnapshot("1h").isLoadingMore).toBe(true);
+		// The extended range replaces every RSI point with a full recalculation.
+		socket.emitMessage({
+			...base,
+			version: 3,
+			chart: chart([candle(0), candle(1), candle(2, 15)], [50, 61, 73], false),
+		});
+		expect(source.getSnapshot("1h").isLoadingMore).toBe(false);
+		expect(source.getSnapshot("1h").indicator.map((p) => p.value)).toEqual([
+			50, 61, 73,
+		]);
+		expect(source.getSnapshot("1d")).toBe(daily);
+		expect(fetch).not.toHaveBeenCalled();
 	} finally {
 		source.stop();
-		queryClient.clear();
-	}
-});
-
-it("restores cached chart pages and prepares all intervals on reopening without a refetch", async () => {
-	const requested = stubChartTransport();
-	const queryClient = new QueryClient();
-	const first = createCoinChartData("BTCUSDT", queryClient);
-	let reopened: ReturnType<typeof createCoinChartData> | undefined;
-	try {
-		first.start("1h");
-		await vi.waitFor(() =>
-			expect(first.getSnapshot("1M").candles).toHaveLength(1),
-		);
-		first.stop();
-		expect(requested).toHaveLength(4);
-
-		reopened = createCoinChartData("BTCUSDT", queryClient);
-		reopened.start("1h");
-		await vi.waitFor(() =>
-			expect(reopened?.getSnapshot("1h").candles).toHaveLength(1),
-		);
-		await vi.waitFor(() =>
-			expect(reopened?.getSnapshot("1d").candles).toHaveLength(1),
-		);
-		expect(requested).toHaveLength(4);
-	} finally {
-		reopened?.stop();
-		first.stop();
-		queryClient.clear();
 	}
 });

@@ -80,14 +80,15 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 		return err
 	}
 	exchange := binance.NewWithOptions(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
+	liveStream := binance.NewKlineStream(logger)
+	liveService := marketlive.New(liveStream, store, logger)
+	syncStore := marketsync.ObservableStore{Store: store, Changed: liveService.HistoryChanged}
 	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
 	for _, interval := range market.CandleIntervals() {
 		profile := marketsync.Profile(interval)
-		synchronizers[interval] = marketsync.NewWithProfile(exchange, store, logger, cfg.SyncWorkers, profile)
+		synchronizers[interval] = marketsync.NewWithProfile(exchange, syncStore, logger, cfg.SyncWorkers, profile)
 	}
 	scheduler := marketsync.NewSchedulerWithProfiles(synchronizers, logger)
-	liveStream := binance.NewKlineStream(logger)
-	liveService := marketlive.New(liveStream, store, logger)
 	coinMetadataResolver := marketcap.New(store, marketcap.NewClient("", cfg.CoinGeckoDemoAPIKey))
 	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(coinMetadataResolver, store, logger, time.Hour, time.Minute)
 	if err != nil {

@@ -45,16 +45,15 @@ func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cursor := start.Add(-time.Hour)
 	page, err := service.Build(context.Background(), chart.Request{
-		Symbol: "btcusdt", Interval: market.IntervalHour, Before: &cursor, Limit: 200,
+		Symbol: "btcusdt", Interval: market.IntervalHour, Limit: 200,
 		Indicators: []chart.IndicatorConfig{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}},
 	})
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	if store.resolveCalls != 1 || store.listCalls != 1 || store.limit != 200 || store.before != &cursor {
-		t.Fatalf("store resolve calls=%d list calls=%d limit=%d before=%p, want one lookup and one candle read with limit 200 and cursor", store.resolveCalls, store.listCalls, store.limit, store.before)
+	if store.resolveCalls != 1 || store.listCalls != 1 || store.limit != 200 || store.before != nil {
+		t.Fatalf("store resolve calls=%d list calls=%d limit=%d before=%v, want one lookup and one latest candle read with limit 200", store.resolveCalls, store.listCalls, store.limit, store.before)
 	}
 	if page.Symbol != "BTCUSDT" {
 		t.Fatalf("page symbol = %q, want BTCUSDT", page.Symbol)

@@ -26,8 +26,7 @@ export interface PriceHistorySnapshot {
 export interface PriceHistorySource {
 	getSnapshot(interval: ChartInterval): PriceHistorySnapshot;
 	subscribe(listener: () => void): () => void;
-	start(interval: ChartInterval): void;
-	select(interval: ChartInterval): void;
+	start(): void;
 	stop(): void;
 	loadOlder(interval: ChartInterval): void;
 }

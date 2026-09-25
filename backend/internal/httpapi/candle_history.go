@@ -56,6 +56,14 @@ func (api *api) ListInstrumentCandles(ctx context.Context, request ListInstrumen
 	}, nil
 }
 
+func candleResponse(candle market.Candle) Candle {
+	return Candle{
+		OpenTime: candle.OpenTime.UTC(), CloseTime: candle.CloseTime.UTC(),
+		Open: candle.Open, High: candle.High, Low: candle.Low, Close: candle.Close,
+		Volume: candle.Volume, QuoteAssetVolume: candle.QuoteAssetVolume, TradeCount: candle.TradeCount,
+	}
+}
+
 func (api *api) candleError(ctx context.Context, status int, code, message string) ListInstrumentCandlesResponseObject {
 	body := newErrorResponse(ctx, code, message, nil)
 	requestID := body.RequestId

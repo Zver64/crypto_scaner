@@ -17,7 +17,9 @@ import (
 
 	"crypto-scanner/internal/auth"
 	authtelegram "crypto-scanner/internal/auth/telegram"
+	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/exchange/binance"
+	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	marketlive "crypto-scanner/internal/market/live"
 
@@ -49,6 +51,7 @@ type LiveCandles interface {
 type liveCandleHandler struct {
 	authenticator LiveAuthenticator
 	service       LiveCandles
+	charts        ChartService
 	logger        *slog.Logger
 	upgrader      websocket.Upgrader
 	connections   chan struct{}
@@ -56,8 +59,8 @@ type liveCandleHandler struct {
 	userCounts    map[int64]int
 }
 
-func newLiveCandleHandler(authenticator LiveAuthenticator, service LiveCandles, logger *slog.Logger) http.Handler {
-	handler := &liveCandleHandler{authenticator: authenticator, service: service, logger: logger, connections: make(chan struct{}, maxLiveConnections), userCounts: make(map[int64]int)}
+func newLiveCandleHandler(authenticator LiveAuthenticator, service LiveCandles, charts ChartService, logger *slog.Logger) http.Handler {
+	handler := &liveCandleHandler{authenticator: authenticator, service: service, charts: charts, logger: logger, connections: make(chan struct{}, maxLiveConnections), userCounts: make(map[int64]int)}
 	handler.upgrader = websocket.Upgrader{HandshakeTimeout: 5 * time.Second, CheckOrigin: sameWebSocketOrigin, EnableCompression: false}
 	return handler
 }
@@ -84,7 +87,8 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 		return
 	}
 	client := newLiveSocketClient(newRequestID(), connection)
-	defer func() { handler.service.RemoveClient(client.ID()); client.Close() }()
+	subscriber := newChartClient(client, handler.charts)
+	defer func() { handler.service.RemoveClient(client.ID()); subscriber.Close() }()
 	connection.SetReadLimit(maxClientMessage)
 	_ = connection.SetReadDeadline(time.Now().Add(clientAuthTimeout))
 	message, err := readLiveClientMessage(connection)
@@ -107,7 +111,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 		return
 	}
 	defer handler.releaseUser(user.ID)
-	if !handler.service.RegisterClient(client) {
+	if !handler.service.RegisterClient(subscriber) {
 		return
 	}
 	_ = connection.SetReadDeadline(time.Now().Add(clientPongTimeout))
@@ -137,7 +141,28 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 		key := binance.KlineKey{Symbol: strings.ToUpper(strings.TrimSpace(*message.Symbol)), Interval: market.CandleInterval(*message.Interval)}
 		switch message.Type {
 		case Subscribe:
-			err := handler.service.Subscribe(request.Context(), client, key.Symbol, key.Interval)
+			limit := defaultCandlePageSize
+			if message.Limit != nil {
+				limit = *message.Limit
+			}
+			if limit < 1 || limit > 5000 {
+				client.enqueueKeyError(key, "invalid_argument", "Invalid chart range")
+				continue
+			}
+			if message.Indicators == nil || len(*message.Indicators) == 0 || len(*message.Indicators) > 8 {
+				client.enqueueKeyError(key, "invalid_argument", "Invalid indicator selection")
+				continue
+			}
+			configs := make([]chart.IndicatorConfig, len(*message.Indicators))
+			for i, item := range *message.Indicators {
+				configs[i] = chart.IndicatorConfig{Type: indicator.Type(item.Type), Parameters: indicator.Parameters(item.Parameters)}
+			}
+			// Subscribing again to the same key only changes the chart range.
+			err := handler.service.Subscribe(request.Context(), subscriber, key.Symbol, key.Interval)
+			if err == nil {
+				subscriber.setRange(key, limit, configs)
+				subscriber.Enqueue(marketlive.Message{Kind: "refresh", Key: key})
+			}
 			switch {
 			case errors.Is(err, marketlive.ErrInactiveSymbol):
 				client.enqueueKeyError(key, "symbol_not_found", "Symbol is unknown or inactive")
@@ -149,6 +174,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			}
 		case Unsubscribe:
 			handler.service.Unsubscribe(client.ID(), key)
+			subscriber.forget(key)
 			interval := CandleInterval(key.Interval)
 			symbol := key.Symbol
 			if !client.enqueueWire(LiveCandleServerMessage{Type: Unsubscribed, Symbol: &symbol, Interval: &interval}) {
@@ -288,21 +314,7 @@ func liveWireMessage(message marketlive.Message) LiveCandleServerMessage {
 	if message.Reason != "" {
 		result.Message = &message.Reason
 	}
-	if message.Candle != nil {
-		value := liveCandleState(*message.Candle)
-		result.Candle = &value
-	}
-	if message.Candles != nil {
-		values := make([]LiveCandleState, len(message.Candles))
-		for index, candle := range message.Candles {
-			values[index] = liveCandleState(candle)
-		}
-		result.Candles = &values
-	}
 	return result
-}
-func liveCandleState(value marketlive.CandleState) LiveCandleState {
-	return LiveCandleState{Candle: candleResponse(value.Candle), Final: value.Final}
 }
 
 // Hijack preserves WebSocket upgrades through request logging middleware.

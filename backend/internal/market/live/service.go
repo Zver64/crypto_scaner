@@ -79,12 +79,13 @@ type clientState struct {
 }
 
 type keyState struct {
-	instrument market.Instrument
-	clients    map[string]Client
-	candles    map[time.Time]CandleState
-	freshness  Freshness
-	release    *time.Timer
-	generation uint64
+	instrument      market.Instrument
+	clients         map[string]Client
+	candles         map[time.Time]CandleState
+	latestConfirmed time.Time // REST-confirmed high-water mark; independent of clock skew
+	freshness       Freshness
+	release         *time.Timer
+	generation      uint64
 
 	recovering         bool
 	recoveryGeneration uint64
@@ -301,6 +302,25 @@ func (service *Service) apply(event binance.KlineEvent) {
 		service.mu.Unlock()
 		return
 	}
+	if event.Final && !state.latestConfirmed.IsZero() && !event.Candle.OpenTime.After(state.latestConfirmed) {
+		service.mu.Unlock()
+		return
+	}
+	// Old packets cannot re-enter the bounded buffer after their REST
+	// confirmation has been evicted and replace persisted chart history.
+	if _, exists := state.candles[event.Candle.OpenTime]; !exists && len(state.candles) >= maxRetainedCandles {
+		older := false
+		for open := range state.candles {
+			if open.Before(event.Candle.OpenTime) {
+				older = true
+				break
+			}
+		}
+		if !older {
+			service.mu.Unlock()
+			return
+		}
+	}
 	incoming := CandleState{Candle: event.Candle, Final: event.Final}
 	if state.freshness != FreshnessStale {
 		state.upstreamConnected = true
@@ -357,6 +377,40 @@ func (service *Service) apply(event binance.KlineEvent) {
 	service.publish(clients, Message{Kind: "update", Key: event.Key, Candle: &incoming, Freshness: freshness})
 	if recoverNow {
 		go service.recover(event.Key, generation)
+	}
+}
+
+// HistoryChanged publishes committed REST closures and corrections to active
+// graph subscribers. This path is demand-driven: it adds no Binance subscription.
+func (service *Service) HistoryChanged(candles []market.Candle) {
+	service.mu.Lock()
+	changed := make(map[binance.KlineKey]struct{})
+	for key, state := range service.states {
+		for _, candle := range candles {
+			if candle.InstrumentID != state.instrument.ID || candle.Interval != key.Interval {
+				continue
+			}
+			if candle.OpenTime.After(state.latestConfirmed) {
+				state.latestConfirmed = candle.OpenTime
+			}
+			if _, exists := state.candles[candle.OpenTime]; exists {
+				state.candles[candle.OpenTime] = CandleState{Candle: candle, Final: true}
+			}
+			changed[key] = struct{}{}
+		}
+	}
+	type delivery struct {
+		clients []Client
+		message Message
+	}
+	messages := make([]delivery, 0, len(changed))
+	for key := range changed {
+		state := service.states[key]
+		messages = append(messages, delivery{clientSlice(state.clients), snapshotMessage(key, state)})
+	}
+	service.mu.Unlock()
+	for _, item := range messages {
+		service.publish(item.clients, item.message)
 	}
 }
 

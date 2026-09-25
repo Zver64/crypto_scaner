@@ -11,11 +11,7 @@ import {
 	useMatches,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
-import {
-	type InfiniteData,
-	keepPreviousData,
-	useQueryClient,
-} from "@tanstack/react-query";
+import { type InfiniteData, keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import {
 	useAnalyzeInstrument,
@@ -90,11 +86,7 @@ export function InstrumentAnalysisScreen({
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const textSize = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
-	const queryClient = useQueryClient();
-	const chartSource = useMemo(
-		() => createCoinChartData(symbol, queryClient),
-		[symbol, queryClient],
-	);
+	const chartSource = useMemo(() => createCoinChartData(symbol), [symbol]);
 	// These hourly candles belong to the page's 7d/grid calculations, not the chart.
 	const hourlyHistoryQuery = useListInstrumentCandlesInfinite<
 		InfiniteData<CandlePageResponse, string | undefined>

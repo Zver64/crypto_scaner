@@ -194,63 +194,6 @@ paths:
           $ref: "#/components/responses/SymbolNotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-  /api/v1/instruments/{symbol}/chart:
-    post:
-      operationId: getInstrumentChart
-      summary: Get a closed-candle range with indicators recalculated over the entire range
-      tags: [Market Data]
-      security:
-        - telegramInitData: []
-      parameters:
-        - $ref: "#/components/parameters/RequestID"
-        - $ref: "#/components/parameters/Symbol"
-        - name: interval
-          in: query
-          required: true
-          schema:
-            $ref: "#/components/schemas/CandleInterval"
-        - name: before
-          in: query
-          required: false
-          description: Optional exclusive upper bound for the closed-candle range.
-          schema:
-            type: string
-            format: date-time
-        - name: limit
-          in: query
-          required: false
-          schema:
-            type: integer
-            minimum: 1
-            maximum: 5000
-            default: 200
-          description: Number of closed candles in the calculation range; increase to load older history and replace all indicator points.
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ChartRequest"
-      responses:
-        "200":
-          description: Closed-candle range and indicator series calculated from its first candle.
-          headers:
-            X-Request-ID:
-              $ref: "#/components/headers/RequestID"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ChartPageResponse"
-        "400":
-          $ref: "#/components/responses/BadRequest"
-        "401":
-          $ref: "#/components/responses/Unauthenticated"
-        "403":
-          $ref: "#/components/responses/AccessDenied"
-        "404":
-          $ref: "#/components/responses/SymbolNotFound"
-        "500":
-          $ref: "#/components/responses/InternalError"
   /api/v1/favorites:
     get:
       operationId: listFavorites
@@ -814,17 +757,6 @@ components:
         next_before:
           type: [string, "null"]
           format: date-time
-    ChartRequest:
-      type: object
-      additionalProperties: false
-      required: [indicators]
-      properties:
-        indicators:
-          type: array
-          minItems: 1
-          maxItems: 8
-          items:
-            $ref: "#/components/schemas/IndicatorConfig"
     IndicatorConfig:
       type: object
       additionalProperties: false
@@ -911,15 +843,17 @@ components:
           maxLength: 32
         interval:
           $ref: "#/components/schemas/CandleInterval"
-    LiveCandleState:
-      type: object
-      additionalProperties: false
-      required: [candle, final]
-      properties:
-        candle:
-          $ref: "#/components/schemas/Candle"
-        final:
-          type: boolean
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 5000
+          description: Closed-candle range for this chart subscription; subscribing again with a larger value extends the range.
+        indicators:
+          type: array
+          minItems: 1
+          maxItems: 8
+          items:
+            $ref: "#/components/schemas/IndicatorConfig"
     LiveCandleServerMessage:
       type: object
       additionalProperties: false
@@ -932,13 +866,17 @@ components:
           type: string
         interval:
           $ref: "#/components/schemas/CandleInterval"
-        candle:
-          $ref: "#/components/schemas/LiveCandleState"
-        candles:
-          type: array
-          maxItems: 16
-          items:
-            $ref: "#/components/schemas/LiveCandleState"
+        chart:
+          description: >-
+            In a snapshot, the complete closed-candle range plus the current candle,
+            with indicators calculated over the entire range. In an update, only the
+            current candle and indicator points from its open time; it applies solely
+            on top of the message with the preceding version.
+          $ref: "#/components/schemas/ChartPageResponse"
+        version:
+          type: integer
+          format: int64
+          description: Increases by one with every snapshot or update of this subscription.
         freshness:
           type: string
           enum: [waiting, fresh, stale, recovering]

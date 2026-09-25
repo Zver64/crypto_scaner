@@ -14,18 +14,19 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { CandleInterval } from './candleInterval.ts';
+import type { ChartPageResponse } from './chartPageResponse.ts';
 import type { LiveCandleServerMessageCode } from './liveCandleServerMessageCode.ts';
 import type { LiveCandleServerMessageFreshness } from './liveCandleServerMessageFreshness.ts';
 import type { LiveCandleServerMessageType } from './liveCandleServerMessageType.ts';
-import type { LiveCandleState } from './liveCandleState.ts';
 
 export interface LiveCandleServerMessage {
   type: LiveCandleServerMessageType;
   symbol?: string;
   interval?: CandleInterval;
-  candle?: LiveCandleState;
-  /** @maxItems 16 */
-  candles?: LiveCandleState[];
+  /** In a snapshot, the complete closed-candle range plus the current candle, with indicators calculated over the entire range. In an update, only the current candle and indicator points from its open time; it applies solely on top of the message with the preceding version. */
+  chart?: ChartPageResponse;
+  /** Increases by one with every snapshot or update of this subscription. */
+  version?: number;
   freshness?: LiveCandleServerMessageFreshness;
   code?: LiveCandleServerMessageCode;
   message?: string;

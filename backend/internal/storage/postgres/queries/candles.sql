@@ -1,4 +1,4 @@
--- name: UpsertCandle :exec
+-- name: UpsertCandle :one
 INSERT INTO binance_spot.candles (
     instrument_id, interval, open_time, close_time, open, high, low, close,
     volume, quote_asset_volume, trade_count
@@ -11,7 +11,13 @@ ON CONFLICT (instrument_id, interval, open_time) DO UPDATE SET
     close = EXCLUDED.close,
     volume = EXCLUDED.volume,
     quote_asset_volume = EXCLUDED.quote_asset_volume,
-    trade_count = EXCLUDED.trade_count;
+    trade_count = EXCLUDED.trade_count
+WHERE (binance_spot.candles.close_time, binance_spot.candles.open, binance_spot.candles.high,
+       binance_spot.candles.low, binance_spot.candles.close, binance_spot.candles.volume,
+       binance_spot.candles.quote_asset_volume, binance_spot.candles.trade_count)
+  IS DISTINCT FROM (EXCLUDED.close_time, EXCLUDED.open, EXCLUDED.high, EXCLUDED.low,
+                    EXCLUDED.close, EXCLUDED.volume, EXCLUDED.quote_asset_volume, EXCLUDED.trade_count)
+RETURNING open_time;
 
 -- name: ListLatestCandles :many
 SELECT instrument_id, interval, open_time, close_time, open, high, low, close,

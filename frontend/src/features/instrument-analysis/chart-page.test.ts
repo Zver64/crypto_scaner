@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { getInstrumentChartResponseSuccess } from "@/api/generated/api";
+import type { ChartPageResponse } from "@/api/generated/models";
 import {
 	rsiPoints,
 	validateChartPage,
@@ -18,36 +18,32 @@ const candle = {
 };
 
 function response(
-	overrides: Partial<getInstrumentChartResponseSuccess["data"]> = {},
-): getInstrumentChartResponseSuccess {
+	overrides: Partial<ChartPageResponse> = {},
+): ChartPageResponse {
 	return {
-		data: {
-			candles: [candle],
-			has_more: true,
-			indicators: [
-				{
-					parameters: { period: 14 },
-					series: [
-						{
-							name: "rsi",
-							points: [{ time: candle.open_time, value: 62.5 }],
-						},
-					],
-					type: "rsi",
-				},
-			],
-			interval: "1h",
-			next_before: candle.open_time,
-			symbol: "BTCUSDT",
-			...overrides,
-		},
-		headers: new Headers(),
-		status: 200,
+		candles: [candle],
+		has_more: true,
+		indicators: [
+			{
+				parameters: { period: 14 },
+				series: [
+					{
+						name: "rsi",
+						points: [{ time: candle.open_time, value: 62.5 }],
+					},
+				],
+				type: "rsi",
+			},
+		],
+		interval: "1h",
+		next_before: candle.open_time,
+		symbol: "BTCUSDT",
+		...overrides,
 	};
 }
 
 describe("chart page contract", () => {
-	it("validates synchronized candles and RSI and advances by the visible cursor", () => {
+	it("validates synchronized candles and RSI", () => {
 		const page = response();
 		const validated = validateChartPage(page, "BTCUSDT", "1h");
 		expect(rsiPoints(validated)).toEqual([

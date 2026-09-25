@@ -25,7 +25,8 @@ type Store interface {
 	ApplyInstrumentSnapshot(context.Context, []market.Instrument) error
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
 	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
-	UpsertCandles(context.Context, []market.Candle) error
+	// Returns only committed insertions/corrections; unchanged rows are omitted.
+	UpsertCandlesWithChanges(context.Context, []market.Candle) ([]market.Candle, error)
 	GetCandleHistoryCoverage(context.Context, int64, market.CandleInterval) (market.HistoryCoverage, bool, error)
 	SaveCandleHistoryCoverage(context.Context, market.HistoryCoverage) error
 }
@@ -242,7 +243,8 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	}
 
 	result := instrumentResult{}
-	if len(existing) == 0 {
+	initiallyEmpty := len(existing) == 0
+	if initiallyEmpty {
 		coverage, found, err := synchronizer.store.GetCandleHistoryCoverage(ctx, instrument.ID, profile.Interval)
 		if err != nil {
 			result.err = fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
@@ -282,12 +284,14 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 		result.latestOpenTime = &latest
 	}
 
-	// Keep current data ahead of historical repair so an old prefix can never
-	// delay the newest closed candle for an instrument.
-	if latest.Before(profile.Interval.LastClosedOpenTime(startedAt)) {
+	// Recheck the latest persisted close even when no newer interval exists.
+	// Binance can correct an already stored final; overlapping the forward
+	// cursor makes that correction durable and notifies active graphs.
+	if !initiallyEmpty {
+		previous := profile.Interval.PreviousOpenTime(latest)
 		loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
 			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
-			ClosedBefore: startedAt, AfterOpenTime: &latest,
+			ClosedBefore: startedAt, AfterOpenTime: &previous,
 		}, true)
 		result = mergeInstrumentResults(result, loaded)
 		if result.err != nil {
@@ -403,7 +407,7 @@ func (synchronizer *Synchronizer) loadRange(ctx context.Context, instrument mark
 				pageOldest = &oldest
 			}
 		}
-		if err := synchronizer.store.UpsertCandles(ctx, closed); err != nil {
+		if _, err := synchronizer.store.UpsertCandlesWithChanges(ctx, closed); err != nil {
 			result.err = fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)
 			return result
 		}

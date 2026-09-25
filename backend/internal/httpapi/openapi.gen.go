@@ -405,11 +405,6 @@ type ChartPageResponse struct {
 	Symbol     string                 `json:"symbol"`
 }
 
-// ChartRequest defines model for ChartRequest.
-type ChartRequest struct {
-	Indicators []IndicatorConfig `json:"indicators"`
-}
-
 // CriterionRequest defines model for CriterionRequest.
 type CriterionRequest struct {
 	Key        string                 `json:"key"`
@@ -484,10 +479,14 @@ type InstrumentAnalysisResponse struct {
 
 // LiveCandleClientMessage defines model for LiveCandleClientMessage.
 type LiveCandleClientMessage struct {
-	InitData *string                     `json:"init_data,omitempty"`
-	Interval *CandleInterval             `json:"interval,omitempty"`
-	Symbol   *string                     `json:"symbol,omitempty"`
-	Type     LiveCandleClientMessageType `json:"type"`
+	Indicators *[]IndicatorConfig `json:"indicators,omitempty"`
+	InitData   *string            `json:"init_data,omitempty"`
+	Interval   *CandleInterval    `json:"interval,omitempty"`
+
+	// Limit Closed-candle range for this chart subscription; subscribing again with a larger value extends the range.
+	Limit  *int                        `json:"limit,omitempty"`
+	Symbol *string                     `json:"symbol,omitempty"`
+	Type   LiveCandleClientMessageType `json:"type"`
 }
 
 // LiveCandleClientMessageType defines model for LiveCandleClientMessage.Type.
@@ -495,14 +494,17 @@ type LiveCandleClientMessageType string
 
 // LiveCandleServerMessage defines model for LiveCandleServerMessage.
 type LiveCandleServerMessage struct {
-	Candle    *LiveCandleState                  `json:"candle,omitempty"`
-	Candles   *[]LiveCandleState                `json:"candles,omitempty"`
+	// Chart In a snapshot, the complete closed-candle range plus the current candle, with indicators calculated over the entire range. In an update, only the current candle and indicator points from its open time; it applies solely on top of the message with the preceding version.
+	Chart     *ChartPageResponse                `json:"chart,omitempty"`
 	Code      *LiveCandleServerMessageCode      `json:"code,omitempty"`
 	Freshness *LiveCandleServerMessageFreshness `json:"freshness,omitempty"`
 	Interval  *CandleInterval                   `json:"interval,omitempty"`
 	Message   *string                           `json:"message,omitempty"`
 	Symbol    *string                           `json:"symbol,omitempty"`
 	Type      LiveCandleServerMessageType       `json:"type"`
+
+	// Version Increases by one with every snapshot or update of this subscription.
+	Version *int64 `json:"version,omitempty"`
 }
 
 // LiveCandleServerMessageCode defines model for LiveCandleServerMessage.Code.
@@ -513,12 +515,6 @@ type LiveCandleServerMessageFreshness string
 
 // LiveCandleServerMessageType defines model for LiveCandleServerMessage.Type.
 type LiveCandleServerMessageType string
-
-// LiveCandleState defines model for LiveCandleState.
-type LiveCandleState struct {
-	Candle Candle `json:"candle"`
-	Final  bool   `json:"final"`
-}
 
 // LivenessResponse defines model for LivenessResponse.
 type LivenessResponse struct {
@@ -708,20 +704,6 @@ type ListInstrumentCandlesParams struct {
 	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
 }
 
-// GetInstrumentChartParams defines parameters for GetInstrumentChart.
-type GetInstrumentChartParams struct {
-	Interval CandleInterval `form:"interval" json:"interval"`
-
-	// Before Optional exclusive upper bound for the closed-candle range.
-	Before *time.Time `form:"before,omitempty" json:"before,omitempty"`
-
-	// Limit Number of closed candles in the calculation range; increase to load older history and replace all indicator points.
-	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
-
-	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
-	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
-}
-
 // GetLivenessParams defines parameters for GetLiveness.
 type GetLivenessParams struct {
 	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
@@ -748,9 +730,6 @@ type AnalyzeFavoritesJSONRequestBody = MarketAnalysisRequest
 
 // CreatePriceAlertJSONRequestBody defines body for CreatePriceAlert for application/json ContentType.
 type CreatePriceAlertJSONRequestBody = PriceAlertInput
-
-// GetInstrumentChartJSONRequestBody defines body for GetInstrumentChart for application/json ContentType.
-type GetInstrumentChartJSONRequestBody = ChartRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
@@ -787,9 +766,6 @@ type ServerInterface interface {
 	// ListInstrumentCandles List a chronological page of closed candles
 	// (GET /api/v1/instruments/{symbol}/candles)
 	ListInstrumentCandles(w http.ResponseWriter, r *http.Request, symbol Symbol, params ListInstrumentCandlesParams)
-	// GetInstrumentChart Get a closed-candle range with indicators recalculated over the entire range
-	// (POST /api/v1/instruments/{symbol}/chart)
-	GetInstrumentChart(w http.ResponseWriter, r *http.Request, symbol Symbol, params GetInstrumentChartParams)
 	// GetLiveness Check whether the process is alive
 	// (GET /health/live)
 	GetLiveness(w http.ResponseWriter, r *http.Request, params GetLivenessParams)
@@ -1187,95 +1163,6 @@ func (siw *ServerInterfaceWrapper) ListInstrumentCandles(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
-// GetInstrumentChart operation middleware
-func (siw *ServerInterfaceWrapper) GetInstrumentChart(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "symbol" -------------
-	var symbol Symbol
-
-	err = runtime.BindStyledParameterWithOptions("simple", "symbol", r.PathValue("symbol"), &symbol, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "symbol", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params GetInstrumentChartParams
-
-	// ------------- Required query parameter "interval" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, true, "interval", r.URL.Query(), &params.Interval, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "interval"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "interval", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "before" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "string", Format: "date-time"})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
-		}
-		return
-	}
-
-	// ------------- Optional query parameter "limit" -------------
-
-	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
-	if err != nil {
-		var requiredError *runtime.RequiredParameterError
-		if errors.As(err, &requiredError) {
-			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "limit"})
-		} else {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
-		}
-		return
-	}
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "X-Request-ID" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("X-Request-ID")]; found {
-		var XRequestID RequestID
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "X-Request-ID", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", valueList[0], &XRequestID, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "X-Request-ID", Err: err})
-			return
-		}
-
-		params.XRequestID = &XRequestID
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.GetInstrumentChart(w, r, symbol, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // GetLiveness operation middleware
 func (siw *ServerInterfaceWrapper) GetLiveness(w http.ResponseWriter, r *http.Request) {
 
@@ -1483,7 +1370,6 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/analysis/instruments/{symbol}", wrapper.AnalyzeInstrument)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/analysis/market", wrapper.AnalyzeMarket)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instruments/{symbol}/candles", wrapper.ListInstrumentCandles)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instruments/{symbol}/chart", wrapper.GetInstrumentChart)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/favorites", wrapper.ListFavorites)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/favorites/{symbol}", wrapper.RemoveFavorite)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/favorites/{symbol}", wrapper.AddFavorite)
@@ -2684,113 +2570,6 @@ func (response ListInstrumentCandles500JSONResponse) VisitListInstrumentCandlesR
 	return err
 }
 
-type GetInstrumentChartRequestObject struct {
-	Symbol Symbol `json:"symbol"`
-	Params GetInstrumentChartParams
-	Body   *GetInstrumentChartJSONRequestBody
-}
-
-type GetInstrumentChartResponseObject interface {
-	VisitGetInstrumentChartResponse(w http.ResponseWriter) error
-}
-
-type GetInstrumentChart200ResponseHeaders struct {
-	XRequestID string
-}
-
-type GetInstrumentChart200JSONResponse struct {
-	Body    ChartPageResponse
-	Headers GetInstrumentChart200ResponseHeaders
-}
-
-func (response GetInstrumentChart200JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetInstrumentChart400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response GetInstrumentChart400JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetInstrumentChart401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response GetInstrumentChart401JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetInstrumentChart403JSONResponse struct{ AccessDeniedJSONResponse }
-
-func (response GetInstrumentChart403JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetInstrumentChart404JSONResponse struct{ SymbolNotFoundJSONResponse }
-
-func (response GetInstrumentChart404JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(404)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type GetInstrumentChart500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response GetInstrumentChart500JSONResponse) VisitGetInstrumentChartResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type GetLivenessRequestObject struct {
 	Params GetLivenessParams
 }
@@ -2908,9 +2687,6 @@ type StrictServerInterface interface {
 	// ListInstrumentCandles List a chronological page of closed candles
 	// (GET /api/v1/instruments/{symbol}/candles)
 	ListInstrumentCandles(ctx context.Context, request ListInstrumentCandlesRequestObject) (ListInstrumentCandlesResponseObject, error)
-	// GetInstrumentChart Get a closed-candle range with indicators recalculated over the entire range
-	// (POST /api/v1/instruments/{symbol}/chart)
-	GetInstrumentChart(ctx context.Context, request GetInstrumentChartRequestObject) (GetInstrumentChartResponseObject, error)
 	// GetLiveness Check whether the process is alive
 	// (GET /health/live)
 	GetLiveness(ctx context.Context, request GetLivenessRequestObject) (GetLivenessResponseObject, error)
@@ -3278,40 +3054,6 @@ func (sh *strictHandler) ListInstrumentCandles(w http.ResponseWriter, r *http.Re
 	}
 }
 
-// GetInstrumentChart operation middleware
-func (sh *strictHandler) GetInstrumentChart(w http.ResponseWriter, r *http.Request, symbol Symbol, params GetInstrumentChartParams) {
-	var request GetInstrumentChartRequestObject
-
-	request.Symbol = symbol
-	request.Params = params
-
-	var body GetInstrumentChartJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.GetInstrumentChart(ctx, request.(GetInstrumentChartRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "GetInstrumentChart")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(GetInstrumentChartResponseObject); ok {
-		if err := validResponse.VisitGetInstrumentChartResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
 // GetLiveness operation middleware
 func (sh *strictHandler) GetLiveness(w http.ResponseWriter, r *http.Request, params GetLivenessParams) {
 	var request GetLivenessRequestObject
@@ -3369,73 +3111,71 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

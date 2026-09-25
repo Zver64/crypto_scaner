@@ -287,32 +287,43 @@ func marketInstruments(rows []generated.BinanceSpotInstrument) []market.Instrume
 }
 
 func (store *Store) UpsertCandles(ctx context.Context, items []market.Candle) error {
+	_, err := store.UpsertCandlesWithChanges(ctx, items)
+	return err
+}
+
+// UpsertCandlesWithChanges reports only rows inserted or materially corrected
+// after the entire batch has committed.
+func (store *Store) UpsertCandlesWithChanges(ctx context.Context, items []market.Candle) ([]market.Candle, error) {
 	params := make([]generated.UpsertCandleParams, 0, len(items))
 	for index, item := range items {
 		values, err := candleParams(item)
 		if err != nil {
-			return fmt.Errorf("validate candle %d: %w", index, err)
+			return nil, fmt.Errorf("validate candle %d: %w", index, err)
 		}
 		params = append(params, values)
 	}
 	if len(params) == 0 {
-		return nil
+		return nil, nil
 	}
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return fmt.Errorf("begin candle upsert: %w", err)
+		return nil, fmt.Errorf("begin candle upsert: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	for _, values := range params {
-		if err := queries.UpsertCandle(ctx, values); err != nil {
-			return fmt.Errorf("upsert candle: %w", err)
+	changed := make([]market.Candle, 0, len(items))
+	for index, values := range params {
+		if _, err := queries.UpsertCandle(ctx, values); errors.Is(err, pgx.ErrNoRows) {
+			continue
+		} else if err != nil {
+			return nil, fmt.Errorf("upsert candle: %w", err)
 		}
+		changed = append(changed, items[index])
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit candle upsert: %w", err)
+		return nil, fmt.Errorf("commit candle upsert: %w", err)
 	}
-	return nil
+	return changed, nil
 }
 
 func (store *Store) ListLatestCandlesByInterval(ctx context.Context, instrumentID int64, interval string, limit int) ([]market.Candle, error) {

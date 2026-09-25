@@ -8,6 +8,8 @@ export default defineConfig({
 			mode: "single",
 			target: "./src/api/generated/api.ts",
 			schemas: "./src/api/generated/models",
+			// Remove models of schemas that no longer exist in the contract.
+			clean: true,
 			urlEncodeParameters: true,
 			override: {
 				fetch: {
@@ -40,14 +42,6 @@ export default defineConfig({
 						query: {
 							useInfinite: true,
 							useInfiniteQueryParam: "before",
-							useQuery: false,
-						},
-					},
-					getInstrumentChart: {
-						query: {
-							useInfinite: true,
-							useInfiniteQueryParam: "before",
-							useMutation: false,
 							useQuery: false,
 						},
 					},

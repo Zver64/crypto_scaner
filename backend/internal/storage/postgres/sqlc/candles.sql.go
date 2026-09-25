@@ -272,7 +272,7 @@ func (q *Queries) SaveCandleHistoryCoverage(ctx context.Context, arg SaveCandleH
 	return err
 }
 
-const upsertCandle = `-- name: UpsertCandle :exec
+const upsertCandle = `-- name: UpsertCandle :one
 INSERT INTO binance_spot.candles (
     instrument_id, interval, open_time, close_time, open, high, low, close,
     volume, quote_asset_volume, trade_count
@@ -286,6 +286,12 @@ ON CONFLICT (instrument_id, interval, open_time) DO UPDATE SET
     volume = EXCLUDED.volume,
     quote_asset_volume = EXCLUDED.quote_asset_volume,
     trade_count = EXCLUDED.trade_count
+WHERE (binance_spot.candles.close_time, binance_spot.candles.open, binance_spot.candles.high,
+       binance_spot.candles.low, binance_spot.candles.close, binance_spot.candles.volume,
+       binance_spot.candles.quote_asset_volume, binance_spot.candles.trade_count)
+  IS DISTINCT FROM (EXCLUDED.close_time, EXCLUDED.open, EXCLUDED.high, EXCLUDED.low,
+                    EXCLUDED.close, EXCLUDED.volume, EXCLUDED.quote_asset_volume, EXCLUDED.trade_count)
+RETURNING open_time
 `
 
 type UpsertCandleParams struct {
@@ -302,8 +308,8 @@ type UpsertCandleParams struct {
 	TradeCount       int64
 }
 
-func (q *Queries) UpsertCandle(ctx context.Context, arg UpsertCandleParams) error {
-	_, err := q.db.Exec(ctx, upsertCandle,
+func (q *Queries) UpsertCandle(ctx context.Context, arg UpsertCandleParams) (pgtype.Timestamptz, error) {
+	row := q.db.QueryRow(ctx, upsertCandle,
 		arg.InstrumentID,
 		arg.Interval,
 		arg.OpenTime,
@@ -316,5 +322,7 @@ func (q *Queries) UpsertCandle(ctx context.Context, arg UpsertCandleParams) erro
 		arg.QuoteAssetVolume,
 		arg.TradeCount,
 	)
-	return err
+	var open_time pgtype.Timestamptz
+	err := row.Scan(&open_time)
+	return open_time, err
 }

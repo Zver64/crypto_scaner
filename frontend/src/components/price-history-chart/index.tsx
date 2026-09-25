@@ -84,12 +84,9 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	);
 	useEffect(() => {
 		if (!enabled) return;
-		source.start(intervals[0].value);
+		source.start();
 		return () => source.stop();
-	}, [enabled, source, intervals[0].value]);
-	useEffect(() => {
-		if (enabled) source.select(interval);
-	}, [enabled, source, interval]);
+	}, [enabled, source]);
 	const { candles, hasMore, isLoading, isLoadingMore } = state;
 	const theme = useMantineTheme();
 	const colorScheme = useComputedColorScheme("dark");

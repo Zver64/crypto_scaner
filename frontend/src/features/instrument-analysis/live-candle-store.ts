@@ -1,18 +1,21 @@
 import type {
 	CandleInterval,
+	ChartPageResponse,
 	LiveCandleServerMessage,
-	LiveCandleState,
 } from "@/api/generated/models";
 import type {
 	ChartConnection,
 	ChartFreshness,
 } from "@/components/price-history-chart/types";
-import { validateCandles } from "@/features/instrument-analysis/candle-page";
+import {
+	mergeChartTail,
+	validateChartPage,
+} from "@/features/instrument-analysis/chart-page";
 import { coinChartIntervals } from "@/features/instrument-analysis/coin-chart-presentation";
-import { applyLiveCandleUpdate } from "@/features/instrument-analysis/live-candle-merge";
 
 export interface LiveCandlesState {
-	candles: readonly LiveCandleState[];
+	chart?: ChartPageResponse;
+	version?: number;
 	connection: ChartConnection;
 	freshness: ChartFreshness;
 	error?: string;
@@ -21,9 +24,7 @@ export interface LiveCandlesState {
 export const chartIntervals: readonly CandleInterval[] = coinChartIntervals.map(
 	(item) => item.value,
 );
-
 const initialState: LiveCandlesState = {
-	candles: [],
 	connection: "connecting",
 	freshness: "waiting",
 };
@@ -53,11 +54,12 @@ export function createLiveStore(symbol: string) {
 					{
 						...state,
 						connection: next,
+						version: next === "connected" ? undefined : state.version,
 						error: next === "disconnected" ? state.error : undefined,
 						freshness:
 							next === "connected"
 								? state.freshness
-								: state.candles.length > 0
+								: state.chart
 									? "stale"
 									: "waiting",
 					},
@@ -92,12 +94,11 @@ export function applyServerMessage(
 			...Object.entries(states),
 			...intervals.map((interval) => {
 				const key = `${symbol}:${interval}`;
-				const previous = states[key] ?? { ...initialState, connection };
 				return [
 					key,
 					{
-						...previous,
-						error: message.message ?? "Live candles are unavailable",
+						...(states[key] ?? { ...initialState, connection }),
+						error: message.message ?? "Live chart is unavailable",
 						freshness: "stale",
 					},
 				];
@@ -107,26 +108,34 @@ export function applyServerMessage(
 	if (!message.symbol || !message.interval) return states;
 	const key = `${message.symbol}:${message.interval}`;
 	const previous = states[key] ?? { ...initialState, connection };
-	if (message.type === "snapshot" && message.candles) {
+	if (message.type === "snapshot" || message.type === "update") {
+		const { chart: received, version } = message;
+		if (!received || version === undefined) return states;
+		const accepted =
+			message.type === "snapshot"
+				? previous.version === undefined || version > previous.version
+				: previous.chart !== undefined &&
+					previous.version !== undefined &&
+					version === previous.version + 1;
+		if (!accepted) return states;
+		let chart: ChartPageResponse;
+		try {
+			chart = validateChartPage(
+				message.type === "update" && previous.chart
+					? mergeChartTail(previous.chart, received)
+					: received,
+				symbol,
+				message.interval,
+			);
+		} catch {
+			return states;
+		}
 		return {
 			...states,
 			[key]: {
 				...previous,
-				candles: validLiveCandles(message.candles)
-					? message.candles
-					: previous.candles,
-				freshness: message.freshness ?? previous.freshness,
-				error: undefined,
-			},
-		};
-	}
-	if (message.type === "update" && message.candle) {
-		if (!validLiveCandles([message.candle])) return states;
-		return {
-			...states,
-			[key]: {
-				...previous,
-				candles: applyLiveCandleUpdate(previous.candles, message.candle),
+				chart,
+				version,
 				freshness: message.freshness ?? "fresh",
 				error: undefined,
 			},
@@ -136,20 +145,4 @@ export function applyServerMessage(
 		return { ...states, [key]: { ...previous, freshness: message.freshness } };
 	}
 	return states;
-}
-
-function validLiveCandles(candles: readonly LiveCandleState[]) {
-	try {
-		validateCandles(
-			[...candles]
-				.map((state) => state.candle)
-				.sort(
-					(left, right) =>
-						Date.parse(left.open_time) - Date.parse(right.open_time),
-				),
-		);
-		return candles.every((state) => typeof state.final === "boolean");
-	} catch {
-		return false;
-	}
 }

@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.19.0](https://github.com/Zver64/crypto_scaner/compare/v0.18.1...v0.19.0) (2026-09-25)
+
+
+### Features
+
+* show visible min and max prices on shared chart axis ([d8aea25](https://github.com/Zver64/crypto_scaner/commit/d8aea259a115956abd19830771125a7d81a6ac55))
+
+
+### Bug Fixes
+
+* add shared analysis settings to favorites ([1bc3a9e](https://github.com/Zver64/crypto_scaner/commit/1bc3a9e3bb001e54f3357ba8c7ff06ba1420b51d))
+* better layout ([e3301e4](https://github.com/Zver64/crypto_scaner/commit/e3301e469f3da608baec8ca3c1ccf31988fac30c))
+* monitor live trades only for favorite symbols ([4f5ba03](https://github.com/Zver64/crypto_scaner/commit/4f5ba03995f927b639826e9f4bfbc239e26ccc71))
+
 ## [0.18.1](https://github.com/Zver64/crypto_scaner/compare/v0.18.0...v0.18.1) (2026-09-24)
 
 

@@ -744,24 +744,3 @@ func duplicateViolation(err error) bool {
 func alertFromInsert(r generated.InsertPriceAlertRow, symbol, target string, telegramID int64) alerts.Alert {
 	return alerts.Alert{ID: r.ID, UserID: r.UserID, TelegramID: telegramID, InstrumentID: r.InstrumentID, Symbol: symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()}
 }
-
-func (store *Store) ListTopSymbols(ctx context.Context, limit int) ([]string, error) {
-	if limit <= 0 || limit > 100 {
-		return nil, fmt.Errorf("top symbol limit must be between 1 and 100")
-	}
-	instruments, err := store.SelectActiveInstruments(ctx, analysis.Selection{
-		Constraints: []analysis.SelectionConstraint{
-			{Fact: analysis.SelectionFactStablecoin, Operator: analysis.SelectionEqual, Boolean: false},
-			{Fact: analysis.SelectionFactMarketCapUSD, Operator: analysis.SelectionAtLeast, Number: 0},
-		},
-		Limit: limit, SortFact: analysis.SelectionFactMarketCapUSD, SortDirection: "desc",
-	})
-	if err != nil {
-		return nil, err
-	}
-	result := make([]string, len(instruments))
-	for index, instrument := range instruments {
-		result[index] = instrument.Symbol
-	}
-	return result, nil
-}

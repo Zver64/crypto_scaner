@@ -16,7 +16,6 @@ func (s *monitorStoreFake) FireAlert(_ context.Context, id, version int64) (bool
 	return true, nil
 }
 func (*monitorStoreFake) ListMonitoredSymbols(context.Context) ([]string, error) { return nil, nil }
-func (*monitorStoreFake) ListTopSymbols(context.Context, int) ([]string, error)  { return nil, nil }
 
 type tradeFeedFake struct {
 	sets     int

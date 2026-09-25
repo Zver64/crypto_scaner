@@ -8,9 +8,6 @@ import (
 )
 
 // SelectionFact is a closed set of persisted facts supported by candidate SQL.
-// TopMarketCapLimit is the canonical server-side size of the Top Market Cap universe.
-const TopMarketCapLimit = 50
-
 type SelectionFact uint8
 
 const (

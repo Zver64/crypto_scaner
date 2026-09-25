@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"crypto-scanner/internal/analysis"
 	markettrade "crypto-scanner/internal/market/trade"
 )
 
@@ -21,7 +20,6 @@ type TriggerStore interface {
 type MonitorStore interface {
 	TriggerStore
 	ListMonitoredSymbols(context.Context) ([]string, error)
-	ListTopSymbols(context.Context, int) ([]string, error)
 }
 type AlertSender interface {
 	SendPriceAlert(context.Context, Fired) error
@@ -76,7 +74,7 @@ func (m *Monitor) Run(ctx context.Context) error {
 	}
 	defer workers.Wait()
 	// Mutations trigger immediate refreshes. This infrequent poll is only a
-	// safety net for external access changes and market-cap ranking updates.
+	// safety net for external access and favorite changes.
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 	for {
@@ -119,12 +117,8 @@ func (m *Monitor) reload(ctx context.Context, states map[string]*symbolState, su
 	if err != nil {
 		return err
 	}
-	top, err := m.store.ListTopSymbols(ctx, analysis.TopMarketCapLimit)
-	if err != nil {
-		return err
-	}
 	desired := map[string]struct{}{}
-	for _, v := range append(favorites, top...) {
+	for _, v := range favorites {
 		desired[v] = struct{}{}
 	}
 	next := map[string]map[int64]Alert{}

@@ -97,7 +97,6 @@ func TestRegistryReportsLookback(t *testing.T) {
 }
 
 func TestRegistryRejectsInvalidRegistrations(t *testing.T) {
-	var typedNil *fakeImplementation
 	tests := []struct {
 		name            string
 		implementations []indicator.Implementation
@@ -105,7 +104,6 @@ func TestRegistryRejectsInvalidRegistrations(t *testing.T) {
 	}{
 		{name: "none", want: indicator.ErrEmptyRegistration},
 		{name: "nil", implementations: []indicator.Implementation{nil}, want: indicator.ErrEmptyRegistration},
-		{name: "typed nil", implementations: []indicator.Implementation{typedNil}, want: indicator.ErrEmptyRegistration},
 		{name: "empty type", implementations: []indicator.Implementation{&fakeImplementation{}}, want: indicator.ErrEmptyRegistration},
 		{
 			name: "duplicate type",
@@ -194,5 +192,4 @@ func TestRegistryRejectsNegativeLookback(t *testing.T) {
 		t.Fatalf("Lookback() error = %v, want ErrInvalidResult", err)
 	}
 
-	var _ indicator.Calculator = registry
 }

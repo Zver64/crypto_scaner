@@ -1,4 +1,4 @@
--- name: UpsertCandle :one
+-- name: UpsertCandle :batchone
 INSERT INTO binance_spot.candles (
     instrument_id, interval, open_time, close_time, open, high, low, close,
     volume, quote_asset_volume, trade_count
@@ -20,15 +20,7 @@ WHERE (binance_spot.candles.close_time, binance_spot.candles.open, binance_spot.
 RETURNING open_time;
 
 -- name: ListLatestCandles :many
-SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
-       volume, quote_asset_volume, trade_count
-FROM binance_spot.candles
-WHERE instrument_id = $1
-  AND interval = $2
-ORDER BY open_time DESC
-LIMIT $3;
-
--- name: ListLatestCandlesBatch :many
+-- Returns up to row_limit latest candles per instrument in chronological order.
 SELECT candle.instrument_id, candle.interval, candle.open_time, candle.close_time,
        candle.open, candle.high, candle.low, candle.close,
        candle.volume, candle.quote_asset_volume, candle.trade_count
@@ -42,7 +34,7 @@ CROSS JOIN LATERAL (
     ORDER BY open_time DESC
     LIMIT sqlc.arg(row_limit)
 ) AS candle
-ORDER BY candle.instrument_id, candle.open_time DESC;
+ORDER BY candle.instrument_id, candle.open_time;
 
 -- name: ListCandlePage :many
 SELECT instrument_id, interval, open_time, close_time, open, high, low, close,

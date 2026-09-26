@@ -74,10 +74,9 @@ func (q *Queries) ListActiveInstruments(ctx context.Context) ([]BinanceSpotInstr
 }
 
 const selectActiveInstruments = `-- name: SelectActiveInstruments :many
-SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset,
-       instrument.exchange_status, instrument.is_active,
-       market_cap.coin_id IS NOT NULL AS market_cap_available,
-       COALESCE(market_cap.market_cap_usd::text, ''::text) AS market_cap_usd
+SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active,
+       (market_cap.coin_id IS NOT NULL)::boolean AS market_cap_available,
+       COALESCE(market_cap.market_cap_usd::text, ''::text)::text AS market_cap_usd
 FROM binance_spot.instruments AS instrument
 LEFT JOIN app.coingecko_asset_mappings AS mapping
   ON mapping.base_asset = instrument.base_asset
@@ -106,14 +105,9 @@ type SelectActiveInstrumentsParams struct {
 }
 
 type SelectActiveInstrumentsRow struct {
-	ID                 int64
-	Symbol             string
-	BaseAsset          string
-	QuoteAsset         string
-	ExchangeStatus     string
-	IsActive           bool
-	MarketCapAvailable interface{}
-	MarketCapUsd       interface{}
+	BinanceSpotInstrument BinanceSpotInstrument
+	MarketCapAvailable    bool
+	MarketCapUsd          string
 }
 
 func (q *Queries) SelectActiveInstruments(ctx context.Context, arg SelectActiveInstrumentsParams) ([]SelectActiveInstrumentsRow, error) {
@@ -133,12 +127,12 @@ func (q *Queries) SelectActiveInstruments(ctx context.Context, arg SelectActiveI
 	for rows.Next() {
 		var i SelectActiveInstrumentsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Symbol,
-			&i.BaseAsset,
-			&i.QuoteAsset,
-			&i.ExchangeStatus,
-			&i.IsActive,
+			&i.BinanceSpotInstrument.ID,
+			&i.BinanceSpotInstrument.Symbol,
+			&i.BinanceSpotInstrument.BaseAsset,
+			&i.BinanceSpotInstrument.QuoteAsset,
+			&i.BinanceSpotInstrument.ExchangeStatus,
+			&i.BinanceSpotInstrument.IsActive,
 			&i.MarketCapAvailable,
 			&i.MarketCapUsd,
 		); err != nil {

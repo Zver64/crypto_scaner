@@ -8,37 +8,37 @@ import (
 	"testing"
 	"time"
 
-	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/market/kline"
 
 	"golang.org/x/time/rate"
 )
 
 type upstreamStub struct {
-	events       chan binance.KlineEvent
-	statuses     chan binance.StreamStatus
+	events       chan kline.Event
+	statuses     chan kline.Status
 	mu           sync.Mutex
-	subscribes   map[binance.KlineKey]int
-	unsubscribes map[binance.KlineKey]int
+	subscribes   map[kline.Key]int
+	unsubscribes map[kline.Key]int
 }
 
 func newUpstreamStub() *upstreamStub {
-	return &upstreamStub{events: make(chan binance.KlineEvent, 8), statuses: make(chan binance.StreamStatus, 8), subscribes: make(map[binance.KlineKey]int), unsubscribes: make(map[binance.KlineKey]int)}
+	return &upstreamStub{events: make(chan kline.Event, 8), statuses: make(chan kline.Status, 8), subscribes: make(map[kline.Key]int), unsubscribes: make(map[kline.Key]int)}
 }
-func (stub *upstreamStub) Subscribe(key binance.KlineKey) error {
+func (stub *upstreamStub) Subscribe(key kline.Key) error {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	stub.subscribes[key]++
 	return nil
 }
-func (stub *upstreamStub) Unsubscribe(key binance.KlineKey) {
+func (stub *upstreamStub) Unsubscribe(key kline.Key) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	stub.unsubscribes[key]++
 }
-func (stub *upstreamStub) Events() <-chan binance.KlineEvent     { return stub.events }
-func (stub *upstreamStub) Statuses() <-chan binance.StreamStatus { return stub.statuses }
-func (stub *upstreamStub) counts(key binance.KlineKey) (int, int) {
+func (stub *upstreamStub) Events() <-chan kline.Event    { return stub.events }
+func (stub *upstreamStub) Statuses() <-chan kline.Status { return stub.statuses }
+func (stub *upstreamStub) counts(key kline.Key) (int, int) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	return stub.subscribes[key], stub.unsubscribes[key]
@@ -91,7 +91,7 @@ func (client *clientStub) Enqueue(message Message) bool {
 }
 
 func TestShutdownClosesRegisteredClientWithoutSubscriptions(t *testing.T) {
-	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	client := &clientStub{id: "idle", messages: make(chan Message, 1), closed: make(chan struct{})}
 	service.RegisterClient(client)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -111,11 +111,11 @@ func TestShutdownClosesRegisteredClientWithoutSubscriptions(t *testing.T) {
 
 func TestServiceSharesUpstreamAndCancelsDelayedRelease(t *testing.T) {
 	upstream := newUpstreamStub()
-	service := NewWithOptions(upstream, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: 25 * time.Millisecond})
+	service := New(upstream, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: 25 * time.Millisecond})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = service.Run(ctx) }()
-	key := binance.KlineKey{Symbol: "BTCUSDT", Interval: market.IntervalHour}
+	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 	first := &clientStub{id: "first", messages: make(chan Message, 16)}
 	second := &clientStub{id: "second", messages: make(chan Message, 16)}
 	if err := service.Subscribe(ctx, first, key.Symbol, key.Interval); err != nil {
@@ -153,17 +153,17 @@ func TestServiceSharesUpstreamAndCancelsDelayedRelease(t *testing.T) {
 
 func TestServiceDoesNotRollFinalCandleBack(t *testing.T) {
 	upstream := newUpstreamStub()
-	service := NewWithOptions(upstream, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: time.Second})
+	service := New(upstream, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: time.Second})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = service.Run(ctx) }()
 	client := &clientStub{id: "client", messages: make(chan Message, 16)}
-	key := binance.KlineKey{Symbol: "BTCUSDT", Interval: market.IntervalHour}
+	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 	if err := service.Subscribe(ctx, client, key.Symbol, key.Interval); err != nil {
 		t.Fatal(err)
 	}
 	open := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
-	closed := binance.KlineEvent{Key: key, Candle: market.Candle{Interval: key.Interval, OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 10, High: 12, Low: 9, Close: 11}, Final: true}
+	closed := kline.Event{Key: key, Candle: market.Candle{Interval: key.Interval, OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 10, High: 12, Low: 9, Close: 11}, Final: true}
 	upstream.events <- closed
 	closed.Final = false
 	closed.Candle.Close = 9
@@ -172,14 +172,14 @@ func TestServiceDoesNotRollFinalCandleBack(t *testing.T) {
 	for {
 		select {
 		case message := <-client.messages:
-			if message.Kind == "update" && message.Candle != nil {
+			if message.Kind == KindUpdate && message.Candle != nil {
 				if !message.Candle.Final || message.Candle.Candle.Close != 11 {
 					t.Fatalf("final candle rolled back: %+v", message.Candle)
 				}
 				time.Sleep(20 * time.Millisecond)
 				select {
 				case extra := <-client.messages:
-					if extra.Kind == "update" {
+					if extra.Kind == KindUpdate {
 						t.Fatalf("received delayed non-final update")
 					}
 				default:
@@ -193,33 +193,33 @@ func TestServiceDoesNotRollFinalCandleBack(t *testing.T) {
 }
 
 func TestHistoryCorrectionRefreshesActiveGraph(t *testing.T) {
-	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	client := &clientStub{id: "graph", messages: make(chan Message, 16)}
 	ctx := context.Background()
 	if err := service.Subscribe(ctx, client, "BTCUSDT", market.IntervalDay); err != nil {
 		t.Fatal(err)
 	}
 	open := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	key := binance.KlineKey{Symbol: "BTCUSDT", Interval: market.IntervalDay}
-	service.apply(binance.KlineEvent{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: open, Close: 10}, Final: true})
+	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalDay}
+	service.apply(ctx, kline.Event{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: open, Close: 10}, Final: true})
 	for len(client.messages) > 0 {
 		<-client.messages
 	}
 	service.HistoryChanged([]market.Candle{{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: open, Close: 12}})
 	// Exchange and server clocks need not agree: a final packet with a future
 	// event time cannot undo a REST-confirmed candle either.
-	service.apply(binance.KlineEvent{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: open, Close: 10}, Final: true, EventTime: time.Now().Add(time.Hour)})
+	service.apply(ctx, kline.Event{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: open, Close: 10}, Final: true, EventTime: time.Now().Add(time.Hour)})
 	// A REST-confirmed candle outside the live buffer is protected as well.
 	yesterday := open.AddDate(0, 0, -1)
 	service.HistoryChanged([]market.Candle{{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: yesterday, Close: 20}})
-	service.apply(binance.KlineEvent{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: yesterday, Close: 9}, Final: true, EventTime: time.Now().Add(time.Hour)})
+	service.apply(ctx, kline.Event{Key: key, Candle: market.Candle{InstrumentID: 1, Interval: market.IntervalDay, OpenTime: yesterday, Close: 9}, Final: true, EventTime: time.Now().Add(time.Hour)})
 	corrected := false
 	for len(client.messages) > 0 {
 		message := <-client.messages
-		if message.Kind == "update" && message.Candle != nil {
+		if message.Kind == KindUpdate && message.Candle != nil {
 			t.Fatal("delayed WS final was published")
 		}
-		if message.Kind == "snapshot" && len(message.Candles) > 0 && message.Candles[0].Candle.Close == 12 {
+		if message.Kind == KindSnapshot && len(message.Candles) > 0 && message.Candles[0].Candle.Close == 12 {
 			corrected = true
 		}
 	}
@@ -233,24 +233,24 @@ func TestReconnectRestoresMissedFinalBeforeFresh(t *testing.T) {
 	open := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	finalA := testCandle(open, market.IntervalHour, 11)
 	history := &historyStub{candles: []market.Candle{finalA}}
-	service := NewWithOptions(upstream, history, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: time.Second})
+	service := New(upstream, history, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: time.Second})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = service.Run(ctx) }()
 	client := &clientStub{id: "client", messages: make(chan Message, 32)}
-	key := binance.KlineKey{Symbol: "BTCUSDT", Interval: market.IntervalHour}
+	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 	if err := service.Subscribe(ctx, client, key.Symbol, key.Interval); err != nil {
 		t.Fatal(err)
 	}
-	upstream.events <- binance.KlineEvent{Key: key, Candle: testCandle(open, key.Interval, 10), Final: false}
-	waitForMessage(t, client.messages, func(message Message) bool { return message.Kind == "update" })
-	upstream.statuses <- binance.StreamStatus{Keys: []binance.KlineKey{key}, Connected: false}
+	upstream.events <- kline.Event{Key: key, Candle: testCandle(open, key.Interval, 10), Final: false}
+	waitForMessage(t, client.messages, func(message Message) bool { return message.Kind == KindUpdate })
+	upstream.statuses <- kline.Status{Keys: []kline.Key{key}, Connected: false}
 	waitForMessage(t, client.messages, func(message Message) bool { return message.Freshness == FreshnessStale })
-	upstream.statuses <- binance.StreamStatus{Keys: []binance.KlineKey{key}, Connected: true}
+	upstream.statuses <- kline.Status{Keys: []kline.Key{key}, Connected: true}
 	waitForMessage(t, client.messages, func(message Message) bool { return message.Freshness == FreshnessRecovering })
-	upstream.events <- binance.KlineEvent{Key: key, Candle: testCandle(open.Add(time.Hour), key.Interval, 12), Final: false}
+	upstream.events <- kline.Event{Key: key, Candle: testCandle(open.Add(time.Hour), key.Interval, 12), Final: false}
 	message := waitForMessage(t, client.messages, func(message Message) bool {
-		return message.Kind == "snapshot" && message.Freshness == FreshnessFresh
+		return message.Kind == KindSnapshot && message.Freshness == FreshnessFresh
 	})
 	for _, candle := range message.Candles {
 		if candle.Candle.OpenTime.Equal(open) {
@@ -269,7 +269,7 @@ func TestLoadRecoveryPaginatesBeyondLiveBuffer(t *testing.T) {
 	for index := range candles {
 		candles[index] = testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
 	}
-	service := New(newUpstreamStub(), &historyStub{candles: candles}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	service := New(newUpstreamStub(), &historyStub{candles: candles}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	service.recoveryLimiter = rate.NewLimiter(rate.Inf, 0)
 	progress := newRecoveryProgress(candles[len(candles)-1].OpenTime)
 	for {
@@ -290,7 +290,7 @@ func TestLoadRecoveryPaginatesBeyondLiveBuffer(t *testing.T) {
 }
 
 func TestNewerRecoveryGenerationSupersedesOlderRange(t *testing.T) {
-	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	state := &keyState{}
 	start := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	first, ok := service.startRecoveryLocked(state, start, start.Add(time.Hour))

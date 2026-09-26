@@ -3,10 +3,7 @@ package binance
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"log/slog"
-	"math/rand/v2"
 	"net/http"
 	"sync/atomic"
 	"time"
@@ -28,43 +25,6 @@ const (
 	streamACKTimeout   = 10 * time.Second
 	streamRotation     = 23*time.Hour + 55*time.Minute
 )
-
-func runDynamicStreamWorker(ctx context.Context, hasSubscriptions func() bool, changes <-chan struct{}, connect func(context.Context) error, disconnected func(error), logger *slog.Logger, module, label string) {
-	backoff := time.Second
-	for ctx.Err() == nil {
-		if !hasSubscriptions() {
-			select {
-			case <-ctx.Done():
-				return
-			case <-changes:
-				continue
-			}
-		}
-		connectedAt := time.Now()
-		err := connect(ctx)
-		if ctx.Err() != nil {
-			return
-		}
-		if errors.Is(err, errStreamWorkerIdle) {
-			backoff = time.Second
-			continue
-		}
-		if time.Since(connectedAt) >= time.Minute {
-			backoff = time.Second
-		}
-		disconnected(err)
-		logger.Warn("Binance WebSocket reconnecting", "module", module, "operation", "reconnect", "stream", label, "error", err)
-		delay := backoff + time.Duration(rand.Int64N(int64(backoff/2+1)))
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(delay):
-		}
-		if backoff < 30*time.Second {
-			backoff *= 2
-		}
-	}
-}
 
 func dialBinanceStream(ctx context.Context, url string, dialer *websocket.Dialer, limiter *rate.Limiter, label string) (*websocket.Conn, error) {
 	if err := limiter.Wait(ctx); err != nil {

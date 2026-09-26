@@ -1,4 +1,4 @@
-package sync
+package marketsync
 
 import (
 	"context"

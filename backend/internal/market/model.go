@@ -29,8 +29,6 @@ type Candle struct {
 	TradeCount       int64
 }
 
-// CandleRequest describes one bounded closed-candle query at the exchange
-// boundary. ClosedBefore is the synchronization start and is exclusive.
 // CandlePage is a chronological page of closed candles. HasMore reports that
 // an older page exists before Candles[0].OpenTime.
 type CandlePage struct {
@@ -38,6 +36,17 @@ type CandlePage struct {
 	HasMore bool
 }
 
+// NextBefore is the cursor for the next older page, or nil when none exists.
+func (page CandlePage) NextBefore() *time.Time {
+	if !page.HasMore || len(page.Candles) == 0 {
+		return nil
+	}
+	oldest := page.Candles[0].OpenTime.UTC()
+	return &oldest
+}
+
+// CandleRequest describes one bounded closed-candle query at the exchange
+// boundary. ClosedBefore is the synchronization start and is exclusive.
 type CandleRequest struct {
 	Symbol        string
 	Interval      CandleInterval
@@ -79,11 +88,6 @@ func (profile SyncProfile) Key() string {
 func BinanceSpotSyncProfile(interval CandleInterval) SyncProfile {
 	return SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: interval, TimeZone: "UTC"}
 }
-
-func DailySyncProfile() SyncProfile   { return BinanceSpotSyncProfile(IntervalDay) }
-func HourlySyncProfile() SyncProfile  { return BinanceSpotSyncProfile(IntervalHour) }
-func WeeklySyncProfile() SyncProfile  { return BinanceSpotSyncProfile(IntervalWeek) }
-func MonthlySyncProfile() SyncProfile { return BinanceSpotSyncProfile(IntervalMonth) }
 
 // CoinMetadataSyncProfile identifies persisted CoinGecko metadata refresh state.
 func CoinMetadataSyncProfile() SyncProfile {

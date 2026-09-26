@@ -3,9 +3,9 @@ package indicator
 import (
 	"errors"
 	"fmt"
-	"math"
-	"reflect"
 	"strings"
+
+	"crypto-scanner/internal/platform/numeric"
 )
 
 var (
@@ -37,7 +37,7 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 
 	registered := make(map[Type]Implementation, len(implementations))
 	for index, implementation := range implementations {
-		if isNilImplementation(implementation) {
+		if implementation == nil {
 			return nil, fmt.Errorf("%w at index %d", ErrEmptyRegistration, index)
 		}
 
@@ -128,25 +128,11 @@ func validateResult(result Result) error {
 			return fmt.Errorf("output %q has nil values", name)
 		}
 		for index, value := range series.Values {
-			if math.IsNaN(value) || math.IsInf(value, 0) {
+			if !numeric.Finite(value) {
 				return fmt.Errorf("output %q value %d is not finite", name, index)
 			}
 		}
 	}
 
 	return nil
-}
-
-func isNilImplementation(implementation Implementation) bool {
-	if implementation == nil {
-		return true
-	}
-
-	value := reflect.ValueOf(implementation)
-	switch value.Kind() {
-	case reflect.Chan, reflect.Func, reflect.Interface, reflect.Map, reflect.Pointer, reflect.Slice:
-		return value.IsNil()
-	default:
-		return false
-	}
 }

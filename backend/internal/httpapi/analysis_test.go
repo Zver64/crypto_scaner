@@ -202,7 +202,7 @@ func TestAnalysisSchemaValidationRejectsRequestsBeforeService(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &countingAnalysis{}
-			handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, service, nil, passThroughAuthenticator{})
+			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service}, httpapi.Options{}, passThrough)
 			response := analysisRequestTo(t, handler, test.path, test.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -239,7 +239,7 @@ func TestMarketAnalysisPreservesOmittedAndZeroLimitWithOptionalSort(t *testing.T
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &countingAnalysis{}
-			handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, service, nil, passThroughAuthenticator{})
+			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service}, httpapi.Options{}, passThrough)
 			response := analysisRequestTo(t, handler, "/api/v1/analysis/market", test.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -420,9 +420,9 @@ func (enabledUserStore) FindEnabledByTelegramID(context.Context, int64) (auth.Us
 }
 func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysis.Factory) http.Handler {
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
-	service, _ := analysis.NewService(store, factories...)
-	authenticator := authtelegram.NewWithOptions(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
-	return httpapi.New(logging.New(io.Discard, "error"), readinessStub{marketSync: true}, service, nil, authenticator)
+	service, _ := analysis.NewService(store, nil, factories...)
+	authenticator := authtelegram.New(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
+	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, Authenticator: authenticator}, httpapi.Options{})
 }
 
 type httpStore struct {
@@ -460,11 +460,15 @@ func (s httpStore) SelectActiveInstruments(_ context.Context, selection analysis
 func (s httpStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
 	return nil, nil
 }
-func (s httpStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, interval string, _ int) ([]market.Candle, error) {
-	if s.candlesByInterval != nil {
-		return s.candlesByInterval[instrumentID][interval], nil
+func (s httpStore) ListLatestCandles(_ context.Context, instrumentIDs []int64, interval market.CandleInterval, _ int) (map[int64][]market.Candle, error) {
+	result := make(map[int64][]market.Candle, len(instrumentIDs))
+	for _, instrumentID := range instrumentIDs {
+		result[instrumentID] = s.candles[instrumentID]
+		if s.candlesByInterval != nil {
+			result[instrumentID] = s.candlesByInterval[instrumentID][string(interval)]
+		}
 	}
-	return s.candles[instrumentID], nil
+	return result, nil
 }
 
 type httpMarketCapFactory struct{}
@@ -479,9 +483,6 @@ type httpMarketCapCriterion struct{}
 func (httpMarketCapCriterion) Name() string                               { return "market_cap" }
 func (httpMarketCapCriterion) Requirements() []analysis.CandleRequirement { return nil }
 func (httpMarketCapCriterion) MinimumMarketCapUSD() float64               { return 0 }
-func (httpMarketCapCriterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
-	return nil, nil
-}
 func (httpMarketCapCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
 	return analysis.Evaluation{Matched: true, Metrics: map[string]float64{"market_cap_usd": 1}}, nil
 }

@@ -16,11 +16,10 @@ import (
 	"time"
 
 	"crypto-scanner/internal/auth"
-	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/chart"
-	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/market/kline"
 	marketlive "crypto-scanner/internal/market/live"
 
 	"github.com/gorilla/websocket"
@@ -37,19 +36,15 @@ const (
 	maxClientMessage          = 16 << 10
 )
 
-type LiveAuthenticator interface {
-	AuthenticateInitData(context.Context, string) (auth.User, error)
-}
-
 type LiveCandles interface {
 	RegisterClient(marketlive.Client) bool
 	Subscribe(context.Context, marketlive.Client, string, market.CandleInterval) error
-	Unsubscribe(string, binance.KlineKey)
+	Unsubscribe(string, kline.Key)
 	RemoveClient(string)
 }
 
 type liveCandleHandler struct {
-	authenticator LiveAuthenticator
+	authenticator InitDataAuthenticator
 	service       LiveCandles
 	charts        ChartService
 	logger        *slog.Logger
@@ -59,7 +54,7 @@ type liveCandleHandler struct {
 	userCounts    map[int64]int
 }
 
-func newLiveCandleHandler(authenticator LiveAuthenticator, service LiveCandles, charts ChartService, logger *slog.Logger) http.Handler {
+func newLiveCandleHandler(authenticator InitDataAuthenticator, service LiveCandles, charts ChartService, logger *slog.Logger) http.Handler {
 	handler := &liveCandleHandler{authenticator: authenticator, service: service, charts: charts, logger: logger, connections: make(chan struct{}, maxLiveConnections), userCounts: make(map[int64]int)}
 	handler.upgrader = websocket.Upgrader{HandshakeTimeout: 5 * time.Second, CheckOrigin: sameWebSocketOrigin, EnableCompression: false}
 	return handler
@@ -87,22 +82,22 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 		return
 	}
 	client := newLiveSocketClient(newRequestID(), connection)
-	subscriber := newChartClient(client, handler.charts, handler.logger)
+	subscriber := newChartClient(request.Context(), client, handler.charts)
 	defer func() { handler.service.RemoveClient(client.ID()); subscriber.Close() }()
 	connection.SetReadLimit(maxClientMessage)
 	_ = connection.SetReadDeadline(time.Now().Add(clientAuthTimeout))
 	message, err := readLiveClientMessage(connection)
 	if err != nil || message.Type != Authenticate || message.InitData == nil {
-		client.writeError("unauthenticated", "Telegram authentication is required")
+		client.writeError("unauthenticated", authenticationRequiredMessage)
 		return
 	}
 	user, err := handler.authenticator.AuthenticateInitData(request.Context(), *message.InitData)
 	if err != nil {
 		switch {
-		case errors.Is(err, authtelegram.ErrAccessDenied):
-			client.writeError("access_denied", "Telegram user is not allowed")
+		case errors.Is(err, auth.ErrAccessDenied):
+			client.writeError("access_denied", auth.ErrAccessDenied.Error())
 		default:
-			client.writeError("unauthenticated", "Telegram authentication is invalid or expired")
+			client.writeError("unauthenticated", auth.ErrUnauthenticated.Error())
 		}
 		return
 	}
@@ -138,24 +133,22 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			client.enqueueError("invalid_argument", "A valid symbol and interval are required")
 			continue
 		}
-		key := binance.KlineKey{Symbol: strings.ToUpper(strings.TrimSpace(*message.Symbol)), Interval: market.CandleInterval(*message.Interval)}
+		key := kline.Key{Symbol: market.NormalizeSymbol(*message.Symbol), Interval: market.CandleInterval(*message.Interval)}
 		switch message.Type {
 		case Subscribe:
-			limit := defaultCandlePageSize
+			limit := chart.DefaultRange
 			if message.Limit != nil {
 				limit = *message.Limit
 			}
-			if limit < 1 || limit > maxChartRange {
+			if limit < 1 || limit > chart.MaxRange {
 				client.enqueueKeyError(key, "invalid_argument", "Invalid chart range")
 				continue
 			}
-			if message.Indicators == nil || len(*message.Indicators) == 0 || len(*message.Indicators) > 8 {
-				client.enqueueKeyError(key, "invalid_argument", "Invalid indicator selection")
-				continue
-			}
-			configs := make([]chart.IndicatorConfig, len(*message.Indicators))
-			for i, item := range *message.Indicators {
-				configs[i] = chart.IndicatorConfig{Type: indicator.Type(item.Type), Parameters: indicator.Parameters(item.Parameters)}
+			var configs []indicator.Selection
+			if message.Indicators != nil {
+				for _, item := range *message.Indicators {
+					configs = append(configs, indicator.Selection{Type: indicator.Type(item.Type), Parameters: indicator.Parameters(item.Parameters)})
+				}
 			}
 			if handler.charts.Validate(configs) != nil {
 				client.enqueueKeyError(key, "invalid_argument", "Invalid indicator selection")
@@ -165,7 +158,6 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			err := handler.service.Subscribe(request.Context(), subscriber, key.Symbol, key.Interval)
 			if err == nil {
 				subscriber.setRange(key, limit, configs)
-				subscriber.Enqueue(marketlive.Message{Kind: "refresh", Key: key})
 			}
 			switch {
 			case errors.Is(err, marketlive.ErrInactiveSymbol):
@@ -173,7 +165,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			case errors.Is(err, marketlive.ErrTooManyClientSubscriptions):
 				client.enqueueKeyError(key, "subscription_limit", "Subscription limit exceeded")
 			case err != nil:
-				handler.logger.Error("live candle subscription failed", "module", "httpapi_live", "operation", "subscribe", "error", err)
+				handler.logger.ErrorContext(request.Context(), "live candle subscription failed", "module", "httpapi", "operation", "subscribe", "error", err)
 				client.enqueueKeyError(key, "unavailable", "Live candles are temporarily unavailable")
 			}
 		case Unsubscribe:
@@ -264,7 +256,7 @@ func (client *liveSocketClient) enqueueError(code, message string) {
 	c := LiveCandleServerMessageCode(code)
 	client.enqueueWire(LiveCandleServerMessage{Type: Error, Code: &c, Message: &message})
 }
-func (client *liveSocketClient) enqueueKeyError(key binance.KlineKey, code, message string) {
+func (client *liveSocketClient) enqueueKeyError(key kline.Key, code, message string) {
 	c := LiveCandleServerMessageCode(code)
 	symbol, interval := key.Symbol, CandleInterval(key.Interval)
 	client.enqueueWire(LiveCandleServerMessage{Type: Error, Code: &c, Message: &message, Symbol: &symbol, Interval: &interval})

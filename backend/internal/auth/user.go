@@ -9,6 +9,13 @@ import (
 // ErrUserNotFound means that no enabled application user matches an identity.
 var ErrUserNotFound = errors.New("enabled user not found")
 
+var (
+	// ErrUnauthenticated means that presented credentials are invalid or expired.
+	ErrUnauthenticated = errors.New("Telegram authentication is invalid or expired")
+	// ErrAccessDenied means that a valid identity is not an enabled user.
+	ErrAccessDenied = errors.New("Telegram user is not allowed")
+)
+
 // User is an application user independent of its persistence representation.
 type User struct {
 	ID          int64

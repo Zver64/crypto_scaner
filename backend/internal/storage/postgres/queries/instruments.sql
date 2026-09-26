@@ -23,10 +23,9 @@ FROM binance_spot.instruments
 WHERE is_active = TRUE;
 
 -- name: SelectActiveInstruments :many
-SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset,
-       instrument.exchange_status, instrument.is_active,
-       market_cap.coin_id IS NOT NULL AS market_cap_available,
-       COALESCE(market_cap.market_cap_usd::text, ''::text) AS market_cap_usd
+SELECT sqlc.embed(instrument),
+       (market_cap.coin_id IS NOT NULL)::boolean AS market_cap_available,
+       COALESCE(market_cap.market_cap_usd::text, ''::text)::text AS market_cap_usd
 FROM binance_spot.instruments AS instrument
 LEFT JOIN app.coingecko_asset_mappings AS mapping
   ON mapping.base_asset = instrument.base_asset

@@ -39,14 +39,23 @@ func TestPercentileRequiresConfiguredShareToMeetThreshold(t *testing.T) {
 	}
 }
 
-func TestPercentileDoesNotDependOnCandleInputOrder(t *testing.T) {
+func TestPercentileDoesNotDependOnRangeOrderWithinWindow(t *testing.T) {
 	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(4), "percentile": float64(75), "minimum_range_percent": float64(0)})
 	if err != nil {
 		t.Fatal(err)
 	}
 	start := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
-	candles := []market.Candle{candle(start, 8), candle(start.AddDate(0, 0, 1), 1), candle(start.AddDate(0, 0, 2), 4), candle(start.AddDate(0, 0, 3), 2)}
-	permuted := []market.Candle{candles[2], candles[0], candles[3], candles[1]}
+	chronological := func(ranges ...float64) []market.Candle {
+		candles := make([]market.Candle, len(ranges))
+		for i, r := range ranges {
+			candles[i] = candle(start.AddDate(0, 0, i), r)
+		}
+		return candles
+	}
+	// Both inputs are chronological and fully inside the window; only the
+	// order of the ranges across days differs.
+	candles := chronological(8, 1, 4, 2)
+	permuted := chronological(4, 8, 2, 1)
 
 	var values []float64
 	for _, data := range [][]market.Candle{candles, permuted} {
@@ -57,7 +66,7 @@ func TestPercentileDoesNotDependOnCandleInputOrder(t *testing.T) {
 		values = append(values, result.Metrics["range_percent"])
 	}
 	if values[0] != 2 || values[1] != values[0] {
-		t.Fatalf("range percent by input order = %v", values)
+		t.Fatalf("range percent by range order = %v", values)
 	}
 }
 

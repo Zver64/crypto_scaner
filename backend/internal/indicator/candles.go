@@ -2,7 +2,7 @@ package indicator
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -27,13 +27,10 @@ type Calculation struct {
 	Series     []NamedSeries
 }
 
-// Engine calculates named series over contiguous candle runs. The same method
-// handles closed history and a private extension with the current candle.
-type Engine struct{ registry Calculator }
-
-func NewEngine(registry Calculator) *Engine                  { return &Engine{registry: registry} }
-func (e *Engine) Lookback(t Type, p Parameters) (int, error) { return e.registry.Lookback(t, p) }
-func (e *Engine) Calculate(interval market.CandleInterval, candles []market.Candle, selections []Selection) ([]Calculation, error) {
+// CalculateCandles calculates named series over contiguous candle runs, so no
+// warm-up spans a gap. The same method handles closed history and a private
+// extension with the current candle.
+func (r *Registry) CalculateCandles(interval market.CandleInterval, candles []market.Candle, selections []Selection) ([]Calculation, error) {
 	starts := []int{0}
 	for i := 1; i < len(candles); i++ {
 		if !interval.NextOpenTime(candles[i-1].OpenTime).Equal(candles[i].OpenTime) {
@@ -43,7 +40,7 @@ func (e *Engine) Calculate(interval market.CandleInterval, candles []market.Cand
 	starts = append(starts, len(candles))
 	results := make([]Calculation, 0, len(selections))
 	for _, selection := range selections {
-		fields, err := e.registry.Inputs(selection.Type)
+		fields, err := r.Inputs(selection.Type)
 		if err != nil {
 			return nil, err
 		}
@@ -78,7 +75,7 @@ func (e *Engine) Calculate(interval market.CandleInterval, candles []market.Cand
 				}
 				inputs[field] = values
 			}
-			calculated, err := e.registry.Calculate(Request{Type: selection.Type, Parameters: selection.Parameters, Inputs: inputs})
+			calculated, err := r.Calculate(Request{Type: selection.Type, Parameters: selection.Parameters, Inputs: inputs})
 			if err != nil {
 				return nil, err
 			}
@@ -98,7 +95,7 @@ func (e *Engine) Calculate(interval market.CandleInterval, candles []market.Cand
 		for name := range byName {
 			names = append(names, name)
 		}
-		sort.Strings(names)
+		slices.Sort(names)
 		series := make([]NamedSeries, 0, len(names))
 		for _, name := range names {
 			series = append(series, NamedSeries{Name: name, Points: byName[name]})

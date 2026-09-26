@@ -137,54 +137,6 @@ func (q *Queries) ListHourlyPrices(ctx context.Context, arg ListHourlyPricesPara
 }
 
 const listLatestCandles = `-- name: ListLatestCandles :many
-SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
-       volume, quote_asset_volume, trade_count
-FROM binance_spot.candles
-WHERE instrument_id = $1
-  AND interval = $2
-ORDER BY open_time DESC
-LIMIT $3
-`
-
-type ListLatestCandlesParams struct {
-	InstrumentID int64
-	Interval     string
-	Limit        int32
-}
-
-func (q *Queries) ListLatestCandles(ctx context.Context, arg ListLatestCandlesParams) ([]BinanceSpotCandle, error) {
-	rows, err := q.db.Query(ctx, listLatestCandles, arg.InstrumentID, arg.Interval, arg.Limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []BinanceSpotCandle
-	for rows.Next() {
-		var i BinanceSpotCandle
-		if err := rows.Scan(
-			&i.InstrumentID,
-			&i.Interval,
-			&i.OpenTime,
-			&i.CloseTime,
-			&i.Open,
-			&i.High,
-			&i.Low,
-			&i.Close,
-			&i.Volume,
-			&i.QuoteAssetVolume,
-			&i.TradeCount,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listLatestCandlesBatch = `-- name: ListLatestCandlesBatch :many
 SELECT candle.instrument_id, candle.interval, candle.open_time, candle.close_time,
        candle.open, candle.high, candle.low, candle.close,
        candle.volume, candle.quote_asset_volume, candle.trade_count
@@ -198,17 +150,18 @@ CROSS JOIN LATERAL (
     ORDER BY open_time DESC
     LIMIT $3
 ) AS candle
-ORDER BY candle.instrument_id, candle.open_time DESC
+ORDER BY candle.instrument_id, candle.open_time
 `
 
-type ListLatestCandlesBatchParams struct {
+type ListLatestCandlesParams struct {
 	InstrumentIds []int64
 	Interval      string
 	RowLimit      int32
 }
 
-func (q *Queries) ListLatestCandlesBatch(ctx context.Context, arg ListLatestCandlesBatchParams) ([]BinanceSpotCandle, error) {
-	rows, err := q.db.Query(ctx, listLatestCandlesBatch, arg.InstrumentIds, arg.Interval, arg.RowLimit)
+// Returns up to row_limit latest candles per instrument in chronological order.
+func (q *Queries) ListLatestCandles(ctx context.Context, arg ListLatestCandlesParams) ([]BinanceSpotCandle, error) {
+	rows, err := q.db.Query(ctx, listLatestCandles, arg.InstrumentIds, arg.Interval, arg.RowLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -270,59 +223,4 @@ func (q *Queries) SaveCandleHistoryCoverage(ctx context.Context, arg SaveCandleH
 		arg.RetryAfter,
 	)
 	return err
-}
-
-const upsertCandle = `-- name: UpsertCandle :one
-INSERT INTO binance_spot.candles (
-    instrument_id, interval, open_time, close_time, open, high, low, close,
-    volume, quote_asset_volume, trade_count
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-ON CONFLICT (instrument_id, interval, open_time) DO UPDATE SET
-    close_time = EXCLUDED.close_time,
-    open = EXCLUDED.open,
-    high = EXCLUDED.high,
-    low = EXCLUDED.low,
-    close = EXCLUDED.close,
-    volume = EXCLUDED.volume,
-    quote_asset_volume = EXCLUDED.quote_asset_volume,
-    trade_count = EXCLUDED.trade_count
-WHERE (binance_spot.candles.close_time, binance_spot.candles.open, binance_spot.candles.high,
-       binance_spot.candles.low, binance_spot.candles.close, binance_spot.candles.volume,
-       binance_spot.candles.quote_asset_volume, binance_spot.candles.trade_count)
-  IS DISTINCT FROM (EXCLUDED.close_time, EXCLUDED.open, EXCLUDED.high, EXCLUDED.low,
-                    EXCLUDED.close, EXCLUDED.volume, EXCLUDED.quote_asset_volume, EXCLUDED.trade_count)
-RETURNING open_time
-`
-
-type UpsertCandleParams struct {
-	InstrumentID     int64
-	Interval         string
-	OpenTime         pgtype.Timestamptz
-	CloseTime        pgtype.Timestamptz
-	Open             string
-	High             string
-	Low              string
-	Close            string
-	Volume           string
-	QuoteAssetVolume string
-	TradeCount       int64
-}
-
-func (q *Queries) UpsertCandle(ctx context.Context, arg UpsertCandleParams) (pgtype.Timestamptz, error) {
-	row := q.db.QueryRow(ctx, upsertCandle,
-		arg.InstrumentID,
-		arg.Interval,
-		arg.OpenTime,
-		arg.CloseTime,
-		arg.Open,
-		arg.High,
-		arg.Low,
-		arg.Close,
-		arg.Volume,
-		arg.QuoteAssetVolume,
-		arg.TradeCount,
-	)
-	var open_time pgtype.Timestamptz
-	err := row.Scan(&open_time)
-	return open_time, err
 }

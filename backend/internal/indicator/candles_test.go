@@ -9,24 +9,23 @@ import (
 	"crypto-scanner/internal/market"
 )
 
-func TestEngineKeepsClosedHistoryIndependentOfLiveContext(t *testing.T) {
+func TestCalculateCandlesKeepsClosedHistoryIndependentOfLiveContext(t *testing.T) {
 	registry, err := indicator.NewRegistry(talib.NewRSI())
 	if err != nil {
 		t.Fatal(err)
 	}
-	engine := indicator.NewEngine(registry)
 	selections := []indicator.Selection{{Type: talib.RSIType, Parameters: indicator.Parameters{"period": 14}}}
 	candles := make([]market.Candle, 200)
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range candles {
 		candles[i] = market.Candle{OpenTime: start.AddDate(0, 0, i), Close: float64(i + 1)}
 	}
-	closed, err := engine.Calculate(market.IntervalDay, candles, selections)
+	closed, err := registry.CalculateCandles(market.IntervalDay, candles, selections)
 	if err != nil {
 		t.Fatal(err)
 	}
 	live := append(append([]market.Candle(nil), candles...), market.Candle{OpenTime: start.AddDate(0, 0, 200), Close: 500})
-	extended, err := engine.Calculate(market.IntervalDay, live, selections)
+	extended, err := registry.CalculateCandles(market.IntervalDay, live, selections)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,9 +46,8 @@ func TestEngineKeepsClosedHistoryIndependentOfLiveContext(t *testing.T) {
 	}
 }
 
-func TestEngineDoesNotWarmAcrossGaps(t *testing.T) {
+func TestCalculateCandlesDoesNotWarmAcrossGaps(t *testing.T) {
 	registry, _ := indicator.NewRegistry(talib.NewRSI())
-	engine := indicator.NewEngine(registry)
 	candles := make([]market.Candle, 16)
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range candles {
@@ -59,7 +57,7 @@ func TestEngineDoesNotWarmAcrossGaps(t *testing.T) {
 		}
 		candles[i] = market.Candle{OpenTime: start.AddDate(0, 0, offset), Close: float64(i + 1)}
 	}
-	result, err := engine.Calculate(market.IntervalDay, candles, []indicator.Selection{{Type: talib.RSIType, Parameters: indicator.Parameters{"period": 14}}})
+	result, err := registry.CalculateCandles(market.IntervalDay, candles, []indicator.Selection{{Type: talib.RSIType, Parameters: indicator.Parameters{"period": 14}}})
 	if err != nil {
 		t.Fatal(err)
 	}

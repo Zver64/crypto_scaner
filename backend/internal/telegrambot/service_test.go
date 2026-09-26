@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -24,7 +25,7 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{}
 	accessChanges := 0
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true, AccessChanged: func() { accessChanges++ }})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true, AccessChanged: func() { accessChanges++ }})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -78,7 +79,7 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 
 func TestAddUserCancelRemovesPickerReplyKeyboard(t *testing.T) {
 	transport := newTelegramTransport(t)
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -99,7 +100,7 @@ func TestAddUserCancelRemovesPickerReplyKeyboard(t *testing.T) {
 func TestAddUserGrantErrorRemovesPickerReplyKeyboard(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{grantErr: errors.New("storage unavailable")}
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -119,7 +120,7 @@ func TestAddUserGrantErrorRemovesPickerReplyKeyboard(t *testing.T) {
 
 func TestStaleAddUserSelectionRemovesPickerReplyKeyboard(t *testing.T) {
 	transport := newTelegramTransport(t)
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -140,7 +141,7 @@ func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
 	transport := newTelegramTransport(t)
 	transport.setGetMeResponse(`{"ok":false,"error_code":401,"description":"Unauthorized"}`)
 
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err == nil {
 		t.Fatal("New() error = nil, want Telegram initialization failure")
 	}
@@ -161,7 +162,7 @@ func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
 func TestAccessAdministrationIsPrivateAndAdministratorOnly(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{users: map[int64]auth.User{300: {ID: 1, TelegramID: 300, Enabled: true}}}
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -193,7 +194,7 @@ func TestAdministratorCanConfirmUserDeletion(t *testing.T) {
 		100: {ID: 1, TelegramID: 100, DisplayName: "Administrator", Enabled: true},
 		200: {ID: 2, TelegramID: 200, DisplayName: "Taylor", Enabled: true},
 	}}
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -228,7 +229,7 @@ func TestDeletionInvalidatesOlderAddConfirmation(t *testing.T) {
 		100: {ID: 1, TelegramID: 100, DisplayName: "Administrator", Enabled: true},
 		200: {ID: 2, TelegramID: 200, DisplayName: "Taylor", Enabled: true},
 	}}
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -260,7 +261,7 @@ func TestDeletionInvalidatesOlderAddConfirmation(t *testing.T) {
 func TestEmptyUserListIdentifiesAdministrator(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{users: map[int64]auth.User{100: {ID: 1, TelegramID: 100, DisplayName: "Administrator", Enabled: true}}}
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -277,7 +278,7 @@ func TestAdministratorCanNavigateLongUserList(t *testing.T) {
 		telegramID := 200 + index
 		store.users[telegramID] = auth.User{ID: telegramID, TelegramID: telegramID, DisplayName: fmt.Sprintf("User %d", index+1), Enabled: true}
 	}
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -297,7 +298,7 @@ func TestAdministratorCanNavigateLongUserList(t *testing.T) {
 func TestPriceAlertRechecksAccessAfterRateLimitWait(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &synchronizedAccessStore{user: auth.User{ID: 1, TelegramID: 200, Enabled: true}}
-	service, err := telegrambot.New("123456:test-token", 100, store, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatal(err)
 	}

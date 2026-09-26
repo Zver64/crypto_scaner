@@ -20,7 +20,7 @@ func TestCandleHistoryReturnsChronologicalKeysetPage(t *testing.T) {
 		{OpenTime: oldest, CloseTime: oldest.Add(time.Hour - time.Millisecond), Open: 1, High: 3, Low: .5, Close: 2},
 		{OpenTime: oldest.Add(time.Hour), CloseTime: oldest.Add(2*time.Hour - time.Millisecond), Open: 2, High: 4, Low: 1, Close: 3},
 	}}}
-	handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, history, passThroughAuthenticator{})
+	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, History: history}, httpapi.Options{}, passThrough)
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/instruments/btcusdt/candles?interval=1h&limit=2", nil)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
@@ -49,7 +49,7 @@ func TestCandleHistoryReturnsChronologicalKeysetPage(t *testing.T) {
 
 func TestCandleHistoryValidationPreservesCanonicalErrors(t *testing.T) {
 	history := &candleHistoryStub{}
-	handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, history, passThroughAuthenticator{})
+	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, History: history}, httpapi.Options{}, passThrough)
 	for _, test := range []struct {
 		target  string
 		message string

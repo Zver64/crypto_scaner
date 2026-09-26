@@ -1,4 +1,4 @@
-package sync_test
+package marketsync_test
 
 import (
 	"bytes"
@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -14,22 +15,13 @@ import (
 	"time"
 
 	"crypto-scanner/internal/market"
-	marketsync "crypto-scanner/internal/market/sync"
+	"crypto-scanner/internal/market/marketsync"
 )
-
-func TestCompatibilityProfilesDelegateToMarketProfiles(t *testing.T) {
-	if got, want := marketsync.MVPProfile(), market.DailySyncProfile(); got != want {
-		t.Fatalf("MVPProfile() = %+v, want %+v", got, want)
-	}
-	if got, want := marketsync.HourlyProfile(), market.HourlySyncProfile(); got != want {
-		t.Fatalf("HourlyProfile() = %+v, want %+v", got, want)
-	}
-}
 
 func TestSynchronizerAppliesCompleteSnapshotAndRecordsSuccess(t *testing.T) {
 	previousSuccess := time.Date(2026, time.August, 4, 0, 1, 0, 0, time.UTC)
 	previousClosed := time.Date(2026, time.August, 3, 0, 0, 0, 0, time.UTC)
-	profile := marketsync.MVPProfile()
+	profile := market.BinanceSpotSyncProfile(market.IntervalDay)
 	store := &fakeMarketStore{state: market.SyncState{
 		Profile: profile, Status: market.SyncStatusRunning,
 		LastSucceededAt: &previousSuccess, LastClosedOpenTime: &previousClosed,
@@ -38,7 +30,7 @@ func TestSynchronizerAppliesCompleteSnapshotAndRecordsSuccess(t *testing.T) {
 		{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING", Active: true},
 		{Symbol: "ETHUSDT", BaseAsset: "ETH", QuoteAsset: "USDT", Status: "BREAK", Active: false},
 	}
-	synchronizer := marketsync.New(&fakeExchange{items: wantSnapshot}, store)
+	synchronizer := marketsync.New(&fakeExchange{items: wantSnapshot}, store, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 	if err := synchronizer.Sync(context.Background()); err != nil {
 		t.Fatalf("Sync() error = %v", err)
@@ -72,12 +64,12 @@ func TestSynchronizerBackfillsLatestClosedCandlesForInstrumentWithoutHistory(t *
 	forming.CloseTime = time.Date(2099, time.January, 1, 23, 59, 59, 999000000, time.UTC)
 	exchange := &fakeExchange{items: []market.Instrument{instrument}, candles: map[string][]market.Candle{"BTCUSDT": {closed, forming}}}
 	store := &fakeMarketStore{
-		state:  market.SyncState{Profile: marketsync.MVPProfile(), Status: market.SyncStatusNeverRun},
+		state:  market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalDay), Status: market.SyncStatusNeverRun},
 		active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{},
 	}
 	var logs bytes.Buffer
 
-	if err := marketsync.NewWithLogger(exchange, store, slog.New(slog.NewJSONHandler(&logs, nil))).Sync(context.Background()); err != nil {
+	if err := marketsync.New(exchange, store, slog.New(slog.NewJSONHandler(&logs, nil)), 4, market.BinanceSpotSyncProfile(market.IntervalDay)).Sync(context.Background()); err != nil {
 		t.Fatalf("Sync() error = %v", err)
 	}
 	if len(exchange.candleRequests) < 1 {
@@ -111,10 +103,10 @@ func TestSynchronizerUsesPolicyForInitialRequests(t *testing.T) {
 		name    string
 		profile market.SyncProfile
 	}{
-		{name: "daily", profile: marketsync.MVPProfile()},
-		{name: "hourly", profile: marketsync.HourlyProfile()},
-		{name: "weekly", profile: marketsync.Profile(market.IntervalWeek)},
-		{name: "monthly", profile: marketsync.Profile(market.IntervalMonth)},
+		{name: "daily", profile: market.BinanceSpotSyncProfile(market.IntervalDay)},
+		{name: "hourly", profile: market.BinanceSpotSyncProfile(market.IntervalHour)},
+		{name: "weekly", profile: market.BinanceSpotSyncProfile(market.IntervalWeek)},
+		{name: "monthly", profile: market.BinanceSpotSyncProfile(market.IntervalMonth)},
 	}
 
 	for _, test := range tests {
@@ -125,7 +117,7 @@ func TestSynchronizerUsesPolicyForInitialRequests(t *testing.T) {
 				active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{},
 			}
 
-			if err := marketsync.NewWithProfile(exchange, store, nil, 1, test.profile).Sync(context.Background()); err != nil {
+			if err := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, test.profile).Sync(context.Background()); err != nil {
 				t.Fatalf("Sync() error = %v", err)
 			}
 			if len(exchange.candleRequests) != 1 {
@@ -147,14 +139,14 @@ func TestSynchronizerRepairsDepthWhenLatestClosedIntervalIsStored(t *testing.T) 
 	latest := market.Candle{InstrumentID: instrument.ID, Interval: market.IntervalHour, OpenTime: market.IntervalHour.LastClosedOpenTime(time.Now())}
 	exchange := &fakeExchange{items: []market.Instrument{instrument}}
 	store := &fakeMarketStore{
-		state:  market.SyncState{Profile: marketsync.HourlyProfile(), Status: market.SyncStatusSucceeded},
+		state:  market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalHour), Status: market.SyncStatusSucceeded},
 		active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{instrument.ID: {latest}},
 	}
-	if err := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.HourlyProfile()).Sync(context.Background()); err != nil {
+	if err := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, market.BinanceSpotSyncProfile(market.IntervalHour)).Sync(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if len(exchange.candleRequests) != 2 || exchange.candleRequests[0].AfterOpenTime == nil ||
-		!exchange.candleRequests[0].AfterOpenTime.Equal(marketsync.HourlyProfile().Interval.PreviousOpenTime(latest.OpenTime)) ||
+		!exchange.candleRequests[0].AfterOpenTime.Equal(market.BinanceSpotSyncProfile(market.IntervalHour).Interval.PreviousOpenTime(latest.OpenTime)) ||
 		!exchange.candleRequests[1].HistoryRepair || exchange.candleRequests[1].AfterOpenTime != nil {
 		t.Fatalf("candle requests = %#v, want latest-close recheck and backward depth repair", exchange.candleRequests)
 	}
@@ -168,7 +160,7 @@ func TestSynchronizerPersistsCorrectedLatestClose(t *testing.T) {
 	corrected.Close = 12
 	exchange := &fakeExchange{items: []market.Instrument{instrument}, candles: map[string][]market.Candle{instrument.Symbol: {corrected}}}
 	store := &fakeMarketStore{active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{instrument.ID: {stored}}}
-	if err := marketsync.New(exchange, store).Sync(context.Background()); err != nil {
+	if err := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay)).Sync(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if len(store.latest[instrument.ID]) == 0 || store.latest[instrument.ID][0].Close != 12 {
@@ -186,18 +178,18 @@ func TestSynchronizerRechecksLatestStoredOpenTime(t *testing.T) {
 	}
 	exchange := &fakeExchange{items: []market.Instrument{instrument}, candles: map[string][]market.Candle{instrument.Symbol: {missing}}}
 	store := &fakeMarketStore{
-		state:  market.SyncState{Profile: marketsync.MVPProfile(), Status: market.SyncStatusSucceeded},
+		state:  market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalDay), Status: market.SyncStatusSucceeded},
 		active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{instrument.ID: {latest}},
 	}
 
-	if err := marketsync.New(exchange, store).Sync(context.Background()); err != nil {
+	if err := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay)).Sync(context.Background()); err != nil {
 		t.Fatalf("Sync() error = %v", err)
 	}
 	if len(exchange.candleRequests) != 2 {
 		t.Fatalf("candle requests = %#v, want incremental and depth-repair requests", exchange.candleRequests)
 	}
 	request := exchange.candleRequests[0]
-	if request.AfterOpenTime == nil || !request.AfterOpenTime.Equal(marketsync.MVPProfile().Interval.PreviousOpenTime(latest.OpenTime)) || request.Limit != 1000 {
+	if request.AfterOpenTime == nil || !request.AfterOpenTime.Equal(market.BinanceSpotSyncProfile(market.IntervalDay).Interval.PreviousOpenTime(latest.OpenTime)) || request.Limit != 1000 {
 		t.Fatalf("incremental request = %#v, want overlap of latest close %s with page limit 1000", request, latest.OpenTime)
 	}
 	written := flattenedCandles(store.upserted)
@@ -210,7 +202,7 @@ func TestSynchronizerRejectsOverlappingRunWithoutWaiting(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	exchange := &fakeExchange{items: []market.Instrument{{Symbol: "BTCUSDT", QuoteAsset: "USDT", Status: "TRADING", Active: true}}, started: started, release: release}
-	synchronizer := marketsync.New(exchange, &fakeMarketStore{state: market.SyncState{Profile: marketsync.MVPProfile()}})
+	synchronizer := marketsync.New(exchange, &fakeMarketStore{state: market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalDay)}}, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay))
 	firstResult := make(chan error, 1)
 	go func() { firstResult <- synchronizer.Sync(context.Background()) }()
 	<-started
@@ -232,9 +224,11 @@ func TestSynchronizerBoundsInstrumentConcurrency(t *testing.T) {
 	started := make(chan struct{}, len(instruments))
 	release := make(chan struct{})
 	exchange := &fakeExchange{items: instruments, candles: map[string][]market.Candle{}, workerStarted: started, workerRelease: release}
-	store := &fakeMarketStore{state: market.SyncState{Profile: marketsync.MVPProfile()}, active: instruments, latest: map[int64][]market.Candle{}}
+	store := &fakeMarketStore{state: market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalDay)}, active: instruments, latest: map[int64][]market.Candle{}}
 	result := make(chan error, 1)
-	go func() { result <- marketsync.NewWithOptions(exchange, store, nil, 2).Sync(context.Background()) }()
+	go func() {
+		result <- marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 2, market.BinanceSpotSyncProfile(market.IntervalDay)).Sync(context.Background())
+	}()
 
 	<-started
 	<-started
@@ -265,13 +259,13 @@ func TestSynchronizerContinuesAfterInstrumentFailureAndReportsRunTotals(t *testi
 		candleErrors: map[string]error{"BTCUSDT": permanentErr},
 	}
 	store := &fakeMarketStore{
-		state:  market.SyncState{Profile: marketsync.MVPProfile(), Status: market.SyncStatusNeverRun},
+		state:  market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalDay), Status: market.SyncStatusNeverRun},
 		active: []market.Instrument{btc, eth}, latest: map[int64][]market.Candle{},
 	}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 
-	err := marketsync.NewWithLogger(exchange, store, logger).Sync(context.Background())
+	err := marketsync.New(exchange, store, logger, 4, market.BinanceSpotSyncProfile(market.IntervalDay)).Sync(context.Background())
 	if !errors.Is(err, permanentErr) {
 		t.Fatalf("Sync() error = %v, want permanent instrument failure", err)
 	}
@@ -299,10 +293,10 @@ func TestSynchronizerContinuesAfterInstrumentFailureAndReportsRunTotals(t *testi
 func TestSynchronizerRecordsDiscoveryFailureWithoutApplyingSnapshot(t *testing.T) {
 	previousSuccess := time.Date(2026, time.August, 4, 0, 1, 0, 0, time.UTC)
 	store := &fakeMarketStore{state: market.SyncState{
-		Profile: marketsync.MVPProfile(), Status: market.SyncStatusSucceeded, LastSucceededAt: &previousSuccess,
+		Profile: market.BinanceSpotSyncProfile(market.IntervalDay), Status: market.SyncStatusSucceeded, LastSucceededAt: &previousSuccess,
 	}}
 	discoveryErr := errors.New("exchange unavailable")
-	synchronizer := marketsync.New(&fakeExchange{err: discoveryErr}, store)
+	synchronizer := marketsync.New(&fakeExchange{err: discoveryErr}, store, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 	err := synchronizer.Sync(context.Background())
 	if !errors.Is(err, discoveryErr) {
@@ -321,8 +315,8 @@ func TestSynchronizerRecordsDiscoveryFailureWithoutApplyingSnapshot(t *testing.T
 }
 
 func TestSynchronizerRejectsEmptyDiscoveryWithoutDeactivatingCatalog(t *testing.T) {
-	store := &fakeMarketStore{state: market.SyncState{Profile: marketsync.MVPProfile(), Status: market.SyncStatusNeverRun}}
-	synchronizer := marketsync.New(&fakeExchange{items: []market.Instrument{}}, store)
+	store := &fakeMarketStore{state: market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalDay), Status: market.SyncStatusNeverRun}}
+	synchronizer := marketsync.New(&fakeExchange{items: []market.Instrument{}}, store, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 	if err := synchronizer.Sync(context.Background()); err == nil {
 		t.Fatal("Sync() accepted an empty discovery snapshot")
@@ -339,9 +333,9 @@ func TestSynchronizerRecordsTransactionalApplyFailure(t *testing.T) {
 	applyErr := errors.New("transaction rolled back")
 	items := []market.Instrument{{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING", Active: true}}
 	store := &fakeMarketStore{
-		state: market.SyncState{Profile: marketsync.MVPProfile(), Status: market.SyncStatusNeverRun}, applyErr: applyErr,
+		state: market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalDay), Status: market.SyncStatusNeverRun}, applyErr: applyErr,
 	}
-	synchronizer := marketsync.New(&fakeExchange{items: items}, store)
+	synchronizer := marketsync.New(&fakeExchange{items: items}, store, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 	err := synchronizer.Sync(context.Background())
 	if !errors.Is(err, applyErr) {
@@ -360,13 +354,13 @@ func TestSynchronizerRecordsFailureWhenSuccessfulOutcomeCannotBeSaved(t *testing
 	successSaveErr := errors.New("save succeeded outcome")
 	store := &fakeMarketStore{
 		state: market.SyncState{
-			Profile: marketsync.MVPProfile(), Status: market.SyncStatusSucceeded, LastSucceededAt: &previousSuccess,
+			Profile: market.BinanceSpotSyncProfile(market.IntervalDay), Status: market.SyncStatusSucceeded, LastSucceededAt: &previousSuccess,
 		},
 		saveErrors: []error{nil, successSaveErr, nil},
 	}
 	items := []market.Instrument{{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING", Active: true}}
 
-	err := marketsync.New(&fakeExchange{items: items}, store).Sync(context.Background())
+	err := marketsync.New(&fakeExchange{items: items}, store, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay)).Sync(context.Background())
 	if !errors.Is(err, successSaveErr) {
 		t.Fatalf("Sync() error = %v, want successful-outcome persistence failure", err)
 	}
@@ -383,12 +377,12 @@ func TestSynchronizerReturnsBothOutcomePersistenceFailures(t *testing.T) {
 	successSaveErr := errors.New("save succeeded outcome")
 	failureSaveErr := errors.New("save failed outcome")
 	store := &fakeMarketStore{
-		state:      market.SyncState{Profile: marketsync.MVPProfile(), Status: market.SyncStatusNeverRun},
+		state:      market.SyncState{Profile: market.BinanceSpotSyncProfile(market.IntervalDay), Status: market.SyncStatusNeverRun},
 		saveErrors: []error{nil, successSaveErr, failureSaveErr},
 	}
 	items := []market.Instrument{{Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", Status: "TRADING", Active: true}}
 
-	err := marketsync.New(&fakeExchange{items: items}, store).Sync(context.Background())
+	err := marketsync.New(&fakeExchange{items: items}, store, slog.New(slog.DiscardHandler), 4, market.BinanceSpotSyncProfile(market.IntervalDay)).Sync(context.Background())
 	if !errors.Is(err, successSaveErr) || !errors.Is(err, failureSaveErr) {
 		t.Fatalf("Sync() error = %v, want both persistence failures", err)
 	}
@@ -431,6 +425,8 @@ func (exchange *fakeExchange) ListInstruments(ctx context.Context) ([]market.Ins
 	}
 	return exchange.items, exchange.err
 }
+
+func (*fakeExchange) RetryCount() uint64 { return 0 }
 
 func (exchange *fakeExchange) ListClosedCandles(_ context.Context, request market.CandleRequest) ([]market.Candle, error) {
 	exchange.mu.Lock()
@@ -475,16 +471,22 @@ func (store *fakeMarketStore) ListActiveInstruments(context.Context) ([]market.I
 	return store.active, nil
 }
 
-func (store *fakeMarketStore) ListLatestCandlesByInterval(_ context.Context, instrumentID int64, interval string, limit int) ([]market.Candle, error) {
+func (store *fakeMarketStore) ListLatestCandles(_ context.Context, instrumentIDs []int64, interval market.CandleInterval, limit int) (map[int64][]market.Candle, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	var result []market.Candle
-	for _, candle := range store.latest[instrumentID] {
-		if string(candle.Interval) == interval {
-			result = append(result, candle)
+	result := make(map[int64][]market.Candle, len(instrumentIDs))
+	for _, instrumentID := range instrumentIDs {
+		var candles []market.Candle
+		for _, candle := range store.latest[instrumentID] {
+			if candle.Interval == interval {
+				candles = append(candles, candle)
+			}
 		}
+		candles = candles[:min(len(candles), limit)]
+		slices.Reverse(candles) // store.latest is newest first
+		result[instrumentID] = append([]market.Candle(nil), candles...)
 	}
-	return append([]market.Candle(nil), result[:min(len(result), limit)]...), nil
+	return result, nil
 }
 
 func (store *fakeMarketStore) UpsertCandlesWithChanges(ctx context.Context, items []market.Candle) ([]market.Candle, error) {

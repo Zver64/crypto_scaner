@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
@@ -37,7 +38,6 @@ type Options struct {
 	HTTPClient    telegram.HttpClient
 	PollTimeout   time.Duration
 	Synchronous   bool
-	Logger        *slog.Logger
 	AccessChanged func()
 }
 
@@ -81,16 +81,15 @@ type userPage struct {
 // New constructs a Telegram Bot API client without changing any BotFather
 // settings. The configured administrator ID is the only authority for access
 // management; enabled application users never gain that authority.
-func New(token string, administratorID int64, store auth.AccessStore, options Options) (*Service, error) {
+func New(token string, administratorID int64, store auth.AccessStore, logger *slog.Logger, options Options) (*Service, error) {
 	if administratorID <= 0 {
 		return nil, fmt.Errorf("administrator Telegram ID must be positive")
 	}
 	if store == nil {
 		return nil, fmt.Errorf("access store is required")
 	}
-	logger := options.Logger
 	if logger == nil {
-		logger = slog.Default()
+		return nil, fmt.Errorf("logger is required")
 	}
 	service := &Service{store: store, administratorID: administratorID, logger: logger, operations: map[string]*operation{}, sendLimiter: rate.NewLimiter(rate.Limit(25), 25), accessChanged: options.AccessChanged}
 	botOptions := []telegram.Option{
@@ -476,13 +475,13 @@ func (service *Service) sendWithoutReplyKeyboard(ctx context.Context, client *te
 
 func (service *Service) send(ctx context.Context, client *telegram.Bot, chatID int64, text string, markup models.ReplyMarkup) {
 	if _, err := client.SendMessage(ctx, &telegram.SendMessageParams{ChatID: chatID, Text: text, ReplyMarkup: markup}); err != nil {
-		service.logger.WarnContext(ctx, "Telegram message failed", "module", "telegram_bot", "operation", "send_message", "error", err.Error())
+		service.logger.WarnContext(ctx, "Telegram message failed", "module", "telegram_bot", "operation", "send_message", "error", err)
 	}
 }
 
 func (service *Service) answer(ctx context.Context, client *telegram.Bot, callbackID, text string) {
 	if _, err := client.AnswerCallbackQuery(ctx, &telegram.AnswerCallbackQueryParams{CallbackQueryID: callbackID, Text: text}); err != nil {
-		service.logger.WarnContext(ctx, "Telegram callback answer failed", "module", "telegram_bot", "operation", "answer_callback", "error", err.Error())
+		service.logger.WarnContext(ctx, "Telegram callback answer failed", "module", "telegram_bot", "operation", "answer_callback", "error", err)
 	}
 }
 
@@ -510,17 +509,8 @@ func formatUser(user auth.User) string {
 
 func newToken() string {
 	bytes := make([]byte, 12)
-	if _, err := rand.Read(bytes); err == nil {
-		return hex.EncodeToString(bytes)
-	}
-	return fmt.Sprintf("%d", time.Now().UnixNano())
-}
-
-func max(left, right int) int {
-	if left > right {
-		return left
-	}
-	return right
+	_, _ = rand.Read(bytes) // never fails since Go 1.24
+	return hex.EncodeToString(bytes)
 }
 
 // SendPriceAlert performs one best-effort Telegram API request. It rechecks
@@ -543,8 +533,11 @@ func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) 
 		return err
 	}
 	user, err := service.store.FindEnabledByTelegramID(ctx, fired.Alert.TelegramID)
-	if err != nil || !user.Enabled {
+	if errors.Is(err, auth.ErrUserNotFound) || err == nil && !user.Enabled {
 		return fmt.Errorf("alert owner is no longer enabled")
+	}
+	if err != nil {
+		return fmt.Errorf("look up alert owner: %w", err)
 	}
 	text := fmt.Sprintf("Price alert: %s reached %s USDT (observed %s at %s).", fired.Alert.Symbol, fired.Alert.Target, fired.Price, fired.EventTime.UTC().Format(time.RFC3339))
 	_, err = service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: fired.Alert.TelegramID, Text: text})

@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -39,7 +40,7 @@ var _ MonitorStore = (*monitorStoreFake)(nil)
 
 func TestMonitorSkipsUnchangedSubscriptions(t *testing.T) {
 	feed := newTradeFeedFake()
-	monitor := NewMonitor(&monitorStoreFake{}, feed, nil, nil)
+	monitor := NewMonitor(&monitorStoreFake{}, feed, nil, slog.New(slog.DiscardHandler))
 	states := map[string]*symbolState{"ETHUSDT": {}, "BTCUSDT": {}}
 	var subscribed []string
 	monitor.syncSubscriptions(states, &subscribed)
@@ -54,7 +55,7 @@ func TestMonitorSkipsUnchangedSubscriptions(t *testing.T) {
 
 func TestMonitorApplyFiresImmediateEqualityWithOwnerAndTradeTime(t *testing.T) {
 	store := &monitorStoreFake{}
-	monitor := NewMonitor(store, nil, nil, nil)
+	monitor := NewMonitor(store, nil, nil, slog.New(slog.DiscardHandler))
 	tradeTime := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	states := map[string]*symbolState{"BTCUSDT": {
 		lastPrice: "100", lastTradeID: 7, lastEventTime: tradeTime, epoch: 1, fresh: true,
@@ -74,7 +75,7 @@ func TestMonitorApplyFiresImmediateEqualityWithOwnerAndTradeTime(t *testing.T) {
 
 func TestMonitorTradeCrossingAndEpochReset(t *testing.T) {
 	store := &monitorStoreFake{}
-	m := NewMonitor(store, nil, nil, nil)
+	m := NewMonitor(store, nil, nil, slog.New(slog.DiscardHandler))
 	states := map[string]*symbolState{"BTCUSDT": {alerts: map[int64]Alert{1: {ID: 1, Version: 1, Symbol: "BTCUSDT", Target: "100"}}}}
 	at := time.Now()
 	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "90", TradeID: 1, Epoch: 1, EventTime: at})

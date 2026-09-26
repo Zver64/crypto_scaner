@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"crypto-scanner/internal/analysis/criteria/market_cap"
+	marketcapcriterion "crypto-scanner/internal/analysis/criteria/marketcap"
 	"crypto-scanner/internal/market"
 )
 
@@ -23,7 +23,7 @@ func TestMarketAPIExecutesUnifiedPipeline(t *testing.T) {
 			2: {"1d": httpCandles(start, 30, 24*time.Hour, 4)},
 		},
 	}
-	response := analysisRequestTo(t, newAnalysisHTTPHandler(store, market_cap.New()), "/api/v1/analysis/market", pipelineBody)
+	response := analysisRequestTo(t, newAnalysisHTTPHandler(store, marketcapcriterion.New()), "/api/v1/analysis/market", pipelineBody)
 	if response.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 	}
@@ -58,7 +58,7 @@ func TestMarketAPIValidatesEachVolatilityInstance(t *testing.T) {
 	for _, period := range []string{`"period":30`, `"period":60`} {
 		t.Run(period, func(t *testing.T) {
 			body := strings.Replace(pipelineBody, period, `"period":0`, 1)
-			response := analysisRequestTo(t, newAnalysisHTTPHandler(httpStore{}, market_cap.New()), "/api/v1/analysis/market", body)
+			response := analysisRequestTo(t, newAnalysisHTTPHandler(httpStore{}, marketcapcriterion.New()), "/api/v1/analysis/market", body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status=%d body=%s", response.Code, response.Body.String())
 			}

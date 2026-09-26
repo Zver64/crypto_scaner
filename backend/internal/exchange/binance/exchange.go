@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/numeric"
 
 	connector "github.com/binance/binance-connector-go"
 	"golang.org/x/time/rate"
@@ -35,20 +35,9 @@ type Options struct {
 	HistoryRepairLimiter *rate.Limiter
 }
 
-// New creates a public Binance Spot exchange adapter for the official endpoint.
-func New() *Exchange {
-	return NewWithOptions(Options{})
-}
-
-// NewWithHTTPClient creates an adapter with an explicit HTTP boundary. It is
-// useful for deterministic fixtures without exposing official connector types.
-func NewWithHTTPClient(baseURL string, httpClient *http.Client) *Exchange {
-	return NewWithOptions(Options{BaseURL: baseURL, HTTPClient: httpClient})
-}
-
-// NewWithOptions creates an adapter whose discovery and candle calls share one
-// limiter and retry policy.
-func NewWithOptions(options Options) *Exchange {
+// New creates a Binance Spot adapter whose discovery and candle calls share
+// one limiter and retry policy. Zero options select the official endpoint.
+func New(options Options) *Exchange {
 	if options.BaseURL == "" {
 		options.BaseURL = "https://api.binance.com"
 	}
@@ -102,7 +91,7 @@ func (exchange *Exchange) ListInstruments(ctx context.Context) ([]market.Instrum
 			return nil, fmt.Errorf("Binance Spot exchange information contains an empty symbol at index %d", index)
 		}
 		item := market.Instrument{
-			Symbol:     strings.ToUpper(strings.TrimSpace(symbol.Symbol)),
+			Symbol:     market.NormalizeSymbol(symbol.Symbol),
 			BaseAsset:  strings.ToUpper(strings.TrimSpace(symbol.BaseAsset)),
 			QuoteAsset: strings.ToUpper(strings.TrimSpace(symbol.QuoteAsset)),
 			Status:     strings.ToUpper(strings.TrimSpace(symbol.Status)),
@@ -151,7 +140,7 @@ func (exchange *Exchange) applyRateLimits(limits []*connector.RateLimit) {
 // ListClosedCandles returns Binance klines that are complete at the request's
 // exclusive cutoff. Connector response types remain confined to this adapter.
 func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.CandleRequest) ([]market.Candle, error) {
-	symbol := strings.ToUpper(strings.TrimSpace(request.Symbol))
+	symbol := market.NormalizeSymbol(request.Symbol)
 	if symbol == "" {
 		return nil, fmt.Errorf("list Binance candles: symbol is required")
 	}
@@ -201,8 +190,8 @@ func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.
 		values := []string{kline.Open, kline.High, kline.Low, kline.Close, kline.Volume, kline.QuoteAssetVolume}
 		converted := make([]float64, len(values))
 		for valueIndex, value := range values {
-			converted[valueIndex], err = strconv.ParseFloat(value, 64)
-			if err != nil || math.IsNaN(converted[valueIndex]) || math.IsInf(converted[valueIndex], 0) {
+			converted[valueIndex], err = numeric.ParseFinite(value)
+			if err != nil {
 				return nil, fmt.Errorf("list Binance candles for %s: invalid numeric value %q at kline %d", symbol, value, index)
 			}
 		}

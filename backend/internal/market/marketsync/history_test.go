@@ -1,9 +1,10 @@
-package sync_test
+package marketsync_test
 
 import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"reflect"
 	"sort"
 	"testing"
@@ -11,7 +12,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/market"
-	marketsync "crypto-scanner/internal/market/sync"
+	"crypto-scanner/internal/market/marketsync"
 )
 
 func TestSyncEnsuresHistoryDepthForEverySupportedInterval(t *testing.T) {
@@ -53,14 +54,14 @@ func TestSyncEnsuresHistoryDepthForEverySupportedInterval(t *testing.T) {
 
 					exchange := &historyExchange{instrument: instrument, candles: all}
 					store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: stored}
-					synchronizer := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.Profile(interval))
+					synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, market.BinanceSpotSyncProfile(interval))
 					if err := synchronizer.Sync(t.Context()); err != nil {
 						t.Fatal(err)
 					}
 					assertContinuousHistory(t, store, interval, want)
 					requestsAfterRepair := len(exchange.requests)
 
-					restarted := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.Profile(interval))
+					restarted := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, market.BinanceSpotSyncProfile(interval))
 					if err := restarted.Sync(t.Context()); err != nil {
 						t.Fatal(err)
 					}
@@ -94,7 +95,7 @@ func TestForwardPaginationResumesFromPersistedProgressAfterFailure(t *testing.T)
 		}
 		exchangeErr := errors.New("interrupted after first page")
 		exchange := &historyExchange{instrument: instrument, candles: all, failAtRequest: 2, requestErr: exchangeErr}
-		synchronizer := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.HourlyProfile())
+		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, market.BinanceSpotSyncProfile(market.IntervalHour))
 
 		if err := synchronizer.Sync(t.Context()); !errors.Is(err, exchangeErr) {
 			t.Fatalf("Sync() error = %v, want pagination failure", err)
@@ -121,7 +122,7 @@ func TestHistoryRepairDatabaseFailureDoesNotAdvanceCoverage(t *testing.T) {
 			upsertErrOnce:   storeErr,
 		}
 		exchange := &historyExchange{instrument: instrument, candles: all}
-		synchronizer := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.MVPProfile())
+		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 		if err := synchronizer.Sync(t.Context()); !errors.Is(err, storeErr) {
 			t.Fatalf("Sync() error = %v, want storage failure", err)
@@ -144,7 +145,7 @@ func TestHistoryRepairFailureKeepsDurableProgressAndDoesNotMarkExhausted(t *test
 		exchangeErr := errors.New("temporary Binance failure")
 		exchange := &historyExchange{instrument: instrument, candles: all, repairErr: exchangeErr}
 		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: stored}
-		synchronizer := marketsync.NewWithProfile(exchange, store, nil, 1, marketsync.MVPProfile())
+		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 		if err := synchronizer.Sync(t.Context()); !errors.Is(err, exchangeErr) {
 			t.Fatalf("Sync() error = %v, want repair failure", err)
@@ -162,10 +163,11 @@ func TestHistoryRepairFailureKeepsDurableProgressAndDoesNotMarkExhausted(t *test
 
 func assertContinuousHistory(t *testing.T, store *historyStore, interval market.CandleInterval, want int) {
 	t.Helper()
-	got, err := store.ListLatestCandlesByInterval(t.Context(), 1, string(interval), 3000)
+	latest, err := store.ListLatestCandles(t.Context(), []int64{1}, interval, 3000)
 	if err != nil {
 		t.Fatal(err)
 	}
+	got := latest[1]
 	if len(got) != want {
 		t.Fatalf("got %d candles, want %d", len(got), want)
 	}
@@ -175,8 +177,8 @@ func assertContinuousHistory(t *testing.T, store *historyStore, interval market.
 			t.Fatalf("duplicate candle at %s", candle.OpenTime)
 		}
 		seen[candle.OpenTime] = struct{}{}
-		if index > 0 && !interval.NextOpenTime(candle.OpenTime).Equal(got[index-1].OpenTime) {
-			t.Fatalf("history gap between %s and %s", candle.OpenTime, got[index-1].OpenTime)
+		if index > 0 && !interval.NextOpenTime(got[index-1].OpenTime).Equal(candle.OpenTime) {
+			t.Fatalf("history gap between %s and %s", got[index-1].OpenTime, candle.OpenTime)
 		}
 	}
 }
@@ -195,6 +197,8 @@ type historyExchange struct {
 func (e *historyExchange) ListInstruments(context.Context) ([]market.Instrument, error) {
 	return []market.Instrument{e.instrument}, nil
 }
+
+func (*historyExchange) RetryCount() uint64 { return 0 }
 
 func (e *historyExchange) ListClosedCandles(_ context.Context, request market.CandleRequest) ([]market.Candle, error) {
 	e.requests = append(e.requests, request)
@@ -227,10 +231,10 @@ type historyStore struct {
 	upsertErrOnce error
 }
 
-func (s *historyStore) ListLatestCandlesByInterval(_ context.Context, _ int64, _ string, limit int) ([]market.Candle, error) {
+func (s *historyStore) ListLatestCandles(_ context.Context, instrumentIDs []int64, _ market.CandleInterval, limit int) (map[int64][]market.Candle, error) {
 	result := cloneCandles(s.candles)
-	sort.Slice(result, func(i, j int) bool { return result[i].OpenTime.After(result[j].OpenTime) })
-	return result[:min(len(result), limit)], nil
+	sort.Slice(result, func(i, j int) bool { return result[i].OpenTime.Before(result[j].OpenTime) })
+	return map[int64][]market.Candle{instrumentIDs[0]: result[max(len(result)-limit, 0):]}, nil
 }
 
 func (s *historyStore) UpsertCandlesWithChanges(ctx context.Context, candles []market.Candle) ([]market.Candle, error) {

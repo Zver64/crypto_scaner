@@ -7,13 +7,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"math"
 	"slices"
 	"sync"
 	"time"
 
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/numeric"
 )
 
 const (
@@ -67,24 +67,22 @@ type Subscription struct {
 }
 
 // Source supplies the pairs that must stay current without any clients.
+// targets are the tracker's table targets; a source may track other ones.
 type Source interface {
-	Subscriptions(context.Context) ([]Subscription, error)
+	Subscriptions(ctx context.Context, targets []Target) ([]Subscription, error)
 }
 
-// InstrumentSource tracks every target for each listed instrument.
-type InstrumentSource struct {
-	List    func(context.Context) ([]int64, error)
-	Targets []Target
-}
+// InstrumentSource tracks every table target for each listed instrument.
+type InstrumentSource func(context.Context) ([]int64, error)
 
-func (source InstrumentSource) Subscriptions(ctx context.Context) ([]Subscription, error) {
-	ids, err := source.List(ctx)
+func (source InstrumentSource) Subscriptions(ctx context.Context, targets []Target) ([]Subscription, error) {
+	ids, err := source(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]Subscription, 0, len(ids)*len(source.Targets))
+	result := make([]Subscription, 0, len(ids)*len(targets))
 	for _, id := range ids {
-		for _, target := range source.Targets {
+		for _, target := range targets {
 			result = append(result, Subscription{InstrumentID: id, Target: target})
 		}
 	}
@@ -92,8 +90,9 @@ func (source InstrumentSource) Subscriptions(ctx context.Context) ([]Subscriptio
 }
 
 type Store interface {
-	// ListLatestCandlesByIntervalBatch returns the newest closed candles first.
-	ListLatestCandlesByIntervalBatch(context.Context, []int64, string, int) (map[int64][]market.Candle, error)
+	// ListLatestCandles returns up to limit latest closed candles per
+	// instrument in chronological order.
+	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
 }
 
 type pairKey struct {
@@ -109,12 +108,15 @@ type historyKey struct {
 // Tracker recalculates tracked pairs whenever their closed history changes and
 // caches on-demand table values until the history of their instrument changes.
 type Tracker struct {
-	store   Store
-	engine  *indicator.Engine
-	targets []Target
-	sources []Source
-	logger  *slog.Logger
-	wake    chan struct{}
+	store    Store
+	registry *indicator.Registry
+	targets  []Target
+	sources  []Source
+	logger   *slog.Logger
+	wake     chan struct{}
+	// retries are applied by Run after retryDelay; only Run's goroutine
+	// touches them.
+	retries []func()
 
 	mu        sync.Mutex
 	tracked   map[pairKey]Subscription
@@ -127,15 +129,12 @@ type Tracker struct {
 
 // New creates a tracker. Targets are the values served to tables; sources
 // decide which pairs are kept current in the background.
-func New(store Store, calculator indicator.Calculator, targets []Target, logger *slog.Logger, sources ...Source) (*Tracker, error) {
-	if store == nil || calculator == nil {
-		return nil, fmt.Errorf("closed indicator store and calculator are required")
-	}
-	if logger == nil {
-		logger = slog.Default()
+func New(store Store, registry *indicator.Registry, targets []Target, logger *slog.Logger, sources ...Source) (*Tracker, error) {
+	if store == nil || registry == nil || logger == nil {
+		return nil, fmt.Errorf("closed indicator store, indicator registry, and logger are required")
 	}
 	tracker := &Tracker{
-		store: store, engine: indicator.NewEngine(calculator), targets: targets, sources: sources, logger: logger,
+		store: store, registry: registry, targets: targets, sources: sources, logger: logger,
 		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, values: map[pairKey]Value{},
 		versions: map[historyKey]uint64{}, dirty: map[historyKey]struct{}{},
 	}
@@ -251,14 +250,32 @@ func (tracker *Tracker) Run(ctx context.Context) error {
 	tracker.Refresh()
 	ticker := time.NewTicker(refreshPeriod)
 	defer ticker.Stop()
+	retry := time.NewTimer(retryDelay)
+	retry.Stop()
+	defer retry.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
 			tracker.Refresh()
-		case <-tracker.wake:
+		case <-retry.C:
+			tracker.mu.Lock()
+			for _, mark := range tracker.retries {
+				mark()
+			}
+			tracker.mu.Unlock()
+			tracker.retries = nil
 			tracker.step(ctx)
+			if len(tracker.retries) > 0 {
+				retry.Reset(retryDelay)
+			}
+		case <-tracker.wake:
+			scheduled := len(tracker.retries) > 0
+			tracker.step(ctx)
+			if !scheduled && len(tracker.retries) > 0 {
+				retry.Reset(retryDelay)
+			}
 		}
 	}
 }
@@ -358,7 +375,7 @@ func (tracker *Tracker) step(ctx context.Context) {
 func (tracker *Tracker) collect(ctx context.Context) ([]Subscription, error) {
 	var result []Subscription
 	for _, source := range tracker.sources {
-		subscriptions, err := source.Subscriptions(ctx)
+		subscriptions, err := source.Subscriptions(ctx, tracker.targets)
 		if err != nil {
 			return nil, err
 		}
@@ -373,13 +390,10 @@ func (tracker *Tracker) collect(ctx context.Context) ([]Subscription, error) {
 	return result, nil
 }
 
+// retry schedules mark to run under the lock after retryDelay, followed by a
+// recalculation step.
 func (tracker *Tracker) retry(mark func()) {
-	time.AfterFunc(retryDelay, func() {
-		tracker.mu.Lock()
-		mark()
-		tracker.mu.Unlock()
-		tracker.signal()
-	})
+	tracker.retries = append(tracker.retries, mark)
 }
 
 // versionSnapshot must be called with the lock held.
@@ -396,7 +410,7 @@ func (tracker *Tracker) depth(target Target) (int, error) {
 	if !target.Interval.Valid() {
 		return 0, fmt.Errorf("closed indicator interval %q is unsupported", target.Interval)
 	}
-	lookback, err := tracker.engine.Lookback(target.Selection.Type, target.Selection.Parameters)
+	lookback, err := tracker.registry.Lookback(target.Selection.Type, target.Selection.Parameters)
 	if err != nil {
 		return 0, fmt.Errorf("closed indicator %q: %w", target.Selection.Type, err)
 	}
@@ -421,14 +435,12 @@ func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscript
 		for index, subscription := range group {
 			ids[index] = subscription.InstrumentID
 		}
-		candles, err := tracker.store.ListLatestCandlesByIntervalBatch(ctx, ids, string(target.Interval), depth)
+		candles, err := tracker.store.ListLatestCandles(ctx, ids, target.Interval, depth)
 		if err != nil {
 			return nil, fmt.Errorf("load closed %s history: %w", target.Interval, err)
 		}
 		for _, instrumentID := range ids {
-			history := slices.Clone(candles[instrumentID])
-			slices.Reverse(history)
-			value, err := tracker.value(target, history)
+			value, err := tracker.value(target, candles[instrumentID])
 			if err != nil {
 				return nil, err
 			}
@@ -445,13 +457,13 @@ func (tracker *Tracker) value(target Target, candles []market.Candle) (Value, er
 	}
 	last := candles[len(candles)-1].OpenTime.UTC()
 	value.OpenTime = last
-	results, err := tracker.engine.Calculate(target.Interval, candles, []indicator.Selection{target.Selection})
+	results, err := tracker.registry.CalculateCandles(target.Interval, candles, []indicator.Selection{target.Selection})
 	if err != nil {
 		return Value{}, fmt.Errorf("calculate closed %s: %w", target.Selection.Type, err)
 	}
 	for _, series := range results[0].Series {
 		if count := len(series.Points); count > 0 && series.Points[count-1].Time.Equal(last) &&
-			!math.IsNaN(series.Points[count-1].Value) && !math.IsInf(series.Points[count-1].Value, 0) {
+			numeric.Finite(series.Points[count-1].Value) {
 			value.Outputs = append(value.Outputs, Output{Name: series.Name, Value: series.Points[count-1].Value})
 		}
 	}

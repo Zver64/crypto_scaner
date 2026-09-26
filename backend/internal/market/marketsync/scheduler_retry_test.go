@@ -1,4 +1,4 @@
-package sync
+package marketsync
 
 import (
 	"context"
@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"crypto-scanner/internal/market"
 )
 
 func TestRetryDelayUsesBoundedExponentialBackoff(t *testing.T) {
@@ -28,7 +30,7 @@ func TestRetryDelayUsesBoundedExponentialBackoff(t *testing.T) {
 
 func TestSchedulerRetriesFailedStartupProfile(t *testing.T) {
 	runner := &failOnceRunner{succeeded: make(chan struct{})}
-	scheduler := NewScheduler(runner, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	scheduler := NewScheduler(map[market.CandleInterval]Runner{market.IntervalDay: runner}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	scheduler.retryDelay = time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)

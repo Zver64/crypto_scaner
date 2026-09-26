@@ -1,10 +1,7 @@
 package analysis
 
 import (
-	"context"
 	"fmt"
-
-	"crypto-scanner/internal/market"
 )
 
 // SelectionFact is a closed set of persisted facts supported by candidate SQL.
@@ -75,11 +72,6 @@ func (selection Selection) HasConstraint(fact SelectionFact) bool {
 		}
 	}
 	return false
-}
-
-// SelectionStore applies all constraints before ordering and limiting.
-type SelectionStore interface {
-	SelectActiveInstruments(context.Context, Selection) ([]market.Instrument, error)
 }
 
 // SelectionFilter is shared by backend defaults and request-activated filters.

@@ -6,65 +6,65 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math/big"
-	"sort"
+	"slices"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
+	"crypto-scanner/internal/market"
 	markettrade "crypto-scanner/internal/market/trade"
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/time/rate"
 )
 
-type TradeEvent = markettrade.Event
-type TradeStatus = markettrade.Status
+var _ markettrade.Feed = (*TradeStream)(nil)
 
-// sharedDialLimiter accounts for both kline and trade connections in the
-// process-wide Binance/IP connection budget.
-var sharedDialLimiter = rate.NewLimiter(rate.Every(1200*time.Millisecond), 5)
+func tradeStreamName(symbol string) string { return strings.ToLower(symbol) + "@trade" }
 
 // TradeStream is a process-wide pool of dynamically subscribed Binance Spot
 // <symbol>@trade connections. Each symbol belongs to exactly one worker.
 type TradeStream struct {
-	url      string
-	dialer   *websocket.Dialer
-	logger   *slog.Logger
-	events   chan TradeEvent
-	statuses chan TradeStatus
-	epoch    atomic.Int64
-
-	mu          sync.Mutex
-	workers     []*tradeWorker
-	assignments map[string]int
-	running     bool
-	ctx         context.Context
+	*streamPool[string]
+	events      chan markettrade.Event
+	statuses    chan markettrade.Status
+	assignments map[string]int // symbol -> worker index; guarded by mu
 }
 
-func NewTradeStream(logger *slog.Logger) *TradeStream {
-	return newTradeStream(defaultStreamURL, websocket.DefaultDialer, logger)
+func NewTradeStream(logger *slog.Logger, dialLimiter *rate.Limiter) *TradeStream {
+	return newTradeStream(defaultStreamURL, websocket.DefaultDialer, logger, dialLimiter)
 }
-func newTradeStream(url string, dialer *websocket.Dialer, logger *slog.Logger) *TradeStream {
-	return &TradeStream{url: url, dialer: dialer, logger: logger, events: make(chan TradeEvent, 512), statuses: make(chan TradeStatus, 64), assignments: map[string]int{}}
+
+func newTradeStream(url string, dialer *websocket.Dialer, logger *slog.Logger, dialLimiter *rate.Limiter) *TradeStream {
+	stream := &TradeStream{events: make(chan markettrade.Event, 512), statuses: make(chan markettrade.Status, 64), assignments: map[string]int{}}
+	stream.streamPool = newStreamPool(url, dialer, logger, dialLimiter, streamKind[string]{
+		label: "trade", module: "binance_trade", event: "trade", name: tradeStreamName,
+		handle: stream.handle,
+		status: func(symbols []string, connected bool, err error) bool {
+			select {
+			case stream.statuses <- markettrade.Status{Symbols: symbols, Connected: connected, Err: err}:
+				return true
+			default:
+				return false
+			}
+		},
+	})
+	return stream
 }
-func (stream *TradeStream) Events() <-chan TradeEvent    { return stream.events }
-func (stream *TradeStream) Statuses() <-chan TradeStatus { return stream.statuses }
+
+func (stream *TradeStream) Events() <-chan markettrade.Event    { return stream.events }
+func (stream *TradeStream) Statuses() <-chan markettrade.Status { return stream.statuses }
 
 func (stream *TradeStream) SetSymbols(symbols []string) {
 	set := make(map[string]struct{}, len(symbols))
 	for _, symbol := range symbols {
-		symbol = strings.ToUpper(strings.TrimSpace(symbol))
+		symbol = market.NormalizeSymbol(symbol)
 		if symbol != "" {
 			set[symbol] = struct{}{}
 		}
 	}
-	sorted := make([]string, 0, len(set))
-	for symbol := range set {
-		sorted = append(sorted, symbol)
-	}
-	sort.Strings(sorted)
+	sorted := slices.Sorted(maps.Keys(set))
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
 	for symbol := range stream.assignments {
@@ -80,230 +80,57 @@ func (stream *TradeStream) SetSymbols(symbols []string) {
 		if _, assigned := stream.assignments[symbol]; assigned {
 			continue
 		}
-		workerIndex := -1
-		for index, count := range counts {
-			if count < maxStreamsPerConnection {
-				workerIndex = index
-				break
-			}
-		}
+		workerIndex := slices.IndexFunc(counts, func(count int) bool { return count < maxStreamsPerConnection })
 		if workerIndex < 0 {
-			worker := newTradeWorker(stream.url, stream.dialer, stream.logger, stream.events, stream.statuses, sharedDialLimiter, &stream.epoch)
-			stream.workers = append(stream.workers, worker)
+			stream.addWorkerLocked()
 			counts = append(counts, 0)
 			workerIndex = len(stream.workers) - 1
-			if stream.running {
-				go worker.run(stream.ctx)
-			}
 		}
 		stream.assignments[symbol] = workerIndex
 		counts[workerIndex]++
 	}
-	groups := make([][]string, len(stream.workers))
+	groups := make([]map[string]struct{}, len(stream.workers))
+	for index := range groups {
+		groups[index] = map[string]struct{}{}
+	}
 	for symbol, workerIndex := range stream.assignments {
-		groups[workerIndex] = append(groups[workerIndex], symbol)
+		groups[workerIndex][symbol] = struct{}{}
 	}
 	for index, worker := range stream.workers {
-		sort.Strings(groups[index])
-		worker.setSymbols(groups[index])
+		worker.update(func(desired map[string]struct{}) {
+			clear(desired)
+			maps.Copy(desired, groups[index])
+		})
 	}
 }
 
-func (stream *TradeStream) Run(ctx context.Context) error {
-	stream.mu.Lock()
-	if stream.running {
-		stream.mu.Unlock()
-		return errors.New("trade stream already running")
+func (stream *TradeStream) handle(ctx context.Context, payload []byte, epoch int64) error {
+	// Case-only duplicates ("e"/"E", "t"/"T", "m"/"M") need their own fields
+	// because encoding/json matches keys case-insensitively.
+	var message struct {
+		Event     string `json:"e"`
+		EventTime int64  `json:"E"`
+		Symbol    string `json:"s"`
+		TradeID   int64  `json:"t"`
+		TradeTime int64  `json:"T"`
+		Price     string `json:"p"`
+		Maker     bool   `json:"m"`
+		Ignore    bool   `json:"M"`
 	}
-	stream.running, stream.ctx = true, ctx
-	workers := append([]*tradeWorker(nil), stream.workers...)
-	stream.mu.Unlock()
-	for _, worker := range workers {
-		go worker.run(ctx)
+	if err := json.Unmarshal(payload, &message); err != nil {
+		return fmt.Errorf("decode Binance trade stream: %w", err)
 	}
-	<-ctx.Done()
-	stream.mu.Lock()
-	stream.running = false
-	stream.mu.Unlock()
-	return nil
-}
-
-type tradeWorker struct {
-	url         string
-	dialer      *websocket.Dialer
-	logger      *slog.Logger
-	events      chan<- TradeEvent
-	statuses    chan<- TradeStatus
-	dialLimiter *rate.Limiter
-	epoch       *atomic.Int64
-	changes     chan struct{}
-	request     atomic.Int64
-	mu          sync.Mutex
-	desired     map[string]struct{}
-}
-
-func newTradeWorker(url string, dialer *websocket.Dialer, logger *slog.Logger, events chan<- TradeEvent, statuses chan<- TradeStatus, dialLimiter *rate.Limiter, epoch *atomic.Int64) *tradeWorker {
-	return &tradeWorker{url: url, dialer: dialer, logger: logger, events: events, statuses: statuses, dialLimiter: dialLimiter, epoch: epoch, changes: make(chan struct{}, 1), desired: map[string]struct{}{}}
-}
-func (worker *tradeWorker) setSymbols(symbols []string) {
-	desired := make(map[string]struct{}, len(symbols))
-	for _, symbol := range symbols {
-		desired[symbol] = struct{}{}
+	price, validPrice := new(big.Rat).SetString(message.Price)
+	if message.Symbol == "" || message.TradeID < 0 || !validPrice || price.Sign() <= 0 || message.EventTime <= 0 {
+		return errors.New("invalid Binance trade event")
 	}
-	worker.mu.Lock()
-	worker.desired = desired
-	worker.mu.Unlock()
+	event := markettrade.Event{Symbol: strings.ToUpper(message.Symbol), Price: message.Price, TradeID: message.TradeID, Epoch: epoch, EventTime: time.UnixMilli(message.EventTime).UTC()}
 	select {
-	case worker.changes <- struct{}{}:
+	case stream.events <- event:
+		return nil
+	case <-ctx.Done():
+		return nil
 	default:
-	}
-}
-func (worker *tradeWorker) symbols() []string {
-	worker.mu.Lock()
-	defer worker.mu.Unlock()
-	result := make([]string, 0, len(worker.desired))
-	for symbol := range worker.desired {
-		result = append(result, symbol)
-	}
-	sort.Strings(result)
-	return result
-}
-func (worker *tradeWorker) run(ctx context.Context) {
-	runDynamicStreamWorker(ctx, func() bool { return len(worker.symbols()) > 0 }, worker.changes, worker.connect,
-		func(err error) { worker.publish(false, err) }, worker.logger, "binance_trade", "trade")
-}
-
-func (worker *tradeWorker) connect(ctx context.Context) error {
-	conn, err := dialBinanceStream(ctx, worker.url, worker.dialer, worker.dialLimiter, "trade")
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
-
-	epoch := worker.epoch.Add(1)
-	readResult := make(chan error, 1)
-	acks := make(chan controlReply, 16)
-	go func() { readResult <- worker.readLoop(ctx, conn, acks, epoch) }()
-	active := make(map[string]struct{})
-	limiter := rate.NewLimiter(rate.Every(250*time.Millisecond), 1)
-	rotation := time.NewTimer(streamRotation)
-	defer rotation.Stop()
-	if err := worker.reconcile(ctx, conn, limiter, active, acks); err != nil {
-		return err
-	}
-	if len(active) == 0 {
-		return errStreamWorkerIdle
-	}
-	worker.publish(true, nil)
-	for {
-		select {
-		case <-ctx.Done():
-			return nil
-		case err := <-readResult:
-			return err
-		case <-rotation.C:
-			return errors.New("scheduled Binance trade connection rotation")
-		case <-worker.changes:
-			if err := worker.reconcile(ctx, conn, limiter, active, acks); err != nil {
-				return err
-			}
-			if len(active) == 0 {
-				return errStreamWorkerIdle
-			}
-		}
-	}
-}
-
-func (worker *tradeWorker) reconcile(ctx context.Context, conn *websocket.Conn, limiter *rate.Limiter, active map[string]struct{}, acks <-chan controlReply) error {
-	desired := worker.symbols()
-	desiredSet := make(map[string]struct{}, len(desired))
-	for _, symbol := range desired {
-		desiredSet[symbol] = struct{}{}
-	}
-	var add, remove []string
-	for _, symbol := range desired {
-		if _, ok := active[symbol]; !ok {
-			add = append(add, symbol)
-		}
-	}
-	for symbol := range active {
-		if _, ok := desiredSet[symbol]; !ok {
-			remove = append(remove, symbol)
-		}
-	}
-	sort.Strings(remove)
-	if err := worker.control(ctx, conn, limiter, "UNSUBSCRIBE", remove, acks); err != nil {
-		return err
-	}
-	if err := worker.control(ctx, conn, limiter, "SUBSCRIBE", add, acks); err != nil {
-		return err
-	}
-	clear(active)
-	for symbol := range desiredSet {
-		active[symbol] = struct{}{}
-	}
-	return nil
-}
-
-func (worker *tradeWorker) control(ctx context.Context, conn *websocket.Conn, limiter *rate.Limiter, method string, symbols []string, acks <-chan controlReply) error {
-	names := make([]string, len(symbols))
-	for index, symbol := range symbols {
-		names[index] = strings.ToLower(symbol) + "@trade"
-	}
-	return controlBinanceStreams(ctx, conn, limiter, &worker.request, "trade", method, names, acks)
-}
-
-func (worker *tradeWorker) readLoop(ctx context.Context, conn *websocket.Conn, acks chan<- controlReply, epoch int64) error {
-	for {
-		_, payload, err := conn.ReadMessage()
-		if err != nil {
-			return fmt.Errorf("read Binance trade stream: %w", err)
-		}
-		var envelope struct {
-			ID        *int64          `json:"id"`
-			Result    json.RawMessage `json:"result"`
-			Code      *int            `json:"code"`
-			Msg       string          `json:"msg"`
-			Event     string          `json:"e"`
-			EventTime int64           `json:"E"`
-			Symbol    string          `json:"s"`
-			TradeID   int64           `json:"t"`
-			Price     string          `json:"p"`
-		}
-		if err := json.Unmarshal(payload, &envelope); err != nil {
-			return fmt.Errorf("decode Binance trade stream: %w", err)
-		}
-		if envelope.ID != nil {
-			select {
-			case acks <- controlReply{ID: *envelope.ID, Result: envelope.Result, Code: envelope.Code, Msg: envelope.Msg}:
-			case <-ctx.Done():
-				return nil
-			}
-			continue
-		}
-		if envelope.Event != "trade" {
-			continue
-		}
-		price, validPrice := new(big.Rat).SetString(envelope.Price)
-		if envelope.Symbol == "" || envelope.TradeID < 0 || !validPrice || price.Sign() <= 0 || envelope.EventTime <= 0 {
-			return errors.New("invalid Binance trade event")
-		}
-		event := TradeEvent{Symbol: strings.ToUpper(envelope.Symbol), Price: envelope.Price, TradeID: envelope.TradeID, Epoch: epoch, EventTime: time.UnixMilli(envelope.EventTime).UTC()}
-		select {
-		case worker.events <- event:
-		case <-ctx.Done():
-			return nil
-		default:
-			return errors.New("trade event queue full")
-		}
-	}
-}
-
-func (worker *tradeWorker) publish(connected bool, err error) {
-	status := TradeStatus{Symbols: worker.symbols(), Connected: connected, Err: err}
-	select {
-	case worker.statuses <- status:
-	default:
-		worker.logger.Warn("Binance trade status queue full", "module", "binance_trade", "operation", "status")
+		return errors.New("trade event queue full")
 	}
 }

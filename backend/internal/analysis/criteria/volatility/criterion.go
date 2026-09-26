@@ -4,10 +4,9 @@ package volatility
 import (
 	"context"
 	"math"
-	"sort"
 
 	"crypto-scanner/internal/analysis"
-	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/numeric"
 )
 
 type Factory struct{}
@@ -26,7 +25,7 @@ func (Factory) Build(parameters map[string]any) (analysis.Criterion, error) {
 	unit := analysis.Unit(unitValue)
 	if !unitOK || !periodOK || period != math.Trunc(period) || !percentileOK || !minimumOK ||
 		(unit != analysis.UnitDays && unit != analysis.UnitHours) || period < 1 || period > float64(maxPeriod(unit)) ||
-		!finite(percentile) || percentile < 0 || percentile > 100 || !finite(minimum) || minimum < 0 {
+		!numeric.Finite(percentile) || percentile < 0 || percentile > 100 || !numeric.Finite(minimum) || minimum < 0 {
 		return nil, analysis.ErrInvalidArgument
 	}
 	return criterion{unit: unit, period: int(period), percentile: percentile, minimum: minimum}, nil
@@ -42,18 +41,13 @@ func (criterion) Name() string { return "volatility" }
 func (c criterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: c.unit, Count: c.period}}
 }
-func (criterion) Prepare(context.Context, []market.Instrument) ([]analysis.Warning, error) {
-	return nil, nil
-}
 
 func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	candles := input.Candles[c.unit]
 	if len(candles) < c.period {
 		return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Criterion: c.Name(), Required: c.period, Available: len(candles)}
 	}
-	candles = append([]market.Candle(nil), candles...)
-	sort.Slice(candles, func(i, j int) bool { return candles[i].OpenTime.After(candles[j].OpenTime) })
-	candles = candles[:c.period]
+	candles = candles[len(candles)-c.period:]
 	ranges := make([]float64, len(candles))
 	for i, candle := range candles {
 		if !(candle.Open > 0) {
@@ -62,11 +56,10 @@ func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.E
 		ranges[i] = ((candle.High - candle.Low) / candle.Open) * 100
 	}
 	value := exceedancePercentile(ranges, c.percentile)
-	return analysis.Evaluation{Name: c.Name(), Matched: value >= c.minimum, Metrics: map[string]float64{"range_percent": value}, CandleCount: len(candles), From: candles[len(candles)-1].OpenTime.UTC(), To: candles[0].OpenTime.UTC()}, nil
+	return analysis.Evaluation{Name: c.Name(), Matched: value >= c.minimum, Metrics: map[string]float64{"range_percent": value}, CandleCount: len(candles), From: candles[0].OpenTime.UTC(), To: candles[len(candles)-1].OpenTime.UTC()}, nil
 }
 
 func number(value any) (float64, bool) { number, ok := value.(float64); return number, ok }
-func finite(value float64) bool        { return !math.IsNaN(value) && !math.IsInf(value, 0) }
 func maxPeriod(unit analysis.Unit) int {
 	if unit == analysis.UnitHours {
 		return 3650 * 24

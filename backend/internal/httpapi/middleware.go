@@ -4,17 +4,13 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync/atomic"
 	"time"
 )
 
 type requestIDContextKey struct{}
-
-var fallbackRequestIDCounter atomic.Uint64
 
 // RequestIdentifier returns the correlation identifier installed by the HTTP
 // middleware, or an empty string outside an HTTP request.
@@ -89,10 +85,8 @@ func validRequestID(value string) bool {
 
 func newRequestID() string {
 	var random [16]byte
-	if _, err := rand.Read(random[:]); err == nil {
-		return hex.EncodeToString(random[:])
-	}
-	return fmt.Sprintf("%x-%x", time.Now().UnixNano(), fallbackRequestIDCounter.Add(1))
+	_, _ = rand.Read(random[:]) // never fails since Go 1.24
+	return hex.EncodeToString(random[:])
 }
 
 func outcome(status int) string {

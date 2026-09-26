@@ -1,4 +1,4 @@
-package market_cap
+package marketcap
 
 import (
 	"context"
@@ -17,7 +17,7 @@ func TestValidationAndPersistedInclusiveBoundary(t *testing.T) {
 	}
 	value := 100.0
 	store := &storeStub{instrument: market.Instrument{ID: 1, Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", MarketCapUSD: &value}}
-	service, _ := analysis.NewService(store, factory)
+	service, _ := analysis.NewService(store, nil, factory)
 	result, err := service.AnalyzeSymbol(context.Background(), analysis.SymbolRequest{Symbol: "BTCUSDT", Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{"min_market_cap_usd": float64(100)}}}})
 	if err != nil || !result.Matched || result.Evaluations[0].Metrics["market_cap_usd"] != 100 {
 		t.Fatalf("result=%+v err=%v", result, err)
@@ -50,7 +50,7 @@ func (s *storeStub) SelectActiveInstruments(_ context.Context, selection analysi
 	}
 	return []market.Instrument{s.instrument}, nil
 }
-func (s *storeStub) ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error) {
+func (s *storeStub) ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error) {
 	return nil, nil
 }
 func (s *storeStub) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {

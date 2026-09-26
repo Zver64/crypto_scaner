@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/market/kline"
 
 	"github.com/gorilla/websocket"
 )
@@ -46,8 +47,8 @@ func TestKlineStreamClosesIdleUpstreamAfterAcknowledgedUnsubscribe(t *testing.T)
 		}
 	}))
 	defer server.Close()
-	stream := newKlineStream("ws"+strings.TrimPrefix(server.URL, "http"), websocket.DefaultDialer, slog.New(slog.NewTextHandler(io.Discard, nil)))
-	key := KlineKey{Symbol: "BTCUSDT", Interval: market.IntervalHour}
+	stream := newKlineStream("ws"+strings.TrimPrefix(server.URL, "http"), websocket.DefaultDialer, slog.New(slog.NewTextHandler(io.Discard, nil)), NewDialLimiter())
+	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 	if err := stream.Subscribe(key); err != nil {
 		t.Fatal(err)
 	}
@@ -85,7 +86,7 @@ func TestDecodeKlineReturnsCompleteSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if event.Key != (KlineKey{Symbol: "BTCUSDT", Interval: market.IntervalHour}) {
+	if event.Key != (kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}) {
 		t.Fatalf("unexpected key: %+v", event.Key)
 	}
 	if !event.Final || event.Candle.Open != 100.5 || event.Candle.High != 110 || event.Candle.Low != 99 || event.Candle.Close != 108.25 || event.Candle.Volume != 12.5 || event.Candle.QuoteAssetVolume != 1300.75 || event.Candle.TradeCount != 42 {

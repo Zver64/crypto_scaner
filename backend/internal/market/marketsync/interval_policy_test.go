@@ -1,4 +1,4 @@
-package sync
+package marketsync
 
 import (
 	"testing"
@@ -25,9 +25,9 @@ func TestPolicyRejectsUnknownIntervalForGapRepair(t *testing.T) {
 
 func TestMissingRangesGroupsCalendarLengthMonthlyGap(t *testing.T) {
 	candles := []market.Candle{
-		{OpenTime: time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)},
-		{OpenTime: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)},
 		{OpenTime: time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)},
+		{OpenTime: time.Date(2024, 2, 1, 0, 0, 0, 0, time.UTC)},
+		{OpenTime: time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)},
 	}
 	got := missingRanges(candles, market.IntervalMonth)
 	if len(got) != 1 || !got[0].from.Equal(time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)) || !got[0].to.Equal(time.Date(2024, 5, 1, 0, 0, 0, 0, time.UTC)) {

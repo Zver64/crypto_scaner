@@ -39,7 +39,7 @@ func TestSynchronizerRefreshesPersistedFactsAndRecordsStatus(t *testing.T) {
 func TestSynchronizerFirstFailureHasNoSuccessfulTimestamp(t *testing.T) {
 	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{}}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
-	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, &fakeProvider{marketErr: io.ErrUnexpectedEOF}), source, nil, time.Hour, time.Minute)
+	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, &fakeProvider{marketErr: io.ErrUnexpectedEOF}), source, slog.New(slog.DiscardHandler), time.Hour, time.Minute)
 	if err := synchronizer.runRefresh(context.Background()); err == nil {
 		t.Fatal("provider failure unexpectedly succeeded")
 	}
@@ -55,7 +55,7 @@ func TestSynchronizerFailurePreservesPriorSuccessfulTimestampAndCap(t *testing.T
 	provider := &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", USD: 100, Available: true, ObservedAt: time.Now()}}}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
 	resolver := New(store, provider)
-	synchronizer, _ := NewCoinMetadataSynchronizer(resolver, source, nil, time.Hour, time.Minute)
+	synchronizer, _ := NewCoinMetadataSynchronizer(resolver, source, slog.New(slog.DiscardHandler), time.Hour, time.Minute)
 	if err := synchronizer.runRefresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +75,7 @@ func TestSynchronizerRetriesObservableBootstrapThenRefreshes(t *testing.T) {
 	store := &fakeStore{mappings: map[string]Mapping{}, caps: map[string]Cap{}}
 	provider := &bootstrapRetryProvider{firstErr: errors.New("temporary bootstrap failure"), refreshed: make(chan struct{})}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
-	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, nil, time.Hour, time.Millisecond)
+	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, slog.New(slog.DiscardHandler), time.Hour, time.Millisecond)
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- synchronizer.Run(ctx) }()
@@ -100,7 +100,7 @@ func TestSynchronizerRetriesEmptyCatalogBeforeRefreshInterval(t *testing.T) {
 		provider := &catalogProvider{refreshed: make(chan struct{})}
 		source := newDelayedCatalogSource()
 		const retryDelay = 40 * time.Millisecond
-		synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, nil, time.Hour, retryDelay)
+		synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, slog.New(slog.DiscardHandler), time.Hour, retryDelay)
 		ctx, cancel := context.WithCancel(context.Background())
 		result := make(chan error, 1)
 		go func() { result <- synchronizer.Run(ctx) }()
@@ -135,7 +135,7 @@ func TestSynchronizerCancellationResultPersistenceIsBounded(t *testing.T) {
 	store := &fakeStore{mappings: map[string]Mapping{}, caps: map[string]Cap{}}
 	provider := &blockingBootstrapProvider{started: make(chan struct{})}
 	source := &blockingStateSource{resultSaveStarted: make(chan struct{})}
-	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, nil, time.Hour, time.Hour)
+	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, slog.New(slog.DiscardHandler), time.Hour, time.Hour)
 	synchronizer.stateSaveTimeout = 20 * time.Millisecond
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
@@ -161,7 +161,7 @@ func TestSynchronizerCancellationDuringBootstrapIsRecorded(t *testing.T) {
 	store := &fakeStore{mappings: map[string]Mapping{}, caps: map[string]Cap{}}
 	provider := &blockingBootstrapProvider{started: make(chan struct{})}
 	source := &syncSource{}
-	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, nil, time.Hour, time.Hour)
+	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, provider), source, slog.New(slog.DiscardHandler), time.Hour, time.Hour)
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- synchronizer.Run(ctx) }()

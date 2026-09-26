@@ -1,10 +1,12 @@
 // Package indicator defines the transport-independent contract for calculating
 // technical indicators.
 //
-// Inputs and outputs are named numeric series. The package has no notion of
-// candles, timestamps, persistence, HTTP, or a particular indicator library.
-// Concrete implementations live in adapter packages and are selected by a
-// Registry.
+// Implementations consume and produce named numeric series and know nothing
+// about candles, timestamps, persistence, HTTP, or a particular indicator
+// library. Registry.CalculateCandles is the candle-aware layer on top of that
+// contract: it converts market.Candle history into input series and aligns the
+// results with candle open times. Concrete implementations live in adapter
+// packages and are selected by a Registry.
 package indicator
 
 // Type is the stable identifier of an indicator implementation.
@@ -52,11 +54,4 @@ type Implementation interface {
 	Inputs() []string
 	Lookback(parameters Parameters) (int, error)
 	Calculate(parameters Parameters, inputs Inputs) (Result, error)
-}
-
-// Calculator is the consumer-facing indicator calculation contract.
-type Calculator interface {
-	Lookback(indicatorType Type, parameters Parameters) (int, error)
-	Inputs(indicatorType Type) ([]string, error)
-	Calculate(request Request) (Result, error)
 }

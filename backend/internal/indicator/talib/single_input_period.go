@@ -9,6 +9,7 @@ import (
 	"math"
 
 	"crypto-scanner/internal/indicator"
+	"crypto-scanner/internal/platform/numeric"
 )
 
 // ErrInvalidRequest indicates invalid parameters or inputs supplied to a
@@ -64,7 +65,7 @@ func (adapter *singleInputPeriod) Calculate(parameters indicator.Parameters, inp
 		return indicator.Result{}, fmt.Errorf("%w: %s input is required", ErrInvalidRequest, adapter.spec.inputName)
 	}
 	for index, value := range values {
-		if math.IsNaN(value) || math.IsInf(value, 0) {
+		if !numeric.Finite(value) {
 			return indicator.Result{}, fmt.Errorf("%w: %s value %d is not finite", ErrInvalidRequest, adapter.spec.inputName, index)
 		}
 	}

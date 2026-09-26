@@ -16,7 +16,7 @@ import (
 )
 
 func TestTradeStreamPartitionsSymbolsAcrossConnectionLimit(t *testing.T) {
-	stream := newTradeStream("ws://unused", websocket.DefaultDialer, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	stream := newTradeStream("ws://unused", websocket.DefaultDialer, slog.New(slog.NewTextHandler(io.Discard, nil)), NewDialLimiter())
 	symbols := make([]string, maxStreamsPerConnection*2+1)
 	for index := range symbols {
 		symbols[index] = fmt.Sprintf("ASSET%04dUSDT", index)
@@ -27,7 +27,7 @@ func TestTradeStreamPartitionsSymbolsAcrossConnectionLimit(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, worker := range stream.workers {
-		owned := worker.symbols()
+		owned := worker.keys()
 		if len(owned) > maxStreamsPerConnection {
 			t.Fatalf("worker owns %d streams", len(owned))
 		}
@@ -82,7 +82,7 @@ func TestTradeStreamWaitsForAcknowledgementBeforeConnectedAndDeliversTrade(t *te
 	}))
 	defer server.Close()
 
-	stream := newTradeStream("ws"+strings.TrimPrefix(server.URL, "http"), websocket.DefaultDialer, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	stream := newTradeStream("ws"+strings.TrimPrefix(server.URL, "http"), websocket.DefaultDialer, slog.New(slog.NewTextHandler(io.Discard, nil)), NewDialLimiter())
 	stream.SetSymbols([]string{"BTCUSDT"})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

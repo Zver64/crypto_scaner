@@ -6,13 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"sort"
-	"strings"
+	"slices"
 	"sync"
 	"time"
 
-	"crypto-scanner/internal/exchange/binance"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/market/kline"
+	"crypto-scanner/internal/platform/backoff"
 
 	"golang.org/x/time/rate"
 )
@@ -22,21 +22,16 @@ const (
 	maxRetainedCandles    = 16
 	recoveryPagesPerBatch = 16
 	recoveryQueryRate     = 20
+	// maxClientSubscriptions bounds the live keys of one client connection.
+	maxClientSubscriptions = 8
 )
 
 var (
-	ErrInactiveSymbol             = errors.New("symbol is unknown or inactive")
+	ErrInactiveSymbol             = fmt.Errorf("live candles: %w", market.ErrInstrumentNotFound)
 	ErrInvalidInterval            = errors.New("unsupported candle interval")
 	ErrTooManyClientSubscriptions = errors.New("too many client subscriptions")
 	ErrServiceStopped             = errors.New("live service is stopped")
 )
-
-type Upstream interface {
-	Subscribe(binance.KlineKey) error
-	Unsubscribe(binance.KlineKey)
-	Events() <-chan binance.KlineEvent
-	Statuses() <-chan binance.StreamStatus
-}
 
 type HistoryStore interface {
 	GetActiveInstrumentBySymbol(context.Context, string) (market.Instrument, error)
@@ -57,9 +52,18 @@ type CandleState struct {
 	Final  bool
 }
 
+type MessageKind string
+
+const (
+	KindSubscribed MessageKind = "subscribed"
+	KindSnapshot   MessageKind = "snapshot"
+	KindUpdate     MessageKind = "update"
+	KindStatus     MessageKind = "status"
+)
+
 type Message struct {
-	Kind      string
-	Key       binance.KlineKey
+	Kind      MessageKind
+	Key       kline.Key
 	Candle    *CandleState
 	Candles   []CandleState
 	Freshness Freshness
@@ -75,7 +79,7 @@ type Client interface {
 
 type clientState struct {
 	client Client
-	keys   map[binance.KlineKey]struct{}
+	keys   map[kline.Key]struct{}
 }
 
 type keyState struct {
@@ -95,51 +99,70 @@ type keyState struct {
 	upstreamConnected  bool
 }
 
+// delivery is one message for a set of clients, published outside the lock.
+type delivery struct {
+	clients []Client
+	message Message
+}
+
+// settledFreshness is the freshness of a key that is not recovering.
+func (state *keyState) settledFreshness() Freshness {
+	if state.upstreamConnected {
+		return FreshnessFresh
+	}
+	return FreshnessStale
+}
+
 type Options struct {
 	ReleaseDelay time.Duration
 }
 
 type Service struct {
-	upstream        Upstream
+	upstream        kline.Feed
 	store           HistoryStore
 	logger          *slog.Logger
 	delay           time.Duration
 	recoveryLimiter *rate.Limiter
 
+	// recoveries tracks recovery goroutines. They are started only from Run's
+	// goroutine (via apply) with Run's context, and Run waits for them.
+	recoveries sync.WaitGroup
+
 	mu      sync.Mutex
-	states  map[binance.KlineKey]*keyState
+	states  map[kline.Key]*keyState
 	clients map[string]*clientState
-	ctx     context.Context
+	running bool
 	stopped bool
 }
 
-func New(upstream Upstream, store HistoryStore, logger *slog.Logger) *Service {
-	return NewWithOptions(upstream, store, logger, Options{})
-}
-
-func NewWithOptions(upstream Upstream, store HistoryStore, logger *slog.Logger, options Options) *Service {
+func New(upstream kline.Feed, store HistoryStore, logger *slog.Logger, options Options) *Service {
 	delay := options.ReleaseDelay
 	if delay <= 0 {
 		delay = defaultReleaseDelay
 	}
-	return &Service{upstream: upstream, store: store, logger: logger, delay: delay, recoveryLimiter: rate.NewLimiter(rate.Limit(recoveryQueryRate), 4), states: make(map[binance.KlineKey]*keyState), clients: make(map[string]*clientState)}
+	return &Service{upstream: upstream, store: store, logger: logger, delay: delay, recoveryLimiter: rate.NewLimiter(rate.Limit(recoveryQueryRate), 4), states: make(map[kline.Key]*keyState), clients: make(map[string]*clientState)}
 }
 
 func (service *Service) Run(ctx context.Context) error {
 	service.mu.Lock()
-	if service.ctx != nil {
+	if service.running {
 		service.mu.Unlock()
 		return errors.New("live service already running")
 	}
-	service.ctx = ctx
+	service.running = true
 	service.mu.Unlock()
-	defer service.shutdown()
+	ctx, cancel := context.WithCancel(ctx)
+	defer func() {
+		cancel()
+		service.recoveries.Wait()
+		service.shutdown()
+	}()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case event := <-service.upstream.Events():
-			service.apply(event)
+			service.apply(ctx, event)
 		case status := <-service.upstream.Statuses():
 			service.applyStatus(status)
 		}
@@ -154,7 +177,7 @@ func (service *Service) RegisterClient(client Client) bool {
 	}
 	state := service.clients[client.ID()]
 	if state == nil {
-		state = &clientState{keys: make(map[binance.KlineKey]struct{})}
+		state = &clientState{keys: make(map[kline.Key]struct{})}
 		service.clients[client.ID()] = state
 	}
 	state.client = client
@@ -162,11 +185,11 @@ func (service *Service) RegisterClient(client Client) bool {
 }
 
 func (service *Service) Subscribe(ctx context.Context, client Client, symbol string, interval market.CandleInterval) error {
-	symbol = strings.ToUpper(strings.TrimSpace(symbol))
+	symbol = market.NormalizeSymbol(symbol)
 	if !interval.Valid() {
 		return ErrInvalidInterval
 	}
-	key := binance.KlineKey{Symbol: symbol, Interval: interval}
+	key := kline.Key{Symbol: symbol, Interval: interval}
 	service.mu.Lock()
 	if service.stopped {
 		service.mu.Unlock()
@@ -177,7 +200,7 @@ func (service *Service) Subscribe(ctx context.Context, client Client, symbol str
 			service.mu.Unlock()
 			return nil
 		}
-		if len(clientState.keys) >= 8 {
+		if len(clientState.keys) >= maxClientSubscriptions {
 			service.mu.Unlock()
 			return ErrTooManyClientSubscriptions
 		}
@@ -222,13 +245,13 @@ func (service *Service) Subscribe(ctx context.Context, client Client, symbol str
 	state.clients[client.ID()] = client
 	registration := service.clients[client.ID()]
 	if registration == nil {
-		registration = &clientState{client: client, keys: make(map[binance.KlineKey]struct{})}
+		registration = &clientState{client: client, keys: make(map[kline.Key]struct{})}
 		service.clients[client.ID()] = registration
 	}
 	registration.keys[key] = struct{}{}
 	message := snapshotMessage(key, state)
 	service.mu.Unlock()
-	if !client.Enqueue(Message{Kind: "subscribed", Key: key}) || !client.Enqueue(message) {
+	if !client.Enqueue(Message{Kind: KindSubscribed, Key: key}) || !client.Enqueue(message) {
 		service.RemoveClient(client.ID())
 		client.Close()
 	}
@@ -236,8 +259,8 @@ func (service *Service) Subscribe(ctx context.Context, client Client, symbol str
 	return nil
 }
 
-func (service *Service) Unsubscribe(clientID string, key binance.KlineKey) {
-	key.Symbol = strings.ToUpper(strings.TrimSpace(key.Symbol))
+func (service *Service) Unsubscribe(clientID string, key kline.Key) {
+	key.Symbol = market.NormalizeSymbol(key.Symbol)
 	service.mu.Lock()
 	service.unsubscribeLocked(clientID, key)
 	service.mu.Unlock()
@@ -247,9 +270,9 @@ func (service *Service) Unsubscribe(clientID string, key binance.KlineKey) {
 func (service *Service) RemoveClient(clientID string) {
 	service.mu.Lock()
 	clientState := service.clients[clientID]
-	var keys []binance.KlineKey
+	var keys []kline.Key
 	if clientState != nil {
-		keys = make([]binance.KlineKey, 0, len(clientState.keys))
+		keys = make([]kline.Key, 0, len(clientState.keys))
 		for key := range clientState.keys {
 			keys = append(keys, key)
 		}
@@ -262,7 +285,7 @@ func (service *Service) RemoveClient(clientID string) {
 	service.logCounts("disconnect")
 }
 
-func (service *Service) unsubscribeLocked(clientID string, key binance.KlineKey) {
+func (service *Service) unsubscribeLocked(clientID string, key kline.Key) {
 	state := service.states[key]
 	if state == nil {
 		return
@@ -282,7 +305,7 @@ func (service *Service) unsubscribeLocked(clientID string, key binance.KlineKey)
 	state.release = time.AfterFunc(service.delay, func() { service.release(key, generation) })
 }
 
-func (service *Service) release(key binance.KlineKey, generation uint64) {
+func (service *Service) release(key kline.Key, generation uint64) {
 	service.mu.Lock()
 	state := service.states[key]
 	if state == nil || state.generation != generation || len(state.clients) != 0 {
@@ -295,7 +318,8 @@ func (service *Service) release(key binance.KlineKey, generation uint64) {
 	service.logCounts("release")
 }
 
-func (service *Service) apply(event binance.KlineEvent) {
+// apply runs on Run's goroutine; ctx bounds any recovery it starts.
+func (service *Service) apply(ctx context.Context, event kline.Event) {
 	service.mu.Lock()
 	state := service.states[event.Key]
 	if state == nil {
@@ -365,18 +389,14 @@ func (service *Service) apply(event binance.KlineEvent) {
 	}
 	generation, recoverNow := service.startRecoveryLocked(state, recoveryStart, recoveryThrough)
 	if !state.recovering {
-		if state.upstreamConnected {
-			state.freshness = FreshnessFresh
-		} else {
-			state.freshness = FreshnessStale
-		}
+		state.freshness = state.settledFreshness()
 	}
 	clients := clientSlice(state.clients)
 	freshness := state.freshness
 	service.mu.Unlock()
-	service.publish(clients, Message{Kind: "update", Key: event.Key, Candle: &incoming, Freshness: freshness})
+	service.publish(clients, Message{Kind: KindUpdate, Key: event.Key, Candle: &incoming, Freshness: freshness})
 	if recoverNow {
-		go service.recover(event.Key, generation)
+		service.recoveries.Go(func() { service.recover(ctx, event.Key, generation) })
 	}
 }
 
@@ -384,7 +404,7 @@ func (service *Service) apply(event binance.KlineEvent) {
 // graph subscribers. This path is demand-driven: it adds no Binance subscription.
 func (service *Service) HistoryChanged(candles []market.Candle) {
 	service.mu.Lock()
-	changed := make(map[binance.KlineKey]struct{})
+	changed := make(map[kline.Key]struct{})
 	for key, state := range service.states {
 		for _, candle := range candles {
 			if candle.InstrumentID != state.instrument.ID || candle.Interval != key.Interval {
@@ -399,10 +419,6 @@ func (service *Service) HistoryChanged(candles []market.Candle) {
 			changed[key] = struct{}{}
 		}
 	}
-	type delivery struct {
-		clients []Client
-		message Message
-	}
 	messages := make([]delivery, 0, len(changed))
 	for key := range changed {
 		state := service.states[key]
@@ -414,12 +430,9 @@ func (service *Service) HistoryChanged(candles []market.Candle) {
 	}
 }
 
-func (service *Service) applyStatus(status binance.StreamStatus) {
+func (service *Service) applyStatus(status kline.Status) {
 	service.mu.Lock()
-	messages := make([]struct {
-		clients []Client
-		message Message
-	}, 0, len(status.Keys))
+	messages := make([]delivery, 0, len(status.Keys))
 	for _, key := range status.Keys {
 		state := service.states[key]
 		if state == nil {
@@ -441,10 +454,7 @@ func (service *Service) applyStatus(status binance.StreamStatus) {
 		} else {
 			state.freshness = FreshnessStale
 		}
-		messages = append(messages, struct {
-			clients []Client
-			message Message
-		}{clientSlice(state.clients), Message{Kind: "status", Key: key, Freshness: state.freshness, Reason: errorString(status.Err)}})
+		messages = append(messages, delivery{clientSlice(state.clients), Message{Kind: KindStatus, Key: key, Freshness: state.freshness, Reason: errorString(status.Err)}})
 	}
 	service.mu.Unlock()
 	for _, item := range messages {
@@ -475,16 +485,13 @@ func (service *Service) startRecoveryLocked(state *keyState, start, through time
 	return state.recoveryGeneration, true
 }
 
-func (service *Service) recover(key binance.KlineKey, generation uint64) {
+func (service *Service) recover(ctx context.Context, key kline.Key, generation uint64) {
 	delay := time.Duration(0)
+	failures := 0
 	var progress recoveryProgress
 	for {
-		if delay > 0 {
-			select {
-			case <-service.context().Done():
-				return
-			case <-time.After(delay):
-			}
+		if delay > 0 && backoff.Sleep(ctx, delay) != nil {
+			return
 		}
 		service.mu.Lock()
 		state := service.states[key]
@@ -498,7 +505,7 @@ func (service *Service) recover(key binance.KlineKey, generation uint64) {
 			progress = newRecoveryProgress(through)
 		}
 
-		batchCtx, cancel := context.WithTimeout(service.context(), 5*time.Second)
+		batchCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		complete, stalled, err := service.loadRecoveryBatch(batchCtx, instrument.ID, key.Interval, start, &progress)
 		cancel()
 		service.mu.Lock()
@@ -518,11 +525,7 @@ func (service *Service) recover(key binance.KlineKey, generation uint64) {
 			state.recovering = false
 			state.recoveryStart = time.Time{}
 			state.recoveryThrough = time.Time{}
-			if state.upstreamConnected {
-				state.freshness = FreshnessFresh
-			} else {
-				state.freshness = FreshnessStale
-			}
+			state.freshness = state.settledFreshness()
 		}
 		clients, snapshot := clientSlice(state.clients), snapshotMessage(key, state)
 		service.mu.Unlock()
@@ -537,16 +540,11 @@ func (service *Service) recover(key binance.KlineKey, generation uint64) {
 			// The cursor is retained across bounded batches, while the process-wide
 			// limiter prevents many recovering streams from overwhelming PostgreSQL.
 			delay = 100 * time.Millisecond
+			failures = 0
 			continue
 		}
-		if delay < time.Second {
-			delay = time.Second
-		} else if delay < 30*time.Second {
-			delay *= 2
-			if delay > 30*time.Second {
-				delay = 30 * time.Second
-			}
-		}
+		delay = backoff.Exponential(time.Second, 30*time.Second, failures)
+		failures++
 		service.logger.Warn("live candle history recovery incomplete", "module", "market_live", "operation", "recover", "symbol", key.Symbol, "interval", key.Interval, "error", errorString(err), "retry_in", delay)
 	}
 }
@@ -602,31 +600,22 @@ func closedThrough(interval market.CandleInterval, candle CandleState) time.Time
 	return interval.PreviousOpenTime(candle.Candle.OpenTime)
 }
 
-func (service *Service) context() context.Context {
-	service.mu.Lock()
-	defer service.mu.Unlock()
-	if service.ctx != nil {
-		return service.ctx
-	}
-	return context.Background()
-}
-
 func (service *Service) publish(clients []Client, message Message) {
 	for _, client := range clients {
 		if !client.Enqueue(message) {
 			client.Close()
-			go service.RemoveClient(client.ID())
+			service.RemoveClient(client.ID())
 		}
 	}
 }
 
-func snapshotMessage(key binance.KlineKey, state *keyState) Message {
+func snapshotMessage(key kline.Key, state *keyState) Message {
 	candles := make([]CandleState, 0, len(state.candles))
 	for _, candle := range state.candles {
 		candles = append(candles, candle)
 	}
-	sort.Slice(candles, func(i, j int) bool { return candles[i].Candle.OpenTime.Before(candles[j].Candle.OpenTime) })
-	return Message{Kind: "snapshot", Key: key, Candles: candles, Freshness: state.freshness}
+	slices.SortFunc(candles, func(left, right CandleState) int { return left.Candle.OpenTime.Compare(right.Candle.OpenTime) })
+	return Message{Kind: KindSnapshot, Key: key, Candles: candles, Freshness: state.freshness}
 }
 
 func clientSlice(values map[string]Client) []Client {
@@ -655,7 +644,7 @@ func trimCandles(values map[time.Time]CandleState) time.Time {
 	for key := range values {
 		keys = append(keys, key)
 	}
-	sort.Slice(keys, func(i, j int) bool { return keys[i].Before(keys[j]) })
+	slices.SortFunc(keys, time.Time.Compare)
 	removed := keys[:len(keys)-maxRetainedCandles]
 	for _, key := range removed {
 		delete(values, key)
@@ -683,7 +672,7 @@ func (service *Service) shutdown() {
 		}
 		service.upstream.Unsubscribe(key)
 	}
-	service.states = make(map[binance.KlineKey]*keyState)
+	service.states = make(map[kline.Key]*keyState)
 	service.clients = make(map[string]*clientState)
 	service.mu.Unlock()
 	for _, client := range clients {

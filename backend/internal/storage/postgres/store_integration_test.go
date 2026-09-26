@@ -412,22 +412,38 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if err := store.UpsertCandles(ctx, []market.Candle{candle}); err != nil {
 			t.Fatalf("second candle upsert: %v", err)
 		}
-		candles, err := store.ListLatestCandlesByInterval(ctx, instrumentID, "1d", 30)
+		batch, err := store.ListLatestCandles(ctx, []int64{instrumentID}, market.IntervalDay, 30)
 		if err != nil {
 			t.Fatalf("ListLatestCandles() error = %v", err)
 		}
-		if len(candles) != 1 || candles[0].Close != 106.25 || candles[0].Open != 100.125 {
+		if candles := batch[instrumentID]; len(candles) != 1 || candles[0].Close != 106.25 || candles[0].Open != 100.125 {
 			t.Fatalf("candles = %#v, want one updated precision-preserving value", candles)
 		}
-		batch, err := store.ListLatestCandlesByIntervalBatch(ctx, []int64{instrumentID}, "1d", 30)
-		if err != nil || len(batch[instrumentID]) != 1 || batch[instrumentID][0].Close != 106.25 {
-			t.Fatalf("ListLatestCandlesByIntervalBatch() = %#v, %v", batch, err)
+
+		next := make([]market.Candle, 2)
+		for i := range next {
+			next[i] = candle
+			next[i].OpenTime = openTime.AddDate(0, 0, i+1)
+			next[i].CloseTime = next[i].OpenTime.Add(24*time.Hour - time.Millisecond)
+			next[i].Close = float64(101 + i)
+		}
+		if err := store.UpsertCandles(ctx, next); err != nil {
+			t.Fatalf("consecutive candle upsert: %v", err)
+		}
+		latest, err := store.ListLatestCandles(ctx, []int64{instrumentID}, market.IntervalDay, 2)
+		if err != nil {
+			t.Fatalf("ListLatestCandles(limit 2) error = %v", err)
+		}
+		if candles := latest[instrumentID]; len(candles) != 2 ||
+			!candles[0].OpenTime.Equal(next[0].OpenTime) || !candles[1].OpenTime.Equal(next[1].OpenTime) ||
+			candles[0].Close != 101 || candles[1].Close != 102 {
+			t.Fatalf("latest candles = %#v, want the two newest in ascending open time", candles)
 		}
 
 		if _, err := db.Exec(ctx, `UPDATE binance_spot.candles SET high = 1e10000 WHERE instrument_id = $1`, instrumentID); err != nil {
 			t.Fatalf("seed out-of-range numeric: %v", err)
 		}
-		if _, err := store.ListLatestCandlesByInterval(ctx, instrumentID, "1d", 30); err == nil {
+		if _, err := store.ListLatestCandles(ctx, []int64{instrumentID}, market.IntervalDay, 30); err == nil {
 			t.Fatal("ListLatestCandles() accepted a NUMERIC outside float64 range")
 		}
 	})

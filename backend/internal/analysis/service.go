@@ -12,13 +12,18 @@ import (
 )
 
 var ErrMarketDataUnavailable = errors.New("market data unavailable")
-var ErrMarketCapUnavailable = errors.New("market cap data unavailable")
-var ErrSymbolNotFound = errors.New("symbol not found")
+
+// ErrSymbolNotFound reports an unknown or inactive symbol. It wraps
+// market.ErrInstrumentNotFound, so callers may match either sentinel.
+var ErrSymbolNotFound = fmt.Errorf("analysis symbol lookup: %w", market.ErrInstrumentNotFound)
 
 type Store interface {
 	GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error)
-	ListActiveInstruments(context.Context) ([]market.Instrument, error)
-	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
+	// SelectActiveInstruments applies all constraints before ordering and limiting.
+	SelectActiveInstruments(context.Context, Selection) ([]market.Instrument, error)
+	// ListLatestCandles returns up to limit latest candles per instrument in
+	// chronological order.
+	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
 	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
 }
 
@@ -26,10 +31,6 @@ type Store interface {
 type ClosedIndicators interface {
 	// Latest never fails: unavailable values have no outputs.
 	Latest(context.Context, []int64) map[int64][]closedindicator.Value
-}
-
-type CandleBatchStore interface {
-	ListLatestCandlesByIntervalBatch(context.Context, []int64, string, int) (map[int64][]market.Candle, error)
 }
 
 type SymbolRequest struct {
@@ -83,8 +84,10 @@ type criterionInstance struct {
 	label string
 }
 
-// NewService validates and registers the explicitly composed criterion factories.
-func NewService(store Store, factories ...Factory) (*Service, error) {
+// NewService validates and registers the explicitly composed criterion
+// factories. closed attaches closed indicator values to search items; it may
+// be nil.
+func NewService(store Store, closed ClosedIndicators, factories ...Factory) (*Service, error) {
 	if len(factories) == 0 {
 		return nil, fmt.Errorf("criterion factories: %w", ErrInvalidArgument)
 	}
@@ -113,12 +116,7 @@ func NewService(store Store, factories ...Factory) (*Service, error) {
 			sortRegistry[field] = filter
 		}
 	}
-	return &Service{store: store, factories: registry, selectionFilters: selectionRegistry, selectionSortFilters: sortRegistry}, nil
-}
-
-// SetClosedIndicators attaches closed indicator values to every search item.
-func (service *Service) SetClosedIndicators(provider ClosedIndicators) {
-	service.closed = provider
+	return &Service{store: store, closed: closed, factories: registry, selectionFilters: selectionRegistry, selectionSortFilters: sortRegistry}, nil
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
@@ -129,13 +127,9 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 	if err := service.requireMarketData(ctx, requirements); err != nil {
 		return SymbolResult{}, err
 	}
-	selectionStore, ok := service.store.(SelectionStore)
-	if !ok {
-		return SymbolResult{}, fmt.Errorf("instrument selection is unsupported")
-	}
 	// Direct symbol analysis intentionally does not activate market-wide backend
 	// defaults such as stablecoin exclusion.
-	instruments, err := selectionStore.SelectActiveInstruments(ctx, Selection{Symbol: request.Symbol})
+	instruments, err := service.store.SelectActiveInstruments(ctx, Selection{Symbol: request.Symbol})
 	if err != nil {
 		return SymbolResult{}, fmt.Errorf("select active instrument: %w", err)
 	}
@@ -184,11 +178,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	if err := service.requireMarketData(ctx, requirements); err != nil {
 		return SearchResult{}, err
 	}
-	selectionStore, ok := service.store.(SelectionStore)
-	if !ok {
-		return SearchResult{}, fmt.Errorf("instrument selection is unsupported")
-	}
-	instruments, err := selectionStore.SelectActiveInstruments(ctx, selection)
+	instruments, err := service.store.SelectActiveInstruments(ctx, selection)
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("select active instruments: %w", err)
 	}
@@ -207,11 +197,6 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 		if err := service.loadCandleData(ctx, candidates, criterion.Requirements(), candleData); err != nil {
 			return SearchResult{}, err
 		}
-		warnings, prepareErr := criterion.Prepare(ctx, candidates)
-		if prepareErr != nil {
-			return SearchResult{}, fmt.Errorf("prepare criterion %s: %w", criterion.Name(), prepareErr)
-		}
-		result.Warnings = appendUniqueWarnings(result.Warnings, warnings)
 		for _, instrument := range candidates {
 			item, evaluateErr := service.evaluateCriterionWithData(ctx, instrument, criterion, candleData[instrument.ID], false)
 			var insufficient *InsufficientHistoryError
@@ -273,41 +258,15 @@ func (service *Service) loadCandleData(ctx context.Context, instruments []market
 		if len(ids) == 0 {
 			continue
 		}
-		if batchStore, ok := service.store.(CandleBatchStore); ok {
-			candles, err := batchStore.ListLatestCandlesByIntervalBatch(ctx, ids, string(requirement.Unit.Interval()), requirement.Count)
-			if err != nil {
-				return fmt.Errorf("list latest %s candles: %w", requirement.Unit, err)
-			}
-			for _, instrument := range pending {
-				data[instrument.ID][requirement.Unit] = candles[instrument.ID]
-			}
-			continue
+		candles, err := service.store.ListLatestCandles(ctx, ids, requirement.Unit.Interval(), requirement.Count)
+		if err != nil {
+			return fmt.Errorf("list latest %s candles: %w", requirement.Unit, err)
 		}
 		for _, instrument := range pending {
-			candles, err := service.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(requirement.Unit.Interval()), requirement.Count)
-			if err != nil {
-				return fmt.Errorf("list latest candles for %s: %w", instrument.Symbol, err)
-			}
-			data[instrument.ID][requirement.Unit] = candles
+			data[instrument.ID][requirement.Unit] = candles[instrument.ID]
 		}
 	}
 	return nil
-}
-
-func appendUniqueWarnings(existing, additions []Warning) []Warning {
-	for _, addition := range additions {
-		duplicate := false
-		for _, warning := range existing {
-			if warning == addition {
-				duplicate = true
-				break
-			}
-		}
-		if !duplicate {
-			existing = append(existing, addition)
-		}
-	}
-	return existing
 }
 
 func (service *Service) selection(request SearchRequest, criteria []criterionInstance) (Selection, error) {
@@ -385,18 +344,9 @@ func (service *Service) evaluate(ctx context.Context, instrument market.Instrume
 	result := SymbolResult{Symbol: instrument.Symbol, Matched: true, Evaluations: make([]Evaluation, 0, len(criteria))}
 	data := make(map[Unit][]market.Candle)
 	for _, criterion := range criteria {
-		warnings, err := criterion.Prepare(ctx, []market.Instrument{instrument})
-		if err != nil {
-			return SymbolResult{}, fmt.Errorf("prepare criterion %s: %w", criterion.Name(), err)
-		}
-		result.Warnings = append(result.Warnings, warnings...)
 		item, err := service.evaluateCriterionWithData(ctx, instrument, criterion, data, true)
 		if err != nil {
-			var insufficient *InsufficientHistoryError
-			if errors.As(err, &insufficient) && insufficient.Criterion == "" {
-				insufficient.Criterion = criterion.Name()
-			}
-			return SymbolResult{}, fmt.Errorf("evaluate criterion %s: %w", criterion.Name(), err)
+			return SymbolResult{}, err
 		}
 		result.Evaluations = append(result.Evaluations, item.Evaluations...)
 		result.Matched = result.Matched && item.Matched
@@ -423,11 +373,11 @@ func (service *Service) evaluateCriterionWithData(ctx context.Context, instrumen
 		if !loadMissing {
 			continue
 		}
-		candles, err := service.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(requirement.Unit.Interval()), requirement.Count)
+		candles, err := service.store.ListLatestCandles(ctx, []int64{instrument.ID}, requirement.Unit.Interval(), requirement.Count)
 		if err != nil {
 			return SymbolResult{}, fmt.Errorf("list latest candles for %s: %w", instrument.Symbol, err)
 		}
-		data[requirement.Unit] = candles
+		data[requirement.Unit] = candles[instrument.ID]
 	}
 	evaluation, err := criterion.Evaluate(ctx, Input{Instrument: instrument, Candles: data})
 	if err != nil {
@@ -443,16 +393,9 @@ func (service *Service) evaluateCriterionWithData(ctx context.Context, instrumen
 	return SymbolResult{Symbol: instrument.Symbol, Matched: evaluation.Matched, Evaluations: []Evaluation{evaluation}}, nil
 }
 
-var marketProfile = market.DailySyncProfile()
-var hourlyMarketProfile = market.HourlySyncProfile()
-
 func (service *Service) requireMarketData(ctx context.Context, requirements map[Unit]int) error {
 	for unit := range requirements {
-		profile := marketProfile
-		if unit == UnitHours {
-			profile = hourlyMarketProfile
-		}
-		state, err := service.store.GetSyncState(ctx, profile)
+		state, err := service.store.GetSyncState(ctx, market.BinanceSpotSyncProfile(unit.Interval()))
 		if err != nil {
 			return fmt.Errorf("get market synchronization state: %w", err)
 		}

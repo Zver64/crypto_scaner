@@ -33,7 +33,7 @@ func TestRunServicesMakesHTTPAvailableBeforeSchedulerStartup(t *testing.T) {
 	go func() {
 		result <- runServices(ctx, listener, http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
 			response.WriteHeader(http.StatusOK)
-		}), probe, idleService{}, idleService{}, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Second)
+		}), slog.New(slog.NewTextHandler(io.Discard, nil)), time.Second, testServices(probe, idleService{})...)
 	}()
 	select {
 	case <-probe.started:

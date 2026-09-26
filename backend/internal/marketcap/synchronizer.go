@@ -7,15 +7,14 @@ import (
 	"time"
 
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/backoff"
 )
 
 // InstrumentSource supplies the active exchange universe to the background
-// market-cap refresh. It is intentionally not used by HTTP analysis.
+// market-cap refresh and persists its outcomes. It is intentionally not used
+// by HTTP analysis.
 type InstrumentSource interface {
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
-}
-
-type syncStateStore interface {
 	SaveSyncState(context.Context, market.SyncState) error
 }
 
@@ -35,11 +34,8 @@ type CoinMetadataSynchronizer struct {
 }
 
 func NewCoinMetadataSynchronizer(resolver *Resolver, source InstrumentSource, logger *slog.Logger, interval, retryDelay time.Duration) (*CoinMetadataSynchronizer, error) {
-	if resolver == nil || source == nil || interval <= 0 || retryDelay <= 0 {
+	if resolver == nil || source == nil || logger == nil || interval <= 0 || retryDelay <= 0 {
 		return nil, fmt.Errorf("invalid coin metadata synchronizer")
-	}
-	if logger == nil {
-		logger = slog.Default()
 	}
 	return &CoinMetadataSynchronizer{resolver: resolver, source: source, logger: logger, interval: interval, retryDelay: retryDelay, stateSaveTimeout: defaultStateSaveTimeout}, nil
 }
@@ -53,8 +49,8 @@ func (s *CoinMetadataSynchronizer) Run(ctx context.Context) error {
 		if err == nil {
 			break
 		}
-		s.logger.WarnContext(ctx, "coin metadata mapping bootstrap failed", "module", "coin_metadata", "error", err.Error())
-		if !wait(ctx, s.retryDelay) {
+		s.logger.WarnContext(ctx, "coin metadata mapping bootstrap failed", "module", "coin_metadata", "error", err)
+		if backoff.Sleep(ctx, s.retryDelay) != nil {
 			return nil
 		}
 	}
@@ -66,24 +62,13 @@ func (s *CoinMetadataSynchronizer) Run(ctx context.Context) error {
 				return nil
 			}
 			delay = s.retryDelay
-			s.logger.WarnContext(ctx, "coin metadata refresh failed", "module", "coin_metadata", "error", err.Error())
+			s.logger.WarnContext(ctx, "coin metadata refresh failed", "module", "coin_metadata", "error", err)
 		} else {
 			s.logger.InfoContext(ctx, "coin metadata refresh completed", "module", "coin_metadata")
 		}
-		if !wait(ctx, delay) {
+		if backoff.Sleep(ctx, delay) != nil {
 			return nil
 		}
-	}
-}
-
-func wait(ctx context.Context, delay time.Duration) bool {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
 	}
 }
 
@@ -93,7 +78,7 @@ func (s *CoinMetadataSynchronizer) runRefresh(ctx context.Context) error {
 
 func (s *CoinMetadataSynchronizer) runOperation(ctx context.Context, operation string, run func(context.Context) error) error {
 	startedAt := time.Now().UTC()
-	if err := s.saveState(ctx, market.SyncState{Profile: market.CoinMetadataSyncProfile(), LastStartedAt: &startedAt, Status: market.SyncStatusRunning}); err != nil {
+	if err := s.source.SaveSyncState(ctx, market.SyncState{Profile: market.CoinMetadataSyncProfile(), LastStartedAt: &startedAt, Status: market.SyncStatusRunning}); err != nil {
 		return fmt.Errorf("save coin metadata %s start: %w", operation, err)
 	}
 	err := run(ctx)
@@ -110,18 +95,10 @@ func (s *CoinMetadataSynchronizer) runOperation(ctx context.Context, operation s
 	// the service lifecycle open indefinitely.
 	stateCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.stateSaveTimeout)
 	defer cancel()
-	if saveErr := s.saveState(stateCtx, state); saveErr != nil {
+	if saveErr := s.source.SaveSyncState(stateCtx, state); saveErr != nil {
 		return fmt.Errorf("save coin metadata %s result: %w", operation, saveErr)
 	}
 	return err
-}
-
-func (s *CoinMetadataSynchronizer) saveState(ctx context.Context, state market.SyncState) error {
-	store, ok := s.source.(syncStateStore)
-	if !ok {
-		return nil
-	}
-	return store.SaveSyncState(ctx, state)
 }
 
 // Refresh is never called from an HTTP request path.

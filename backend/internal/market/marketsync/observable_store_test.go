@@ -1,4 +1,4 @@
-package sync_test
+package marketsync_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"crypto-scanner/internal/market"
-	marketsync "crypto-scanner/internal/market/sync"
+	"crypto-scanner/internal/market/marketsync"
 )
 
 type changeReportingStore struct {

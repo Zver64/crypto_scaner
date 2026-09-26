@@ -175,7 +175,7 @@ func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *tes
 
 func TestBusinessRoutesRejectUnsupportedMethodsBeforeAuthentication(t *testing.T) {
 	authenticator := &countingAuthenticator{}
-	handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, nil, authenticator)
+	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
 	for _, test := range []struct {
 		name   string
 		method string
@@ -185,6 +185,10 @@ func TestBusinessRoutesRejectUnsupportedMethodsBeforeAuthentication(t *testing.T
 		{name: "market analysis", method: http.MethodGet, path: "/api/v1/analysis/market", allow: http.MethodPost},
 		{name: "instrument analysis", method: http.MethodGet, path: "/api/v1/analysis/instruments/BTCUSDT", allow: http.MethodPost},
 		{name: "candle history", method: http.MethodPost, path: "/api/v1/instruments/BTCUSDT/candles?interval=1h", allow: "GET, HEAD"},
+		{name: "favorites", method: http.MethodPost, path: "/api/v1/favorites", allow: "GET, HEAD"},
+		{name: "favorite", method: http.MethodGet, path: "/api/v1/favorites/BTCUSDT", allow: "DELETE, PUT"},
+		{name: "instrument alerts", method: http.MethodDelete, path: "/api/v1/instruments/BTCUSDT/alerts", allow: "GET, HEAD, POST"},
+		{name: "alert", method: http.MethodGet, path: "/api/v1/alerts/5", allow: "DELETE, PATCH"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := httptest.NewRecorder()
@@ -204,7 +208,7 @@ func TestBusinessRoutesRejectUnsupportedMethodsBeforeAuthentication(t *testing.T
 
 func TestUnknownAPIRouteReturnsNotFoundBeforeAuthentication(t *testing.T) {
 	authenticator := &countingAuthenticator{}
-	handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, nil, authenticator)
+	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/unknown", nil))
 	if response.Code != http.StatusNotFound {
@@ -215,21 +219,6 @@ func TestUnknownAPIRouteReturnsNotFoundBeforeAuthentication(t *testing.T) {
 	}
 	if authenticator.calls != 0 {
 		t.Fatalf("unknown API route reached authentication %d times", authenticator.calls)
-	}
-}
-
-func TestRouterDoesNotRegisterOptionalFavoritesAndAlertRoutesWithoutServices(t *testing.T) {
-	handler := newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{})
-	for _, request := range []*http.Request{
-		httptest.NewRequest(http.MethodGet, "/api/v1/favorites", nil),
-		httptest.NewRequest(http.MethodPost, "/api/v1/favorites/analysis", strings.NewReader(`{"criteria":[]}`)),
-		httptest.NewRequest(http.MethodGet, "/api/v1/instruments/BTCUSDT/alerts", nil),
-	} {
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		if response.Code != http.StatusNotFound {
-			t.Errorf("%s %s status = %d, want 404", request.Method, request.URL.Path, response.Code)
-		}
 	}
 }
 
@@ -247,7 +236,7 @@ func TestRouterDoesNotExposeTelegramBotEndpoints(t *testing.T) {
 }
 
 func newTestHTTPHandler(logger *slog.Logger, readiness httpapi.Readiness) http.Handler {
-	return httpapi.New(logger, readiness, unavailableAnalysis{}, nil, passThroughAuthenticator{})
+	return httpapi.NewWithAuthentication(logger, httpapi.Dependencies{Readiness: readiness, Analysis: unavailableAnalysis{}}, httpapi.Options{}, passThrough)
 }
 
 type unavailableAnalysis struct{}
@@ -259,9 +248,7 @@ func (unavailableAnalysis) Search(context.Context, analysis.SearchRequest) (anal
 	return analysis.SearchResult{}, analysis.ErrMarketDataUnavailable
 }
 
-type passThroughAuthenticator struct{}
-
-func (passThroughAuthenticator) Authenticate(next http.Handler) http.Handler { return next }
+func passThrough(next http.Handler) http.Handler { return next }
 
 type countingAuthenticator struct{ calls int }
 

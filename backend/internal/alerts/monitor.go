@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"sort"
 	"sync"
 	"time"
 
@@ -37,6 +36,11 @@ type symbolState struct {
 	alerts        map[int64]Alert
 }
 
+// reset drops the trade baseline; the next trade establishes a new one.
+func (s *symbolState) reset() {
+	s.fresh, s.lastPrice, s.lastTradeID, s.lastEventTime = false, "", 0, time.Time{}
+}
+
 type Monitor struct {
 	store   MonitorStore
 	feed    markettrade.Feed
@@ -48,13 +52,23 @@ type Monitor struct {
 }
 
 func NewMonitor(store MonitorStore, feed markettrade.Feed, sender AlertSender, logger *slog.Logger) *Monitor {
-	if logger == nil {
-		logger = slog.Default()
-	}
-	return &Monitor{store: store, feed: feed, sender: sender, logger: logger, ops: make(chan liveOperation, 128), refresh: make(chan struct{}, 1), sends: make(chan Fired, 128)}
+	return &Monitor{store: store, feed: feed, sender: sender, logger: logger.With("module", "alerts"), ops: make(chan liveOperation, 128), refresh: make(chan struct{}, 1), sends: make(chan Fired, 128)}
 }
-func (m *Monitor) Apply(a Alert)           { copy := a; m.ops <- liveOperation{apply: &copy} }
-func (m *Monitor) Remove(userID, id int64) { m.ops <- liveOperation{removeUser: userID, removeID: id} }
+func (m *Monitor) Apply(a Alert) { copy := a; m.enqueue(liveOperation{apply: &copy}) }
+func (m *Monitor) Remove(userID, id int64) {
+	m.enqueue(liveOperation{removeUser: userID, removeID: id})
+}
+
+// enqueue never blocks the caller's request. A full queue, or a stopped
+// monitor, falls back to a full reload: it reflects the committed change,
+// including an immediate fire for a target equal to the current price.
+func (m *Monitor) enqueue(op liveOperation) {
+	select {
+	case m.ops <- op:
+	default:
+		m.Changed()
+	}
+}
 func (m *Monitor) Changed() {
 	select {
 	case m.refresh <- struct{}{}:
@@ -65,6 +79,9 @@ func (m *Monitor) Run(ctx context.Context) error {
 	states := map[string]*symbolState{}
 	subscribed := []string(nil)
 	if err := m.reload(ctx, states, &subscribed); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
 		return fmt.Errorf("load price alerts: %w", err)
 	}
 	var workers sync.WaitGroup
@@ -82,13 +99,9 @@ func (m *Monitor) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
-			if err := m.reload(ctx, states, &subscribed); err != nil {
-				m.logger.WarnContext(ctx, "refresh price alerts failed", "error", err)
-			}
+			m.refreshAll(ctx, states, &subscribed)
 		case <-m.refresh:
-			if err := m.reload(ctx, states, &subscribed); err != nil {
-				m.logger.WarnContext(ctx, "refresh price alerts failed", "error", err)
-			}
+			m.refreshAll(ctx, states, &subscribed)
 		case op := <-m.ops:
 			m.operation(ctx, states, op)
 			m.syncSubscriptions(states, &subscribed)
@@ -96,10 +109,7 @@ func (m *Monitor) Run(ctx context.Context) error {
 			if !status.Connected {
 				for _, symbol := range status.Symbols {
 					if s := states[symbol]; s != nil {
-						s.fresh = false
-						s.lastPrice = ""
-						s.lastTradeID = 0
-						s.lastEventTime = time.Time{}
+						s.reset()
 					}
 				}
 			}
@@ -108,6 +118,23 @@ func (m *Monitor) Run(ctx context.Context) error {
 		}
 	}
 }
+
+// refreshAll applies queued operations before reloading, so an operation
+// enqueued before a newer committed change can never overwrite the reload.
+func (m *Monitor) refreshAll(ctx context.Context, states map[string]*symbolState, subscribed *[]string) {
+	for drained := false; !drained; {
+		select {
+		case op := <-m.ops:
+			m.operation(ctx, states, op)
+		default:
+			drained = true
+		}
+	}
+	if err := m.reload(ctx, states, subscribed); err != nil {
+		m.logger.WarnContext(ctx, "refresh price alerts failed", "error", err)
+	}
+}
+
 func (m *Monitor) reload(ctx context.Context, states map[string]*symbolState, subscribed *[]string) error {
 	items, err := m.store.ListEnabledAlerts(ctx)
 	if err != nil {
@@ -138,13 +165,16 @@ func (m *Monitor) reload(ctx context.Context, states map[string]*symbolState, su
 		if incoming == nil {
 			incoming = map[int64]Alert{}
 		}
+		var changed []Alert
 		for id, alert := range incoming {
 			if existing, ok := s.alerts[id]; !ok || existing.Version != alert.Version {
-				s.fresh, s.lastPrice, s.lastTradeID, s.lastEventTime = false, "", 0, time.Time{}
-				break
+				changed = append(changed, alert)
 			}
 		}
 		s.alerts = incoming
+		if len(changed) > 0 {
+			m.applied(ctx, s, changed...)
+		}
 	}
 	for symbol := range states {
 		if _, ok := desired[symbol]; !ok {
@@ -160,7 +190,7 @@ func (m *Monitor) syncSubscriptions(states map[string]*symbolState, subscribed *
 	for symbol := range states {
 		symbols = append(symbols, symbol)
 	}
-	sort.Strings(symbols)
+	slices.Sort(symbols)
 	if slices.Equal(symbols, *subscribed) {
 		return
 	}
@@ -175,16 +205,12 @@ func (m *Monitor) operation(ctx context.Context, states map[string]*symbolState,
 			s = &symbolState{alerts: map[int64]Alert{}}
 			states[a.Symbol] = s
 		}
-		wasFresh, price, eventTime := s.fresh, s.lastPrice, s.lastEventTime
-		s.alerts[a.ID] = a
-		if wasFresh {
-			if cmp, err := Compare(a.Target, price); err == nil && cmp == 0 {
-				m.fire(ctx, s, a, price, eventTime)
-			}
+		// Versions only grow; an operation older than a reload is stale.
+		if existing, ok := s.alerts[a.ID]; ok && existing.Version > a.Version {
+			return
 		}
-		// A newly created/versioned target must never use the pre-change side of
-		// a crossing. The next trade establishes a new baseline.
-		s.fresh, s.lastPrice, s.lastTradeID, s.lastEventTime = false, "", 0, time.Time{}
+		s.alerts[a.ID] = a
+		m.applied(ctx, s, a)
 		return
 	}
 	for _, s := range states {
@@ -193,13 +219,29 @@ func (m *Monitor) operation(ctx context.Context, states map[string]*symbolState,
 		}
 	}
 }
+
+// applied handles new or re-versioned alerts of s: a target equal to the
+// current price fires at once, and no target may use the pre-change side of a
+// crossing, so the next trade establishes a new baseline.
+func (m *Monitor) applied(ctx context.Context, s *symbolState, alerts ...Alert) {
+	if s.fresh {
+		for _, a := range alerts {
+			if cmp, err := Compare(a.Target, s.lastPrice); err == nil && cmp == 0 {
+				m.fire(ctx, s, a, s.lastPrice, s.lastEventTime)
+			}
+		}
+	}
+	s.reset()
+}
+
 func (m *Monitor) trade(ctx context.Context, states map[string]*symbolState, e markettrade.Event) {
 	s := states[e.Symbol]
 	if s == nil {
 		return
 	}
 	if s.epoch != e.Epoch {
-		s.fresh, s.lastPrice, s.lastTradeID, s.lastEventTime, s.epoch = false, "", 0, time.Time{}, e.Epoch
+		s.reset()
+		s.epoch = e.Epoch
 	}
 	if s.fresh && e.TradeID <= s.lastTradeID {
 		return

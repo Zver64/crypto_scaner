@@ -1,11 +1,11 @@
-// Package chart coordinates candle pages with the shared indicator engine.
+// Package chart coordinates candle pages with the shared indicator registry.
 package chart
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
+	"log/slog"
 	"time"
 
 	"crypto-scanner/internal/indicator"
@@ -15,48 +15,50 @@ import (
 var ErrInvalidRequest = errors.New("invalid chart request")
 
 const (
-	maxIndicatorConfigs = 8
-	maxChartLookback    = 5000
+	// DefaultRange is the initial chart range; larger ranges come from scroll-back.
+	DefaultRange = 200
+	// MaxRange bounds the number of closed candles in one chart.
+	MaxRange = 5000
+	// maxIndicators bounds the indicator selection of one chart.
+	maxIndicators        = 8
+	maxIndicatorLookback = 5000
 )
 
 type Store interface {
 	GetActiveInstrumentBySymbol(context.Context, string) (market.Instrument, error)
 	ListCandlePage(context.Context, int64, market.CandleInterval, *time.Time, int) (market.CandlePage, error)
 }
-type IndicatorConfig = indicator.Selection
 type Request struct {
 	Symbol     string
 	Interval   market.CandleInterval
 	Limit      int
-	Indicators []IndicatorConfig
+	Indicators []indicator.Selection
 }
-type Point = indicator.Point
-type Series = indicator.NamedSeries
-type IndicatorResult = indicator.Calculation
 type Page struct {
 	Symbol     string
 	Candles    []market.Candle
-	Indicators []IndicatorResult
+	Indicators []indicator.Calculation
 	HasMore    bool
 	NextBefore *time.Time
 }
 type Service struct {
-	store  Store
-	engine *indicator.Engine
+	store      Store
+	indicators *indicator.Registry
+	logger     *slog.Logger
 }
 
-func NewService(store Store, calculator indicator.Calculator) (*Service, error) {
-	if store == nil || calculator == nil {
-		return nil, fmt.Errorf("%w: store and calculator are required", ErrInvalidRequest)
+func NewService(store Store, indicators *indicator.Registry, logger *slog.Logger) (*Service, error) {
+	if store == nil || indicators == nil || logger == nil {
+		return nil, errors.New("chart store, indicator registry, and logger are required")
 	}
-	return &Service{store: store, engine: indicator.NewEngine(calculator)}, nil
+	return &Service{store: store, indicators: indicators, logger: logger.With("module", "chart")}, nil
 }
 func (service *Service) Build(ctx context.Context, request Request) (Page, error) {
-	symbol := strings.ToUpper(strings.TrimSpace(request.Symbol))
+	symbol := market.NormalizeSymbol(request.Symbol)
 	if service == nil || symbol == "" || !request.Interval.Valid() || request.Limit <= 0 || len(request.Indicators) == 0 {
 		return Page{}, fmt.Errorf("%w: symbol, interval, limit, and indicators are required", ErrInvalidRequest)
 	}
-	if request.Limit > maxChartLookback {
+	if request.Limit > MaxRange {
 		return Page{}, fmt.Errorf("%w: chart range exceeds limit", ErrInvalidRequest)
 	}
 	if err := service.Validate(request.Indicators); err != nil {
@@ -70,34 +72,32 @@ func (service *Service) Build(ctx context.Context, request Request) (Page, error
 	if err != nil {
 		return Page{}, fmt.Errorf("list chart candles: %w", err)
 	}
-	results, err := service.engine.Calculate(request.Interval, stored.Candles, request.Indicators)
+	results, err := service.indicators.CalculateCandles(request.Interval, stored.Candles, request.Indicators)
 	if err != nil {
-		return Page{}, fmt.Errorf("%w: calculate: %v", ErrInvalidRequest, err)
+		return Page{}, fmt.Errorf("%w: calculate: %w", ErrInvalidRequest, err)
 	}
-	var nextBefore *time.Time
-	if stored.HasMore && len(stored.Candles) > 0 {
-		value := stored.Candles[0].OpenTime.UTC()
-		nextBefore = &value
-	}
-	return Page{Symbol: instrument.Symbol, Candles: stored.Candles, Indicators: results, HasMore: stored.HasMore, NextBefore: nextBefore}, nil
+	return Page{Symbol: instrument.Symbol, Candles: stored.Candles, Indicators: results, HasMore: stored.HasMore, NextBefore: stored.NextBefore()}, nil
 }
 
 // Validate checks an indicator selection before any history is loaded.
-func (service *Service) Validate(configs []IndicatorConfig) error {
-	if len(configs) == 0 || len(configs) > maxIndicatorConfigs {
-		return fmt.Errorf("%w: indicator count must be between 1 and %d", ErrInvalidRequest, maxIndicatorConfigs)
+func (service *Service) Validate(configs []indicator.Selection) error {
+	if len(configs) == 0 || len(configs) > maxIndicators {
+		return fmt.Errorf("%w: indicator count must be between 1 and %d", ErrInvalidRequest, maxIndicators)
 	}
 	for _, config := range configs {
-		value, err := service.engine.Lookback(config.Type, config.Parameters)
-		if err != nil || value > maxChartLookback {
-			return fmt.Errorf("%w: lookback for %q: %v", ErrInvalidRequest, config.Type, err)
+		value, err := service.indicators.Lookback(config.Type, config.Parameters)
+		if err != nil {
+			return fmt.Errorf("%w: lookback for %q: %w", ErrInvalidRequest, config.Type, err)
+		}
+		if value > maxIndicatorLookback {
+			return fmt.Errorf("%w: lookback for %q exceeds %d", ErrInvalidRequest, config.Type, maxIndicatorLookback)
 		}
 	}
 	return nil
 }
 
-// Extend calculates a private live context. It never mutates closed history.
-func (service *Service) Extend(page Page, interval market.CandleInterval, live *market.Candle, configs []IndicatorConfig) (Page, error) {
+// extend calculates a private live context. It never mutates closed history.
+func (service *Service) extend(page Page, interval market.CandleInterval, live *market.Candle, configs []indicator.Selection) (Page, error) {
 	candles := append([]market.Candle(nil), page.Candles...)
 	if live != nil {
 		if len(candles) > 0 && candles[len(candles)-1].OpenTime.Equal(live.OpenTime) {
@@ -106,7 +106,7 @@ func (service *Service) Extend(page Page, interval market.CandleInterval, live *
 			candles = append(candles, *live)
 		}
 	}
-	results, err := service.engine.Calculate(interval, candles, configs)
+	results, err := service.indicators.CalculateCandles(interval, candles, configs)
 	if err != nil {
 		return Page{}, err
 	}

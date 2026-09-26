@@ -45,26 +45,16 @@ func Serve(
 	case <-ctx.Done():
 	}
 
-	deadline := time.Now().Add(shutdownTimeout)
-	shutdownCtx, cancel := context.WithDeadline(context.Background(), deadline)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancel()
-	forceResult := make(chan error, 1)
-	forceTimer := time.AfterFunc(time.Until(deadline), func() {
-		forceResult <- server.Close()
-	})
-	shutdownErr := server.Shutdown(shutdownCtx)
-	if !forceTimer.Stop() {
-		closeErr := <-forceResult
-		if shutdownErr == nil {
-			shutdownErr = context.DeadlineExceeded
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		if !errors.Is(err, context.DeadlineExceeded) {
+			return fmt.Errorf("shutdown HTTP: %w", err)
 		}
-		if closeErr != nil {
-			return fmt.Errorf("HTTP shutdown deadline exceeded: %w (force close: %v)", shutdownErr, closeErr)
+		if closeErr := server.Close(); closeErr != nil {
+			return fmt.Errorf("HTTP shutdown deadline exceeded: %w (force close: %v)", err, closeErr)
 		}
-		return fmt.Errorf("HTTP shutdown deadline exceeded: %w", shutdownErr)
-	}
-	if shutdownErr != nil {
-		return fmt.Errorf("shutdown HTTP: %w", shutdownErr)
+		return fmt.Errorf("HTTP shutdown deadline exceeded: %w", err)
 	}
 
 	if err := <-serveResult; err != nil && !errors.Is(err, http.ErrServerClosed) {

@@ -62,7 +62,6 @@ type Factory interface {
 type Criterion interface {
 	Name() string
 	Requirements() []CandleRequirement
-	Prepare(context.Context, []market.Instrument) ([]Warning, error)
 	Evaluate(context.Context, Input) (Evaluation, error)
 }
 type Input struct {

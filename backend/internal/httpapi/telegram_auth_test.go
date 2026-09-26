@@ -1,4 +1,4 @@
-package telegram_test
+package httpapi_test
 
 import (
 	"context"
@@ -17,18 +17,18 @@ import (
 
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/auth/telegram"
+	"crypto-scanner/internal/httpapi"
 )
 
 const (
-	fixtureBotToken = "123456789:AAExampleBotTokenForDeterministicTests"
-	validInitData   = "auth_date=1785902400&query_id=AAHdF6IQAAAAAN0XogcAAAAA&user=%7B%22id%22%3A424242%2C%22first_name%22%3A%22Alice%22%2C%22username%22%3A%22alice%22%7D&hash=3787d0e46c1919cd293ec89f766ac33375446dbd7311acc07e422fecfc07812b"
+	validInitData = "auth_date=1785902400&query_id=AAHdF6IQAAAAAN0XogcAAAAA&user=%7B%22id%22%3A424242%2C%22first_name%22%3A%22Alice%22%2C%22username%22%3A%22alice%22%7D&hash=3787d0e46c1919cd293ec89f766ac33375446dbd7311acc07e422fecfc07812b"
 )
 
 var fixtureNow = time.Date(2026, time.August, 5, 4, 10, 0, 0, time.UTC)
 
 func TestEnabledTelegramUserCanReachProtectedHandler(t *testing.T) {
 	want := auth.User{ID: 7, TelegramID: 424242, Username: "alice", DisplayName: "Alice", Enabled: true}
-	middleware := telegram.NewWithOptions(
+	middleware := httpapi.RequireTelegramUser(telegram.New(
 		userStoreStub{find: func(_ context.Context, telegramID int64) (auth.User, error) {
 			if telegramID != want.TelegramID {
 				t.Fatalf("telegram ID = %d, want %d", telegramID, want.TelegramID)
@@ -38,9 +38,9 @@ func TestEnabledTelegramUserCanReachProtectedHandler(t *testing.T) {
 		fixtureBotToken,
 		15*time.Minute,
 		telegram.Options{Now: func() time.Time { return fixtureNow }},
-	)
-	handler := middleware.Authenticate(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		got, ok := telegram.UserFromContext(request.Context())
+	))
+	handler := middleware(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		got, ok := httpapi.UserFromContext(request.Context())
 		if !ok || got != want {
 			t.Fatalf("authenticated user = %#v, %t; want %#v, true", got, ok, want)
 		}
@@ -81,7 +81,7 @@ func TestInvalidTelegramCredentialsAreUnauthenticated(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			middleware := telegram.NewWithOptions(
+			middleware := httpapi.RequireTelegramUser(telegram.New(
 				userStoreStub{find: func(context.Context, int64) (auth.User, error) {
 					t.Fatal("user store called for unauthenticated request")
 					return auth.User{}, nil
@@ -89,9 +89,9 @@ func TestInvalidTelegramCredentialsAreUnauthenticated(t *testing.T) {
 				fixtureBotToken,
 				10*time.Minute,
 				telegram.Options{Now: func() time.Time { return fixtureNow }},
-			)
+			))
 			reached := false
-			handler := middleware.Authenticate(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
+			handler := middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
 			request.Header.Set("Authorization", test.authorization)
 			response := httptest.NewRecorder()
@@ -125,13 +125,13 @@ func TestTelegramUserMustBeEnabledInTheStore(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			middleware := telegram.NewWithOptions(
+			middleware := httpapi.RequireTelegramUser(telegram.New(
 				userStoreStub{find: func(context.Context, int64) (auth.User, error) { return test.storeReply, test.storeError }},
 				fixtureBotToken,
 				15*time.Minute,
 				telegram.Options{Now: func() time.Time { return fixtureNow }},
-			)
-			handler := middleware.Authenticate(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+			))
+			handler := middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 				t.Fatal("protected handler was reached")
 			}))
 			request := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
@@ -149,11 +149,11 @@ func TestTelegramUserMustBeEnabledInTheStore(t *testing.T) {
 }
 
 func TestAuthenticationErrorCarriesTheRequestIDWithoutExposingCredentials(t *testing.T) {
-	middleware := telegram.New(userStoreStub{find: func(context.Context, int64) (auth.User, error) {
+	middleware := httpapi.RequireTelegramUser(telegram.New(userStoreStub{find: func(context.Context, int64) (auth.User, error) {
 		t.Fatal("user store called for invalid signature")
 		return auth.User{}, nil
-	}}, fixtureBotToken, 15*time.Minute)
-	handler := middleware.Authenticate(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+	}}, fixtureBotToken, 15*time.Minute, telegram.Options{}))
+	handler := middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("protected handler was reached")
 	}))
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)

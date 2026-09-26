@@ -25,11 +25,6 @@ type Readiness interface {
 	SuccessfulMarketSyncExists(context.Context) bool
 }
 
-// Authenticator protects business endpoints with an authenticated user.
-type Authenticator interface {
-	Authenticate(http.Handler) http.Handler
-}
-
 // Analysis exposes the application use cases served by the HTTP API.
 type Analysis interface {
 	AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error)
@@ -52,16 +47,25 @@ type PriceAlerts interface {
 
 const maxAnalysisRequestBody = 1 << 20
 
+// Dependencies are the use cases served by the API. All are required.
+type Dependencies struct {
+	Readiness Readiness
+	Analysis  Analysis
+	History   CandleHistory
+	// Authenticator verifies Telegram init data for HTTP and WebSocket requests.
+	Authenticator InitDataAuthenticator
+	Chart         ChartService
+	LiveCandles   LiveCandles
+	Favorites     Favorites
+	Alerts        PriceAlerts
+}
+
 type Options struct {
-	APIDocsEnabled    bool
-	Chart             ChartService
-	LiveAuthenticator LiveAuthenticator
-	LiveCandles       LiveCandles
-	Favorites         Favorites
-	Alerts            PriceAlerts
+	APIDocsEnabled bool
 }
 
 type api struct {
+	logger    *slog.Logger
 	readiness Readiness
 	analysis  Analysis
 	history   CandleHistory
@@ -71,17 +75,36 @@ type api struct {
 
 var _ StrictServerInterface = (*api)(nil)
 
-// New returns the service HTTP handler with process-wide middleware applied.
-func New(logger *slog.Logger, readiness Readiness, service Analysis, history CandleHistory, authenticator Authenticator) http.Handler {
-	return NewWithOptions(logger, readiness, service, history, authenticator, Options{})
+// protectedRoutes are the authenticated OpenAPI operations. Method-specific
+// patterns let the router reject unsupported methods before authentication.
+var protectedRoutes = []string{
+	"POST /api/v1/analysis/instruments/{symbol}",
+	"POST /api/v1/analysis/market",
+	"GET /api/v1/instruments/{symbol}/candles",
+	"GET /api/v1/favorites",
+	"PUT /api/v1/favorites/{symbol}",
+	"DELETE /api/v1/favorites/{symbol}",
+	"POST /api/v1/favorites/analysis",
+	"GET /api/v1/instruments/{symbol}/alerts",
+	"POST /api/v1/instruments/{symbol}/alerts",
+	"PATCH /api/v1/alerts/{alert_id}",
+	"DELETE /api/v1/alerts/{alert_id}",
 }
 
-// NewWithOptions returns the service HTTP handler with optional development-only API documentation.
-func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, history CandleHistory, authenticator Authenticator, options Options) http.Handler {
+// New returns the service HTTP handler with process-wide middleware applied.
+func New(logger *slog.Logger, dependencies Dependencies, options Options) http.Handler {
+	return newHandler(logger, dependencies, options, requireTelegramUser(dependencies.Authenticator))
+}
+
+func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
-	strict := NewStrictHandlerWithOptions(&api{readiness: readiness, analysis: service, history: history, favorites: options.Favorites, alerts: options.Alerts}, nil, StrictHTTPServerOptions{
-		RequestErrorHandlerFunc:  openAPIRequestError,
-		ResponseErrorHandlerFunc: openAPIResponseError,
+	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts}
+	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
+		RequestErrorHandlerFunc: openAPIRequestError,
+		ResponseErrorHandlerFunc: func(response http.ResponseWriter, request *http.Request, err error) {
+			logger.ErrorContext(request.Context(), "HTTP response failed", "module", "httpapi", "request_id", RequestIdentifier(request.Context()), "error", err)
+			writeAPIError(response, http.StatusInternalServerError, "internal_error", "Internal server error", nil)
+		},
 	})
 	HandlerWithOptions(strict, StdHTTPServerOptions{BaseRouter: operations, ErrorHandlerFunc: openAPIRequestError})
 
@@ -92,25 +115,11 @@ func NewWithOptions(logger *slog.Logger, readiness Readiness, service Analysis, 
 
 	router := http.NewServeMux()
 	router.Handle("/health/", operations)
-	protectedOperations := authenticator.Authenticate(defaultJSONContentType(limitAnalysisRequestBody(validator(operations))))
-	router.Handle("POST /api/v1/analysis/instruments/{symbol}", protectedOperations)
-	router.Handle("POST /api/v1/analysis/market", protectedOperations)
-	router.Handle("GET /api/v1/instruments/{symbol}/candles", protectedOperations)
-	if options.Favorites != nil {
-		router.Handle("GET /api/v1/favorites", protectedOperations)
-		router.Handle("PUT /api/v1/favorites/{symbol}", protectedOperations)
-		router.Handle("DELETE /api/v1/favorites/{symbol}", protectedOperations)
-		router.Handle("POST /api/v1/favorites/analysis", protectedOperations)
+	protectedOperations := authenticate(defaultJSONContentType(limitAnalysisRequestBody(validator(operations))))
+	for _, route := range protectedRoutes {
+		router.Handle(route, protectedOperations)
 	}
-	if options.Alerts != nil {
-		router.Handle("GET /api/v1/instruments/{symbol}/alerts", protectedOperations)
-		router.Handle("POST /api/v1/instruments/{symbol}/alerts", protectedOperations)
-		router.Handle("PATCH /api/v1/alerts/{alert_id}", protectedOperations)
-		router.Handle("DELETE /api/v1/alerts/{alert_id}", protectedOperations)
-	}
-	if options.LiveAuthenticator != nil && options.LiveCandles != nil && options.Chart != nil {
-		router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(options.LiveAuthenticator, options.LiveCandles, options.Chart, logger))
-	}
+	router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(dependencies.Authenticator, dependencies.LiveCandles, dependencies.Chart, logger))
 	if options.APIDocsEnabled {
 		registerDocs(router)
 	}
@@ -130,14 +139,18 @@ func openAPIValidator() (func(http.Handler) http.Handler, error) {
 }
 
 func openAPIValidationError(_ context.Context, _ error, response http.ResponseWriter, request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {
-	message := "Invalid request"
+	writeAPIError(response, options.StatusCode, "invalid_argument", validationMessage(request, options), nil)
+}
+
+func validationMessage(request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) string {
 	switch {
 	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
-		message = "Invalid analysis argument"
+		return "Invalid analysis argument"
 	case isCandleHistoryPath(request.URL.Path):
-		message = candleValidationMessage(request, options)
+		return candleValidationMessage(request, options)
+	default:
+		return "Invalid request"
 	}
-	writeAPIError(response, options.StatusCode, "invalid_argument", message, nil)
 }
 
 func isCandleHistoryPath(path string) bool {
@@ -191,18 +204,7 @@ func defaultJSONContentType(next http.Handler) http.Handler {
 }
 
 func openAPIRequestError(response http.ResponseWriter, request *http.Request, _ error) {
-	message := "Invalid request"
-	switch {
-	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
-		message = "Invalid analysis argument"
-	case isCandleHistoryPath(request.URL.Path):
-		message = candleValidationMessage(request, nethttpmiddleware.ErrorHandlerOpts{})
-	}
-	writeAPIError(response, http.StatusBadRequest, "invalid_argument", message, nil)
-}
-
-func openAPIResponseError(response http.ResponseWriter, _ *http.Request, _ error) {
-	writeAPIError(response, http.StatusInternalServerError, "internal_error", "Internal server error", nil)
+	writeAPIError(response, http.StatusBadRequest, "invalid_argument", validationMessage(request, nethttpmiddleware.ErrorHandlerOpts{}), nil)
 }
 
 func (api *api) GetLiveness(ctx context.Context, _ GetLivenessRequestObject) (GetLivenessResponseObject, error) {

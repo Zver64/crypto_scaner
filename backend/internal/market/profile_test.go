@@ -9,10 +9,10 @@ func TestSyncProfilesPreserveFieldsAndKeys(t *testing.T) {
 		wantKey  string
 		interval CandleInterval
 	}{
-		{name: "hourly", profile: HourlySyncProfile(), wantKey: "binance:spot:USDT:1h:UTC", interval: IntervalHour},
-		{name: "daily", profile: DailySyncProfile(), wantKey: "binance:spot:USDT:1d:UTC", interval: IntervalDay},
-		{name: "weekly", profile: WeeklySyncProfile(), wantKey: "binance:spot:USDT:1w:UTC", interval: IntervalWeek},
-		{name: "monthly", profile: MonthlySyncProfile(), wantKey: "binance:spot:USDT:1M:UTC", interval: IntervalMonth},
+		{name: "hourly", profile: BinanceSpotSyncProfile(IntervalHour), wantKey: "binance:spot:USDT:1h:UTC", interval: IntervalHour},
+		{name: "daily", profile: BinanceSpotSyncProfile(IntervalDay), wantKey: "binance:spot:USDT:1d:UTC", interval: IntervalDay},
+		{name: "weekly", profile: BinanceSpotSyncProfile(IntervalWeek), wantKey: "binance:spot:USDT:1w:UTC", interval: IntervalWeek},
+		{name: "monthly", profile: BinanceSpotSyncProfile(IntervalMonth), wantKey: "binance:spot:USDT:1M:UTC", interval: IntervalMonth},
 	}
 
 	for _, test := range tests {

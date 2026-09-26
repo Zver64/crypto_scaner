@@ -1,10 +1,9 @@
-package sync
+package marketsync
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -16,6 +15,8 @@ import (
 type Exchange interface {
 	ListInstruments(context.Context) ([]market.Instrument, error)
 	ListClosedCandles(context.Context, market.CandleRequest) ([]market.Candle, error)
+	// RetryCount returns the cumulative number of retried exchange requests.
+	RetryCount() uint64
 }
 
 // Store is the persistence boundary required by instrument synchronization.
@@ -24,21 +25,14 @@ type Store interface {
 	SaveSyncState(context.Context, market.SyncState) error
 	ApplyInstrumentSnapshot(context.Context, []market.Instrument) error
 	ListActiveInstruments(context.Context) ([]market.Instrument, error)
-	ListLatestCandlesByInterval(context.Context, int64, string, int) ([]market.Candle, error)
+	// ListLatestCandles returns up to limit latest candles per instrument in
+	// chronological order.
+	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
 	// Returns only committed insertions/corrections; unchanged rows are omitted.
 	UpsertCandlesWithChanges(context.Context, []market.Candle) ([]market.Candle, error)
 	GetCandleHistoryCoverage(context.Context, int64, market.CandleInterval) (market.HistoryCoverage, bool, error)
 	SaveCandleHistoryCoverage(context.Context, market.HistoryCoverage) error
 }
-
-// Profile returns the canonical market synchronization profile for interval.
-func Profile(interval market.CandleInterval) market.SyncProfile {
-	return market.BinanceSpotSyncProfile(interval)
-}
-
-// MVPProfile and HourlyProfile remain compatibility names for existing callers.
-func MVPProfile() market.SyncProfile    { return Profile(market.IntervalDay) }
-func HourlyProfile() market.SyncProfile { return Profile(market.IntervalHour) }
 
 // Synchronizer coordinates instrument discovery, backfill, and incremental loading.
 type Synchronizer struct {
@@ -49,8 +43,6 @@ type Synchronizer struct {
 	profile  market.SyncProfile
 	runLock  sync.Mutex
 }
-
-const defaultWorkerCount = 4
 
 const (
 	exchangePageLimit           = 1000
@@ -75,26 +67,9 @@ func policyForInterval(interval market.CandleInterval) intervalPolicy {
 // ErrSyncInProgress reports that another process-local synchronization owns the run lock.
 var ErrSyncInProgress = errors.New("market synchronization already in progress")
 
-// New creates a market synchronizer that discards structured run logs.
-func New(exchange Exchange, store Store) *Synchronizer {
-	return NewWithLogger(exchange, store, slog.New(slog.NewJSONHandler(io.Discard, nil)))
-}
-
-// NewWithLogger creates a market synchronizer that emits per-run totals.
-func NewWithLogger(exchange Exchange, store Store, logger *slog.Logger) *Synchronizer {
-	return NewWithOptions(exchange, store, logger, defaultWorkerCount)
-}
-
-// NewWithOptions creates a synchronizer with explicit per-instance instrument concurrency.
-func NewWithOptions(exchange Exchange, store Store, logger *slog.Logger, workers int) *Synchronizer {
-	return NewWithProfile(exchange, store, logger, workers, MVPProfile())
-}
-
-// NewWithProfile creates a synchronizer for one independently persisted interval.
-func NewWithProfile(exchange Exchange, store Store, logger *slog.Logger, workers int, profile market.SyncProfile) *Synchronizer {
-	if logger == nil {
-		logger = slog.New(slog.NewJSONHandler(io.Discard, nil))
-	}
+// New creates a synchronizer for one independently persisted interval. The
+// logger must be non-nil.
+func New(exchange Exchange, store Store, logger *slog.Logger, workers int, profile market.SyncProfile) *Synchronizer {
 	if workers < 1 {
 		workers = 1
 	}
@@ -112,9 +87,9 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	profile := synchronizer.profile
 	operationStartedAt := time.Now()
 	stats := runStats{}
-	retriesBefore := synchronizer.retryCount()
+	retriesBefore := synchronizer.exchange.RetryCount()
 	defer func() {
-		stats.retryCount = synchronizer.retryCount() - retriesBefore
+		stats.retryCount = synchronizer.exchange.RetryCount() - retriesBefore
 		outcome := "succeeded"
 		if syncErr != nil {
 			outcome = "failed"
@@ -237,7 +212,7 @@ func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instrumen
 
 func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument market.Instrument, profile market.SyncProfile, startedAt time.Time) instrumentResult {
 	policy := policyForInterval(profile.Interval)
-	existing, err := synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(profile.Interval), policy.inspectionLimit)
+	existing, err := synchronizer.latestCandles(ctx, instrument.ID, profile.Interval, policy.inspectionLimit)
 	if err != nil {
 		return instrumentResult{err: fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)}
 	}
@@ -250,7 +225,7 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 			result.err = fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
 			return result
 		}
-		if found && coverage.TargetDepth == policy.initialLimit && coverage.PolicyVersion == historyDepthPolicyVersion && startedAt.Before(coverage.RetryAfter) {
+		if found && coverageCurrent(coverage, policy, startedAt) {
 			return result
 		}
 		result = synchronizer.loadRange(ctx, instrument, market.CandleRequest{
@@ -260,29 +235,19 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 		if result.err != nil {
 			return result
 		}
-		existing, err = synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(profile.Interval), policy.inspectionLimit)
+		existing, err = synchronizer.latestCandles(ctx, instrument.ID, profile.Interval, policy.inspectionLimit)
 		if err != nil {
 			result.err = fmt.Errorf("reinspect candle history for %s: %w", instrument.Symbol, err)
 			return result
 		}
 		if len(existing) == 0 {
-			verifiedOldest := profile.Interval.LastClosedOpenTime(startedAt)
-			err := synchronizer.store.SaveCandleHistoryCoverage(ctx, market.HistoryCoverage{
-				InstrumentID: instrument.ID, Interval: profile.Interval, VerifiedOldestOpenTime: verifiedOldest,
-				TargetDepth: policy.initialLimit, PolicyVersion: historyDepthPolicyVersion,
-				RetryAfter: startedAt.Add(historyExhaustionRetryDelay),
-			})
-			if err != nil {
-				result.err = fmt.Errorf("save candle history coverage for %s: %w", instrument.Symbol, err)
-			}
+			result.err = synchronizer.saveExhaustedHistory(ctx, instrument, profile.Interval, policy, profile.Interval.LastClosedOpenTime(startedAt), startedAt)
 			return result
 		}
 	}
 
-	latest := existing[0].OpenTime.UTC()
-	if result.latestOpenTime == nil || latest.After(*result.latestOpenTime) {
-		result.latestOpenTime = &latest
-	}
+	latest := existing[len(existing)-1].OpenTime.UTC()
+	result.latestOpenTime = laterOf(result.latestOpenTime, &latest)
 
 	// Recheck the latest persisted close even when no newer interval exists.
 	// Binance can correct an already stored final; overlapping the forward
@@ -316,7 +281,7 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	// Forward and gap writes can change both the count and boundaries. The
 	// persisted rows are the durable repair cursor, so always decide depth from
 	// a fresh read rather than from responses held in memory.
-	existing, err = synchronizer.store.ListLatestCandlesByInterval(ctx, instrument.ID, string(profile.Interval), policy.inspectionLimit)
+	existing, err = synchronizer.latestCandles(ctx, instrument.ID, profile.Interval, policy.inspectionLimit)
 	if err != nil {
 		result.err = fmt.Errorf("reinspect repaired candle history for %s: %w", instrument.Symbol, err)
 		return result
@@ -324,14 +289,13 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	if len(existing) >= policy.initialLimit || len(existing) == 0 {
 		return result
 	}
-	oldest := existing[len(existing)-1].OpenTime.UTC()
+	oldest := existing[0].OpenTime.UTC()
 	coverage, found, err := synchronizer.store.GetCandleHistoryCoverage(ctx, instrument.ID, profile.Interval)
 	if err != nil {
 		result.err = fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
 		return result
 	}
-	if found && coverage.TargetDepth == policy.initialLimit && coverage.PolicyVersion == historyDepthPolicyVersion &&
-		coverage.VerifiedOldestOpenTime.Equal(oldest) && startedAt.Before(coverage.RetryAfter) {
+	if found && coverageCurrent(coverage, policy, startedAt) && coverage.VerifiedOldestOpenTime.Equal(oldest) {
 		return result
 	}
 
@@ -345,31 +309,27 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 		return result
 	}
 	if loaded.rowsRequested < remaining {
-		verifiedOldest := oldest
-		if loaded.oldestOpenTime != nil && loaded.oldestOpenTime.Before(verifiedOldest) {
-			verifiedOldest = *loaded.oldestOpenTime
-		}
-		err := synchronizer.store.SaveCandleHistoryCoverage(ctx, market.HistoryCoverage{
-			InstrumentID: instrument.ID, Interval: profile.Interval, VerifiedOldestOpenTime: verifiedOldest,
-			TargetDepth: policy.initialLimit, PolicyVersion: historyDepthPolicyVersion,
-			RetryAfter: startedAt.Add(historyExhaustionRetryDelay),
-		})
-		if err != nil {
-			result.err = fmt.Errorf("save candle history coverage for %s: %w", instrument.Symbol, err)
-		}
+		verifiedOldest := *earlierOf(&oldest, loaded.oldestOpenTime)
+		result.err = synchronizer.saveExhaustedHistory(ctx, instrument, profile.Interval, policy, verifiedOldest, startedAt)
 	}
 	return result
 }
 
+func (synchronizer *Synchronizer) latestCandles(ctx context.Context, instrumentID int64, interval market.CandleInterval, limit int) ([]market.Candle, error) {
+	candles, err := synchronizer.store.ListLatestCandles(ctx, []int64{instrumentID}, interval, limit)
+	return candles[instrumentID], err
+}
+
 type missingRange struct{ from, to time.Time }
 
-// missingRanges finds internal holes only. Absence before the oldest row may be
-// the instrument's pre-listing period and is deliberately not inferred as a gap.
+// missingRanges finds internal holes in chronological candles only. Absence
+// before the oldest row may be the instrument's pre-listing period and is
+// deliberately not inferred as a gap.
 func missingRanges(candles []market.Candle, interval market.CandleInterval) []missingRange {
 	var ranges []missingRange
-	for index := len(candles) - 1; index > 0; index-- {
-		older := candles[index].OpenTime.UTC()
-		newer := candles[index-1].OpenTime.UTC()
+	for index := 1; index < len(candles); index++ {
+		older := candles[index-1].OpenTime.UTC()
+		newer := candles[index].OpenTime.UTC()
 		firstMissing := interval.NextOpenTime(older)
 		if firstMissing.Before(newer) {
 			ranges = append(ranges, missingRange{from: firstMissing, to: newer})
@@ -398,26 +358,16 @@ func (synchronizer *Synchronizer) loadRange(ctx context.Context, instrument mark
 			candle.Interval = request.Interval
 			closed = append(closed, candle)
 			openTime := candle.OpenTime.UTC()
-			if pageLatest == nil || openTime.After(*pageLatest) {
-				latest := openTime
-				pageLatest = &latest
-			}
-			if pageOldest == nil || openTime.Before(*pageOldest) {
-				oldest := openTime
-				pageOldest = &oldest
-			}
+			pageLatest = laterOf(pageLatest, &openTime)
+			pageOldest = earlierOf(pageOldest, &openTime)
 		}
 		if _, err := synchronizer.store.UpsertCandlesWithChanges(ctx, closed); err != nil {
 			result.err = fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)
 			return result
 		}
 		result.rowsWritten += len(closed)
-		if pageLatest != nil && (result.latestOpenTime == nil || pageLatest.After(*result.latestOpenTime)) {
-			result.latestOpenTime = pageLatest
-		}
-		if pageOldest != nil && (result.oldestOpenTime == nil || pageOldest.Before(*result.oldestOpenTime)) {
-			result.oldestOpenTime = pageOldest
-		}
+		result.latestOpenTime = laterOf(result.latestOpenTime, pageLatest)
+		result.oldestOpenTime = earlierOf(result.oldestOpenTime, pageOldest)
 		if !paginate || len(candles) < request.Limit || pageLatest == nil {
 			return result
 		}
@@ -433,13 +383,45 @@ func mergeInstrumentResults(current, addition instrumentResult) instrumentResult
 	if addition.err != nil {
 		current.err = addition.err
 	}
-	if addition.latestOpenTime != nil && (current.latestOpenTime == nil || addition.latestOpenTime.After(*current.latestOpenTime)) {
-		current.latestOpenTime = addition.latestOpenTime
-	}
-	if addition.oldestOpenTime != nil && (current.oldestOpenTime == nil || addition.oldestOpenTime.Before(*current.oldestOpenTime)) {
-		current.oldestOpenTime = addition.oldestOpenTime
+	current.latestOpenTime = laterOf(current.latestOpenTime, addition.latestOpenTime)
+	current.oldestOpenTime = earlierOf(current.oldestOpenTime, addition.oldestOpenTime)
+	return current
+}
+
+// laterOf returns the later of two optional times; nil means unknown.
+func laterOf(current, candidate *time.Time) *time.Time {
+	if candidate != nil && (current == nil || candidate.After(*current)) {
+		return candidate
 	}
 	return current
+}
+
+// earlierOf returns the earlier of two optional times; nil means unknown.
+func earlierOf(current, candidate *time.Time) *time.Time {
+	if candidate != nil && (current == nil || candidate.Before(*current)) {
+		return candidate
+	}
+	return current
+}
+
+// coverageCurrent reports whether persisted coverage still describes the depth policy
+// and its exhaustion retry has not yet expired.
+func coverageCurrent(coverage market.HistoryCoverage, policy intervalPolicy, at time.Time) bool {
+	return coverage.TargetDepth == policy.initialLimit && coverage.PolicyVersion == historyDepthPolicyVersion && at.Before(coverage.RetryAfter)
+}
+
+// saveExhaustedHistory records that the exchange has no history older than
+// verifiedOldest, so the backfill is not retried before the retry delay.
+func (synchronizer *Synchronizer) saveExhaustedHistory(ctx context.Context, instrument market.Instrument, interval market.CandleInterval, policy intervalPolicy, verifiedOldest, at time.Time) error {
+	err := synchronizer.store.SaveCandleHistoryCoverage(ctx, market.HistoryCoverage{
+		InstrumentID: instrument.ID, Interval: interval, VerifiedOldestOpenTime: verifiedOldest,
+		TargetDepth: policy.initialLimit, PolicyVersion: historyDepthPolicyVersion,
+		RetryAfter: at.Add(historyExhaustionRetryDelay),
+	})
+	if err != nil {
+		return fmt.Errorf("save candle history coverage for %s: %w", instrument.Symbol, err)
+	}
+	return nil
 }
 
 type runStats struct {
@@ -452,17 +434,6 @@ type runStats struct {
 	gapRangesRepaired    int
 	lagIntervals         int
 	retryCount           uint64
-}
-
-type retryCounter interface {
-	RetryCount() uint64
-}
-
-func (synchronizer *Synchronizer) retryCount() uint64 {
-	if counter, ok := synchronizer.exchange.(retryCounter); ok {
-		return counter.RetryCount()
-	}
-	return 0
 }
 
 func (synchronizer *Synchronizer) recordFailure(ctx context.Context, state *market.SyncState, failure error) error {

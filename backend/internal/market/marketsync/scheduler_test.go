@@ -1,4 +1,4 @@
-package sync_test
+package marketsync_test
 
 import (
 	"context"
@@ -7,7 +7,8 @@ import (
 	"testing"
 	"time"
 
-	marketsync "crypto-scanner/internal/market/sync"
+	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/market/marketsync"
 )
 
 func TestNextDailyRunTargetsThirtySecondsAfterUTCMidnight(t *testing.T) {
@@ -29,7 +30,7 @@ func TestNextDailyRunTargetsThirtySecondsAfterUTCMidnight(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := marketsync.NextDailyRun(test.now); !got.Equal(test.want) {
+			if got := marketsync.NextRun(market.IntervalDay, test.now); !got.Equal(test.want) {
 				t.Fatalf("NextDailyRun(%s) = %s, want %s", test.now, got, test.want)
 			}
 		})
@@ -39,25 +40,25 @@ func TestNextDailyRunTargetsThirtySecondsAfterUTCMidnight(t *testing.T) {
 func TestNextHourlyRunTargetsThirtySecondsAfterUTCClockHour(t *testing.T) {
 	now := time.Date(2026, time.August, 5, 5, 59, 59, 0, time.FixedZone("ICT", 7*60*60))
 	want := time.Date(2026, time.August, 4, 23, 0, 30, 0, time.UTC)
-	if got := marketsync.NextHourlyRun(now); !got.Equal(want) {
+	if got := marketsync.NextRun(market.IntervalHour, now); !got.Equal(want) {
 		t.Fatalf("NextHourlyRun(%s) = %s, want %s", now, got, want)
 	}
 }
 
 func TestNextWeeklyAndMonthlyRunsUseUTCCalendarBoundaries(t *testing.T) {
 	weeklyNow := time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)
-	if got, want := marketsync.NextWeeklyRun(weeklyNow), time.Date(2026, time.August, 10, 0, 0, 30, 0, time.UTC); !got.Equal(want) {
+	if got, want := marketsync.NextRun(market.IntervalWeek, weeklyNow), time.Date(2026, time.August, 10, 0, 0, 30, 0, time.UTC); !got.Equal(want) {
 		t.Fatalf("NextWeeklyRun() = %s, want %s", got, want)
 	}
 	monthlyNow := time.Date(2024, time.February, 20, 0, 0, 0, 0, time.UTC)
-	if got, want := marketsync.NextMonthlyRun(monthlyNow), time.Date(2024, time.March, 1, 0, 0, 30, 0, time.UTC); !got.Equal(want) {
+	if got, want := marketsync.NextRun(market.IntervalMonth, monthlyNow), time.Date(2024, time.March, 1, 0, 0, 30, 0, time.UTC); !got.Equal(want) {
 		t.Fatalf("NextMonthlyRun() = %s, want %s", got, want)
 	}
 }
 
 func TestSchedulerStartsCatchUpAsynchronouslyAndCancelsItOnShutdown(t *testing.T) {
 	runner := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
-	scheduler := marketsync.NewScheduler(runner, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	scheduler := marketsync.NewScheduler(map[market.CandleInterval]marketsync.Runner{market.IntervalDay: runner}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- scheduler.Run(ctx) }()
@@ -81,7 +82,7 @@ func TestSchedulerStartsCatchUpAsynchronouslyAndCancelsItOnShutdown(t *testing.T
 func TestHourlySchedulerStartsAndCancelsWithoutWaitGroupRace(t *testing.T) {
 	daily := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{}), release: make(chan struct{})}
 	hourly := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
-	scheduler := marketsync.NewSchedulerWithHourly(daily, hourly, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	scheduler := marketsync.NewScheduler(map[market.CandleInterval]marketsync.Runner{market.IntervalDay: daily, market.IntervalHour: hourly}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- scheduler.Run(ctx) }()
@@ -112,7 +113,7 @@ func TestHourlySchedulerStartsAndCancelsWithoutWaitGroupRace(t *testing.T) {
 func TestSchedulerDiscardsQueuedHourlyRunOnCancellation(t *testing.T) {
 	daily := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
 	hourly := &blockingSyncRunner{started: make(chan struct{}), stopped: make(chan struct{})}
-	scheduler := marketsync.NewSchedulerWithHourly(daily, hourly, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	scheduler := marketsync.NewScheduler(map[market.CandleInterval]marketsync.Runner{market.IntervalDay: daily, market.IntervalHour: hourly}, slog.New(slog.NewTextHandler(io.Discard, nil)))
 	ctx, cancel := context.WithCancel(context.Background())
 	result := make(chan error, 1)
 	go func() { result <- scheduler.Run(ctx) }()

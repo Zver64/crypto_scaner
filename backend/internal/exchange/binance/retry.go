@@ -1,13 +1,13 @@
 package binance
 
 import (
-	"context"
 	"io"
-	"math/rand/v2"
 	"net/http"
 	"strconv"
 	"sync/atomic"
 	"time"
+
+	"crypto-scanner/internal/platform/backoff"
 
 	"golang.org/x/time/rate"
 )
@@ -45,7 +45,7 @@ func (transport *retryTransport) RoundTrip(request *http.Request) (*http.Respons
 		}
 		transport.retryCount.Add(1)
 		delay := retryDelay(response, transport.baseDelay, attempt)
-		if err := wait(request.Context(), delay); err != nil {
+		if err := backoff.Sleep(request.Context(), delay); err != nil {
 			return nil, err
 		}
 	}
@@ -70,17 +70,5 @@ func retryDelay(response *http.Response, base time.Duration, attempt int) time.D
 			}
 		}
 	}
-	delay := base * time.Duration(1<<min(attempt, 7))
-	return delay + time.Duration(rand.Float64()*0.25*float64(delay))
-}
-
-func wait(ctx context.Context, delay time.Duration) error {
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
-	}
+	return backoff.Jitter(backoff.Exponential(base, base<<7, attempt), 0.25)
 }

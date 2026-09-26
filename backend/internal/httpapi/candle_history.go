@@ -3,8 +3,6 @@ package httpapi
 import (
 	"context"
 	"errors"
-	"net/http"
-	"strings"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -26,32 +24,27 @@ func (api *api) ListInstrumentCandles(ctx context.Context, request ListInstrumen
 	if request.Params.Limit != nil {
 		limit = *request.Params.Limit
 	}
-	symbol := strings.ToUpper(strings.TrimSpace(request.Symbol))
+	symbol := market.NormalizeSymbol(request.Symbol)
 	if symbol == "" {
-		return api.candleError(ctx, http.StatusBadRequest, "invalid_argument", "Symbol is required"), nil
+		return ListInstrumentCandles400JSONResponse{invalidArgument(ctx, "Symbol is required").badRequest()}, nil
 	}
 	instrument, err := api.history.GetActiveInstrumentBySymbol(ctx, symbol)
 	if errors.Is(err, market.ErrInstrumentNotFound) {
-		return api.candleError(ctx, http.StatusNotFound, "symbol_not_found", "Symbol is unknown or inactive"), nil
+		return ListInstrumentCandles404JSONResponse{symbolNotFound(ctx).symbolNotFound()}, nil
 	}
 	if err != nil {
-		return api.candleError(ctx, http.StatusInternalServerError, "internal_error", "Internal server error"), nil
+		return ListInstrumentCandles500JSONResponse{api.internalError(ctx, "get_instrument", err)}, nil
 	}
 	page, err := api.history.ListCandlePage(ctx, instrument.ID, interval, request.Params.Before, limit)
 	if err != nil {
-		return api.candleError(ctx, http.StatusInternalServerError, "internal_error", "Internal server error"), nil
+		return ListInstrumentCandles500JSONResponse{api.internalError(ctx, "list_candles", err)}, nil
 	}
 	candles := make([]Candle, len(page.Candles))
 	for index, candle := range page.Candles {
 		candles[index] = candleResponse(candle)
 	}
-	var nextBefore *time.Time
-	if page.HasMore && len(page.Candles) > 0 {
-		value := page.Candles[0].OpenTime.UTC()
-		nextBefore = &value
-	}
 	return ListInstrumentCandles200JSONResponse{
-		Body:    CandlePageResponse{Symbol: instrument.Symbol, Interval: CandleInterval(interval), Candles: candles, HasMore: page.HasMore, NextBefore: nextBefore},
+		Body:    CandlePageResponse{Symbol: instrument.Symbol, Interval: CandleInterval(interval), Candles: candles, HasMore: page.HasMore, NextBefore: page.NextBefore()},
 		Headers: ListInstrumentCandles200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
 	}, nil
 }
@@ -61,18 +54,5 @@ func candleResponse(candle market.Candle) Candle {
 		OpenTime: candle.OpenTime.UTC(), CloseTime: candle.CloseTime.UTC(),
 		Open: candle.Open, High: candle.High, Low: candle.Low, Close: candle.Close,
 		Volume: candle.Volume, QuoteAssetVolume: candle.QuoteAssetVolume, TradeCount: candle.TradeCount,
-	}
-}
-
-func (api *api) candleError(ctx context.Context, status int, code, message string) ListInstrumentCandlesResponseObject {
-	body := newErrorResponse(ctx, code, message, nil)
-	requestID := body.RequestId
-	switch status {
-	case http.StatusBadRequest:
-		return ListInstrumentCandles400JSONResponse{BadRequestJSONResponse: BadRequestJSONResponse{Body: body, Headers: BadRequestResponseHeaders{XRequestID: requestID}}}
-	case http.StatusNotFound:
-		return ListInstrumentCandles404JSONResponse{SymbolNotFoundJSONResponse: SymbolNotFoundJSONResponse{Body: body, Headers: SymbolNotFoundResponseHeaders{XRequestID: requestID}}}
-	default:
-		return ListInstrumentCandles500JSONResponse{InternalErrorJSONResponse: InternalErrorJSONResponse{Body: body, Headers: InternalErrorResponseHeaders{XRequestID: requestID}}}
 	}
 }

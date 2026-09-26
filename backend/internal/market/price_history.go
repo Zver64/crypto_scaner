@@ -7,17 +7,13 @@ const SevenDayPriceSlots = 169
 // PriceHistoryWindow identifies hourly closes by their candle open times.
 // Both bounds are inclusive; the currently open UTC hour is never included.
 type PriceHistoryWindow struct {
-	From time.Time `json:"from"`
-	To   time.Time `json:"to"`
+	From time.Time
+	To   time.Time
 }
 
 func SevenDayWindow(at time.Time) PriceHistoryWindow {
-	end := lastClosedHour(at)
+	end := IntervalHour.LastClosedOpenTime(at)
 	return PriceHistoryWindow{From: end.Add(-168 * time.Hour), To: end}
-}
-
-func lastClosedHour(at time.Time) time.Time {
-	return at.UTC().Truncate(time.Hour).Add(-time.Hour)
 }
 
 // HourlyPrice is presentation history, independent of criterion requirements.

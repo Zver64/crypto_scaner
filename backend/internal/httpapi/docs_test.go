@@ -12,7 +12,7 @@ import (
 )
 
 func TestAPIDocsAreDisabledByDefault(t *testing.T) {
-	handler := httpapi.New(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, nil, passThroughAuthenticator{})
+	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, passThrough)
 	for _, path := range []string{"/docs/", "/openapi.yaml"} {
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, path, nil))
@@ -23,7 +23,7 @@ func TestAPIDocsAreDisabledByDefault(t *testing.T) {
 }
 
 func TestAPIDocsExposeEmbeddedContractAndSwaggerUIWhenEnabled(t *testing.T) {
-	handler := httpapi.NewWithOptions(logging.New(io.Discard, "error"), readinessStub{}, unavailableAnalysis{}, nil, passThroughAuthenticator{}, httpapi.Options{APIDocsEnabled: true})
+	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{APIDocsEnabled: true}, passThrough)
 
 	contract := httptest.NewRecorder()
 	handler.ServeHTTP(contract, httptest.NewRequest(http.MethodGet, "/openapi.yaml", nil))

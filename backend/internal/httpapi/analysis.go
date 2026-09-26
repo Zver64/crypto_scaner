@@ -2,8 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"math"
 	"net/http"
 	"strings"
@@ -106,72 +104,38 @@ func closedIndicatorsResponse(values []closedindicator.Value) []ClosedIndicator 
 }
 
 func (api *api) analyzeInstrumentError(ctx context.Context, err error, symbol string) AnalyzeInstrumentResponseObject {
-	body, status := analysisError(ctx, err, symbol)
-	requestID := RequestIdentifier(ctx)
-	switch status {
+	mapped, ok := analysisError(ctx, err, symbol)
+	if !ok {
+		return AnalyzeInstrument500JSONResponse{api.internalError(ctx, "analyze_instrument", err)}
+	}
+	switch mapped.status {
 	case http.StatusBadRequest:
-		return AnalyzeInstrument400JSONResponse{BadRequestJSONResponse: BadRequestJSONResponse{Body: body, Headers: BadRequestResponseHeaders{XRequestID: requestID}}}
+		return AnalyzeInstrument400JSONResponse{mapped.badRequest()}
 	case http.StatusNotFound:
-		return AnalyzeInstrument404JSONResponse{SymbolNotFoundJSONResponse: SymbolNotFoundJSONResponse{Body: body, Headers: SymbolNotFoundResponseHeaders{XRequestID: requestID}}}
+		return AnalyzeInstrument404JSONResponse{mapped.symbolNotFound()}
 	case http.StatusConflict:
-		return AnalyzeInstrument409JSONResponse{InsufficientDataJSONResponse: InsufficientDataJSONResponse{Body: body, Headers: InsufficientDataResponseHeaders{XRequestID: requestID}}}
+		return AnalyzeInstrument409JSONResponse{mapped.insufficientData()}
 	case http.StatusUnprocessableEntity:
-		return AnalyzeInstrument422JSONResponse{UnprocessableAnalysisJSONResponse: UnprocessableAnalysisJSONResponse{Body: body, Headers: UnprocessableAnalysisResponseHeaders{XRequestID: requestID}}}
-	case http.StatusServiceUnavailable:
-		return AnalyzeInstrument503JSONResponse{AnalysisUnavailableJSONResponse: AnalysisUnavailableJSONResponse{Body: body, Headers: AnalysisUnavailableResponseHeaders{XRequestID: requestID}}}
+		return AnalyzeInstrument422JSONResponse{mapped.unprocessable()}
 	default:
-		return AnalyzeInstrument500JSONResponse{InternalErrorJSONResponse: InternalErrorJSONResponse{Body: body, Headers: InternalErrorResponseHeaders{XRequestID: requestID}}}
+		return AnalyzeInstrument503JSONResponse{mapped.unavailable()}
 	}
 }
 
 func (api *api) analyzeMarketError(ctx context.Context, err error) AnalyzeMarketResponseObject {
-	body, status := analysisError(ctx, err, "")
-	requestID := RequestIdentifier(ctx)
-	switch status {
-	case http.StatusBadRequest:
-		return AnalyzeMarket400JSONResponse{BadRequestJSONResponse: BadRequestJSONResponse{Body: body, Headers: BadRequestResponseHeaders{XRequestID: requestID}}}
-	case http.StatusUnprocessableEntity:
-		return AnalyzeMarket422JSONResponse{UnprocessableAnalysisJSONResponse: UnprocessableAnalysisJSONResponse{Body: body, Headers: UnprocessableAnalysisResponseHeaders{XRequestID: requestID}}}
-	case http.StatusServiceUnavailable:
-		return AnalyzeMarket503JSONResponse{AnalysisUnavailableJSONResponse: AnalysisUnavailableJSONResponse{Body: body, Headers: AnalysisUnavailableResponseHeaders{XRequestID: requestID}}}
-	default:
-		return AnalyzeMarket500JSONResponse{InternalErrorJSONResponse: InternalErrorJSONResponse{Body: body, Headers: InternalErrorResponseHeaders{XRequestID: requestID}}}
-	}
-}
-
-func analysisError(ctx context.Context, err error, symbol string) (ErrorResponse, int) {
-	var insufficient *analysis.InsufficientHistoryError
-	var unresolved *analysis.UnresolvedError
+	mapped, ok := analysisError(ctx, err, "")
 	switch {
-	case errors.Is(err, analysis.ErrInvalidArgument):
-		return newErrorResponse(ctx, "invalid_argument", "Invalid analysis argument", nil), http.StatusBadRequest
-	case errors.Is(err, analysis.ErrSymbolNotFound):
-		return newErrorResponse(ctx, "symbol_not_found", "Symbol is unknown or inactive", nil), http.StatusNotFound
-	case errors.As(err, &insufficient):
-		return newErrorResponse(ctx, "insufficient_data", "Not enough closed candles for the requested period", map[string]any{"symbol": symbol, "criterion": insufficient.Criterion, "required": insufficient.Required, "available": insufficient.Available}), http.StatusConflict
-	case errors.Is(err, analysis.ErrMarketDataUnavailable):
-		return newErrorResponse(ctx, "market_data_unavailable", "Market data is unavailable", nil), http.StatusServiceUnavailable
-	case errors.Is(err, analysis.ErrMarketCapUnavailable):
-		return newErrorResponse(ctx, "market_cap_unavailable", "Market capitalization data is unavailable", nil), http.StatusServiceUnavailable
-	case errors.As(err, &unresolved):
-		return newErrorResponse(ctx, unresolved.Code, unresolved.Message, map[string]any{"symbol": symbol}), http.StatusUnprocessableEntity
+	case !ok:
+		return AnalyzeMarket500JSONResponse{api.internalError(ctx, "analyze_market", err)}
+	case mapped.status == http.StatusBadRequest:
+		return AnalyzeMarket400JSONResponse{mapped.badRequest()}
+	case mapped.status == http.StatusUnprocessableEntity:
+		return AnalyzeMarket422JSONResponse{mapped.unprocessable()}
+	case mapped.status == http.StatusServiceUnavailable:
+		return AnalyzeMarket503JSONResponse{mapped.unavailable()}
 	default:
-		return newErrorResponse(ctx, "internal_error", "Internal server error", nil), http.StatusInternalServerError
+		return AnalyzeMarket500JSONResponse{api.internalError(ctx, "analyze_market", err)}
 	}
-}
-
-func newErrorResponse(ctx context.Context, code, message string, details any) ErrorResponse {
-	return ErrorResponse{Error: APIError{Code: APIErrorCode(code), Message: message, Details: details}, RequestId: RequestIdentifier(ctx)}
-}
-
-func writeAPIError(response http.ResponseWriter, status int, code, message string, details any) {
-	writeJSON(response, status, ErrorResponse{Error: APIError{Code: APIErrorCode(code), Message: message, Details: details}, RequestId: response.Header().Get("X-Request-ID")})
-}
-
-func writeJSON(response http.ResponseWriter, status int, body any) {
-	response.Header().Set("Content-Type", "application/json")
-	response.WriteHeader(status)
-	_ = json.NewEncoder(response).Encode(body)
 }
 
 func roundPercentage(value float64) float64 { return math.Round(value*10_000) / 10_000 }

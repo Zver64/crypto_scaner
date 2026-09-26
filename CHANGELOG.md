@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.20.0](https://github.com/Zver64/crypto_scaner/compare/v0.19.0...v0.20.0) (2026-09-26)
+
+
+### Features
+
+* show background-tracked daily RSI in all coin tables ([57d3832](https://github.com/Zver64/crypto_scaner/commit/57d3832d7d23a418fbb547329c0a3fd7a6dc2c1e))
+* show background-tracked weekly RSI in coin tables ([c48cfed](https://github.com/Zver64/crypto_scaner/commit/c48cfeda1da6465af65a232701903ea865181ed8))
+* stream chart candles and indicators from a shared engine ([09e9752](https://github.com/Zver64/crypto_scaner/commit/09e97520ed124ed355f6c191aa60632d27bb7755))
+
+
+### Bug Fixes
+
+* keep live charts updating at range limits and delayed closes ([614ece5](https://github.com/Zver64/crypto_scaner/commit/614ece5717513216fa45ca0e7cbaefcaa6efcec0))
+* recalculate chart RSI across expanded history ([739a3cf](https://github.com/Zver64/crypto_scaner/commit/739a3cfbdc8b1affd76726637e1dda396c7ec781))
+* restructure backend modules and fix live data defects ([b44d8c4](https://github.com/Zver64/crypto_scaner/commit/b44d8c47960d9774d53cc9ca7d5c3f8601c8413e))
+
 ## [0.19.0](https://github.com/Zver64/crypto_scaner/compare/v0.18.1...v0.19.0) (2026-09-25)
 
 

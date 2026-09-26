@@ -6,6 +6,8 @@ Agent and subagent orchestration is done via herdr.
 
 ## Project structure
 
+Backend architecture, package boundaries, and Go conventions are described in `backend/AGENTS.md`.
+
 - `backend/`: Go HTTP API, Telegram authentication, market synchronization, analysis criteria, PostgreSQL storage, migrations, and service commands.
 - `frontend/`: React Telegram Mini App built with Vite and TanStack Router.
 - `docs/agents/`: repository-specific configuration consumed by engineering skills.
@@ -62,11 +64,17 @@ npm -C frontend run build
 
 Pre-commit hooks run the checks relevant to staged changes, so do not routinely run those checks separately before committing. Run checks manually only when diagnosing a failure, when no commit will be created, or when explicitly requested. Use `make check` for manual verification of cross-cutting changes.
 
+## Reviews
+
+When asked only to review code or changes, inspect `git status`, diffs, and files. Do not build, run tests, or start services unless asked to.
+
 ## Commits
 
 Use Conventional Commit messages. Use `feat:` and `fix:` only when a release
 should receive the matching SemVer bump; use `!` or `BREAKING CHANGE:` only for
 a genuine breaking change.
+Do not add AI or tool attribution (such as `Co-Authored-By` trailers) to commit messages or pull requests.
+Create commits only when the user asks.
 
 ## Generated files
 

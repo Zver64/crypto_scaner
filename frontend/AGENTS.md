@@ -99,3 +99,9 @@ tanstackIntent:
 - Keep component-specific utility functions and their tests in the component directory as `utils.ts` and `utils.test.ts`. A `utils.ts` file must contain only functions or methods—never configuration objects, constants, or type declarations.
 - Keep `src/config.ts` limited to meaningful application-wide product-tuning values, such as shared presets and defaults. Keep presentation metadata, component behavior, domain constraints, and arbitrary constants with their owning modules. Put component-specific type declarations in the component directory's `types.ts`.
 - Do not use `<component>-utils.ts` files at the feature root.
+
+## Market scan tables
+
+- Market scan and favorites tables share `MarketScanRow`, the columns in `src/features/market-scan/results-table/`, and client-side sorting. A new sortable column needs its key in `keys.ts`, a row field filled in both `toMarketScanRows` and `mergeFavoriteRows`, and an entry in `sortColumns` in `src/routes/-market-scan-search.ts`.
+- Background indicator values arrive in `closed_indicators`. Read them with `closedIndicatorValue` and a key from `closed-indicators.ts`; do not compute indicators in the frontend.
+- Charts arrive over the live WebSocket only (snapshot, then tail updates with sequential versions); there is no HTTP chart endpoint.

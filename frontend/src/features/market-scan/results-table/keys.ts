@@ -4,6 +4,7 @@ export const marketScanColumnKeys = {
 	dailyRange: "dailyRangePercent",
 	hourlyRange: "hourlyRangePercent",
 	dailyRsi14: "dailyRsi14",
+	weeklyRsi14: "weeklyRsi14",
 	marketCap: "marketCapUsd",
 	priceHistory: "priceHistory",
 	sevenDayChangePercent: "sevenDayChangePercent",

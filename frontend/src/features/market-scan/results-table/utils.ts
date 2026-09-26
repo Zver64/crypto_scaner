@@ -6,6 +6,7 @@ import { criterionKeys } from "@/features/analysis/identifiers";
 import {
 	closedIndicatorValue,
 	dailyRsi14,
+	weeklyRsi14,
 } from "@/features/market-scan/closed-indicators";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { marketCapEvaluation } from "@/utils/market-cap";
@@ -31,6 +32,7 @@ export interface MarketScanRow {
 	dailyRangePercent: number | null;
 	hourlyRangePercent: number | null;
 	dailyRsi14: number | null;
+	weeklyRsi14: number | null;
 	marketCapUsd: number | null;
 	priceHistory: readonly (number | null)[];
 	sevenDayChangePercent: number | null;
@@ -55,6 +57,7 @@ export function toMarketScanRows(
 			dailyRangePercent: daily?.rangePercent ?? null,
 			hourlyRangePercent: hourly?.rangePercent ?? null,
 			dailyRsi14: closedIndicatorValue(item.closed_indicators, dailyRsi14),
+			weeklyRsi14: closedIndicatorValue(item.closed_indicators, weeklyRsi14),
 			marketCapUsd: marketCapEvaluation(item.evaluations)?.marketCapUsd ?? null,
 			priceHistory: item.price_history,
 			sevenDayChangePercent: sevenDayChangePercent(item.price_history),

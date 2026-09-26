@@ -50,10 +50,11 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
 	}
 	// Values shown in tables; favorites keep them current without clients.
-	closedTargets := []closedindicator.Target{{
-		Interval:  market.IntervalDay,
-		Selection: indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": indicatortalib.DefaultRSIPeriod}},
-	}}
+	rsi14 := indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": indicatortalib.DefaultRSIPeriod}}
+	closedTargets := []closedindicator.Target{
+		{Interval: market.IntervalDay, Selection: rsi14},
+		{Interval: market.IntervalWeek, Selection: rsi14},
+	}
 	closedIndicators, err := closedindicator.New(store, indicatorRegistry, closedTargets, logger,
 		closedindicator.InstrumentSource(store.ListMonitoredInstrumentIDs))
 	if err != nil {

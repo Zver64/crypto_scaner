@@ -60,14 +60,13 @@ export const marketScanColumns = [
 	{
 		key: marketScanColumnKeys.dailyRsi14,
 		header: "d-rsi-14",
-		cell: (row) =>
-			row.dailyRsi14 === null ? (
-				"—"
-			) : (
-				<span style={{ color: oscillatorColor(row.dailyRsi14) }}>
-					{row.dailyRsi14.toFixed(1)}
-				</span>
-			),
+		cell: (row) => <OscillatorValue value={row.dailyRsi14} />,
+		sortable: true,
+	},
+	{
+		key: marketScanColumnKeys.weeklyRsi14,
+		header: "w-rsi-14",
+		cell: (row) => <OscillatorValue value={row.weeklyRsi14} />,
 		sortable: true,
 	},
 	{
@@ -126,3 +125,12 @@ export const unresolvedInstrumentColumns: readonly DataTableColumn<UnresolvedIns
 			cell: (item) => marketCapUnavailableReason(item.code),
 		},
 	];
+
+function OscillatorValue({ value }: { value: number | null }) {
+	if (value === null) {
+		return "—";
+	}
+	return (
+		<span style={{ color: oscillatorColor(value) }}>{value.toFixed(1)}</span>
+	);
+}

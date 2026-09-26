@@ -14,6 +14,11 @@ export const dailyRsi14: ClosedIndicatorOutputKey = {
 	output: "rsi",
 };
 
+export const weeklyRsi14: ClosedIndicatorOutputKey = {
+	...dailyRsi14,
+	interval: "1w",
+};
+
 export function closedIndicatorValue(
 	indicators: readonly ClosedIndicator[],
 	key: ClosedIndicatorOutputKey,

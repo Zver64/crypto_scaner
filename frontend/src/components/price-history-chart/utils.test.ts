@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createCandlestickData,
 	createIndicatorData,
+	fitPaneIndicatorScale,
 	formatChartTime,
 	formatOhlc,
 	formatPrice,
@@ -79,5 +80,42 @@ describe("price history chart data", () => {
 		expect(nextCandleOpen("2026-08-26T23:00:00Z", "1h")).toBe(
 			"2026-08-27T00:00:00.000Z",
 		);
+	});
+});
+
+describe("fitPaneIndicatorScale", () => {
+	const rsi = {
+		levels: [
+			{ title: "Oversold", value: 30 },
+			{ title: "Overbought", value: 70 },
+		],
+		max: 100,
+		min: 0,
+	};
+
+	it("keeps the levels in view when values stay between them", () => {
+		expect(
+			fitPaneIndicatorScale({ priceRange: { maxValue: 57, minValue: 40 } }, rsi)
+				?.priceRange,
+		).toEqual({ maxValue: 70, minValue: 30 });
+	});
+
+	it("extends past the levels to fit the values", () => {
+		expect(
+			fitPaneIndicatorScale({ priceRange: { maxValue: 85, minValue: 22 } }, rsi)
+				?.priceRange,
+		).toEqual({ maxValue: 85, minValue: 22 });
+	});
+
+	it("shows only the levels without visible values", () => {
+		expect(fitPaneIndicatorScale(null, rsi)?.priceRange).toEqual({
+			maxValue: 70,
+			minValue: 30,
+		});
+	});
+
+	it("keeps the visible range of an unbounded indicator", () => {
+		const visible = { priceRange: { maxValue: 2, minValue: -1 } };
+		expect(fitPaneIndicatorScale(visible, { levels: [] })).toEqual(visible);
 	});
 });

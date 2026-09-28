@@ -1,8 +1,9 @@
-import type { IRange, UTCTimestamp } from "lightweight-charts";
+import type { AutoscaleInfo, IRange, UTCTimestamp } from "lightweight-charts";
 import type {
 	ChartCandle,
 	ChartCandleSlot,
 	ChartIndicatorOptions,
+	ChartIndicatorScale,
 	ChartIndicatorSlot,
 	ChartInterval,
 	ChartLegendItem,
@@ -208,4 +209,24 @@ export function createIndicatorLegend(
 			return { color, key, title, value };
 		}),
 	);
+}
+
+// Fits a pane scale to the visible values while keeping its reference levels,
+// such as RSI 30 and 70, in view and staying within the indicator's bounds.
+export function fitPaneIndicatorScale(
+	visible: AutoscaleInfo | null,
+	{ levels, max, min }: Pick<ChartIndicatorScale, "levels" | "max" | "min">,
+): AutoscaleInfo | null {
+	const values = levels.map(({ value }) => value);
+	if (visible?.priceRange) {
+		values.push(visible.priceRange.minValue, visible.priceRange.maxValue);
+	}
+	if (values.length === 0) return visible;
+	return {
+		...visible,
+		priceRange: {
+			maxValue: Math.min(Math.max(...values), max ?? Number.POSITIVE_INFINITY),
+			minValue: Math.max(Math.min(...values), min ?? Number.NEGATIVE_INFINITY),
+		},
+	};
 }

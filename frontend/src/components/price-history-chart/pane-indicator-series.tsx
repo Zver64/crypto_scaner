@@ -1,5 +1,9 @@
 import { useComputedColorScheme } from "@mantine/core";
-import { LineSeries, type LineSeriesPartialOptions } from "lightweight-charts";
+import {
+	type AutoscaleInfo,
+	LineSeries,
+	type LineSeriesPartialOptions,
+} from "lightweight-charts";
 import { useMemo } from "react";
 import { PriceLine, Series } from "@/components/lightweight-chart";
 import {
@@ -12,6 +16,7 @@ import type {
 	ChartIndicatorScale,
 	ChartIndicatorSlot,
 } from "@/components/price-history-chart/types";
+import { fitPaneIndicatorScale } from "@/components/price-history-chart/utils";
 import { formatNumber } from "@/utils/number-format";
 
 interface PaneIndicatorSeriesProps {
@@ -34,14 +39,13 @@ export function PaneIndicatorSeries({
 	const levelOptions =
 		paneIndicatorLevelOptions[useComputedColorScheme("dark")];
 	const options = useMemo<LineSeriesPartialOptions>(() => {
-		const { max, min, precision } = scale;
+		const { precision } = scale;
 		return {
 			...paneIndicatorSeriesOptions,
-			// Fixed bounds keep bounded oscillators such as RSI on a stable scale.
-			autoscaleInfoProvider:
-				min !== undefined && max !== undefined
-					? () => ({ priceRange: { maxValue: max, minValue: min } })
-					: undefined,
+			// Fit the visible values instead of the full range, such as RSI 0-100,
+			// so the line fills the pane without empty space above and below.
+			autoscaleInfoProvider: (baseImplementation: () => AutoscaleInfo | null) =>
+				fitPaneIndicatorScale(baseImplementation(), scale),
 			color: line.color,
 			priceFormat: {
 				formatter: (value: number) => formatNumber(value, precision),

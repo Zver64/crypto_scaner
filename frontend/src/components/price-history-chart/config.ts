@@ -121,7 +121,8 @@ export const paneIndicatorSeriesOptions = {
 
 export const paneIndicatorPriceScaleOptions = {
 	autoScale: true,
-	scaleMargins: { bottom: 0, top: 0 },
+	// A small margin keeps the edge level labels, such as RSI 70, unclipped.
+	scaleMargins: { bottom: 0.08, top: 0.08 },
 } satisfies DeepPartial<PriceScaleOptions>;
 
 function priceLineOptionsFor(color: string) {

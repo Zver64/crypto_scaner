@@ -9,6 +9,7 @@ import {
 export const Route = createFileRoute("/instruments/$symbol")({
 	component: InstrumentRoute,
 	validateSearch: parseRequiredScanCriteriaSearch,
+	beforeLoad: ({ params }) => ({ pageTitle: params.symbol.toUpperCase() }),
 });
 
 function InstrumentRoute() {

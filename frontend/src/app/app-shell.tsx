@@ -7,7 +7,7 @@ import {
 	Text,
 	Title,
 } from "@mantine/core";
-import { Outlet } from "@tanstack/react-router";
+import { Outlet, useMatches } from "@tanstack/react-router";
 import { useGetReadiness } from "@/api/generated/api";
 import { ShellContentCenter } from "@/components/shell-content-center";
 import { FavoritesProvider } from "@/features/favorites/favorites-provider";
@@ -37,6 +37,9 @@ export function MiniAppShell() {
 		},
 	});
 	const backendReady = readiness.data === true;
+	const pageTitle = useMatches({
+		select: (matches) => matches.at(-1)?.context.pageTitle,
+	});
 	const permission = getBusinessRequestPermission({
 		backendReady,
 		isProduction: import.meta.env.PROD,
@@ -69,6 +72,11 @@ export function MiniAppShell() {
 								{appVersion}
 							</Text>
 						</Group>
+						{pageTitle ? (
+							<Text fw={700} truncate>
+								{pageTitle}
+							</Text>
+						) : null}
 						<ReadinessBadge status={readinessStatus} />
 					</Group>
 				</AppShell.Header>

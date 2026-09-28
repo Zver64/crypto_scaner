@@ -1,4 +1,4 @@
-import { createTheme, MantineProvider } from "@mantine/core";
+import { createTheme, MantineProvider, NumberInput } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
@@ -15,6 +15,9 @@ const theme = createTheme({
 	fontFamily:
 		"Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, sans-serif",
 	primaryColor: "teal",
+	components: {
+		NumberInput: NumberInput.extend({ defaultProps: { hideControls: true } }),
+	},
 });
 
 const queryClient = new QueryClient();

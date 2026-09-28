@@ -34,7 +34,6 @@ export function PriceAlertForm({
 					disabled={isSaving || (limitReached && !isEditing)}
 					error={targetError}
 					label={isEditing ? "Edit target" : "New target"}
-					hideControls
 					// onChange converts to a JS number; the raw string keeps all 18 decimals.
 					onValueChange={({ value }) => onTargetChange(value)}
 					placeholder="0.00"

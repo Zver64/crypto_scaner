@@ -275,56 +275,49 @@ export function SpotGridEstimator({
 						{calculation.error}
 					</Alert>
 				) : null}
-				<SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md" aria-live="polite">
+				<Stack aria-live="polite" gap="md">
 					<ValueGroup
-						title="Profit"
-						items={[
-							{ label: "USDT (nominal)", value: values.profitPerStep },
-							{ label: "Percent", value: values.profitPerStepPercent },
-						]}
-					/>
-					<ValueGroup
-						title="Grid info"
+						title="Grid"
 						items={[
 							{ label: "Average price", value: values.averageEntryPrice },
 							{ label: "Grid step", value: values.gridStepPercent },
 						]}
 					/>
-				</SimpleGrid>
-				<SegmentedValueGroup
-					title="Profit split per trade"
-					rows={values.profitSplits.map((split) => ({
-						ariaLabel: `${split.label}: fees ${split.feeCost}, ${split.feeShareOfGross} of gross profit; ${split.isLoss ? "net loss" : "clean profit"} ${split.cleanProfit}`,
-						items: [
-							{
-								color: "orange",
-								label: "Fees",
-								secondaryValue: split.feeShareOfGross,
-								value: split.feeCost,
-							},
-							{
-								color: split.isLoss ? "red" : "green",
-								label: split.isLoss ? "Net loss" : "Profit",
-								secondaryValue: split.cleanShareOfGross,
-								value: split.cleanProfit,
-							},
-						],
-						key: split.label,
-						label: split.label === "Every trade" ? undefined : split.label,
-						segments: [
-							{
-								color: "var(--mantine-color-orange-6)",
-								key: "fees",
-								percentage: split.feeSegmentPercent,
-							},
-							{
-								color: "var(--mantine-color-green-6)",
-								key: "clean-profit",
-								percentage: split.cleanSegmentPercent,
-							},
-						],
-					}))}
-				/>
+					<SegmentedValueGroup
+						title="Profit per trade"
+						rows={values.profitSplits.map((split) => ({
+							ariaLabel: `${split.label}: fees ${split.feeCost}, ${split.feeShareOfGross} profit; ${split.isLoss ? "net loss" : "clean profit"} ${split.cleanProfit}, ${split.cleanReturnPercent}`,
+							items: [
+								{
+									color: "orange",
+									label: "Fees",
+									secondaryValue: split.feeShareOfGross,
+									value: split.feeCost,
+								},
+								{
+									color: split.isLoss ? "red" : "green",
+									label: split.isLoss ? "Net loss" : "Profit",
+									secondaryValue: split.cleanReturnPercent,
+									value: split.cleanProfit,
+								},
+							],
+							key: split.label,
+							label: split.label === "Every trade" ? undefined : split.label,
+							segments: [
+								{
+									color: "var(--mantine-color-orange-6)",
+									key: "fees",
+									percentage: split.feeSegmentPercent,
+								},
+								{
+									color: "var(--mantine-color-green-6)",
+									key: "clean-profit",
+									percentage: split.cleanSegmentPercent,
+								},
+							],
+						}))}
+					/>
+				</Stack>
 			</Stack>
 		</Paper>
 	);

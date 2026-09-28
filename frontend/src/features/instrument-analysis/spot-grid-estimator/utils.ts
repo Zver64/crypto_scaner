@@ -27,8 +27,9 @@ export interface SpotGridCalculation {
 
 export interface SpotGridProfitSplit {
 	cleanProfit: string;
+	// Net return of the trade relative to its order, e.g. "0.52% per trade".
+	cleanReturnPercent: string;
 	cleanSegmentPercent: number;
-	cleanShareOfGross: string;
 	feeCost: string;
 	feeSegmentPercent: number;
 	feeShareOfGross: string;
@@ -168,11 +169,11 @@ function profitSplit(
 	allocationPerBuy: GeometricSpotGridEstimate["allocationPerBuy"],
 	grossProfitPercent: GeometricSpotGridEstimate["stepPercent"],
 	netProfit: GeometricSpotGridEstimate["cycleProfit"],
+	netProfitPercent: GeometricSpotGridEstimate["cycleProfitPercent"],
 ): SpotGridProfitSplit {
 	const grossProfit = allocationPerBuy.times(grossProfitPercent).div(100);
 	const feeCost = grossProfit.minus(netProfit);
 	const feeShareOfGross = feeCost.div(grossProfit).times(100);
-	const cleanShareOfGross = netProfit.div(grossProfit).times(100);
 	const feeSegmentPercent = feeShareOfGross.gte(100)
 		? 100
 		: feeShareOfGross.lte(0)
@@ -181,11 +182,11 @@ function profitSplit(
 
 	return {
 		cleanProfit: `${formatNumber(netProfit.toFixed())} USDT`,
+		cleanReturnPercent: `${formatNumber(netProfitPercent.toFixed())}% per trade`,
 		cleanSegmentPercent: 100 - feeSegmentPercent,
-		cleanShareOfGross: `${formatNumber(cleanShareOfGross.toFixed())}%`,
 		feeCost: `${formatNumber(feeCost.toFixed())} USDT`,
 		feeSegmentPercent,
-		feeShareOfGross: `${formatNumber(feeShareOfGross.toFixed())}%`,
+		feeShareOfGross: `${formatNumber(feeShareOfGross.toFixed())}% of gross`,
 		grossProfit: `${formatNumber(grossProfit.toFixed())} USDT`,
 		isLoss: netProfit.lt(0),
 		label,
@@ -202,6 +203,7 @@ export function spotGridProfitSplits(
 				estimate.allocationPerBuy,
 				estimate.stepPercent,
 				estimate.cycleProfit,
+				estimate.cycleProfitPercent,
 			),
 		];
 	}
@@ -212,12 +214,14 @@ export function spotGridProfitSplits(
 			estimate.allocationPerBuy,
 			estimate.stepPercentMinimum,
 			estimate.cycleProfitMinimum,
+			estimate.cycleProfitMinimumPercent,
 		),
 		profitSplit(
 			"Highest-profit trade",
 			estimate.allocationPerBuy,
 			estimate.stepPercentMaximum,
 			estimate.cycleProfitMaximum,
+			estimate.cycleProfitMaximumPercent,
 		),
 	];
 }
@@ -227,16 +231,14 @@ export function spotGridEstimateValues(estimate: SpotGridEstimate | null) {
 		return {
 			averageEntryPrice: "0 USDT",
 			gridStepPercent: "0%",
-			profitPerStep: "0 USDT",
-			profitPerStepPercent: "0%",
 			profitSplits: [
 				{
 					cleanProfit: "0 USDT",
+					cleanReturnPercent: "0% per trade",
 					cleanSegmentPercent: 0,
-					cleanShareOfGross: "0%",
 					feeCost: "0 USDT",
 					feeSegmentPercent: 0,
-					feeShareOfGross: "0%",
+					feeShareOfGross: "0% of gross",
 					grossProfit: "0 USDT",
 					isLoss: false,
 					label: "Every trade",
@@ -250,12 +252,6 @@ export function spotGridEstimateValues(estimate: SpotGridEstimate | null) {
 		gridStepPercent: isGeometric
 			? `${formatNumber(estimate.stepPercent.toFixed())}%`
 			: `${formatNumber(estimate.stepPercentMinimum.toFixed())}%–${formatNumber(estimate.stepPercentMaximum.toFixed())}%`,
-		profitPerStep: isGeometric
-			? `${formatNumber(estimate.cycleProfit.toFixed())} USDT`
-			: `${formatNumber(estimate.cycleProfitMinimum.toFixed())}–${formatNumber(estimate.cycleProfitMaximum.toFixed())} USDT`,
-		profitPerStepPercent: isGeometric
-			? `${formatNumber(estimate.cycleProfitPercent.toFixed())}%`
-			: `${formatNumber(estimate.cycleProfitMinimumPercent.toFixed())}%–${formatNumber(estimate.cycleProfitMaximumPercent.toFixed())}%`,
 		profitSplits: spotGridProfitSplits(estimate),
 	};
 }

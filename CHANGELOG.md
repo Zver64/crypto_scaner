@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.21.0](https://github.com/Zver64/crypto_scaner/compare/v0.20.0...v0.21.0) (2026-09-28)
+
+
+### Features
+
+* add backend-configured chart indicators with EMA 20/50/100 ([0335789](https://github.com/Zver64/crypto_scaner/commit/0335789236415ce6f914924c4ac370910bb18e5d))
+* hide gross profit from the spot grid profit split ([53aec2b](https://github.com/Zver64/crypto_scaner/commit/53aec2b1f14e8325edc4c46a68e4b9c4640f56dd))
+* merge spot grid profit into a single per-trade card ([16f97ca](https://github.com/Zver64/crypto_scaner/commit/16f97ca096573e71f0eeb12bc74df105a5240be2))
+* open the coin chart on the daily interval ([64429b3](https://github.com/Zver64/crypto_scaner/commit/64429b38691f6a59408c97f2a4efd752aa32a5e5))
+* show the coin symbol in the app header ([b69c102](https://github.com/Zver64/crypto_scaner/commit/b69c102d6e0b431a1c48fbe50da2bedd582ed60f))
+* show trading volume on the coin chart ([607459e](https://github.com/Zver64/crypto_scaner/commit/607459e68c348671c37d9bc2ad56274fe00aa494))
+
+
+### Bug Fixes
+
+* format RSI values with the shared number formatter ([1eb7edd](https://github.com/Zver64/crypto_scaner/commit/1eb7eddcc3417bb0309f701a4875d214da9ae515))
+* keep chart price scale stable near zero ([71aa082](https://github.com/Zver64/crypto_scaner/commit/71aa08240277f86bbfa882bceb65bc743586d594))
+* removed irrelevant text ([86733a0](https://github.com/Zver64/crypto_scaner/commit/86733a0edbf59adace4a1c2342da5cd9c7ef01a2))
+
 ## [0.20.0](https://github.com/Zver64/crypto_scaner/compare/v0.19.0...v0.20.0) (2026-09-26)
 
 

@@ -77,8 +77,11 @@ export function getVisibleMinMax(
 	return Number.isFinite(min) && Number.isFinite(max) ? { min, max } : null;
 }
 
-export function formatPrice(value: number): string {
-	return formatNumber(value);
+export function formatPrice(
+	value: number,
+	maximumFractionDigits?: number,
+): string {
+	return formatNumber(value, maximumFractionDigits);
 }
 
 export function formatOhlc(candle: PriceCandle | ChartCandlestick): string {

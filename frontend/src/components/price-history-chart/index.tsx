@@ -125,15 +125,21 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		}),
 		[colors, formatTime, interval, intervals],
 	);
-	const candleOptions = useMemo<ChartCandlestickOptions>(
-		() => ({
+	const candleOptions = useMemo<ChartCandlestickOptions>(() => {
+		const resolution = chartPriceResolution(data);
+		// Axis ticks carry floating-point noise near zero; round it at the chart
+		// resolution so it cannot widen the price scale.
+		const fractionDigits = Math.min(
+			100,
+			Math.round(Math.log10(resolution.base)),
+		);
+		return {
 			downColor: colors.down,
-			formatPrice,
-			...chartPriceResolution(data),
+			formatPrice: (value) => formatPrice(value, fractionDigits),
+			...resolution,
 			upColor: colors.up,
-		}),
-		[colors, data],
-	);
+		};
+	}, [colors, data]);
 	const indicatorOptions = useMemo<ChartLineOptions | undefined>(
 		() =>
 			indicator && {

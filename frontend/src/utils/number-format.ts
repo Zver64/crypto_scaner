@@ -1,47 +1,43 @@
 type NumericValue = number | string;
 
-interface NumericNumberFormatter {
-	formatToParts(value: NumericValue): Intl.NumberFormatPart[];
-}
-
-// TypeScript exposes numeric-string formatting only with newer Intl library
-// declarations. Browsers support it and avoid an imprecise Number conversion.
-const adaptiveNumberFormatter = new Intl.NumberFormat("en", {
-	maximumSignificantDigits: 3,
-}) as unknown as NumericNumberFormatter;
-
 const compactNumberFormatter = new Intl.NumberFormat("en", {
 	maximumFractionDigits: 1,
 	notation: "compact",
-}) as unknown as NumericNumberFormatter;
+});
 
-function formatNumericValue(
-	formatter: NumericNumberFormatter,
-	value: NumericValue,
-): string {
-	const source = String(value);
-	const parts = formatter.formatToParts(value);
-	const sourceIsNonzero = /[1-9]/.test(source);
-	const resultIsNonzero = parts
-		.filter((part) => part.type === "integer" || part.type === "fraction")
-		.some((part) => /[1-9]/.test(part.value));
+// Creating an Intl.NumberFormat is far more expensive than formatting with one,
+// and chart axes call formatNumber for every label on every redraw. Keep one
+// formatter per fraction digit limit instead of rebuilding it on each call.
+const adaptiveNumberFormatters = new Map<number, Intl.NumberFormat>();
 
-	// Some engines coerce numeric strings to Number. Preserve the source instead
-	// of displaying infinity or rounding a nonzero value down to zero.
-	if (
-		parts.some((part) => part.type === "infinity") ||
-		(sourceIsNonzero && !resultIsNonzero)
-	) {
-		return source;
-	}
+// Matches the backend NUMERIC(38,18) price scale, so real values keep their
+// significant digits.
+const defaultMaximumFractionDigits = 18;
 
-	return parts.map((part) => part.value).join("");
+// Intl formats numeric strings exactly, so Decimal output keeps its precision.
+function toNumeric(value: NumericValue): number | Intl.StringNumericLiteral {
+	return value as number | Intl.StringNumericLiteral;
 }
 
-export function formatNumber(value: NumericValue): string {
-	return formatNumericValue(adaptiveNumberFormatter, value);
+// Three significant digits, optionally capped at a number of fraction digits so
+// values below that resolution (such as floating-point noise) format as zero.
+export function formatNumber(
+	value: NumericValue,
+	maximumFractionDigits = defaultMaximumFractionDigits,
+): string {
+	let formatter = adaptiveNumberFormatters.get(maximumFractionDigits);
+	if (!formatter) {
+		formatter = new Intl.NumberFormat("en", {
+			maximumFractionDigits,
+			maximumSignificantDigits: 3,
+			roundingPriority: "lessPrecision",
+			signDisplay: "negative",
+		});
+		adaptiveNumberFormatters.set(maximumFractionDigits, formatter);
+	}
+	return formatter.format(toNumeric(value));
 }
 
 export function formatCompactNumber(value: NumericValue): string {
-	return formatNumericValue(compactNumberFormatter, value);
+	return compactNumberFormatter.format(toNumeric(value));
 }

@@ -100,6 +100,13 @@ tanstackIntent:
 - Keep `src/config.ts` limited to meaningful application-wide product-tuning values, such as shared presets and defaults. Keep presentation metadata, component behavior, domain constraints, and arbitrary constants with their owning modules. Put component-specific type declarations in the component directory's `types.ts`.
 - Do not use `<component>-utils.ts` files at the feature root.
 
+## Number formatting
+
+- Format displayed numbers with `formatNumber` or `formatCompactNumber` from `src/utils/number-format.ts`; do not create ad-hoc `Intl.NumberFormat` instances or custom rounding helpers.
+- `formatNumber` shows three significant digits and accepts numbers or numeric strings. Pass `Decimal.toFixed()` output as a string to keep precision beyond JavaScript numbers.
+- Its optional `maximumFractionDigits` defaults to 18, the backend `NUMERIC(38,18)` scale. Pass a lower limit only when values below a known resolution are noise, such as chart axis ticks rounded at the chart price resolution.
+- Formatters are cached per fraction digit limit because chart axes format every label on each redraw.
+
 ## Market scan tables
 
 - Market scan and favorites tables share `MarketScanRow`, the columns in `src/features/market-scan/results-table/`, and client-side sorting. A new sortable column needs its key in `keys.ts`, a row field filled in both `toMarketScanRows` and `mergeFavoriteRows`, and an entry in `sortColumns` in `src/routes/-market-scan-search.ts`.

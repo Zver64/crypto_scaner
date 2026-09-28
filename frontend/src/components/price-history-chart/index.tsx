@@ -35,6 +35,7 @@ import {
 	candleSeriesOptions,
 	chartHeight,
 	chartIntervalOptions,
+	defaultChartInterval,
 	indicatorPriceLineOptions,
 	indicatorPriceScaleOptions,
 	indicatorSeriesOptions,
@@ -82,9 +83,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	source,
 	symbol,
 }: PriceHistoryChartProps) {
-	const [interval, setInterval] = useState<ChartInterval>(
-		chartIntervalOptions[0].value,
-	);
+	const [interval, setInterval] = useState<ChartInterval>(defaultChartInterval);
 	const state = useSyncExternalStore(
 		source.subscribe,
 		() => source.getSnapshot(interval),

@@ -10,7 +10,10 @@ import {
 	type TimeChartOptions,
 } from "lightweight-charts";
 import { resolvedTheme } from "@/app/theme";
-import type { ChartIntervalOption } from "@/components/price-history-chart/types";
+import type {
+	ChartInterval,
+	ChartIntervalOption,
+} from "@/components/price-history-chart/types";
 
 export const chartIntervalOptions: readonly [
 	ChartIntervalOption,
@@ -21,6 +24,8 @@ export const chartIntervalOptions: readonly [
 	{ label: "Weekly", value: "1w" },
 	{ label: "Monthly", value: "1M" },
 ];
+
+export const defaultChartInterval: ChartInterval = "1d";
 
 export const chartHeight = 300;
 // Candle pane and indicator pane heights, in that order.

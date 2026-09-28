@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.0](https://github.com/Zver64/crypto_scaner/compare/v0.23.0...v0.24.0) (2026-09-28)
+
+
+### Features
+
+* show Binance token security audit issues ([722a590](https://github.com/Zver64/crypto_scaner/commit/722a59043de20123692d27075c046c55aa5b3cfe))
+
 ## [0.23.0](https://github.com/Zver64/crypto_scaner/compare/v0.22.0...v0.23.0) (2026-09-28)
 
 

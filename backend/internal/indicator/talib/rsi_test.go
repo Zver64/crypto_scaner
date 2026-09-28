@@ -29,7 +29,7 @@ func TestRSIBindingProducesKnownWilderSequenceWithoutWarmupZeros(t *testing.T) {
 		}
 	}
 	lookback, err := implementation.Lookback(indicator.Parameters{"period": float64(14)})
-	if err != nil || lookback != 140 {
-		t.Fatalf("Lookback() = %d, %v; want 140, nil", lookback, err)
+	if err != nil || lookback != 14 {
+		t.Fatalf("Lookback() = %d, %v; want 14, nil", lookback, err)
 	}
 }

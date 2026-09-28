@@ -64,8 +64,8 @@ func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	if store.resolveCalls != 1 || store.listCalls != 1 || store.limit != 340 || store.before != nil {
-		t.Fatalf("store resolve calls=%d list calls=%d limit=%d before=%v, want one lookup and one latest candle read with limit 340 (range plus RSI warm-up)", store.resolveCalls, store.listCalls, store.limit, store.before)
+	if store.resolveCalls != 1 || store.listCalls != 1 || store.limit != 214 || store.before != nil {
+		t.Fatalf("store resolve calls=%d list calls=%d limit=%d before=%v, want one lookup and one latest candle read with limit 214 (range plus RSI warm-up)", store.resolveCalls, store.listCalls, store.limit, store.before)
 	}
 	if page.Symbol != "BTCUSDT" {
 		t.Fatalf("page symbol = %q, want BTCUSDT", page.Symbol)
@@ -89,7 +89,7 @@ func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	extendedPoints := extended.Indicators[0].Series[0].Points
-	if store.limit != 540 || len(extended.Candles) != 400 || len(extendedPoints) != 386 ||
+	if store.limit != 414 || len(extended.Candles) != 400 || len(extendedPoints) != 386 ||
 		!extendedPoints[0].Time.Equal(start.Add(-186*time.Hour)) ||
 		!extendedPoints[len(extendedPoints)-1].Time.Equal(points[len(points)-1].Time) {
 		t.Fatalf("extended range: limit=%d candles=%d points=%d", store.limit, len(extended.Candles), len(extendedPoints))

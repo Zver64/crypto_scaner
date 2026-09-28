@@ -1,9 +1,6 @@
 import type { NumberInputProps } from "@mantine/core";
 import type { NumberInputField } from "@/components/number-input-fieldset";
-import {
-	analysisCriteriaConstraints,
-	maximumPeriodForUnit,
-} from "@/features/analysis/criteria";
+import { analysisCriteriaConstraints } from "@/features/analysis/criteria";
 import type {
 	VolatilityFieldsetProps,
 	VolatilityFormField,
@@ -18,13 +15,12 @@ export function buildVolatilityInputs({
 	period,
 	periodPresets,
 	size,
-	unit,
 }: Omit<VolatilityFieldsetProps, "title">): NumberInputField[] {
 	return [
 		input(period, periodPresets, {
 			allowDecimal: false,
 			label: "Period",
-			max: maximumPeriodForUnit(unit),
+			max: analysisCriteriaConstraints.period.maximum,
 			min: analysisCriteriaConstraints.period.minimum,
 			size,
 		}),

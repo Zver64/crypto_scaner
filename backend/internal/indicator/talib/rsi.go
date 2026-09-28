@@ -25,9 +25,6 @@ func NewRSI() indicator.Implementation {
 		offset: func(period int) int {
 			return period
 		},
-		lookback: func(period int) int {
-			return period * 10
-		},
 		calculate: gotalib.Rsi,
 	})
 }

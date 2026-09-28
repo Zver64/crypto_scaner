@@ -111,7 +111,7 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 		"coingecko_asset_mappings_status_check", "coingecko_mapping_bootstrap_id_check",
 		"coingecko_mapping_bootstrap_pkey", "coingecko_market_caps_market_cap_usd_check",
 		"coingecko_market_caps_pkey", "favorites_instrument_id_fkey", "favorites_pkey",
-		"favorites_user_id_fkey", "instruments_base_nonempty", "instruments_pkey",
+		"favorites_user_id_fkey", "instruments_base_nonempty", "instruments_deactivated_at_matches_activity", "instruments_pkey",
 		"instruments_quote_nonempty", "instruments_symbol_key", "instruments_symbol_nonempty",
 		"price_alerts_favorite_fk", "price_alerts_pkey", "price_alerts_target_positive",
 		"price_alerts_unique_target", "schema_migrations_pkey", "sync_state_pkey",
@@ -147,8 +147,8 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	var indexExists bool
 	if err := db.QueryRow(ctx,
 		"SELECT to_regclass('binance_spot.candles_instrument_interval_time_desc_idx') IS NOT NULL",
-	).Scan(&indexExists); err != nil || !indexExists {
-		t.Fatalf("descending candle index exists = %t, error = %v", indexExists, err)
+	).Scan(&indexExists); err != nil || indexExists {
+		t.Fatalf("redundant descending candle index exists = %t, error = %v", indexExists, err)
 	}
 
 	if _, err := db.Exec(ctx, "CREATE TABLE app.operator_owned (id BIGINT PRIMARY KEY)"); err != nil {
@@ -163,6 +163,14 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 			t.Errorf("clean up app schema: %v", err)
 		}
 	})
+	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+		t.Fatalf("migrate v9 to v8 down: %v", err)
+	}
+	if err := db.QueryRow(ctx,
+		"SELECT to_regclass('binance_spot.candles_instrument_interval_time_desc_idx') IS NOT NULL",
+	).Scan(&indexExists); err != nil || !indexExists {
+		t.Fatalf("v9 rollback restored descending candle index = %t, error = %v", indexExists, err)
+	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate v8 to v7 down: %v", err)
 	}
@@ -215,7 +223,7 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate absent schemas up: %v", err)
 	}
-	for version := 8; version >= 1; version-- {
+	for version := 9; version >= 1; version-- {
 		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 			t.Fatalf("migrate absent schemas v%d down: %v", version, err)
 		}
@@ -242,13 +250,13 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate pre-existing schemas up: %v", err)
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 9 WHERE version = 8"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 10 WHERE version = 9"); err != nil {
 		t.Fatalf("create future migration metadata: %v", err)
 	}
 	if err := postgres.VerifySchema(ctx, db, databaseURL); err == nil {
 		t.Fatal("VerifySchema() accepted future migration metadata")
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 8 WHERE version = 9"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 9 WHERE version = 10"); err != nil {
 		t.Fatalf("restore current migration metadata: %v", err)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
@@ -260,7 +268,7 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if !appSchema || !binanceSchema {
 		t.Fatalf("pre-existing schemas removed on down: app=%t binance_spot=%t", appSchema, binanceSchema)
 	}
-	for version := 7; version >= 1; version-- {
+	for version := 8; version >= 1; version-- {
 		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 			t.Fatalf("migrate pre-existing schemas v%d down: %v", version, err)
 		}

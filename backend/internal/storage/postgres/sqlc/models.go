@@ -70,12 +70,12 @@ type BinanceSpotCandle struct {
 	Interval         string
 	OpenTime         pgtype.Timestamptz
 	CloseTime        pgtype.Timestamptz
-	Open             string
-	High             string
-	Low              string
-	Close            string
-	Volume           string
-	QuoteAssetVolume string
+	Open             float64
+	High             float64
+	Low              float64
+	Close            float64
+	Volume           float64
+	QuoteAssetVolume float64
 	TradeCount       int64
 }
 
@@ -95,6 +95,7 @@ type BinanceSpotInstrument struct {
 	QuoteAsset     string
 	ExchangeStatus string
 	IsActive       bool
+	DeactivatedAt  pgtype.Timestamptz
 }
 
 type BinanceSpotSyncState struct {

@@ -37,6 +37,68 @@ func (q *Queries) GetCandleHistoryCoverage(ctx context.Context, arg GetCandleHis
 	return i, err
 }
 
+const listCandleGaps = `-- name: ListCandleGaps :many
+SELECT selected.instrument_id::bigint AS instrument_id,
+       gap.previous_open_time::timestamptz AS previous_open_time,
+       gap.open_time::timestamptz AS next_open_time
+FROM unnest($1::bigint[]) AS selected(instrument_id)
+CROSS JOIN LATERAL (
+    SELECT recent.open_time,
+           lag(recent.open_time) OVER (ORDER BY recent.open_time) AS previous_open_time
+    FROM (
+        SELECT candle.open_time
+        FROM binance_spot.candles AS candle
+        WHERE candle.instrument_id = selected.instrument_id
+          AND candle.interval = $2
+        ORDER BY candle.open_time DESC
+        LIMIT $3
+    ) AS recent
+) AS gap
+WHERE gap.previous_open_time IS NOT NULL
+  AND gap.open_time > ((gap.previous_open_time AT TIME ZONE 'UTC') + $4::interval) AT TIME ZONE 'UTC'
+ORDER BY 1, 2
+`
+
+type ListCandleGapsParams struct {
+	InstrumentIds []int64
+	Interval      string
+	RowLimit      int32
+	Step          pgtype.Interval
+}
+
+type ListCandleGapsRow struct {
+	InstrumentID     int64
+	PreviousOpenTime pgtype.Timestamptz
+	NextOpenTime     pgtype.Timestamptz
+}
+
+// Returns consecutive pairs among the latest row_limit candles per instrument
+// that are further apart than one interval step (calendar-aware in UTC).
+func (q *Queries) ListCandleGaps(ctx context.Context, arg ListCandleGapsParams) ([]ListCandleGapsRow, error) {
+	rows, err := q.db.Query(ctx, listCandleGaps,
+		arg.InstrumentIds,
+		arg.Interval,
+		arg.RowLimit,
+		arg.Step,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCandleGapsRow
+	for rows.Next() {
+		var i ListCandleGapsRow
+		if err := rows.Scan(&i.InstrumentID, &i.PreviousOpenTime, &i.NextOpenTime); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listCandlePage = `-- name: ListCandlePage :many
 SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
        volume, quote_asset_volume, trade_count
@@ -113,7 +175,7 @@ type ListHourlyPricesParams struct {
 type ListHourlyPricesRow struct {
 	InstrumentID int64
 	OpenTime     pgtype.Timestamptz
-	Close        string
+	Close        float64
 }
 
 func (q *Queries) ListHourlyPrices(ctx context.Context, arg ListHourlyPricesParams) ([]ListHourlyPricesRow, error) {
@@ -192,6 +254,39 @@ func (q *Queries) ListLatestCandles(ctx context.Context, arg ListLatestCandlesPa
 	return items, nil
 }
 
+const pruneCandles = `-- name: PruneCandles :execrows
+DELETE FROM binance_spot.candles AS candle
+USING (
+    SELECT instrument.id AS instrument_id, cutoff.open_time
+    FROM binance_spot.instruments AS instrument
+    CROSS JOIN LATERAL (
+        SELECT recent.open_time
+        FROM binance_spot.candles AS recent
+        WHERE recent.instrument_id = instrument.id AND recent.interval = $1
+        ORDER BY recent.open_time DESC
+        OFFSET $2::int
+        LIMIT 1
+    ) AS cutoff
+) AS bound
+WHERE candle.instrument_id = bound.instrument_id
+  AND candle.interval = $1
+  AND candle.open_time <= bound.open_time
+`
+
+type PruneCandlesParams struct {
+	Interval  string
+	KeepCount int32
+}
+
+// Keeps the newest keep_count candles of the interval per instrument.
+func (q *Queries) PruneCandles(ctx context.Context, arg PruneCandlesParams) (int64, error) {
+	result, err := q.db.Exec(ctx, pruneCandles, arg.Interval, arg.KeepCount)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const saveCandleHistoryCoverage = `-- name: SaveCandleHistoryCoverage :exec
 INSERT INTO binance_spot.candle_history_coverage (
     instrument_id, interval, verified_oldest_open_time, target_depth,
@@ -223,4 +318,62 @@ func (q *Queries) SaveCandleHistoryCoverage(ctx context.Context, arg SaveCandleH
 		arg.RetryAfter,
 	)
 	return err
+}
+
+const summarizeCandleHistory = `-- name: SummarizeCandleHistory :many
+SELECT selected.instrument_id::bigint AS instrument_id,
+       count(*)::int AS candle_count,
+       min(recent.open_time)::timestamptz AS oldest_open_time,
+       max(recent.open_time)::timestamptz AS latest_open_time
+FROM unnest($1::bigint[]) AS selected(instrument_id)
+CROSS JOIN LATERAL (
+    SELECT candle.open_time
+    FROM binance_spot.candles AS candle
+    WHERE candle.instrument_id = selected.instrument_id
+      AND candle.interval = $2
+    ORDER BY candle.open_time DESC
+    LIMIT $3
+) AS recent
+GROUP BY selected.instrument_id
+`
+
+type SummarizeCandleHistoryParams struct {
+	InstrumentIds []int64
+	Interval      string
+	RowLimit      int32
+}
+
+type SummarizeCandleHistoryRow struct {
+	InstrumentID   int64
+	CandleCount    int32
+	OldestOpenTime pgtype.Timestamptz
+	LatestOpenTime pgtype.Timestamptz
+}
+
+// Counts the latest row_limit candles per instrument and returns their time
+// bounds. It reads only the primary key index; instruments without candles
+// are omitted.
+func (q *Queries) SummarizeCandleHistory(ctx context.Context, arg SummarizeCandleHistoryParams) ([]SummarizeCandleHistoryRow, error) {
+	rows, err := q.db.Query(ctx, summarizeCandleHistory, arg.InstrumentIds, arg.Interval, arg.RowLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SummarizeCandleHistoryRow
+	for rows.Next() {
+		var i SummarizeCandleHistoryRow
+		if err := rows.Scan(
+			&i.InstrumentID,
+			&i.CandleCount,
+			&i.OldestOpenTime,
+			&i.LatestOpenTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

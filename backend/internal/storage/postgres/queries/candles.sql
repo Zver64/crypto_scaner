@@ -36,6 +36,48 @@ CROSS JOIN LATERAL (
 ) AS candle
 ORDER BY candle.instrument_id, candle.open_time;
 
+-- name: SummarizeCandleHistory :many
+-- Counts the latest row_limit candles per instrument and returns their time
+-- bounds. It reads only the primary key index; instruments without candles
+-- are omitted.
+SELECT selected.instrument_id::bigint AS instrument_id,
+       count(*)::int AS candle_count,
+       min(recent.open_time)::timestamptz AS oldest_open_time,
+       max(recent.open_time)::timestamptz AS latest_open_time
+FROM unnest(sqlc.arg(instrument_ids)::bigint[]) AS selected(instrument_id)
+CROSS JOIN LATERAL (
+    SELECT candle.open_time
+    FROM binance_spot.candles AS candle
+    WHERE candle.instrument_id = selected.instrument_id
+      AND candle.interval = sqlc.arg(interval)
+    ORDER BY candle.open_time DESC
+    LIMIT sqlc.arg(row_limit)
+) AS recent
+GROUP BY selected.instrument_id;
+
+-- name: ListCandleGaps :many
+-- Returns consecutive pairs among the latest row_limit candles per instrument
+-- that are further apart than one interval step (calendar-aware in UTC).
+SELECT selected.instrument_id::bigint AS instrument_id,
+       gap.previous_open_time::timestamptz AS previous_open_time,
+       gap.open_time::timestamptz AS next_open_time
+FROM unnest(sqlc.arg(instrument_ids)::bigint[]) AS selected(instrument_id)
+CROSS JOIN LATERAL (
+    SELECT recent.open_time,
+           lag(recent.open_time) OVER (ORDER BY recent.open_time) AS previous_open_time
+    FROM (
+        SELECT candle.open_time
+        FROM binance_spot.candles AS candle
+        WHERE candle.instrument_id = selected.instrument_id
+          AND candle.interval = sqlc.arg(interval)
+        ORDER BY candle.open_time DESC
+        LIMIT sqlc.arg(row_limit)
+    ) AS recent
+) AS gap
+WHERE gap.previous_open_time IS NOT NULL
+  AND gap.open_time > ((gap.previous_open_time AT TIME ZONE 'UTC') + sqlc.arg(step)::interval) AT TIME ZONE 'UTC'
+ORDER BY 1, 2;
+
 -- name: ListCandlePage :many
 SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
        volume, quote_asset_volume, trade_count
@@ -46,6 +88,25 @@ WHERE instrument_id = sqlc.arg(instrument_id)
   AND (sqlc.narg(before_time)::timestamptz IS NULL OR open_time < sqlc.narg(before_time))
 ORDER BY open_time DESC
 LIMIT sqlc.arg(row_limit);
+
+-- name: PruneCandles :execrows
+-- Keeps the newest keep_count candles of the interval per instrument.
+DELETE FROM binance_spot.candles AS candle
+USING (
+    SELECT instrument.id AS instrument_id, cutoff.open_time
+    FROM binance_spot.instruments AS instrument
+    CROSS JOIN LATERAL (
+        SELECT recent.open_time
+        FROM binance_spot.candles AS recent
+        WHERE recent.instrument_id = instrument.id AND recent.interval = sqlc.arg(interval)
+        ORDER BY recent.open_time DESC
+        OFFSET sqlc.arg(keep_count)::int
+        LIMIT 1
+    ) AS cutoff
+) AS bound
+WHERE candle.instrument_id = bound.instrument_id
+  AND candle.interval = sqlc.arg(interval)
+  AND candle.open_time <= bound.open_time;
 
 -- name: GetCandleHistoryCoverage :one
 SELECT instrument_id, interval, verified_oldest_open_time, target_depth,

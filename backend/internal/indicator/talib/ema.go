@@ -22,11 +22,6 @@ func NewEMA() indicator.Implementation {
 		offset: func(period int) int {
 			return period - 1
 		},
-		// The SMA seed's influence fades exponentially; ten periods of history
-		// make it negligible, matching RSI.
-		lookback: func(period int) int {
-			return period * 10
-		},
 		calculate: gotalib.Ema,
 	})
 }

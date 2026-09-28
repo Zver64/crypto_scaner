@@ -6,6 +6,7 @@ import (
 	"math"
 
 	"crypto-scanner/internal/analysis"
+	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/numeric"
 )
 
@@ -24,7 +25,7 @@ func (Factory) Build(parameters map[string]any) (analysis.Criterion, error) {
 	minimum, minimumOK := number(parameters["minimum_range_percent"])
 	unit := analysis.Unit(unitValue)
 	if !unitOK || !periodOK || period != math.Trunc(period) || !percentileOK || !minimumOK ||
-		(unit != analysis.UnitDays && unit != analysis.UnitHours) || period < 1 || period > float64(maxPeriod(unit)) ||
+		(unit != analysis.UnitDays && unit != analysis.UnitHours) || period < 1 || period > market.HistoryDepth ||
 		!numeric.Finite(percentile) || percentile < 0 || percentile > 100 || !numeric.Finite(minimum) || minimum < 0 {
 		return nil, analysis.ErrInvalidArgument
 	}
@@ -60,9 +61,3 @@ func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.E
 }
 
 func number(value any) (float64, bool) { number, ok := value.(float64); return number, ok }
-func maxPeriod(unit analysis.Unit) int {
-	if unit == analysis.UnitHours {
-		return 3650 * 24
-	}
-	return 3650
-}

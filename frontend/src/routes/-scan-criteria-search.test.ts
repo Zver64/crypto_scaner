@@ -96,18 +96,18 @@ describe("scan criteria URL state", () => {
 			...search,
 			hourly_minimum_range_percent: 0,
 			hourly_percentile: 100,
-			hourly_period: 87600,
+			hourly_period: 2000,
 			minimum_market_cap_millions: 0,
 			minimum_range_percent: 0,
 			percentile: 0,
-			period: 3650,
+			period: 2000,
 		};
 		expect(parseOptionalScanCriteriaSearch(boundaries)).toEqual(boundaries);
 		expect(
-			parseOptionalScanCriteriaSearch({ ...boundaries, period: 3651 }),
+			parseOptionalScanCriteriaSearch({ ...boundaries, period: 2001 }),
 		).toEqual({});
 		expect(
-			parseOptionalScanCriteriaSearch({ ...boundaries, hourly_period: 87601 }),
+			parseOptionalScanCriteriaSearch({ ...boundaries, hourly_period: 2001 }),
 		).toEqual({});
 	});
 });

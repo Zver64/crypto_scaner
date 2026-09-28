@@ -13,6 +13,11 @@ const (
 	IntervalMonth CandleInterval = "1M"
 )
 
+// HistoryDepth is the number of closed candles backfilled and kept per
+// instrument and interval; the retention pruner deletes older ones. It also
+// bounds chart ranges and analysis periods.
+const HistoryDepth = 2000
+
 // CandleIntervals returns the supported intervals in increasing granularity.
 func CandleIntervals() []CandleInterval {
 	return []CandleInterval{IntervalHour, IntervalDay, IntervalWeek, IntervalMonth}

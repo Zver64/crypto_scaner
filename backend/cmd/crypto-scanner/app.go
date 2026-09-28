@@ -22,6 +22,7 @@ import (
 	"crypto-scanner/internal/market"
 	marketlive "crypto-scanner/internal/market/live"
 	"crypto-scanner/internal/market/marketsync"
+	"crypto-scanner/internal/market/retention"
 	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/storage/postgres"
@@ -72,7 +73,7 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 	}}
 	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
 	for _, interval := range market.CandleIntervals() {
-		synchronizers[interval] = marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.BinanceSpotSyncProfile(interval))
+		synchronizers[interval] = marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.HistoryDepth, market.BinanceSpotSyncProfile(interval))
 	}
 	scheduler := marketsync.NewScheduler(synchronizers, logger)
 
@@ -119,5 +120,6 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 		{"closed indicator tracker", closedIndicators},
 		{"Telegram bot", botService},
 		{"coin metadata synchronizer", coinMetadataSynchronizer},
+		{"market retention", retention.New(store, logger, market.HistoryDepth)},
 	}}, nil
 }

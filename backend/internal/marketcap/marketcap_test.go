@@ -172,6 +172,8 @@ func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
 		entry Mapping
 		err   error
 		valid bool
+		// A store failure is returned instead of being treated as absence.
+		wantErr bool
 	}{
 		{name: "resolved", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}, valid: true},
 		{name: "resolved past expiry", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: &past}, valid: true},
@@ -179,8 +181,8 @@ func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
 		{name: "unresolved exact expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found", ExpiresAt: &exact}},
 		{name: "unresolved past expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found", ExpiresAt: &past}},
 		{name: "unresolved nil expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found"}, valid: true},
-		{name: "store error", err: storeErr},
-		{name: "store error with resolved mapping", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}, err: storeErr},
+		{name: "store error", err: storeErr, wantErr: true},
+		{name: "store error with resolved mapping", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}, err: storeErr, wantErr: true},
 	}
 
 	for _, phase := range []string{"initial lookup", "lookup after scan lock"} {
@@ -199,7 +201,7 @@ func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
 						store.getMapping = func(string) (Mapping, error) {
 							lookups++
 							if lookups == 1 {
-								return Mapping{}, errors.New("missing")
+								return Mapping{}, errMappingMissing
 							}
 							return tc.entry, tc.err
 						}
@@ -209,6 +211,12 @@ func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
 					r.now = func() time.Time { return now }
 
 					batch, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}})
+					if tc.wantErr {
+						if !errors.Is(err, storeErr) {
+							t.Fatalf("error=%v, want %v", err, storeErr)
+						}
+						return
+					}
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -259,6 +267,10 @@ func (s *fakeStore) BootstrapCompleted(context.Context) (bool, error) { return s
 func (s *fakeStore) ReplaceSnapshot(_ context.Context, mappings []Mapping) error {
 	s.replacements++
 	s.snapshot = append([]Mapping(nil), mappings...)
+	s.mappings = map[string]Mapping{}
+	for _, m := range mappings {
+		s.mappings[m.BaseAsset] = m
+	}
 	s.done = true
 	return nil
 }
@@ -266,28 +278,51 @@ func (s *fakeStore) ReplaceStablecoinClassifications(_ context.Context, ids []st
 	s.stablecoinIDs = append([]string(nil), ids...)
 	return nil
 }
-func (s *fakeStore) GetMapping(_ context.Context, b string) (Mapping, error) {
-	if s.getMapping != nil {
-		return s.getMapping(b)
+
+// errMappingMissing reports an absent mapping from a getMapping hook.
+var errMappingMissing = errors.New("missing")
+
+func (s *fakeStore) ListMappings(_ context.Context, bases []string) (map[string]Mapping, error) {
+	result := map[string]Mapping{}
+	for _, b := range bases {
+		if s.getMapping == nil {
+			if m, ok := s.mappings[b]; ok {
+				result[b] = m
+			}
+			continue
+		}
+		m, err := s.getMapping(b)
+		if errors.Is(err, errMappingMissing) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		result[b] = m
 	}
-	m, ok := s.mappings[b]
-	if !ok {
-		return Mapping{}, errors.New("missing")
-	}
-	return m, nil
+	return result, nil
 }
-func (s *fakeStore) SaveMapping(_ context.Context, m Mapping) error {
-	s.mappings[m.BaseAsset] = m
+func (s *fakeStore) SaveMappings(_ context.Context, mappings []Mapping) error {
+	for _, m := range mappings {
+		s.mappings[m.BaseAsset] = m
+	}
 	return nil
 }
-func (s *fakeStore) GetCap(_ context.Context, id string) (Cap, error) {
-	c, ok := s.caps[id]
-	if !ok {
-		return Cap{}, errors.New("missing")
+func (s *fakeStore) ListCaps(_ context.Context, ids []string) (map[string]Cap, error) {
+	result := map[string]Cap{}
+	for _, id := range ids {
+		if c, ok := s.caps[id]; ok {
+			result[id] = c
+		}
 	}
-	return c, nil
+	return result, nil
 }
-func (s *fakeStore) SaveCap(_ context.Context, c Cap) error { s.caps[c.CoinID] = c; return nil }
+func (s *fakeStore) SaveCaps(_ context.Context, caps []Cap) error {
+	for _, c := range caps {
+		s.caps[c.CoinID] = c
+	}
+	return nil
+}
 
 type fakeProvider struct {
 	mu                       sync.Mutex

@@ -28,9 +28,10 @@ type singleInputPeriodSpec struct {
 	outputName    string
 	minimumPeriod int
 	maximumPeriod int
-	offset        func(int) int
-	lookback      func(int) int
-	calculate     func([]float64, int) []float64
+	// offset is the number of inputs before the first output, which is also
+	// the history the indicator needs.
+	offset    func(int) int
+	calculate func([]float64, int) []float64
 }
 
 func newSingleInputPeriod(spec singleInputPeriodSpec) indicator.Implementation {
@@ -50,7 +51,7 @@ func (adapter *singleInputPeriod) Lookback(parameters indicator.Parameters) (int
 	if err != nil {
 		return 0, err
 	}
-	lookback := adapter.spec.lookback(period)
+	lookback := adapter.spec.offset(period)
 	if lookback < 0 {
 		return 0, fmt.Errorf("%w: %q produced negative lookback", ErrInvalidRequest, adapter.spec.indicatorType)
 	}

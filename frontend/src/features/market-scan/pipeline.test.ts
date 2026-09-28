@@ -53,20 +53,20 @@ it("validates both mandatory volatility instances independently", () => {
 	expect(
 		validateMarketScanCriteria({
 			...defaultMarketScanCriteria,
-			period: 3651,
+			period: 2001,
 			percentile: 101,
 			minimumRangePercent: -1,
-			hourlyPeriod: 87601,
+			hourlyPeriod: 2001,
 			hourlyPercentile: -1,
 			hourlyMinimumRangePercent: "",
 			minimumMarketCapMillions: -1,
 		}),
 	).toEqual({
-		period: "Analysis period must be a whole number between 1 and 3650 days",
+		period: "Analysis period must be a whole number between 1 and 2000 days",
 		percentile: "Range percentile must be between 0 and 100",
 		minimumRangePercent: "Minimum range must be zero or greater",
 		hourlyPeriod:
-			"Analysis period must be a whole number between 1 and 87600 hours",
+			"Analysis period must be a whole number between 1 and 2000 hours",
 		hourlyPercentile: "Range percentile must be between 0 and 100",
 		hourlyMinimumRangePercent: "Minimum range is required",
 		minimumMarketCapMillions: "Minimum market cap must be zero or greater",

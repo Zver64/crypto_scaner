@@ -347,7 +347,7 @@ func TestExchangeUsesDiscoveryRequestWeightMetadata(t *testing.T) {
 		t.Fatalf("ListInstruments() error = %v", err)
 	}
 	if got := limiter.Limit(); got != rate.Limit(18) {
-		t.Fatalf("shared limiter rate = %v, want 18 requests/second with headroom", got)
+		t.Fatalf("shared limiter rate = %v, want 18 weight/second with headroom", got)
 	}
 }
 

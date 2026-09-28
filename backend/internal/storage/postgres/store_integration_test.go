@@ -440,11 +440,11 @@ func TestPostgresStoreContracts(t *testing.T) {
 			t.Fatalf("latest candles = %#v, want the two newest in ascending open time", candles)
 		}
 
-		if _, err := db.Exec(ctx, `UPDATE binance_spot.candles SET high = 1e10000 WHERE instrument_id = $1`, instrumentID); err != nil {
-			t.Fatalf("seed out-of-range numeric: %v", err)
+		if _, err := db.Exec(ctx, `UPDATE binance_spot.candles SET high = 'Infinity' WHERE instrument_id = $1`, instrumentID); err != nil {
+			t.Fatalf("seed non-finite value: %v", err)
 		}
 		if _, err := store.ListLatestCandles(ctx, []int64{instrumentID}, market.IntervalDay, 30); err == nil {
-			t.Fatal("ListLatestCandles() accepted a NUMERIC outside float64 range")
+			t.Fatal("ListLatestCandles() accepted a non-finite candle value")
 		}
 	})
 

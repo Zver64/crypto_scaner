@@ -21,14 +21,15 @@ func (*monitorStoreFake) ListMonitoredSymbols(context.Context) ([]string, error)
 type tradeFeedFake struct {
 	sets     int
 	symbols  []string
-	events   chan markettrade.Event
+	ready    chan struct{}
 	statuses chan markettrade.Status
 }
 
 func newTradeFeedFake() *tradeFeedFake {
-	return &tradeFeedFake{events: make(chan markettrade.Event), statuses: make(chan markettrade.Status)}
+	return &tradeFeedFake{ready: make(chan struct{}), statuses: make(chan markettrade.Status)}
 }
-func (feed *tradeFeedFake) Events() <-chan markettrade.Event    { return feed.events }
+func (feed *tradeFeedFake) Ready() <-chan struct{}              { return feed.ready }
+func (feed *tradeFeedFake) Drain() []markettrade.Event          { return nil }
 func (feed *tradeFeedFake) Statuses() <-chan markettrade.Status { return feed.statuses }
 func (feed *tradeFeedFake) SetSymbols(symbols []string) {
 	feed.sets++
@@ -74,29 +75,28 @@ func TestMonitorApplyFiresImmediateEqualityWithOwnerAndTradeTime(t *testing.T) {
 }
 
 func TestMonitorTradeCrossingAndEpochReset(t *testing.T) {
-	store := &monitorStoreFake{}
-	m := NewMonitor(store, nil, nil, slog.New(slog.DiscardHandler))
+	m := NewMonitor(&monitorStoreFake{}, nil, nil, slog.New(slog.DiscardHandler))
 	states := map[string]*symbolState{"BTCUSDT": {alerts: map[int64]Alert{1: {ID: 1, Version: 1, Symbol: "BTCUSDT", Target: "100"}}}}
 	at := time.Now()
-	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "90", TradeID: 1, Epoch: 1, EventTime: at})
-	if len(store.fired) != 0 {
+	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "90", Low: "90", High: "90", TradeID: 1, Epoch: 1, EventTime: at})
+	if len(m.sends) != 0 {
 		t.Fatal("first event crossed without a baseline")
 	}
-	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "110", TradeID: 2, Epoch: 1, EventTime: at})
-	if len(store.fired) != 1 {
-		t.Fatalf("crossing fired %d alerts", len(store.fired))
+	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "110", Low: "110", High: "110", TradeID: 2, Epoch: 1, EventTime: at})
+	if len(m.sends) != 1 {
+		t.Fatalf("crossing fired %d alerts", len(m.sends))
 	}
 	states["BTCUSDT"].alerts[2] = Alert{ID: 2, Version: 1, Symbol: "BTCUSDT", Target: "100"}
-	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "90", TradeID: 3, Epoch: 2, EventTime: at})
-	if len(store.fired) != 1 {
+	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "90", Low: "90", High: "90", TradeID: 3, Epoch: 2, EventTime: at})
+	if len(m.sends) != 1 {
 		t.Fatal("crossed across reconnect epoch")
 	}
-	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "100", TradeID: 4, Epoch: 2, EventTime: at})
-	if len(store.fired) != 2 {
+	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "100", Low: "100", High: "100", TradeID: 4, Epoch: 2, EventTime: at})
+	if len(m.sends) != 2 {
 		t.Fatal("equality did not fire")
 	}
-	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "101", TradeID: 4, Epoch: 2, EventTime: at})
-	if len(store.fired) != 2 {
+	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "101", Low: "101", High: "101", TradeID: 4, Epoch: 2, EventTime: at})
+	if len(m.sends) != 2 {
 		t.Fatal("duplicate trade ID fired")
 	}
 }

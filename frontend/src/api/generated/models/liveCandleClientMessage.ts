@@ -30,7 +30,7 @@ export interface LiveCandleClientMessage {
   /**
      * Closed-candle range for this chart subscription; subscribing again with a larger value extends the range.
      * @minimum 1
-     * @maximum 5000
+     * @maximum 2000
      */
   limit?: number;
   /**

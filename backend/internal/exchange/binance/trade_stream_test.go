@@ -110,8 +110,13 @@ func TestTradeStreamWaitsForAcknowledgementBeforeConnectedAndDeliversTrade(t *te
 		t.Fatal("connected status not published after ACK")
 	}
 	select {
-	case event := <-stream.Events():
-		if event.Symbol != "BTCUSDT" || event.TradeID != 42 || event.Price != "100.25" || event.Epoch == 0 {
+	case <-stream.Ready():
+		events := stream.Drain()
+		if len(events) != 1 {
+			t.Fatalf("trade events = %+v", events)
+		}
+		event := events[0]
+		if event.Symbol != "BTCUSDT" || event.TradeID != 42 || event.Price != "100.25" || event.Low != "100.25" || event.High != "100.25" || event.Epoch == 0 {
 			t.Fatalf("trade event = %+v", event)
 		}
 	case <-time.After(2 * time.Second):

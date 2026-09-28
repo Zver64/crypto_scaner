@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -25,11 +26,22 @@ func tradeStreamName(symbol string) string { return strings.ToLower(symbol) + "@
 
 // TradeStream is a process-wide pool of dynamically subscribed Binance Spot
 // <symbol>@trade connections. Each symbol belongs to exactly one worker.
+// Trades merge into one pending event per symbol and epoch, so a slow
+// consumer never drops trades or forces a reconnect.
 type TradeStream struct {
 	*streamPool[string]
-	events      chan markettrade.Event
 	statuses    chan markettrade.Status
 	assignments map[string]int // symbol -> worker index; guarded by mu
+
+	ready     chan struct{}
+	pendingMu sync.Mutex
+	pending   map[string][]*pendingTrades // in epoch order
+}
+
+// pendingTrades is the merged event of one symbol and epoch.
+type pendingTrades struct {
+	event     markettrade.Event
+	low, high *big.Rat
 }
 
 func NewTradeStream(logger *slog.Logger, dialLimiter *rate.Limiter) *TradeStream {
@@ -37,7 +49,7 @@ func NewTradeStream(logger *slog.Logger, dialLimiter *rate.Limiter) *TradeStream
 }
 
 func newTradeStream(url string, dialer *websocket.Dialer, logger *slog.Logger, dialLimiter *rate.Limiter) *TradeStream {
-	stream := &TradeStream{events: make(chan markettrade.Event, 512), statuses: make(chan markettrade.Status, 64), assignments: map[string]int{}}
+	stream := &TradeStream{statuses: make(chan markettrade.Status, 64), assignments: map[string]int{}, ready: make(chan struct{}, 1), pending: map[string][]*pendingTrades{}}
 	stream.streamPool = newStreamPool(url, dialer, logger, dialLimiter, streamKind[string]{
 		label: "trade", module: "binance_trade", event: "trade", name: tradeStreamName,
 		handle: stream.handle,
@@ -53,8 +65,21 @@ func newTradeStream(url string, dialer *websocket.Dialer, logger *slog.Logger, d
 	return stream
 }
 
-func (stream *TradeStream) Events() <-chan markettrade.Event    { return stream.events }
+func (stream *TradeStream) Ready() <-chan struct{}              { return stream.ready }
 func (stream *TradeStream) Statuses() <-chan markettrade.Status { return stream.statuses }
+
+func (stream *TradeStream) Drain() []markettrade.Event {
+	stream.pendingMu.Lock()
+	defer stream.pendingMu.Unlock()
+	events := make([]markettrade.Event, 0, len(stream.pending))
+	for _, merged := range stream.pending {
+		for _, item := range merged {
+			events = append(events, item.event)
+		}
+	}
+	clear(stream.pending)
+	return events
+}
 
 func (stream *TradeStream) SetSymbols(symbols []string) {
 	set := make(map[string]struct{}, len(symbols))
@@ -65,6 +90,13 @@ func (stream *TradeStream) SetSymbols(symbols []string) {
 		}
 	}
 	sorted := slices.Sorted(maps.Keys(set))
+	stream.pendingMu.Lock()
+	for symbol := range stream.pending {
+		if _, wanted := set[symbol]; !wanted {
+			delete(stream.pending, symbol)
+		}
+	}
+	stream.pendingMu.Unlock()
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
 	for symbol := range stream.assignments {
@@ -124,13 +156,29 @@ func (stream *TradeStream) handle(ctx context.Context, payload []byte, epoch int
 	if message.Symbol == "" || message.TradeID < 0 || !validPrice || price.Sign() <= 0 || message.EventTime <= 0 {
 		return errors.New("invalid Binance trade event")
 	}
-	event := markettrade.Event{Symbol: strings.ToUpper(message.Symbol), Price: message.Price, TradeID: message.TradeID, Epoch: epoch, EventTime: time.UnixMilli(message.EventTime).UTC()}
-	select {
-	case stream.events <- event:
-		return nil
-	case <-ctx.Done():
-		return nil
-	default:
-		return errors.New("trade event queue full")
+	symbol := strings.ToUpper(message.Symbol)
+	eventTime := time.UnixMilli(message.EventTime).UTC()
+	stream.pendingMu.Lock()
+	merged := stream.pending[symbol]
+	if count := len(merged); count > 0 && merged[count-1].event.Epoch == epoch {
+		last := merged[count-1]
+		if price.Cmp(last.low) < 0 {
+			last.low, last.event.Low = price, message.Price
+		}
+		if price.Cmp(last.high) > 0 {
+			last.high, last.event.High = price, message.Price
+		}
+		last.event.Price, last.event.TradeID, last.event.EventTime = message.Price, message.TradeID, eventTime
+	} else {
+		stream.pending[symbol] = append(merged, &pendingTrades{
+			event: markettrade.Event{Symbol: symbol, Price: message.Price, Low: message.Price, High: message.Price, TradeID: message.TradeID, Epoch: epoch, EventTime: eventTime},
+			low:   price, high: price,
+		})
 	}
+	stream.pendingMu.Unlock()
+	select {
+	case stream.ready <- struct{}{}:
+	default:
+	}
+	return nil
 }

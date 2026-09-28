@@ -7,11 +7,22 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
 	"crypto-scanner/internal/marketcap"
+	"crypto-scanner/internal/platform/backoff"
 	"crypto-scanner/internal/platform/numeric"
+
+	"golang.org/x/time/rate"
+)
+
+const (
+	// requestAttempts bounds attempts per request on 429 and 5xx responses.
+	requestAttempts = 3
+	retryBaseDelay  = 5 * time.Second
+	maxRetryDelay   = 2 * time.Minute
 )
 
 var _ marketcap.Provider = (*Client)(nil)
@@ -30,6 +41,7 @@ type Client struct {
 	baseURL, key string
 	http         *http.Client
 	keyAllowed   bool
+	limiter      *rate.Limiter
 }
 
 // NewClient creates a CoinGecko client. The API key is only sent to official
@@ -46,7 +58,10 @@ func NewClient(base, key string) *Client {
 		scheme = u.Scheme
 	}
 	allowed := scheme == "https" && (host == "api.coingecko.com" || host == "pro-api.coingecko.com")
-	return &Client{baseURL: strings.TrimRight(base, "/"), key: key, keyAllowed: allowed, http: &http.Client{Timeout: 15 * time.Second}}
+	// The Demo plan allows 30 calls per minute: a burst of 5, then one call
+	// every 2.5 seconds, stays below it within any minute.
+	limiter := rate.NewLimiter(rate.Every(2500*time.Millisecond), 5)
+	return &Client{baseURL: strings.TrimRight(base, "/"), key: key, keyAllowed: allowed, http: &http.Client{Timeout: 15 * time.Second}, limiter: limiter}
 }
 func (c *Client) Tickers(ctx context.Context, page int) ([]marketcap.Ticker, error) {
 	var body struct {
@@ -160,21 +175,46 @@ func (c *Client) Markets(ctx context.Context, ids []string) ([]marketcap.Cap, er
 	}
 	return result, nil
 }
+
+// get decodes one rate-limited request, retrying 429 and 5xx responses.
 func (c *Client) get(ctx context.Context, path string, destination any) error {
+	for attempt := 0; ; attempt++ {
+		retry, err := c.getOnce(ctx, path, destination)
+		if err == nil || retry == 0 || attempt == requestAttempts-1 {
+			return err
+		}
+		if err := backoff.Sleep(ctx, retry); err != nil {
+			return err
+		}
+	}
+}
+
+// getOnce returns the delay before a retry, or 0 when err is not retryable.
+func (c *Client) getOnce(ctx context.Context, path string, destination any) (time.Duration, error) {
+	if err := c.limiter.Wait(ctx); err != nil {
+		return 0, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	if c.key != "" && c.keyAllowed {
 		req.Header.Set("x-cg-demo-api-key", c.key)
 	}
 	response, err := c.http.Do(req)
 	if err != nil {
-		return err
+		return 0, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode/100 != 2 {
-		return fmt.Errorf("CoinGecko status %d", response.StatusCode)
+	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
+		delay := retryBaseDelay
+		if seconds, parseErr := strconv.Atoi(response.Header.Get("Retry-After")); parseErr == nil && seconds > 0 {
+			delay = time.Duration(seconds) * time.Second
+		}
+		return min(delay, maxRetryDelay), fmt.Errorf("CoinGecko status %d", response.StatusCode)
 	}
-	return json.NewDecoder(response.Body).Decode(destination)
+	if response.StatusCode/100 != 2 {
+		return 0, fmt.Errorf("CoinGecko status %d", response.StatusCode)
+	}
+	return 0, json.NewDecoder(response.Body).Decode(destination)
 }

@@ -1,26 +1,42 @@
--- name: DeactivateAllInstruments :exec
-UPDATE binance_spot.instruments SET is_active = FALSE;
+-- name: DeactivateInstrumentsExcept :exec
+UPDATE binance_spot.instruments SET is_active = FALSE, deactivated_at = now()
+WHERE is_active AND symbol <> ALL(sqlc.arg(symbols)::text[]);
 
--- name: UpsertInstrument :one
+-- name: UpsertInstruments :exec
+-- Rows whose values are unchanged are not rewritten.
 INSERT INTO binance_spot.instruments (
-    symbol, base_asset, quote_asset, exchange_status, is_active
-) VALUES ($1, $2, $3, $4, $5)
+    symbol, base_asset, quote_asset, exchange_status, is_active, deactivated_at
+)
+SELECT snapshot.symbol, snapshot.base_asset, snapshot.quote_asset, snapshot.exchange_status, snapshot.is_active,
+       CASE WHEN snapshot.is_active THEN NULL ELSE now() END
+FROM (
+    SELECT unnest(sqlc.arg(symbols)::text[]) AS symbol, unnest(sqlc.arg(base_assets)::text[]) AS base_asset,
+           unnest(sqlc.arg(quote_assets)::text[]) AS quote_asset, unnest(sqlc.arg(statuses)::text[]) AS exchange_status,
+           unnest(sqlc.arg(actives)::boolean[]) AS is_active
+) AS snapshot
 ON CONFLICT (symbol) DO UPDATE SET
     base_asset = EXCLUDED.base_asset,
     quote_asset = EXCLUDED.quote_asset,
     exchange_status = EXCLUDED.exchange_status,
-    is_active = EXCLUDED.is_active
-RETURNING id, symbol, base_asset, quote_asset, exchange_status, is_active;
+    is_active = EXCLUDED.is_active,
+    -- Keep the first deactivation time while an instrument stays inactive.
+    deactivated_at = CASE
+        WHEN EXCLUDED.is_active THEN NULL
+        ELSE COALESCE(binance_spot.instruments.deactivated_at, now())
+    END
+WHERE (binance_spot.instruments.base_asset, binance_spot.instruments.quote_asset,
+       binance_spot.instruments.exchange_status, binance_spot.instruments.is_active)
+  IS DISTINCT FROM (EXCLUDED.base_asset, EXCLUDED.quote_asset, EXCLUDED.exchange_status, EXCLUDED.is_active);
 
 -- name: GetActiveInstrumentBySymbol :one
-SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
-FROM binance_spot.instruments
-WHERE symbol = $1 AND is_active = TRUE;
+SELECT sqlc.embed(instrument)
+FROM binance_spot.instruments AS instrument
+WHERE instrument.symbol = $1 AND instrument.is_active = TRUE;
 
 -- name: ListActiveInstruments :many
-SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
-FROM binance_spot.instruments
-WHERE is_active = TRUE;
+SELECT sqlc.embed(instrument)
+FROM binance_spot.instruments AS instrument
+WHERE instrument.is_active = TRUE;
 
 -- name: SelectActiveInstruments :many
 SELECT sqlc.embed(instrument),
@@ -42,3 +58,23 @@ ORDER BY
   CASE WHEN sqlc.arg(market_cap_sort)::text = 'desc' THEN market_cap.market_cap_usd END DESC NULLS LAST,
   CASE WHEN sqlc.arg(market_cap_sort)::text <> '' THEN instrument.symbol END ASC
 LIMIT NULLIF(sqlc.arg(result_limit)::int, 0);
+
+-- name: DeleteDelistedInstrumentCandles :execrows
+DELETE FROM binance_spot.candles
+WHERE instrument_id = ANY(sqlc.arg(instrument_ids)::bigint[]);
+
+-- name: DeleteDelistedInstruments :many
+-- Their candles must already be deleted; history coverage cascades.
+DELETE FROM binance_spot.instruments AS instrument
+WHERE instrument.id = ANY(sqlc.arg(instrument_ids)::bigint[])
+RETURNING instrument.symbol;
+
+-- name: ListDelistedInstrumentIDs :many
+-- Locks instruments inactive since before inactive_before that nobody has
+-- favorited, so a concurrent snapshot cannot reactivate them mid-deletion.
+SELECT instrument.id
+FROM binance_spot.instruments AS instrument
+WHERE NOT instrument.is_active
+  AND instrument.deactivated_at < sqlc.arg(inactive_before)
+  AND NOT EXISTS (SELECT 1 FROM app.favorites AS favorite WHERE favorite.instrument_id = instrument.id)
+FOR UPDATE;

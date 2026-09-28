@@ -48,6 +48,11 @@ func Open(ctx context.Context, databaseURL string) (*DB, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse PostgreSQL configuration: invalid DATABASE_URL")
 	}
+	// pgxpool defaults to max(4, CPUs); on a small host the sync workers alone
+	// would hold every connection and stall HTTP requests.
+	if !strings.Contains(databaseURL, "pool_max_conns") {
+		poolConfig.MaxConns = defaultMaxConns
+	}
 	pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
 	if err != nil {
 		return nil, safeError("open PostgreSQL", err, databaseURL)
@@ -204,6 +209,9 @@ func schemaMetadata(ctx context.Context, queries RowQuerier) (bool, int64, bool,
 }
 
 const migrationTable = "crypto_scanner_schema_versions"
+
+// defaultMaxConns applies unless DATABASE_URL sets pool_max_conns.
+const defaultMaxConns = 10
 
 const migrationLockID int64 = 19193286063743041
 

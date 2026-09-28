@@ -9,6 +9,7 @@ import (
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/market/marketsync"
 	"crypto-scanner/internal/platform/numeric"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
 
@@ -23,16 +24,19 @@ func (store *Store) ApplyInstrumentSnapshot(ctx context.Context, items []market.
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	if err := queries.DeactivateAllInstruments(ctx); err != nil {
-		return fmt.Errorf("deactivate previous instrument snapshot: %w", err)
+	params := generated.UpsertInstrumentsParams{
+		Symbols: make([]string, len(items)), BaseAssets: make([]string, len(items)), QuoteAssets: make([]string, len(items)),
+		Statuses: make([]string, len(items)), Actives: make([]bool, len(items)),
 	}
-	for _, item := range items {
-		if _, err := queries.UpsertInstrument(ctx, generated.UpsertInstrumentParams{
-			Symbol: item.Symbol, BaseAsset: item.BaseAsset, QuoteAsset: item.QuoteAsset,
-			ExchangeStatus: item.Status, IsActive: item.Active,
-		}); err != nil {
-			return fmt.Errorf("apply instrument %q: %w", item.Symbol, err)
-		}
+	for index, item := range items {
+		params.Symbols[index], params.BaseAssets[index], params.QuoteAssets[index] = item.Symbol, item.BaseAsset, item.QuoteAsset
+		params.Statuses[index], params.Actives[index] = item.Status, item.Active
+	}
+	if err := queries.DeactivateInstrumentsExcept(ctx, params.Symbols); err != nil {
+		return fmt.Errorf("deactivate instruments absent from snapshot: %w", err)
+	}
+	if err := queries.UpsertInstruments(ctx, params); err != nil {
+		return fmt.Errorf("apply instrument snapshot: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit instrument snapshot: %w", err)
@@ -48,7 +52,7 @@ func (store *Store) GetActiveInstrumentBySymbol(ctx context.Context, symbol stri
 	if err != nil {
 		return market.Instrument{}, fmt.Errorf("get active instrument by symbol: %w", err)
 	}
-	return instrumentFromRow(row), nil
+	return instrumentFromRow(row.BinanceSpotInstrument), nil
 }
 
 func (store *Store) ListActiveInstruments(ctx context.Context) ([]market.Instrument, error) {
@@ -56,7 +60,11 @@ func (store *Store) ListActiveInstruments(ctx context.Context) ([]market.Instrum
 	if err != nil {
 		return nil, fmt.Errorf("list active instruments: %w", err)
 	}
-	return marketInstruments(rows), nil
+	items := make([]market.Instrument, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, instrumentFromRow(row.BinanceSpotInstrument))
+	}
+	return items, nil
 }
 
 func (store *Store) SelectActiveInstruments(ctx context.Context, selection analysis.Selection) ([]market.Instrument, error) {
@@ -109,14 +117,6 @@ func selectionParams(selection analysis.Selection) (generated.SelectActiveInstru
 		}
 	}
 	return params, nil
-}
-
-func marketInstruments(rows []generated.BinanceSpotInstrument) []market.Instrument {
-	items := make([]market.Instrument, 0, len(rows))
-	for _, row := range rows {
-		items = append(items, instrumentFromRow(row))
-	}
-	return items
 }
 
 func instrumentFromRow(row generated.BinanceSpotInstrument) market.Instrument {
@@ -197,6 +197,103 @@ func (store *Store) ListLatestCandles(ctx context.Context, instrumentIDs []int64
 	return items, nil
 }
 
+// PruneCandles keeps the newest keep candles of interval per instrument and
+// returns how many were deleted.
+func (store *Store) PruneCandles(ctx context.Context, interval market.CandleInterval, keep int) (int64, error) {
+	if !interval.Valid() || keep < 1 || int64(keep) > math.MaxInt32 {
+		return 0, fmt.Errorf("invalid candle retention")
+	}
+	deleted, err := store.queries.PruneCandles(ctx, generated.PruneCandlesParams{Interval: string(interval), KeepCount: int32(keep)})
+	if err != nil {
+		return 0, fmt.Errorf("prune %s candles: %w", interval, err)
+	}
+	return deleted, nil
+}
+
+// DeleteDelistedInstruments removes, with all their candles, the instruments
+// inactive since before inactiveBefore that nobody has favorited, and returns
+// their symbols.
+func (store *Store) DeleteDelistedInstruments(ctx context.Context, inactiveBefore time.Time) ([]string, error) {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin delisted instrument deletion: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	queries := store.queries.WithTx(tx)
+	ids, err := queries.ListDelistedInstrumentIDs(ctx, timestamptz(&inactiveBefore))
+	if err != nil {
+		return nil, fmt.Errorf("list delisted instruments: %w", err)
+	}
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	if _, err := queries.DeleteDelistedInstrumentCandles(ctx, ids); err != nil {
+		return nil, fmt.Errorf("delete delisted instrument candles: %w", err)
+	}
+	symbols, err := queries.DeleteDelistedInstruments(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("delete delisted instruments: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit delisted instrument deletion: %w", err)
+	}
+	return symbols, nil
+}
+
+// SummarizeCandleHistory summarizes up to limit latest candles per
+// instrument without reading candle rows.
+func (store *Store) SummarizeCandleHistory(ctx context.Context, instrumentIDs []int64, interval market.CandleInterval, limit int) (map[int64]marketsync.HistorySummary, error) {
+	step, ok := intervalStep(interval)
+	if !ok || limit <= 0 || int64(limit) > math.MaxInt32 {
+		return nil, fmt.Errorf("invalid candle history summary")
+	}
+	histories := make(map[int64]marketsync.HistorySummary, len(instrumentIDs))
+	if len(instrumentIDs) == 0 {
+		return histories, nil
+	}
+	rows, err := store.queries.SummarizeCandleHistory(ctx, generated.SummarizeCandleHistoryParams{
+		InstrumentIds: instrumentIDs, Interval: string(interval), RowLimit: int32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("summarize candle history: %w", err)
+	}
+	for _, row := range rows {
+		histories[row.InstrumentID] = marketsync.HistorySummary{
+			Count: int(row.CandleCount), Oldest: row.OldestOpenTime.Time.UTC(), Latest: row.LatestOpenTime.Time.UTC(),
+		}
+	}
+	gaps, err := store.queries.ListCandleGaps(ctx, generated.ListCandleGapsParams{
+		InstrumentIds: instrumentIDs, Interval: string(interval), RowLimit: int32(limit), Step: step,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list candle gaps: %w", err)
+	}
+	for _, gap := range gaps {
+		history := histories[gap.InstrumentID]
+		history.Gaps = append(history.Gaps, marketsync.HistoryGap{
+			From: interval.NextOpenTime(gap.PreviousOpenTime.Time.UTC()), To: gap.NextOpenTime.Time.UTC(),
+		})
+		histories[gap.InstrumentID] = history
+	}
+	return histories, nil
+}
+
+// intervalStep is one interval as a PostgreSQL calendar interval.
+func intervalStep(interval market.CandleInterval) (pgtype.Interval, bool) {
+	switch interval {
+	case market.IntervalHour:
+		return pgtype.Interval{Microseconds: time.Hour.Microseconds(), Valid: true}, true
+	case market.IntervalDay:
+		return pgtype.Interval{Days: 1, Valid: true}, true
+	case market.IntervalWeek:
+		return pgtype.Interval{Days: 7, Valid: true}, true
+	case market.IntervalMonth:
+		return pgtype.Interval{Months: 1, Valid: true}, true
+	default:
+		return pgtype.Interval{}, false
+	}
+}
+
 func (store *Store) GetCandleHistoryCoverage(ctx context.Context, instrumentID int64, interval market.CandleInterval) (market.HistoryCoverage, bool, error) {
 	row, err := store.queries.GetCandleHistoryCoverage(ctx, generated.GetCandleHistoryCoverageParams{InstrumentID: instrumentID, Interval: string(interval)})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -272,11 +369,10 @@ func (store *Store) ListHourlyPrices(ctx context.Context, instrumentIDs []int64,
 	}
 	prices := make([]market.HourlyPrice, 0, len(rows))
 	for _, row := range rows {
-		price, err := numeric.ParseFinite(row.Close)
-		if err != nil {
+		if !numeric.Finite(row.Close) {
 			return nil, fmt.Errorf("invalid hourly close for instrument %d at %s", row.InstrumentID, row.OpenTime.Time)
 		}
-		prices = append(prices, market.HourlyPrice{InstrumentID: row.InstrumentID, OpenTime: row.OpenTime.Time.UTC(), Close: price})
+		prices = append(prices, market.HourlyPrice{InstrumentID: row.InstrumentID, OpenTime: row.OpenTime.Time.UTC(), Close: row.Close})
 	}
 	return prices, nil
 }
@@ -302,26 +398,21 @@ func candleParams(item market.Candle) (generated.UpsertCandleParams, error) {
 	return generated.UpsertCandleParams{
 		InstrumentID: item.InstrumentID, Interval: string(item.Interval),
 		OpenTime: pgtype.Timestamptz{Time: item.OpenTime, Valid: true}, CloseTime: pgtype.Timestamptz{Time: item.CloseTime, Valid: true},
-		Open: decimal(item.Open), High: decimal(item.High), Low: decimal(item.Low), Close: decimal(item.Close),
-		Volume: decimal(item.Volume), QuoteAssetVolume: decimal(item.QuoteAssetVolume), TradeCount: item.TradeCount,
+		Open: item.Open, High: item.High, Low: item.Low, Close: item.Close,
+		Volume: item.Volume, QuoteAssetVolume: item.QuoteAssetVolume, TradeCount: item.TradeCount,
 	}, nil
 }
 
+// candleFromRow rejects NaN and infinities, which DOUBLE PRECISION columns
+// accept and CHECK constraints do not exclude.
 func candleFromRow(row generated.BinanceSpotCandle) (market.Candle, error) {
-	fields := []struct{ name, value string }{
-		{"open", row.Open}, {"high", row.High}, {"low", row.Low}, {"close", row.Close},
-		{"volume", row.Volume}, {"quote asset volume", row.QuoteAssetVolume},
-	}
-	converted := make([]float64, len(fields))
-	for index, field := range fields {
-		value, err := numeric.ParseFinite(field.value)
-		if err != nil {
-			return market.Candle{}, fmt.Errorf("%s NUMERIC %q is outside finite float64 range", field.name, field.value)
+	for _, value := range []float64{row.Open, row.High, row.Low, row.Close, row.Volume, row.QuoteAssetVolume} {
+		if !numeric.Finite(value) {
+			return market.Candle{}, fmt.Errorf("candle value %v is not finite", value)
 		}
-		converted[index] = value
 	}
 	return market.Candle{
 		InstrumentID: row.InstrumentID, Interval: market.CandleInterval(row.Interval), OpenTime: row.OpenTime.Time, CloseTime: row.CloseTime.Time,
-		Open: converted[0], High: converted[1], Low: converted[2], Close: converted[3], Volume: converted[4], QuoteAssetVolume: converted[5], TradeCount: row.TradeCount,
+		Open: row.Open, High: row.High, Low: row.Low, Close: row.Close, Volume: row.Volume, QuoteAssetVolume: row.QuoteAssetVolume, TradeCount: row.TradeCount,
 	}, nil
 }

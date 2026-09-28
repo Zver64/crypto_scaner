@@ -29,7 +29,7 @@ describe("Top Market Cap settings", () => {
 			}),
 		).toEqual({
 			hourlyPeriod:
-				"Analysis period must be a whole number between 1 and 87600 hours",
+				"Analysis period must be a whole number between 1 and 2000 hours",
 			percentile: "Range percentile must be a whole number",
 		});
 	});

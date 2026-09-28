@@ -17,7 +17,7 @@ import {
 } from "@/features/instrument-analysis/live-candle-store";
 
 const initialLimit = 200;
-const maxLimit = 5000;
+const maxLimit = 2000;
 
 // The backend owns each chart range: it sends a full snapshot whenever closed
 // history or the range changes and a tail update for the current candle.

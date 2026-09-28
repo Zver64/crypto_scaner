@@ -31,10 +31,8 @@ func (store *Store) ReplaceSnapshot(ctx context.Context, mappings []marketcap.Ma
 	if err = q.ClearMappings(ctx); err != nil {
 		return err
 	}
-	for _, m := range mappings {
-		if err = upsertMapping(ctx, q, m); err != nil {
-			return err
-		}
+	if err = upsertMappings(ctx, q, mappings); err != nil {
+		return err
 	}
 	if err = q.ReplaceMappingsAndCompleteBootstrap(ctx); err != nil {
 		return err
@@ -49,34 +47,71 @@ func (store *Store) ReplaceStablecoinClassifications(ctx context.Context, stable
 	return store.queries.ReplaceStablecoinClassifications(ctx, stablecoinIDs)
 }
 
-func (store *Store) GetMapping(ctx context.Context, base string) (marketcap.Mapping, error) {
-	row, err := store.queries.GetCoinGeckoMapping(ctx, base)
+func (store *Store) ListMappings(ctx context.Context, bases []string) (map[string]marketcap.Mapping, error) {
+	rows, err := store.queries.ListCoinGeckoMappings(ctx, bases)
 	if err != nil {
-		return marketcap.Mapping{}, err
+		return nil, fmt.Errorf("list CoinGecko mappings: %w", err)
 	}
-	return marketcap.Mapping{BaseAsset: row.BaseAsset, CoinID: row.CoinID.String, QuoteAsset: row.QuoteAsset, SourceSymbol: row.SourceSymbol, Status: row.Status, Reason: row.Reason.String, ExpiresAt: timePointer(row.ExpiresAt)}, nil
+	mappings := make(map[string]marketcap.Mapping, len(rows))
+	for _, row := range rows {
+		mappings[row.BaseAsset] = marketcap.Mapping{BaseAsset: row.BaseAsset, CoinID: row.CoinID.String, QuoteAsset: row.QuoteAsset, SourceSymbol: row.SourceSymbol, Status: row.Status, Reason: row.Reason.String, ExpiresAt: timePointer(row.ExpiresAt)}
+	}
+	return mappings, nil
 }
 
-func (store *Store) SaveMapping(ctx context.Context, m marketcap.Mapping) error {
-	return upsertMapping(ctx, store.queries, m)
+func (store *Store) SaveMappings(ctx context.Context, mappings []marketcap.Mapping) error {
+	return upsertMappings(ctx, store.queries, mappings)
 }
 
-func upsertMapping(ctx context.Context, q *generated.Queries, m marketcap.Mapping) error {
-	return q.UpsertCoinGeckoMapping(ctx, generated.UpsertCoinGeckoMappingParams{BaseAsset: m.BaseAsset, CoinID: pgtype.Text{String: m.CoinID, Valid: m.CoinID != ""}, QuoteAsset: m.QuoteAsset, SourceSymbol: m.SourceSymbol, Status: m.Status, Reason: pgtype.Text{String: m.Reason, Valid: m.Reason != ""}, ObservedAt: pgtype.Timestamptz{Time: time.Now(), Valid: true}, ExpiresAt: timestamptz(m.ExpiresAt)})
+// upsertMappings writes all mappings in one round trip.
+func upsertMappings(ctx context.Context, q *generated.Queries, mappings []marketcap.Mapping) error {
+	if len(mappings) == 0 {
+		return nil
+	}
+	observedAt := pgtype.Timestamptz{Time: time.Now(), Valid: true}
+	params := make([]generated.UpsertCoinGeckoMappingParams, len(mappings))
+	for index, m := range mappings {
+		params[index] = generated.UpsertCoinGeckoMappingParams{BaseAsset: m.BaseAsset, CoinID: pgtype.Text{String: m.CoinID, Valid: m.CoinID != ""}, QuoteAsset: m.QuoteAsset, SourceSymbol: m.SourceSymbol, Status: m.Status, Reason: pgtype.Text{String: m.Reason, Valid: m.Reason != ""}, ObservedAt: observedAt, ExpiresAt: timestamptz(m.ExpiresAt)}
+	}
+	var batchErr error
+	q.UpsertCoinGeckoMapping(ctx, params).Exec(func(_ int, err error) {
+		if batchErr == nil && err != nil {
+			batchErr = fmt.Errorf("upsert CoinGecko mapping: %w", err)
+		}
+	})
+	return batchErr
 }
 
-func (store *Store) GetCap(ctx context.Context, id string) (marketcap.Cap, error) {
-	row, err := store.queries.GetCoinGeckoMarketCap(ctx, id)
+func (store *Store) ListCaps(ctx context.Context, ids []string) (map[string]marketcap.Cap, error) {
+	rows, err := store.queries.ListCoinGeckoMarketCaps(ctx, ids)
 	if err != nil {
-		return marketcap.Cap{}, err
+		return nil, fmt.Errorf("list CoinGecko market caps: %w", err)
 	}
-	usd, err := numeric.ParseFinite(row.MarketCapUsd)
-	if err != nil {
-		return marketcap.Cap{}, err
+	caps := make(map[string]marketcap.Cap, len(rows))
+	for _, row := range rows {
+		usd, err := numeric.ParseFinite(row.MarketCapUsd)
+		if err != nil {
+			return nil, fmt.Errorf("invalid persisted market cap for %s", row.CoinID)
+		}
+		caps[row.CoinID] = marketcap.Cap{CoinID: row.CoinID, USD: usd, Available: true, FetchedAt: row.FetchedAt.Time, ObservedAt: row.ObservedAt.Time}
 	}
-	return marketcap.Cap{CoinID: row.CoinID, USD: usd, Available: true, FetchedAt: row.FetchedAt.Time, ObservedAt: row.ObservedAt.Time}, nil
+	return caps, nil
 }
 
-func (store *Store) SaveCap(ctx context.Context, c marketcap.Cap) error {
-	return store.queries.UpsertCoinGeckoMarketCap(ctx, generated.UpsertCoinGeckoMarketCapParams{CoinID: c.CoinID, MarketCapUsd: decimal(c.USD), FetchedAt: pgtype.Timestamptz{Time: c.FetchedAt, Valid: true}, ObservedAt: pgtype.Timestamptz{Time: c.ObservedAt, Valid: true}})
+// SaveCaps writes all caps in one round trip.
+func (store *Store) SaveCaps(ctx context.Context, caps []marketcap.Cap) error {
+	if len(caps) == 0 {
+		return nil
+	}
+	params := make([]generated.UpsertCoinGeckoMarketCapParams, len(caps))
+	for index, c := range caps {
+		params[index] = generated.UpsertCoinGeckoMarketCapParams{CoinID: c.CoinID, MarketCapUsd: decimal(c.USD), FetchedAt: pgtype.Timestamptz{Time: c.FetchedAt, Valid: true}, ObservedAt: pgtype.Timestamptz{Time: c.ObservedAt, Valid: true}}
+	}
+	var batchErr error
+	store.queries.UpsertCoinGeckoMarketCap(ctx, params).Exec(func(_ int, err error) {
+		if batchErr == nil && err != nil {
+			batchErr = fmt.Errorf("upsert CoinGecko market cap: %w", err)
+		}
+	})
+	return batchErr
 }

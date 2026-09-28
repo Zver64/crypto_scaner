@@ -21,16 +21,17 @@ const spotPermission = "SPOT"
 // Connector request and response types do not leave this package.
 type Exchange struct {
 	client    *connector.Client
-	limiter   *rate.Limiter
 	transport *retryTransport
 }
 
 // Options configures the shared public Binance HTTP policy.
 type Options struct {
-	BaseURL              string
-	HTTPClient           *http.Client
-	RetryAttempts        int
-	RetryBaseDelay       time.Duration
+	BaseURL        string
+	HTTPClient     *http.Client
+	RetryAttempts  int
+	RetryBaseDelay time.Duration
+	// Limiter meters request weight per second; its burst must cover the
+	// heaviest request (exchange information, weight 20).
 	Limiter              *rate.Limiter
 	HistoryRepairLimiter *rate.Limiter
 }
@@ -51,7 +52,8 @@ func New(options Options) *Exchange {
 		options.RetryBaseDelay = 200 * time.Millisecond
 	}
 	if options.Limiter == nil {
-		options.Limiter = rate.NewLimiter(rate.Limit(10), 4)
+		// Conservative until exchange information reports the real budget.
+		options.Limiter = rate.NewLimiter(rate.Limit(20), 40)
 	}
 	if options.HistoryRepairLimiter == nil {
 		// Historical prefix repair is deliberately conservative and shared by
@@ -70,7 +72,7 @@ func New(options Options) *Exchange {
 	}
 	httpClient.Transport = transport
 	client.HTTPClient = &httpClient
-	return &Exchange{client: client, limiter: options.Limiter, transport: transport}
+	return &Exchange{client: client, transport: transport}
 }
 
 // RetryCount returns the cumulative number of retry attempts made by this adapter.
@@ -132,7 +134,8 @@ func (exchange *Exchange) applyRateLimits(limits []*connector.RateLimit) {
 			continue
 		}
 		// Keep ten percent headroom for other users of the public IP.
-		exchange.limiter.SetLimit(rate.Limit(float64(limit.Limit) * 0.9 / 60))
+		exchange.transport.weightLimit.Store(int64(limit.Limit))
+		exchange.transport.limiter.SetLimit(rate.Limit(float64(limit.Limit) * 0.9 / 60))
 		return
 	}
 }

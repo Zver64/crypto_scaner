@@ -20,15 +20,12 @@ export const defaultAnalysisCriteria: AnalysisCriteria = {
 
 export const analysisCriteriaConstraints = {
 	percentile: { maximum: 100, minimum: 0 },
-	period: { maximum: 87600, minimum: 1 },
+	// Mirrors the backend market.HistoryDepth.
+	period: { maximum: 2000, minimum: 1 },
 } as const;
 
 export function defaultPeriodForUnit(unit: AnalysisUnit): number {
 	return unit === "hours" ? 60 : 30;
-}
-
-export function maximumPeriodForUnit(unit: AnalysisUnit): number {
-	return unit === "hours" ? 87600 : 3650;
 }
 
 export type AnalysisValidationErrors = Partial<
@@ -44,8 +41,8 @@ export function validateAnalysisCriteria(
 		values.period,
 		"Analysis period",
 		analysisCriteriaConstraints.period.minimum,
-		maximumPeriodForUnit(values.unit),
-		`Analysis period must be a whole number between 1 and ${maximumPeriodForUnit(values.unit)} ${values.unit}`,
+		analysisCriteriaConstraints.period.maximum,
+		`Analysis period must be a whole number between 1 and ${analysisCriteriaConstraints.period.maximum} ${values.unit}`,
 		(message) => {
 			errors.period = message;
 		},

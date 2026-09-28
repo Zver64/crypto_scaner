@@ -11,57 +11,108 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deactivateAllInstruments = `-- name: DeactivateAllInstruments :exec
-UPDATE binance_spot.instruments SET is_active = FALSE
+const deactivateInstrumentsExcept = `-- name: DeactivateInstrumentsExcept :exec
+UPDATE binance_spot.instruments SET is_active = FALSE, deactivated_at = now()
+WHERE is_active AND symbol <> ALL($1::text[])
 `
 
-func (q *Queries) DeactivateAllInstruments(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deactivateAllInstruments)
+func (q *Queries) DeactivateInstrumentsExcept(ctx context.Context, symbols []string) error {
+	_, err := q.db.Exec(ctx, deactivateInstrumentsExcept, symbols)
 	return err
 }
 
-const getActiveInstrumentBySymbol = `-- name: GetActiveInstrumentBySymbol :one
-SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
-FROM binance_spot.instruments
-WHERE symbol = $1 AND is_active = TRUE
+const deleteDelistedInstrumentCandles = `-- name: DeleteDelistedInstrumentCandles :execrows
+DELETE FROM binance_spot.candles
+WHERE instrument_id = ANY($1::bigint[])
 `
 
-func (q *Queries) GetActiveInstrumentBySymbol(ctx context.Context, symbol string) (BinanceSpotInstrument, error) {
+func (q *Queries) DeleteDelistedInstrumentCandles(ctx context.Context, instrumentIds []int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteDelistedInstrumentCandles, instrumentIds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteDelistedInstruments = `-- name: DeleteDelistedInstruments :many
+DELETE FROM binance_spot.instruments AS instrument
+WHERE instrument.id = ANY($1::bigint[])
+RETURNING instrument.symbol
+`
+
+// Their candles must already be deleted; history coverage cascades.
+func (q *Queries) DeleteDelistedInstruments(ctx context.Context, instrumentIds []int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, deleteDelistedInstruments, instrumentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var symbol string
+		if err := rows.Scan(&symbol); err != nil {
+			return nil, err
+		}
+		items = append(items, symbol)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getActiveInstrumentBySymbol = `-- name: GetActiveInstrumentBySymbol :one
+SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active, instrument.deactivated_at
+FROM binance_spot.instruments AS instrument
+WHERE instrument.symbol = $1 AND instrument.is_active = TRUE
+`
+
+type GetActiveInstrumentBySymbolRow struct {
+	BinanceSpotInstrument BinanceSpotInstrument
+}
+
+func (q *Queries) GetActiveInstrumentBySymbol(ctx context.Context, symbol string) (GetActiveInstrumentBySymbolRow, error) {
 	row := q.db.QueryRow(ctx, getActiveInstrumentBySymbol, symbol)
-	var i BinanceSpotInstrument
+	var i GetActiveInstrumentBySymbolRow
 	err := row.Scan(
-		&i.ID,
-		&i.Symbol,
-		&i.BaseAsset,
-		&i.QuoteAsset,
-		&i.ExchangeStatus,
-		&i.IsActive,
+		&i.BinanceSpotInstrument.ID,
+		&i.BinanceSpotInstrument.Symbol,
+		&i.BinanceSpotInstrument.BaseAsset,
+		&i.BinanceSpotInstrument.QuoteAsset,
+		&i.BinanceSpotInstrument.ExchangeStatus,
+		&i.BinanceSpotInstrument.IsActive,
+		&i.BinanceSpotInstrument.DeactivatedAt,
 	)
 	return i, err
 }
 
 const listActiveInstruments = `-- name: ListActiveInstruments :many
-SELECT id, symbol, base_asset, quote_asset, exchange_status, is_active
-FROM binance_spot.instruments
-WHERE is_active = TRUE
+SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active, instrument.deactivated_at
+FROM binance_spot.instruments AS instrument
+WHERE instrument.is_active = TRUE
 `
 
-func (q *Queries) ListActiveInstruments(ctx context.Context) ([]BinanceSpotInstrument, error) {
+type ListActiveInstrumentsRow struct {
+	BinanceSpotInstrument BinanceSpotInstrument
+}
+
+func (q *Queries) ListActiveInstruments(ctx context.Context) ([]ListActiveInstrumentsRow, error) {
 	rows, err := q.db.Query(ctx, listActiveInstruments)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []BinanceSpotInstrument
+	var items []ListActiveInstrumentsRow
 	for rows.Next() {
-		var i BinanceSpotInstrument
+		var i ListActiveInstrumentsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.Symbol,
-			&i.BaseAsset,
-			&i.QuoteAsset,
-			&i.ExchangeStatus,
-			&i.IsActive,
+			&i.BinanceSpotInstrument.ID,
+			&i.BinanceSpotInstrument.Symbol,
+			&i.BinanceSpotInstrument.BaseAsset,
+			&i.BinanceSpotInstrument.QuoteAsset,
+			&i.BinanceSpotInstrument.ExchangeStatus,
+			&i.BinanceSpotInstrument.IsActive,
+			&i.BinanceSpotInstrument.DeactivatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -73,8 +124,39 @@ func (q *Queries) ListActiveInstruments(ctx context.Context) ([]BinanceSpotInstr
 	return items, nil
 }
 
+const listDelistedInstrumentIDs = `-- name: ListDelistedInstrumentIDs :many
+SELECT instrument.id
+FROM binance_spot.instruments AS instrument
+WHERE NOT instrument.is_active
+  AND instrument.deactivated_at < $1
+  AND NOT EXISTS (SELECT 1 FROM app.favorites AS favorite WHERE favorite.instrument_id = instrument.id)
+FOR UPDATE
+`
+
+// Locks instruments inactive since before inactive_before that nobody has
+// favorited, so a concurrent snapshot cannot reactivate them mid-deletion.
+func (q *Queries) ListDelistedInstrumentIDs(ctx context.Context, inactiveBefore pgtype.Timestamptz) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listDelistedInstrumentIDs, inactiveBefore)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const selectActiveInstruments = `-- name: SelectActiveInstruments :many
-SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active,
+SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active, instrument.deactivated_at,
        (market_cap.coin_id IS NOT NULL)::boolean AS market_cap_available,
        COALESCE(market_cap.market_cap_usd::text, ''::text)::text AS market_cap_usd
 FROM binance_spot.instruments AS instrument
@@ -133,6 +215,7 @@ func (q *Queries) SelectActiveInstruments(ctx context.Context, arg SelectActiveI
 			&i.BinanceSpotInstrument.QuoteAsset,
 			&i.BinanceSpotInstrument.ExchangeStatus,
 			&i.BinanceSpotInstrument.IsActive,
+			&i.BinanceSpotInstrument.DeactivatedAt,
 			&i.MarketCapAvailable,
 			&i.MarketCapUsd,
 		); err != nil {
@@ -146,42 +229,48 @@ func (q *Queries) SelectActiveInstruments(ctx context.Context, arg SelectActiveI
 	return items, nil
 }
 
-const upsertInstrument = `-- name: UpsertInstrument :one
+const upsertInstruments = `-- name: UpsertInstruments :exec
 INSERT INTO binance_spot.instruments (
-    symbol, base_asset, quote_asset, exchange_status, is_active
-) VALUES ($1, $2, $3, $4, $5)
+    symbol, base_asset, quote_asset, exchange_status, is_active, deactivated_at
+)
+SELECT snapshot.symbol, snapshot.base_asset, snapshot.quote_asset, snapshot.exchange_status, snapshot.is_active,
+       CASE WHEN snapshot.is_active THEN NULL ELSE now() END
+FROM (
+    SELECT unnest($1::text[]) AS symbol, unnest($2::text[]) AS base_asset,
+           unnest($3::text[]) AS quote_asset, unnest($4::text[]) AS exchange_status,
+           unnest($5::boolean[]) AS is_active
+) AS snapshot
 ON CONFLICT (symbol) DO UPDATE SET
     base_asset = EXCLUDED.base_asset,
     quote_asset = EXCLUDED.quote_asset,
     exchange_status = EXCLUDED.exchange_status,
-    is_active = EXCLUDED.is_active
-RETURNING id, symbol, base_asset, quote_asset, exchange_status, is_active
+    is_active = EXCLUDED.is_active,
+    -- Keep the first deactivation time while an instrument stays inactive.
+    deactivated_at = CASE
+        WHEN EXCLUDED.is_active THEN NULL
+        ELSE COALESCE(binance_spot.instruments.deactivated_at, now())
+    END
+WHERE (binance_spot.instruments.base_asset, binance_spot.instruments.quote_asset,
+       binance_spot.instruments.exchange_status, binance_spot.instruments.is_active)
+  IS DISTINCT FROM (EXCLUDED.base_asset, EXCLUDED.quote_asset, EXCLUDED.exchange_status, EXCLUDED.is_active)
 `
 
-type UpsertInstrumentParams struct {
-	Symbol         string
-	BaseAsset      string
-	QuoteAsset     string
-	ExchangeStatus string
-	IsActive       bool
+type UpsertInstrumentsParams struct {
+	Symbols     []string
+	BaseAssets  []string
+	QuoteAssets []string
+	Statuses    []string
+	Actives     []bool
 }
 
-func (q *Queries) UpsertInstrument(ctx context.Context, arg UpsertInstrumentParams) (BinanceSpotInstrument, error) {
-	row := q.db.QueryRow(ctx, upsertInstrument,
-		arg.Symbol,
-		arg.BaseAsset,
-		arg.QuoteAsset,
-		arg.ExchangeStatus,
-		arg.IsActive,
+// Rows whose values are unchanged are not rewritten.
+func (q *Queries) UpsertInstruments(ctx context.Context, arg UpsertInstrumentsParams) error {
+	_, err := q.db.Exec(ctx, upsertInstruments,
+		arg.Symbols,
+		arg.BaseAssets,
+		arg.QuoteAssets,
+		arg.Statuses,
+		arg.Actives,
 	)
-	var i BinanceSpotInstrument
-	err := row.Scan(
-		&i.ID,
-		&i.Symbol,
-		&i.BaseAsset,
-		&i.QuoteAsset,
-		&i.ExchangeStatus,
-		&i.IsActive,
-	)
-	return i, err
+	return err
 }

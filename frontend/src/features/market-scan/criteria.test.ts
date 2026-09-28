@@ -46,7 +46,7 @@ describe("validateMarketScanCriteria", () => {
 			minimumMarketCapMillions: "Minimum market cap must be zero or greater",
 			minimumRangePercent: "Minimum range must be zero or greater",
 			percentile: "Range percentile must be between 0 and 100",
-			period: "Analysis period must be a whole number between 1 and 3650 days",
+			period: "Analysis period must be a whole number between 1 and 2000 days",
 		});
 	});
 

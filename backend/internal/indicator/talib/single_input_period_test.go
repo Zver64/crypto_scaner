@@ -18,7 +18,6 @@ func TestSingleInputPeriodAdaptsCalculationAndWarmup(t *testing.T) {
 		minimumPeriod: 2,
 		maximumPeriod: 20,
 		offset:        func(period int) int { return period },
-		lookback:      func(period int) int { return period * 3 },
 		calculate: func(values []float64, period int) []float64 {
 			receivedPeriod = period
 			receivedValues = values
@@ -31,8 +30,8 @@ func TestSingleInputPeriodAdaptsCalculationAndWarmup(t *testing.T) {
 	})
 
 	lookback, err := implementation.Lookback(indicator.Parameters{"period": float64(3)})
-	if err != nil || lookback != 9 {
-		t.Fatalf("Lookback() = %d, %v; want 9, nil", lookback, err)
+	if err != nil || lookback != 3 {
+		t.Fatalf("Lookback() = %d, %v; want 3, nil", lookback, err)
 	}
 	inputs := indicator.Inputs{"price": {10, 11, 12, 13, 14}}
 	result, err := implementation.Calculate(indicator.Parameters{"period": 3}, inputs)
@@ -57,7 +56,6 @@ func TestSingleInputPeriodReturnsNonNilEmptySeriesBeforeWarmup(t *testing.T) {
 		minimumPeriod: 2,
 		maximumPeriod: 20,
 		offset:        func(period int) int { return period },
-		lookback:      func(period int) int { return period },
 		calculate: func([]float64, int) []float64 {
 			called = true
 			return nil
@@ -81,7 +79,6 @@ func TestSingleInputPeriodValidatesSharedContract(t *testing.T) {
 		minimumPeriod: 2,
 		maximumPeriod: 20,
 		offset:        func(period int) int { return period },
-		lookback:      func(period int) int { return period },
 		calculate:     func(values []float64, _ int) []float64 { return make([]float64, len(values)) },
 	})
 	tests := []struct {

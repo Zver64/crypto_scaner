@@ -20,11 +20,12 @@ func (q *Queries) ClearMappings(ctx context.Context) error {
 	return err
 }
 
-const getCoinGeckoMapping = `-- name: GetCoinGeckoMapping :one
-SELECT base_asset, coin_id, quote_asset, source_symbol, status, reason, observed_at, expires_at FROM app.coingecko_asset_mappings WHERE base_asset = $1
+const listCoinGeckoMappings = `-- name: ListCoinGeckoMappings :many
+SELECT base_asset, coin_id, quote_asset, source_symbol, status, reason, observed_at, expires_at
+FROM app.coingecko_asset_mappings WHERE base_asset = ANY($1::text[])
 `
 
-type GetCoinGeckoMappingRow struct {
+type ListCoinGeckoMappingsRow struct {
 	BaseAsset    string
 	CoinID       pgtype.Text
 	QuoteAsset   string
@@ -35,36 +36,63 @@ type GetCoinGeckoMappingRow struct {
 	ExpiresAt    pgtype.Timestamptz
 }
 
-func (q *Queries) GetCoinGeckoMapping(ctx context.Context, baseAsset string) (GetCoinGeckoMappingRow, error) {
-	row := q.db.QueryRow(ctx, getCoinGeckoMapping, baseAsset)
-	var i GetCoinGeckoMappingRow
-	err := row.Scan(
-		&i.BaseAsset,
-		&i.CoinID,
-		&i.QuoteAsset,
-		&i.SourceSymbol,
-		&i.Status,
-		&i.Reason,
-		&i.ObservedAt,
-		&i.ExpiresAt,
-	)
-	return i, err
+func (q *Queries) ListCoinGeckoMappings(ctx context.Context, baseAssets []string) ([]ListCoinGeckoMappingsRow, error) {
+	rows, err := q.db.Query(ctx, listCoinGeckoMappings, baseAssets)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCoinGeckoMappingsRow
+	for rows.Next() {
+		var i ListCoinGeckoMappingsRow
+		if err := rows.Scan(
+			&i.BaseAsset,
+			&i.CoinID,
+			&i.QuoteAsset,
+			&i.SourceSymbol,
+			&i.Status,
+			&i.Reason,
+			&i.ObservedAt,
+			&i.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
-const getCoinGeckoMarketCap = `-- name: GetCoinGeckoMarketCap :one
-SELECT coin_id, market_cap_usd, fetched_at, observed_at FROM app.coingecko_market_caps WHERE coin_id = $1
+const listCoinGeckoMarketCaps = `-- name: ListCoinGeckoMarketCaps :many
+SELECT coin_id, market_cap_usd, fetched_at, observed_at
+FROM app.coingecko_market_caps WHERE coin_id = ANY($1::text[])
 `
 
-func (q *Queries) GetCoinGeckoMarketCap(ctx context.Context, coinID string) (AppCoingeckoMarketCap, error) {
-	row := q.db.QueryRow(ctx, getCoinGeckoMarketCap, coinID)
-	var i AppCoingeckoMarketCap
-	err := row.Scan(
-		&i.CoinID,
-		&i.MarketCapUsd,
-		&i.FetchedAt,
-		&i.ObservedAt,
-	)
-	return i, err
+func (q *Queries) ListCoinGeckoMarketCaps(ctx context.Context, coinIds []string) ([]AppCoingeckoMarketCap, error) {
+	rows, err := q.db.Query(ctx, listCoinGeckoMarketCaps, coinIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AppCoingeckoMarketCap
+	for rows.Next() {
+		var i AppCoingeckoMarketCap
+		if err := rows.Scan(
+			&i.CoinID,
+			&i.MarketCapUsd,
+			&i.FetchedAt,
+			&i.ObservedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const mappingBootstrapCompleted = `-- name: MappingBootstrapCompleted :one
@@ -97,58 +125,5 @@ END
 
 func (q *Queries) ReplaceStablecoinClassifications(ctx context.Context, stablecoinIds []string) error {
 	_, err := q.db.Exec(ctx, replaceStablecoinClassifications, stablecoinIds)
-	return err
-}
-
-const upsertCoinGeckoMapping = `-- name: UpsertCoinGeckoMapping :exec
-INSERT INTO app.coingecko_asset_mappings (base_asset, coin_id, quote_asset, source_symbol, status, reason, observed_at, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (base_asset) DO UPDATE SET coin_id=EXCLUDED.coin_id, quote_asset=EXCLUDED.quote_asset, source_symbol=EXCLUDED.source_symbol, status=EXCLUDED.status, reason=EXCLUDED.reason, observed_at=EXCLUDED.observed_at, expires_at=EXCLUDED.expires_at
-`
-
-type UpsertCoinGeckoMappingParams struct {
-	BaseAsset    string
-	CoinID       pgtype.Text
-	QuoteAsset   string
-	SourceSymbol string
-	Status       string
-	Reason       pgtype.Text
-	ObservedAt   pgtype.Timestamptz
-	ExpiresAt    pgtype.Timestamptz
-}
-
-func (q *Queries) UpsertCoinGeckoMapping(ctx context.Context, arg UpsertCoinGeckoMappingParams) error {
-	_, err := q.db.Exec(ctx, upsertCoinGeckoMapping,
-		arg.BaseAsset,
-		arg.CoinID,
-		arg.QuoteAsset,
-		arg.SourceSymbol,
-		arg.Status,
-		arg.Reason,
-		arg.ObservedAt,
-		arg.ExpiresAt,
-	)
-	return err
-}
-
-const upsertCoinGeckoMarketCap = `-- name: UpsertCoinGeckoMarketCap :exec
-INSERT INTO app.coingecko_market_caps (coin_id, market_cap_usd, fetched_at, observed_at) VALUES ($1, $2, $3, $4)
-ON CONFLICT (coin_id) DO UPDATE SET market_cap_usd=EXCLUDED.market_cap_usd, fetched_at=EXCLUDED.fetched_at, observed_at=EXCLUDED.observed_at
-`
-
-type UpsertCoinGeckoMarketCapParams struct {
-	CoinID       string
-	MarketCapUsd string
-	FetchedAt    pgtype.Timestamptz
-	ObservedAt   pgtype.Timestamptz
-}
-
-func (q *Queries) UpsertCoinGeckoMarketCap(ctx context.Context, arg UpsertCoinGeckoMarketCapParams) error {
-	_, err := q.db.Exec(ctx, upsertCoinGeckoMarketCap,
-		arg.CoinID,
-		arg.MarketCapUsd,
-		arg.FetchedAt,
-		arg.ObservedAt,
-	)
 	return err
 }

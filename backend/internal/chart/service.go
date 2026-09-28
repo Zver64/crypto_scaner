@@ -18,8 +18,9 @@ var ErrInvalidRequest = errors.New("invalid chart request")
 const (
 	// DefaultRange is the initial chart range; larger ranges come from scroll-back.
 	DefaultRange = 200
-	// MaxRange bounds the number of closed candles in one chart.
-	MaxRange = 5000
+	// MaxRange bounds the number of closed candles in one chart to the
+	// history the backend keeps.
+	MaxRange = market.HistoryDepth
 	// maxIndicators bounds the indicator selection of one chart.
 	maxIndicators        = 8
 	maxIndicatorLookback = 5000

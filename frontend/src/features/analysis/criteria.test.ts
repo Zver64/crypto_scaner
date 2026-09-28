@@ -10,7 +10,7 @@ describe("analysis criteria", () => {
 		expect(
 			validateAnalysisCriteria({
 				percentile: 100,
-				period: 87600,
+				period: 2000,
 				unit: "hours",
 			}),
 		).toEqual({});
@@ -26,23 +26,22 @@ describe("analysis criteria", () => {
 		expect(
 			validateAnalysisCriteria({
 				percentile: 101,
-				period: 3651,
+				period: 2001,
 				unit: "days",
 			}),
 		).toEqual({
 			percentile: "Range percentile must be between 0 and 100",
-			period: "Analysis period must be a whole number between 1 and 3650 days",
+			period: "Analysis period must be a whole number between 1 and 2000 days",
 		});
 		expect(
 			validateAnalysisCriteria({
 				percentile: 80.5,
-				period: 87601,
+				period: 2001,
 				unit: "hours",
 			}),
 		).toEqual({
 			percentile: "Range percentile must be a whole number",
-			period:
-				"Analysis period must be a whole number between 1 and 87600 hours",
+			period: "Analysis period must be a whole number between 1 and 2000 hours",
 		});
 	});
 });

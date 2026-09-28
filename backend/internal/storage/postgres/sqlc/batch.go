@@ -50,12 +50,12 @@ type UpsertCandleParams struct {
 	Interval         string
 	OpenTime         pgtype.Timestamptz
 	CloseTime        pgtype.Timestamptz
-	Open             string
-	High             string
-	Low              string
-	Close            string
-	Volume           string
-	QuoteAssetVolume string
+	Open             float64
+	High             float64
+	Low              float64
+	Close            float64
+	Volume           float64
+	QuoteAssetVolume float64
 	TradeCount       int64
 }
 
@@ -100,6 +100,123 @@ func (b *UpsertCandleBatchResults) QueryRow(f func(int, pgtype.Timestamptz, erro
 }
 
 func (b *UpsertCandleBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const upsertCoinGeckoMapping = `-- name: UpsertCoinGeckoMapping :batchexec
+INSERT INTO app.coingecko_asset_mappings (base_asset, coin_id, quote_asset, source_symbol, status, reason, observed_at, expires_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (base_asset) DO UPDATE SET coin_id=EXCLUDED.coin_id, quote_asset=EXCLUDED.quote_asset, source_symbol=EXCLUDED.source_symbol, status=EXCLUDED.status, reason=EXCLUDED.reason, observed_at=EXCLUDED.observed_at, expires_at=EXCLUDED.expires_at
+`
+
+type UpsertCoinGeckoMappingBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type UpsertCoinGeckoMappingParams struct {
+	BaseAsset    string
+	CoinID       pgtype.Text
+	QuoteAsset   string
+	SourceSymbol string
+	Status       string
+	Reason       pgtype.Text
+	ObservedAt   pgtype.Timestamptz
+	ExpiresAt    pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertCoinGeckoMapping(ctx context.Context, arg []UpsertCoinGeckoMappingParams) *UpsertCoinGeckoMappingBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.BaseAsset,
+			a.CoinID,
+			a.QuoteAsset,
+			a.SourceSymbol,
+			a.Status,
+			a.Reason,
+			a.ObservedAt,
+			a.ExpiresAt,
+		}
+		batch.Queue(upsertCoinGeckoMapping, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &UpsertCoinGeckoMappingBatchResults{br, len(arg), false}
+}
+
+func (b *UpsertCoinGeckoMappingBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *UpsertCoinGeckoMappingBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
+const upsertCoinGeckoMarketCap = `-- name: UpsertCoinGeckoMarketCap :batchexec
+INSERT INTO app.coingecko_market_caps (coin_id, market_cap_usd, fetched_at, observed_at) VALUES ($1, $2, $3, $4)
+ON CONFLICT (coin_id) DO UPDATE SET market_cap_usd=EXCLUDED.market_cap_usd, fetched_at=EXCLUDED.fetched_at, observed_at=EXCLUDED.observed_at
+`
+
+type UpsertCoinGeckoMarketCapBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type UpsertCoinGeckoMarketCapParams struct {
+	CoinID       string
+	MarketCapUsd string
+	FetchedAt    pgtype.Timestamptz
+	ObservedAt   pgtype.Timestamptz
+}
+
+func (q *Queries) UpsertCoinGeckoMarketCap(ctx context.Context, arg []UpsertCoinGeckoMarketCapParams) *UpsertCoinGeckoMarketCapBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.CoinID,
+			a.MarketCapUsd,
+			a.FetchedAt,
+			a.ObservedAt,
+		}
+		batch.Queue(upsertCoinGeckoMarketCap, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &UpsertCoinGeckoMarketCapBatchResults{br, len(arg), false}
+}
+
+func (b *UpsertCoinGeckoMarketCapBatchResults) Exec(f func(int, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		if b.closed {
+			if f != nil {
+				f(t, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		_, err := b.br.Exec()
+		if f != nil {
+			f(t, err)
+		}
+	}
+}
+
+func (b *UpsertCoinGeckoMarketCapBatchResults) Close() error {
 	b.closed = true
 	return b.br.Close()
 }

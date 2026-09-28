@@ -15,6 +15,7 @@
  */
 import type { ClosedIndicator } from './closedIndicator.ts';
 import type { Evaluation } from './evaluation.ts';
+import type { SecurityIssue } from './securityIssue.ts';
 
 export interface MarketAnalysisItem {
   symbol: string;
@@ -22,6 +23,8 @@ export interface MarketAnalysisItem {
   evaluations: Evaluation[];
   /** Indicator values at the latest closed candle. */
   closed_indicators: ClosedIndicator[];
+  /** Failed token security audit checks; empty when none failed or no audit is available. */
+  security_issues: SecurityIssue[];
   /**
      * @minItems 169
      * @maxItems 169

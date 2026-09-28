@@ -9,6 +9,7 @@ import (
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/tokensecurity"
 )
 
 func marketSearchRequest(request MarketAnalysisRequest) analysis.SearchRequest {
@@ -43,6 +44,7 @@ func (api *api) AnalyzeInstrument(ctx context.Context, request AnalyzeInstrument
 		Body: InstrumentAnalysisResponse{
 			Symbol: result.Symbol, Matched: result.Matched,
 			Evaluations: responseEvaluations(result.Evaluations), Warnings: responseWarnings(result.Warnings),
+			SecurityIssues: securityIssuesResponse(result.SecurityIssues),
 		},
 		Headers: AnalyzeInstrument200ResponseHeaders{XRequestID: RequestIdentifier(ctx)},
 	}, nil
@@ -66,7 +68,7 @@ func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestO
 func marketAnalysisResponse(result analysis.SearchResult) MarketAnalysisResponse {
 	items := make([]MarketAnalysisItem, len(result.Items))
 	for i, item := range result.Items {
-		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory, ClosedIndicators: closedIndicatorsResponse(item.ClosedIndicators)}
+		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory, ClosedIndicators: closedIndicatorsResponse(item.ClosedIndicators), SecurityIssues: securityIssuesResponse(item.SecurityIssues)}
 	}
 	unresolved := make([]UnresolvedInstrument, len(result.Unresolved))
 	for i, item := range result.Unresolved {
@@ -170,6 +172,14 @@ func responseWarnings(warnings []analysis.Warning) []Warning {
 	result := make([]Warning, len(warnings))
 	for i, warning := range warnings {
 		result[i] = Warning{Code: warning.Code, Message: warning.Message}
+	}
+	return result
+}
+
+func securityIssuesResponse(issues []tokensecurity.Issue) []SecurityIssue {
+	result := make([]SecurityIssue, len(issues))
+	for i, issue := range issues {
+		result[i] = SecurityIssue{Chain: SecurityIssueChain(issue.Chain), Severity: SecurityIssueSeverity(issue.Severity), Title: issue.Title, Description: issue.Description}
 	}
 	return result
 }

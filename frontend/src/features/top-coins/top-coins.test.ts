@@ -10,6 +10,7 @@ function item(symbol: string): MarketAnalysisItem {
 	return {
 		evaluations: [],
 		closed_indicators: [],
+		security_issues: [],
 		matched: true,
 		price_history: [],
 		symbol,

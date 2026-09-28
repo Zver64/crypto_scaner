@@ -18,25 +18,43 @@ import { useTelegramMiniApp } from "./telegram";
 
 const headerContentHeight = "3.25rem";
 
-type ReadinessStatus = "checking" | "ready" | "unavailable";
+type ReadinessStatus =
+	| "checking"
+	| "ready"
+	| "auditing"
+	| "auditFailed"
+	| "unavailable";
 
 const readinessPresentation = {
 	checking: { color: "yellow", label: "Checking" },
 	ready: { color: "teal", label: "Ready" },
+	auditing: { color: "blue", label: "Audit" },
+	auditFailed: { color: "orange", label: "Audit failed" },
 	unavailable: { color: "red", label: "Unavailable" },
 } as const;
+
+// Progress is polled faster while a background security audit runs.
+const auditPollInterval = 5_000;
+const readinessPollInterval = 30_000;
 
 export function MiniAppShell() {
 	const { webApp } = useTelegramMiniApp();
 	const appVersion = getAppVersion(import.meta.env.VITE_APP_VERSION);
 	const readiness = useGetReadiness({
 		query: {
-			refetchInterval: 30_000,
+			refetchInterval: (query) =>
+				query.state.data?.data.background.token_security.status === "running"
+					? auditPollInterval
+					: readinessPollInterval,
 			retry: false,
-			select: (response) => response.status === 200,
+			select: (response) => ({
+				ready: response.status === 200,
+				tokenSecurity: response.data.background.token_security,
+			}),
 		},
 	});
-	const backendReady = readiness.data === true;
+	const backendReady = readiness.data?.ready === true;
+	const tokenSecurity = readiness.data?.tokenSecurity;
 	const pageTitle = useMatches({
 		select: (matches) => matches.at(-1)?.context.pageTitle,
 	});
@@ -47,9 +65,13 @@ export function MiniAppShell() {
 	});
 	const readinessStatus: ReadinessStatus = readiness.isPending
 		? "checking"
-		: backendReady
-			? "ready"
-			: "unavailable";
+		: !backendReady
+			? "unavailable"
+			: tokenSecurity?.status === "running"
+				? "auditing"
+				: tokenSecurity?.status === "failed"
+					? "auditFailed"
+					: "ready";
 
 	return (
 		<BusinessRequestContext value={permission}>
@@ -77,7 +99,14 @@ export function MiniAppShell() {
 								{pageTitle}
 							</Text>
 						) : null}
-						<ReadinessBadge status={readinessStatus} />
+						<ReadinessBadge
+							progress={
+								readinessStatus === "auditing" && tokenSecurity
+									? `${tokenSecurity.completed}/${tokenSecurity.total}`
+									: undefined
+							}
+							status={readinessStatus}
+						/>
 					</Group>
 				</AppShell.Header>
 				<AppShell.Main>
@@ -94,12 +123,18 @@ export function MiniAppShell() {
 	);
 }
 
-function ReadinessBadge({ status }: { status: ReadinessStatus }) {
+function ReadinessBadge({
+	progress,
+	status,
+}: {
+	progress?: string;
+	status: ReadinessStatus;
+}) {
 	const presentation = readinessPresentation[status];
 
 	return (
 		<Badge color={presentation.color} size="sm" variant="light">
-			{presentation.label}
+			{progress ? `${presentation.label} ${progress}` : presentation.label}
 		</Badge>
 	);
 }

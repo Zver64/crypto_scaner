@@ -28,6 +28,7 @@ import (
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/storage/postgres"
 	"crypto-scanner/internal/telegrambot"
+	"crypto-scanner/internal/tokensecurity"
 )
 
 // app is the composed process: the HTTP handler and its background services.
@@ -44,6 +45,16 @@ func (l *listeners) notify() {
 	for _, listener := range *l {
 		listener()
 	}
+}
+
+// readiness adds background task progress to the store's readiness checks.
+type readiness struct {
+	*postgres.Store
+	tokenSecurity *tokensecurity.Service
+}
+
+func (r readiness) TokenSecurityProgress() tokensecurity.Progress {
+	return r.tokenSecurity.Progress()
 }
 
 func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Store) (app, error) {
@@ -78,11 +89,14 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 	}
 	scheduler := marketsync.NewScheduler(synchronizers, logger)
 
-	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(marketcap.New(store, coingecko.NewClient("", cfg.CoinGeckoDemoAPIKey)), store, logger, time.Hour, time.Minute)
+	// One CoinGecko client keeps every caller within one rate limit.
+	coinGecko := coingecko.NewClient("", cfg.CoinGeckoDemoAPIKey)
+	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(marketcap.New(store, coinGecko), store, logger, time.Hour, time.Minute)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize coin metadata synchronizer: %w", err)
 	}
-	analysisService, err := analysis.NewService(store, closedIndicators, volatility.New(), marketcapcriterion.New(), rsicriterion.New(rsi14))
+	tokenSecurity := tokensecurity.New(store, coinGecko, binance.NewTokenAuditor(""), logger)
+	analysisService, err := analysis.NewService(store, closedIndicators, tokenSecurity, volatility.New(), marketcapcriterion.New(), rsicriterion.New(rsi14))
 	if err != nil {
 		return app{}, fmt.Errorf("initialize analysis service: %w", err)
 	}
@@ -103,7 +117,7 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 	favoriteService := favorites.New(store, monitoredChanged.notify, analysisService, closedIndicators)
 
 	handler := httpapi.New(logger, httpapi.Dependencies{
-		Readiness:     store,
+		Readiness:     readiness{Store: store, tokenSecurity: tokenSecurity},
 		Analysis:      analysisService,
 		History:       store,
 		Authenticator: authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, authtelegram.Options{}),
@@ -121,6 +135,7 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 		{"closed indicator tracker", closedIndicators},
 		{"Telegram bot", botService},
 		{"coin metadata synchronizer", coinMetadataSynchronizer},
+		{"token security auditor", tokenSecurity},
 		{"market retention", retention.New(store, logger, market.HistoryDepth)},
 	}}, nil
 }

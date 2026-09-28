@@ -61,6 +61,7 @@ function marketResult(evaluations: Evaluation[]): MarketAnalysisResponse {
 			{
 				evaluations,
 				closed_indicators: [],
+				security_issues: [],
 				matched: true,
 				price_history: Array(169).fill(null),
 				symbol: "BTCUSDT",

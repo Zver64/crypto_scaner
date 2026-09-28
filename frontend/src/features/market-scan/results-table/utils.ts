@@ -1,5 +1,7 @@
 import type {
 	MarketAnalysisItem,
+	SecurityIssue,
+	SecurityIssueSeverity,
 	UnresolvedInstrumentCode,
 } from "@/api/generated/models";
 import { criterionKeys } from "@/features/analysis/identifiers";
@@ -36,6 +38,7 @@ export interface MarketScanRow {
 	marketCapUsd: number | null;
 	priceHistory: readonly (number | null)[];
 	sevenDayChangePercent: number | null;
+	securitySeverity: SecurityIssueSeverity | null;
 }
 
 // Required evaluations are validated by the query. Presentation preserves every
@@ -61,8 +64,17 @@ export function toMarketScanRows(
 			marketCapUsd: marketCapEvaluation(item.evaluations)?.marketCapUsd ?? null,
 			priceHistory: item.price_history,
 			sevenDayChangePercent: sevenDayChangePercent(item.price_history),
+			securitySeverity: highestSecuritySeverity(item.security_issues),
 		};
 	});
+}
+
+// Risks outrank cautions; null means no failed audit check.
+export function highestSecuritySeverity(
+	issues: readonly SecurityIssue[],
+): SecurityIssueSeverity | null {
+	if (issues.some((issue) => issue.severity === "risk")) return "risk";
+	return issues.length > 0 ? "caution" : null;
 }
 
 // Blends the positive and negative theme colors: 0 is fully green, 100 red.

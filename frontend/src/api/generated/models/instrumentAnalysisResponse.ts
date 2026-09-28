@@ -14,6 +14,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { Evaluation } from './evaluation.ts';
+import type { SecurityIssue } from './securityIssue.ts';
 import type { Warning } from './warning.ts';
 
 export interface InstrumentAnalysisResponse {
@@ -21,4 +22,5 @@ export interface InstrumentAnalysisResponse {
   matched: boolean;
   evaluations: Evaluation[];
   warnings: Warning[];
+  security_issues: SecurityIssue[];
 }

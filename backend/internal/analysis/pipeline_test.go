@@ -15,7 +15,7 @@ import (
 func TestSearchUsesPersistedSelectionBeforeLimitWithoutProviderPreparation(t *testing.T) {
 	cap := 100.0
 	store := &selectionStore{items: []market.Instrument{{ID: 2, Symbol: "BTCUSDT", BaseAsset: "BTC", MarketCapUSD: &cap}}, candles: map[int64][]market.Candle{2: {testCandle(8)}}}
-	service, err := analysis.NewService(store, nil, volatility.New(), marketcapcriterion.New())
+	service, err := analysis.NewService(store, nil, nil, volatility.New(), marketcapcriterion.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestSearchBatchLoadsCandlesForAllCandidates(t *testing.T) {
 		items:   []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"}},
 		candles: map[int64][]market.Candle{1: {testCandle(8)}, 2: {testCandle(8)}},
 	}
-	service, err := analysis.NewService(store, nil, volatility.New())
+	service, err := analysis.NewService(store, nil, nil, volatility.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestRepeatedMarketCapConstraintsUseMaximumBeforeAscendingLimit(t *testing.T
 		t.Run(fmt.Sprintf("%v_then_%v", minimums[0], minimums[1]), func(t *testing.T) {
 			cap := 500.0
 			store := &selectionStore{items: []market.Instrument{{ID: 1, Symbol: "BTCUSDT", MarketCapUSD: &cap}}}
-			service, err := analysis.NewService(store, nil, marketcapcriterion.New())
+			service, err := analysis.NewService(store, nil, nil, marketcapcriterion.New())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -85,7 +85,7 @@ func TestRepeatedMarketCapConstraintsUseMaximumBeforeAscendingLimit(t *testing.T
 func TestDirectStablecoinAnalysisDoesNotApplyMarketSearchDefault(t *testing.T) {
 	cap := 100.0
 	store := &selectionStore{items: []market.Instrument{{ID: 1, Symbol: "USDCUSDT", BaseAsset: "USDC", MarketCapUSD: &cap}}}
-	service, err := analysis.NewService(store, nil, marketcapcriterion.New())
+	service, err := analysis.NewService(store, nil, nil, marketcapcriterion.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +96,7 @@ func TestDirectStablecoinAnalysisDoesNotApplyMarketSearchDefault(t *testing.T) {
 }
 
 func TestSearchRejectsMarketCapSortWithoutPersistedMarketCapConstraint(t *testing.T) {
-	service, _ := analysis.NewService(&selectionStore{}, nil, volatility.New())
+	service, _ := analysis.NewService(&selectionStore{}, nil, nil, volatility.New())
 	_, err := service.Search(context.Background(), analysis.SearchRequest{
 		Criteria: []analysis.CriterionConfig{{Key: "daily", Name: "volatility", Label: "Daily", Parameters: map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}}},
 		Sort:     &analysis.SearchSort{Field: "market_cap_usd", Direction: "desc"},

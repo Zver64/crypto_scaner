@@ -66,6 +66,7 @@ describe("sortMarketScanRows", () => {
 		{
 			evaluations: [daily, hourly, marketCap],
 			closed_indicators: rsi(50),
+			security_issues: [],
 			matched: true,
 			symbol: "ZEBRAUSDT",
 			price_history: Array(169).fill(null),
@@ -77,6 +78,7 @@ describe("sortMarketScanRows", () => {
 				{ ...marketCap, metrics: { market_cap_usd: 900 } },
 			],
 			closed_indicators: rsi(70),
+			security_issues: [],
 			matched: true,
 			symbol: "ALPHAUSDT",
 			price_history: Array(169).fill(null),
@@ -88,6 +90,7 @@ describe("sortMarketScanRows", () => {
 				{ ...marketCap, metrics: { market_cap_usd: 100 } },
 			],
 			closed_indicators: [],
+			security_issues: [],
 			matched: true,
 			symbol: "BRAVOUSDT",
 			price_history: Array(169).fill(null),
@@ -99,6 +102,7 @@ describe("sortMarketScanRows", () => {
 				{ ...marketCap, metrics: { market_cap_usd: 100 } },
 			],
 			closed_indicators: rsi(30),
+			security_issues: [],
 			matched: true,
 			symbol: "CHARLIEUSDT",
 			price_history: Array(169).fill(null),
@@ -167,6 +171,7 @@ it.each([
 			matched: true,
 			price_history: [],
 			closed_indicators: [],
+			security_issues: [],
 		},
 	])[0];
 	const rows = [
@@ -199,6 +204,7 @@ it.each([
 			matched: true,
 			price_history: [],
 			closed_indicators: [],
+			security_issues: [],
 		},
 	])[0];
 	const rows = [

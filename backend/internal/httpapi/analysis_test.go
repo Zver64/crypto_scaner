@@ -420,7 +420,7 @@ func (enabledUserStore) FindEnabledByTelegramID(context.Context, int64) (auth.Us
 }
 func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysis.Factory) http.Handler {
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
-	service, _ := analysis.NewService(store, nil, factories...)
+	service, _ := analysis.NewService(store, nil, nil, factories...)
 	authenticator := authtelegram.New(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
 	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, Authenticator: authenticator}, httpapi.Options{})
 }

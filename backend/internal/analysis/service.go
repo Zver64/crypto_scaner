@@ -10,6 +10,7 @@ import (
 
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/tokensecurity"
 )
 
 var ErrMarketDataUnavailable = errors.New("market data unavailable")
@@ -34,15 +35,22 @@ type ClosedIndicators interface {
 	Latest(context.Context, []int64) map[int64][]closedindicator.Value
 }
 
+// SecurityIssues supplies token security audit findings by base asset.
+type SecurityIssues interface {
+	// Issues never fails: unavailable audits have no issues.
+	Issues(context.Context, []string) map[string][]tokensecurity.Issue
+}
+
 type SymbolRequest struct {
 	Symbol   string
 	Criteria []CriterionConfig
 }
 type SymbolResult struct {
-	Symbol      string
-	Matched     bool
-	Evaluations []Evaluation
-	Warnings    []Warning
+	Symbol         string
+	Matched        bool
+	Evaluations    []Evaluation
+	Warnings       []Warning
+	SecurityIssues []tokensecurity.Issue
 }
 type SearchRequest struct {
 	Criteria []CriterionConfig
@@ -59,6 +67,7 @@ type SearchItem struct {
 	Matched          bool
 	Evaluations      []Evaluation
 	ClosedIndicators []closedindicator.Value
+	SecurityIssues   []tokensecurity.Issue
 }
 type SearchResult struct {
 	PriceHistoryWindow    market.PriceHistoryWindow
@@ -74,6 +83,7 @@ type UnresolvedItem struct{ Symbol, Code, Message string }
 type Service struct {
 	store                Store
 	closed               ClosedIndicators
+	security             SecurityIssues
 	factories            map[string]Factory
 	selectionFilters     map[string]SelectionFilter
 	selectionSortFilters map[string]SelectionFilter
@@ -86,9 +96,9 @@ type criterionInstance struct {
 }
 
 // NewService validates and registers the explicitly composed criterion
-// factories. closed attaches closed indicator values to search items; it may
-// be nil.
-func NewService(store Store, closed ClosedIndicators, factories ...Factory) (*Service, error) {
+// factories. closed attaches closed indicator values to search items and
+// security attaches token security issues to results; either may be nil.
+func NewService(store Store, closed ClosedIndicators, security SecurityIssues, factories ...Factory) (*Service, error) {
 	if len(factories) == 0 {
 		return nil, fmt.Errorf("criterion factories: %w", ErrInvalidArgument)
 	}
@@ -117,7 +127,7 @@ func NewService(store Store, closed ClosedIndicators, factories ...Factory) (*Se
 			sortRegistry[field] = filter
 		}
 	}
-	return &Service{store: store, closed: closed, factories: registry, selectionFilters: selectionRegistry, selectionSortFilters: sortRegistry}, nil
+	return &Service{store: store, closed: closed, security: security, factories: registry, selectionFilters: selectionRegistry, selectionSortFilters: sortRegistry}, nil
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
@@ -140,6 +150,7 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 			if err != nil {
 				return SymbolResult{}, fmt.Errorf("analyze %s: %w", request.Symbol, err)
 			}
+			result.SecurityIssues = service.securityIssues(ctx, []market.Instrument{instrument})[instrument.BaseAsset]
 			return result, nil
 		}
 	}
@@ -236,9 +247,10 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	if service.closed != nil {
 		service.loadClosedIndicators(ctx, candidates, closed)
 	}
+	issues := service.securityIssues(ctx, candidates)
 	for _, instrument := range candidates {
 		item := results[instrument.ID]
-		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID], ClosedIndicators: closed[instrument.ID]})
+		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID], ClosedIndicators: closed[instrument.ID], SecurityIssues: issues[instrument.BaseAsset]})
 	}
 	result.MatchedCount = len(result.Items)
 	return result, nil
@@ -282,6 +294,18 @@ func (service *Service) loadClosedIndicators(ctx context.Context, instruments []
 		return
 	}
 	maps.Copy(closed, service.closed.Latest(ctx, ids))
+}
+
+// securityIssues batch-loads the token security issues of instruments by base asset.
+func (service *Service) securityIssues(ctx context.Context, instruments []market.Instrument) map[string][]tokensecurity.Issue {
+	if service.security == nil || len(instruments) == 0 {
+		return map[string][]tokensecurity.Issue{}
+	}
+	bases := make([]string, len(instruments))
+	for i, instrument := range instruments {
+		bases[i] = instrument.BaseAsset
+	}
+	return service.security.Issues(ctx, bases)
 }
 
 func (service *Service) selection(request SearchRequest, criteria []criterionInstance) (Selection, error) {

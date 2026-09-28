@@ -14,6 +14,7 @@ import (
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/httpapi"
 	"crypto-scanner/internal/platform/logging"
+	"crypto-scanner/internal/tokensecurity"
 )
 
 func TestReadinessReportsMissingSuccessfulMarketSync(t *testing.T) {
@@ -103,6 +104,9 @@ type readinessStub struct {
 func (stub readinessStub) DatabaseReady(context.Context) bool              { return stub.database }
 func (stub readinessStub) MigrationsReady(context.Context) bool            { return stub.migrations }
 func (stub readinessStub) SuccessfulMarketSyncExists(context.Context) bool { return stub.marketSync }
+func (stub readinessStub) TokenSecurityProgress() tokensecurity.Progress {
+	return tokensecurity.Progress{}
+}
 
 func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing.T) {
 	var logOutput bytes.Buffer

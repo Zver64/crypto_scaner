@@ -223,7 +223,7 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate absent schemas up: %v", err)
 	}
-	for version := 9; version >= 1; version-- {
+	for version := 10; version >= 1; version-- {
 		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 			t.Fatalf("migrate absent schemas v%d down: %v", version, err)
 		}
@@ -250,13 +250,13 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate pre-existing schemas up: %v", err)
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 10 WHERE version = 9"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 11 WHERE version = 10"); err != nil {
 		t.Fatalf("create future migration metadata: %v", err)
 	}
 	if err := postgres.VerifySchema(ctx, db, databaseURL); err == nil {
 		t.Fatal("VerifySchema() accepted future migration metadata")
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 9 WHERE version = 10"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 10 WHERE version = 11"); err != nil {
 		t.Fatalf("restore current migration metadata: %v", err)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {

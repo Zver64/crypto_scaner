@@ -33,6 +33,7 @@ export function mergeFavoriteRows(
 				marketCapUsd: null,
 				priceHistory: [],
 				sevenDayChangePercent: null,
+				securitySeverity: null,
 			},
 	);
 }

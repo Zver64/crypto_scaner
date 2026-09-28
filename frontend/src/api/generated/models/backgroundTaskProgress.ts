@@ -13,13 +13,15 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ReadinessResponseBackground } from './readinessResponseBackground.ts';
-import type { ReadinessResponseChecks } from './readinessResponseChecks.ts';
-import type { ReadinessResponseStatus } from './readinessResponseStatus.ts';
+import type { BackgroundTaskProgressStatus } from './backgroundTaskProgressStatus.ts';
 
-export interface ReadinessResponse {
-  status: ReadinessResponseStatus;
-  checks: ReadinessResponseChecks;
-  /** Background tasks that do not affect readiness. */
-  background: ReadinessResponseBackground;
+/**
+ * Progress of the current or last pass of a background task.
+ */
+export interface BackgroundTaskProgress {
+  status: BackgroundTaskProgressStatus;
+  /** @minimum 0 */
+  completed: number;
+  /** @minimum 0 */
+  total: number;
 }

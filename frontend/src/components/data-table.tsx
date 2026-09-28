@@ -12,6 +12,8 @@ export interface DataTableColumn<Row> {
 interface DataTableProps<Row> {
 	columns: readonly DataTableColumn<Row>[];
 	getRowKey(row: Row): string;
+	// A translucent color drawn over the whole row, including sticky cells.
+	getRowTint?(row: Row): string | undefined;
 	onRowClick?(row: Row): void;
 	rows: readonly Row[];
 }
@@ -19,6 +21,7 @@ interface DataTableProps<Row> {
 export function DataTable<Row>({
 	columns,
 	getRowKey,
+	getRowTint,
 	onRowClick,
 	rows,
 }: DataTableProps<Row>) {
@@ -48,32 +51,41 @@ export function DataTable<Row>({
 						</Table.Tr>
 					</Table.Thead>
 					<Table.Tbody>
-						{rows.map((row) => (
-							<Table.Tr
-								key={getRowKey(row)}
-								onClick={onRowClick ? () => onRowClick(row) : undefined}
-								onKeyDown={
-									onRowClick
-										? (event) => {
-												if (event.key === "Enter") onRowClick(row);
+						{rows.map((row) => {
+							const tint = getRowTint?.(row);
+							return (
+								<Table.Tr
+									data-tinted={tint ? true : undefined}
+									key={getRowKey(row)}
+									onClick={onRowClick ? () => onRowClick(row) : undefined}
+									onKeyDown={
+										onRowClick
+											? (event) => {
+													if (event.key === "Enter") onRowClick(row);
+												}
+											: undefined
+									}
+									role={onRowClick ? "link" : undefined}
+									style={{
+										cursor: onRowClick ? "pointer" : undefined,
+										"--row-tint": tint,
+									}}
+									tabIndex={onRowClick ? 0 : undefined}
+								>
+									{columns.map((column, index) => (
+										<Table.Td
+											className={
+												index === 0 ? "sticky-first-column" : undefined
 											}
-										: undefined
-								}
-								role={onRowClick ? "link" : undefined}
-								style={onRowClick ? { cursor: "pointer" } : undefined}
-								tabIndex={onRowClick ? 0 : undefined}
-							>
-								{columns.map((column, index) => (
-									<Table.Td
-										className={index === 0 ? "sticky-first-column" : undefined}
-										key={column.key}
-										ta={column.textAlign}
-									>
-										{column.cell(row)}
-									</Table.Td>
-								))}
-							</Table.Tr>
-						))}
+											key={column.key}
+											ta={column.textAlign}
+										>
+											{column.cell(row)}
+										</Table.Td>
+									))}
+								</Table.Tr>
+							);
+						})}
 					</Table.Tbody>
 				</Table>
 			</Table.ScrollContainer>

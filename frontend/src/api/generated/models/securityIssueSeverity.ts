@@ -13,13 +13,11 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ReadinessResponseBackground } from './readinessResponseBackground.ts';
-import type { ReadinessResponseChecks } from './readinessResponseChecks.ts';
-import type { ReadinessResponseStatus } from './readinessResponseStatus.ts';
 
-export interface ReadinessResponse {
-  status: ReadinessResponseStatus;
-  checks: ReadinessResponseChecks;
-  /** Background tasks that do not affect readiness. */
-  background: ReadinessResponseBackground;
-}
+export type SecurityIssueSeverity = typeof SecurityIssueSeverity[keyof typeof SecurityIssueSeverity];
+
+
+export const SecurityIssueSeverity = {
+  risk: 'risk',
+  caution: 'caution',
+} as const;

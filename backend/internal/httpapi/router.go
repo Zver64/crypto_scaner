@@ -13,6 +13,7 @@ import (
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/tokensecurity"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/oapi-codegen/nethttp-middleware"
@@ -23,6 +24,7 @@ type Readiness interface {
 	DatabaseReady(context.Context) bool
 	MigrationsReady(context.Context) bool
 	SuccessfulMarketSyncExists(context.Context) bool
+	TokenSecurityProgress() tokensecurity.Progress
 }
 
 // Analysis exposes the application use cases served by the HTTP API.
@@ -239,8 +241,19 @@ func (api *api) GetReadiness(ctx context.Context, _ GetReadinessRequestObject) (
 	}
 	body := ReadinessResponse{Status: state}
 	body.Checks = checks
+	body.Background.TokenSecurity = backgroundTaskProgress(api.readiness.TokenSecurityProgress())
 	if status == http.StatusOK {
 		return GetReadiness200JSONResponse{Body: body, Headers: GetReadiness200ResponseHeaders{XRequestID: RequestIdentifier(ctx)}}, nil
 	}
 	return GetReadiness503JSONResponse{Body: body, Headers: GetReadiness503ResponseHeaders{XRequestID: RequestIdentifier(ctx)}}, nil
+}
+
+func backgroundTaskProgress(progress tokensecurity.Progress) BackgroundTaskProgress {
+	status := Idle
+	if progress.Running {
+		status = Running
+	} else if progress.Failed {
+		status = Failed
+	}
+	return BackgroundTaskProgress{Status: status, Completed: progress.Completed, Total: progress.Total}
 }

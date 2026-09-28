@@ -18,6 +18,11 @@ thead .sticky-first-column {
 	z-index: 2;
 }
 
+/* Layered over the cell background so opaque sticky cells are tinted too. */
+tbody tr[data-tinted] > td {
+	background-image: linear-gradient(var(--row-tint), var(--row-tint));
+}
+
 tbody tr:where([data-hover]):hover > .sticky-first-column {
 	background-color: var(--tr-hover-bg);
 }

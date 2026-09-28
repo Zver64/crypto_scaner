@@ -11,6 +11,7 @@ const items = toMarketScanRows([
 	{
 		evaluations: [],
 		closed_indicators: [],
+		security_issues: [],
 		matched: true,
 		symbol: "ZZZUSDT",
 		price_history: Array(169).fill(null),
@@ -18,6 +19,7 @@ const items = toMarketScanRows([
 	{
 		evaluations: [],
 		closed_indicators: [],
+		security_issues: [],
 		matched: true,
 		symbol: "AdaUsdt",
 		price_history: Array(169).fill(null),
@@ -25,6 +27,7 @@ const items = toMarketScanRows([
 	{
 		evaluations: [],
 		closed_indicators: [],
+		security_issues: [],
 		matched: true,
 		symbol: "AAAUSDT",
 		price_history: Array(169).fill(null),
@@ -110,5 +113,6 @@ it("preserves rows with absent metrics instead of silently dropping instruments"
 		marketCapUsd: null,
 		priceHistory: Array(169).fill(null),
 		sevenDayChangePercent: null,
+		securitySeverity: null,
 	});
 });

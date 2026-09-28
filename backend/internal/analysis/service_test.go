@@ -14,7 +14,7 @@ import (
 
 func TestServiceCombinesCriteriaAndLoadsMergedRequirementsOnce(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[string][]market.Candle{"1d": {testCandle(1), testCandle(2)}, "1h": {testCandle(1)}}, failRepeatedLoad: true}
-	service, err := analysis.NewService(store, nil, volatility.New(), fakeFactory{})
+	service, err := analysis.NewService(store, nil, nil, volatility.New(), fakeFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestAnalyzeSymbolShortCircuitsLaterCriteria(t *testing.T) {
 		candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}},
 	}
 	second := &trackingFactory{}
-	service, err := analysis.NewService(store, nil, firstFactory{}, second)
+	service, err := analysis.NewService(store, nil, nil, firstFactory{}, second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +58,7 @@ func TestServiceCorrelatesRepeatedCriterionTypesByInstanceIdentity(t *testing.T)
 			"1h": {testCandle(2)},
 		},
 	}
-	service, err := analysis.NewService(store, nil, volatility.New())
+	service, err := analysis.NewService(store, nil, nil, volatility.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +92,7 @@ func TestSearchEvaluatesRepeatedCriterionTypesOnlyForSurvivors(t *testing.T) {
 			2: {"1d": {testCandle(6)}, "1h": {testCandle(3)}},
 		},
 	}
-	service, err := analysis.NewService(store, nil, volatility.New())
+	service, err := analysis.NewService(store, nil, nil, volatility.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +127,7 @@ func TestServiceSearchCombinesCriteriaAndPreservesStoreOrder(t *testing.T) {
 			6: {"1d": {}, "1h": {testCandle(6)}},
 		},
 	}
-	service, err := analysis.NewService(store, nil, volatility.New(), hourlyMatchFactory{})
+	service, err := analysis.NewService(store, nil, nil, volatility.New(), hourlyMatchFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +153,7 @@ func TestServiceSearchCombinesCriteriaAndPreservesStoreOrder(t *testing.T) {
 func TestSearchDoesNotPrepareMarketCapsOnRequest(t *testing.T) {
 	cap := 100.0
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT", BaseAsset: "BTC", MarketCapUSD: &cap}}}
-	service, err := analysis.NewService(store, nil, marketcapcriterion.New())
+	service, err := analysis.NewService(store, nil, nil, marketcapcriterion.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +170,7 @@ func TestSearchUsesBackendMarketCapSortAndLimit(t *testing.T) {
 			{ID: 1, Symbol: "ETHUSDT"},
 		},
 	}
-	service, err := analysis.NewService(store, nil, marketCapTestFactory{})
+	service, err := analysis.NewService(store, nil, nil, marketCapTestFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func TestSearchUsesBackendMarketCapSortAndLimit(t *testing.T) {
 
 func TestSearchSymbolsReturnsValidatedEmptyResultWithoutMarketReadiness(t *testing.T) {
 	store := &storeStub{syncUnavailable: true}
-	service, err := analysis.NewService(store, nil, fakeFactory{})
+	service, err := analysis.NewService(store, nil, nil, fakeFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +209,7 @@ func TestSearchSymbolsRestrictsPipelineAndIgnoresMarketLimit(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{
 		{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"},
 	}}
-	service, err := analysis.NewService(store, nil, marketCapTestFactory{})
+	service, err := analysis.NewService(store, nil, nil, marketCapTestFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +235,7 @@ func TestSearchUsesBackendLimitWithoutChangingStoreOrder(t *testing.T) {
 			{ID: 2, Symbol: "AAAUSDT"},
 		},
 	}
-	service, err := analysis.NewService(store, nil, marketCapTestFactory{})
+	service, err := analysis.NewService(store, nil, nil, marketCapTestFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +256,7 @@ func TestSearchUsesBackendLimitWithoutChangingStoreOrder(t *testing.T) {
 
 func TestServiceRejectsInvalidSelectionBeforeReads(t *testing.T) {
 	store := &storeStub{}
-	service, _ := analysis.NewService(store, nil, volatility.New())
+	service, _ := analysis.NewService(store, nil, nil, volatility.New())
 	for _, request := range []analysis.SearchRequest{
 		{},
 		{Criteria: []analysis.CriterionConfig{{Key: "missing", Name: "missing", Label: "Missing"}}},
@@ -278,7 +278,7 @@ func TestServiceRejectsInvalidSelectionBeforeReads(t *testing.T) {
 
 func TestServiceRejectsInvalidCriterionInstanceIdentityBeforeReads(t *testing.T) {
 	store := &storeStub{}
-	service, _ := analysis.NewService(store, nil, volatility.New())
+	service, _ := analysis.NewService(store, nil, nil, volatility.New())
 	validParameters := map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}
 	tests := []struct {
 		name     string
@@ -307,7 +307,7 @@ func TestServiceRejectsInvalidCriterionInstanceIdentityBeforeReads(t *testing.T)
 	}
 }
 func TestServiceRejectsDuplicateFactoryNames(t *testing.T) {
-	_, err := analysis.NewService(&storeStub{}, nil, fakeFactory{}, fakeFactory{})
+	_, err := analysis.NewService(&storeStub{}, nil, nil, fakeFactory{}, fakeFactory{})
 	if !errors.Is(err, analysis.ErrInvalidArgument) {
 		t.Fatalf("err=%v", err)
 	}
@@ -315,7 +315,7 @@ func TestServiceRejectsDuplicateFactoryNames(t *testing.T) {
 func TestSearchPreparesAndLoadsSecondCriterionOnlyForSurvivors(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "DROP"}, {ID: 2, Symbol: "KEEP"}}, candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}, 2: {"1d": {testCandle(2)}, "1h": {testCandle(1)}}}}
 	second := &trackingFactory{}
-	service, _ := analysis.NewService(store, nil, firstFactory{}, second)
+	service, _ := analysis.NewService(store, nil, nil, firstFactory{}, second)
 	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "first", Name: "first", Label: "First", Parameters: map[string]any{}}, {Key: "second", Name: "second", Label: "Second", Parameters: map[string]any{}}}})
 	if err != nil || result.MatchedCount != 1 || second.evaluated != 1 {
 		t.Fatalf("result=%+v err=%v evaluated=%d", result, err, second.evaluated)
@@ -327,7 +327,7 @@ func TestSearchPreparesAndLoadsSecondCriterionOnlyForSurvivors(t *testing.T) {
 func TestSearchSkipsLaterCriteriaWhenNoCandidatesSurvive(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "DROP"}}, candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}}}
 	second := &trackingFactory{}
-	service, _ := analysis.NewService(store, nil, firstFactory{}, second)
+	service, _ := analysis.NewService(store, nil, nil, firstFactory{}, second)
 	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "first", Name: "first", Label: "First", Parameters: map[string]any{}}, {Key: "second", Name: "second", Label: "Second", Parameters: map[string]any{}}}})
 	if err != nil || result.MatchedCount != 0 || second.evaluated != 0 {
 		t.Fatalf("result=%+v err=%v evaluated=%d", result, err, second.evaluated)
@@ -336,7 +336,7 @@ func TestSearchSkipsLaterCriteriaWhenNoCandidatesSurvive(t *testing.T) {
 
 func TestSearchDoesNotCountUnresolvedInstrumentsAsAnalyzed(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "UNKNOWN"}}}
-	service, _ := analysis.NewService(store, nil, unresolvedFactory{})
+	service, _ := analysis.NewService(store, nil, nil, unresolvedFactory{})
 	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "unresolved", Name: "unresolved", Label: "Unresolved", Parameters: map[string]any{}}}})
 	if err != nil || result.AnalyzedCount != 0 || len(result.Unresolved) != 1 {
 		t.Fatalf("result=%+v err=%v", result, err)

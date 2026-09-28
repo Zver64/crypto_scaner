@@ -1,4 +1,5 @@
-// Package coingecko is the CoinGecko HTTP adapter for market-cap data.
+// Package coingecko is the CoinGecko HTTP adapter for market-cap data and
+// token contracts.
 package coingecko
 
 import (
@@ -14,6 +15,7 @@ import (
 	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/platform/backoff"
 	"crypto-scanner/internal/platform/numeric"
+	"crypto-scanner/internal/tokensecurity"
 
 	"golang.org/x/time/rate"
 )
@@ -25,7 +27,10 @@ const (
 	maxRetryDelay   = 2 * time.Minute
 )
 
-var _ marketcap.Provider = (*Client)(nil)
+var (
+	_ marketcap.Provider           = (*Client)(nil)
+	_ tokensecurity.ContractSource = (*Client)(nil)
+)
 
 type wireTicker struct {
 	Base         string `json:"base"`
@@ -171,6 +176,40 @@ func (c *Client) Markets(ctx context.Context, ids []string) ([]marketcap.Cap, er
 	for id := range requested {
 		if !seen[id] {
 			result = append(result, marketcap.Cap{CoinID: id, Reason: "market_cap_missing"})
+		}
+	}
+	return result, nil
+}
+
+// auditedPlatforms maps CoinGecko asset platform IDs to audited chains.
+var auditedPlatforms = map[string]tokensecurity.Chain{
+	"binance-smart-chain": tokensecurity.ChainBSC,
+	"ethereum":            tokensecurity.ChainEthereum,
+	"base":                tokensecurity.ChainBase,
+	"solana":              tokensecurity.ChainSolana,
+}
+
+// Contracts returns the token contracts of every coin on audited chains from
+// one coin list request.
+func (c *Client) Contracts(ctx context.Context) (map[string][]tokensecurity.Contract, error) {
+	var body *[]struct {
+		ID        string            `json:"id"`
+		Platforms map[string]string `json:"platforms"`
+	}
+	if err := c.get(ctx, "/api/v3/coins/list?include_platform=true", &body); err != nil {
+		return nil, err
+	}
+	if body == nil || len(*body) == 0 {
+		return nil, fmt.Errorf("invalid CoinGecko coin list response")
+	}
+	result := make(map[string][]tokensecurity.Contract)
+	for _, coin := range *body {
+		for platform, address := range coin.Platforms {
+			chain, ok := auditedPlatforms[platform]
+			if !ok || coin.ID == "" || strings.TrimSpace(address) == "" {
+				continue
+			}
+			result[coin.ID] = append(result[coin.ID], tokensecurity.Contract{CoinID: coin.ID, Chain: chain, Address: strings.TrimSpace(address)})
 		}
 	}
 	return result, nil

@@ -13,13 +13,15 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ReadinessResponseBackground } from './readinessResponseBackground.ts';
-import type { ReadinessResponseChecks } from './readinessResponseChecks.ts';
-import type { ReadinessResponseStatus } from './readinessResponseStatus.ts';
+import type { SecurityIssueChain } from './securityIssueChain.ts';
+import type { SecurityIssueSeverity } from './securityIssueSeverity.ts';
 
-export interface ReadinessResponse {
-  status: ReadinessResponseStatus;
-  checks: ReadinessResponseChecks;
-  /** Background tasks that do not affect readiness. */
-  background: ReadinessResponseBackground;
+/**
+ * A failed check of the Binance Web3 token security audit of the coin's contract on one chain.
+ */
+export interface SecurityIssue {
+  chain: SecurityIssueChain;
+  severity: SecurityIssueSeverity;
+  title: string;
+  description: string;
 }

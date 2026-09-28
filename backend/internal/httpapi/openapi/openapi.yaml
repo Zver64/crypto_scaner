@@ -519,7 +519,7 @@ components:
     ReadinessResponse:
       type: object
       additionalProperties: false
-      required: [status, checks]
+      required: [status, checks, background]
       properties:
         status:
           type: string
@@ -535,6 +535,29 @@ components:
               $ref: "#/components/schemas/ReadinessCheck"
             market_sync:
               $ref: "#/components/schemas/ReadinessCheck"
+        background:
+          type: object
+          description: Background tasks that do not affect readiness.
+          additionalProperties: false
+          required: [token_security]
+          properties:
+            token_security:
+              $ref: "#/components/schemas/BackgroundTaskProgress"
+    BackgroundTaskProgress:
+      type: object
+      description: Progress of the current or last pass of a background task.
+      additionalProperties: false
+      required: [status, completed, total]
+      properties:
+        status:
+          type: string
+          enum: [idle, running, failed]
+        completed:
+          type: integer
+          minimum: 0
+        total:
+          type: integer
+          minimum: 0
     ReadinessCheck:
       type: string
       enum: [ok, unavailable, missing]
@@ -631,7 +654,7 @@ components:
     InstrumentAnalysisResponse:
       type: object
       additionalProperties: false
-      required: [symbol, matched, evaluations, warnings]
+      required: [symbol, matched, evaluations, warnings, security_issues]
       properties:
         symbol:
           type: string
@@ -645,6 +668,26 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Warning"
+        security_issues:
+          type: array
+          items:
+            $ref: "#/components/schemas/SecurityIssue"
+    SecurityIssue:
+      type: object
+      description: A failed check of the Binance Web3 token security audit of the coin's contract on one chain.
+      additionalProperties: false
+      required: [chain, severity, title, description]
+      properties:
+        chain:
+          type: string
+          enum: [bsc, ethereum, base, solana]
+        severity:
+          type: string
+          enum: [risk, caution]
+        title:
+          type: string
+        description:
+          type: string
     PriceHistoryWindow:
       type: object
       additionalProperties: false
@@ -659,7 +702,7 @@ components:
     MarketAnalysisItem:
       type: object
       additionalProperties: false
-      required: [symbol, matched, evaluations, price_history, closed_indicators]
+      required: [symbol, matched, evaluations, price_history, closed_indicators, security_issues]
       properties:
         symbol:
           type: string
@@ -674,6 +717,11 @@ components:
           description: Indicator values at the latest closed candle.
           items:
             $ref: "#/components/schemas/ClosedIndicator"
+        security_issues:
+          type: array
+          description: Failed token security audit checks; empty when none failed or no audit is available.
+          items:
+            $ref: "#/components/schemas/SecurityIssue"
         price_history:
           type: array
           minItems: 169

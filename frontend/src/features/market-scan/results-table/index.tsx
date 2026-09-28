@@ -12,6 +12,7 @@ import {
 	nextMarketScanSort,
 	sortMarketScanRows,
 } from "@/features/market-scan/sort";
+import { securitySeverityColors } from "@/features/security-issues/severity-colors";
 import { scanCriteriaToSearch } from "@/routes/-scan-criteria-search";
 
 interface MarketScanResultsTableProps {
@@ -78,6 +79,11 @@ export function MarketScanResultsTable({
 			columns={columns}
 			rows={sortMarketScanRows(rows, sort)}
 			getRowKey={(row) => row.symbol}
+			getRowTint={(row) =>
+				row.securitySeverity
+					? securitySeverityColors[row.securitySeverity]
+					: undefined
+			}
 			onRowClick={(row) => {
 				void navigate({
 					params: { symbol: row.symbol },

@@ -55,6 +55,15 @@ type AppSchemaMigration struct {
 	BinanceSpotSchemaCreated bool
 }
 
+type AppTokenSecurityAudit struct {
+	CoinID          string
+	Chain           string
+	ContractAddress string
+	Supported       bool
+	Issues          []byte
+	AuditedAt       pgtype.Timestamptz
+}
+
 type AppUser struct {
 	ID          int64
 	TelegramID  int64

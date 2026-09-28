@@ -1,8 +1,9 @@
-import { Paper, Stack } from "@mantine/core";
+import { Divider, Paper, Stack } from "@mantine/core";
 import type { InstrumentAnalysisResponse } from "@/api/generated/models";
 import { PercentChange } from "@/components/percent-change";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import { OverviewRow } from "@/features/instrument-analysis/overview-row";
+import { SecurityIssueList } from "@/features/instrument-analysis/security-issue-list";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
@@ -52,6 +53,12 @@ export function CoinOverview({ result, sevenDayChange }: CoinOverviewProps) {
 						/>
 					);
 				})}
+				{result?.security_issues.length ? (
+					<>
+						<Divider />
+						<SecurityIssueList issues={result.security_issues} />
+					</>
+				) : null}
 			</Stack>
 		</Paper>
 	);

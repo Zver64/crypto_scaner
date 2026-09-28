@@ -25,7 +25,7 @@ interface SegmentedValueGroupRow {
 		key: string;
 		percentage: number;
 	}[];
-	summary: string;
+	summary?: string;
 }
 
 interface SegmentedValueGroupProps {
@@ -42,19 +42,23 @@ export function SegmentedValueGroup({ rows, title }: SegmentedValueGroupProps) {
 				</Title>
 				{rows.map((row) => (
 					<Stack gap="sm" key={row.key}>
-						<Group
-							justify={row.label ? "space-between" : "flex-end"}
-							wrap="wrap"
-						>
-							{row.label ? (
-								<Text fw={600} size="sm">
-									{row.label}
-								</Text>
-							) : null}
-							<Text c="dimmed" size="sm">
-								{row.summary}
-							</Text>
-						</Group>
+						{row.label || row.summary ? (
+							<Group
+								justify={row.label ? "space-between" : "flex-end"}
+								wrap="wrap"
+							>
+								{row.label ? (
+									<Text fw={600} size="sm">
+										{row.label}
+									</Text>
+								) : null}
+								{row.summary ? (
+									<Text c="dimmed" size="sm">
+										{row.summary}
+									</Text>
+								) : null}
+							</Group>
+						) : null}
 						<Box
 							aria-label={row.ariaLabel}
 							bg="var(--mantine-color-default-hover)"

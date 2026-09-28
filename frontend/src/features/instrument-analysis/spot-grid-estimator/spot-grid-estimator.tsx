@@ -323,7 +323,6 @@ export function SpotGridEstimator({
 								percentage: split.cleanSegmentPercent,
 							},
 						],
-						summary: `Gross profit: ${split.grossProfit}`,
 					}))}
 				/>
 			</Stack>

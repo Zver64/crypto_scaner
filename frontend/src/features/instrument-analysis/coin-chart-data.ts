@@ -1,11 +1,15 @@
-import type { CandleInterval } from "@/api/generated/models";
+import type {
+	CandleInterval,
+	ChartIndicatorDefinition,
+	ChartPageResponse,
+} from "@/api/generated/models";
 import { LiveCandlesClient } from "@/api/live-candles";
 import { getTelegramInitData } from "@/app/telegram";
 import type {
+	ChartIndicatorPoints,
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/components/price-history-chart";
-import { rsiIndicators } from "@/features/instrument-analysis/chart-page";
 import {
 	chartIntervals,
 	createLiveStore,
@@ -17,9 +21,16 @@ const maxLimit = 5000;
 
 // The backend owns each chart range: it sends a full snapshot whenever closed
 // history or the range changes and a tail update for the current candle.
-export function createCoinChartData(symbol: string): PriceHistorySource {
+export function createCoinChartData(
+	symbol: string,
+	catalog: readonly ChartIndicatorDefinition[],
+): PriceHistorySource {
 	const upper = symbol.toUpperCase();
-	const live = createLiveStore(upper);
+	const live = createLiveStore(upper, catalog);
+	const indicators = catalog.map(({ parameters, type }) => ({
+		parameters,
+		type,
+	}));
 	const listeners = new Set<() => void>();
 	type IntervalState = {
 		limit: number;
@@ -40,7 +51,7 @@ export function createCoinChartData(symbol: string): PriceHistorySource {
 			symbol: upper,
 			interval,
 			limit: intervals.get(interval)?.limit ?? initialLimit,
-			indicators: rsiIndicators,
+			indicators,
 		}));
 	const recompute = (interval: CandleInterval, force = false) => {
 		const current = intervals.get(interval);
@@ -57,7 +68,7 @@ export function createCoinChartData(symbol: string): PriceHistorySource {
 			current.loadingMore = false;
 		current.snapshot = {
 			candles: state.chart?.candles ?? [],
-			indicator: state.chart?.indicators[0]?.series[0]?.points ?? [],
+			indicators: indicatorPoints(state.chart, catalog),
 			connection: state.connection,
 			freshness: state.freshness,
 			error: state.error,
@@ -126,10 +137,30 @@ export function createCoinChartData(symbol: string): PriceHistorySource {
 
 const emptySnapshot: PriceHistorySnapshot = {
 	candles: [],
-	indicator: [],
+	indicators: {},
 	connection: "connecting",
 	freshness: "waiting",
 	isLoading: true,
 	isLoadingMore: false,
 	hasMore: false,
 };
+
+// Keys each result's series by catalog id and output name; results arrive in
+// catalog order.
+function indicatorPoints(
+	chart: ChartPageResponse | undefined,
+	catalog: readonly ChartIndicatorDefinition[],
+): ChartIndicatorPoints {
+	if (!chart) return {};
+	return Object.fromEntries(
+		catalog.map(({ id }, index) => [
+			id,
+			Object.fromEntries(
+				(chart.indicators[index]?.series ?? []).map(({ name, points }) => [
+					name,
+					points,
+				]),
+			),
+		]),
+	);
+}

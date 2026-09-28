@@ -43,12 +43,11 @@ import {
 	validateCandlePage,
 } from "@/features/instrument-analysis/candle-page";
 import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
-import {
-	rangeReadout,
-	rsiIndicator,
-} from "@/features/instrument-analysis/coin-chart-presentation";
+import { CoinChartPlaceholder } from "@/features/instrument-analysis/coin-chart-placeholder";
+import { rangeReadout } from "@/features/instrument-analysis/coin-chart-presentation";
 import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
 import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
+import { useChartIndicators } from "@/features/instrument-analysis/use-chart-indicators";
 import { PriceAlertsPanel } from "@/features/price-alerts/price-alerts-panel";
 import { formatMarketCapUsd, marketCapEvaluation } from "@/utils/market-cap";
 import { formatRangePercent } from "@/utils/range-percent";
@@ -83,7 +82,15 @@ export function InstrumentAnalysisScreen({
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const textSize = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
-	const chartSource = useMemo(() => createCoinChartData(symbol), [symbol]);
+	const {
+		catalog,
+		failed: chartIndicatorsFailed,
+		indicators,
+	} = useChartIndicators(permission.allowed);
+	const chartSource = useMemo(
+		() => catalog && createCoinChartData(symbol, catalog),
+		[catalog, symbol],
+	);
 	// These hourly candles belong to the page's 7d/grid calculations, not the chart.
 	const hourlyHistoryQuery = useListInstrumentCandlesInfinite<
 		InfiniteData<CandlePageResponse, string | undefined>
@@ -293,15 +300,22 @@ export function InstrumentAnalysisScreen({
 								</Stack>
 							</Paper>
 							{result ? (
-								<PriceHistoryChart
-									enabled={permission.allowed}
-									indicator={rsiIndicator}
-									extraReadout={rangeReadout}
-									key={symbol}
-									paperPadding={paperPadding}
-									source={chartSource}
-									symbol={symbol}
-								/>
+								chartSource ? (
+									<PriceHistoryChart
+										enabled={permission.allowed}
+										indicators={indicators}
+										extraReadout={rangeReadout}
+										key={symbol}
+										paperPadding={paperPadding}
+										source={chartSource}
+										symbol={symbol}
+									/>
+								) : (
+									<CoinChartPlaceholder
+										failed={chartIndicatorsFailed}
+										paperPadding={paperPadding}
+									/>
+								)
 							) : null}
 							<SpotGridEstimator
 								candles={recommendationReady ? hourlyCandles : undefined}

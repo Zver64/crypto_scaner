@@ -52,6 +52,8 @@ type Implementation interface {
 	Type() Type
 	// Inputs names the candle fields consumed by this implementation.
 	Inputs() []string
+	// Outputs names the series returned by Calculate, for example "rsi".
+	Outputs() []string
 	Lookback(parameters Parameters) (int, error)
 	Calculate(parameters Parameters, inputs Inputs) (Result, error)
 }

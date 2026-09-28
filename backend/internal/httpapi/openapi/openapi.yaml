@@ -194,6 +194,22 @@ paths:
           $ref: "#/components/responses/SymbolNotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/v1/chart/indicators:
+    get:
+      operationId: listChartIndicators
+      summary: List the indicators charts request and how to draw them
+      description: |
+        Clients subscribe to live charts with each item's `type` and `parameters`,
+        in this order, and draw the returned series as described here.
+      tags: [Market Data]
+      security: [{ telegramInitData: [] }]
+      responses:
+        "200":
+          description: Chart indicator catalog.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ChartIndicatorCatalog" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AccessDenied" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/favorites:
     get:
       operationId: listFavorites
@@ -844,6 +860,81 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/IndicatorSeries"
+    ChartIndicatorCatalog:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ChartIndicatorDefinition" }
+    ChartIndicatorDefinition:
+      type: object
+      additionalProperties: false
+      required: [id, type, parameters, placement, lines]
+      properties:
+        id:
+          type: string
+          minLength: 1
+        type:
+          type: string
+          minLength: 1
+        parameters:
+          type: object
+          additionalProperties: true
+        placement:
+          type: string
+          enum: [overlay, pane]
+          description: "`overlay` draws over the candles on their price scale; `pane` draws in its own pane below."
+        lines:
+          type: array
+          minItems: 1
+          items: { $ref: "#/components/schemas/ChartIndicatorLine" }
+        scale:
+          $ref: "#/components/schemas/ChartIndicatorScale"
+    ChartIndicatorLine:
+      type: object
+      additionalProperties: false
+      required: [output, title, color]
+      properties:
+        output:
+          type: string
+          description: Name of the calculated series drawn by this line.
+        title:
+          type: string
+        color:
+          type: string
+          description: Client theme color token, for example `yellow.5`.
+    ChartIndicatorScale:
+      type: object
+      additionalProperties: false
+      required: [levels, precision]
+      description: Value axis of a pane indicator.
+      properties:
+        min:
+          type: number
+          format: double
+        max:
+          type: number
+          format: double
+        levels:
+          type: array
+          items: { $ref: "#/components/schemas/ChartIndicatorLevel" }
+        precision:
+          type: integer
+          minimum: 0
+          maximum: 18
+          description: Maximum fraction digits shown for values.
+    ChartIndicatorLevel:
+      type: object
+      additionalProperties: false
+      required: [value, title]
+      properties:
+        value:
+          type: number
+          format: double
+        title:
+          type: string
     ChartPageResponse:
       type: object
       additionalProperties: false

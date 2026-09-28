@@ -14,6 +14,7 @@ import {
 	type SeriesLifecycle,
 	useChartLifecycle,
 } from "@/components/lightweight-chart/context";
+import { isTailChange } from "@/components/lightweight-chart/utils";
 
 interface UseSeriesOptions<T extends SeriesType> {
 	data: readonly SeriesDataItemTypeMap<Time>[T][];
@@ -94,9 +95,14 @@ export function useSeries<T extends SeriesType>({
 	}
 	const binding = bindingRef.current;
 
+	// Data applied to the current series; a recreated series starts empty.
+	const appliedDataRef = useRef<readonly SeriesDataItemTypeMap<Time>[T][]>([]);
 	useLayoutEffect(() => {
 		binding.series();
-		return () => binding.context.destroy();
+		return () => {
+			binding.context.destroy();
+			appliedDataRef.current = [];
+		};
 	}, [binding]);
 
 	useLayoutEffect(() => {
@@ -105,7 +111,21 @@ export function useSeries<T extends SeriesType>({
 
 	useLayoutEffect(() => {
 		beforeDataChangeRef.current?.();
-		binding.series().setData(Array.from(data));
+		const series = binding.series();
+		const last = data.at(-1);
+		// Live ticks only touch the last point; redrawing the whole series on
+		// every trade would scale with the loaded history.
+		if (last !== undefined && isTailChange(appliedDataRef.current, data)) {
+			try {
+				series.update(last);
+			} catch {
+				// update() rejects a point older than the current last one.
+				series.setData(Array.from(data));
+			}
+		} else {
+			series.setData(Array.from(data));
+		}
+		appliedDataRef.current = data;
 	}, [binding, data]);
 
 	useLayoutEffect(() => {

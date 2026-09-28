@@ -44,6 +44,7 @@ import type {
   AnalysisUnavailableResponse,
   BadRequestResponse,
   CandlePageResponse,
+  ChartIndicatorCatalog,
   Favorite,
   FavoriteAlertsConflictResponse,
   FavoriteNotFoundResponse,
@@ -854,6 +855,150 @@ export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<Re
   const queryOptions = getListInstrumentCandlesInfiniteQueryOptions(symbol,params,options)
 
   const query = useInfiniteQuery(queryOptions, queryClient) as  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listChartIndicatorsResponse200 = {
+  data: ChartIndicatorCatalog
+  status: 200
+}
+
+export type listChartIndicatorsResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listChartIndicatorsResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type listChartIndicatorsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listChartIndicatorsResponseSuccess = (listChartIndicatorsResponse200) & {
+  headers: Headers;
+};
+export type listChartIndicatorsResponseError = (listChartIndicatorsResponse401 | listChartIndicatorsResponse403 | listChartIndicatorsResponse500) & {
+  headers: Headers;
+};
+
+export const getListChartIndicatorsUrl = () => {
+
+
+
+
+  return `/api/v1/chart/indicators`
+}
+
+/**
+ * Clients subscribe to live charts with each item's `type` and `parameters`,
+ * in this order, and draw the returned series as described here.
+ * @summary List the indicators charts request and how to draw them
+ */
+export const listChartIndicators = async ( options?: RequestInit): Promise<listChartIndicatorsResponseSuccess> => {
+
+  const res = await fetch(getListChartIndicatorsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: listChartIndicatorsResponseError['data'], status?: number} = new globalThis.Error();
+    const data : listChartIndicatorsResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: listChartIndicatorsResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listChartIndicatorsResponseSuccess
+}
+
+
+
+
+
+export const getListChartIndicatorsQueryKey = () => {
+    return [
+    `/api/v1/chart/indicators`
+    ] as const;
+    }
+
+
+export const getListChartIndicatorsQueryOptions = <TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListChartIndicatorsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChartIndicators>>> = ({ signal }) => listChartIndicators({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListChartIndicatorsQueryResult = NonNullable<Awaited<ReturnType<typeof listChartIndicators>>>
+export type ListChartIndicatorsQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }
+
+
+export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listChartIndicators>>,
+          TError,
+          Awaited<ReturnType<typeof listChartIndicators>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listChartIndicators>>,
+          TError,
+          Awaited<ReturnType<typeof listChartIndicators>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the indicators charts request and how to draw them
+ */
+
+export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListChartIndicatorsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return withQueryKey(query, queryOptions.queryKey);
 }

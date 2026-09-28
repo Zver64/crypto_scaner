@@ -1,5 +1,6 @@
 import type {
 	CandleInterval,
+	ChartIndicatorDefinition,
 	ChartPageResponse,
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
@@ -28,7 +29,10 @@ const initialState: LiveCandlesState = {
 	freshness: "waiting",
 };
 
-export function createLiveStore(symbol: string) {
+export function createLiveStore(
+	symbol: string,
+	catalog: readonly ChartIndicatorDefinition[],
+) {
 	let states: Record<string, LiveCandlesState> = {};
 	let fallback = initialState;
 	const listeners = new Set<() => void>();
@@ -73,6 +77,7 @@ export function createLiveStore(symbol: string) {
 				message,
 				symbol,
 				fallback.connection,
+				catalog,
 			);
 			if (next === states) return;
 			states = next;
@@ -86,6 +91,7 @@ export function applyServerMessage(
 	message: LiveCandleServerMessage,
 	symbol: string,
 	connection: LiveCandlesState["connection"],
+	catalog: readonly ChartIndicatorDefinition[],
 ): Record<string, LiveCandlesState> {
 	if (message.type === "error") {
 		const intervals = message.interval ? [message.interval] : chartIntervals;
@@ -125,6 +131,7 @@ export function applyServerMessage(
 					: received,
 				symbol,
 				message.interval,
+				catalog,
 			);
 		} catch {
 			return states;

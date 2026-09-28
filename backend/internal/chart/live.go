@@ -148,6 +148,8 @@ func (session *LiveSession) Next(ctx context.Context, trigger Trigger, limit int
 		keep = limit
 	}
 	if len(candles) > keep {
+		// Candles leaving the range still warm up the indicators.
+		page.warmup = append(slices.Clip(page.warmup), candles[:len(candles)-keep]...)
 		candles = candles[len(candles)-keep:]
 		page.HasMore = true
 	}

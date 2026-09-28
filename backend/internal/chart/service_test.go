@@ -34,6 +34,17 @@ func (store *storeStub) ListCandlePage(_ context.Context, _ int64, _ market.Cand
 	return store.page, nil
 }
 
+func testCatalog() []chart.CatalogIndicator {
+	minimum, maximum := 0.0, 100.0
+	return []chart.CatalogIndicator{{
+		ID:        "rsi-14",
+		Selection: indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}},
+		Placement: chart.PlacementPane,
+		Lines:     []chart.IndicatorLine{{Output: "rsi", Title: "RSI 14", Color: "blue.5"}},
+		Scale:     &chart.IndicatorScale{Min: &minimum, Max: &maximum, Precision: 1},
+	}}
+}
+
 func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	candles := testCandles(start, 200)
@@ -42,7 +53,7 @@ func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := chart.NewService(store, registry, slog.New(slog.DiscardHandler))
+	service, err := chart.NewService(store, registry, testCatalog(), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,8 +64,8 @@ func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Build() error = %v", err)
 	}
-	if store.resolveCalls != 1 || store.listCalls != 1 || store.limit != 200 || store.before != nil {
-		t.Fatalf("store resolve calls=%d list calls=%d limit=%d before=%v, want one lookup and one latest candle read with limit 200", store.resolveCalls, store.listCalls, store.limit, store.before)
+	if store.resolveCalls != 1 || store.listCalls != 1 || store.limit != 340 || store.before != nil {
+		t.Fatalf("store resolve calls=%d list calls=%d limit=%d before=%v, want one lookup and one latest candle read with limit 340 (range plus RSI warm-up)", store.resolveCalls, store.listCalls, store.limit, store.before)
 	}
 	if page.Symbol != "BTCUSDT" {
 		t.Fatalf("page symbol = %q, want BTCUSDT", page.Symbol)
@@ -67,8 +78,8 @@ func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 		t.Fatalf("RSI points = %d starting %v, want 186 points after warmup", len(points), points[0].Time)
 	}
 
-	// Extending the same chart range changes the warmup and recalculates
-	// every point, including those already present in the initial range.
+	// Extending the range recalculates every point; the store has no older
+	// candles here, so the new range starts without warm-up history.
 	store.page = market.CandlePage{Candles: testCandles(start.Add(-200*time.Hour), 400)}
 	extended, err := service.Build(context.Background(), chart.Request{
 		Symbol: "BTCUSDT", Interval: market.IntervalHour, Limit: 400,
@@ -78,7 +89,7 @@ func TestServiceUsesOnlyRequestedClosedRange(t *testing.T) {
 		t.Fatal(err)
 	}
 	extendedPoints := extended.Indicators[0].Series[0].Points
-	if store.limit != 400 || len(extended.Candles) != 400 || len(extendedPoints) != 386 ||
+	if store.limit != 540 || len(extended.Candles) != 400 || len(extendedPoints) != 386 ||
 		!extendedPoints[0].Time.Equal(start.Add(-186*time.Hour)) ||
 		!extendedPoints[len(extendedPoints)-1].Time.Equal(points[len(points)-1].Time) {
 		t.Fatalf("extended range: limit=%d candles=%d points=%d", store.limit, len(extended.Candles), len(extendedPoints))
@@ -91,7 +102,7 @@ func TestServiceAllowsHistoryShorterThanRSIWarmup(t *testing.T) {
 		t.Run(fmt.Sprintf("%d candles", count), func(t *testing.T) {
 			store := &storeStub{page: market.CandlePage{Candles: testCandles(start, count)}}
 			registry, _ := indicator.NewRegistry(indicatortalib.NewRSI())
-			service, _ := chart.NewService(store, registry, slog.New(slog.DiscardHandler))
+			service, _ := chart.NewService(store, registry, testCatalog(), slog.New(slog.DiscardHandler))
 			page, err := service.Build(context.Background(), chart.Request{
 				Symbol: "BTCUSDT", Interval: market.IntervalDay, Limit: 200,
 				Indicators: []indicator.Selection{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}},
@@ -109,7 +120,7 @@ func TestServiceAllowsHistoryShorterThanRSIWarmup(t *testing.T) {
 func TestServiceRejectsExcessIndicatorsBeforeStorageRead(t *testing.T) {
 	store := &storeStub{}
 	registry, _ := indicator.NewRegistry(indicatortalib.NewRSI())
-	service, _ := chart.NewService(store, registry, slog.New(slog.DiscardHandler))
+	service, _ := chart.NewService(store, registry, testCatalog(), slog.New(slog.DiscardHandler))
 	configs := make([]indicator.Selection, 9)
 	for index := range configs {
 		configs[index] = indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}
@@ -128,7 +139,7 @@ func TestServiceRejectsExcessIndicatorsBeforeStorageRead(t *testing.T) {
 func TestServiceRejectsExcessLookbackBeforeStorageRead(t *testing.T) {
 	store := &storeStub{}
 	registry, _ := indicator.NewRegistry(indicatortalib.NewRSI())
-	service, _ := chart.NewService(store, registry, slog.New(slog.DiscardHandler))
+	service, _ := chart.NewService(store, registry, testCatalog(), slog.New(slog.DiscardHandler))
 	_, err := service.Build(context.Background(), chart.Request{
 		Symbol: "BTCUSDT", Interval: market.IntervalHour, Limit: 200,
 		Indicators: []indicator.Selection{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 501}}},
@@ -145,7 +156,7 @@ func TestServiceAlignsShortHistoryAfterWarmup(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	store := &storeStub{page: market.CandlePage{Candles: testCandles(start, 18)}}
 	registry, _ := indicator.NewRegistry(indicatortalib.NewRSI())
-	service, _ := chart.NewService(store, registry, slog.New(slog.DiscardHandler))
+	service, _ := chart.NewService(store, registry, testCatalog(), slog.New(slog.DiscardHandler))
 	page, err := service.Build(context.Background(), chart.Request{
 		Symbol: "BTCUSDT", Interval: market.IntervalHour, Limit: 200,
 		Indicators: []indicator.Selection{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": float64(14)}}},
@@ -169,7 +180,7 @@ func TestServiceRestartsWarmupAfterHistoryGap(t *testing.T) {
 	candles = append(candles[:20:20], candles[21:]...)
 	store := &storeStub{page: market.CandlePage{Candles: candles}}
 	registry, _ := indicator.NewRegistry(indicatortalib.NewRSI())
-	service, _ := chart.NewService(store, registry, slog.New(slog.DiscardHandler))
+	service, _ := chart.NewService(store, registry, testCatalog(), slog.New(slog.DiscardHandler))
 	page, err := service.Build(context.Background(), chart.Request{
 		Symbol: "BTCUSDT", Interval: market.IntervalHour, Limit: 200,
 		Indicators: []indicator.Selection{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}},

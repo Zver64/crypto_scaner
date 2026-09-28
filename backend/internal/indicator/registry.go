@@ -48,6 +48,9 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 		if _, exists := registered[indicatorType]; exists {
 			return nil, fmt.Errorf("%w: %q", ErrDuplicateRegistration, indicatorType)
 		}
+		if err := validateOutputs(implementation.Outputs()); err != nil {
+			return nil, fmt.Errorf("%w: %q: %v", ErrEmptyRegistration, indicatorType, err)
+		}
 		registered[indicatorType] = implementation
 	}
 
@@ -83,6 +86,15 @@ func (r *Registry) Inputs(indicatorType Type) ([]string, error) {
 	return append([]string(nil), implementation.Inputs()...), nil
 }
 
+// Outputs returns the named series produced by the selected module.
+func (r *Registry) Outputs(indicatorType Type) ([]string, error) {
+	implementation, err := r.implementation(indicatorType)
+	if err != nil {
+		return nil, err
+	}
+	return append([]string(nil), implementation.Outputs()...), nil
+}
+
 // Calculate dispatches a request and validates the implementation's result.
 func (r *Registry) Calculate(request Request) (Result, error) {
 	implementation, err := r.implementation(request.Type)
@@ -94,7 +106,7 @@ func (r *Registry) Calculate(request Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := validateResult(result); err != nil {
+	if err := validateResult(result, implementation.Outputs()); err != nil {
 		return Result{}, fmt.Errorf("%w: indicator %q: %v", ErrInvalidResult, request.Type, err)
 	}
 
@@ -112,9 +124,30 @@ func (r *Registry) implementation(indicatorType Type) (Implementation, error) {
 	return implementation, nil
 }
 
-func validateResult(result Result) error {
-	if len(result.Outputs) == 0 {
-		return errors.New("no output series")
+func validateOutputs(outputs []string) error {
+	if len(outputs) == 0 {
+		return errors.New("no declared outputs")
+	}
+	seen := map[string]bool{}
+	for _, name := range outputs {
+		if strings.TrimSpace(name) == "" || seen[name] {
+			return fmt.Errorf("output %q is empty or duplicated", name)
+		}
+		seen[name] = true
+	}
+	return nil
+}
+
+// validateResult checks the common contract, including that the result
+// contains exactly the declared outputs clients are told to expect.
+func validateResult(result Result, outputs []string) error {
+	if len(result.Outputs) != len(outputs) {
+		return fmt.Errorf("returned %d output series, declared %d", len(result.Outputs), len(outputs))
+	}
+	for _, name := range outputs {
+		if _, ok := result.Outputs[name]; !ok {
+			return fmt.Errorf("declared output %q is missing", name)
+		}
 	}
 
 	for name, series := range result.Outputs {

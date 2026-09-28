@@ -24,7 +24,7 @@ export type ChartFreshness = "waiting" | "fresh" | "stale" | "recovering";
 
 export interface PriceHistorySnapshot {
 	candles: readonly PriceCandle[];
-	indicator: readonly IndicatorPoint[];
+	indicators: ChartIndicatorPoints;
 	connection: ChartConnection;
 	freshness: ChartFreshness;
 	error?: string;
@@ -44,19 +44,38 @@ export interface ChartIntervalOption {
 	value: ChartInterval;
 	showTime?: boolean;
 }
-export interface ChartIndicatorOptions {
-	bounds: { min: number; max: number };
-	lines: readonly { price: number; title: string }[];
-	formatValue(value: number): string;
-	minMove: number;
+// Points of each indicator line, keyed by indicator id and then output name.
+export type ChartIndicatorPoints = Readonly<
+	Record<string, Readonly<Record<string, readonly IndicatorPoint[]>>>
+>;
+export interface ChartIndicatorLine {
+	output: string;
+	title: string;
+	color: string;
 }
+export interface ChartIndicatorScale {
+	min?: number;
+	max?: number;
+	levels: readonly { value: number; title: string }[];
+	precision: number;
+}
+// Overlays share the candle pane and price scale; panes get their own pane
+// and value scale below the candles.
+export type ChartIndicatorOptions =
+	| { id: string; placement: "overlay"; lines: readonly ChartIndicatorLine[] }
+	| {
+			id: string;
+			placement: "pane";
+			lines: readonly ChartIndicatorLine[];
+			scale: ChartIndicatorScale;
+	  };
 export interface ChartReadoutOptions {
 	label: string;
 	format(candle: Pick<PriceCandle, "open" | "high" | "low" | "close">): string;
 }
 export interface PriceHistoryChartProps {
 	enabled: boolean;
-	indicator?: ChartIndicatorOptions;
+	indicators: readonly ChartIndicatorOptions[];
 	extraReadout?: ChartReadoutOptions;
 	paperPadding: string;
 	source: PriceHistorySource;
@@ -71,3 +90,11 @@ export type ChartVolumeSlot =
 export type ChartIndicatorSlot =
 	| LineData<UTCTimestamp>
 	| WhitespaceData<UTCTimestamp>;
+
+// One entry of the indicator legend above the chart.
+export interface ChartLegendItem {
+	key: string;
+	title: string;
+	color: string;
+	value: string | null;
+}

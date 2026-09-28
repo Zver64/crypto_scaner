@@ -2,8 +2,10 @@ import type { IRange, UTCTimestamp } from "lightweight-charts";
 import type {
 	ChartCandle,
 	ChartCandleSlot,
+	ChartIndicatorOptions,
 	ChartIndicatorSlot,
 	ChartInterval,
+	ChartLegendItem,
 	ChartVolumeSlot,
 	IndicatorPoint,
 	PriceCandle,
@@ -184,4 +186,26 @@ export function nextCandleOpen(value: string, interval: ChartInterval): string {
 			break;
 	}
 	return date.toISOString();
+}
+
+// Titles and values of every indicator line at one candle slot. Indicator data
+// is aligned with the candle slots, so the slot index selects the value.
+export function createIndicatorLegend(
+	indicators: readonly ChartIndicatorOptions[],
+	indicatorData: ReadonlyMap<string, readonly ChartIndicatorSlot[]>,
+	slotIndex: number,
+): ChartLegendItem[] {
+	return indicators.flatMap((indicator) =>
+		indicator.lines.map(({ color, output, title }) => {
+			const key = `${indicator.id}:${output}`;
+			const slot = indicatorData.get(key)?.[slotIndex];
+			const value =
+				slot && "value" in slot
+					? indicator.placement === "pane"
+						? formatNumber(slot.value, indicator.scale.precision)
+						: formatPrice(slot.value)
+					: null;
+			return { color, key, title, value };
+		}),
+	);
 }

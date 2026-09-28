@@ -12,10 +12,12 @@ import (
 	marketlive "crypto-scanner/internal/market/live"
 )
 
-// ChartService validates indicator selections and starts live chart sessions.
+// ChartService validates indicator selections, starts live chart sessions,
+// and lists the indicator catalog clients draw.
 type ChartService interface {
 	Validate([]indicator.Selection) error
 	NewLiveSession(string, market.CandleInterval) *chart.LiveSession
+	Catalog() []chart.CatalogIndicator
 }
 
 type chartRange struct {

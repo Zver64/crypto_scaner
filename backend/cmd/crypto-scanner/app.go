@@ -45,7 +45,7 @@ func (l *listeners) notify() {
 }
 
 func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Store) (app, error) {
-	indicatorRegistry, err := indicator.NewRegistry(indicatortalib.NewRSI())
+	indicatorRegistry, err := indicator.NewRegistry(indicatorModules()...)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
 	}
@@ -84,7 +84,7 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 	if err != nil {
 		return app{}, fmt.Errorf("initialize analysis service: %w", err)
 	}
-	chartService, err := chart.NewService(store, indicatorRegistry, logger)
+	chartService, err := chart.NewService(store, indicatorRegistry, chartIndicatorCatalog(), logger)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize chart service: %w", err)
 	}

@@ -2,6 +2,7 @@ import {
 	CandlestickSeries,
 	type CandlestickSeriesPartialOptions,
 	type IRange,
+	type PriceFormatCustom,
 } from "lightweight-charts";
 import { useMemo } from "react";
 import { Series } from "@/components/lightweight-chart";
@@ -15,14 +16,13 @@ import type {
 	ChartCandleSlot,
 } from "@/components/price-history-chart/types";
 import {
-	chartPriceResolution,
-	formatPrice,
 	getVisibleMinMax,
 	isChartCandle,
 } from "@/components/price-history-chart/utils";
 
 interface CandleSeriesProps {
 	data: readonly ChartCandleSlot[];
+	priceFormat: PriceFormatCustom;
 	onActiveCandleChange(candle: ChartCandle | null): void;
 	visibleRange: IRange<number> | null;
 }
@@ -30,22 +30,13 @@ interface CandleSeriesProps {
 export function CandleSeries({
 	data,
 	onActiveCandleChange,
+	priceFormat,
 	visibleRange,
 }: CandleSeriesProps) {
-	const options = useMemo<CandlestickSeriesPartialOptions>(() => {
-		const { base, fractionDigits, minMove } = chartPriceResolution(data);
-		return {
-			...candleSeriesOptions,
-			priceFormat: {
-				base,
-				// Axis ticks carry floating-point noise near zero; round it at the
-				// chart resolution so it cannot widen the price scale.
-				formatter: (value: number) => formatPrice(value, fractionDigits),
-				minMove,
-				type: "custom",
-			},
-		};
-	}, [data]);
+	const options = useMemo<CandlestickSeriesPartialOptions>(
+		() => ({ ...candleSeriesOptions, priceFormat }),
+		[priceFormat],
+	);
 	const minMax = useMemo(
 		() => getVisibleMinMax(data, visibleRange),
 		[data, visibleRange],

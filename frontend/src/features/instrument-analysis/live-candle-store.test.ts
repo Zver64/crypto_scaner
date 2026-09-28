@@ -1,9 +1,24 @@
 import { expect, it } from "vitest";
-import type { Candle, LiveCandleServerMessage } from "@/api/generated/models";
+import type {
+	Candle,
+	ChartIndicatorDefinition,
+	LiveCandleServerMessage,
+} from "@/api/generated/models";
 import {
 	applyServerMessage,
 	createLiveStore,
 } from "@/features/instrument-analysis/live-candle-store";
+
+const rsiCatalog: ChartIndicatorDefinition[] = [
+	{
+		id: "rsi-14",
+		lines: [{ color: "blue.5", output: "rsi", title: "RSI 14" }],
+		parameters: { period: 14 },
+		placement: "pane",
+		scale: { levels: [], max: 100, min: 0, precision: 1 },
+		type: "rsi",
+	},
+];
 
 function candle(openTime: string): Candle {
 	return {
@@ -46,7 +61,7 @@ function snapshot(
 	};
 }
 it("keeps the visible interval snapshot stable when a hidden interval updates", () => {
-	const store = createLiveStore("BTC");
+	const store = createLiveStore("BTC", rsiCatalog);
 	const hourly = store.getSnapshot("1h");
 	store.message({
 		type: "status",
@@ -63,12 +78,14 @@ it("retains isolated calculated snapshots and rejects late versions", () => {
 		snapshot("1h", "2026-01-01T23:00:00Z", 2, 45),
 		"BTC",
 		"connected",
+		rsiCatalog,
 	);
 	states = applyServerMessage(
 		states,
 		snapshot("1d", "2026-01-01T00:00:00Z", 1, 55),
 		"BTC",
 		"connected",
+		rsiCatalog,
 	);
 	const stable = states;
 	states = applyServerMessage(
@@ -76,6 +93,7 @@ it("retains isolated calculated snapshots and rejects late versions", () => {
 		snapshot("1h", "2026-01-01T23:00:00Z", 1, 99),
 		"BTC",
 		"connected",
+		rsiCatalog,
 	);
 	expect(states).toBe(stable);
 	states = applyServerMessage(
@@ -83,6 +101,7 @@ it("retains isolated calculated snapshots and rejects late versions", () => {
 		snapshot("1d", "2026-01-01T00:00:00Z", 2, 60),
 		"BTC",
 		"connected",
+		rsiCatalog,
 	);
 	expect(
 		states["BTC:1h"]?.chart?.indicators[0]?.series[0]?.points[0]?.value,

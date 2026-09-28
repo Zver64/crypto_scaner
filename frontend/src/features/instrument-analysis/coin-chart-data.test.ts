@@ -1,10 +1,27 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type {
 	Candle,
+	ChartIndicatorDefinition,
 	ChartPageResponse,
 	LiveCandleClientMessage,
 } from "@/api/generated/models";
 import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
+
+const rsiCatalog: ChartIndicatorDefinition[] = [
+	{
+		id: "rsi-14",
+		lines: [{ color: "blue.5", output: "rsi", title: "RSI 14" }],
+		parameters: { period: 14 },
+		placement: "pane",
+		scale: { levels: [], max: 100, min: 0, precision: 1 },
+		type: "rsi",
+	},
+];
+
+const rsiValues = (source: ReturnType<typeof createCoinChartData>) =>
+	(source.getSnapshot("1h").indicators["rsi-14"]?.rsi ?? []).map(
+		(point) => point.value,
+	);
 
 class FakeSocket {
 	static OPEN = 1;
@@ -84,7 +101,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 	vi.stubGlobal("WebSocket", FakeSocket);
 	const fetch = vi.fn();
 	vi.stubGlobal("fetch", fetch);
-	const source = createCoinChartData("btcusdt");
+	const source = createCoinChartData("btcusdt", rsiCatalog);
 	try {
 		source.start();
 		const socket = FakeSocket.current;
@@ -107,9 +124,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 			chart: chart([candle(1), candle(2, 14)], [60, 70], true),
 		});
 		const daily = source.getSnapshot("1d");
-		expect(source.getSnapshot("1h").indicator.map((p) => p.value)).toEqual([
-			60, 70,
-		]);
+		expect(rsiValues(source)).toEqual([60, 70]);
 
 		// A trade replaces only the current candle and its RSI point.
 		socket.emitMessage({
@@ -121,9 +136,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 		expect(source.getSnapshot("1h").candles.map((c) => c.close)).toEqual([
 			12, 15,
 		]);
-		expect(source.getSnapshot("1h").indicator.map((p) => p.value)).toEqual([
-			60, 72,
-		]);
+		expect(rsiValues(source)).toEqual([60, 72]);
 		// An update without its preceding version is never applied.
 		socket.emitMessage({
 			...base,
@@ -131,7 +144,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 			version: 4,
 			chart: chart([candle(2, 99)], [99], true),
 		});
-		expect(source.getSnapshot("1h").indicator.at(-1)?.value).toBe(72);
+		expect(rsiValues(source).at(-1)).toBe(72);
 
 		source.loadOlder("1h");
 		expect(socket.sent.at(-1)).toMatchObject({
@@ -147,9 +160,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 			chart: chart([candle(0), candle(1), candle(2, 15)], [50, 61, 73], false),
 		});
 		expect(source.getSnapshot("1h").isLoadingMore).toBe(false);
-		expect(source.getSnapshot("1h").indicator.map((p) => p.value)).toEqual([
-			50, 61, 73,
-		]);
+		expect(rsiValues(source)).toEqual([50, 61, 73]);
 		expect(source.getSnapshot("1d")).toBe(daily);
 		expect(fetch).not.toHaveBeenCalled();
 	} finally {

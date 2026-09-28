@@ -25,6 +25,8 @@ func (f *fakeImplementation) Type() indicator.Type {
 
 func (f *fakeImplementation) Inputs() []string { return []string{"close"} }
 
+func (f *fakeImplementation) Outputs() []string { return []string{"value"} }
+
 func (f *fakeImplementation) Lookback(parameters indicator.Parameters) (int, error) {
 	f.parameters = parameters
 	return f.lookback, f.lookbackErr

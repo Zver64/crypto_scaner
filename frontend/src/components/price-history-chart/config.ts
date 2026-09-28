@@ -28,8 +28,9 @@ export const chartIntervalOptions: readonly [
 export const defaultChartInterval: ChartInterval = "1d";
 
 export const chartHeight = 300;
-// Candle pane and indicator pane heights, in that order.
-export const paneStretchFactors = [3, 1] as const;
+// Relative pane heights: the candle pane, then each indicator pane.
+export const candlePaneStretchFactor = 3;
+export const indicatorPaneStretchFactor = 1;
 // Request older candles when fewer than this many bars remain on the left.
 export const loadOlderThreshold = 10;
 export const minVisibleBars = 24;
@@ -105,14 +106,20 @@ export const volumePriceScaleOptions = {
 	scaleMargins: { bottom: 0, top: 0.8 },
 } satisfies DeepPartial<PriceScaleOptions>;
 
-export const indicatorSeriesOptions = {
-	color: colors.blue[5],
+export const overlayIndicatorSeriesOptions = {
+	// Moving averages and similar lines should not hide the candles.
+	lineWidth: 1,
+	lastValueVisible: true,
+	priceLineVisible: false,
+} satisfies LineSeriesPartialOptions;
+
+export const paneIndicatorSeriesOptions = {
 	lastValueVisible: true,
 	lineWidth: 2,
 	priceLineVisible: false,
 } satisfies LineSeriesPartialOptions;
 
-export const indicatorPriceScaleOptions = {
+export const paneIndicatorPriceScaleOptions = {
 	autoScale: true,
 	scaleMargins: { bottom: 0, top: 0 },
 } satisfies DeepPartial<PriceScaleOptions>;
@@ -126,8 +133,8 @@ function priceLineOptionsFor(color: string) {
 	} satisfies Partial<PriceLineOptions>;
 }
 
-// Labeled RSI levels, such as 30 and 70.
-export const indicatorPriceLineOptions = {
+// Pane reference levels, such as RSI 30 and 70.
+export const paneIndicatorLevelOptions = {
 	dark: priceLineOptionsFor(schemeColors.dark.grid),
 	light: priceLineOptionsFor(schemeColors.light.grid),
 } satisfies Record<ColorScheme, Partial<PriceLineOptions>>;

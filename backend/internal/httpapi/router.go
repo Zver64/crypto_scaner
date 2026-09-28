@@ -71,6 +71,7 @@ type api struct {
 	history   CandleHistory
 	favorites Favorites
 	alerts    PriceAlerts
+	chart     ChartService
 }
 
 var _ StrictServerInterface = (*api)(nil)
@@ -81,6 +82,7 @@ var protectedRoutes = []string{
 	"POST /api/v1/analysis/instruments/{symbol}",
 	"POST /api/v1/analysis/market",
 	"GET /api/v1/instruments/{symbol}/candles",
+	"GET /api/v1/chart/indicators",
 	"GET /api/v1/favorites",
 	"PUT /api/v1/favorites/{symbol}",
 	"DELETE /api/v1/favorites/{symbol}",
@@ -98,7 +100,7 @@ func New(logger *slog.Logger, dependencies Dependencies, options Options) http.H
 
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
-	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts}
+	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,
 		ResponseErrorHandlerFunc: func(response http.ResponseWriter, request *http.Request, err error) {

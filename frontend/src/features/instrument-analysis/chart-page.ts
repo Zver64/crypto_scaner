@@ -1,27 +1,25 @@
 import type {
 	CandleInterval,
+	ChartIndicatorDefinition,
+	ChartIndicatorResult,
 	ChartPageResponse,
-	IndicatorConfig,
-	IndicatorPoint,
 } from "@/api/generated/models";
 import { unexpectedApiError } from "@/features/analysis/api-error";
 import { validateCandles } from "@/features/instrument-analysis/candle-page";
-
-export const rsiIndicators: IndicatorConfig[] = [
-	{ parameters: { period: 14 }, type: "rsi" },
-];
+import { canonicalParameters } from "@/utils/canonical-parameters";
 
 export function validateChartPage(
 	page: ChartPageResponse,
 	expectedSymbol: string,
 	expectedInterval: CandleInterval,
+	catalog: readonly ChartIndicatorDefinition[],
 ): ChartPageResponse {
 	if (
 		page.symbol !== expectedSymbol.toUpperCase() ||
 		page.interval !== expectedInterval ||
 		(page.has_more && !page.next_before) ||
 		(!page.has_more && page.next_before) ||
-		page.indicators.length !== 1
+		page.indicators.length !== catalog.length
 	) {
 		throw unexpectedApiError();
 	}
@@ -34,37 +32,46 @@ export function validateChartPage(
 	) {
 		throw unexpectedApiError();
 	}
-	const result = page.indicators[0];
-	const series = result?.series;
-	if (
-		result?.type !== "rsi" ||
-		result.parameters.period !== 14 ||
-		series?.length !== 1 ||
-		series[0]?.name !== "rsi"
-	) {
-		throw unexpectedApiError();
-	}
 	const candleTimes = new Set(page.candles.map((candle) => candle.open_time));
-	let previous = Number.NEGATIVE_INFINITY;
-	for (const point of series[0].points) {
-		const timestamp = Date.parse(point.time);
-		if (
-			!Number.isFinite(timestamp) ||
-			timestamp <= previous ||
-			!Number.isFinite(point.value) ||
-			point.value < 0 ||
-			point.value > 100 ||
-			!candleTimes.has(point.time)
-		) {
-			throw unexpectedApiError();
-		}
-		previous = timestamp;
-	}
+	catalog.forEach((definition, index) => {
+		validateIndicatorResult(page.indicators[index], definition, candleTimes);
+	});
 	return page;
 }
 
-export function rsiPoints(page: ChartPageResponse): readonly IndicatorPoint[] {
-	return page.indicators[0]?.series[0]?.points ?? [];
+// Results arrive in the order the catalog selections were requested. Every
+// drawn output must be present; outputs the catalog does not draw are ignored.
+// Scale bounds only shape the pane and are not a data constraint.
+function validateIndicatorResult(
+	result: ChartIndicatorResult | undefined,
+	definition: ChartIndicatorDefinition,
+	candleTimes: ReadonlySet<string>,
+) {
+	if (
+		result?.type !== definition.type ||
+		canonicalParameters(result.parameters) !==
+			canonicalParameters(definition.parameters) ||
+		definition.lines.some(
+			({ output }) => !result.series.some(({ name }) => name === output),
+		)
+	) {
+		throw unexpectedApiError();
+	}
+	for (const series of result.series) {
+		let previous = Number.NEGATIVE_INFINITY;
+		for (const point of series.points) {
+			const timestamp = Date.parse(point.time);
+			if (
+				!Number.isFinite(timestamp) ||
+				timestamp <= previous ||
+				!Number.isFinite(point.value) ||
+				!candleTimes.has(point.time)
+			) {
+				throw unexpectedApiError();
+			}
+			previous = timestamp;
+		}
+	}
 }
 
 // Replaces the current candle and its indicator points; closed points stay.

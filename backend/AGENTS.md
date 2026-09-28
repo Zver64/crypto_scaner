@@ -12,8 +12,10 @@ Packages and dependency direction (domain never imports adapters):
 
 Product constraints:
 
-- Closed-candle indicators are computed in the background by `closedindicator` even with no clients, because Telegram alerts on arbitrary indicators are planned. Table values come from the same tracker. To show or track another indicator, register its module in the indicator registry and add a target to `closedTargets` in `app.go`; do not add request-time recalculation or per-indicator branches.
+- Closed-candle indicators are computed in the background by `closedindicator` even with no clients, because Telegram alerts on arbitrary indicators are planned. Table values come from the same tracker. To track another indicator in tables, register its module in `indicatorModules` (`cmd/crypto-scanner/indicators.go`) and add a target to `closedTargets` in `app.go`; do not add request-time recalculation or per-indicator branches.
 - Charts are streamed over WebSocket only (snapshot plus tail updates with sequential versions). Chart logic belongs in `chart`; `httpapi` only serializes and manages the connection.
+- Chart indicators are backend-configured. `chartIndicatorCatalog` in `cmd/crypto-scanner/indicators.go` lists what every chart calculates and how clients draw it (placement, lines with theme color tokens, pane scale); clients read it from `GET /api/v1/chart/indicators`. To add a chart indicator, add a catalog entry, plus a module in `indicatorModules` for a new algorithm; the frontend needs no change. `chart.NewService` validates the catalog against the registry at startup. Modules declare their outputs, and the registry rejects results that differ from them.
+- Chart builds load each selection's `Lookback` of extra closed candles before the requested range, calculate over them, and return only the requested range, so indicator values do not depend on how far the client scrolled.
 
 ## Go conventions
 

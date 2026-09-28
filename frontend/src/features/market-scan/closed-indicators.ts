@@ -1,4 +1,5 @@
 import type { CandleInterval, ClosedIndicator } from "@/api/generated/models";
+import { canonicalParameters } from "@/utils/canonical-parameters";
 
 export interface ClosedIndicatorOutputKey {
 	type: string;
@@ -34,8 +35,4 @@ export function closedIndicatorValue(
 		indicator?.outputs.find((output) => output.name === key.output)?.value ??
 		null
 	);
-}
-
-function canonicalParameters(parameters: Record<string, unknown>): string {
-	return JSON.stringify(parameters, Object.keys(parameters).sort());
 }

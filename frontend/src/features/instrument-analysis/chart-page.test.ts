@@ -1,9 +1,20 @@
 import { describe, expect, it } from "vitest";
-import type { ChartPageResponse } from "@/api/generated/models";
-import {
-	rsiPoints,
-	validateChartPage,
-} from "@/features/instrument-analysis/chart-page";
+import type {
+	ChartIndicatorDefinition,
+	ChartPageResponse,
+} from "@/api/generated/models";
+import { validateChartPage } from "@/features/instrument-analysis/chart-page";
+
+const rsiCatalog: ChartIndicatorDefinition[] = [
+	{
+		id: "rsi-14",
+		lines: [{ color: "blue.5", output: "rsi", title: "RSI 14" }],
+		parameters: { period: 14 },
+		placement: "pane",
+		scale: { levels: [], max: 100, min: 0, precision: 1 },
+		type: "rsi",
+	},
+];
 
 const candle = {
 	close: 12,
@@ -45,8 +56,8 @@ function response(
 describe("chart page contract", () => {
 	it("validates synchronized candles and RSI", () => {
 		const page = response();
-		const validated = validateChartPage(page, "BTCUSDT", "1h");
-		expect(rsiPoints(validated)).toEqual([
+		const validated = validateChartPage(page, "BTCUSDT", "1h", rsiCatalog);
+		expect(validated.indicators[0]?.series[0]?.points).toEqual([
 			{ time: candle.open_time, value: 62.5 },
 		]);
 	});
@@ -76,7 +87,10 @@ describe("chart page contract", () => {
 			],
 			next_before: older.open_time,
 		});
-		expect(rsiPoints(validateChartPage(range, "BTCUSDT", "1h"))).toEqual([
+		expect(
+			validateChartPage(range, "BTCUSDT", "1h", rsiCatalog).indicators[0]
+				?.series[0]?.points,
+		).toEqual([
 			{ time: older.open_time, value: 55 },
 			{ time: candle.open_time, value: 70 },
 		]);
@@ -113,8 +127,8 @@ describe("chart page contract", () => {
 					parameters: { period: 14 },
 					series: [
 						{
-							name: "rsi",
-							points: [{ time: candle.open_time, value: 101 }],
+							name: "other",
+							points: [{ time: candle.open_time, value: 50 }],
 						},
 					],
 					type: "rsi",
@@ -123,7 +137,7 @@ describe("chart page contract", () => {
 		},
 	])("rejects a desynchronized chart response", (overrides) => {
 		expect(() =>
-			validateChartPage(response(overrides), "BTCUSDT", "1h"),
+			validateChartPage(response(overrides), "BTCUSDT", "1h", rsiCatalog),
 		).toThrow();
 	});
 });

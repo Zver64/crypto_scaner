@@ -2,6 +2,7 @@ import type {
 	ChartIndicatorOptions,
 	ChartReadoutOptions,
 } from "@/components/price-history-chart";
+import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
 export const rsiIndicator: ChartIndicatorOptions = {
@@ -10,7 +11,7 @@ export const rsiIndicator: ChartIndicatorOptions = {
 		{ price: 30, title: "RSI 30" },
 		{ price: 70, title: "RSI 70" },
 	],
-	formatValue: (value) => value.toFixed(1),
+	formatValue: (value) => formatNumber(value, 1),
 	minMove: 0.1,
 };
 

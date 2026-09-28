@@ -1,3 +1,4 @@
+import type Decimal from "decimal.js";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	type ArithmeticSpotGridEstimate,
@@ -10,6 +11,7 @@ import {
 import {
 	parseSpotGridCount,
 	parseSpotGridDecimal,
+	SPOT_GRID_MAX_COUNT,
 	SpotGridDecimal,
 	type SpotGridInput,
 } from "@/utils/calculator/spot-grid";
@@ -39,6 +41,7 @@ export interface SpotGridProfitSplit {
 }
 
 export const DEFAULT_MARKUP_PERCENT = 5;
+export const LOWER_MARKUP_MAX_PERCENT = 50;
 export const DEFAULT_GRID_COUNT = "40";
 export const DEFAULT_INVESTMENT = "1000";
 
@@ -50,6 +53,7 @@ export interface SpotGridRecommendation {
 	input: SpotGridInput;
 	hasHourlyVolatility: boolean;
 	hasLatestHigh: boolean;
+	lowerMarkup: number | null;
 }
 
 function validPositiveNumber(value: number | undefined): value is number {
@@ -89,32 +93,150 @@ export function recommendedUpperPrice(
 	}
 }
 
-export function recommendedLowerPrice(
+function roundedLowerPrice(lower: Decimal, upper: Decimal): string | null {
+	if (!lower.gt(0)) return null;
+	// Round down so the range only widens and grid steps never shrink.
+	const formatted = formatNumber(
+		lower.toFixed(),
+		undefined,
+		"floor",
+	).replaceAll(",", "");
+	const parsed = parseSpotGridDecimal(formatted, "Lower price");
+	return parsed.lte(upper) ? formatted : null;
+}
+
+/** Returns the lower price that sits `markupPercent` below the upper price. */
+export function lowerPriceFromMarkup(
 	upperPrice: string,
-	rangePercent: number | undefined,
-	gridCount: string,
-	gridType: SpotGridType = "geometric",
+	markupPercent: number,
 ): string | null {
-	if (!validPositiveNumber(rangePercent)) return null;
+	if (
+		!Number.isFinite(markupPercent) ||
+		markupPercent < 0 ||
+		markupPercent >= 100
+	)
+		return null;
 	try {
 		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
+		const lower = upper.times(
+			new SpotGridDecimal(1).minus(new SpotGridDecimal(markupPercent).div(100)),
+		);
+		return roundedLowerPrice(lower, upper);
+	} catch {
+		return null;
+	}
+}
+
+function percentNumber(value: Decimal): number | null {
+	const percent = value.times(100).toDecimalPlaces(2).toNumber();
+	return Number.isFinite(percent) ? percent : null;
+}
+
+/** Returns how far the lower price sits below the upper price, in percent. */
+export function lowerMarkupPercent(
+	upperPrice: string,
+	lowerPrice: string,
+): number | null {
+	try {
+		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
+		const lower = parseSpotGridDecimal(lowerPrice, "Lower price");
+		return percentNumber(new SpotGridDecimal(1).minus(lower.div(upper)));
+	} catch {
+		return null;
+	}
+}
+
+/** Returns how far the upper price sits above the candle high, in percent. */
+export function upperMarkupPercent(
+	high: number | undefined,
+	upperPrice: string,
+): number | null {
+	if (!validPositiveNumber(high)) return null;
+	try {
+		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
+		return percentNumber(upper.div(high).minus(1));
+	} catch {
+		return null;
+	}
+}
+
+function floorGridCount(
+	upper: Decimal,
+	lower: Decimal,
+	target: Decimal,
+	gridType: SpotGridType,
+): Decimal {
+	return (
+		gridType === "arithmetic"
+			? upper
+					.minus(lower)
+					.times(new SpotGridDecimal(1).plus(target))
+					.div(target.times(upper))
+			: upper.div(lower).ln().div(new SpotGridDecimal(1).plus(target).ln())
+	).floor();
+}
+
+/**
+ * Returns the largest grid count whose minimum step stays at or above
+ * `stepPercent` for the given price range. When the lower price was derived
+ * from `lowerMarkupPercent`, the count is also capped by the exact markup so
+ * rounding the lower price down never adds a grid.
+ */
+export function gridCountForStep(
+	upperPrice: string,
+	lowerPrice: string,
+	stepPercent: number | undefined,
+	gridType: SpotGridType,
+	lowerMarkupPercent?: number,
+): string | null {
+	if (!validPositiveNumber(stepPercent)) return null;
+	try {
+		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
+		const lower = parseSpotGridDecimal(lowerPrice, "Lower price");
+		if (!upper.gt(lower)) return null;
+		const target = new SpotGridDecimal(stepPercent).div(100);
+		let count = floorGridCount(upper, lower, target, gridType);
+		if (validPositiveNumber(lowerMarkupPercent) && lowerMarkupPercent < 100) {
+			const markupLower = upper.times(
+				new SpotGridDecimal(1).minus(
+					new SpotGridDecimal(lowerMarkupPercent).div(100),
+				),
+			);
+			count = SpotGridDecimal.min(
+				count,
+				floorGridCount(upper, markupLower, target, gridType),
+			);
+		}
+		if (!count.isFinite() || count.lt(1)) return null;
+		return SpotGridDecimal.min(count, SPOT_GRID_MAX_COUNT).toString();
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Returns the smallest whole lower markup percent that fits `gridCount` grids
+ * with a minimum step of `stepPercent`, capped at the slider maximum.
+ */
+export function initialLowerMarkup(
+	stepPercent: number | undefined,
+	gridCount: string,
+	gridType: SpotGridType,
+): number | null {
+	if (!validPositiveNumber(stepPercent)) return null;
+	try {
 		const count = parseSpotGridCount(gridCount);
-		const target = new SpotGridDecimal(rangePercent).div(100);
-		const lower =
+		const target = new SpotGridDecimal(stepPercent).div(100);
+		const markup =
 			gridType === "arithmetic"
-				? upper
-						.times(
-							new SpotGridDecimal(1).minus(
-								target.times(new SpotGridDecimal(count).minus(1)),
-							),
-						)
-						.div(new SpotGridDecimal(1).plus(target))
-				: upper.div(new SpotGridDecimal(1).plus(target).pow(count));
-		if (!lower.gt(0)) return null;
-		const rounded = lower.toSignificantDigits(3, SpotGridDecimal.ROUND_DOWN);
-		const formatted = formatCalculatorInput(rounded.toString());
-		const parsed = parseSpotGridDecimal(formatted, "Lower price");
-		return parsed.lt(upper) ? formatted : null;
+				? target.times(count).div(new SpotGridDecimal(1).plus(target))
+				: new SpotGridDecimal(1).minus(
+						new SpotGridDecimal(1).plus(target).pow(-count),
+					);
+		return Math.min(
+			LOWER_MARKUP_MAX_PERCENT,
+			markup.times(100).ceil().toNumber(),
+		);
 	} catch {
 		return null;
 	}
@@ -123,13 +245,29 @@ export function recommendedLowerPrice(
 export function spotGridRecommendation(
 	candles: readonly (PriceCandle | null)[] | undefined,
 	hourlyVolatilityPercent: number | undefined,
+	gridType: SpotGridType = "geometric",
 	markupPercent = DEFAULT_MARKUP_PERCENT,
-	gridCount = DEFAULT_GRID_COUNT,
+	targetGridCount = DEFAULT_GRID_COUNT,
 ): SpotGridRecommendation {
 	const high = latestAvailableCandle(candles)?.high;
 	const upperPrice = recommendedUpperPrice(high, markupPercent) ?? "";
+	const lowerMarkup = initialLowerMarkup(
+		hourlyVolatilityPercent,
+		targetGridCount,
+		gridType,
+	);
 	const lowerPrice =
-		recommendedLowerPrice(upperPrice, hourlyVolatilityPercent, gridCount) ?? "";
+		lowerMarkup === null
+			? ""
+			: (lowerPriceFromMarkup(upperPrice, lowerMarkup) ?? "");
+	const gridCount =
+		gridCountForStep(
+			upperPrice,
+			lowerPrice,
+			hourlyVolatilityPercent,
+			gridType,
+			lowerMarkup ?? undefined,
+		) ?? targetGridCount;
 	return {
 		input: {
 			lowerPrice,
@@ -139,7 +277,17 @@ export function spotGridRecommendation(
 		},
 		hasHourlyVolatility: validPositiveNumber(hourlyVolatilityPercent),
 		hasLatestHigh: validPositiveNumber(high),
+		lowerMarkup,
 	};
+}
+
+/** Returns the smallest per-trade step of an estimate, in percent. */
+export function spotGridMinimumStepPercent(estimate: SpotGridEstimate): number {
+	return (
+		"stepPercent" in estimate
+			? estimate.stepPercent
+			: estimate.stepPercentMinimum
+	).toNumber();
 }
 
 export function calculateSpotGridInput(

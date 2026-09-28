@@ -17,12 +17,18 @@ import { ValueGroup } from "@/components/value-group";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	calculateSpotGridInput,
+	DEFAULT_MARKUP_PERCENT,
+	gridCountForStep,
+	LOWER_MARKUP_MAX_PERCENT,
 	latestAvailableCandle,
-	recommendedLowerPrice,
+	lowerMarkupPercent,
+	lowerPriceFromMarkup,
 	recommendedUpperPrice,
 	type SpotGridType,
 	spotGridEstimateValues,
+	spotGridMinimumStepPercent,
 	spotGridRecommendation,
+	upperMarkupPercent,
 } from "@/features/instrument-analysis/spot-grid-estimator/utils";
 import type { SpotGridInput } from "@/utils/calculator/spot-grid";
 import { formatRangePercent } from "@/utils/range-percent";
@@ -37,20 +43,28 @@ interface SpotGridEstimatorProps {
 
 type SpotGridFormValues = SpotGridInput & {
 	gridType: SpotGridType;
+	lowerMarkup: number;
 	markup: number;
 	rangePercent: number;
 };
 
 type InputField = keyof SpotGridInput;
 
+type RangeValues = Pick<
+	SpotGridFormValues,
+	"gridType" | "lowerPrice" | "rangePercent" | "upperPrice"
+>;
+
 function formValues(
 	input: SpotGridInput,
+	lowerMarkup: number | null,
 	hourlyRangePercent: number | undefined,
 ): SpotGridFormValues {
 	return {
 		...input,
 		gridType: "geometric",
-		markup: 5,
+		lowerMarkup: lowerMarkup ?? 0,
+		markup: DEFAULT_MARKUP_PERCENT,
 		rangePercent: hourlyRangePercent ?? 0,
 	};
 }
@@ -66,7 +80,11 @@ export function SpotGridEstimator({
 		spotGridRecommendation(candles, hourlyVolatilityPercent),
 	);
 	const form = useForm<SpotGridFormValues>({
-		initialValues: formValues(recommendation.input, hourlyVolatilityPercent),
+		initialValues: formValues(
+			recommendation.input,
+			recommendation.lowerMarkup,
+			hourlyVolatilityPercent,
+		),
 		mode: "controlled",
 	});
 	const [committedInput, setCommittedInput] = useState<SpotGridInput>(
@@ -99,12 +117,39 @@ export function SpotGridEstimator({
 	);
 	const values = spotGridEstimateValues(calculation?.estimate ?? null);
 
-	function commitField(field: InputField) {
-		const nextInput = {
+	// Applies a new price range, step, or grid type and derives the largest grid
+	// count whose minimum step stays at or above the selected step.
+	function applyRange(
+		range: RangeValues,
+		extraValues: Partial<SpotGridFormValues> = {},
+	) {
+		const gridCount =
+			range.rangePercent > 0
+				? (gridCountForStep(
+						range.upperPrice,
+						range.lowerPrice,
+						range.rangePercent,
+						range.gridType,
+						extraValues.lowerMarkup ?? form.values.lowerMarkup,
+					) ?? "")
+				: committedInput.gridCount;
+		form.setValues({ ...range, ...extraValues, gridCount });
+		form.clearFieldError("gridCount");
+		setCommittedInput({
 			...committedInput,
-			[field]: form.getValues()[field],
+			gridCount,
+			lowerPrice: range.lowerPrice,
+			upperPrice: range.upperPrice,
+		});
+	}
+
+	function currentRange(): RangeValues {
+		return {
+			gridType: form.values.gridType,
+			lowerPrice: committedInput.lowerPrice,
+			rangePercent: form.values.rangePercent,
+			upperPrice: committedInput.upperPrice,
 		};
-		setCommittedInput(nextInput);
 	}
 
 	function changeMarkup(markup: number) {
@@ -112,38 +157,99 @@ export function SpotGridEstimator({
 		if (!upperPrice) return;
 
 		const lowerPrice =
-			recommendedLowerPrice(
-				upperPrice,
-				selectedRangePercent,
-				committedInput.gridCount,
-				form.values.gridType,
-			) ?? "";
-		form.setValues({ lowerPrice, markup, upperPrice });
-		setCommittedInput({ ...committedInput, lowerPrice, upperPrice });
+			lowerPriceFromMarkup(upperPrice, form.values.lowerMarkup) ?? "";
+		applyRange({ ...currentRange(), lowerPrice, upperPrice }, { markup });
+	}
+
+	function changeLowerMarkup(lowerMarkup: number) {
+		const lowerPrice = lowerPriceFromMarkup(
+			committedInput.upperPrice,
+			lowerMarkup,
+		);
+		if (!lowerPrice) {
+			form.setFieldValue("lowerMarkup", lowerMarkup);
+			return;
+		}
+		applyRange({ ...currentRange(), lowerPrice }, { lowerMarkup });
 	}
 
 	function changeRange(rangePercent: number) {
-		const lowerPrice =
-			recommendedLowerPrice(
-				committedInput.upperPrice,
-				rangePercent,
-				committedInput.gridCount,
-				form.values.gridType,
-			) ?? "";
-		form.setValues({ lowerPrice, rangePercent });
-		setCommittedInput({ ...committedInput, lowerPrice });
+		applyRange({ ...currentRange(), rangePercent });
 	}
 
 	function changeGridType(gridType: SpotGridType) {
-		const lowerPrice =
-			recommendedLowerPrice(
-				committedInput.upperPrice,
-				selectedRangePercent,
-				committedInput.gridCount,
-				gridType,
-			) ?? "";
-		form.setValues({ gridType, lowerPrice });
-		setCommittedInput({ ...committedInput, lowerPrice });
+		applyRange({ ...currentRange(), gridType });
+	}
+
+	function commitUpperPrice(upperPrice: string) {
+		const lowerPrice = lowerPriceFromMarkup(
+			upperPrice,
+			form.values.lowerMarkup,
+		);
+		if (!lowerPrice) {
+			setCommittedInput({ ...committedInput, upperPrice });
+			return;
+		}
+		const markup = upperMarkupPercent(latestHigh, upperPrice);
+		applyRange(
+			{ ...currentRange(), lowerPrice, upperPrice },
+			markup === null ? {} : { markup },
+		);
+	}
+
+	function commitLowerPrice(lowerPrice: string) {
+		const lowerMarkup = lowerMarkupPercent(
+			committedInput.upperPrice,
+			lowerPrice,
+		);
+		if (lowerMarkup === null) {
+			setCommittedInput({ ...committedInput, lowerPrice });
+			return;
+		}
+		applyRange({ ...currentRange(), lowerPrice }, { lowerMarkup });
+	}
+
+	// Accepts a typed grid count only when its minimum step stays within the
+	// hourly-to-daily range, then moves the step slider to that step.
+	function commitGridCount(gridCount: string) {
+		const nextInput = { ...committedInput, gridCount };
+		const estimate = calculateSpotGridInput(
+			nextInput,
+			form.values.gridType,
+		)?.estimate;
+		if (!estimate || !hasHourlyVolatility) {
+			setCommittedInput(nextInput);
+			return;
+		}
+
+		const stepPercent = spotGridMinimumStepPercent(estimate);
+		const maxStepPercent = hasDailyVolatility ? dailyRangeValue : null;
+		if (
+			stepPercent < hourlyRangeValue ||
+			(maxStepPercent !== null && stepPercent > maxStepPercent)
+		) {
+			form.setFieldError(
+				"gridCount",
+				`Minimum grid step would be ${formatRangePercent(stepPercent)}; it must be ${
+					maxStepPercent === null
+						? `at least ${formatRangePercent(hourlyRangeValue)}`
+						: `from ${formatRangePercent(hourlyRangeValue)} to ${formatRangePercent(maxStepPercent)}`
+				}`,
+			);
+			return;
+		}
+		form.setFieldValue("rangePercent", stepPercent);
+		setCommittedInput(nextInput);
+	}
+
+	function commitField(field: InputField) {
+		const value = form.getValues()[field];
+		if (value === committedInput[field]) return;
+
+		if (field === "upperPrice") commitUpperPrice(value);
+		else if (field === "lowerPrice") commitLowerPrice(value);
+		else if (field === "gridCount") commitGridCount(value);
+		else setCommittedInput({ ...committedInput, [field]: value });
 	}
 
 	function inputProps(field: InputField) {
@@ -162,6 +268,7 @@ export function SpotGridEstimator({
 				if (event.key === "Escape") {
 					event.preventDefault();
 					form.setFieldValue(field, committedInput[field]);
+					form.clearFieldError(field);
 				}
 			},
 		};
@@ -194,7 +301,7 @@ export function SpotGridEstimator({
 				<Stack gap="sm">
 					<SliderField
 						disabled={disabled || !hasLatestHigh}
-						formatValue={(value) => `${value}%`}
+						formatValue={formatRangePercent}
 						label="Upper price markup"
 						max={50}
 						min={0}
@@ -206,6 +313,20 @@ export function SpotGridEstimator({
 						]}
 						step={1}
 						value={form.values.markup}
+					/>
+					<SliderField
+						disabled={disabled}
+						formatValue={formatRangePercent}
+						label="Lower price markup"
+						max={LOWER_MARKUP_MAX_PERCENT}
+						min={0}
+						onChange={changeLowerMarkup}
+						scaleLabels={[
+							{ label: "0%", position: 0 },
+							{ label: `${LOWER_MARKUP_MAX_PERCENT}%`, position: 100 },
+						]}
+						step={1}
+						value={form.values.lowerMarkup}
 					/>
 					<SliderField
 						disabled={disabled || !canSelectRange}

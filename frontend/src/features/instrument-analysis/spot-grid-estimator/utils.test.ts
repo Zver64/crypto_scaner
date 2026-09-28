@@ -1,12 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
 	calculateSpotGridInput,
+	gridCountForStep,
+	initialLowerMarkup,
+	LOWER_MARKUP_MAX_PERCENT,
 	latestAvailableCandle,
-	recommendedLowerPrice,
+	lowerMarkupPercent,
+	lowerPriceFromMarkup,
 	recommendedUpperPrice,
+	type SpotGridType,
 	spotGridEstimateValues,
+	spotGridMinimumStepPercent,
 	spotGridProfitSplits,
 	spotGridRecommendation,
+	upperMarkupPercent,
 } from "@/features/instrument-analysis/spot-grid-estimator/utils";
 
 const validInput = {
@@ -49,83 +56,111 @@ describe("spot grid recommendations", () => {
 		expect(recommendedUpperPrice(100, 50)).toBe("150");
 	});
 
-	it("uses the latest non-null candle and raw hourly step", () => {
+	function minimumStep(
+		input: Parameters<typeof calculateSpotGridInput>[0],
+		gridType: SpotGridType,
+	): number {
+		const calculation = calculateSpotGridInput(input, gridType);
+		expect(calculation?.error).toBeNull();
+		if (!calculation?.estimate) throw new Error("missing estimate");
+		return spotGridMinimumStepPercent(calculation.estimate);
+	}
+
+	it("starts from the lower markup that fits at least 40 hourly steps", () => {
 		const recommendation = spotGridRecommendation([candle, null], 1);
 		expect(latestAvailableCandle([candle, null])).toEqual(candle);
+		expect(recommendation.lowerMarkup).toBe(33);
 		expect(recommendation.input).toEqual({
-			lowerPrice: "70.5",
+			lowerPrice: "70.3",
 			upperPrice: "105",
 			gridCount: "40",
 			investment: "1000",
 		});
-		const calculation = calculateSpotGridInput(
-			recommendation.input,
-			"geometric",
-		);
-		expect(calculation?.estimate).toMatchObject({
-			gridCount: 40,
-			levelCount: 41,
+		expect(
+			minimumStep(recommendation.input, "geometric"),
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("starts arithmetic grids from their own lower markup", () => {
+		const recommendation = spotGridRecommendation([candle], 1, "arithmetic");
+		expect(recommendation.lowerMarkup).toBe(40);
+		expect(recommendation.input).toMatchObject({
+			lowerPrice: "63",
+			gridCount: "40",
 		});
-		if (calculation?.estimate && "stepPercent" in calculation.estimate) {
-			expect(calculation.estimate.stepPercent.gte(1)).toBe(true);
-		}
+		expect(
+			minimumStep(recommendation.input, "arithmetic"),
+		).toBeGreaterThanOrEqual(1);
+	});
+
+	it("caps the initial lower markup at the slider maximum", () => {
+		expect(initialLowerMarkup(3, "40", "geometric")).toBe(
+			LOWER_MARKUP_MAX_PERCENT,
+		);
+		expect(initialLowerMarkup(3, "40", "arithmetic")).toBe(
+			LOWER_MARKUP_MAX_PERCENT,
+		);
+		expect(initialLowerMarkup(0, "40", "geometric")).toBeNull();
+		expect(initialLowerMarkup(1, "0", "geometric")).toBeNull();
 	});
 
 	it("uses the shared number formatter for calculator-safe rounded prices", () => {
-		expect(recommendedUpperPrice(12_345_678.9, 0)).toBe("12300000");
-		expect(recommendedLowerPrice("105", 1, "40")).toBe("70.5");
+		expect(recommendedUpperPrice(12_345_678.9, 0)).toBe("12345679");
+		expect(lowerPriceFromMarkup("105", 33)).toBe("70.3");
 	});
 
-	it("keeps the arithmetic minimum grid step at or above the target", () => {
-		const lowerPrice = recommendedLowerPrice("105", 1, "40", "arithmetic");
-		expect(lowerPrice).toBe("63.4");
+	it("converts between prices and markups", () => {
+		expect(lowerPriceFromMarkup("1640", 25)).toBe("1230");
+		expect(lowerPriceFromMarkup("105", 0)).toBe("105");
+		expect(lowerMarkupPercent("1640", "1230")).toBe(25);
+		expect(lowerMarkupPercent("105", "70.3")).toBe(33.05);
+		expect(upperMarkupPercent(100, "105")).toBe(5);
+		expect(upperMarkupPercent(100, "95")).toBe(-5);
+	});
 
-		const calculation = calculateSpotGridInput(
-			{
-				lowerPrice: lowerPrice ?? "",
-				upperPrice: "105",
-				gridCount: "40",
+	it.each([
+		"geometric",
+		"arithmetic",
+	] as const)("derives the largest %s grid count that keeps the minimum step", (gridType) => {
+		for (const stepPercent of [0.3, 0.705, 1, 2.5]) {
+			const gridCount = gridCountForStep("1640", "1230", stepPercent, gridType);
+			if (!gridCount) throw new Error("missing grid count");
+			const input = {
+				lowerPrice: "1230",
+				upperPrice: "1640",
+				gridCount,
 				investment: "1000",
-			},
-			"arithmetic",
-		);
-		expect(calculation?.error).toBeNull();
-		if (calculation?.estimate && "stepPercentMinimum" in calculation.estimate) {
-			expect(calculation.estimate.stepPercentMinimum.gte(1)).toBe(true);
+			};
+			expect(minimumStep(input, gridType)).toBeGreaterThanOrEqual(stepPercent);
+			expect(
+				minimumStep(
+					{ ...input, gridCount: String(Number(gridCount) + 1) },
+					gridType,
+				),
+			).toBeLessThan(stepPercent);
 		}
 	});
 
-	it("rejects arithmetic targets that cannot produce a positive lower price", () => {
-		expect(recommendedLowerPrice("105", 3, "40", "arithmetic")).toBeNull();
+	it("does not add a grid when rounding a markup-derived lower price down", () => {
+		expect(lowerPriceFromMarkup("2130", 25)).toBe("1597");
+		expect(lowerPriceFromMarkup("2.13", 25)).toBe("1.59");
+		expect(gridCountForStep("2.13", "1.59", 0.712, "geometric")).toBe("41");
+		expect(gridCountForStep("2.13", "1.59", 0.712, "geometric", 25)).toBe("40");
+		expect(gridCountForStep("1640", "1230", 0.712, "geometric", 25)).toBe("40");
+		const input = {
+			lowerPrice: "1.59",
+			upperPrice: "2.13",
+			gridCount: "40",
+			investment: "1000",
+		};
+		expect(minimumStep(input, "geometric")).toBeGreaterThanOrEqual(0.712);
 	});
 
-	it("calculates a valid geometric range for a slider commit using grid count 10", () => {
-		const lowerPrice = recommendedLowerPrice("105", 1, "10");
-		expect(lowerPrice).toBe("95");
-
-		const calculation = calculateSpotGridInput(
-			{
-				lowerPrice: lowerPrice ?? "",
-				upperPrice: "105",
-				gridCount: "10",
-				investment: "1000",
-			},
-			"geometric",
-		);
-		expect(calculation?.estimate).toMatchObject({
-			gridCount: 10,
-			levelCount: 11,
-		});
-		if (calculation?.estimate && "stepPercent" in calculation.estimate) {
-			expect(calculation.estimate.stepPercent.gte(1)).toBe(true);
-		}
-	});
-
-	it("returns partial fallbacks for missing market data and unsupported lower values", () => {
+	it("returns partial fallbacks for missing market data and unsupported values", () => {
 		expect(latestAvailableCandle([null, null])).toBeNull();
-		expect(spotGridRecommendation([candle], 0).input).toMatchObject({
-			lowerPrice: "",
-			upperPrice: "105",
+		expect(spotGridRecommendation([candle], 0)).toMatchObject({
+			input: { lowerPrice: "", upperPrice: "105", gridCount: "40" },
+			lowerMarkup: null,
 		});
 		expect(
 			spotGridRecommendation([{ ...candle, high: Number.NaN }], 1).input,
@@ -135,10 +170,15 @@ describe("spot grid recommendations", () => {
 			gridCount: "40",
 			investment: "1000",
 		});
-		expect(recommendedLowerPrice("1e1001", 1, "40")).toBeNull();
-		expect(recommendedLowerPrice("105", -1, "40")).toBeNull();
-		expect(recommendedLowerPrice("105", 1, "0")).toBeNull();
-		expect(recommendedLowerPrice("105", 1e-59, "40")).toBeNull();
+		expect(lowerPriceFromMarkup("1e1001", 10)).toBeNull();
+		expect(lowerPriceFromMarkup("105", -1)).toBeNull();
+		expect(lowerPriceFromMarkup("105", 100)).toBeNull();
+		expect(lowerMarkupPercent("105", "")).toBeNull();
+		expect(upperMarkupPercent(undefined, "105")).toBeNull();
+		expect(gridCountForStep("105", "105", 1, "geometric")).toBeNull();
+		expect(gridCountForStep("105", "104.9", 1, "geometric")).toBeNull();
+		expect(gridCountForStep("105", "70", 0, "geometric")).toBeNull();
+		expect(gridCountForStep("105", "0.0001", 0.001, "geometric")).toBe("1000");
 	});
 });
 

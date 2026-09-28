@@ -8,8 +8,8 @@ describe("formatRangePercent", () => {
 		[0.9995, "1%"],
 		[1.005, "1.01%"],
 		[9.4381, "9.44%"],
-		[1234.5, "1,230%"],
-	])("formats %s with three significant digits as %s", (value, expected) => {
+		[1234.5, "1,235%"],
+	])("formats %s keeping the integer part as %s", (value, expected) => {
 		expect(formatRangePercent(value)).toBe(expected);
 	});
 });

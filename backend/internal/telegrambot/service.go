@@ -539,7 +539,11 @@ func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) 
 	if err != nil {
 		return fmt.Errorf("look up alert owner: %w", err)
 	}
-	text := fmt.Sprintf("Price alert: %s reached %s USDT (observed %s at %s).", fired.Alert.Symbol, fired.Alert.Target, fired.Price, fired.EventTime.UTC().Format(time.RFC3339))
-	_, err = service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: fired.Alert.TelegramID, Text: text})
+	_, err = service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: fired.Alert.TelegramID, Text: priceAlertText(fired)})
 	return err
+}
+
+// priceAlertText names only the symbol and the target that was hit.
+func priceAlertText(fired alerts.Fired) string {
+	return "🔔 " + fired.Alert.Symbol + " hit " + fired.Alert.Target
 }

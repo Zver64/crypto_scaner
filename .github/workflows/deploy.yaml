@@ -34,22 +34,7 @@ jobs:
   quality:
     needs: release
     if: needs.release.outputs.created == 'true'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          ref: ${{ needs.release.outputs.tag }}
-      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
-        with:
-          node-version: 24
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - run: npm -C frontend ci
-      - run: make check
+    uses: ./.github/workflows/ci.yaml
 
   build:
     needs: [release, quality]
@@ -57,15 +42,18 @@ jobs:
       contents: read
       packages: write
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     strategy:
       matrix:
         include:
           - name: backend
             context: backend
             target: ""
+            build-args: ""
           - name: frontend
             context: frontend
             target: production
+            build-args: APP_VERSION=${{ needs.release.outputs.version }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -86,8 +74,9 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: ${{ steps.image.outputs.name }}
-          build-args: APP_VERSION=${{ needs.release.outputs.version }}
+          build-args: ${{ matrix.build-args }}
           labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ needs.release.outputs.sha }}
             org.opencontainers.image.version=${{ needs.release.outputs.tag }}
           cache-from: type=gha,scope=${{ matrix.name }}
@@ -99,6 +88,7 @@ jobs:
       contents: read
       packages: read
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment: production
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -113,6 +103,7 @@ jobs:
           DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ needs.release.outputs.tag }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
@@ -123,8 +114,6 @@ jobs:
           target="$DEPLOY_USER@$DEPLOY_HOST"
           ssh_options=(-i ~/.ssh/id_deploy -p "$SSH_PORT" -o StrictHostKeyChecking=yes)
 
-          release_tag='${{ needs.release.outputs.tag }}'
-
           ssh "${ssh_options[@]}" "$target" "mkdir -p '$DEPLOY_PATH'"
           scp -i ~/.ssh/id_deploy -P "$SSH_PORT" -o StrictHostKeyChecking=yes compose.production.yaml "$target:$DEPLOY_PATH/"
-          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" "set -e; docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin; trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT; cd '$DEPLOY_PATH'; export BACKEND_IMAGE='ghcr.io/$repository-backend:$release_tag' FRONTEND_IMAGE='ghcr.io/$repository-frontend:$release_tag'; docker compose -f compose.production.yaml pull; docker compose -f compose.production.yaml up -d --wait --remove-orphans; docker image prune -f"
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" "set -e; docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin; trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT; cd '$DEPLOY_PATH'; export BACKEND_IMAGE='ghcr.io/$repository-backend:$RELEASE_TAG' FRONTEND_IMAGE='ghcr.io/$repository-frontend:$RELEASE_TAG'; docker compose -f compose.production.yaml pull; docker compose -f compose.production.yaml up -d --wait --wait-timeout 300 --remove-orphans; docker image prune -f"

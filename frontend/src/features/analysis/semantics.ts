@@ -101,5 +101,8 @@ function hasExpectedMetrics(
 			evaluation.metrics[evaluationMetricKeys.marketCapUsd],
 		);
 	}
+	if (criterion.name === criterionNames.rsi) {
+		return Number.isFinite(evaluation.metrics[evaluationMetricKeys.rsi]);
+	}
 	return true;
 }

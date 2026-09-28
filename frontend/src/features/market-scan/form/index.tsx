@@ -1,7 +1,8 @@
-import { Button, Paper, Stack, useMatches } from "@mantine/core";
+import { Button, Fieldset, Paper, Stack, useMatches } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import type { FormEvent } from "react";
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
+import { SliderField } from "@/components/slider-field";
 import { applicationConfig } from "@/config";
 import { VolatilityFieldset } from "@/features/analysis/volatility-form";
 import { marketScanCriteriaConstraints } from "@/features/market-scan/criteria";
@@ -9,12 +10,21 @@ import { criteriaFromValidDraft } from "@/features/market-scan/form/utils";
 import {
 	type MarketScanCriteria,
 	type MarketScanDraft,
+	rsiFilterConstraints,
 	validateMarketScanCriteria,
 } from "@/features/market-scan/pipeline";
 
 function formatMarketCapPreset(value: number) {
 	return value >= 1000 ? `${value / 1000}B` : `${value}M`;
 }
+
+const rsiScaleLabels = [20, 30, 70, 100].map((value) => ({
+	label: String(value),
+	position:
+		((value - rsiFilterConstraints.minimum) /
+			(rsiFilterConstraints.maximum - rsiFilterConstraints.minimum)) *
+		100,
+}));
 
 interface MarketScanFormProps {
 	initialCriteria: MarketScanCriteria;
@@ -127,6 +137,30 @@ export function MarketScanForm({
 					presetsPosition="below"
 					title="Market Cap"
 				/>
+				<Fieldset legend="RSI">
+					<Stack gap="md">
+						<SliderField
+							formatValue={String}
+							label="Daily max RSI"
+							max={rsiFilterConstraints.maximum}
+							min={rsiFilterConstraints.minimum}
+							onChange={(value) => form.setFieldValue("dailyMaxRsi", value)}
+							scaleLabels={rsiScaleLabels}
+							step={1}
+							value={Number(form.values.dailyMaxRsi)}
+						/>
+						<SliderField
+							formatValue={String}
+							label="Weekly max RSI"
+							max={rsiFilterConstraints.maximum}
+							min={rsiFilterConstraints.minimum}
+							onChange={(value) => form.setFieldValue("weeklyMaxRsi", value)}
+							scaleLabels={rsiScaleLabels}
+							step={1}
+							value={Number(form.values.weeklyMaxRsi)}
+						/>
+					</Stack>
+				</Fieldset>
 				<Button
 					disabled={disabled || !draftCriteria}
 					loading={isSubmitting}

@@ -1,10 +1,12 @@
 import {
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
+	rsiFilterConstraints,
 	validateMarketScanCriteria,
 } from "@/features/market-scan/pipeline";
 
 export interface ScanCriteriaSearch {
+	daily_max_rsi?: number;
 	hourly_minimum_range_percent?: number;
 	hourly_percentile?: number;
 	hourly_period?: number;
@@ -12,6 +14,7 @@ export interface ScanCriteriaSearch {
 	minimum_range_percent?: number;
 	percentile?: number;
 	period?: number;
+	weekly_max_rsi?: number;
 }
 
 export function parseOptionalScanCriteriaSearch(
@@ -33,6 +36,7 @@ export function scanCriteriaToSearch(
 	criteria: MarketScanCriteria,
 ): Required<ScanCriteriaSearch> {
 	return {
+		daily_max_rsi: criteria.dailyMaxRsi,
 		hourly_minimum_range_percent: criteria.hourlyMinimumRangePercent,
 		hourly_percentile: criteria.hourlyPercentile,
 		hourly_period: criteria.hourlyPeriod,
@@ -40,6 +44,7 @@ export function scanCriteriaToSearch(
 		minimum_range_percent: criteria.minimumRangePercent,
 		percentile: criteria.percentile,
 		period: criteria.period,
+		weekly_max_rsi: criteria.weeklyMaxRsi,
 	};
 }
 
@@ -56,6 +61,8 @@ export function scanCriteriaFromSearch(
 		search.minimum_market_cap_millions === undefined
 			? 0
 			: search.minimum_market_cap_millions;
+	const dailyMaxRsi = search.daily_max_rsi ?? rsiFilterConstraints.maximum;
+	const weeklyMaxRsi = search.weekly_max_rsi ?? rsiFilterConstraints.maximum;
 
 	if (
 		typeof period !== "number" ||
@@ -64,12 +71,15 @@ export function scanCriteriaFromSearch(
 		typeof hourlyMinimumRangePercent !== "number" ||
 		typeof percentile !== "number" ||
 		typeof minimumRangePercent !== "number" ||
-		typeof minimumMarketCapMillions !== "number"
+		typeof minimumMarketCapMillions !== "number" ||
+		typeof dailyMaxRsi !== "number" ||
+		typeof weeklyMaxRsi !== "number"
 	) {
 		return undefined;
 	}
 
 	const criteria = {
+		dailyMaxRsi,
 		hourlyMinimumRangePercent,
 		hourlyPercentile,
 		hourlyPeriod,
@@ -77,6 +87,7 @@ export function scanCriteriaFromSearch(
 		minimumRangePercent,
 		percentile,
 		period,
+		weeklyMaxRsi,
 	};
 	return Object.keys(validateMarketScanCriteria(criteria)).length === 0
 		? criteria

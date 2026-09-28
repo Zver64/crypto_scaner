@@ -9,6 +9,7 @@ import (
 	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/analysis"
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/marketcap"
+	rsicriterion "crypto-scanner/internal/analysis/criteria/rsi"
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/chart"
@@ -81,7 +82,7 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 	if err != nil {
 		return app{}, fmt.Errorf("initialize coin metadata synchronizer: %w", err)
 	}
-	analysisService, err := analysis.NewService(store, closedIndicators, volatility.New(), marketcapcriterion.New())
+	analysisService, err := analysis.NewService(store, closedIndicators, volatility.New(), marketcapcriterion.New(), rsicriterion.New(rsi14))
 	if err != nil {
 		return app{}, fmt.Errorf("initialize analysis service: %w", err)
 	}

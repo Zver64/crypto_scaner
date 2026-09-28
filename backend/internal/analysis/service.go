@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"strings"
 	"time"
 
@@ -189,6 +190,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 		candleData[instrument.ID] = map[Unit][]market.Candle{}
 	}
 	results := make(map[int64]SymbolResult, len(candidates))
+	closed := map[int64][]closedindicator.Value{}
 	for _, criterion := range criteria {
 		if len(candidates) == 0 {
 			break
@@ -197,8 +199,11 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 		if err := service.loadCandleData(ctx, candidates, criterion.Requirements(), candleData); err != nil {
 			return SearchResult{}, err
 		}
+		if criterion.UsesClosedIndicators() {
+			service.loadClosedIndicators(ctx, candidates, closed)
+		}
 		for _, instrument := range candidates {
-			item, evaluateErr := service.evaluateCriterionWithData(ctx, instrument, criterion, candleData[instrument.ID], false)
+			item, evaluateErr := service.evaluateCriterionWithData(ctx, instrument, criterion, candleData[instrument.ID], closed[instrument.ID], false)
 			var insufficient *InsufficientHistoryError
 			if errors.As(evaluateErr, &insufficient) {
 				result.InsufficientDataCount++
@@ -228,13 +233,8 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	if err != nil {
 		return SearchResult{}, err
 	}
-	closed := map[int64][]closedindicator.Value{}
-	if service.closed != nil && len(candidates) > 0 {
-		ids := make([]int64, len(candidates))
-		for index, instrument := range candidates {
-			ids[index] = instrument.ID
-		}
-		closed = service.closed.Latest(ctx, ids)
+	if service.closed != nil {
+		service.loadClosedIndicators(ctx, candidates, closed)
 	}
 	for _, instrument := range candidates {
 		item := results[instrument.ID]
@@ -267,6 +267,21 @@ func (service *Service) loadCandleData(ctx context.Context, instruments []market
 		}
 	}
 	return nil
+}
+
+// loadClosedIndicators batch-loads closed indicator values for instruments
+// that do not have them yet.
+func (service *Service) loadClosedIndicators(ctx context.Context, instruments []market.Instrument, closed map[int64][]closedindicator.Value) {
+	ids := make([]int64, 0, len(instruments))
+	for _, instrument := range instruments {
+		if _, ok := closed[instrument.ID]; !ok {
+			ids = append(ids, instrument.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return
+	}
+	maps.Copy(closed, service.closed.Latest(ctx, ids))
 }
 
 func (service *Service) selection(request SearchRequest, criteria []criterionInstance) (Selection, error) {
@@ -323,7 +338,7 @@ func (service *Service) prepare(configs []CriterionConfig) ([]criterionInstance,
 		if err != nil {
 			return nil, nil, fmt.Errorf("build criterion %s: %w", config.Name, err)
 		}
-		if criterion == nil || criterion.Name() != config.Name {
+		if criterion == nil || criterion.Name() != config.Name || (criterion.UsesClosedIndicators() && service.closed == nil) {
 			return nil, nil, ErrInvalidArgument
 		}
 		selectedKeys[config.Key] = true
@@ -343,8 +358,12 @@ func (service *Service) prepare(configs []CriterionConfig) ([]criterionInstance,
 func (service *Service) evaluate(ctx context.Context, instrument market.Instrument, criteria []criterionInstance) (SymbolResult, error) {
 	result := SymbolResult{Symbol: instrument.Symbol, Matched: true, Evaluations: make([]Evaluation, 0, len(criteria))}
 	data := make(map[Unit][]market.Candle)
+	closed := map[int64][]closedindicator.Value{}
 	for _, criterion := range criteria {
-		item, err := service.evaluateCriterionWithData(ctx, instrument, criterion, data, true)
+		if criterion.UsesClosedIndicators() {
+			service.loadClosedIndicators(ctx, []market.Instrument{instrument}, closed)
+		}
+		item, err := service.evaluateCriterionWithData(ctx, instrument, criterion, data, closed[instrument.ID], true)
 		if err != nil {
 			return SymbolResult{}, err
 		}
@@ -363,7 +382,7 @@ type UnresolvedError struct{ Code, Message string }
 
 func (e *UnresolvedError) Error() string { return e.Message }
 
-func (service *Service) evaluateCriterionWithData(ctx context.Context, instrument market.Instrument, criterion criterionInstance, data map[Unit][]market.Candle, loadMissing bool) (SymbolResult, error) {
+func (service *Service) evaluateCriterionWithData(ctx context.Context, instrument market.Instrument, criterion criterionInstance, data map[Unit][]market.Candle, closed []closedindicator.Value, loadMissing bool) (SymbolResult, error) {
 	for _, requirement := range criterion.Requirements() {
 		if existing, ok := data[requirement.Unit]; ok && len(existing) >= requirement.Count {
 			continue
@@ -379,7 +398,7 @@ func (service *Service) evaluateCriterionWithData(ctx context.Context, instrumen
 		}
 		data[requirement.Unit] = candles[instrument.ID]
 	}
-	evaluation, err := criterion.Evaluate(ctx, Input{Instrument: instrument, Candles: data})
+	evaluation, err := criterion.Evaluate(ctx, Input{Instrument: instrument, Candles: data, ClosedIndicators: closed})
 	if err != nil {
 		var insufficient *InsufficientHistoryError
 		if errors.As(err, &insufficient) && insufficient.Criterion == "" {

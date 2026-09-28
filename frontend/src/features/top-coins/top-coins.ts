@@ -7,6 +7,7 @@ import type { VolatilitySettings } from "@/features/analysis/volatility-settings
 import {
 	criterionSelections,
 	type MarketScanCriteria,
+	rsiFilterConstraints,
 } from "@/features/market-scan/pipeline";
 import {
 	type MarketScanRow,
@@ -18,9 +19,11 @@ export function buildTopCoinsScanCriteria(
 ): MarketScanCriteria {
 	return {
 		...settings,
+		dailyMaxRsi: rsiFilterConstraints.maximum,
 		hourlyMinimumRangePercent: 0,
 		minimumMarketCapMillions: 0,
 		minimumRangePercent: 0,
+		weeklyMaxRsi: rsiFilterConstraints.maximum,
 	};
 }
 

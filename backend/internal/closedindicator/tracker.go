@@ -30,6 +30,9 @@ type Target struct {
 	Selection indicator.Selection
 }
 
+// Equal reports whether both targets identify the same interval and selection.
+func (target Target) Equal(other Target) bool { return target.id() == other.id() }
+
 func (target Target) id() string {
 	parameters, _ := json.Marshal(target.Selection.Parameters)
 	return string(target.Interval) + "|" + string(target.Selection.Type) + "|" + string(parameters)

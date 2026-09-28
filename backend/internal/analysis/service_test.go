@@ -354,6 +354,7 @@ func (firstCriterion) Name() string { return "first" }
 func (firstCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitDays, Count: 1}}
 }
+func (firstCriterion) UsesClosedIndicators() bool { return false }
 func (firstCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	return analysis.Evaluation{Matched: input.Instrument.ID == 2}, nil
 }
@@ -371,6 +372,7 @@ func (*trackingCriterion) Name() string { return "second" }
 func (*trackingCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitHours, Count: 1}}
 }
+func (*trackingCriterion) UsesClosedIndicators() bool { return false }
 func (t *trackingCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
 	t.factory.evaluated++
 	return analysis.Evaluation{Matched: true}, nil
@@ -387,6 +389,7 @@ type unresolvedCriterion struct{}
 
 func (unresolvedCriterion) Name() string                               { return "unresolved" }
 func (unresolvedCriterion) Requirements() []analysis.CandleRequirement { return nil }
+func (unresolvedCriterion) UsesClosedIndicators() bool                 { return false }
 func (unresolvedCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
 	return analysis.Evaluation{}, &analysis.UnresolvedError{Code: "missing", Message: "missing"}
 }
@@ -402,6 +405,7 @@ type marketCapTestCriterion struct{}
 
 func (marketCapTestCriterion) Name() string                               { return "market_cap" }
 func (marketCapTestCriterion) Requirements() []analysis.CandleRequirement { return nil }
+func (marketCapTestCriterion) UsesClosedIndicators() bool                 { return false }
 func (marketCapTestCriterion) MinimumMarketCapUSD() float64               { return 0 }
 func (marketCapTestCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	return analysis.Evaluation{Matched: true, Metrics: map[string]float64{"market_cap_usd": float64(input.Instrument.ID)}}, nil
@@ -418,6 +422,7 @@ func (fakeCriterion) Name() string { return "fake" }
 func (fakeCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitDays, Count: 1}, {Unit: analysis.UnitHours, Count: 1}}
 }
+func (fakeCriterion) UsesClosedIndicators() bool { return false }
 
 type hourlyMatchFactory struct{}
 
@@ -432,6 +437,7 @@ func (hourlyMatchCriterion) Name() string { return "hourly-match" }
 func (hourlyMatchCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitHours, Count: 1}}
 }
+func (hourlyMatchCriterion) UsesClosedIndicators() bool { return false }
 func (hourlyMatchCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	candles := input.Candles[analysis.UnitHours]
 	if len(candles) == 0 {

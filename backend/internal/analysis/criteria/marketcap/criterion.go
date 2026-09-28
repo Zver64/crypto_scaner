@@ -25,6 +25,7 @@ type criterion struct{ minimum float64 }
 
 func (criterion) Name() string                               { return "market_cap" }
 func (criterion) Requirements() []analysis.CandleRequirement { return nil }
+func (criterion) UsesClosedIndicators() bool                 { return false }
 
 // MinimumMarketCapUSD identifies this criterion as a SQL selection constraint.
 func (c *criterion) MinimumMarketCapUSD() float64 { return c.minimum }

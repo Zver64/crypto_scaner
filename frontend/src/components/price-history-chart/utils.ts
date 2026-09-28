@@ -17,21 +17,23 @@ export function toUtcTimestamp(value: string): UTCTimestamp {
 export function createCandlestickData(
 	candles: readonly PriceCandle[],
 	interval: ChartInterval,
-	nextOpen: (time: string, interval: ChartInterval) => string,
 ): ChartCandleSlot[] {
 	const data: ChartCandleSlot[] = [];
 	for (let index = 0; index < candles.length; index++) {
 		const candle = candles[index];
 		if (!candle) continue;
 		if (index > 0) {
-			let missing = nextOpen(candles[index - 1]?.open_time ?? "", interval);
+			let missing = nextCandleOpen(
+				candles[index - 1]?.open_time ?? "",
+				interval,
+			);
 			for (
 				let count = 0;
 				Date.parse(missing) < Date.parse(candle.open_time) && count < 500;
 				count++
 			) {
 				data.push({ time: toUtcTimestamp(missing) });
-				missing = nextOpen(missing, interval);
+				missing = nextCandleOpen(missing, interval);
 			}
 		}
 		data.push({
@@ -141,4 +143,45 @@ export function chartPriceResolution(data: readonly ChartCandleSlot[]): {
 		fractionDigits: Math.min(100, exponent),
 		minMove: 10 ** -exponent,
 	};
+}
+
+export function formatChartTime(
+	value: string | number,
+	interval: ChartInterval,
+): string {
+	const timestamp =
+		typeof value === "number" ? value * 1_000 : Date.parse(value);
+	const date = new Date(timestamp);
+	if (interval === "1h") {
+		return `${new Intl.DateTimeFormat("en", { day: "numeric", hour: "2-digit", hourCycle: "h23", minute: "2-digit", month: "short", timeZone: "UTC" }).format(date)} UTC`;
+	}
+	if (interval === "1M") {
+		return `${new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: "UTC" }).format(date)} UTC`;
+	}
+	const day = new Intl.DateTimeFormat("en", {
+		day: "numeric",
+		month: "short",
+		year: "numeric",
+		timeZone: "UTC",
+	}).format(date);
+	return interval === "1w" ? `Week of ${day} UTC` : `${day} UTC`;
+}
+
+export function nextCandleOpen(value: string, interval: ChartInterval): string {
+	const date = new Date(value);
+	switch (interval) {
+		case "1h":
+			date.setUTCHours(date.getUTCHours() + 1);
+			break;
+		case "1d":
+			date.setUTCDate(date.getUTCDate() + 1);
+			break;
+		case "1w":
+			date.setUTCDate(date.getUTCDate() + 7);
+			break;
+		case "1M":
+			date.setUTCMonth(date.getUTCMonth() + 1);
+			break;
+	}
+	return date.toISOString();
 }

@@ -3,6 +3,7 @@ import type {
 	ChartPageResponse,
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
+import { chartIntervalOptions } from "@/components/price-history-chart/config";
 import type {
 	ChartConnection,
 	ChartFreshness,
@@ -11,7 +12,6 @@ import {
 	mergeChartTail,
 	validateChartPage,
 } from "@/features/instrument-analysis/chart-page";
-import { coinChartIntervals } from "@/features/instrument-analysis/coin-chart-presentation";
 
 export interface LiveCandlesState {
 	chart?: ChartPageResponse;
@@ -21,9 +21,8 @@ export interface LiveCandlesState {
 	error?: string;
 }
 
-export const chartIntervals: readonly CandleInterval[] = coinChartIntervals.map(
-	(item) => item.value,
-);
+export const chartIntervals: readonly CandleInterval[] =
+	chartIntervalOptions.map((item) => item.value);
 const initialState: LiveCandlesState = {
 	connection: "connecting",
 	freshness: "waiting",

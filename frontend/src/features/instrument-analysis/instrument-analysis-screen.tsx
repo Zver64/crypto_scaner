@@ -44,9 +44,6 @@ import {
 } from "@/features/instrument-analysis/candle-page";
 import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import {
-	coinChartIntervals,
-	formatCoinChartTime,
-	nextCoinCandleOpen,
 	rangeReadout,
 	rsiIndicator,
 } from "@/features/instrument-analysis/coin-chart-presentation";
@@ -298,10 +295,7 @@ export function InstrumentAnalysisScreen({
 							{result ? (
 								<PriceHistoryChart
 									enabled={permission.allowed}
-									intervals={coinChartIntervals}
 									indicator={rsiIndicator}
-									formatTime={formatCoinChartTime}
-									nextOpen={nextCoinCandleOpen}
 									extraReadout={rangeReadout}
 									key={symbol}
 									paperPadding={paperPadding}

@@ -1,19 +1,12 @@
 import type {
 	CandlestickData,
-	CandlestickSeriesPartialOptions,
-	CreatePriceLineOptions,
-	DeepPartial,
 	HistogramData,
-	HistogramSeriesPartialOptions,
 	LineData,
-	LineSeriesPartialOptions,
-	PriceScaleOptions,
-	TimeChartOptions,
 	UTCTimestamp,
 	WhitespaceData,
 } from "lightweight-charts";
 
-export type ChartInterval = string;
+export type ChartInterval = "1h" | "1d" | "1w" | "1M";
 export interface PriceCandle {
 	open_time: string;
 	open: number;
@@ -64,9 +57,6 @@ export interface ChartReadoutOptions {
 export interface PriceHistoryChartProps {
 	enabled: boolean;
 	indicator?: ChartIndicatorOptions;
-	intervals: readonly [ChartIntervalOption, ...ChartIntervalOption[]];
-	formatTime(time: string | number, interval: ChartInterval): string;
-	nextOpen(time: string, interval: ChartInterval): string;
 	extraReadout?: ChartReadoutOptions;
 	paperPadding: string;
 	source: PriceHistorySource;
@@ -81,27 +71,3 @@ export type ChartVolumeSlot =
 export type ChartIndicatorSlot =
 	| LineData<UTCTimestamp>
 	| WhitespaceData<UTCTimestamp>;
-
-export interface PriceHistoryChartConfig {
-	height: number;
-	paneStretchFactors: readonly number[];
-	viewport: { loadOlderThreshold: number; minVisibleBars: number };
-	chart: DeepPartial<TimeChartOptions> & {
-		timeScale: { barSpacing: number };
-	};
-	candles: {
-		priceScale: DeepPartial<PriceScaleOptions>;
-		series: CandlestickSeriesPartialOptions;
-	};
-	volume: {
-		// Translucency of the volume bars drawn behind the candles.
-		opacity: number;
-		priceScale: DeepPartial<PriceScaleOptions>;
-		series: HistogramSeriesPartialOptions;
-	};
-	indicator: {
-		priceScale: DeepPartial<PriceScaleOptions>;
-		series: LineSeriesPartialOptions;
-	};
-	priceLine: Partial<CreatePriceLineOptions>;
-}

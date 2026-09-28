@@ -1,5 +1,4 @@
 import {
-	alpha,
 	Box,
 	Center,
 	Loader,
@@ -8,7 +7,6 @@ import {
 	Stack,
 	Text,
 	useComputedColorScheme,
-	useMantineTheme,
 } from "@mantine/core";
 import {
 	CandlestickSeries,
@@ -30,7 +28,24 @@ import {
 	useSyncExternalStore,
 } from "react";
 import { ChartCanvas, PriceLine, Series } from "@/components/lightweight-chart";
-import { priceHistoryChartConfig as config } from "@/components/price-history-chart/config";
+import {
+	barSpacing,
+	chartOptions as baseChartOptions,
+	candlePriceScaleOptions,
+	candleSeriesOptions,
+	chartHeight,
+	chartIntervalOptions,
+	indicatorPriceLineOptions,
+	indicatorPriceScaleOptions,
+	indicatorSeriesOptions,
+	loadOlderThreshold,
+	minMaxPriceLineOptions,
+	minVisibleBars,
+	paneStretchFactors,
+	volumeColors,
+	volumePriceScaleOptions,
+	volumeSeriesOptions,
+} from "@/components/price-history-chart/config";
 import { LiveStatus } from "@/components/price-history-chart/live-status";
 
 export type {
@@ -52,32 +67,24 @@ import {
 	createCandlestickData,
 	createIndicatorData,
 	createVolumeData,
+	formatChartTime,
 	formatOhlc,
 	formatPrice,
 	getVisibleMinMax,
 	isChartCandle,
 } from "@/components/price-history-chart/utils";
 
-interface ChartColors {
-	background: string;
-	down: string;
-	grid: string;
-	text: string;
-	up: string;
-}
-
 export const PriceHistoryChart = memo(function PriceHistoryChart({
 	enabled,
 	indicator,
-	intervals,
-	formatTime,
-	nextOpen,
 	extraReadout,
 	paperPadding,
 	source,
 	symbol,
 }: PriceHistoryChartProps) {
-	const [interval, setInterval] = useState<ChartInterval>(intervals[0].value);
+	const [interval, setInterval] = useState<ChartInterval>(
+		chartIntervalOptions[0].value,
+	);
 	const state = useSyncExternalStore(
 		source.subscribe,
 		() => source.getSnapshot(interval),
@@ -89,11 +96,10 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		return () => source.stop();
 	}, [enabled, source]);
 	const { candles, hasMore, isLoading, isLoadingMore } = state;
-	const theme = useMantineTheme();
 	const colorScheme = useComputedColorScheme("dark");
 	const data = useMemo(
-		() => createCandlestickData(candles, interval, nextOpen),
-		[candles, interval, nextOpen],
+		() => createCandlestickData(candles, interval),
+		[candles, interval],
 	);
 	const indicatorData = useMemo(
 		() => (indicator ? createIndicatorData(data, state.indicator) : []),
@@ -101,59 +107,32 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	);
 	const last = candles.at(-1) ?? null;
 	const [active, setActive] = useState<ChartCandle | null>(null);
-	const colors = useMemo<ChartColors>(
-		() => ({
-			background: colorScheme === "dark" ? theme.colors.dark[7] : theme.white,
-			down: theme.colors.red[6],
-			grid:
-				colorScheme === "dark" ? theme.colors.dark[5] : theme.colors.gray[3],
-			text:
-				colorScheme === "dark" ? theme.colors.dark[0] : theme.colors.gray[7],
-			up: theme.colors.green[6],
-		}),
-		[colorScheme, theme],
-	);
 	const chartOptions = useMemo<DeepPartial<TimeChartOptions>>(
 		() => ({
-			...config.chart,
-			grid: {
-				horzLines: { color: colors.grid },
-				vertLines: { color: colors.grid },
-			},
-			layout: {
-				background: { color: colors.background },
-				textColor: colors.text,
-			},
+			...baseChartOptions[colorScheme],
 			localization: {
 				timeFormatter: (time: Time) =>
-					typeof time === "number" ? formatTime(time, interval) : String(time),
+					typeof time === "number"
+						? formatChartTime(time, interval)
+						: String(time),
 			},
-			rightPriceScale: { borderColor: colors.grid },
 			timeScale: {
-				...config.chart.timeScale,
-				borderColor: colors.grid,
+				...baseChartOptions[colorScheme].timeScale,
 				timeVisible:
-					intervals.find((item) => item.value === interval)?.showTime ?? false,
+					chartIntervalOptions.find((item) => item.value === interval)
+						?.showTime ?? false,
 			},
 		}),
-		[colors, formatTime, interval, intervals],
+		[colorScheme, interval],
 	);
 	const volumeData = useMemo(
-		() =>
-			createVolumeData(data, candles, {
-				down: alpha(colors.down, config.volume.opacity),
-				up: alpha(colors.up, config.volume.opacity),
-			}),
-		[candles, colors, data],
+		() => createVolumeData(data, candles, volumeColors),
+		[candles, data],
 	);
 	const candleOptions = useMemo<CandlestickSeriesPartialOptions>(() => {
 		const { base, fractionDigits, minMove } = chartPriceResolution(data);
 		return {
-			...config.candles.series,
-			downColor: colors.down,
-			upColor: colors.up,
-			wickDownColor: colors.down,
-			wickUpColor: colors.up,
+			...candleSeriesOptions,
 			priceFormat: {
 				base,
 				// Axis ticks carry floating-point noise near zero; round it at the
@@ -163,35 +142,33 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 				type: "custom",
 			},
 		};
-	}, [colors, data]);
+	}, [data]);
 	const indicatorOptions = useMemo<LineSeriesPartialOptions | undefined>(
 		() =>
 			indicator && {
-				...config.indicator.series,
+				...indicatorSeriesOptions,
 				autoscaleInfoProvider: () => ({
 					priceRange: {
 						maxValue: indicator.bounds.max,
 						minValue: indicator.bounds.min,
 					},
 				}),
-				color: theme.colors.blue[5],
 				priceFormat: {
 					formatter: indicator.formatValue,
 					minMove: indicator.minMove,
 					type: "custom",
 				},
 			},
-		[indicator, theme],
+		[indicator],
 	);
 	const indicatorPriceLines = useMemo<readonly CreatePriceLineOptions[]>(
 		() =>
 			(indicator?.lines ?? []).map(({ price, title }) => ({
-				...config.priceLine,
-				color: colors.grid,
+				...indicatorPriceLineOptions[colorScheme],
 				price,
 				title,
 			})),
-		[colors.grid, indicator],
+		[colorScheme, indicator],
 	);
 
 	const onLoadOlder = useCallback(
@@ -204,13 +181,13 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		onVisibleLogicalRangeChange,
 		visibleRange,
 	} = useChartViewport({
-		barWidth: config.chart.timeScale.barSpacing,
+		barWidth: barSpacing,
 		data,
 		hasMore,
 		isLoadingMore,
-		minVisibleBars: config.viewport.minVisibleBars,
+		minVisibleBars,
 		onLoadOlder,
-		threshold: config.viewport.loadOlderThreshold,
+		threshold: loadOlderThreshold,
 	});
 	const minMax = useMemo(
 		() => getVisibleMinMax(data, visibleRange),
@@ -228,7 +205,10 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		<Paper component="section" p={paperPadding}>
 			<Stack gap="md">
 				<SegmentedControl
-					data={intervals.map(({ label, value }) => ({ label, value }))}
+					data={chartIntervalOptions.map(({ label, value }) => ({
+						label,
+						value,
+					}))}
 					fullWidth
 					onChange={(value) => {
 						setActive(null);
@@ -244,7 +224,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 					/>
 					{readout && readoutTime !== null ? (
 						<Text aria-live="polite" ff="monospace" mb="xs" size="sm">
-							{formatTime(readoutTime, interval)} · {formatOhlc(readout)}
+							{formatChartTime(readoutTime, interval)} · {formatOhlc(readout)}
 							{extraReadout ? (
 								<>
 									{" "}
@@ -264,10 +244,10 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 						aria-label={`${symbol}: ${interval} candlestick history with the current live candle. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
 						onVisibleLogicalRangeChange={onVisibleLogicalRangeChange}
 						options={chartOptions}
-						paneStretchFactors={indicator ? config.paneStretchFactors : []}
+						paneStretchFactors={indicator ? paneStretchFactors : []}
 						ref={chartRef}
 						role="img"
-						style={{ height: config.height, width: "100%" }}
+						style={{ height: chartHeight, width: "100%" }}
 					>
 						{/* Added first so the volume bars are drawn behind the candles. As the
 						first series to receive data, it also records the viewport first. */}
@@ -275,35 +255,31 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 							data={volumeData}
 							definition={HistogramSeries}
 							onBeforeDataChange={onBeforeDataChange}
-							options={config.volume.series}
-							priceScale={config.volume.priceScale}
+							options={volumeSeriesOptions}
+							priceScale={volumePriceScaleOptions}
 						/>
 						<Series
 							data={data}
 							definition={CandlestickSeries}
 							onCrosshairMove={handleCrosshairMove}
 							options={candleOptions}
-							priceScale={config.candles.priceScale}
+							priceScale={candlePriceScaleOptions}
 						>
 							{minMax && (
 								<>
 									<PriceLine
 										options={{
-											...config.priceLine,
+											...minMaxPriceLineOptions[colorScheme],
 											price: minMax.min,
 											title: minMax.min === minMax.max ? "Min / Max" : "Min",
-											color: colors.text,
-											lineVisible: false,
 										}}
 									/>
 									{minMax.min !== minMax.max && (
 										<PriceLine
 											options={{
-												...config.priceLine,
+												...minMaxPriceLineOptions[colorScheme],
 												price: minMax.max,
 												title: "Max",
-												color: colors.text,
-												lineVisible: false,
 											}}
 										/>
 									)}
@@ -316,7 +292,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 								definition={LineSeries}
 								options={indicatorOptions}
 								pane={1}
-								priceScale={config.indicator.priceScale}
+								priceScale={indicatorPriceScaleOptions}
 							>
 								{indicatorPriceLines.map((options) => (
 									<PriceLine key={options.price} options={options} />

@@ -20,7 +20,7 @@ import (
 
 func TestValidateArgsRejectsRemovedTelegramWebhookCommand(t *testing.T) {
 	err := validateArgs([]string{"telegram", "set-webhook"})
-	if err == nil || err.Error() != "usage: crypto-scanner" {
+	if err == nil || err.Error() != "usage: crypto-scanner [healthcheck]" {
 		t.Fatalf("validateArgs() error = %v, want usage error", err)
 	}
 }

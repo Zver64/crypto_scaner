@@ -6,6 +6,18 @@ x-logging: &default-logging
     max-size: "10m"
     max-file: "3"
 
+x-hardening: &hardening
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  tmpfs: [/tmp]
+
+# Point the backend image at the Compose PostgreSQL service; everything else
+# comes from .env.
+x-database-env: &database-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -25,14 +37,10 @@ services:
       - postgres-data:/var/lib/postgresql
 
   migrate:
+    <<: *hardening
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      DATABASE_URL: ${DATABASE_URL:-}
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    env_file: .env
+    environment: *database-env
     logging: *default-logging
     depends_on:
       postgres:
@@ -42,17 +50,13 @@ services:
     restart: "no"
 
   backend:
+    <<: *hardening
     image: ${BACKEND_IMAGE:?BACKEND_IMAGE is required}
     env_file: .env
     environment:
+      <<: *database-env
       HTTP_ADDRESS: 0.0.0.0:8080
       API_DOCS_ENABLED: "false"
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      DATABASE_URL: ${DATABASE_URL:-}
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -60,17 +64,18 @@ services:
     stop_grace_period: ${BACKEND_STOP_GRACE_PERIOD:-30s}
     logging: *default-logging
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:8080/health/live"]
+      test: ["CMD", "/usr/local/bin/crypto-scanner", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 12
       start_period: 10s
 
   frontend:
+    <<: *hardening
     image: ${FRONTEND_IMAGE:?FRONTEND_IMAGE is required}
+    # nginx resolves the backend per request, so it only needs the network up.
     depends_on:
-      backend:
-        condition: service_healthy
+      - backend
     restart: unless-stopped
     logging: *default-logging
     healthcheck:

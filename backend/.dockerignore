@@ -1,11 +1,13 @@
-.git
 .scratch
 .env
 .env.*
-!.env.example
 bin
+http
 coverage.out
 *.coverprofile
+*.md
 .DS_Store
 .idea
 .vscode
+**/*_test.go
+**/testdata

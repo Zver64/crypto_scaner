@@ -27,6 +27,13 @@ func main() {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	if len(os.Args) > 1 {
+		if err := healthcheck(ctx); err != nil {
+			logFailure(logging.New(os.Stderr, "info"), "healthcheck", err)
+			os.Exit(1)
+		}
+		return
+	}
 	cfg, err := config.LoadServer()
 	if err != nil {
 		logFailure(logging.New(os.Stderr, "info"), "load_configuration", fmt.Errorf("load configuration: %w", err))
@@ -46,8 +53,8 @@ func main() {
 }
 
 func validateArgs(args []string) error {
-	if len(args) != 0 {
-		return fmt.Errorf("usage: crypto-scanner")
+	if len(args) != 0 && (len(args) != 1 || args[0] != "healthcheck") {
+		return fmt.Errorf("usage: crypto-scanner [healthcheck]")
 	}
 	return nil
 }

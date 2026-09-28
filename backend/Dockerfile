@@ -3,22 +3,21 @@ FROM golang:1.26-alpine AS build
 WORKDIR /src
 
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/crypto-scanner ./cmd/crypto-scanner \
-    && CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/migrate ./cmd/migrate
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/ ./cmd/...
 
-FROM alpine:3.23
-
-RUN apk add --no-cache ca-certificates tzdata \
-    && addgroup -S -g 10001 scanner \
-    && adduser -S -D -H -u 10001 -G scanner scanner
+# Distroless static ships CA certificates and time zone data, runs as a
+# non-root user, and has no shell; healthchecks use `crypto-scanner healthcheck`.
+FROM gcr.io/distroless/static-debian13:nonroot
 
 COPY --from=build /out/crypto-scanner /usr/local/bin/crypto-scanner
 COPY --from=build /out/migrate /usr/local/bin/migrate
 
-USER scanner
 EXPOSE 8080
 
 CMD ["/usr/local/bin/crypto-scanner"]

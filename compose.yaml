@@ -1,5 +1,11 @@
 name: crypto-scanner
 
+# Point the backend image at the Compose PostgreSQL service; everything else
+# comes from .env.
+x-database-env: &database-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -8,7 +14,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     ports:
-      - "${POSTGRES_HOST:-127.0.0.1}:${POSTGRES_PORT}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 2s
@@ -19,44 +25,42 @@ services:
       - postgres-data:/var/lib/postgresql
 
   migrate:
+    image: crypto-scanner-backend:dev
     build:
       context: ./backend
-    environment:
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      DATABASE_URL: ${DATABASE_URL:-}
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
+    env_file: .env
+    environment: *database-env
     depends_on:
       postgres:
         condition: service_healthy
     entrypoint: ["/usr/local/bin/migrate"]
     command: ["up"]
     restart: "no"
+    develop:
+      watch:
+        - action: rebuild
+          path: ./backend/migrations
 
   backend:
+    image: crypto-scanner-backend:dev
     build:
       context: ./backend
-    env_file:
-      - ./.env
+    env_file: .env
     environment:
+      <<: *database-env
       HTTP_ADDRESS: 0.0.0.0:8080
       API_DOCS_ENABLED: "true"
-      POSTGRES_HOST: postgres
-      POSTGRES_PORT: "5432"
-      DATABASE_URL: ${DATABASE_URL:-}
-      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
-      POSTGRES_DB: ${POSTGRES_DB:?POSTGRES_DB is required}
     stop_grace_period: ${BACKEND_STOP_GRACE_PERIOD:-30s}
+    # A watch rebuild after a new migration can start the backend before
+    # migrate finishes; the schema check fails and the restart retries.
+    restart: on-failure
     depends_on:
       migrate:
         condition: service_completed_successfully
     ports:
       - "127.0.0.1:8080:8080"
     healthcheck:
-      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1:8080/health/live"]
+      test: ["CMD", "/usr/local/bin/crypto-scanner", "healthcheck"]
       interval: 5s
       timeout: 3s
       retries: 12

@@ -24,6 +24,20 @@ export const priceHistoryChartConfig = {
 		},
 		series: { borderVisible: false },
 	},
+	volume: {
+		opacity: 0.4,
+		priceScale: {
+			// Volume bars use the bottom 20% of the candle pane, like TradingView.
+			scaleMargins: { bottom: 0, top: 0.8 },
+		},
+		series: {
+			lastValueVisible: false,
+			priceFormat: { type: "volume" },
+			priceLineVisible: false,
+			// An empty id puts the series on its own hidden overlay price scale.
+			priceScaleId: "",
+		},
+	},
 	indicator: {
 		priceScale: {
 			autoScale: true,

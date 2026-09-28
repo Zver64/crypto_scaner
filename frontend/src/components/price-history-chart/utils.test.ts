@@ -16,6 +16,7 @@ function candle(slot: number, close: number) {
 		high: close + 1,
 		low: close - 1,
 		open: close - 0.5,
+		volume: 100,
 		open_time: new Date(Date.parse(from) + slot * 3_600_000).toISOString(),
 	};
 }

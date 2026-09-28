@@ -1,4 +1,5 @@
 import {
+	alpha,
 	Box,
 	Center,
 	Loader,
@@ -14,6 +15,7 @@ import {
 	type CandlestickSeriesPartialOptions,
 	type CreatePriceLineOptions,
 	type DeepPartial,
+	HistogramSeries,
 	LineSeries,
 	type LineSeriesPartialOptions,
 	type Time,
@@ -49,6 +51,7 @@ import {
 	chartPriceResolution,
 	createCandlestickData,
 	createIndicatorData,
+	createVolumeData,
 	formatOhlc,
 	formatPrice,
 	getVisibleMinMax,
@@ -134,6 +137,14 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 			},
 		}),
 		[colors, formatTime, interval, intervals],
+	);
+	const volumeData = useMemo(
+		() =>
+			createVolumeData(data, candles, {
+				down: alpha(colors.down, config.volume.opacity),
+				up: alpha(colors.up, config.volume.opacity),
+			}),
+		[candles, colors, data],
 	);
 	const candleOptions = useMemo<CandlestickSeriesPartialOptions>(() => {
 		const { base, fractionDigits, minMove } = chartPriceResolution(data);
@@ -258,10 +269,18 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 						role="img"
 						style={{ height: config.height, width: "100%" }}
 					>
+						{/* Added first so the volume bars are drawn behind the candles. As the
+						first series to receive data, it also records the viewport first. */}
+						<Series
+							data={volumeData}
+							definition={HistogramSeries}
+							onBeforeDataChange={onBeforeDataChange}
+							options={config.volume.series}
+							priceScale={config.volume.priceScale}
+						/>
 						<Series
 							data={data}
 							definition={CandlestickSeries}
-							onBeforeDataChange={onBeforeDataChange}
 							onCrosshairMove={handleCrosshairMove}
 							options={candleOptions}
 							priceScale={config.candles.priceScale}

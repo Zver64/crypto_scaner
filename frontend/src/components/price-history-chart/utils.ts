@@ -4,6 +4,7 @@ import type {
 	ChartCandleSlot,
 	ChartIndicatorSlot,
 	ChartInterval,
+	ChartVolumeSlot,
 	IndicatorPoint,
 	PriceCandle,
 } from "@/components/price-history-chart/types";
@@ -54,6 +55,26 @@ export function createIndicatorData(
 	return data.map(({ time }) => {
 		const value = values.get(time);
 		return value === undefined ? { time } : { time, value };
+	});
+}
+
+export function createVolumeData(
+	data: readonly ChartCandleSlot[],
+	candles: readonly PriceCandle[],
+	colors: { down: string; up: string },
+): ChartVolumeSlot[] {
+	const volumes = new Map(
+		candles.map((candle) => [toUtcTimestamp(candle.open_time), candle]),
+	);
+	return data.map(({ time }) => {
+		const candle = volumes.get(time);
+		return candle === undefined
+			? { time }
+			: {
+					color: candle.close >= candle.open ? colors.up : colors.down,
+					time,
+					value: candle.volume,
+				};
 	});
 }
 

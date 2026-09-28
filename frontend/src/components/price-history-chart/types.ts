@@ -3,6 +3,8 @@ import type {
 	CandlestickSeriesPartialOptions,
 	CreatePriceLineOptions,
 	DeepPartial,
+	HistogramData,
+	HistogramSeriesPartialOptions,
 	LineData,
 	LineSeriesPartialOptions,
 	PriceScaleOptions,
@@ -18,6 +20,7 @@ export interface PriceCandle {
 	high: number;
 	low: number;
 	close: number;
+	volume: number;
 }
 export interface IndicatorPoint {
 	time: string;
@@ -72,6 +75,9 @@ export interface PriceHistoryChartProps {
 
 export type ChartCandle = CandlestickData<UTCTimestamp>;
 export type ChartCandleSlot = ChartCandle | WhitespaceData<UTCTimestamp>;
+export type ChartVolumeSlot =
+	| HistogramData<UTCTimestamp>
+	| WhitespaceData<UTCTimestamp>;
 export type ChartIndicatorSlot =
 	| LineData<UTCTimestamp>
 	| WhitespaceData<UTCTimestamp>;
@@ -86,6 +92,12 @@ export interface PriceHistoryChartConfig {
 	candles: {
 		priceScale: DeepPartial<PriceScaleOptions>;
 		series: CandlestickSeriesPartialOptions;
+	};
+	volume: {
+		// Translucency of the volume bars drawn behind the candles.
+		opacity: number;
+		priceScale: DeepPartial<PriceScaleOptions>;
+		series: HistogramSeriesPartialOptions;
 	};
 	indicator: {
 		priceScale: DeepPartial<PriceScaleOptions>;

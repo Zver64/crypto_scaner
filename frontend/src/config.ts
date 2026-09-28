@@ -1,6 +1,6 @@
 export const applicationConfig = {
 	marketCap: {
-		presets: [100, 500, 1000, 5000, 10000],
+		presets: [100, 500, 1000],
 	},
 	topMarketCap: {
 		resultLimit: 50,

@@ -134,7 +134,6 @@ export function MarketScanForm({
 							value: form.values.minimumMarketCapMillions,
 						},
 					]}
-					presetsPosition="below"
 					title="Market Cap"
 				/>
 				<Fieldset legend="RSI">

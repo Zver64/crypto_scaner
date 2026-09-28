@@ -1,4 +1,4 @@
-import { Button, Group, Stack, Text, TextInput } from "@mantine/core";
+import { Button, Group, NumberInput, Stack, Text } from "@mantine/core";
 import type { FormEvent } from "react";
 
 interface PriceAlertFormProps {
@@ -27,12 +27,16 @@ export function PriceAlertForm({
 	return (
 		<form onSubmit={onSubmit}>
 			<Stack gap="sm">
-				<TextInput
+				<NumberInput
+					allowNegative={false}
+					decimalScale={18}
 					description="Positive USDT price, up to 18 decimal places"
 					disabled={isSaving || (limitReached && !isEditing)}
 					error={targetError}
 					label={isEditing ? "Edit target" : "New target"}
-					onChange={(event) => onTargetChange(event.currentTarget.value)}
+					hideControls
+					// onChange converts to a JS number; the raw string keeps all 18 decimals.
+					onValueChange={({ value }) => onTargetChange(value)}
 					placeholder="0.00"
 					value={target}
 				/>

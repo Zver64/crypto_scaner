@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.22.0](https://github.com/Zver64/crypto_scaner/compare/v0.21.0...v0.22.0) (2026-09-28)
+
+
+### Features
+
+* add symbol filter to top market cap and favorites pages ([f370dc9](https://github.com/Zver64/crypto_scaner/commit/f370dc9879146c18825ebd42055b405f95bf33a6))
+* bound market history and harden exchange and alert feeds ([a8d6063](https://github.com/Zver64/crypto_scaner/commit/a8d6063d726cfbec7559a5f49bf4af976b687ed1))
+* derive spot grid count from a lower price markup slider ([0608992](https://github.com/Zver64/crypto_scaner/commit/0608992052267d017f7def5d2d4152a4d0119652))
+
+
+### Bug Fixes
+
+* fit indicator panes to visible values instead of the full range ([aea55fb](https://github.com/Zver64/crypto_scaner/commit/aea55fb373c5530b353c3738a414b39f53869349))
+
 ## [0.21.0](https://github.com/Zver64/crypto_scaner/compare/v0.20.0...v0.21.0) (2026-09-28)
 
 

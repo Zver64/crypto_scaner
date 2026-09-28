@@ -1,8 +1,12 @@
 import { applicationConfig } from "@/config";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import { settingsFromValidDraft } from "@/features/analysis/volatility-settings-form/utils";
-import type { MarketScanSortSearch } from "@/routes/-market-scan-search";
-import { parseMarketScanSortSearch } from "@/routes/-market-scan-search";
+import {
+	type MarketScanSortSearch,
+	parseMarketScanSortSearch,
+	parseSymbolFilterSearch,
+	type SymbolFilterSearch,
+} from "@/routes/-market-scan-search";
 
 export interface VolatilitySettingsSearch {
 	hourly_percentile: number;
@@ -13,7 +17,8 @@ export interface VolatilitySettingsSearch {
 
 export interface VolatilitySettingsSearchWithSort
 	extends VolatilitySettingsSearch,
-		MarketScanSortSearch {}
+		MarketScanSortSearch,
+		SymbolFilterSearch {}
 
 export function parseVolatilitySettingsSearch(
 	search: Record<string, unknown>,
@@ -25,6 +30,7 @@ export function parseVolatilitySettingsSearch(
 			settings ?? applicationConfig.topMarketCap.defaultSettings,
 		),
 		...parseMarketScanSortSearch(search),
+		...parseSymbolFilterSearch(search),
 	};
 }
 

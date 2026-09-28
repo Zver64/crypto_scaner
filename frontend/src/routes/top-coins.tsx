@@ -29,7 +29,11 @@ function TopCoinsPage() {
 					sort_direction: nextSort.direction,
 				});
 			}}
+			onSymbolFilterChange={(symbolFilter) => {
+				replaceUrlSearch({ symbol_filter: symbolFilter || undefined });
+			}}
 			sort={sort}
+			symbolFilter={search.symbol_filter ?? ""}
 		/>
 	);
 }

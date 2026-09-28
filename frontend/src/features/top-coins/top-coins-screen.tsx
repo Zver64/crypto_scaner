@@ -5,6 +5,7 @@ import {
 	Paper,
 	Stack,
 	Text,
+	TextInput,
 	useMatches,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
@@ -24,6 +25,7 @@ import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import { useVolatilitySettingsForm } from "@/features/analysis/volatility-settings-form/use-volatility-settings-form";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
+import { filterMarketScanRows } from "@/features/market-scan/results-table/utils";
 import type { MarketScanSort } from "@/features/market-scan/sort";
 import {
 	buildTopCoinsCriteria,
@@ -36,14 +38,18 @@ interface TopCoinsScreenProps {
 	initialSettings: VolatilitySettings;
 	onSettingsCommit(settings: VolatilitySettings): void;
 	onSortChange(sort: MarketScanSort): void;
+	onSymbolFilterChange(symbolFilter: string): void;
 	sort: MarketScanSort;
+	symbolFilter: string;
 }
 
 export function TopCoinsScreen({
 	initialSettings,
 	onSettingsCommit,
 	onSortChange,
+	onSymbolFilterChange,
 	sort,
+	symbolFilter,
 }: TopCoinsScreenProps) {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
@@ -76,7 +82,8 @@ export function TopCoinsScreen({
 			},
 		},
 	);
-	const rows = toTopCoinRows(query.data?.items ?? []);
+	const allRows = toTopCoinRows(query.data?.items ?? []);
+	const rows = filterMarketScanRows(allRows, symbolFilter);
 	useEffect(() => {
 		if (query.isError) {
 			notifications.show({
@@ -112,14 +119,36 @@ export function TopCoinsScreen({
 					</Paper>
 				) : null}
 				{query.data ? (
-					rows.length > 0 ? (
-						<MarketScanResultsTable
-							criteria={scanCriteria}
-							onSortChange={onSortChange}
-							rows={rows}
-							sort={sort}
-							window={query.data.price_history_window}
-						/>
+					allRows.length > 0 ? (
+						<>
+							<TextInput
+								aria-label="Filter Top Market Cap by symbol"
+								label="Symbol filter"
+								labelProps={{ mb: "xs" }}
+								onChange={(event) =>
+									onSymbolFilterChange(event.currentTarget.value)
+								}
+								placeholder="e.g. BTC"
+								size="md"
+								value={symbolFilter}
+							/>
+							{rows.length > 0 ? (
+								<MarketScanResultsTable
+									criteria={scanCriteria}
+									onSortChange={onSortChange}
+									rows={rows}
+									sort={sort}
+									window={query.data.price_history_window}
+								/>
+							) : (
+								<Paper p="xl" ta="center">
+									<Text fw={600}>No instruments match this symbol filter.</Text>
+									<Text c="dimmed" mt={4} size="sm">
+										Clear or change the filter to see all instruments.
+									</Text>
+								</Paper>
+							)}
+						</>
 					) : (
 						<Paper p="xl" ta="center">
 							<Text fw={600}>No market cap data is available.</Text>

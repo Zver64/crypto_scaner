@@ -15,11 +15,14 @@ export interface MarketScanSortSearch {
 	sort_direction?: MarketScanSortDirection;
 }
 
-export interface MarketScanSearch
-	extends ScanCriteriaSearch,
-		MarketScanSortSearch {
+export interface SymbolFilterSearch {
 	symbol_filter?: string;
 }
+
+export interface MarketScanSearch
+	extends ScanCriteriaSearch,
+		MarketScanSortSearch,
+		SymbolFilterSearch {}
 
 const sortColumns = new Set<MarketScanSortColumn>([
 	marketScanColumnKeys.dailyRange,
@@ -52,16 +55,20 @@ export function parseMarketScanSortSearch(
 export function parseMarketScanSearch(
 	search: Record<string, unknown>,
 ): MarketScanSearch {
-	const parsed: MarketScanSearch = {
+	return {
 		...parseOptionalScanCriteriaSearch(search),
 		...parseMarketScanSortSearch(search),
+		...parseSymbolFilterSearch(search),
 	};
-	const symbolFilter = search.symbol_filter;
-	if (typeof symbolFilter === "string" && symbolFilter.length > 0) {
-		parsed.symbol_filter = symbolFilter;
-	}
+}
 
-	return parsed;
+export function parseSymbolFilterSearch(
+	search: Record<string, unknown>,
+): SymbolFilterSearch {
+	const symbolFilter = search.symbol_filter;
+	return typeof symbolFilter === "string" && symbolFilter.length > 0
+		? { symbol_filter: symbolFilter }
+		: {};
 }
 
 export function marketScanSortFromSearch(

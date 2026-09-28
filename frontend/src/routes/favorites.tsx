@@ -27,7 +27,11 @@ function FavoritesPage() {
 					sort_direction: sort.direction,
 				});
 			}}
+			onSymbolFilterChange={(symbolFilter) => {
+				replaceUrlSearch({ symbol_filter: symbolFilter || undefined });
+			}}
 			sort={marketScanSortFromSearch(search)}
+			symbolFilter={search.symbol_filter ?? ""}
 		/>
 	);
 }

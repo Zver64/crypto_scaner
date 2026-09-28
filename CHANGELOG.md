@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.23.0](https://github.com/Zver64/crypto_scaner/compare/v0.22.0...v0.23.0) (2026-09-28)
+
+
+### Features
+
+* add daily and weekly max RSI filter to market scan ([1b8ce98](https://github.com/Zver64/crypto_scaner/commit/1b8ce9816861fdbb6fcde85aff91ffea84ca75f6))
+* shorten Telegram price alert message ([7de36f3](https://github.com/Zver64/crypto_scaner/commit/7de36f3fee2606a6c71dd7a157224bea89c271f8))
+
 ## [0.22.0](https://github.com/Zver64/crypto_scaner/compare/v0.21.0...v0.22.0) (2026-09-28)
 
 

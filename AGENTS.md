@@ -2,6 +2,7 @@
 
 Telegram Mini App for scanning cryptocurrency markets and analyzing instruments.
 
+## Pi agents
 Agent and subagent orchestration is done via herdr.
 
 ## Project structure

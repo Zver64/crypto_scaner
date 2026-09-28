@@ -1,3 +1,16 @@
+import type {
+	CandlestickData,
+	CandlestickSeriesPartialOptions,
+	CreatePriceLineOptions,
+	DeepPartial,
+	LineData,
+	LineSeriesPartialOptions,
+	PriceScaleOptions,
+	TimeChartOptions,
+	UTCTimestamp,
+	WhitespaceData,
+} from "lightweight-charts";
+
 export type ChartInterval = string;
 export interface PriceCandle {
 	open_time: string;
@@ -55,4 +68,28 @@ export interface PriceHistoryChartProps {
 	paperPadding: string;
 	source: PriceHistorySource;
 	symbol: string;
+}
+
+export type ChartCandle = CandlestickData<UTCTimestamp>;
+export type ChartCandleSlot = ChartCandle | WhitespaceData<UTCTimestamp>;
+export type ChartIndicatorSlot =
+	| LineData<UTCTimestamp>
+	| WhitespaceData<UTCTimestamp>;
+
+export interface PriceHistoryChartConfig {
+	height: number;
+	paneStretchFactors: readonly number[];
+	viewport: { loadOlderThreshold: number; minVisibleBars: number };
+	chart: DeepPartial<TimeChartOptions> & {
+		timeScale: { barSpacing: number };
+	};
+	candles: {
+		priceScale: DeepPartial<PriceScaleOptions>;
+		series: CandlestickSeriesPartialOptions;
+	};
+	indicator: {
+		priceScale: DeepPartial<PriceScaleOptions>;
+		series: LineSeriesPartialOptions;
+	};
+	priceLine: Partial<CreatePriceLineOptions>;
 }

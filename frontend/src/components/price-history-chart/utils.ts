@@ -1,18 +1,16 @@
+import type { IRange, UTCTimestamp } from "lightweight-charts";
 import type {
+	ChartCandle,
 	ChartCandleSlot,
-	ChartCandlestick,
 	ChartIndicatorSlot,
-	ChartLogicalRange,
-} from "@/components/lightweight-chart";
-import type {
 	ChartInterval,
 	IndicatorPoint,
 	PriceCandle,
 } from "@/components/price-history-chart/types";
 import { formatNumber } from "@/utils/number-format";
 
-export function toUtcTimestamp(value: string): number {
-	return Date.parse(value) / 1_000;
+export function toUtcTimestamp(value: string): UTCTimestamp {
+	return (Date.parse(value) / 1_000) as UTCTimestamp;
 }
 
 export function createCandlestickData(
@@ -61,7 +59,7 @@ export function createIndicatorData(
 
 export function getVisibleMinMax(
 	data: readonly ChartCandleSlot[],
-	range: ChartLogicalRange | null,
+	range: IRange<number> | null,
 ): { min: number; max: number } | null {
 	if (range === null) return null;
 	const from = Math.max(0, Math.floor(range.from));
@@ -84,17 +82,42 @@ export function formatPrice(
 	return formatNumber(value, maximumFractionDigits);
 }
 
-export function formatOhlc(candle: PriceCandle | ChartCandlestick): string {
+export function formatOhlc(
+	candle: Pick<PriceCandle, "open" | "high" | "low" | "close">,
+): string {
 	return `O ${formatPrice(candle.open)}  H ${formatPrice(candle.high)}  L ${formatPrice(candle.low)}  C ${formatPrice(candle.close)}`;
 }
 
-export function isChartCandle(value: unknown): value is ChartCandlestick {
+export function isChartCandle(value: unknown): value is ChartCandle {
 	return (
 		typeof value === "object" &&
 		value !== null &&
+		"time" in value &&
+		typeof value.time === "number" &&
 		"open" in value &&
 		"high" in value &&
 		"low" in value &&
 		"close" in value
 	);
+}
+
+export function chartPriceResolution(data: readonly ChartCandleSlot[]): {
+	base: number;
+	fractionDigits: number;
+	minMove: number;
+} {
+	const prices = data.flatMap((item) =>
+		"open" in item ? [item.open, item.high, item.low, item.close] : [],
+	);
+	const smallest = Math.min(...prices.filter((price) => price > 0));
+	// Eight significant digits (at least cents), with a valid decimal tick base.
+	const exponent = Number.isFinite(smallest)
+		? Math.min(308, Math.max(2, 7 - Math.floor(Math.log10(smallest))))
+		: 2;
+	return {
+		base: 10 ** exponent,
+		// Intl accepts at most 100 fraction digits.
+		fractionDigits: Math.min(100, exponent),
+		minMove: 10 ** -exponent,
+	};
 }

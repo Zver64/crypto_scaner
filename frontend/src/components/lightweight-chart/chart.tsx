@@ -1,10 +1,4 @@
-import {
-	ColorType,
-	createChart,
-	type DeepPartial,
-	type Time,
-	type TimeChartOptions,
-} from "lightweight-charts";
+import { createChart } from "lightweight-charts";
 import {
 	forwardRef,
 	useImperativeHandle,
@@ -17,36 +11,8 @@ import {
 } from "@/components/lightweight-chart/context";
 import type {
 	ChartCanvasHandle,
-	ChartCanvasOptions,
 	ChartCanvasProps,
 } from "@/components/lightweight-chart/types";
-
-function toChartOptions(
-	options: ChartCanvasOptions,
-): DeepPartial<TimeChartOptions> {
-	return {
-		layout: {
-			background: { color: options.background, type: ColorType.Solid },
-			textColor: options.text,
-		},
-		grid: {
-			horzLines: { color: options.grid },
-			vertLines: { color: options.grid },
-		},
-		localization: {
-			timeFormatter: (time: Time) =>
-				typeof time === "number" ? options.timeFormatter(time) : String(time),
-		},
-		rightPriceScale: { borderColor: options.grid },
-		timeScale: {
-			barSpacing: options.barSpacing,
-			borderColor: options.grid,
-			minBarSpacing: options.minBarSpacing,
-			secondsVisible: false,
-			timeVisible: options.timeVisible,
-		},
-	};
-}
 
 export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 	function ChartCanvas(
@@ -80,7 +46,7 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 						isRemoved = false;
 						generation++;
 						chartApi = createChart(container, {
-							...toChartOptions(optionsRef.current),
+							...optionsRef.current,
 							height: container.clientHeight,
 							width: container.clientWidth,
 						});
@@ -141,7 +107,7 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 
 		useLayoutEffect(() => {
 			optionsRef.current = options;
-			lifecycle.api().applyOptions(toChartOptions(options));
+			lifecycle.api().applyOptions(options);
 		}, [lifecycle, options]);
 
 		useLayoutEffect(() => {

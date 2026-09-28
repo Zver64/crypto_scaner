@@ -1,8 +1,6 @@
+import type { IRange } from "lightweight-charts";
 import { useCallback, useLayoutEffect, useRef, useState } from "react";
-import type {
-	ChartCanvasHandle,
-	ChartLogicalRange,
-} from "@/components/lightweight-chart";
+import type { ChartCanvasHandle } from "@/components/lightweight-chart";
 
 interface ViewportOptions {
 	barWidth: number;
@@ -26,16 +24,14 @@ export function useChartViewport({
 	threshold,
 }: ViewportOptions) {
 	const chartRef = useRef<ChartCanvasHandle>(null);
-	const [visibleRange, setVisibleRange] = useState<ChartLogicalRange | null>(
-		null,
-	);
+	const [visibleRange, setVisibleRange] = useState<IRange<number> | null>(null);
 	const chartInstanceRef = useRef<{
 		handle: ChartCanvasHandle;
 		generation: number;
 	} | null>(null);
 	const previousLengthRef = useRef(0);
 	const previousFirstTimeRef = useRef<number | undefined>(undefined);
-	const previousRangeRef = useRef<ChartLogicalRange | null>(null);
+	const previousRangeRef = useRef<IRange<number> | null>(null);
 
 	const onBeforeDataChange = useCallback(() => {
 		const chartHandle = chartRef.current;
@@ -45,7 +41,7 @@ export function useChartViewport({
 				: chartHandle.getVisibleLogicalRange();
 	}, []);
 	const onVisibleLogicalRangeChange = useCallback(
-		(range: ChartLogicalRange | null) => {
+		(range: IRange<number> | null) => {
 			setVisibleRange(range);
 			if (
 				range !== null &&

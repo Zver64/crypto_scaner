@@ -67,8 +67,8 @@ describe("price history chart data", () => {
 
 	it("formats OHLC with useful price precision", () => {
 		expect(formatPrice(0.0000123456789)).toBe("0.0000123");
-		expect(
-			formatOhlc({ open: 1, high: 2, low: 0.5, close: 1.5, time: 0 }),
-		).toBe("O 1  H 2  L 0.5  C 1.5");
+		expect(formatOhlc({ open: 1, high: 2, low: 0.5, close: 1.5 })).toBe(
+			"O 1  H 2  L 0.5  C 1.5",
+		);
 	});
 });

@@ -1,9 +1,7 @@
 import type {
 	DeepPartial,
 	IPriceLine,
-	IPriceScaleApi,
 	ISeriesApi,
-	MouseEventParams,
 	PriceScaleOptions,
 	SeriesDataItemTypeMap,
 	SeriesDefinition,
@@ -17,19 +15,14 @@ import {
 	useChartLifecycle,
 } from "@/components/lightweight-chart/context";
 
-export type SeriesCrosshairHandler<T extends SeriesType> = (
-	data: SeriesDataItemTypeMap<Time>[T] | undefined,
-	parameter: MouseEventParams<Time>,
-) => void;
-
 interface UseSeriesOptions<T extends SeriesType> {
 	data: readonly SeriesDataItemTypeMap<Time>[T][];
 	definition: SeriesDefinition<T>;
 	onBeforeDataChange?(): void;
-	onCrosshairMove?: SeriesCrosshairHandler<T>;
-	options?: SeriesPartialOptionsMap[T];
+	onCrosshairMove?(value: SeriesDataItemTypeMap<Time>[T] | undefined): void;
+	options: SeriesPartialOptionsMap[T];
 	pane: number;
-	priceScaleOptions?: DeepPartial<PriceScaleOptions>;
+	priceScale?: DeepPartial<PriceScaleOptions>;
 }
 
 interface SeriesBinding<T extends SeriesType> {
@@ -44,8 +37,8 @@ export function useSeries<T extends SeriesType>({
 	onCrosshairMove,
 	options,
 	pane,
-	priceScaleOptions,
-}: UseSeriesOptions<T>): SeriesBinding<T> {
+	priceScale,
+}: UseSeriesOptions<T>): SeriesLifecycle {
 	const parent = useChartLifecycle();
 	const definitionRef = useRef(definition);
 	const optionsRef = useRef(options);
@@ -107,7 +100,7 @@ export function useSeries<T extends SeriesType>({
 	}, [binding]);
 
 	useLayoutEffect(() => {
-		if (options !== undefined) binding.series().applyOptions(options);
+		binding.series().applyOptions(options);
 	}, [binding, options]);
 
 	useLayoutEffect(() => {
@@ -118,11 +111,8 @@ export function useSeries<T extends SeriesType>({
 	useLayoutEffect(() => {
 		const series = binding.series();
 		series.moveToPane(pane);
-		if (priceScaleOptions !== undefined) {
-			const priceScale: IPriceScaleApi = series.priceScale();
-			priceScale.applyOptions(priceScaleOptions);
-		}
-	}, [binding, pane, priceScaleOptions]);
+		if (priceScale !== undefined) series.priceScale().applyOptions(priceScale);
+	}, [binding, pane, priceScale]);
 
 	useLayoutEffect(() => {
 		if (!hasCrosshairHandler) return;
@@ -133,7 +123,7 @@ export function useSeries<T extends SeriesType>({
 			const value = parameter.seriesData.get(binding.series()) as
 				| SeriesDataItemTypeMap<Time>[T]
 				| undefined;
-			crosshairRef.current?.(value, parameter);
+			crosshairRef.current?.(value);
 		};
 		chart.subscribeCrosshairMove(handleCrosshairMove);
 		return () => {
@@ -143,5 +133,5 @@ export function useSeries<T extends SeriesType>({
 		};
 	}, [binding, hasCrosshairHandler, parent]);
 
-	return binding;
+	return binding.context;
 }

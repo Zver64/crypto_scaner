@@ -143,10 +143,6 @@ export function PriceAlertsController({
 					<Title order={2} size="h4">
 						Price alerts
 					</Title>
-					<Text c="dimmed" size="sm">
-						One Telegram message is attempted when a live trade touches or
-						crosses the target.
-					</Text>
 				</div>
 				<PriceAlertList
 					alerts={query.data?.items ?? []}

@@ -1,136 +1,17 @@
-import type { ReactNode } from "react";
-import type {
-	PriceHistoryWindow,
-	UnresolvedInstrument,
-} from "@/api/generated/models";
+import type { UnresolvedInstrument } from "@/api/generated/models";
 import type { DataTableColumn } from "@/components/data-table";
-import { ExternalLink } from "@/components/external-link";
-import { PercentChange } from "@/components/percent-change";
-import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
-import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
-import {
-	binanceSpotUrl,
-	type MarketScanRow,
-	marketCapUnavailableReason,
-	oscillatorColor,
-} from "@/features/market-scan/results-table/utils";
-import { formatMarketCapUsd } from "@/utils/market-cap";
-import { formatRangePercent } from "@/utils/range-percent";
-
-interface MarketScanColumn {
-	key: (typeof marketScanColumnKeys)[keyof typeof marketScanColumnKeys];
-	header: string;
-	cell(row: MarketScanRow, window: PriceHistoryWindow | undefined): ReactNode;
-	sortable?: boolean;
-	textAlign?: DataTableColumn<MarketScanRow>["textAlign"];
-}
-
-// This is the complete, ordered table definition. Criteria do not configure it.
-export const marketScanColumns = [
-	{
-		key: marketScanColumnKeys.symbol,
-		header: "Symbol",
-		cell: (row) => row.symbol,
-	},
-	{
-		key: marketScanColumnKeys.marketCap,
-		header: "MCap",
-		cell: (row) =>
-			row.marketCapUsd === null ? "—" : formatMarketCapUsd(row.marketCapUsd),
-		sortable: true,
-	},
-	{
-		key: marketScanColumnKeys.dailyRange,
-		header: "D Range",
-		cell: (row) =>
-			row.dailyRangePercent === null
-				? "—"
-				: formatRangePercent(row.dailyRangePercent),
-		sortable: true,
-	},
-	{
-		key: marketScanColumnKeys.hourlyRange,
-		header: "H Range",
-		cell: (row) =>
-			row.hourlyRangePercent === null
-				? "—"
-				: formatRangePercent(row.hourlyRangePercent),
-		sortable: true,
-	},
-	{
-		key: marketScanColumnKeys.dailyRsi14,
-		header: "d-rsi-14",
-		cell: (row) => <OscillatorValue value={row.dailyRsi14} />,
-		sortable: true,
-	},
-	{
-		key: marketScanColumnKeys.weeklyRsi14,
-		header: "w-rsi-14",
-		cell: (row) => <OscillatorValue value={row.weeklyRsi14} />,
-		sortable: true,
-	},
-	{
-		key: marketScanColumnKeys.sevenDayChangePercent,
-		header: "7d %",
-		cell: (row) => <PercentChange value={row.sevenDayChangePercent} />,
-		sortable: true,
-	},
-	{
-		key: marketScanColumnKeys.priceHistory,
-		header: "7d chart",
-		cell: (row, window) =>
-			window ? (
-				<PriceHistoryChart
-					prices={row.priceHistory}
-					symbol={row.symbol}
-					window={window}
-				/>
-			) : (
-				"—"
-			),
-	},
-	{
-		key: marketScanColumnKeys.binance,
-		header: "Binance",
-		cell: (row) => {
-			const url = binanceSpotUrl(row.symbol);
-			return url ? (
-				<ExternalLink
-					ariaLabel={`Open ${row.symbol} on Binance Spot`}
-					href={url}
-				/>
-			) : (
-				"—"
-			);
-		},
-		textAlign: "center",
-	},
-] as const satisfies readonly MarketScanColumn[];
-
-export type MarketScanSortColumn = Extract<
-	(typeof marketScanColumns)[number],
-	{ sortable: true }
->["key"];
+import { marketCapUnavailableReason } from "@/features/market-scan/results-table/utils";
 
 export const unresolvedInstrumentColumns: readonly DataTableColumn<UnresolvedInstrument>[] =
 	[
 		{
-			key: marketScanColumnKeys.symbol,
+			key: "symbol",
 			header: "Symbol",
 			cell: (item) => item.symbol,
 		},
 		{
-			key: marketScanColumnKeys.reason,
+			key: "reason",
 			header: "Reason",
 			cell: (item) => marketCapUnavailableReason(item.code),
 		},
 	];
-
-function OscillatorValue({ value }: { value: number | null }) {
-	if (value === null) {
-		return "—";
-	}
-	return (
-		<span style={{ color: oscillatorColor(value) }}>{value.toFixed(1)}</span>
-	);
-}

@@ -61,17 +61,17 @@ describe("Top Market Cap URL state", () => {
 		const parsed = parseVolatilitySettingsSearch({
 			...customSearch,
 			period: 0,
-			sort_column: "hourlyRangePercent",
+			sort_column: "hourly_range_percent",
 			sort_direction: "asc",
 		});
 
 		expect(parsed).toEqual({
 			...defaultSearch,
-			sort_column: "hourlyRangePercent",
+			sort_column: "hourly_range_percent",
 			sort_direction: "asc",
 		});
 		expect(marketScanSortFromSearch(parsed)).toEqual({
-			column: "hourlyRangePercent",
+			column: "hourly_range_percent",
 			direction: "asc",
 		});
 	});
@@ -79,7 +79,7 @@ describe("Top Market Cap URL state", () => {
 	it("serializes all four committed settings without overwriting sort", () => {
 		const currentSearch = parseVolatilitySettingsSearch({
 			...defaultSearch,
-			sort_column: "marketCapUsd",
+			sort_column: "market_cap_usd",
 			sort_direction: "desc",
 		});
 		const settingsUpdate = volatilitySettingsToSearch({
@@ -92,7 +92,7 @@ describe("Top Market Cap URL state", () => {
 		expect(settingsUpdate).toEqual(customSearch);
 		expect({ ...currentSearch, ...settingsUpdate }).toEqual({
 			...customSearch,
-			sort_column: "marketCapUsd",
+			sort_column: "market_cap_usd",
 			sort_direction: "desc",
 		});
 	});
@@ -100,7 +100,7 @@ describe("Top Market Cap URL state", () => {
 	it("preserves settings when sort is updated key-wise", () => {
 		const currentSearch = parseVolatilitySettingsSearch(customSearch);
 		const sortUpdate = {
-			sort_column: "dailyRangePercent" as const,
+			sort_column: "daily_range_percent" as const,
 			sort_direction: "asc" as const,
 		};
 

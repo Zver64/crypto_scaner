@@ -12,8 +12,15 @@ import (
 
 type Factory struct{}
 
-func New() Factory           { return Factory{} }
-func (Factory) Name() string { return "volatility" }
+func New() Factory { return Factory{} }
+
+// Name identifies the criterion, and RangePercentMetric its evaluated range.
+const (
+	Name               = "volatility"
+	RangePercentMetric = "range_percent"
+)
+
+func (Factory) Name() string { return Name }
 
 func (Factory) Build(parameters map[string]any) (analysis.Criterion, error) {
 	if len(parameters) != 4 {
@@ -38,7 +45,7 @@ type criterion struct {
 	percentile, minimum float64
 }
 
-func (criterion) Name() string { return "volatility" }
+func (criterion) Name() string { return Name }
 func (c criterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: c.unit, Count: c.period}}
 }
@@ -58,7 +65,7 @@ func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.E
 		ranges[i] = ((candle.High - candle.Low) / candle.Open) * 100
 	}
 	value := exceedancePercentile(ranges, c.percentile)
-	return analysis.Evaluation{Name: c.Name(), Matched: value >= c.minimum, Metrics: map[string]float64{"range_percent": value}, CandleCount: len(candles), From: candles[0].OpenTime.UTC(), To: candles[len(candles)-1].OpenTime.UTC()}, nil
+	return analysis.Evaluation{Name: c.Name(), Unit: c.unit, Matched: value >= c.minimum, Metrics: map[string]float64{RangePercentMetric: value}, CandleCount: len(candles), From: candles[0].OpenTime.UTC(), To: candles[len(candles)-1].OpenTime.UTC()}, nil
 }
 
 func number(value any) (float64, bool) { number, ok := value.(float64); return number, ok }

@@ -35,6 +35,11 @@ function response(matchedCount: number): MarketAnalysisResponse {
 		insufficient_data_count: 0,
 		items: [],
 		matched_count: matchedCount,
+		table: {
+			columns: [],
+			default_sort: { column: "market_cap_usd", direction: "desc" },
+			rows: [],
+		},
 		price_history_window: {
 			from: "2024-01-01T00:00:00.000Z",
 			to: "2024-01-08T00:00:00.000Z",

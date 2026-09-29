@@ -17,7 +17,10 @@ import (
 	"crypto-scanner/internal/auth"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/httpapi"
+	"crypto-scanner/internal/indicator"
+	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/markettable"
 	"crypto-scanner/internal/platform/logging"
 )
 
@@ -202,7 +205,7 @@ func TestAnalysisSchemaValidationRejectsRequestsBeforeService(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &countingAnalysis{}
-			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service}, httpapi.Options{}, passThrough)
+			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
 			response := analysisRequestTo(t, handler, test.path, test.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -239,7 +242,7 @@ func TestMarketAnalysisPreservesOmittedAndZeroLimitWithOptionalSort(t *testing.T
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &countingAnalysis{}
-			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service}, httpapi.Options{}, passThrough)
+			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
 			response := analysisRequestTo(t, handler, "/api/v1/analysis/market", test.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -407,10 +410,10 @@ func (service *countingAnalysis) AnalyzeSymbol(context.Context, analysis.SymbolR
 	return analysis.SymbolResult{}, analysis.ErrInvalidArgument
 }
 
-func (service *countingAnalysis) Search(_ context.Context, request analysis.SearchRequest) (analysis.SearchResult, error) {
+func (service *countingAnalysis) Search(_ context.Context, request analysis.SearchRequest) (markettable.Result, error) {
 	service.searchCalls++
 	service.searchRequest = request
-	return analysis.SearchResult{}, analysis.ErrInvalidArgument
+	return markettable.Result{}, analysis.ErrInvalidArgument
 }
 
 type enabledUserStore struct{}
@@ -421,8 +424,17 @@ func (enabledUserStore) FindEnabledByTelegramID(context.Context, int64) (auth.Us
 func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysis.Factory) http.Handler {
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
 	service, _ := analysis.NewService(store, nil, factories...)
+	registry, _ := indicator.NewRegistry(indicatortalib.New()...)
+	table, err := markettable.NewCatalog(registry, markettable.Sort{Column: "market_cap_usd", Direction: markettable.Descending},
+		markettable.Column{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
+		markettable.Column{ID: "market_cap_usd", Title: "MCap", Kind: markettable.KindUSDCompact, Sortable: true, Source: markettable.CriterionMetric{Criterion: "market_cap", Metric: "market_cap_usd"}},
+		markettable.Column{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{}},
+	)
+	if err != nil {
+		panic(err)
+	}
 	authenticator := authtelegram.New(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
-	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, Authenticator: authenticator}, httpapi.Options{})
+	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: markettable.NewService(service, table), Authenticator: authenticator}, httpapi.Options{})
 }
 
 type httpStore struct {

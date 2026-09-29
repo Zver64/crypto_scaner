@@ -244,9 +244,6 @@ type unavailableAnalysis struct{}
 func (unavailableAnalysis) AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error) {
 	return analysis.SymbolResult{}, analysis.ErrMarketDataUnavailable
 }
-func (unavailableAnalysis) Search(context.Context, analysis.SearchRequest) (analysis.SearchResult, error) {
-	return analysis.SearchResult{}, analysis.ErrMarketDataUnavailable
-}
 
 func passThrough(next http.Handler) http.Handler { return next }
 

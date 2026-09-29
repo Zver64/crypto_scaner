@@ -13,10 +13,9 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { Evaluation } from './evaluation.ts';
+import type { TableCell } from './tableCell.ts';
 
-export interface MarketAnalysisItem {
-  symbol: string;
-  matched: boolean;
-  evaluations: Evaluation[];
-}
+/**
+ * Cells keyed by column id. Columns of kind `text` and `favorite` have no cell.
+ */
+export type TableRowCells = {[key: string]: TableCell};

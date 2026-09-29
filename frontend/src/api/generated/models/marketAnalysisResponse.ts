@@ -15,11 +15,13 @@
  */
 import type { InsufficientDataInstrument } from './insufficientDataInstrument.ts';
 import type { MarketAnalysisItem } from './marketAnalysisItem.ts';
+import type { MarketTable } from './marketTable.ts';
 import type { PriceHistoryWindow } from './priceHistoryWindow.ts';
 import type { UnresolvedInstrument } from './unresolvedInstrument.ts';
 import type { Warning } from './warning.ts';
 
 export interface MarketAnalysisResponse {
+  table: MarketTable;
   price_history_window: PriceHistoryWindow;
   /** @minimum 0 */
   matched_count: number;

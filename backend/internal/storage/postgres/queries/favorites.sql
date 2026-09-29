@@ -9,13 +9,6 @@ WHERE f.user_id = $1
 GROUP BY i.id, i.symbol, i.base_asset, i.quote_asset, i.exchange_status, i.is_active, f.created_at
 ORDER BY f.created_at DESC, i.symbol;
 
--- name: ListFavoriteSymbols :many
-SELECT i.symbol
-FROM app.favorites f
-JOIN binance_spot.instruments i ON i.id = f.instrument_id
-WHERE f.user_id = $1 AND i.is_active
-ORDER BY i.symbol;
-
 -- name: GetFavorite :one
 SELECT i.id AS instrument_id, i.symbol, i.base_asset, i.quote_asset,
        i.is_active, f.created_at,

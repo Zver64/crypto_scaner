@@ -13,10 +13,12 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { Evaluation } from './evaluation.ts';
+import type { TableColumnKind } from './tableColumnKind.ts';
 
-export interface MarketAnalysisItem {
-  symbol: string;
-  matched: boolean;
-  evaluations: Evaluation[];
+export interface TableColumn {
+  id: string;
+  title: string;
+  kind: TableColumnKind;
+  /** Sortable columns are numeric and sorted by the cell `value`. */
+  sortable: boolean;
 }

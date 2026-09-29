@@ -280,16 +280,16 @@ func (e LivenessResponseStatus) Valid() bool {
 
 // Defines values for MarketSortDirection.
 const (
-	Asc  MarketSortDirection = "asc"
-	Desc MarketSortDirection = "desc"
+	MarketSortDirectionAsc  MarketSortDirection = "asc"
+	MarketSortDirectionDesc MarketSortDirection = "desc"
 )
 
 // Valid indicates whether the value is a known member of the MarketSortDirection enum.
 func (e MarketSortDirection) Valid() bool {
 	switch e {
-	case Asc:
+	case MarketSortDirectionAsc:
 		return true
-	case Desc:
+	case MarketSortDirectionDesc:
 		return true
 	default:
 		return false
@@ -359,6 +359,63 @@ func (e ReadinessResponseStatus) Valid() bool {
 	case NotReady:
 		return true
 	case Ready:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TableColumnKind.
+const (
+	TableColumnKindCount         TableColumnKind = "count"
+	TableColumnKindFavorite      TableColumnKind = "favorite"
+	TableColumnKindLink          TableColumnKind = "link"
+	TableColumnKindOscillator    TableColumnKind = "oscillator"
+	TableColumnKindPercentChange TableColumnKind = "percent_change"
+	TableColumnKindRangePercent  TableColumnKind = "range_percent"
+	TableColumnKindSparkline     TableColumnKind = "sparkline"
+	TableColumnKindText          TableColumnKind = "text"
+	TableColumnKindUsdCompact    TableColumnKind = "usd_compact"
+)
+
+// Valid indicates whether the value is a known member of the TableColumnKind enum.
+func (e TableColumnKind) Valid() bool {
+	switch e {
+	case TableColumnKindCount:
+		return true
+	case TableColumnKindFavorite:
+		return true
+	case TableColumnKindLink:
+		return true
+	case TableColumnKindOscillator:
+		return true
+	case TableColumnKindPercentChange:
+		return true
+	case TableColumnKindRangePercent:
+		return true
+	case TableColumnKindSparkline:
+		return true
+	case TableColumnKindText:
+		return true
+	case TableColumnKindUsdCompact:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TableSortDirection.
+const (
+	TableSortDirectionAsc  TableSortDirection = "asc"
+	TableSortDirectionDesc TableSortDirection = "desc"
+)
+
+// Valid indicates whether the value is a known member of the TableSortDirection enum.
+func (e TableSortDirection) Valid() bool {
+	switch e {
+	case TableSortDirectionAsc:
+		return true
+	case TableSortDirectionDesc:
 		return true
 	default:
 		return false
@@ -489,25 +546,6 @@ type ChartPageResponse struct {
 	Symbol     string                 `json:"symbol"`
 }
 
-// ClosedIndicator defines model for ClosedIndicator.
-type ClosedIndicator struct {
-	Interval CandleInterval `json:"interval"`
-
-	// OpenTime Open time of the latest stored closed candle; null without any history.
-	OpenTime *time.Time `json:"open_time"`
-
-	// Outputs Named outputs at that candle; empty when its continuous history is insufficient.
-	Outputs    []ClosedIndicatorOutput `json:"outputs"`
-	Parameters map[string]interface{}  `json:"parameters"`
-	Type       string                  `json:"type"`
-}
-
-// ClosedIndicatorOutput defines model for ClosedIndicatorOutput.
-type ClosedIndicatorOutput struct {
-	Name  string  `json:"name"`
-	Value float64 `json:"value"`
-}
-
 // CriterionRequest defines model for CriterionRequest.
 type CriterionRequest struct {
 	Key        string                 `json:"key"`
@@ -536,15 +574,12 @@ type Evaluation struct {
 
 // Favorite defines model for Favorite.
 type Favorite struct {
-	Active     bool   `json:"active"`
-	AlertCount int    `json:"alert_count"`
-	BaseAsset  string `json:"base_asset"`
-
-	// ClosedIndicators Indicator values at the latest closed candle, independent of analysis criteria.
-	ClosedIndicators []ClosedIndicator `json:"closed_indicators"`
-	CreatedAt        time.Time         `json:"created_at"`
-	QuoteAsset       string            `json:"quote_asset"`
-	Symbol           string            `json:"symbol"`
+	Active     bool      `json:"active"`
+	AlertCount int       `json:"alert_count"`
+	BaseAsset  string    `json:"base_asset"`
+	CreatedAt  time.Time `json:"created_at"`
+	QuoteAsset string    `json:"quote_asset"`
+	Symbol     string    `json:"symbol"`
 }
 
 // FavoritesResponse defines model for FavoritesResponse.
@@ -643,12 +678,9 @@ type LivenessResponseStatus string
 
 // MarketAnalysisItem defines model for MarketAnalysisItem.
 type MarketAnalysisItem struct {
-	// ClosedIndicators Indicator values at the latest closed candle.
-	ClosedIndicators []ClosedIndicator `json:"closed_indicators"`
-	Evaluations      []Evaluation      `json:"evaluations"`
-	Matched          bool              `json:"matched"`
-	PriceHistory     []*float64        `json:"price_history"`
-	Symbol           string            `json:"symbol"`
+	Evaluations []Evaluation `json:"evaluations"`
+	Matched     bool         `json:"matched"`
+	Symbol      string       `json:"symbol"`
 }
 
 // MarketAnalysisRequest defines model for MarketAnalysisRequest.
@@ -668,8 +700,14 @@ type MarketAnalysisResponse struct {
 	Items                 []MarketAnalysisItem         `json:"items"`
 	MatchedCount          int                          `json:"matched_count"`
 	PriceHistoryWindow    PriceHistoryWindow           `json:"price_history_window"`
-	Unresolved            []UnresolvedInstrument       `json:"unresolved"`
-	Warnings              []Warning                    `json:"warnings"`
+
+	// Table The table clients render for an analysis, as configured by the backend:
+	// columns in display order, how each cell is shown, which columns are
+	// sortable, and the default sort. Columns that show criterion results read
+	// them by criterion and candle unit, independent of criterion keys.
+	Table      MarketTable            `json:"table"`
+	Unresolved []UnresolvedInstrument `json:"unresolved"`
+	Warnings   []Warning              `json:"warnings"`
 }
 
 // MarketSort defines model for MarketSort.
@@ -683,6 +721,16 @@ type MarketSortDirection string
 
 // MarketSortField defines model for MarketSort.Field.
 type MarketSortField string
+
+// MarketTable The table clients render for an analysis, as configured by the backend:
+// columns in display order, how each cell is shown, which columns are
+// sortable, and the default sort. Columns that show criterion results read
+// them by criterion and candle unit, independent of criterion keys.
+type MarketTable struct {
+	Columns     []TableColumn `json:"columns"`
+	DefaultSort TableSort     `json:"default_sort"`
+	Rows        []TableRow    `json:"rows"`
+}
 
 // PriceAlert defines model for PriceAlert.
 type PriceAlert struct {
@@ -730,6 +778,50 @@ type ReadinessResponse struct {
 
 // ReadinessResponseStatus defines model for ReadinessResponse.Status.
 type ReadinessResponseStatus string
+
+// TableCell Holds the field its column kind reads; the field is omitted when its value is unavailable.
+type TableCell struct {
+	Series *[]*float64 `json:"series,omitempty"`
+	Url    *string     `json:"url,omitempty"`
+	Value  *float64    `json:"value,omitempty"`
+}
+
+// TableColumn defines model for TableColumn.
+type TableColumn struct {
+	Id string `json:"id"`
+
+	// Kind How a cell is rendered and which cell field it reads. `text` and
+	// `favorite` use the row symbol; `sparkline` reads `series` over the
+	// response `price_history_window`; `link` reads `url`; every other kind
+	// reads `value`.
+	Kind TableColumnKind `json:"kind"`
+
+	// Sortable Sortable columns are numeric and sorted by the cell `value`.
+	Sortable bool   `json:"sortable"`
+	Title    string `json:"title"`
+}
+
+// TableColumnKind How a cell is rendered and which cell field it reads. `text` and
+// `favorite` use the row symbol; `sparkline` reads `series` over the
+// response `price_history_window`; `link` reads `url`; every other kind
+// reads `value`.
+type TableColumnKind string
+
+// TableRow defines model for TableRow.
+type TableRow struct {
+	// Cells Cells keyed by column id. Columns of kind `text` and `favorite` have no cell.
+	Cells  map[string]TableCell `json:"cells"`
+	Symbol string               `json:"symbol"`
+}
+
+// TableSort defines model for TableSort.
+type TableSort struct {
+	Column    string             `json:"column"`
+	Direction TableSortDirection `json:"direction"`
+}
+
+// TableSortDirection defines model for TableSort.Direction.
+type TableSortDirection string
 
 // UnresolvedInstrument defines model for UnresolvedInstrument.
 type UnresolvedInstrument struct {
@@ -3342,83 +3434,90 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
+	"/w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

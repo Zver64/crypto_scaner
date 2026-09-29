@@ -462,7 +462,7 @@ components:
     Favorite:
       type: object
       additionalProperties: false
-      required: [symbol, base_asset, quote_asset, active, alert_count, created_at, closed_indicators]
+      required: [symbol, base_asset, quote_asset, active, alert_count, created_at]
       properties:
         symbol: { type: string }
         base_asset: { type: string }
@@ -470,10 +470,6 @@ components:
         active: { type: boolean }
         alert_count: { type: integer, minimum: 0 }
         created_at: { type: string, format: date-time }
-        closed_indicators:
-          type: array
-          description: Indicator values at the latest closed candle, independent of analysis criteria.
-          items: { $ref: "#/components/schemas/ClosedIndicator" }
     FavoritesResponse:
       type: object
       additionalProperties: false
@@ -659,7 +655,7 @@ components:
     MarketAnalysisItem:
       type: object
       additionalProperties: false
-      required: [symbol, matched, evaluations, price_history, closed_indicators]
+      required: [symbol, matched, evaluations]
       properties:
         symbol:
           type: string
@@ -669,49 +665,88 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Evaluation"
-        closed_indicators:
+    MarketTable:
+      description: |
+        The table clients render for an analysis, as configured by the backend:
+        columns in display order, how each cell is shown, which columns are
+        sortable, and the default sort. Columns that show criterion results read
+        them by criterion and candle unit, independent of criterion keys.
+      type: object
+      additionalProperties: false
+      required: [columns, default_sort, rows]
+      properties:
+        columns:
           type: array
-          description: Indicator values at the latest closed candle.
+          minItems: 1
           items:
-            $ref: "#/components/schemas/ClosedIndicator"
-        price_history:
+            $ref: "#/components/schemas/TableColumn"
+        default_sort:
+          $ref: "#/components/schemas/TableSort"
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/TableRow"
+    TableColumn:
+      type: object
+      additionalProperties: false
+      required: [id, title, kind, sortable]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        kind:
+          $ref: "#/components/schemas/TableColumnKind"
+        sortable:
+          description: Sortable columns are numeric and sorted by the cell `value`.
+          type: boolean
+    TableColumnKind:
+      description: |
+        How a cell is rendered and which cell field it reads. `text` and
+        `favorite` use the row symbol; `sparkline` reads `series` over the
+        response `price_history_window`; `link` reads `url`; every other kind
+        reads `value`.
+      type: string
+      enum: [text, usd_compact, range_percent, oscillator, percent_change, sparkline, link, favorite, count]
+    TableSort:
+      type: object
+      additionalProperties: false
+      required: [column, direction]
+      properties:
+        column:
+          type: string
+        direction:
+          type: string
+          enum: [asc, desc]
+    TableRow:
+      type: object
+      additionalProperties: false
+      required: [symbol, cells]
+      properties:
+        symbol:
+          type: string
+        cells:
+          description: Cells keyed by column id. Columns of kind `text` and `favorite` have no cell.
+          type: object
+          additionalProperties:
+            $ref: "#/components/schemas/TableCell"
+    TableCell:
+      description: Holds the field its column kind reads; the field is omitted when its value is unavailable.
+      type: object
+      additionalProperties: false
+      properties:
+        value:
+          type: number
+          format: double
+        series:
           type: array
           minItems: 169
           maxItems: 169
           items:
             type: [number, "null"]
             format: double
-    ClosedIndicator:
-      type: object
-      additionalProperties: false
-      required: [type, interval, parameters, open_time, outputs]
-      properties:
-        type:
+        url:
           type: string
-        interval:
-          $ref: "#/components/schemas/CandleInterval"
-        parameters:
-          type: object
-          additionalProperties: true
-        open_time:
-          type: [string, "null"]
-          format: date-time
-          description: Open time of the latest stored closed candle; null without any history.
-        outputs:
-          type: array
-          description: Named outputs at that candle; empty when its continuous history is insufficient.
-          items:
-            $ref: "#/components/schemas/ClosedIndicatorOutput"
-    ClosedIndicatorOutput:
-      type: object
-      additionalProperties: false
-      required: [name, value]
-      properties:
-        name:
-          type: string
-        value:
-          type: number
-          format: double
     UnresolvedInstrument:
       type: object
       additionalProperties: false
@@ -753,7 +788,10 @@ components:
         - items
         - unresolved
         - warnings
+        - table
       properties:
+        table:
+          $ref: "#/components/schemas/MarketTable"
         price_history_window:
           $ref: "#/components/schemas/PriceHistoryWindow"
         matched_count:

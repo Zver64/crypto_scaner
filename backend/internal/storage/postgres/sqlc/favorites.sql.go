@@ -101,34 +101,6 @@ func (q *Queries) GetFavorite(ctx context.Context, arg GetFavoriteParams) (GetFa
 	return i, err
 }
 
-const listFavoriteSymbols = `-- name: ListFavoriteSymbols :many
-SELECT i.symbol
-FROM app.favorites f
-JOIN binance_spot.instruments i ON i.id = f.instrument_id
-WHERE f.user_id = $1 AND i.is_active
-ORDER BY i.symbol
-`
-
-func (q *Queries) ListFavoriteSymbols(ctx context.Context, userID int64) ([]string, error) {
-	rows, err := q.db.Query(ctx, listFavoriteSymbols, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []string
-	for rows.Next() {
-		var symbol string
-		if err := rows.Scan(&symbol); err != nil {
-			return nil, err
-		}
-		items = append(items, symbol)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listFavorites = `-- name: ListFavorites :many
 SELECT i.id AS instrument_id, i.symbol, i.base_asset, i.quote_asset,
        i.is_active, f.created_at,

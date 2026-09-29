@@ -1,53 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { UnresolvedInstrumentCode } from "@/api/generated/models";
+import type {
+	TableRow,
+	UnresolvedInstrumentCode,
+} from "@/api/generated/models";
 import {
-	binanceSpotUrl,
 	filterMarketScanRows,
 	marketCapUnavailableReason,
-	toMarketScanRows,
 } from "@/features/market-scan/results-table/utils";
 
-const items = toMarketScanRows([
-	{
-		evaluations: [],
-		closed_indicators: [],
-		matched: true,
-		symbol: "ZZZUSDT",
-		price_history: Array(169).fill(null),
-	},
-	{
-		evaluations: [],
-		closed_indicators: [],
-		matched: true,
-		symbol: "AdaUsdt",
-		price_history: Array(169).fill(null),
-	},
-	{
-		evaluations: [],
-		closed_indicators: [],
-		matched: true,
-		symbol: "AAAUSDT",
-		price_history: Array(169).fill(null),
-	},
-]);
-
-describe("binanceSpotUrl", () => {
-	it("builds a Binance Spot trading URL for a USDT symbol", () => {
-		expect(binanceSpotUrl("BTCUSDT")).toBe(
-			"https://www.binance.com/en/trade/BTC_USDT?type=spot",
-		);
-	});
-
-	it("normalizes surrounding whitespace and symbol casing", () => {
-		expect(binanceSpotUrl(" adausdt ")).toBe(
-			"https://www.binance.com/en/trade/ADA_USDT?type=spot",
-		);
-	});
-
-	it.each(["", "USDT", "BTCEUR"])("rejects unsupported symbol %j", (symbol) => {
-		expect(binanceSpotUrl(symbol)).toBeUndefined();
-	});
-});
+const items: TableRow[] = [
+	{ symbol: "ZZZUSDT", cells: {} },
+	{ symbol: "AdaUsdt", cells: {} },
+	{ symbol: "AAAUSDT", cells: {} },
+];
 
 describe("Market Cap presentation", () => {
 	it.each<[UnresolvedInstrumentCode, string]>([
@@ -96,19 +61,5 @@ describe("filterMarketScanRows", () => {
 			"AdaUsdt",
 			"AAAUSDT",
 		]);
-	});
-});
-
-it("preserves rows with absent metrics instead of silently dropping instruments", () => {
-	expect(items).toHaveLength(3);
-	expect(items[0]).toEqual({
-		symbol: "ZZZUSDT",
-		dailyRangePercent: null,
-		dailyRsi14: null,
-		weeklyRsi14: null,
-		hourlyRangePercent: null,
-		marketCapUsd: null,
-		priceHistory: Array(169).fill(null),
-		sevenDayChangePercent: null,
 	});
 });

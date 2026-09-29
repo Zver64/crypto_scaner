@@ -13,10 +13,9 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { Evaluation } from './evaluation.ts';
+import type { TableSortDirection } from './tableSortDirection.ts';
 
-export interface MarketAnalysisItem {
-  symbol: string;
-  matched: boolean;
-  evaluations: Evaluation[];
+export interface TableSort {
+  column: string;
+  direction: TableSortDirection;
 }

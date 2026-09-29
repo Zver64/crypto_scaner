@@ -1,9 +1,6 @@
-import type { MarketScanSortColumn } from "@/features/market-scan/results-table/columns";
-import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
-import {
-	defaultMarketScanSort,
-	type MarketScanSort,
-	type MarketScanSortDirection,
+import type {
+	MarketScanSort,
+	MarketScanSortDirection,
 } from "@/features/market-scan/sort";
 import {
 	parseOptionalScanCriteriaSearch,
@@ -11,7 +8,7 @@ import {
 } from "@/routes/-scan-criteria-search";
 
 export interface MarketScanSortSearch {
-	sort_column?: MarketScanSortColumn;
+	sort_column?: string;
 	sort_direction?: MarketScanSortDirection;
 }
 
@@ -24,15 +21,8 @@ export interface MarketScanSearch
 		MarketScanSortSearch,
 		SymbolFilterSearch {}
 
-const sortColumns = new Set<MarketScanSortColumn>([
-	marketScanColumnKeys.dailyRange,
-	marketScanColumnKeys.hourlyRange,
-	marketScanColumnKeys.dailyRsi14,
-	marketScanColumnKeys.weeklyRsi14,
-	marketScanColumnKeys.marketCap,
-	marketScanColumnKeys.sevenDayChangePercent,
-]);
-
+// Sortable columns come from the backend table, so the column is checked
+// against the table once it is loaded.
 export function parseMarketScanSortSearch(
 	search: Record<string, unknown>,
 ): MarketScanSortSearch {
@@ -40,11 +30,11 @@ export function parseMarketScanSortSearch(
 	const sortDirection = search.sort_direction;
 	if (
 		typeof sortColumn === "string" &&
-		sortColumns.has(sortColumn as MarketScanSortColumn) &&
+		sortColumn.length > 0 &&
 		(sortDirection === "asc" || sortDirection === "desc")
 	) {
 		return {
-			sort_column: sortColumn as MarketScanSortColumn,
+			sort_column: sortColumn,
 			sort_direction: sortDirection,
 		};
 	}
@@ -73,8 +63,8 @@ export function parseSymbolFilterSearch(
 
 export function marketScanSortFromSearch(
 	search: MarketScanSortSearch,
-): MarketScanSort {
+): MarketScanSort | undefined {
 	return search.sort_column && search.sort_direction
 		? { column: search.sort_column, direction: search.sort_direction }
-		: defaultMarketScanSort;
+		: undefined;
 }

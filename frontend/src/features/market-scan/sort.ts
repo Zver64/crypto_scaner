@@ -1,22 +1,27 @@
-import type { MarketScanSortColumn } from "@/features/market-scan/results-table/columns";
-import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
-import type { MarketScanRow } from "@/features/market-scan/results-table/utils";
+import type { MarketTable, TableRow } from "@/api/generated/models";
 
 export type MarketScanSortDirection = "asc" | "desc";
 
 export interface MarketScanSort {
-	column: MarketScanSortColumn;
+	column: string;
 	direction: MarketScanSortDirection;
 }
 
-export const defaultMarketScanSort: MarketScanSort = {
-	column: marketScanColumnKeys.marketCap,
-	direction: "desc",
-};
+// A requested column the backend no longer marks sortable falls back to the
+// backend default.
+export function resolveTableSort(
+	table: MarketTable,
+	sort: MarketScanSort | undefined,
+): MarketScanSort {
+	return sort &&
+		table.columns.some(({ id, sortable }) => sortable && id === sort.column)
+		? sort
+		: table.default_sort;
+}
 
 export function nextMarketScanSort(
 	current: MarketScanSort,
-	column: MarketScanSortColumn,
+	column: string,
 ): MarketScanSort {
 	if (column !== current.column) {
 		return { column, direction: "desc" };
@@ -28,13 +33,13 @@ export function nextMarketScanSort(
 	};
 }
 
-export function sortMarketScanRows(
-	rows: readonly MarketScanRow[],
+export function sortTableRows(
+	rows: readonly TableRow[],
 	sort: MarketScanSort,
-): MarketScanRow[] {
+): TableRow[] {
 	return [...rows].sort((left, right) => {
-		const leftValue = left[sort.column];
-		const rightValue = right[sort.column];
+		const leftValue = left.cells[sort.column]?.value ?? null;
+		const rightValue = right.cells[sort.column]?.value ?? null;
 		// Unavailable values are not zero, and remain last in either direction.
 		if (leftValue === null && rightValue !== null) return 1;
 		if (leftValue !== null && rightValue === null) return -1;

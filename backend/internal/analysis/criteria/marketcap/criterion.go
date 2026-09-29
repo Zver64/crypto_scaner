@@ -11,8 +11,15 @@ import (
 // PostgreSQL. Refreshing that fact belongs to the marketcap synchronizer.
 type Factory struct{}
 
-func New() Factory           { return Factory{} }
-func (Factory) Name() string { return "market_cap" }
+func New() Factory { return Factory{} }
+
+// Name identifies the criterion, and USDMetric its market capitalization.
+const (
+	Name      = "market_cap"
+	USDMetric = "market_cap_usd"
+)
+
+func (Factory) Name() string { return Name }
 func (Factory) Build(parameters map[string]any) (analysis.Criterion, error) {
 	value, ok := parameters["min_market_cap_usd"].(float64)
 	if len(parameters) != 1 || !ok || !numeric.Finite(value) || value < 0 {
@@ -23,7 +30,7 @@ func (Factory) Build(parameters map[string]any) (analysis.Criterion, error) {
 
 type criterion struct{ minimum float64 }
 
-func (criterion) Name() string                               { return "market_cap" }
+func (criterion) Name() string                               { return Name }
 func (criterion) Requirements() []analysis.CandleRequirement { return nil }
 func (criterion) UsesClosedIndicators() bool                 { return false }
 
@@ -34,5 +41,5 @@ func (c *criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.
 		return analysis.Evaluation{}, &analysis.UnresolvedError{Code: "market_cap_missing", Message: "Market capitalization could not be resolved"}
 	}
 	cap := *input.Instrument.MarketCapUSD
-	return analysis.Evaluation{Matched: cap >= c.minimum, Metrics: map[string]float64{"market_cap_usd": cap}}, nil
+	return analysis.Evaluation{Matched: cap >= c.minimum, Metrics: map[string]float64{USDMetric: cap}}, nil
 }

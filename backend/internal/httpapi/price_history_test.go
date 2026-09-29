@@ -26,19 +26,28 @@ func TestMarketAPIIncludesFixedSevenDayWindowAndClosedPrices(t *testing.T) {
 		}
 		var body struct {
 			Window market.PriceHistoryWindow `json:"price_history_window"`
-			Items  []struct {
-				Prices []*float64 `json:"price_history"`
-			} `json:"items"`
+			Table  struct {
+				Rows []priceHistoryRow `json:"rows"`
+			} `json:"table"`
 		}
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
-		if len(body.Items) != 1 {
-			t.Fatalf("missing 169-slot history: %+v", body.Items)
+		if len(body.Table.Rows) != 1 {
+			t.Fatalf("missing 169-slot history: %+v", body.Table.Rows)
 		}
-		assertCompleteSevenDayHistory(t, body.Window, body.Items[0].Prices)
+		assertCompleteSevenDayHistory(t, body.Window, body.Table.Rows[0].prices())
 	})
 }
+
+type priceHistoryRow struct {
+	Symbol string `json:"symbol"`
+	Cells  map[string]struct {
+		Series []*float64 `json:"series"`
+	} `json:"cells"`
+}
+
+func (row priceHistoryRow) prices() []*float64 { return row.Cells["price_history"].Series }
 
 type priceHistoryHTTPStore struct {
 	httpStore
@@ -111,25 +120,24 @@ func TestMarketAPIKeepsMissingHistoryAndFreezesWindowBeforeSlowAnalysis(t *testi
 		var body struct {
 			Window  market.PriceHistoryWindow `json:"price_history_window"`
 			Matched int                       `json:"matched_count"`
-			Items   []struct {
-				Symbol string     `json:"symbol"`
-				Prices []*float64 `json:"price_history"`
-			} `json:"items"`
+			Table   struct {
+				Rows []priceHistoryRow `json:"rows"`
+			} `json:"table"`
 		}
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
-		if body.Matched != 3 || len(body.Items) != 3 {
+		if body.Matched != 3 || len(body.Table.Rows) != 3 {
 			t.Fatalf("chart availability excluded results: %+v", body)
 		}
 		if body.Window.To.Format(time.RFC3339) != "1999-12-31T23:00:00Z" {
 			t.Fatalf("window moved during analysis: %+v", body.Window)
 		}
-		for _, item := range body.Items {
-			if len(item.Prices) != 169 {
-				t.Fatalf("%s has %d slots", item.Symbol, len(item.Prices))
+		for _, item := range body.Table.Rows {
+			if len(item.prices()) != 169 {
+				t.Fatalf("%s has %d slots", item.Symbol, len(item.prices()))
 			}
-			for i, price := range item.Prices {
+			for i, price := range item.prices() {
 				var want *float64
 				if item.Symbol == "PARTIAL" && i == 96 {
 					value := 10.00000001

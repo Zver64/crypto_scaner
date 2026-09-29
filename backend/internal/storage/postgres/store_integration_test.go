@@ -215,9 +215,9 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if err != nil || favorite.Symbol != "BTCUSDT" || favorite.AlertCount != 0 {
 			t.Fatalf("AddFavorite() = %#v, %v", favorite, err)
 		}
-		symbols, err := store.ListFavoriteSymbols(ctx, owner.ID)
-		if err != nil || len(symbols) != 1 || symbols[0] != "BTCUSDT" {
-			t.Fatalf("ListFavoriteSymbols() = %v, %v", symbols, err)
+		listed, err := store.ListFavorites(ctx, owner.ID)
+		if err != nil || len(listed) != 1 || listed[0].Symbol != "BTCUSDT" || !listed[0].Active {
+			t.Fatalf("ListFavorites() = %#v, %v", listed, err)
 		}
 		first, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "1")
 		if err != nil || first.Target != "1" || first.Version != 1 || first.TelegramID != owner.TelegramID {

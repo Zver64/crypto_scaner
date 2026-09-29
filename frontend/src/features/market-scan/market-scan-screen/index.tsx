@@ -24,7 +24,7 @@ interface MarketScanScreenProps {
 	onCriteriaCommit(criteria: MarketScanCriteria): void;
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
-	sort: MarketScanSort;
+	sort: MarketScanSort | undefined;
 	symbolFilter: string;
 }
 

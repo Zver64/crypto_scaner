@@ -14,4 +14,15 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export type ClosedIndicatorParameters = { [key: string]: unknown };
+/**
+ * Holds the field its column kind reads; the field is omitted when its value is unavailable.
+ */
+export interface TableCell {
+  value?: number;
+  /**
+     * @minItems 169
+     * @maxItems 169
+     */
+  series?: (number | null)[];
+  url?: string;
+}

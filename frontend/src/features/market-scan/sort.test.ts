@@ -1,221 +1,78 @@
 import { describe, expect, it } from "vitest";
-import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
-import { toMarketScanRows } from "@/features/market-scan/results-table/utils";
+import type { MarketTable, TableRow } from "@/api/generated/models";
 import {
-	defaultMarketScanSort,
 	nextMarketScanSort,
-	sortMarketScanRows,
+	resolveTableSort,
+	sortTableRows,
 } from "@/features/market-scan/sort";
+
+const table: MarketTable = {
+	columns: [
+		{ id: "symbol", kind: "text", sortable: false, title: "Symbol" },
+		{ id: "mcap", kind: "usd_compact", sortable: true, title: "MCap" },
+		{ id: "chart", kind: "sparkline", sortable: false, title: "7d chart" },
+	],
+	default_sort: { column: "mcap", direction: "desc" },
+	rows: [],
+};
+
+function row(symbol: string, value: number | null): TableRow {
+	return { symbol, cells: { mcap: value === null ? {} : { value } } };
+}
 
 describe("Market Scan sorting", () => {
 	it("starts a new column descending and toggles the active column", () => {
-		expect(
-			nextMarketScanSort(
-				defaultMarketScanSort,
-				marketScanColumnKeys.hourlyRange,
-			),
-		).toEqual({
-			column: marketScanColumnKeys.hourlyRange,
+		const current = { column: "mcap", direction: "desc" } as const;
+		expect(nextMarketScanSort(current, "range")).toEqual({
+			column: "range",
 			direction: "desc",
 		});
-		expect(
-			nextMarketScanSort(defaultMarketScanSort, marketScanColumnKeys.marketCap),
-		).toEqual({
-			column: marketScanColumnKeys.marketCap,
+		expect(nextMarketScanSort(current, "mcap")).toEqual({
+			column: "mcap",
 			direction: "asc",
 		});
 	});
-});
 
-describe("sortMarketScanRows", () => {
-	const daily = {
-		candle_count: 30,
-		from: "2026-08-01T00:00:00Z",
-		key: "daily_volatility",
-		label: "Daily Volatility",
-		matched: true,
-		metrics: { range_percent: 4 },
-		name: "volatility",
-		to: "2026-08-02T00:00:00Z",
-	};
-	const hourly = {
-		...daily,
-		candle_count: 60,
-		key: "hourly_volatility",
-		label: "Hourly Volatility",
-		metrics: { range_percent: 2 },
-	};
-	const marketCap = {
-		...daily,
-		candle_count: 0,
-		key: "market_cap",
-		label: "Market Cap",
-		metrics: { market_cap_usd: 400 },
-		name: "market_cap",
-	};
-	const rsi = (value: number) => [
-		{
-			type: "rsi",
-			interval: "1d" as const,
-			parameters: { period: 14 },
-			open_time: "2026-08-01T00:00:00Z",
-			outputs: [{ name: "rsi", value }],
-		},
-	];
-	const sortableItems = [
-		{
-			evaluations: [daily, hourly, marketCap],
-			closed_indicators: rsi(50),
-			matched: true,
-			symbol: "ZEBRAUSDT",
-			price_history: Array(169).fill(null),
-		},
-		{
-			evaluations: [
-				{ ...daily, metrics: { range_percent: 6 } },
-				{ ...hourly, metrics: { range_percent: 1 } },
-				{ ...marketCap, metrics: { market_cap_usd: 900 } },
-			],
-			closed_indicators: rsi(70),
-			matched: true,
-			symbol: "ALPHAUSDT",
-			price_history: Array(169).fill(null),
-		},
-		{
-			evaluations: [
-				{ ...daily, metrics: { range_percent: 6 } },
-				{ ...hourly, metrics: { range_percent: 3 } },
-				{ ...marketCap, metrics: { market_cap_usd: 100 } },
-			],
-			closed_indicators: [],
-			matched: true,
-			symbol: "BRAVOUSDT",
-			price_history: Array(169).fill(null),
-		},
-		{
-			evaluations: [
-				{ ...daily, metrics: { range_percent: 5 } },
-				{ ...hourly, metrics: { range_percent: 3 } },
-				{ ...marketCap, metrics: { market_cap_usd: 100 } },
-			],
-			closed_indicators: rsi(30),
-			matched: true,
-			symbol: "CHARLIEUSDT",
-			price_history: Array(169).fill(null),
-		},
-	];
-
-	it.each([
-		[
-			marketScanColumnKeys.dailyRange,
-			"desc",
-			["ALPHAUSDT", "BRAVOUSDT", "CHARLIEUSDT", "ZEBRAUSDT"],
-		],
-		[
-			marketScanColumnKeys.dailyRange,
-			"asc",
-			["ZEBRAUSDT", "CHARLIEUSDT", "ALPHAUSDT", "BRAVOUSDT"],
-		],
-		[
-			marketScanColumnKeys.hourlyRange,
-			"desc",
-			["BRAVOUSDT", "CHARLIEUSDT", "ZEBRAUSDT", "ALPHAUSDT"],
-		],
-		[
-			marketScanColumnKeys.hourlyRange,
-			"asc",
-			["ALPHAUSDT", "ZEBRAUSDT", "BRAVOUSDT", "CHARLIEUSDT"],
-		],
-		[
-			marketScanColumnKeys.dailyRsi14,
-			"desc",
-			["ALPHAUSDT", "ZEBRAUSDT", "CHARLIEUSDT", "BRAVOUSDT"],
-		],
-		[
-			marketScanColumnKeys.dailyRsi14,
-			"asc",
-			["CHARLIEUSDT", "ZEBRAUSDT", "ALPHAUSDT", "BRAVOUSDT"],
-		],
-		[
-			defaultMarketScanSort.column,
-			defaultMarketScanSort.direction,
-			["ALPHAUSDT", "ZEBRAUSDT", "BRAVOUSDT", "CHARLIEUSDT"],
-		],
-		[
-			marketScanColumnKeys.marketCap,
-			"asc",
-			["BRAVOUSDT", "CHARLIEUSDT", "ZEBRAUSDT", "ALPHAUSDT"],
-		],
-	] as const)("sorts %s %s with alphabetical ties", (column, direction, symbols) => {
+	it("keeps a requested sortable column and otherwise uses the backend default", () => {
+		const ascending = { column: "mcap", direction: "asc" } as const;
+		expect(resolveTableSort(table, ascending)).toBe(ascending);
 		expect(
-			sortMarketScanRows(toMarketScanRows(sortableItems), {
-				column,
-				direction,
-			}).map(({ symbol }) => symbol),
-		).toEqual(symbols);
+			resolveTableSort(table, { column: "chart", direction: "asc" }),
+		).toEqual(table.default_sort);
+		expect(
+			resolveTableSort(table, { column: "missing", direction: "asc" }),
+		).toEqual(table.default_sort);
+		expect(resolveTableSort(table, undefined)).toEqual(table.default_sort);
 	});
 });
 
 it.each([
 	"asc",
 	"desc",
-] as const)("sorts seven-day change percent last when unavailable (%s)", (direction) => {
-	const base = toMarketScanRows([
-		{
-			symbol: "BASEUSDT",
-			evaluations: [],
-			matched: true,
-			price_history: [],
-			closed_indicators: [],
-		},
-	])[0];
+] as const)("sorts unavailable values last (%s), separately from zero, with alphabetical ties", (direction) => {
 	const rows = [
-		{ ...base, symbol: "B", sevenDayChangePercent: null },
-		{ ...base, symbol: "ZERO", sevenDayChangePercent: 0 },
-		{ ...base, symbol: "A", sevenDayChangePercent: null },
-		{ ...base, symbol: "VALUE", sevenDayChangePercent: 100 },
-		{ ...base, symbol: "LOSS", sevenDayChangePercent: -25 },
+		row("B", null),
+		row("ZERO", 0),
+		{ symbol: "A", cells: {} },
+		row("VALUE", 100),
+		row("LOSS", -25),
+		row("TIE", 100),
 	];
 	expect(
-		sortMarketScanRows(rows, {
-			column: marketScanColumnKeys.sevenDayChangePercent,
-			direction,
-		}).map((row) => row.symbol),
+		sortTableRows(rows, { column: "mcap", direction }).map(
+			(item) => item.symbol,
+		),
 	).toEqual(
 		direction === "asc"
-			? ["LOSS", "ZERO", "VALUE", "A", "B"]
-			: ["VALUE", "ZERO", "LOSS", "A", "B"],
+			? ["LOSS", "ZERO", "TIE", "VALUE", "A", "B"]
+			: ["TIE", "VALUE", "ZERO", "LOSS", "A", "B"],
 	);
-});
-
-it.each([
-	"asc",
-	"desc",
-] as const)("sorts unavailable Market Cap last (%s), separately from zero", (direction) => {
-	const base = toMarketScanRows([
-		{
-			symbol: "BASEUSDT",
-			evaluations: [],
-			matched: true,
-			price_history: [],
-			closed_indicators: [],
-		},
-	])[0];
-	const rows = [
-		{ ...base, symbol: "B", marketCapUsd: null },
-		{ ...base, symbol: "ZERO", marketCapUsd: 0 },
-		{ ...base, symbol: "A", marketCapUsd: null },
-		{ ...base, symbol: "VALUE", marketCapUsd: 100 },
-	];
-	expect(
-		sortMarketScanRows(rows, {
-			column: marketScanColumnKeys.marketCap,
-			direction,
-		}).map((row) => row.symbol),
-	).toEqual(
-		direction === "asc"
-			? ["ZERO", "VALUE", "A", "B"]
-			: ["VALUE", "ZERO", "A", "B"],
-	);
-	expect(rows.map((row) => row.symbol)).toEqual(["B", "ZERO", "A", "VALUE"]);
+	expect(rows.map((item) => item.symbol)).toEqual([
+		"B",
+		"ZERO",
+		"A",
+		"VALUE",
+		"LOSS",
+		"TIE",
+	]);
 });

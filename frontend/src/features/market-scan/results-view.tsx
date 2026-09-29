@@ -17,10 +17,7 @@ import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import { unresolvedInstrumentColumns } from "@/features/market-scan/results-table/columns";
-import {
-	filterMarketScanRows,
-	toMarketScanRows,
-} from "@/features/market-scan/results-table/utils";
+import { filterMarketScanRows } from "@/features/market-scan/results-table/utils";
 import type { MarketScanSort } from "@/features/market-scan/sort";
 
 const unitSuffixes: Record<InsufficientDataInstrument["unit"], string> = {
@@ -45,7 +42,7 @@ interface MarketScanResultsProps {
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
 	result: MarketAnalysisResponse;
-	sort: MarketScanSort;
+	sort: MarketScanSort | undefined;
 	symbolFilter: string;
 }
 
@@ -60,10 +57,7 @@ export function MarketScanResults({
 }: MarketScanResultsProps) {
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const textSize = useMatches({ base: "xs", sm: "sm" });
-	const rows = filterMarketScanRows(
-		toMarketScanRows(result.items),
-		symbolFilter,
-	);
+	const rows = filterMarketScanRows(result.table.rows, symbolFilter);
 
 	return (
 		<RefreshingOverlay label="Refreshing Market Scan" visible={isRefreshing}>
@@ -99,7 +93,7 @@ export function MarketScanResults({
 					size="md"
 					value={symbolFilter}
 				/>
-				{result.items.length === 0 ? (
+				{result.table.rows.length === 0 ? (
 					<Paper p="xl" ta="center">
 						<Text fw={600}>No instruments matched these criteria.</Text>
 						<Text c="dimmed" mt={4} size="sm">
@@ -119,6 +113,7 @@ export function MarketScanResults({
 						onSortChange={onSortChange}
 						rows={rows}
 						sort={sort}
+						table={result.table}
 						window={result.price_history_window}
 					/>
 				)}

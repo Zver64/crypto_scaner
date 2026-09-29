@@ -13,19 +13,11 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { CandleInterval } from './candleInterval.ts';
-import type { ClosedIndicatorOutput } from './closedIndicatorOutput.ts';
-import type { ClosedIndicatorParameters } from './closedIndicatorParameters.ts';
 
-export interface ClosedIndicator {
-  type: string;
-  interval: CandleInterval;
-  parameters: ClosedIndicatorParameters;
-  /**
-     * Open time of the latest stored closed candle; null without any history.
-     * @nullable
-     */
-  open_time: string | null;
-  /** Named outputs at that candle; empty when its continuous history is insufficient. */
-  outputs: ClosedIndicatorOutput[];
-}
+export type TableSortDirection = typeof TableSortDirection[keyof typeof TableSortDirection];
+
+
+export const TableSortDirection = {
+  asc: 'asc',
+  desc: 'desc',
+} as const;

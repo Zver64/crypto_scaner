@@ -117,7 +117,8 @@ tanstackIntent:
 
 ## Market scan tables
 
-- Market scan and favorites tables share `MarketScanRow`, the columns in `src/features/market-scan/results-table/`, and client-side sorting. A new sortable column needs its key in `keys.ts`, a row field filled in both `toMarketScanRows` and `mergeFavoriteRows`, and an entry in `sortColumns` in `src/routes/-market-scan-search.ts`.
-- Background indicator values arrive in `closed_indicators`. Read them with `closedIndicatorValue` and a key from `closed-indicators.ts`; do not compute indicators in the frontend.
+- Market Scan, Top Market Cap, and Favorites tables are defined by the backend: every analysis response carries `table` with the columns (order, title, rendering `kind`, sortability), the default sort, and one row of cells per instrument. `MarketScanResultsTable` renders it generically; the frontend fixes only that the first column is sticky. Do not add column definitions, row fields, cell calculations, or sortable-column lists to the frontend. A new column is a backend catalog entry; the frontend changes only when the backend adds a `TableColumnKind`, which needs a renderer in `cellRenderers` (`results-table/cells.tsx`).
+- Sorting runs on the client over the cell `value` of sortable columns. `resolveTableSort` falls back to the table's `default_sort` when the URL names a column the table does not mark sortable.
+- Favorites get their table, including favorites the analysis skipped, only from `POST /api/v1/favorites/analysis`; do not merge it with `GET /api/v1/favorites`.
 - Charts arrive over the live WebSocket only (snapshot, then tail updates with sequential versions); there is no HTTP chart endpoint.
 - Chart indicators come from the backend catalog (`GET /api/v1/chart/indicators`, read with `useChartIndicators`). The coin chart subscribes with the catalog's selections and renders overlays and panes generically from it; do not add per-indicator code, constants or validation to the frontend. Colors arrive as Mantine theme tokens and are resolved against the app theme.

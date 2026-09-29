@@ -13,7 +13,6 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ClosedIndicator } from './closedIndicator.ts';
 
 export interface Favorite {
   symbol: string;
@@ -23,6 +22,4 @@ export interface Favorite {
   /** @minimum 0 */
   alert_count: number;
   created_at: string;
-  /** Indicator values at the latest closed candle, independent of analysis criteria. */
-  closed_indicators: ClosedIndicator[];
 }

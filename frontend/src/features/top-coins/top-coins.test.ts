@@ -1,20 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { MarketAnalysisItem } from "@/api/generated/models";
 import {
 	buildTopCoinsCriteria,
 	buildTopCoinsScanCriteria,
-	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
-
-function item(symbol: string): MarketAnalysisItem {
-	return {
-		evaluations: [],
-		closed_indicators: [],
-		matched: true,
-		price_history: [],
-		symbol,
-	};
-}
 
 describe("Top Market Cap criteria", () => {
 	it("uses non-default periods and percentiles without introducing filters", () => {
@@ -50,17 +38,5 @@ describe("Top Market Cap criteria", () => {
 			},
 			{ min_market_cap_usd: 0 },
 		]);
-	});
-});
-
-describe("toTopCoinRows", () => {
-	it("preserves the backend result without client-side ranking or limiting", () => {
-		const items = Array.from({ length: 11 }, (_, index) =>
-			item(`COIN${index}`),
-		);
-
-		expect(toTopCoinRows(items).map(({ symbol }) => symbol)).toEqual(
-			items.map(({ symbol }) => symbol),
-		);
 	});
 });

@@ -13,10 +13,19 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { Evaluation } from './evaluation.ts';
+import type { TableColumn } from './tableColumn.ts';
+import type { TableRow } from './tableRow.ts';
+import type { TableSort } from './tableSort.ts';
 
-export interface MarketAnalysisItem {
-  symbol: string;
-  matched: boolean;
-  evaluations: Evaluation[];
+/**
+ * The table clients render for an analysis, as configured by the backend:
+ * columns in display order, how each cell is shown, which columns are
+ * sortable, and the default sort. Columns that show criterion results read
+ * them by criterion and candle unit, independent of criterion keys.
+ */
+export interface MarketTable {
+  /** @minItems 1 */
+  columns: TableColumn[];
+  default_sort: TableSort;
+  rows: TableRow[];
 }

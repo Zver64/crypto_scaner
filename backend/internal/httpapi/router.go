@@ -13,6 +13,7 @@ import (
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/markettable"
 
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/oapi-codegen/nethttp-middleware"
@@ -28,14 +29,18 @@ type Readiness interface {
 // Analysis exposes the application use cases served by the HTTP API.
 type Analysis interface {
 	AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error)
-	Search(context.Context, analysis.SearchRequest) (analysis.SearchResult, error)
+}
+
+// MarketTables runs market searches and presents them as tables.
+type MarketTables interface {
+	Search(context.Context, analysis.SearchRequest) (markettable.Result, error)
 }
 
 type Favorites interface {
 	List(context.Context, int64) ([]favorites.Favorite, error)
 	Add(context.Context, int64, string) (favorites.Favorite, error)
 	Remove(context.Context, int64, string, bool) (int, error)
-	Analyze(context.Context, int64, analysis.SearchRequest) (analysis.SearchResult, error)
+	Analyze(context.Context, int64, analysis.SearchRequest) (markettable.Result, error)
 }
 
 type PriceAlerts interface {
@@ -49,9 +54,10 @@ const maxAnalysisRequestBody = 1 << 20
 
 // Dependencies are the use cases served by the API. All are required.
 type Dependencies struct {
-	Readiness Readiness
-	Analysis  Analysis
-	History   CandleHistory
+	Readiness    Readiness
+	Analysis     Analysis
+	MarketTables MarketTables
+	History      CandleHistory
 	// Authenticator verifies Telegram init data for HTTP and WebSocket requests.
 	Authenticator InitDataAuthenticator
 	Chart         ChartService
@@ -68,6 +74,7 @@ type api struct {
 	logger    *slog.Logger
 	readiness Readiness
 	analysis  Analysis
+	tables    MarketTables
 	history   CandleHistory
 	favorites Favorites
 	alerts    PriceAlerts
@@ -100,7 +107,7 @@ func New(logger *slog.Logger, dependencies Dependencies, options Options) http.H
 
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
-	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart}
+	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,
 		ResponseErrorHandlerFunc: func(response http.ResponseWriter, request *http.Request, err error) {

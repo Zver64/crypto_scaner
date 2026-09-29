@@ -1,82 +1,80 @@
 import { UnstyledButton } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
-import type { PriceHistoryWindow } from "@/api/generated/models";
+import type {
+	MarketTable,
+	PriceHistoryWindow,
+	TableRow,
+} from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { FavoriteToggle } from "@/features/favorites/favorite-toggle";
 import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
-import { marketScanColumns } from "@/features/market-scan/results-table/columns";
-import { marketScanColumnKeys } from "@/features/market-scan/results-table/keys";
-import type { MarketScanRow } from "@/features/market-scan/results-table/utils";
+import {
+	type CellRenderer,
+	cellRenderers,
+} from "@/features/market-scan/results-table/cells";
 import {
 	type MarketScanSort,
 	nextMarketScanSort,
-	sortMarketScanRows,
+	resolveTableSort,
+	sortTableRows,
 } from "@/features/market-scan/sort";
 import { scanCriteriaToSearch } from "@/routes/-scan-criteria-search";
 
 interface MarketScanResultsTableProps {
 	criteria: MarketScanCriteria;
-	rows: readonly MarketScanRow[];
+	table: MarketTable;
+	rows: readonly TableRow[];
 	window?: PriceHistoryWindow;
-	alertCounts?: ReadonlyMap<string, number>;
-	sort: MarketScanSort;
+	sort: MarketScanSort | undefined;
 	onSortChange(sort: MarketScanSort): void;
 }
 
+// Columns, their order, rendering kinds, and sortability come from the backend
+// table. Only the first column's position is fixed here: DataTable keeps it
+// sticky.
 export function MarketScanResultsTable({
 	criteria,
+	table,
 	rows,
 	window,
-	alertCounts,
-	sort,
+	sort: requestedSort,
 	onSortChange,
 }: MarketScanResultsTableProps) {
 	const navigate = useNavigate();
+	const sort = resolveTableSort(table, requestedSort);
 	const direction = sort.direction === "desc" ? "descending" : "ascending";
-	const columns: DataTableColumn<MarketScanRow>[] = marketScanColumns.map(
-		(column) => {
-			const sortable = "sortable" in column && column.sortable;
-			const active = sortable && column.key === sort.column;
+	const columns: DataTableColumn<TableRow>[] = table.columns.map(
+		(column, index) => {
+			const active = column.sortable && column.id === sort.column;
+			// A kind newer than this bundle renders as unavailable.
+			const render: CellRenderer | undefined = cellRenderers[column.kind];
 			return {
-				key: column.key,
-				textAlign:
-					column.key === marketScanColumnKeys.symbol ? "left" : "center",
-				cell: (row) => column.cell(row, window),
-				ariaSort: sortable ? (active ? direction : "none") : undefined,
-				header: sortable ? (
+				key: column.id,
+				textAlign: index === 0 ? "left" : "center",
+				cell: (row) =>
+					render
+						? render({ cell: row.cells[column.id], column, row, window })
+						: "—",
+				ariaSort: column.sortable ? (active ? direction : "none") : undefined,
+				header: column.sortable ? (
 					<UnstyledButton
-						aria-label={`Sort by ${column.header}${active ? `, currently ${direction}` : ""}`}
+						aria-label={`Sort by ${column.title}${active ? `, currently ${direction}` : ""}`}
 						style={{ font: "inherit" }}
-						onClick={() => onSortChange(nextMarketScanSort(sort, column.key))}
+						onClick={() => onSortChange(nextMarketScanSort(sort, column.id))}
 					>
-						{column.header}
+						{column.title}
 						{active ? (sort.direction === "desc" ? " ↓" : " ↑") : null}
 					</UnstyledButton>
 				) : (
-					column.header
+					column.title
 				),
 			};
 		},
 	);
-	columns.push({
-		key: "favorite",
-		header: "Favorite",
-		textAlign: "center",
-		cell: (row) => <FavoriteToggle symbol={row.symbol} />,
-	});
-	if (alertCounts) {
-		columns.push({
-			key: "alertCount",
-			header: "Alerts",
-			textAlign: "center",
-			cell: (row) => alertCounts.get(row.symbol) ?? 0,
-		});
-	}
 
 	return (
 		<DataTable
 			columns={columns}
-			rows={sortMarketScanRows(rows, sort)}
+			rows={sortTableRows(rows, sort)}
 			getRowKey={(row) => row.symbol}
 			onRowClick={(row) => {
 				void navigate({

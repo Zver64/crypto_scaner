@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"time"
 
 	"crypto-scanner/internal/alerts"
@@ -25,6 +26,7 @@ import (
 	"crypto-scanner/internal/market/marketsync"
 	"crypto-scanner/internal/market/retention"
 	"crypto-scanner/internal/marketcap"
+	"crypto-scanner/internal/markettable"
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/storage/postgres"
 	"crypto-scanner/internal/telegrambot"
@@ -51,12 +53,24 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 	if err != nil {
 		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
 	}
-	// Values shown in tables; favorites keep them current without clients.
-	rsi14 := indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": indicatortalib.DefaultRSIPeriod}}
-	closedTargets := []closedindicator.Target{
+	marketTable, err := markettable.NewCatalog(indicatorRegistry, defaultTableSort, marketTableColumns()...)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize market table: %w", err)
+	}
+	favoritesTable, err := markettable.NewCatalog(indicatorRegistry, defaultTableSort, favoritesTableColumns()...)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize favorites table: %w", err)
+	}
+	rsi14, err := indicatorRegistry.Normalize(indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": indicatortalib.DefaultRSIPeriod}})
+	if err != nil {
+		return app{}, fmt.Errorf("normalize RSI criterion selection: %w", err)
+	}
+	// Table columns and the RSI criterion read these values; favorites keep
+	// them current without clients.
+	closedTargets := closedTargetsUnion(marketTable.ClosedTargets(), favoritesTable.ClosedTargets(), []closedindicator.Target{
 		{Interval: market.IntervalDay, Selection: rsi14},
 		{Interval: market.IntervalWeek, Selection: rsi14},
-	}
+	})
 	closedIndicators, err := closedindicator.New(store, indicatorRegistry, closedTargets, logger,
 		closedindicator.InstrumentSource(store.ListMonitoredInstrumentIDs))
 	if err != nil {
@@ -100,11 +114,12 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 	tradeStream := binance.NewTradeStream(logger, dialLimiter)
 	alertMonitor := alerts.NewMonitor(store, tradeStream, botService, logger)
 	monitoredChanged = append(monitoredChanged, alertMonitor.Changed, closedIndicators.Refresh)
-	favoriteService := favorites.New(store, monitoredChanged.notify, analysisService, closedIndicators)
+	favoriteService := favorites.New(store, monitoredChanged.notify, analysisService, closedIndicators, favoritesTable)
 
 	handler := httpapi.New(logger, httpapi.Dependencies{
 		Readiness:     store,
 		Analysis:      analysisService,
+		MarketTables:  markettable.NewService(analysisService, marketTable),
 		History:       store,
 		Authenticator: authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, authtelegram.Options{}),
 		Chart:         chartService,
@@ -123,4 +138,16 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 		{"coin metadata synchronizer", coinMetadataSynchronizer},
 		{"market retention", retention.New(store, logger, market.HistoryDepth)},
 	}}, nil
+}
+
+func closedTargetsUnion(groups ...[]closedindicator.Target) []closedindicator.Target {
+	var targets []closedindicator.Target
+	for _, group := range groups {
+		for _, target := range group {
+			if !slices.ContainsFunc(targets, target.Equal) {
+				targets = append(targets, target)
+			}
+		}
+	}
+	return targets
 }

@@ -1,69 +1,7 @@
 import type {
-	MarketAnalysisItem,
+	TableRow,
 	UnresolvedInstrumentCode,
 } from "@/api/generated/models";
-import { criterionKeys } from "@/features/analysis/identifiers";
-import {
-	closedIndicatorValue,
-	dailyRsi14,
-	weeklyRsi14,
-} from "@/features/market-scan/closed-indicators";
-import { volatilityEvaluation } from "@/features/market-scan/criteria";
-import { marketCapEvaluation } from "@/utils/market-cap";
-import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
-
-const binanceSpotQuoteAsset = "USDT";
-
-export function binanceSpotUrl(symbol: string): string | undefined {
-	const normalizedSymbol = symbol.trim().toUpperCase();
-	if (
-		!normalizedSymbol.endsWith(binanceSpotQuoteAsset) ||
-		normalizedSymbol.length === binanceSpotQuoteAsset.length
-	) {
-		return undefined;
-	}
-
-	const baseAsset = normalizedSymbol.slice(0, -binanceSpotQuoteAsset.length);
-	return `https://www.binance.com/en/trade/${encodeURIComponent(baseAsset)}_${binanceSpotQuoteAsset}?type=spot`;
-}
-
-export interface MarketScanRow {
-	symbol: string;
-	dailyRangePercent: number | null;
-	hourlyRangePercent: number | null;
-	dailyRsi14: number | null;
-	weeklyRsi14: number | null;
-	marketCapUsd: number | null;
-	priceHistory: readonly (number | null)[];
-	sevenDayChangePercent: number | null;
-}
-
-// Required evaluations are validated by the query. Presentation preserves every
-// item, including unavailable optional metrics, without applying criteria again.
-export function toMarketScanRows(
-	items: readonly MarketAnalysisItem[],
-): MarketScanRow[] {
-	return items.map((item) => {
-		const daily = volatilityEvaluation(
-			item.evaluations,
-			criterionKeys.dailyVolatility,
-		);
-		const hourly = volatilityEvaluation(
-			item.evaluations,
-			criterionKeys.hourlyVolatility,
-		);
-		return {
-			symbol: item.symbol,
-			dailyRangePercent: daily?.rangePercent ?? null,
-			hourlyRangePercent: hourly?.rangePercent ?? null,
-			dailyRsi14: closedIndicatorValue(item.closed_indicators, dailyRsi14),
-			weeklyRsi14: closedIndicatorValue(item.closed_indicators, weeklyRsi14),
-			marketCapUsd: marketCapEvaluation(item.evaluations)?.marketCapUsd ?? null,
-			priceHistory: item.price_history,
-			sevenDayChangePercent: sevenDayChangePercent(item.price_history),
-		};
-	});
-}
 
 // Blends the positive and negative theme colors: 0 is fully green, 100 red.
 export function oscillatorColor(value: number): string {
@@ -72,9 +10,9 @@ export function oscillatorColor(value: number): string {
 }
 
 export function filterMarketScanRows(
-	rows: readonly MarketScanRow[],
+	rows: readonly TableRow[],
 	filter: string,
-): MarketScanRow[] {
+): TableRow[] {
 	const normalizedFilter = filter.trim().toLocaleLowerCase("en-US");
 	return rows.filter((row) =>
 		row.symbol.toLocaleLowerCase("en-US").includes(normalizedFilter),

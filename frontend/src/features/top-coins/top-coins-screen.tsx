@@ -31,7 +31,6 @@ import {
 	buildTopCoinsCriteria,
 	buildTopCoinsScanCriteria,
 	topCoinsRequestOptions,
-	toTopCoinRows,
 } from "@/features/top-coins/top-coins";
 
 interface TopCoinsScreenProps {
@@ -39,7 +38,7 @@ interface TopCoinsScreenProps {
 	onSettingsCommit(settings: VolatilitySettings): void;
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
-	sort: MarketScanSort;
+	sort: MarketScanSort | undefined;
 	symbolFilter: string;
 }
 
@@ -82,7 +81,7 @@ export function TopCoinsScreen({
 			},
 		},
 	);
-	const allRows = toTopCoinRows(query.data?.items ?? []);
+	const allRows = query.data?.table.rows ?? [];
 	const rows = filterMarketScanRows(allRows, symbolFilter);
 	useEffect(() => {
 		if (query.isError) {
@@ -138,6 +137,7 @@ export function TopCoinsScreen({
 									onSortChange={onSortChange}
 									rows={rows}
 									sort={sort}
+									table={query.data.table}
 									window={query.data.price_history_window}
 								/>
 							) : (

@@ -1,4 +1,5 @@
 import {
+	Button,
 	Center,
 	Container,
 	Loader,
@@ -8,6 +9,7 @@ import {
 	TextInput,
 } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import {
 	getAnalyzeFavoritesQueryKey,
@@ -28,10 +30,6 @@ import {
 	scopedUserQueryKey,
 	telegramUserScope,
 } from "@/features/favorites/user-query-scope";
-import {
-	favoriteAlertCounts,
-	mergeFavoriteRows,
-} from "@/features/favorites/utils";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import { filterMarketScanRows } from "@/features/market-scan/results-table/utils";
 import type { MarketScanSort } from "@/features/market-scan/sort";
@@ -53,12 +51,12 @@ export function FavoritesScreen({
 	onSettingsCommit(settings: VolatilitySettings): void;
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
-	sort: MarketScanSort;
+	sort: MarketScanSort | undefined;
 	symbolFilter: string;
 }) {
 	const permission = useBusinessRequestPermission();
 	const { favorites, handleAccessError, isError, isLoading } = useFavorites();
-	const favoriteItems = [...favorites.values()];
+	const hasFavorites = favorites.size > 0;
 	const [settings, setSettings] = useState(initialSettings);
 	const settingsForm = useVolatilitySettingsForm({
 		disabled: !permission.allowed,
@@ -74,11 +72,13 @@ export function FavoritesScreen({
 	const query = useAnalyzeFavorites<MarketAnalysisResponse>(request, {
 		fetch: telegramRequestOptions(),
 		query: {
-			enabled: permission.allowed && !isLoading && favoriteItems.length > 0,
+			enabled: permission.allowed && !isLoading && hasFavorites,
 			queryKey: scopedUserQueryKey(
 				getAnalyzeFavoritesQueryKey(request),
 				telegramUserScope(),
 			),
+			// Settings changes keep the current table until the new one arrives.
+			placeholderData: keepPreviousData,
 			refetchInterval: 15_000,
 			refetchOnMount: "always",
 			retry: false,
@@ -102,7 +102,11 @@ export function FavoritesScreen({
 		});
 	}, [handleAccessError, query.error, query.isError]);
 	useAnalysisWarningNotification(query.data?.warnings, "Favorites warning");
-	const allRows = mergeFavoriteRows(favoriteItems, query.data?.items ?? []);
+	// The analysis table has a row for every favorite, including instruments
+	// the analysis skipped. Removed favorites disappear before the refetch.
+	const table = hasFavorites ? query.data?.table : undefined;
+	const allRows = table?.rows.filter((row) => favorites.has(row.symbol)) ?? [];
+	const analysisFailed = hasFavorites && query.isError && !query.data;
 	const rows = filterMarketScanRows(allRows, symbolFilter);
 
 	return (
@@ -110,12 +114,12 @@ export function FavoritesScreen({
 			<Stack gap="md">
 				<PageNavigation current="favorites" title="Favorites" />
 				<SettingsForm {...settingsForm} />
-				{isLoading || (query.isPending && favoriteItems.length > 0) ? (
+				{isLoading || (query.isPending && hasFavorites) ? (
 					<Center mih={180}>
 						<Loader aria-label="Loading favorites" />
 					</Center>
 				) : null}
-				{isError && favoriteItems.length === 0 ? (
+				{isError && !hasFavorites ? (
 					<Paper p="xl" ta="center">
 						<Text fw={600}>Unable to load favorites.</Text>
 						<Text c="dimmed" mt={4} size="sm">
@@ -123,7 +127,23 @@ export function FavoritesScreen({
 						</Text>
 					</Paper>
 				) : null}
-				{!isLoading && !isError && favoriteItems.length === 0 ? (
+				{analysisFailed ? (
+					<Paper p="xl" ta="center">
+						<Text fw={600}>Unable to analyze favorites.</Text>
+						<Text c="dimmed" mt={4} size="sm">
+							Try again when market data is available.
+						</Text>
+						<Button
+							loading={query.isFetching}
+							mt="md"
+							onClick={() => void query.refetch()}
+							variant="light"
+						>
+							Try again
+						</Button>
+					</Paper>
+				) : null}
+				{!isLoading && !isError && !hasFavorites ? (
 					<Paper p="xl" ta="center">
 						<Text fw={600}>No favorites yet.</Text>
 						<Text c="dimmed" mt={4} size="sm">
@@ -131,7 +151,7 @@ export function FavoritesScreen({
 						</Text>
 					</Paper>
 				) : null}
-				{allRows.length > 0 ? (
+				{table && allRows.length > 0 ? (
 					<>
 						<TextInput
 							aria-label="Filter Favorites by symbol"
@@ -146,11 +166,11 @@ export function FavoritesScreen({
 						/>
 						{rows.length > 0 ? (
 							<MarketScanResultsTable
-								alertCounts={favoriteAlertCounts(favoriteItems)}
 								criteria={scanCriteria}
 								onSortChange={onSortChange}
 								rows={rows}
 								sort={sort}
+								table={table}
 								window={query.data?.price_history_window}
 							/>
 						) : (

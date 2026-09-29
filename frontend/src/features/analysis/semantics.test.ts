@@ -61,9 +61,7 @@ function marketResult(evaluations: Evaluation[]): MarketAnalysisResponse {
 		items: [
 			{
 				evaluations,
-				closed_indicators: [],
 				matched: true,
-				price_history: Array(169).fill(null),
 				symbol: "BTCUSDT",
 			},
 		],
@@ -71,6 +69,19 @@ function marketResult(evaluations: Evaluation[]): MarketAnalysisResponse {
 		price_history_window: {
 			from: "2026-08-01T00:00:00Z",
 			to: "2026-08-08T00:00:00Z",
+		},
+		table: {
+			columns: [
+				{ id: "symbol", kind: "text", sortable: false, title: "Symbol" },
+				{ id: "chart", kind: "sparkline", sortable: false, title: "7d chart" },
+			],
+			default_sort: { column: "symbol", direction: "desc" },
+			rows: [
+				{
+					cells: { chart: { series: Array(169).fill(null) } },
+					symbol: "BTCUSDT",
+				},
+			],
 		},
 		unresolved: [],
 		warnings: [],
@@ -103,7 +114,7 @@ it("rejects malformed market history", () => {
 		marketCapEvaluation,
 	];
 	const missingPrice = marketResult(evaluations);
-	missingPrice.items[0].price_history.pop();
+	missingPrice.table.rows[0].cells.chart.series?.pop();
 	const invalidWindow = marketResult(evaluations);
 	invalidWindow.price_history_window.from = "invalid";
 

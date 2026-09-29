@@ -5,10 +5,9 @@ import (
 	"math"
 	"net/http"
 	"strings"
-	"time"
 
 	"crypto-scanner/internal/analysis"
-	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/markettable"
 )
 
 func marketSearchRequest(request MarketAnalysisRequest) analysis.SearchRequest {
@@ -53,7 +52,7 @@ func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestO
 	if request.Body != nil {
 		body = *request.Body
 	}
-	result, err := api.analysis.Search(ctx, marketSearchRequest(body))
+	result, err := api.tables.Search(ctx, marketSearchRequest(body))
 	if err != nil {
 		return api.analyzeMarketError(ctx, err), nil
 	}
@@ -63,10 +62,11 @@ func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestO
 	}, nil
 }
 
-func marketAnalysisResponse(result analysis.SearchResult) MarketAnalysisResponse {
+func marketAnalysisResponse(analyzed markettable.Result) MarketAnalysisResponse {
+	result := analyzed.Search
 	items := make([]MarketAnalysisItem, len(result.Items))
 	for i, item := range result.Items {
-		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations), PriceHistory: item.PriceHistory, ClosedIndicators: closedIndicatorsResponse(item.ClosedIndicators)}
+		items[i] = MarketAnalysisItem{Symbol: item.Symbol, Matched: item.Matched, Evaluations: responseMarketScanEvaluations(item.Evaluations)}
 	}
 	unresolved := make([]UnresolvedInstrument, len(result.Unresolved))
 	for i, item := range result.Unresolved {
@@ -81,31 +81,32 @@ func marketAnalysisResponse(result analysis.SearchResult) MarketAnalysisResponse
 		MatchedCount:       result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount,
 		InsufficientData: insufficient,
 		Items:            items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings),
+		Table: marketTableResponse(analyzed.Table),
 	}
 }
 
-func closedIndicatorsResponse(values []closedindicator.Value) []ClosedIndicator {
-	result := make([]ClosedIndicator, len(values))
-	for i, value := range values {
-		outputs := make([]ClosedIndicatorOutput, len(value.Outputs))
-		for j, output := range value.Outputs {
-			outputs[j] = ClosedIndicatorOutput{Name: output.Name, Value: output.Value}
-		}
-		var openTime *time.Time
-		if !value.OpenTime.IsZero() {
-			opened := value.OpenTime.UTC()
-			openTime = &opened
-		}
-		parameters := map[string]interface{}{}
-		for key, parameter := range value.Target.Selection.Parameters {
-			parameters[key] = parameter
-		}
-		result[i] = ClosedIndicator{
-			Type: string(value.Target.Selection.Type), Interval: CandleInterval(value.Target.Interval),
-			Parameters: parameters, OpenTime: openTime, Outputs: outputs,
-		}
+func marketTableResponse(table markettable.Table) MarketTable {
+	columns := make([]TableColumn, len(table.Columns))
+	for i, column := range table.Columns {
+		columns[i] = TableColumn{Id: column.ID, Title: column.Title, Kind: TableColumnKind(column.Kind), Sortable: column.Sortable}
 	}
-	return result
+	rows := make([]TableRow, len(table.Rows))
+	for i, row := range table.Rows {
+		cells := make(map[string]TableCell, len(row.Cells))
+		for id, cell := range row.Cells {
+			response := TableCell{Value: cell.Value, Url: cell.URL}
+			if cell.Series != nil {
+				response.Series = &cell.Series
+			}
+			cells[id] = response
+		}
+		rows[i] = TableRow{Symbol: row.Symbol, Cells: cells}
+	}
+	return MarketTable{
+		Columns:     columns,
+		DefaultSort: TableSort{Column: table.DefaultSort.Column, Direction: TableSortDirection(table.DefaultSort.Direction)},
+		Rows:        rows,
+	}
 }
 
 func (api *api) analyzeInstrumentError(ctx context.Context, err error, symbol string) AnalyzeInstrumentResponseObject {

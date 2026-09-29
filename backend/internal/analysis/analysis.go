@@ -77,9 +77,12 @@ type Warning struct{ Code, Message string }
 
 // Evaluation is an unrounded criterion result.
 type Evaluation struct {
-	Key         string
-	Name        string
-	Label       string
+	Key   string
+	Name  string
+	Label string
+	// Unit is the candle granularity a candle-based criterion evaluated; it is
+	// empty for other criteria.
+	Unit        Unit
 	Matched     bool
 	Metrics     map[string]float64
 	CandleCount int

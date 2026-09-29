@@ -25,14 +25,6 @@ func (store *Store) ListFavorites(ctx context.Context, userID int64) ([]favorite
 	return items, nil
 }
 
-func (store *Store) ListFavoriteSymbols(ctx context.Context, userID int64) ([]string, error) {
-	symbols, err := store.queries.ListFavoriteSymbols(ctx, userID)
-	if err != nil {
-		return nil, fmt.Errorf("list favorite symbols: %w", err)
-	}
-	return symbols, nil
-}
-
 func (store *Store) AddFavorite(ctx context.Context, userID int64, symbol string) (favorites.Favorite, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {

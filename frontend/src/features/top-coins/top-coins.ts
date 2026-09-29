@@ -1,7 +1,4 @@
-import type {
-	CriterionRequest,
-	MarketAnalysisItem,
-} from "@/api/generated/models";
+import type { CriterionRequest } from "@/api/generated/models";
 import { applicationConfig } from "@/config";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import {
@@ -9,10 +6,6 @@ import {
 	type MarketScanCriteria,
 	rsiFilterConstraints,
 } from "@/features/market-scan/pipeline";
-import {
-	type MarketScanRow,
-	toMarketScanRows,
-} from "@/features/market-scan/results-table/utils";
 
 export function buildTopCoinsScanCriteria(
 	settings: VolatilitySettings,
@@ -40,9 +33,3 @@ export const topCoinsRequestOptions = {
 		field: "market_cap_usd",
 	},
 } as const;
-
-export function toTopCoinRows(
-	items: readonly MarketAnalysisItem[],
-): MarketScanRow[] {
-	return toMarketScanRows(items);
-}

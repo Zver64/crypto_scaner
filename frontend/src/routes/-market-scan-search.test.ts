@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { defaultMarketScanSort } from "@/features/market-scan/sort";
 import {
 	marketScanSortFromSearch,
 	parseMarketScanSearch,
@@ -10,38 +9,38 @@ describe("parseMarketScanSortSearch", () => {
 	it("keeps valid sort state and drops unrelated search parameters", () => {
 		expect(
 			parseMarketScanSortSearch({
-				sort_column: "marketCapUsd",
+				sort_column: "market_cap_usd",
 				sort_direction: "asc",
 				symbol_filter: "BTC",
 			}),
 		).toEqual({
-			sort_column: "marketCapUsd",
+			sort_column: "market_cap_usd",
 			sort_direction: "asc",
 		});
 	});
 
 	it("drops incomplete sort state", () => {
-		expect(parseMarketScanSortSearch({ sort_column: "marketCapUsd" })).toEqual(
-			{},
-		);
+		expect(
+			parseMarketScanSortSearch({ sort_column: "market_cap_usd" }),
+		).toEqual({});
 	});
 });
 
 describe("parseMarketScanSearch", () => {
 	it("keeps valid table filter and sort state", () => {
 		const search = parseMarketScanSearch({
-			sort_column: "dailyRangePercent",
+			sort_column: "daily_range_percent",
 			sort_direction: "asc",
 			symbol_filter: "BTC",
 		});
 
 		expect(search).toEqual({
-			sort_column: "dailyRangePercent",
+			sort_column: "daily_range_percent",
 			sort_direction: "asc",
 			symbol_filter: "BTC",
 		});
 		expect(marketScanSortFromSearch(search)).toEqual({
-			column: "dailyRangePercent",
+			column: "daily_range_percent",
 			direction: "asc",
 		});
 	});
@@ -55,7 +54,7 @@ describe("parseMarketScanSearch", () => {
 		).toEqual({});
 	});
 
-	it("drops invalid table state and uses the default sort", () => {
+	it("drops invalid table state and leaves the sort to the table default", () => {
 		const search = parseMarketScanSearch({
 			sort_column: "symbol",
 			sort_direction: "sideways",
@@ -63,6 +62,6 @@ describe("parseMarketScanSearch", () => {
 		});
 
 		expect(search).toEqual({});
-		expect(marketScanSortFromSearch(search)).toEqual(defaultMarketScanSort);
+		expect(marketScanSortFromSearch(search)).toBeUndefined();
 	});
 });

@@ -3,6 +3,7 @@ import type {
 	Evaluation,
 	MarketAnalysisItem,
 	MarketAnalysisResponse,
+	MarketTable,
 } from "@/api/generated/models";
 import {
 	criterionNames,
@@ -27,6 +28,7 @@ export function hasExpectedMarketScanResult(
 ): boolean {
 	return (
 		result.items.every((item) => hasExpectedEvaluations(item, criteria)) &&
+		hasCompletePriceHistories(result.table) &&
 		isSevenDayHourlyWindow(result)
 	);
 }
@@ -35,15 +37,23 @@ function hasExpectedEvaluations(
 	item: MarketAnalysisItem,
 	criteria: readonly CriterionRequest[],
 ): boolean {
-	return (
-		criteria.every(
-			(criterion) =>
-				expectedEvaluation(item.evaluations, criterion) !== undefined,
-		) &&
-		item.price_history.length === 169 &&
-		item.price_history.every(
-			(value) => value === null || Number.isFinite(value),
-		)
+	return criteria.every(
+		(criterion) =>
+			expectedEvaluation(item.evaluations, criterion) !== undefined,
+	);
+}
+
+// Sparklines span the fixed seven-day window: one slot per closed hour.
+function hasCompletePriceHistories(table: MarketTable): boolean {
+	const sparklines = table.columns.filter(({ kind }) => kind === "sparkline");
+	return table.rows.every((row) =>
+		sparklines.every(({ id }) => {
+			const series = row.cells[id]?.series;
+			return (
+				series?.length === 169 &&
+				series.every((value) => value === null || Number.isFinite(value))
+			);
+		}),
 	);
 }
 

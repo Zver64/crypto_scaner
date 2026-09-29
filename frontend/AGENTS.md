@@ -100,6 +100,13 @@ tanstackIntent:
 - Keep `src/config.ts` limited to meaningful application-wide product-tuning values, such as shared presets and defaults. Keep presentation metadata, component behavior, domain constraints, and arbitrary constants with their owning modules. Put component-specific type declarations in the component directory's `types.ts`.
 - Do not use `<component>-utils.ts` files at the feature root.
 
+## Styling and static verification
+
+- Do not make changes that static analysis cannot verify. Every name used in code must fail `npm run quality` when misspelled.
+- Never write CSS custom properties or `var(--…)` references as strings in TS/TSX: not in props, `style` objects, theme `vars` resolvers, or template strings. Neither TypeScript nor a linter can check them.
+- In TS/TSX, pass style values only as typed JS data whose names TypeScript checks. Before relying on an API, confirm that a deliberate typo fails `npm run typecheck`. Mantine's `theme.colors` and component `vars` resolvers do **not** qualify: `theme.colors.drak[5]`, `theme.colors.dark[15]` and unknown `--tooltip-*` keys all typecheck.
+- CSS custom properties belong only in CSS files, and only once a linter in `npm run quality` validates their names. No such linter exists yet (Biome excludes `src/styles.css` and does not check custom property names), so ask before adding styling that depends on CSS variables.
+
 ## Number formatting
 
 - Format displayed numbers with `formatNumber` or `formatCompactNumber` from `src/utils/number-format.ts`; do not create ad-hoc `Intl.NumberFormat` instances or custom rounding helpers.

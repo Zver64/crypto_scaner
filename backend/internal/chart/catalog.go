@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"crypto-scanner/internal/indicator"
+	"crypto-scanner/internal/market"
 )
 
 // Placement tells the client where to draw an indicator.
@@ -36,10 +37,9 @@ type IndicatorLevel struct {
 
 // IndicatorScale describes the value axis of an indicator pane.
 type IndicatorScale struct {
-	Min       *float64
-	Max       *float64
-	Levels    []IndicatorLevel
-	Precision int
+	Min    *float64
+	Max    *float64
+	Levels []IndicatorLevel
 }
 
 // CatalogIndicator is one indicator the chart calculates and how to draw it.
@@ -53,26 +53,17 @@ type CatalogIndicator struct {
 	Scale *IndicatorScale
 }
 
-const maxIndicatorPrecision = 18
+// CatalogSource supplies the indicators every chart of an interval shows.
+type CatalogSource interface {
+	ChartCatalog(market.CandleInterval) []CatalogIndicator
+}
 
-func validateCatalog(registry *indicator.Registry, catalog []CatalogIndicator) error {
-	if len(catalog) == 0 || len(catalog) > maxIndicators {
-		return fmt.Errorf("catalog must contain between 1 and %d indicators", maxIndicators)
+// ValidateIndicator checks that a catalog indicator can be calculated and drawn.
+func ValidateIndicator(registry *indicator.Registry, item CatalogIndicator) error {
+	if strings.TrimSpace(item.ID) == "" {
+		return errors.New("catalog indicator id is empty")
 	}
-	ids := map[string]bool{}
-	for _, item := range catalog {
-		if strings.TrimSpace(item.ID) == "" {
-			return errors.New("catalog indicator id is empty")
-		}
-		if ids[item.ID] {
-			return fmt.Errorf("catalog indicator %q is duplicated", item.ID)
-		}
-		ids[item.ID] = true
-		if err := validateCatalogIndicator(registry, item); err != nil {
-			return fmt.Errorf("catalog indicator %q: %w", item.ID, err)
-		}
-	}
-	return nil
+	return validateCatalogIndicator(registry, item)
 }
 
 func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicator) error {
@@ -111,9 +102,6 @@ func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicato
 	case PlacementPane:
 		if item.Scale == nil {
 			return errors.New("panes require a scale")
-		}
-		if item.Scale.Precision < 0 || item.Scale.Precision > maxIndicatorPrecision {
-			return fmt.Errorf("precision must be between 0 and %d", maxIndicatorPrecision)
 		}
 		if item.Scale.Min != nil && item.Scale.Max != nil && *item.Scale.Min >= *item.Scale.Max {
 			return errors.New("scale min must be below max")

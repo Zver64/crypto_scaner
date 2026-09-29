@@ -33,4 +33,5 @@ export const TableColumnKind = {
   link: 'link',
   favorite: 'favorite',
   count: 'count',
+  number: 'number',
 } as const;

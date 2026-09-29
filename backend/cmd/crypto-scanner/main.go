@@ -69,7 +69,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger) erro
 	if err := store.BootstrapAdministrator(ctx, cfg.AdminTelegramID); err != nil {
 		return err
 	}
-	application, err := buildApp(cfg, logger, store)
+	application, err := buildApp(ctx, cfg, logger, store)
 	if err != nil {
 		return err
 	}

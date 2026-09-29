@@ -26,6 +26,7 @@ import (
 // Defines values for APIErrorCode.
 const (
 	APIErrorCodeAccessDenied               APIErrorCode = "access_denied"
+	APIErrorCodeAdministratorRequired      APIErrorCode = "administrator_required"
 	APIErrorCodeAlertLimit                 APIErrorCode = "alert_limit"
 	APIErrorCodeAlertNotFound              APIErrorCode = "alert_not_found"
 	APIErrorCodeDuplicateTarget            APIErrorCode = "duplicate_target"
@@ -40,6 +41,9 @@ const (
 	APIErrorCodeMarketCapMissing           APIErrorCode = "market_cap_missing"
 	APIErrorCodeMarketCapUnavailable       APIErrorCode = "market_cap_unavailable"
 	APIErrorCodeMarketDataUnavailable      APIErrorCode = "market_data_unavailable"
+	APIErrorCodeScannerIndicatorExists     APIErrorCode = "scanner_indicator_exists"
+	APIErrorCodeScannerIndicatorLimit      APIErrorCode = "scanner_indicator_limit"
+	APIErrorCodeScannerIndicatorNotFound   APIErrorCode = "scanner_indicator_not_found"
 	APIErrorCodeSymbolNotFound             APIErrorCode = "symbol_not_found"
 	APIErrorCodeUnauthenticated            APIErrorCode = "unauthenticated"
 )
@@ -48,6 +52,8 @@ const (
 func (e APIErrorCode) Valid() bool {
 	switch e {
 	case APIErrorCodeAccessDenied:
+		return true
+	case APIErrorCodeAdministratorRequired:
 		return true
 	case APIErrorCodeAlertLimit:
 		return true
@@ -76,6 +82,12 @@ func (e APIErrorCode) Valid() bool {
 	case APIErrorCodeMarketCapUnavailable:
 		return true
 	case APIErrorCodeMarketDataUnavailable:
+		return true
+	case APIErrorCodeScannerIndicatorExists:
+		return true
+	case APIErrorCodeScannerIndicatorLimit:
+		return true
+	case APIErrorCodeScannerIndicatorNotFound:
 		return true
 	case APIErrorCodeSymbolNotFound:
 		return true
@@ -112,16 +124,37 @@ func (e CandleInterval) Valid() bool {
 
 // Defines values for ChartIndicatorDefinitionPlacement.
 const (
-	Overlay ChartIndicatorDefinitionPlacement = "overlay"
-	Pane    ChartIndicatorDefinitionPlacement = "pane"
+	ChartIndicatorDefinitionPlacementOverlay ChartIndicatorDefinitionPlacement = "overlay"
+	ChartIndicatorDefinitionPlacementPane    ChartIndicatorDefinitionPlacement = "pane"
 )
 
 // Valid indicates whether the value is a known member of the ChartIndicatorDefinitionPlacement enum.
 func (e ChartIndicatorDefinitionPlacement) Valid() bool {
 	switch e {
-	case Overlay:
+	case ChartIndicatorDefinitionPlacementOverlay:
 		return true
-	case Pane:
+	case ChartIndicatorDefinitionPlacementPane:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for IndicatorParameterKind.
+const (
+	Choice  IndicatorParameterKind = "choice"
+	Integer IndicatorParameterKind = "integer"
+	Real    IndicatorParameterKind = "real"
+)
+
+// Valid indicates whether the value is a known member of the IndicatorParameterKind enum.
+func (e IndicatorParameterKind) Valid() bool {
+	switch e {
+	case Choice:
+		return true
+	case Integer:
+		return true
+	case Real:
 		return true
 	default:
 		return false
@@ -365,11 +398,30 @@ func (e ReadinessResponseStatus) Valid() bool {
 	}
 }
 
+// Defines values for ScannerIndicatorPlacement.
+const (
+	ScannerIndicatorPlacementOverlay ScannerIndicatorPlacement = "overlay"
+	ScannerIndicatorPlacementPane    ScannerIndicatorPlacement = "pane"
+)
+
+// Valid indicates whether the value is a known member of the ScannerIndicatorPlacement enum.
+func (e ScannerIndicatorPlacement) Valid() bool {
+	switch e {
+	case ScannerIndicatorPlacementOverlay:
+		return true
+	case ScannerIndicatorPlacementPane:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TableColumnKind.
 const (
 	TableColumnKindCount         TableColumnKind = "count"
 	TableColumnKindFavorite      TableColumnKind = "favorite"
 	TableColumnKindLink          TableColumnKind = "link"
+	TableColumnKindNumber        TableColumnKind = "number"
 	TableColumnKindOscillator    TableColumnKind = "oscillator"
 	TableColumnKindPercentChange TableColumnKind = "percent_change"
 	TableColumnKindRangePercent  TableColumnKind = "range_percent"
@@ -386,6 +438,8 @@ func (e TableColumnKind) Valid() bool {
 	case TableColumnKindFavorite:
 		return true
 	case TableColumnKindLink:
+		return true
+	case TableColumnKindNumber:
 		return true
 	case TableColumnKindOscillator:
 		return true
@@ -495,7 +549,7 @@ type ChartIndicatorDefinition struct {
 	// Placement `overlay` draws over the candles on their price scale; `pane` draws in its own pane below.
 	Placement ChartIndicatorDefinitionPlacement `json:"placement"`
 
-	// Scale Value axis of a pane indicator.
+	// Scale Value axis of a pane indicator; clients derive the value precision from the values.
 	Scale *ChartIndicatorScale `json:"scale,omitempty"`
 	Type  string               `json:"type"`
 }
@@ -526,14 +580,11 @@ type ChartIndicatorResult struct {
 	Type       string                 `json:"type"`
 }
 
-// ChartIndicatorScale Value axis of a pane indicator.
+// ChartIndicatorScale Value axis of a pane indicator; clients derive the value precision from the values.
 type ChartIndicatorScale struct {
 	Levels []ChartIndicatorLevel `json:"levels"`
 	Max    *float64              `json:"max,omitempty"`
 	Min    *float64              `json:"min,omitempty"`
-
-	// Precision Maximum fraction digits shown for values.
-	Precision int `json:"precision"`
 }
 
 // ChartPageResponse defines model for ChartPageResponse.
@@ -552,6 +603,12 @@ type CriterionRequest struct {
 	Label      string                 `json:"label"`
 	Name       string                 `json:"name"`
 	Parameters map[string]interface{} `json:"parameters"`
+}
+
+// CurrentUser defines model for CurrentUser.
+type CurrentUser struct {
+	// Administrator Whether the user manages the global scanner settings.
+	Administrator bool `json:"administrator"`
 }
 
 // ErrorResponse defines model for ErrorResponse.
@@ -587,11 +644,34 @@ type FavoritesResponse struct {
 	Items []Favorite `json:"items"`
 }
 
+// IndicatorChoice defines model for IndicatorChoice.
+type IndicatorChoice struct {
+	Title string `json:"title"`
+	Value int    `json:"value"`
+}
+
 // IndicatorConfig defines model for IndicatorConfig.
 type IndicatorConfig struct {
 	Parameters map[string]interface{} `json:"parameters"`
 	Type       string                 `json:"type"`
 }
+
+// IndicatorParameter defines model for IndicatorParameter.
+type IndicatorParameter struct {
+	Choices     *[]IndicatorChoice `json:"choices,omitempty"`
+	Default     float64            `json:"default"`
+	Description string             `json:"description"`
+	Key         string             `json:"key"`
+
+	// Kind `choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds.
+	Kind    IndicatorParameterKind `json:"kind"`
+	Maximum *float64               `json:"maximum,omitempty"`
+	Minimum *float64               `json:"minimum,omitempty"`
+	Title   string                 `json:"title"`
+}
+
+// IndicatorParameterKind `choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds.
+type IndicatorParameterKind string
 
 // IndicatorPoint defines model for IndicatorPoint.
 type IndicatorPoint struct {
@@ -603,6 +683,23 @@ type IndicatorPoint struct {
 type IndicatorSeries struct {
 	Name   string           `json:"name"`
 	Points []IndicatorPoint `json:"points"`
+}
+
+// IndicatorType defines model for IndicatorType.
+type IndicatorType struct {
+	Group   string   `json:"group"`
+	Outputs []string `json:"outputs"`
+
+	// Overlay Charts draw it over the candles; otherwise in a pane below.
+	Overlay    bool                 `json:"overlay"`
+	Parameters []IndicatorParameter `json:"parameters"`
+	Title      string               `json:"title"`
+	Type       string               `json:"type"`
+}
+
+// IndicatorTypeCatalog defines model for IndicatorTypeCatalog.
+type IndicatorTypeCatalog struct {
+	Items []IndicatorType `json:"items"`
 }
 
 // InstrumentAnalysisRequest defines model for InstrumentAnalysisRequest.
@@ -779,6 +876,68 @@ type ReadinessResponse struct {
 // ReadinessResponseStatus defines model for ReadinessResponse.Status.
 type ReadinessResponseStatus string
 
+// ScannerIndicator defines model for ScannerIndicator.
+type ScannerIndicator struct {
+	Id       int64          `json:"id"`
+	Interval CandleInterval `json:"interval"`
+	Outputs  []string       `json:"outputs"`
+
+	// Parameters Canonical parameters with defaults filled in.
+	Parameters map[string]interface{}    `json:"parameters"`
+	Placement  ScannerIndicatorPlacement `json:"placement"`
+
+	// Scale Optional value axis of a pane indicator; overlays have none.
+	Scale       ScannerIndicatorScale `json:"scale"`
+	ShowInTable bool                  `json:"show_in_table"`
+
+	// Title Table column title, such as `d-rsi`.
+	Title string `json:"title"`
+	Type  string `json:"type"`
+}
+
+// ScannerIndicatorPlacement defines model for ScannerIndicator.Placement.
+type ScannerIndicatorPlacement string
+
+// ScannerIndicatorInput defines model for ScannerIndicatorInput.
+type ScannerIndicatorInput struct {
+	Interval CandleInterval `json:"interval"`
+
+	// Parameters Parameter values by key; omitted keys take their defaults.
+	Parameters map[string]interface{} `json:"parameters"`
+
+	// Scale Optional value axis of a pane indicator; overlays have none.
+	Scale *ScannerIndicatorScale `json:"scale,omitempty"`
+
+	// ShowInTable Only indicators with one output can be table columns.
+	ShowInTable bool   `json:"show_in_table"`
+	Type        string `json:"type"`
+}
+
+// ScannerIndicatorList defines model for ScannerIndicatorList.
+type ScannerIndicatorList struct {
+	Items []ScannerIndicator `json:"items"`
+}
+
+// ScannerIndicatorOrder defines model for ScannerIndicatorOrder.
+type ScannerIndicatorOrder struct {
+	// Ids Every indicator id once, in the new display order.
+	Ids []int64 `json:"ids"`
+}
+
+// ScannerIndicatorScale Optional value axis of a pane indicator; overlays have none.
+type ScannerIndicatorScale struct {
+	Levels []float64 `json:"levels"`
+	Max    *float64  `json:"max,omitempty"`
+	Min    *float64  `json:"min,omitempty"`
+}
+
+// ScannerIndicatorUpdate defines model for ScannerIndicatorUpdate.
+type ScannerIndicatorUpdate struct {
+	// Scale Optional value axis of a pane indicator; overlays have none.
+	Scale       *ScannerIndicatorScale `json:"scale,omitempty"`
+	ShowInTable bool                   `json:"show_in_table"`
+}
+
 // TableCell Holds the field its column kind reads; the field is omitted when its value is unavailable.
 type TableCell struct {
 	Series *[]*float64 `json:"series,omitempty"`
@@ -845,11 +1004,17 @@ type AlertID = int64
 // RequestID defines model for RequestID.
 type RequestID = string
 
+// ScannerIndicatorID defines model for ScannerIndicatorID.
+type ScannerIndicatorID = int64
+
 // Symbol defines model for Symbol.
 type Symbol = string
 
 // AccessDenied defines model for AccessDenied.
 type AccessDenied = ErrorResponse
+
+// AdministratorRequired defines model for AdministratorRequired.
+type AdministratorRequired = ErrorResponse
 
 // AlertConflict defines model for AlertConflict.
 type AlertConflict = ErrorResponse
@@ -875,6 +1040,12 @@ type InsufficientData = ErrorResponse
 // InternalError defines model for InternalError.
 type InternalError = ErrorResponse
 
+// ScannerIndicatorConflict defines model for ScannerIndicatorConflict.
+type ScannerIndicatorConflict = ErrorResponse
+
+// ScannerIndicatorNotFound defines model for ScannerIndicatorNotFound.
+type ScannerIndicatorNotFound = ErrorResponse
+
 // SymbolNotFound defines model for SymbolNotFound.
 type SymbolNotFound = ErrorResponse
 
@@ -894,6 +1065,11 @@ type AnalyzeInstrumentParams struct {
 type AnalyzeMarketParams struct {
 	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
 	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
+}
+
+// ListChartIndicatorsParams defines parameters for ListChartIndicators.
+type ListChartIndicatorsParams struct {
+	Interval CandleInterval `form:"interval" json:"interval"`
 }
 
 // RemoveFavoriteParams defines parameters for RemoveFavorite.
@@ -928,6 +1104,15 @@ type GetReadinessParams struct {
 	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
 }
 
+// ReorderScannerIndicatorsJSONRequestBody defines body for ReorderScannerIndicators for application/json ContentType.
+type ReorderScannerIndicatorsJSONRequestBody = ScannerIndicatorOrder
+
+// CreateScannerIndicatorJSONRequestBody defines body for CreateScannerIndicator for application/json ContentType.
+type CreateScannerIndicatorJSONRequestBody = ScannerIndicatorInput
+
+// UpdateScannerIndicatorJSONRequestBody defines body for UpdateScannerIndicator for application/json ContentType.
+type UpdateScannerIndicatorJSONRequestBody = ScannerIndicatorUpdate
+
 // UpdatePriceAlertJSONRequestBody defines body for UpdatePriceAlert for application/json ContentType.
 type UpdatePriceAlertJSONRequestBody = PriceAlertInput
 
@@ -945,6 +1130,24 @@ type CreatePriceAlertJSONRequestBody = PriceAlertInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListIndicatorTypes List every indicator the scanner can calculate
+	// (GET /api/v1/admin/indicator-types)
+	ListIndicatorTypes(w http.ResponseWriter, r *http.Request)
+	// ReorderScannerIndicators Set the display order of the scanner indicators
+	// (PUT /api/v1/admin/scanner-indicator-order)
+	ReorderScannerIndicators(w http.ResponseWriter, r *http.Request)
+	// ListScannerIndicators List the configured scanner indicators
+	// (GET /api/v1/admin/scanner-indicators)
+	ListScannerIndicators(w http.ResponseWriter, r *http.Request)
+	// CreateScannerIndicator Add a scanner indicator
+	// (POST /api/v1/admin/scanner-indicators)
+	CreateScannerIndicator(w http.ResponseWriter, r *http.Request)
+	// DeleteScannerIndicator Remove a scanner indicator
+	// (DELETE /api/v1/admin/scanner-indicators/{indicator_id})
+	DeleteScannerIndicator(w http.ResponseWriter, r *http.Request, indicatorId ScannerIndicatorID)
+	// UpdateScannerIndicator Change the table visibility and pane scale of a scanner indicator
+	// (PATCH /api/v1/admin/scanner-indicators/{indicator_id})
+	UpdateScannerIndicator(w http.ResponseWriter, r *http.Request, indicatorId ScannerIndicatorID)
 
 	// (DELETE /api/v1/alerts/{alert_id})
 	DeletePriceAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
@@ -957,9 +1160,9 @@ type ServerInterface interface {
 	// AnalyzeMarket Analyze active instruments in the market
 	// (POST /api/v1/analysis/market)
 	AnalyzeMarket(w http.ResponseWriter, r *http.Request, params AnalyzeMarketParams)
-	// ListChartIndicators List the indicators charts request and how to draw them
+	// ListChartIndicators List the indicators charts of an interval request and how to draw them
 	// (GET /api/v1/chart/indicators)
-	ListChartIndicators(w http.ResponseWriter, r *http.Request)
+	ListChartIndicators(w http.ResponseWriter, r *http.Request, params ListChartIndicatorsParams)
 
 	// (GET /api/v1/favorites)
 	ListFavorites(w http.ResponseWriter, r *http.Request)
@@ -981,6 +1184,9 @@ type ServerInterface interface {
 	// ListInstrumentCandles List a chronological page of closed candles
 	// (GET /api/v1/instruments/{symbol}/candles)
 	ListInstrumentCandles(w http.ResponseWriter, r *http.Request, symbol Symbol, params ListInstrumentCandlesParams)
+	// GetCurrentUser Describe the authenticated user
+	// (GET /api/v1/me)
+	GetCurrentUser(w http.ResponseWriter, r *http.Request)
 	// GetLiveness Check whether the process is alive
 	// (GET /health/live)
 	GetLiveness(w http.ResponseWriter, r *http.Request, params GetLivenessParams)
@@ -997,6 +1203,114 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListIndicatorTypes operation middleware
+func (siw *ServerInterfaceWrapper) ListIndicatorTypes(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListIndicatorTypes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReorderScannerIndicators operation middleware
+func (siw *ServerInterfaceWrapper) ReorderScannerIndicators(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReorderScannerIndicators(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListScannerIndicators operation middleware
+func (siw *ServerInterfaceWrapper) ListScannerIndicators(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListScannerIndicators(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateScannerIndicator operation middleware
+func (siw *ServerInterfaceWrapper) CreateScannerIndicator(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateScannerIndicator(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteScannerIndicator operation middleware
+func (siw *ServerInterfaceWrapper) DeleteScannerIndicator(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "indicator_id" -------------
+	var indicatorId ScannerIndicatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "indicator_id", r.PathValue("indicator_id"), &indicatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "indicator_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteScannerIndicator(w, r, indicatorId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateScannerIndicator operation middleware
+func (siw *ServerInterfaceWrapper) UpdateScannerIndicator(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "indicator_id" -------------
+	var indicatorId ScannerIndicatorID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "indicator_id", r.PathValue("indicator_id"), &indicatorId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "indicator_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateScannerIndicator(w, r, indicatorId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // DeletePriceAlert operation middleware
 func (siw *ServerInterfaceWrapper) DeletePriceAlert(w http.ResponseWriter, r *http.Request) {
@@ -1144,8 +1458,27 @@ func (siw *ServerInterfaceWrapper) AnalyzeMarket(w http.ResponseWriter, r *http.
 // ListChartIndicators operation middleware
 func (siw *ServerInterfaceWrapper) ListChartIndicators(w http.ResponseWriter, r *http.Request) {
 
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListChartIndicatorsParams
+
+	// ------------- Required query parameter "interval" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "interval", r.URL.Query(), &params.Interval, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "interval"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "interval", Err: err})
+		}
+		return
+	}
+
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListChartIndicators(w, r)
+		siw.Handler.ListChartIndicators(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1392,6 +1725,20 @@ func (siw *ServerInterfaceWrapper) ListInstrumentCandles(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
+// GetCurrentUser operation middleware
+func (siw *ServerInterfaceWrapper) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCurrentUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetLiveness operation middleware
 func (siw *ServerInterfaceWrapper) GetLiveness(w http.ResponseWriter, r *http.Request) {
 
@@ -1608,6 +1955,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/instruments/{symbol}/alerts", wrapper.CreatePriceAlert)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/alerts/{alert_id}", wrapper.DeletePriceAlert)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/alerts/{alert_id}", wrapper.UpdatePriceAlert)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetCurrentUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/indicator-types", wrapper.ListIndicatorTypes)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/scanner-indicators", wrapper.ListScannerIndicators)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/scanner-indicators", wrapper.CreateScannerIndicator)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/admin/scanner-indicator-order", wrapper.ReorderScannerIndicators)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/admin/scanner-indicators/{indicator_id}", wrapper.DeleteScannerIndicator)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/admin/scanner-indicators/{indicator_id}", wrapper.UpdateScannerIndicator)
 
 	return m
 }
@@ -1620,6 +1974,8 @@ type AccessDeniedJSONResponse struct {
 
 	Headers AccessDeniedResponseHeaders
 }
+
+type AdministratorRequiredJSONResponse ErrorResponse
 
 type AlertConflictJSONResponse ErrorResponse
 
@@ -1665,6 +2021,10 @@ type InternalErrorJSONResponse struct {
 	Headers InternalErrorResponseHeaders
 }
 
+type ScannerIndicatorConflictJSONResponse ErrorResponse
+
+type ScannerIndicatorNotFoundJSONResponse ErrorResponse
+
 type SymbolNotFoundResponseHeaders struct {
 	XRequestID string
 }
@@ -1690,6 +2050,516 @@ type UnprocessableAnalysisJSONResponse struct {
 	Body ErrorResponse
 
 	Headers UnprocessableAnalysisResponseHeaders
+}
+
+type ListIndicatorTypesRequestObject struct {
+}
+
+type ListIndicatorTypesResponseObject interface {
+	VisitListIndicatorTypesResponse(w http.ResponseWriter) error
+}
+
+type ListIndicatorTypes200JSONResponse IndicatorTypeCatalog
+
+func (response ListIndicatorTypes200JSONResponse) VisitListIndicatorTypesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIndicatorTypes401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListIndicatorTypes401JSONResponse) VisitListIndicatorTypesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIndicatorTypes403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response ListIndicatorTypes403JSONResponse) VisitListIndicatorTypesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIndicatorTypes500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListIndicatorTypes500JSONResponse) VisitListIndicatorTypesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderScannerIndicatorsRequestObject struct {
+	Body *ReorderScannerIndicatorsJSONRequestBody
+}
+
+type ReorderScannerIndicatorsResponseObject interface {
+	VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error
+}
+
+type ReorderScannerIndicators200JSONResponse ScannerIndicatorList
+
+func (response ReorderScannerIndicators200JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderScannerIndicators400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response ReorderScannerIndicators400JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderScannerIndicators401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ReorderScannerIndicators401JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderScannerIndicators403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response ReorderScannerIndicators403JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderScannerIndicators404JSONResponse struct {
+	ScannerIndicatorNotFoundJSONResponse
+}
+
+func (response ReorderScannerIndicators404JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReorderScannerIndicators500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ReorderScannerIndicators500JSONResponse) VisitReorderScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScannerIndicatorsRequestObject struct {
+}
+
+type ListScannerIndicatorsResponseObject interface {
+	VisitListScannerIndicatorsResponse(w http.ResponseWriter) error
+}
+
+type ListScannerIndicators200JSONResponse ScannerIndicatorList
+
+func (response ListScannerIndicators200JSONResponse) VisitListScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScannerIndicators401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListScannerIndicators401JSONResponse) VisitListScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScannerIndicators403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response ListScannerIndicators403JSONResponse) VisitListScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScannerIndicators500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListScannerIndicators500JSONResponse) VisitListScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScannerIndicatorRequestObject struct {
+	Body *CreateScannerIndicatorJSONRequestBody
+}
+
+type CreateScannerIndicatorResponseObject interface {
+	VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error
+}
+
+type CreateScannerIndicator201JSONResponse ScannerIndicator
+
+func (response CreateScannerIndicator201JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScannerIndicator400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateScannerIndicator400JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScannerIndicator401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateScannerIndicator401JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScannerIndicator403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response CreateScannerIndicator403JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScannerIndicator409JSONResponse struct {
+	ScannerIndicatorConflictJSONResponse
+}
+
+func (response CreateScannerIndicator409JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateScannerIndicator500JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScannerIndicatorRequestObject struct {
+	IndicatorId ScannerIndicatorID `json:"indicator_id"`
+}
+
+type DeleteScannerIndicatorResponseObject interface {
+	VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error
+}
+
+type DeleteScannerIndicator204Response struct {
+}
+
+func (response DeleteScannerIndicator204Response) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteScannerIndicator401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteScannerIndicator401JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScannerIndicator403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response DeleteScannerIndicator403JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScannerIndicator404JSONResponse struct {
+	ScannerIndicatorNotFoundJSONResponse
+}
+
+func (response DeleteScannerIndicator404JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteScannerIndicator500JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScannerIndicatorRequestObject struct {
+	IndicatorId ScannerIndicatorID `json:"indicator_id"`
+	Body        *UpdateScannerIndicatorJSONRequestBody
+}
+
+type UpdateScannerIndicatorResponseObject interface {
+	VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error
+}
+
+type UpdateScannerIndicator200JSONResponse ScannerIndicator
+
+func (response UpdateScannerIndicator200JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScannerIndicator400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateScannerIndicator400JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScannerIndicator401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateScannerIndicator401JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScannerIndicator403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response UpdateScannerIndicator403JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScannerIndicator404JSONResponse struct {
+	ScannerIndicatorNotFoundJSONResponse
+}
+
+func (response UpdateScannerIndicator404JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateScannerIndicator500JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
 }
 
 type DeletePriceAlertRequestObject struct {
@@ -2160,6 +3030,7 @@ func (response AnalyzeMarket503JSONResponse) VisitAnalyzeMarketResponse(w http.R
 }
 
 type ListChartIndicatorsRequestObject struct {
+	Params ListChartIndicatorsParams
 }
 
 type ListChartIndicatorsResponseObject interface {
@@ -2866,6 +3737,72 @@ func (response ListInstrumentCandles500JSONResponse) VisitListInstrumentCandlesR
 	return err
 }
 
+type GetCurrentUserRequestObject struct {
+}
+
+type GetCurrentUserResponseObject interface {
+	VisitGetCurrentUserResponse(w http.ResponseWriter) error
+}
+
+type GetCurrentUser200JSONResponse CurrentUser
+
+func (response GetCurrentUser200JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetCurrentUser401JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response GetCurrentUser403JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCurrentUser500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetCurrentUser500JSONResponse) VisitGetCurrentUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type GetLivenessRequestObject struct {
 	Params GetLivenessParams
 }
@@ -2950,6 +3887,24 @@ func (response GetReadiness503JSONResponse) VisitGetReadinessResponse(w http.Res
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// ListIndicatorTypes List every indicator the scanner can calculate
+	// (GET /api/v1/admin/indicator-types)
+	ListIndicatorTypes(ctx context.Context, request ListIndicatorTypesRequestObject) (ListIndicatorTypesResponseObject, error)
+	// ReorderScannerIndicators Set the display order of the scanner indicators
+	// (PUT /api/v1/admin/scanner-indicator-order)
+	ReorderScannerIndicators(ctx context.Context, request ReorderScannerIndicatorsRequestObject) (ReorderScannerIndicatorsResponseObject, error)
+	// ListScannerIndicators List the configured scanner indicators
+	// (GET /api/v1/admin/scanner-indicators)
+	ListScannerIndicators(ctx context.Context, request ListScannerIndicatorsRequestObject) (ListScannerIndicatorsResponseObject, error)
+	// CreateScannerIndicator Add a scanner indicator
+	// (POST /api/v1/admin/scanner-indicators)
+	CreateScannerIndicator(ctx context.Context, request CreateScannerIndicatorRequestObject) (CreateScannerIndicatorResponseObject, error)
+	// DeleteScannerIndicator Remove a scanner indicator
+	// (DELETE /api/v1/admin/scanner-indicators/{indicator_id})
+	DeleteScannerIndicator(ctx context.Context, request DeleteScannerIndicatorRequestObject) (DeleteScannerIndicatorResponseObject, error)
+	// UpdateScannerIndicator Change the table visibility and pane scale of a scanner indicator
+	// (PATCH /api/v1/admin/scanner-indicators/{indicator_id})
+	UpdateScannerIndicator(ctx context.Context, request UpdateScannerIndicatorRequestObject) (UpdateScannerIndicatorResponseObject, error)
 
 	// (DELETE /api/v1/alerts/{alert_id})
 	DeletePriceAlert(ctx context.Context, request DeletePriceAlertRequestObject) (DeletePriceAlertResponseObject, error)
@@ -2962,7 +3917,7 @@ type StrictServerInterface interface {
 	// AnalyzeMarket Analyze active instruments in the market
 	// (POST /api/v1/analysis/market)
 	AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestObject) (AnalyzeMarketResponseObject, error)
-	// ListChartIndicators List the indicators charts request and how to draw them
+	// ListChartIndicators List the indicators charts of an interval request and how to draw them
 	// (GET /api/v1/chart/indicators)
 	ListChartIndicators(ctx context.Context, request ListChartIndicatorsRequestObject) (ListChartIndicatorsResponseObject, error)
 
@@ -2986,6 +3941,9 @@ type StrictServerInterface interface {
 	// ListInstrumentCandles List a chronological page of closed candles
 	// (GET /api/v1/instruments/{symbol}/candles)
 	ListInstrumentCandles(ctx context.Context, request ListInstrumentCandlesRequestObject) (ListInstrumentCandlesResponseObject, error)
+	// GetCurrentUser Describe the authenticated user
+	// (GET /api/v1/me)
+	GetCurrentUser(ctx context.Context, request GetCurrentUserRequestObject) (GetCurrentUserResponseObject, error)
 	// GetLiveness Check whether the process is alive
 	// (GET /health/live)
 	GetLiveness(ctx context.Context, request GetLivenessRequestObject) (GetLivenessResponseObject, error)
@@ -3031,6 +3989,175 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListIndicatorTypes operation middleware
+func (sh *strictHandler) ListIndicatorTypes(w http.ResponseWriter, r *http.Request) {
+	var request ListIndicatorTypesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListIndicatorTypes(ctx, request.(ListIndicatorTypesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListIndicatorTypes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListIndicatorTypesResponseObject); ok {
+		if err := validResponse.VisitListIndicatorTypesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReorderScannerIndicators operation middleware
+func (sh *strictHandler) ReorderScannerIndicators(w http.ResponseWriter, r *http.Request) {
+	var request ReorderScannerIndicatorsRequestObject
+
+	var body ReorderScannerIndicatorsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReorderScannerIndicators(ctx, request.(ReorderScannerIndicatorsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReorderScannerIndicators")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReorderScannerIndicatorsResponseObject); ok {
+		if err := validResponse.VisitReorderScannerIndicatorsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListScannerIndicators operation middleware
+func (sh *strictHandler) ListScannerIndicators(w http.ResponseWriter, r *http.Request) {
+	var request ListScannerIndicatorsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListScannerIndicators(ctx, request.(ListScannerIndicatorsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListScannerIndicators")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListScannerIndicatorsResponseObject); ok {
+		if err := validResponse.VisitListScannerIndicatorsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateScannerIndicator operation middleware
+func (sh *strictHandler) CreateScannerIndicator(w http.ResponseWriter, r *http.Request) {
+	var request CreateScannerIndicatorRequestObject
+
+	var body CreateScannerIndicatorJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateScannerIndicator(ctx, request.(CreateScannerIndicatorRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateScannerIndicator")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateScannerIndicatorResponseObject); ok {
+		if err := validResponse.VisitCreateScannerIndicatorResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteScannerIndicator operation middleware
+func (sh *strictHandler) DeleteScannerIndicator(w http.ResponseWriter, r *http.Request, indicatorId ScannerIndicatorID) {
+	var request DeleteScannerIndicatorRequestObject
+
+	request.IndicatorId = indicatorId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteScannerIndicator(ctx, request.(DeleteScannerIndicatorRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteScannerIndicator")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteScannerIndicatorResponseObject); ok {
+		if err := validResponse.VisitDeleteScannerIndicatorResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateScannerIndicator operation middleware
+func (sh *strictHandler) UpdateScannerIndicator(w http.ResponseWriter, r *http.Request, indicatorId ScannerIndicatorID) {
+	var request UpdateScannerIndicatorRequestObject
+
+	request.IndicatorId = indicatorId
+
+	var body UpdateScannerIndicatorJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateScannerIndicator(ctx, request.(UpdateScannerIndicatorRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateScannerIndicator")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateScannerIndicatorResponseObject); ok {
+		if err := validResponse.VisitUpdateScannerIndicatorResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // DeletePriceAlert operation middleware
@@ -3160,8 +4287,10 @@ func (sh *strictHandler) AnalyzeMarket(w http.ResponseWriter, r *http.Request, p
 }
 
 // ListChartIndicators operation middleware
-func (sh *strictHandler) ListChartIndicators(w http.ResponseWriter, r *http.Request) {
+func (sh *strictHandler) ListChartIndicators(w http.ResponseWriter, r *http.Request, params ListChartIndicatorsParams) {
 	var request ListChartIndicatorsRequestObject
+
+	request.Params = params
 
 	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
 		return sh.ssi.ListChartIndicators(ctx, request.(ListChartIndicatorsRequestObject))
@@ -3377,6 +4506,30 @@ func (sh *strictHandler) ListInstrumentCandles(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// GetCurrentUser operation middleware
+func (sh *strictHandler) GetCurrentUser(w http.ResponseWriter, r *http.Request) {
+	var request GetCurrentUserRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCurrentUser(ctx, request.(GetCurrentUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCurrentUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCurrentUserResponseObject); ok {
+		if err := validResponse.VisitGetCurrentUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // GetLiveness operation middleware
 func (sh *strictHandler) GetLiveness(w http.ResponseWriter, r *http.Request, params GetLivenessParams) {
 	var request GetLivenessRequestObject
@@ -3434,90 +4587,110 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"/w==",
+	"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",
+	"AgAA//8=",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

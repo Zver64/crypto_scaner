@@ -11,14 +11,14 @@ interface CoinChartProps {
 	symbol: string;
 }
 
-// The live chart waits for the backend indicator catalog, which defines both
-// what it subscribes to and what it draws.
+// The live chart waits for the backend indicator catalogs of every interval,
+// which define both what it subscribes to and what it draws.
 export function CoinChart({ enabled, symbol }: CoinChartProps) {
 	const { paperPadding } = useCoinPageLayout();
-	const { catalog, failed, indicators } = useChartIndicators(enabled);
+	const { catalogs, failed, indicators } = useChartIndicators(enabled);
 	const source = useMemo(
-		() => catalog && createCoinChartData(symbol, catalog),
-		[catalog, symbol],
+		() => catalogs && createCoinChartData(symbol, catalogs),
+		[catalogs, symbol],
 	);
 	if (!source) {
 		return <CoinChartPlaceholder failed={failed} paperPadding={paperPadding} />;

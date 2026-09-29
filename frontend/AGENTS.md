@@ -121,4 +121,12 @@ tanstackIntent:
 - Sorting runs on the client over the cell `value` of sortable columns. `resolveTableSort` falls back to the table's `default_sort` when the URL names a column the table does not mark sortable.
 - Favorites get their table, including favorites the analysis skipped, only from `POST /api/v1/favorites/analysis`; do not merge it with `GET /api/v1/favorites`.
 - Charts arrive over the live WebSocket only (snapshot, then tail updates with sequential versions); there is no HTTP chart endpoint.
-- Chart indicators come from the backend catalog (`GET /api/v1/chart/indicators`, read with `useChartIndicators`). The coin chart subscribes with the catalog's selections and renders overlays and panes generically from it; do not add per-indicator code, constants or validation to the frontend. Colors arrive as Mantine theme tokens and are resolved against the app theme.
+- Chart indicators come from the backend catalog of each interval (`GET /api/v1/chart/indicators?interval=`, read for every chart interval with `useChartIndicators`). The administrator configures them, so a catalog may be empty and the chart then draws candles only. The coin chart subscribes each interval with that interval's selections and renders overlays and panes generically from it; do not add per-indicator code, constants or validation to the frontend. Colors arrive as Mantine theme tokens and are resolved against the app theme.
+- Indicator table columns use the `number` kind (`formatNumber`); which indicators become columns is configured by the administrator, not the frontend.
+
+## Scanner settings
+
+- The administrator (`GET /api/v1/me`, read with `useAdministrator`) manages the global scanner indicators on `/admin` (`features/scanner-settings/`). The page is entered only by clicking the unmarked "CS" app name in the header, which turns into a close cross on the page (Telegram's back button closes it too); other users see plain text and the backend rejects admin requests.
+- The list is one display order, changed by dragging rows (`@hello-pangea/dnd`, touch included) and saved with `PUT /api/v1/admin/scanner-indicator-order`. That order sets the indicator column order in tables (just before Favorite) and the indicator order on charts.
+- The add form is built from the backend indicator descriptors (`GET /api/v1/admin/indicator-types`); do not hardcode indicator types, parameters, or validation. The backend decides chart placement, colors, and column titles.
+- After changing indicators, invalidate the scanner indicator list, chart catalogs, and market and favorites analyses so tables and charts pick up the change.

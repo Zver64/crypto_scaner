@@ -418,6 +418,11 @@ func (service *countingAnalysis) Search(_ context.Context, request analysis.Sear
 
 type enabledUserStore struct{}
 
+// noConfiguredColumns is a table without admin-configured indicator columns.
+type noConfiguredColumns struct{}
+
+func (noConfiguredColumns) TableColumns() []markettable.Column { return nil }
+
 func (enabledUserStore) FindEnabledByTelegramID(context.Context, int64) (auth.User, error) {
 	return auth.User{ID: 1, TelegramID: 424242, Enabled: true}, nil
 }
@@ -425,7 +430,7 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
 	service, _ := analysis.NewService(store, nil, factories...)
 	registry, _ := indicator.NewRegistry(indicatortalib.New()...)
-	table, err := markettable.NewCatalog(registry, markettable.Sort{Column: "market_cap_usd", Direction: markettable.Descending},
+	table, err := markettable.NewCatalog(registry, noConfiguredColumns{}, markettable.Sort{Column: "market_cap_usd", Direction: markettable.Descending},
 		markettable.Column{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
 		markettable.Column{ID: "market_cap_usd", Title: "MCap", Kind: markettable.KindUSDCompact, Sortable: true, Source: markettable.CriterionMetric{Criterion: "market_cap", Metric: "market_cap_usd"}},
 		markettable.Column{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{}},
@@ -433,7 +438,7 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	if err != nil {
 		panic(err)
 	}
-	authenticator := authtelegram.New(enabledUserStore{}, fixtureBotToken, 15*time.Minute, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
+	authenticator := authtelegram.New(enabledUserStore{}, fixtureBotToken, 15*time.Minute, 0, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
 	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: markettable.NewService(service, table), Authenticator: authenticator}, httpapi.Options{})
 }
 

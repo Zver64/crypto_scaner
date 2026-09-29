@@ -60,7 +60,7 @@ const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
 
 export const PriceHistoryChart = memo(function PriceHistoryChart({
 	enabled,
-	indicators,
+	indicators: intervalIndicators,
 	extraReadout,
 	paperPadding,
 	source,
@@ -68,6 +68,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 }: PriceHistoryChartProps) {
 	const [interval, setInterval] = useState<ChartInterval>(defaultChartInterval);
 	const [activeCandle, setActiveCandle] = useState<ChartCandle | null>(null);
+	const indicators = intervalIndicators[interval];
 	const colorScheme = useComputedColorScheme("dark");
 	const {
 		candles,

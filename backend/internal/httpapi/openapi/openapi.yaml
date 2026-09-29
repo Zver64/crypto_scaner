@@ -19,6 +19,7 @@ tags:
   - name: Market Data
   - name: Favorites
   - name: Price Alerts
+  - name: Administration
 paths:
   /health/live:
     get:
@@ -197,12 +198,18 @@ paths:
   /api/v1/chart/indicators:
     get:
       operationId: listChartIndicators
-      summary: List the indicators charts request and how to draw them
+      summary: List the indicators charts of an interval request and how to draw them
       description: |
-        Clients subscribe to live charts with each item's `type` and `parameters`,
-        in this order, and draw the returned series as described here.
+        Clients subscribe to live charts of the interval with each item's `type`
+        and `parameters`, in this order, and draw the returned series as described
+        here. The administrator configures the catalog, so it may be empty.
       tags: [Market Data]
       security: [{ telegramInitData: [] }]
+      parameters:
+        - name: interval
+          in: query
+          required: true
+          schema: { $ref: "#/components/schemas/CandleInterval" }
       responses:
         "200":
           description: Chart indicator catalog.
@@ -335,6 +342,117 @@ paths:
         "403": { $ref: "#/components/responses/AccessDenied" }
         "404": { $ref: "#/components/responses/AlertNotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/me:
+    get:
+      operationId: getCurrentUser
+      summary: Describe the authenticated user
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      responses:
+        "200":
+          description: Current user.
+          content: { application/json: { schema: { $ref: "#/components/schemas/CurrentUser" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AccessDenied" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/indicator-types:
+    get:
+      operationId: listIndicatorTypes
+      summary: List every indicator the scanner can calculate
+      description: Self-descriptions of the registered indicators, used to build the scanner indicator form.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      responses:
+        "200":
+          description: Indicator types ordered by type.
+          content: { application/json: { schema: { $ref: "#/components/schemas/IndicatorTypeCatalog" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/scanner-indicators:
+    get:
+      operationId: listScannerIndicators
+      summary: List the configured scanner indicators
+      description: |
+        Every configured indicator is calculated in the background, drawn on the
+        charts of its interval, and shown as a market table column when
+        `show_in_table` is set. Items are in display order, which orders the
+        table columns and the chart indicators.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      responses:
+        "200":
+          description: Configured indicators.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorList" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createScannerIndicator
+      summary: Add a scanner indicator
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorInput" } } }
+      responses:
+        "201":
+          description: Indicator added.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicator" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "409": { $ref: "#/components/responses/ScannerIndicatorConflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/scanner-indicator-order:
+    put:
+      operationId: reorderScannerIndicators
+      summary: Set the display order of the scanner indicators
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorOrder" } } }
+      responses:
+        "200":
+          description: Indicators in the new order.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorList" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/ScannerIndicatorNotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/scanner-indicators/{indicator_id}:
+    patch:
+      operationId: updateScannerIndicator
+      summary: Change the table visibility and pane scale of a scanner indicator
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorUpdate" } } }
+      responses:
+        "200":
+          description: Updated indicator.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicator" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/ScannerIndicatorNotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteScannerIndicator
+      summary: Remove a scanner indicator
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
+      responses:
+        "204": { description: Indicator removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/ScannerIndicatorNotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
 components:
   securitySchemes:
     telegramInitData:
@@ -361,6 +479,14 @@ components:
         maxLength: 32
     AlertID:
       name: alert_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
+    ScannerIndicatorID:
+      name: indicator_id
       in: path
       required: true
       schema:
@@ -448,6 +574,15 @@ components:
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     AlertConflict:
       description: Duplicate target or per-instrument alert limit.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    AdministratorRequired:
+      description: The user is not enabled or is not the scanner administrator.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    ScannerIndicatorNotFound:
+      description: The scanner indicator does not exist.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    ScannerIndicatorConflict:
+      description: The interval already has this indicator or its charts draw the maximum number of indicators.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     AnalysisUnavailable:
       description: Required market data or market-capitalization data is unavailable.
@@ -707,7 +842,7 @@ components:
         response `price_history_window`; `link` reads `url`; every other kind
         reads `value`.
       type: string
-      enum: [text, usd_compact, range_percent, oscillator, percent_change, sparkline, link, favorite, count]
+      enum: [text, usd_compact, range_percent, oscillator, percent_change, sparkline, link, favorite, count, number]
     TableSort:
       type: object
       additionalProperties: false
@@ -968,8 +1103,8 @@ components:
     ChartIndicatorScale:
       type: object
       additionalProperties: false
-      required: [levels, precision]
-      description: Value axis of a pane indicator.
+      required: [levels]
+      description: Value axis of a pane indicator; clients derive the value precision from the values.
       properties:
         min:
           type: number
@@ -980,11 +1115,6 @@ components:
         levels:
           type: array
           items: { $ref: "#/components/schemas/ChartIndicatorLevel" }
-        precision:
-          type: integer
-          minimum: 0
-          maximum: 18
-          description: Maximum fraction digits shown for values.
     ChartIndicatorLevel:
       type: object
       additionalProperties: false
@@ -1041,7 +1171,6 @@ components:
           description: Closed-candle range for this chart subscription; subscribing again with a larger value extends the range.
         indicators:
           type: array
-          minItems: 1
           maxItems: 8
           items:
             $ref: "#/components/schemas/IndicatorConfig"
@@ -1085,6 +1214,7 @@ components:
           type: string
           enum:
             - access_denied
+            - administrator_required
             - alert_limit
             - alert_not_found
             - duplicate_target
@@ -1099,6 +1229,9 @@ components:
             - market_cap_missing
             - market_cap_unavailable
             - market_data_unavailable
+            - scanner_indicator_exists
+            - scanner_indicator_limit
+            - scanner_indicator_not_found
             - symbol_not_found
             - unauthenticated
         message:
@@ -1113,3 +1246,135 @@ components:
           $ref: "#/components/schemas/APIError"
         request_id:
           type: string
+    CurrentUser:
+      type: object
+      additionalProperties: false
+      required: [administrator]
+      properties:
+        administrator:
+          type: boolean
+          description: Whether the user manages the global scanner settings.
+    IndicatorTypeCatalog:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/IndicatorType" }
+    IndicatorType:
+      type: object
+      additionalProperties: false
+      required: [type, title, group, overlay, parameters, outputs]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        group: { type: string }
+        overlay:
+          type: boolean
+          description: Charts draw it over the candles; otherwise in a pane below.
+        parameters:
+          type: array
+          items: { $ref: "#/components/schemas/IndicatorParameter" }
+        outputs:
+          type: array
+          minItems: 1
+          items: { type: string }
+    IndicatorParameter:
+      type: object
+      additionalProperties: false
+      required: [key, title, description, kind, default]
+      properties:
+        key: { type: string }
+        title: { type: string }
+        description: { type: string }
+        kind:
+          type: string
+          enum: [integer, real, choice]
+          description: "`choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds."
+        default: { type: number, format: double }
+        minimum: { type: number, format: double }
+        maximum: { type: number, format: double }
+        choices:
+          type: array
+          items: { $ref: "#/components/schemas/IndicatorChoice" }
+    IndicatorChoice:
+      type: object
+      additionalProperties: false
+      required: [value, title]
+      properties:
+        value: { type: integer }
+        title: { type: string }
+    ScannerIndicatorScale:
+      type: object
+      additionalProperties: false
+      required: [levels]
+      description: Optional value axis of a pane indicator; overlays have none.
+      properties:
+        min: { type: number, format: double }
+        max: { type: number, format: double }
+        levels:
+          type: array
+          items: { type: number, format: double }
+    ScannerIndicatorInput:
+      type: object
+      additionalProperties: false
+      required: [interval, type, parameters, show_in_table]
+      properties:
+        interval: { $ref: "#/components/schemas/CandleInterval" }
+        type: { type: string, minLength: 1 }
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Parameter values by key; omitted keys take their defaults.
+        show_in_table:
+          type: boolean
+          description: Only indicators with one output can be table columns.
+        scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
+    ScannerIndicatorUpdate:
+      type: object
+      additionalProperties: false
+      required: [show_in_table]
+      properties:
+        show_in_table: { type: boolean }
+        scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
+    ScannerIndicatorOrder:
+      type: object
+      additionalProperties: false
+      required: [ids]
+      properties:
+        ids:
+          type: array
+          description: Every indicator id once, in the new display order.
+          items: { type: integer, format: int64 }
+    ScannerIndicatorList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ScannerIndicator" }
+    ScannerIndicator:
+      type: object
+      additionalProperties: false
+      required: [id, interval, type, parameters, show_in_table, scale, title, placement, outputs]
+      properties:
+        id: { type: integer, format: int64 }
+        interval: { $ref: "#/components/schemas/CandleInterval" }
+        type: { type: string }
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Canonical parameters with defaults filled in.
+        show_in_table: { type: boolean }
+        scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
+        title:
+          type: string
+          description: Table column title, such as `d-rsi`.
+        placement:
+          type: string
+          enum: [overlay, pane]
+        outputs:
+          type: array
+          items: { type: string }

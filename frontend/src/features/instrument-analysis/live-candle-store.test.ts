@@ -15,10 +15,17 @@ const rsiCatalog: ChartIndicatorDefinition[] = [
 		lines: [{ color: "blue.5", output: "rsi", title: "RSI 14" }],
 		parameters: { period: 14 },
 		placement: "pane",
-		scale: { levels: [], max: 100, min: 0, precision: 1 },
+		scale: { levels: [], max: 100, min: 0 },
 		type: "rsi",
 	},
 ];
+
+const rsiCatalogs = {
+	"1h": rsiCatalog,
+	"1d": rsiCatalog,
+	"1w": rsiCatalog,
+	"1M": rsiCatalog,
+};
 
 function candle(openTime: string): Candle {
 	return {
@@ -61,7 +68,7 @@ function snapshot(
 	};
 }
 it("keeps the visible interval snapshot stable when a hidden interval updates", () => {
-	const store = createLiveStore("BTC", rsiCatalog);
+	const store = createLiveStore("BTC", rsiCatalogs);
 	const hourly = store.getSnapshot("1h");
 	store.message({
 		type: "status",

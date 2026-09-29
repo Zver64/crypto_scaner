@@ -13,8 +13,10 @@ import { ShellContentCenter } from "@/components/shell-content-center";
 import { FavoritesProvider } from "@/features/favorites/favorites-provider";
 import { getAppVersion } from "@/utils/app-version";
 import { getBusinessRequestPermission } from "@/utils/business-request-permission";
+import { AppName } from "./app-name";
 import { BusinessRequestContext } from "./business-request-context";
 import { useTelegramMiniApp } from "./telegram";
+import { useAdministrator } from "./use-administrator";
 
 const headerContentHeight = "3.25rem";
 
@@ -45,6 +47,7 @@ export function MiniAppShell() {
 		isProduction: import.meta.env.PROD,
 		telegramInitData: webApp?.initData,
 	});
+	const administrator = useAdministrator(permission.allowed);
 	const readinessStatus: ReadinessStatus = readiness.isPending
 		? "checking"
 		: backendReady
@@ -65,9 +68,7 @@ export function MiniAppShell() {
 						px={{ base: "xs", sm: "sm" }}
 					>
 						<Group gap="xs">
-							<Text fw={800} lts="0.08em">
-								CS
-							</Text>
+							<AppName administrator={administrator} />
 							<Text c="dimmed" size="xs">
 								{appVersion}
 							</Text>

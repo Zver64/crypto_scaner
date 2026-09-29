@@ -12,6 +12,7 @@ import { FavoriteToggle } from "@/features/favorites/favorite-toggle";
 import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
 import { oscillatorColor } from "@/features/market-scan/results-table/utils";
 import { formatMarketCapUsd } from "@/utils/market-cap";
+import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
 interface CellContext {
@@ -54,6 +55,7 @@ export const cellRenderers: Record<TableColumnKind, CellRenderer> = {
 		),
 	favorite: ({ row }) => <FavoriteToggle symbol={row.symbol} />,
 	count: ({ cell }) => cell?.value ?? "—",
+	number: ({ cell }) => (cell?.value == null ? "—" : formatNumber(cell.value)),
 };
 
 function OscillatorValue({ value }: { value: number | null }) {

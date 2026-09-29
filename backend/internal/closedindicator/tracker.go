@@ -113,7 +113,6 @@ type historyKey struct {
 type Tracker struct {
 	store    Store
 	registry *indicator.Registry
-	targets  []Target
 	sources  []Source
 	logger   *slog.Logger
 	wake     chan struct{}
@@ -122,6 +121,7 @@ type Tracker struct {
 	retries []func()
 
 	mu        sync.Mutex
+	targets   []Target
 	tracked   map[pairKey]Subscription
 	values    map[pairKey]Value
 	versions  map[historyKey]uint64
@@ -155,6 +155,33 @@ func (tracker *Tracker) Listen(listener func(Change)) {
 	tracker.mu.Lock()
 	tracker.listeners = append(tracker.listeners, listener)
 	tracker.mu.Unlock()
+}
+
+// SetTargets replaces the table targets, drops cached values of removed ones,
+// and reloads the tracked pairs.
+func (tracker *Tracker) SetTargets(targets []Target) error {
+	for _, target := range targets {
+		if _, err := tracker.depth(target); err != nil {
+			return err
+		}
+	}
+	kept := make(map[string]struct{}, len(targets))
+	for _, target := range targets {
+		kept[target.id()] = struct{}{}
+	}
+	tracker.mu.Lock()
+	tracker.targets = slices.Clone(targets)
+	for pair := range tracker.values {
+		if _, ok := kept[pair.target]; !ok {
+			if _, tracked := tracker.tracked[pair]; !tracked {
+				delete(tracker.values, pair)
+			}
+		}
+	}
+	tracker.refresh = true
+	tracker.mu.Unlock()
+	tracker.signal()
+	return nil
 }
 
 // Refresh reloads the tracked pairs from all sources.
@@ -204,8 +231,9 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 	result := make(map[int64][]Value, len(instrumentIDs))
 	var missing []Subscription
 	tracker.mu.Lock()
+	targets := tracker.targets
 	for _, id := range instrumentIDs {
-		for _, target := range tracker.targets {
+		for _, target := range targets {
 			if _, ok := tracker.values[pairKey{id, target.id()}]; !ok {
 				missing = append(missing, Subscription{InstrumentID: id, Target: target})
 			}
@@ -232,8 +260,8 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 		}
 	}
 	for _, id := range instrumentIDs {
-		values := make([]Value, len(tracker.targets))
-		for index, target := range tracker.targets {
+		values := make([]Value, len(targets))
+		for index, target := range targets {
 			key := pairKey{id, target.id()}
 			if value, ok := computed[key]; ok {
 				values[index] = value
@@ -376,9 +404,12 @@ func (tracker *Tracker) step(ctx context.Context) {
 }
 
 func (tracker *Tracker) collect(ctx context.Context) ([]Subscription, error) {
+	tracker.mu.Lock()
+	targets := tracker.targets
+	tracker.mu.Unlock()
 	var result []Subscription
 	for _, source := range tracker.sources {
-		subscriptions, err := source.Subscriptions(ctx, tracker.targets)
+		subscriptions, err := source.Subscriptions(ctx, targets)
 		if err != nil {
 			return nil, err
 		}

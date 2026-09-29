@@ -11,6 +11,8 @@ sql:
       - migrations/000007_candle_history_coverage.up.sql
       - migrations/000008_favorites_price_alerts.up.sql
       - migrations/000009_candle_storage.up.sql
+      - migrations/000010_scanner_indicators.up.sql
+      - migrations/000011_scanner_indicator_order.up.sql
     queries: internal/storage/postgres/queries
     gen:
       go:

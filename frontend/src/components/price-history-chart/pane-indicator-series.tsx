@@ -16,7 +16,10 @@ import type {
 	ChartIndicatorScale,
 	ChartIndicatorSlot,
 } from "@/components/price-history-chart/types";
-import { fitPaneIndicatorScale } from "@/components/price-history-chart/utils";
+import {
+	fitPaneIndicatorScale,
+	valueResolution,
+} from "@/components/price-history-chart/utils";
 import { formatNumber } from "@/utils/number-format";
 
 interface PaneIndicatorSeriesProps {
@@ -38,8 +41,12 @@ export function PaneIndicatorSeries({
 }: PaneIndicatorSeriesProps) {
 	const levelOptions =
 		paneIndicatorLevelOptions[useComputedColorScheme("dark")];
+	const { base, fractionDigits, minMove } = valueResolution(
+		data.flatMap((slot) => ("value" in slot ? [slot.value] : [])),
+	);
+	// Depends on the resolution, not on data, so live ticks keep the same
+	// options and the series is not reconfigured on every trade.
 	const options = useMemo<LineSeriesPartialOptions>(() => {
-		const { precision } = scale;
 		return {
 			...paneIndicatorSeriesOptions,
 			// Fit the visible values instead of the full range, such as RSI 0-100,
@@ -48,12 +55,15 @@ export function PaneIndicatorSeries({
 				fitPaneIndicatorScale(baseImplementation(), scale),
 			color: line.color,
 			priceFormat: {
-				formatter: (value: number) => formatNumber(value, precision),
-				minMove: 10 ** -precision,
+				base,
+				// Axis ticks carry floating-point noise near zero; round it at
+				// the resolution so it cannot widen the scale.
+				formatter: (value: number) => formatNumber(value, fractionDigits),
+				minMove,
 				type: "custom",
 			},
 		};
-	}, [line, scale]);
+	}, [base, fractionDigits, line, minMove, scale]);
 	return (
 		<Series
 			data={data}

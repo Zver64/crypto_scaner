@@ -28,6 +28,8 @@ const (
 	KindLink          Kind = "link"
 	KindFavorite      Kind = "favorite"
 	KindCount         Kind = "count"
+	// KindNumber is a plain number, such as an admin-configured indicator.
+	KindNumber Kind = "number"
 )
 
 // data is the cell field a kind or source uses.
@@ -44,7 +46,7 @@ func (kind Kind) data() (data, bool) {
 	switch kind {
 	case KindText, KindFavorite:
 		return dataNone, true
-	case KindUSDCompact, KindRangePercent, KindOscillator, KindPercentChange, KindCount:
+	case KindUSDCompact, KindRangePercent, KindOscillator, KindPercentChange, KindCount, KindNumber:
 		return dataValue, true
 	case KindSparkline:
 		return dataSeries, true
@@ -110,22 +112,39 @@ type Table struct {
 	Rows        []TableRow
 }
 
+// ColumnSource supplies the columns that fill a ConfiguredIndicators slot.
+// They must already be valid: numeric closed indicator columns with
+// normalized selections and ids that no static column uses.
+type ColumnSource interface {
+	TableColumns() []Column
+}
+
 // Catalog is a validated table definition.
 type Catalog struct {
 	columns     []Column
 	defaultSort Sort
+	configured  ColumnSource
 }
 
 // NewCatalog validates the columns against their kinds and the indicator
 // registry. Closed indicator selections are normalized, so they match the
-// targets the background tracker calculates.
-func NewCatalog(registry *indicator.Registry, defaultSort Sort, columns ...Column) (Catalog, error) {
-	if registry == nil || len(columns) == 0 {
-		return Catalog{}, errors.New("table catalog needs an indicator registry and columns")
+// targets the background tracker calculates. A ConfiguredIndicators column is
+// a slot that Build replaces with the current columns of configured.
+func NewCatalog(registry *indicator.Registry, configured ColumnSource, defaultSort Sort, columns ...Column) (Catalog, error) {
+	if registry == nil || configured == nil || len(columns) == 0 {
+		return Catalog{}, errors.New("table catalog needs an indicator registry, a configured column source, and columns")
 	}
 	normalized := make([]Column, len(columns))
 	ids := map[string]Column{}
+	slots := 0
 	for i, column := range columns {
+		if _, ok := column.Source.(ConfiguredIndicators); ok {
+			if slots++; slots > 1 {
+				return Catalog{}, errors.New("table catalog has more than one configured indicator slot")
+			}
+			normalized[i] = column
+			continue
+		}
 		if strings.TrimSpace(column.ID) == "" || strings.TrimSpace(column.Title) == "" || column.Source == nil {
 			return Catalog{}, fmt.Errorf("table column %d needs an id, a title, and a source", i)
 		}
@@ -156,7 +175,7 @@ func NewCatalog(registry *indicator.Registry, defaultSort Sort, columns ...Colum
 		(defaultSort.Direction != Ascending && defaultSort.Direction != Descending) {
 		return Catalog{}, fmt.Errorf("default sort %q must name a sortable column with a valid direction", defaultSort.Column)
 	}
-	return Catalog{columns: normalized, defaultSort: defaultSort}, nil
+	return Catalog{columns: normalized, defaultSort: defaultSort, configured: configured}, nil
 }
 
 // ClosedTargets returns the closed indicator targets the columns read, so the
@@ -175,10 +194,11 @@ func (catalog Catalog) ClosedTargets() []closedindicator.Target {
 
 // Build fills every column for each row, in row order.
 func (catalog Catalog) Build(rows []Row) Table {
-	result := Table{Columns: slices.Clone(catalog.columns), DefaultSort: catalog.defaultSort, Rows: make([]TableRow, len(rows))}
+	columns := catalog.expand()
+	result := Table{Columns: columns, DefaultSort: catalog.defaultSort, Rows: make([]TableRow, len(rows))}
 	for i, row := range rows {
-		cells := make(map[string]Cell, len(catalog.columns))
-		for _, column := range catalog.columns {
+		cells := make(map[string]Cell, len(columns))
+		for _, column := range columns {
 			if cell, ok := column.Source.cell(row); ok {
 				cells[column.ID] = cell
 			}
@@ -186,6 +206,19 @@ func (catalog Catalog) Build(rows []Row) Table {
 		result.Rows[i] = TableRow{Symbol: row.Symbol, Cells: cells}
 	}
 	return result
+}
+
+// expand replaces the configured indicator slot with the current columns.
+func (catalog Catalog) expand() []Column {
+	columns := make([]Column, 0, len(catalog.columns))
+	for _, column := range catalog.columns {
+		if _, ok := column.Source.(ConfiguredIndicators); ok {
+			columns = append(columns, catalog.configured.TableColumns()...)
+			continue
+		}
+		columns = append(columns, column)
+	}
+	return columns
 }
 
 // Source reads one cell from a row. The set of sources is closed.
@@ -200,6 +233,13 @@ type Symbol struct{}
 
 func (Symbol) data() data            { return dataNone }
 func (Symbol) cell(Row) (Cell, bool) { return Cell{}, false }
+
+// ConfiguredIndicators marks where the admin-configured indicator columns go.
+// The slot column's own id, title, and kind are ignored.
+type ConfiguredIndicators struct{}
+
+func (ConfiguredIndicators) data() data            { return dataNone }
+func (ConfiguredIndicators) cell(Row) (Cell, bool) { return Cell{}, false }
 
 // Favorite is the user's favorite toggle for the row's symbol.
 type Favorite struct{}

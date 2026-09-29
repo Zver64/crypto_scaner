@@ -121,6 +121,15 @@ func (r *Registry) Normalize(selection Selection) (Selection, error) {
 	return Selection{Type: selection.Type, Parameters: parameters}, nil
 }
 
+// Describe returns the self-description of the selected module.
+func (r *Registry) Describe(indicatorType Type) (Descriptor, error) {
+	entry, err := r.entry(indicatorType)
+	if err != nil {
+		return Descriptor{}, err
+	}
+	return entry.implementation.Describe(), nil
+}
+
 // Descriptors describes every registered module, ordered by type.
 func (r *Registry) Descriptors() []Descriptor {
 	if r == nil {

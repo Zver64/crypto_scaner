@@ -132,11 +132,24 @@ export function chartPriceResolution(data: readonly ChartCandleSlot[]): {
 	fractionDigits: number;
 	minMove: number;
 } {
-	const prices = data.flatMap((item) =>
-		"open" in item ? [item.open, item.high, item.low, item.close] : [],
+	return valueResolution(
+		data.flatMap((item) =>
+			"open" in item ? [item.open, item.high, item.low, item.close] : [],
+		),
 	);
-	const smallest = Math.min(...prices.filter((price) => price > 0));
-	// Eight significant digits (at least cents), with a valid decimal tick base.
+}
+
+// Eight significant digits (at least cents) of the smallest non-zero magnitude,
+// with a valid decimal tick base. Indicator panes use it too, so tiny values
+// such as MACD of a low-priced coin keep their digits.
+export function valueResolution(values: readonly number[]): {
+	base: number;
+	fractionDigits: number;
+	minMove: number;
+} {
+	const smallest = Math.min(
+		...values.map(Math.abs).filter((value) => value > 0),
+	);
 	const exponent = Number.isFinite(smallest)
 		? Math.min(308, Math.max(2, 7 - Math.floor(Math.log10(smallest))))
 		: 2;
@@ -203,7 +216,7 @@ export function createIndicatorLegend(
 			const value =
 				slot && "value" in slot
 					? indicator.placement === "pane"
-						? formatNumber(slot.value, indicator.scale.precision)
+						? formatNumber(slot.value)
 						: formatPrice(slot.value)
 					: null;
 			return { color, key, title, value };

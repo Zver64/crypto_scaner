@@ -16,16 +16,10 @@
 import type { ChartIndicatorLevel } from './chartIndicatorLevel.ts';
 
 /**
- * Value axis of a pane indicator.
+ * Value axis of a pane indicator; clients derive the value precision from the values.
  */
 export interface ChartIndicatorScale {
   min?: number;
   max?: number;
   levels: ChartIndicatorLevel[];
-  /**
-     * Maximum fraction digits shown for values.
-     * @minimum 0
-     * @maximum 18
-     */
-  precision: number;
 }

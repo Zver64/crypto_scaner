@@ -32,6 +32,11 @@ func (stub *analyzerStub) SearchSymbols(_ context.Context, _ analysis.SearchRequ
 	return analysis.SearchResult{}, nil
 }
 
+// noConfiguredColumns is a table without admin-configured indicator columns.
+type noConfiguredColumns struct{}
+
+func (noConfiguredColumns) TableColumns() []markettable.Column { return nil }
+
 type closedStub struct{}
 
 func (closedStub) Latest(context.Context, []int64) map[int64][]closedindicator.Value { return nil }
@@ -41,7 +46,7 @@ func TestAnalyzeOrchestratesFavoriteSelectionOutsideHTTP(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	table, err := markettable.NewCatalog(registry, markettable.Sort{Column: "alert_count", Direction: markettable.Descending},
+	table, err := markettable.NewCatalog(registry, noConfiguredColumns{}, markettable.Sort{Column: "alert_count", Direction: markettable.Descending},
 		markettable.Column{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
 		markettable.Column{ID: "alert_count", Title: "Alerts", Kind: markettable.KindCount, Sortable: true, Source: markettable.AlertCount{}},
 	)

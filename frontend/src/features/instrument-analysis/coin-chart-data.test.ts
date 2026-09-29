@@ -13,10 +13,17 @@ const rsiCatalog: ChartIndicatorDefinition[] = [
 		lines: [{ color: "blue.5", output: "rsi", title: "RSI 14" }],
 		parameters: { period: 14 },
 		placement: "pane",
-		scale: { levels: [], max: 100, min: 0, precision: 1 },
+		scale: { levels: [], max: 100, min: 0 },
 		type: "rsi",
 	},
 ];
+
+const rsiCatalogs = {
+	"1h": rsiCatalog,
+	"1d": rsiCatalog,
+	"1w": rsiCatalog,
+	"1M": rsiCatalog,
+};
 
 const rsiValues = (source: ReturnType<typeof createCoinChartData>) =>
 	(source.getSnapshot("1h").indicators["rsi-14"]?.rsi ?? []).map(
@@ -101,7 +108,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 	vi.stubGlobal("WebSocket", FakeSocket);
 	const fetch = vi.fn();
 	vi.stubGlobal("fetch", fetch);
-	const source = createCoinChartData("btcusdt", rsiCatalog);
+	const source = createCoinChartData("btcusdt", rsiCatalogs);
 	try {
 		source.start();
 		const socket = FakeSocket.current;

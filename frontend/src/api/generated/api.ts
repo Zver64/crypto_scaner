@@ -39,20 +39,24 @@ import type {
 
 import type {
   AccessDeniedResponse,
+  AdministratorRequiredResponse,
   AlertConflictResponse,
   AlertNotFoundResponse,
   AnalysisUnavailableResponse,
   BadRequestResponse,
   CandlePageResponse,
   ChartIndicatorCatalog,
+  CurrentUser,
   Favorite,
   FavoriteAlertsConflictResponse,
   FavoriteNotFoundResponse,
   FavoritesResponse,
+  IndicatorTypeCatalog,
   InstrumentAnalysisRequest,
   InstrumentAnalysisResponse,
   InsufficientDataResponse,
   InternalErrorResponse,
+  ListChartIndicatorsParams,
   ListInstrumentCandlesParams,
   LivenessResponse,
   MarketAnalysisRequest,
@@ -62,6 +66,13 @@ import type {
   PriceAlertsResponse,
   ReadinessResponse,
   RemoveFavoriteParams,
+  ScannerIndicator,
+  ScannerIndicatorConflictResponse,
+  ScannerIndicatorInput,
+  ScannerIndicatorList,
+  ScannerIndicatorNotFoundResponse,
+  ScannerIndicatorOrder,
+  ScannerIndicatorUpdate,
   SymbolNotFoundResponse,
   UnauthenticatedResponse,
   UnprocessableAnalysisResponse
@@ -892,22 +903,30 @@ export type listChartIndicatorsResponseError = (listChartIndicatorsResponse401 |
   headers: Headers;
 };
 
-export const getListChartIndicatorsUrl = () => {
+export const getListChartIndicatorsUrl = (params: ListChartIndicatorsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/chart/indicators`
+  return stringifiedParams.length > 0 ? `/api/v1/chart/indicators?${stringifiedParams}` : `/api/v1/chart/indicators`
 }
 
 /**
- * Clients subscribe to live charts with each item's `type` and `parameters`,
- * in this order, and draw the returned series as described here.
- * @summary List the indicators charts request and how to draw them
+ * Clients subscribe to live charts of the interval with each item's `type`
+ * and `parameters`, in this order, and draw the returned series as described
+ * here. The administrator configures the catalog, so it may be empty.
+ * @summary List the indicators charts of an interval request and how to draw them
  */
-export const listChartIndicators = async ( options?: RequestInit): Promise<listChartIndicatorsResponseSuccess> => {
+export const listChartIndicators = async (params: ListChartIndicatorsParams, options?: RequestInit): Promise<listChartIndicatorsResponseSuccess> => {
 
-  const res = await fetch(getListChartIndicatorsUrl(),
+  const res = await fetch(getListChartIndicatorsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -934,23 +953,23 @@ export const listChartIndicators = async ( options?: RequestInit): Promise<listC
 
 
 
-export const getListChartIndicatorsQueryKey = () => {
+export const getListChartIndicatorsQueryKey = (params?: ListChartIndicatorsParams,) => {
     return [
-    `/api/v1/chart/indicators`
+    `/api/v1/chart/indicators`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListChartIndicatorsQueryOptions = <TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+export const getListChartIndicatorsQueryOptions = <TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
 ) => {
 
 const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListChartIndicatorsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListChartIndicatorsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChartIndicators>>> = ({ signal }) => listChartIndicators({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChartIndicators>>> = ({ signal }) => listChartIndicators(params, { signal, ...fetchOptions });
 
 
 
@@ -964,7 +983,7 @@ export type ListChartIndicatorsQueryError = globalThis.Error & { info?: Unauthen
 
 
 export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>> & Pick<
+ params: ListChartIndicatorsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listChartIndicators>>,
           TError,
@@ -974,7 +993,7 @@ export function useListChartIndicators<TData = Awaited<ReturnType<typeof listCha
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>> & Pick<
+ params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listChartIndicators>>,
           TError,
@@ -984,19 +1003,19 @@ export function useListChartIndicators<TData = Awaited<ReturnType<typeof listCha
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+ params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary List the indicators charts request and how to draw them
+ * @summary List the indicators charts of an interval request and how to draw them
  */
 
 export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+ params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getListChartIndicatorsQueryOptions(options)
+  const queryOptions = getListChartIndicatorsQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -2084,4 +2103,973 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
         TContext
       > => {
       return useMutation(getDeletePriceAlertMutationOptions(options), queryClient);
+    }
+
+export type getCurrentUserResponse200 = {
+  data: CurrentUser
+  status: 200
+}
+
+export type getCurrentUserResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type getCurrentUserResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type getCurrentUserResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type getCurrentUserResponseSuccess = (getCurrentUserResponse200) & {
+  headers: Headers;
+};
+export type getCurrentUserResponseError = (getCurrentUserResponse401 | getCurrentUserResponse403 | getCurrentUserResponse500) & {
+  headers: Headers;
+};
+
+export const getGetCurrentUserUrl = () => {
+
+
+
+
+  return `/api/v1/me`
+}
+
+/**
+ * @summary Describe the authenticated user
+ */
+export const getCurrentUser = async ( options?: RequestInit): Promise<getCurrentUserResponseSuccess> => {
+
+  const res = await fetch(getGetCurrentUserUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: getCurrentUserResponseError['data'], status?: number} = new globalThis.Error();
+    const data : getCurrentUserResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: getCurrentUserResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as getCurrentUserResponseSuccess
+}
+
+
+
+
+
+export const getGetCurrentUserQueryKey = () => {
+    return [
+    `/api/v1/me`
+    ] as const;
+    }
+
+
+export const getGetCurrentUserQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCurrentUserQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentUser>>> = ({ signal }) => getCurrentUser({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCurrentUserQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>
+export type GetCurrentUserQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }
+
+
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCurrentUser>>,
+          TError,
+          Awaited<ReturnType<typeof getCurrentUser>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCurrentUser>>,
+          TError,
+          Awaited<ReturnType<typeof getCurrentUser>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Describe the authenticated user
+ */
+
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCurrentUserQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listIndicatorTypesResponse200 = {
+  data: IndicatorTypeCatalog
+  status: 200
+}
+
+export type listIndicatorTypesResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listIndicatorTypesResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type listIndicatorTypesResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listIndicatorTypesResponseSuccess = (listIndicatorTypesResponse200) & {
+  headers: Headers;
+};
+export type listIndicatorTypesResponseError = (listIndicatorTypesResponse401 | listIndicatorTypesResponse403 | listIndicatorTypesResponse500) & {
+  headers: Headers;
+};
+
+export const getListIndicatorTypesUrl = () => {
+
+
+
+
+  return `/api/v1/admin/indicator-types`
+}
+
+/**
+ * Self-descriptions of the registered indicators, used to build the scanner indicator form.
+ * @summary List every indicator the scanner can calculate
+ */
+export const listIndicatorTypes = async ( options?: RequestInit): Promise<listIndicatorTypesResponseSuccess> => {
+
+  const res = await fetch(getListIndicatorTypesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: listIndicatorTypesResponseError['data'], status?: number} = new globalThis.Error();
+    const data : listIndicatorTypesResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: listIndicatorTypesResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listIndicatorTypesResponseSuccess
+}
+
+
+
+
+
+export const getListIndicatorTypesQueryKey = () => {
+    return [
+    `/api/v1/admin/indicator-types`
+    ] as const;
+    }
+
+
+export const getListIndicatorTypesQueryOptions = <TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListIndicatorTypesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listIndicatorTypes>>> = ({ signal }) => listIndicatorTypes({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListIndicatorTypesQueryResult = NonNullable<Awaited<ReturnType<typeof listIndicatorTypes>>>
+export type ListIndicatorTypesQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+
+
+export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listIndicatorTypes>>,
+          TError,
+          Awaited<ReturnType<typeof listIndicatorTypes>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listIndicatorTypes>>,
+          TError,
+          Awaited<ReturnType<typeof listIndicatorTypes>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List every indicator the scanner can calculate
+ */
+
+export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListIndicatorTypesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listScannerIndicatorsResponse200 = {
+  data: ScannerIndicatorList
+  status: 200
+}
+
+export type listScannerIndicatorsResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listScannerIndicatorsResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type listScannerIndicatorsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listScannerIndicatorsResponseSuccess = (listScannerIndicatorsResponse200) & {
+  headers: Headers;
+};
+export type listScannerIndicatorsResponseError = (listScannerIndicatorsResponse401 | listScannerIndicatorsResponse403 | listScannerIndicatorsResponse500) & {
+  headers: Headers;
+};
+
+export const getListScannerIndicatorsUrl = () => {
+
+
+
+
+  return `/api/v1/admin/scanner-indicators`
+}
+
+/**
+ * Every configured indicator is calculated in the background, drawn on the
+ * charts of its interval, and shown as a market table column when
+ * `show_in_table` is set. Items are in display order, which orders the
+ * table columns and the chart indicators.
+ * @summary List the configured scanner indicators
+ */
+export const listScannerIndicators = async ( options?: RequestInit): Promise<listScannerIndicatorsResponseSuccess> => {
+
+  const res = await fetch(getListScannerIndicatorsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: listScannerIndicatorsResponseError['data'], status?: number} = new globalThis.Error();
+    const data : listScannerIndicatorsResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: listScannerIndicatorsResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listScannerIndicatorsResponseSuccess
+}
+
+
+
+
+
+export const getListScannerIndicatorsQueryKey = () => {
+    return [
+    `/api/v1/admin/scanner-indicators`
+    ] as const;
+    }
+
+
+export const getListScannerIndicatorsQueryOptions = <TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListScannerIndicatorsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listScannerIndicators>>> = ({ signal }) => listScannerIndicators({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListScannerIndicatorsQueryResult = NonNullable<Awaited<ReturnType<typeof listScannerIndicators>>>
+export type ListScannerIndicatorsQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+
+
+export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listScannerIndicators>>,
+          TError,
+          Awaited<ReturnType<typeof listScannerIndicators>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listScannerIndicators>>,
+          TError,
+          Awaited<ReturnType<typeof listScannerIndicators>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the configured scanner indicators
+ */
+
+export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListScannerIndicatorsQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type createScannerIndicatorResponse201 = {
+  data: ScannerIndicator
+  status: 201
+}
+
+export type createScannerIndicatorResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createScannerIndicatorResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type createScannerIndicatorResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type createScannerIndicatorResponse409 = {
+  data: ScannerIndicatorConflictResponse
+  status: 409
+}
+
+export type createScannerIndicatorResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createScannerIndicatorResponseSuccess = (createScannerIndicatorResponse201) & {
+  headers: Headers;
+};
+export type createScannerIndicatorResponseError = (createScannerIndicatorResponse400 | createScannerIndicatorResponse401 | createScannerIndicatorResponse403 | createScannerIndicatorResponse409 | createScannerIndicatorResponse500) & {
+  headers: Headers;
+};
+
+export const getCreateScannerIndicatorUrl = () => {
+
+
+
+
+  return `/api/v1/admin/scanner-indicators`
+}
+
+/**
+ * @summary Add a scanner indicator
+ */
+export const createScannerIndicator = async (scannerIndicatorInput: ScannerIndicatorInput, options?: RequestInit): Promise<createScannerIndicatorResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateScannerIndicatorUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(scannerIndicatorInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: createScannerIndicatorResponseError['data'], status?: number} = new globalThis.Error();
+    const data : createScannerIndicatorResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: createScannerIndicatorResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createScannerIndicatorResponseSuccess
+}
+
+
+
+
+
+export const getCreateScannerIndicatorMutationKey = () => ['createScannerIndicator'] as const;
+
+export const getCreateScannerIndicatorMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext> => {
+
+const mutationKey = getCreateScannerIndicatorMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createScannerIndicator>>, CreateScannerIndicatorMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createScannerIndicator(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof createScannerIndicator>>>
+    export type CreateScannerIndicatorMutationBody = ScannerIndicatorInput
+    export type CreateScannerIndicatorMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse; status?: number }
+    export type CreateScannerIndicatorMutationVariables = {data: ScannerIndicatorInput}
+
+    /**
+ * @summary Add a scanner indicator
+ */
+export const useCreateScannerIndicator = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createScannerIndicator>>,
+        TError,
+        CreateScannerIndicatorMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateScannerIndicatorMutationOptions(options), queryClient);
+    }
+
+export type reorderScannerIndicatorsResponse200 = {
+  data: ScannerIndicatorList
+  status: 200
+}
+
+export type reorderScannerIndicatorsResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type reorderScannerIndicatorsResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type reorderScannerIndicatorsResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type reorderScannerIndicatorsResponse404 = {
+  data: ScannerIndicatorNotFoundResponse
+  status: 404
+}
+
+export type reorderScannerIndicatorsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type reorderScannerIndicatorsResponseSuccess = (reorderScannerIndicatorsResponse200) & {
+  headers: Headers;
+};
+export type reorderScannerIndicatorsResponseError = (reorderScannerIndicatorsResponse400 | reorderScannerIndicatorsResponse401 | reorderScannerIndicatorsResponse403 | reorderScannerIndicatorsResponse404 | reorderScannerIndicatorsResponse500) & {
+  headers: Headers;
+};
+
+export const getReorderScannerIndicatorsUrl = () => {
+
+
+
+
+  return `/api/v1/admin/scanner-indicator-order`
+}
+
+/**
+ * @summary Set the display order of the scanner indicators
+ */
+export const reorderScannerIndicators = async (scannerIndicatorOrder: ScannerIndicatorOrder, options?: RequestInit): Promise<reorderScannerIndicatorsResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getReorderScannerIndicatorsUrl(),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(scannerIndicatorOrder)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: reorderScannerIndicatorsResponseError['data'], status?: number} = new globalThis.Error();
+    const data : reorderScannerIndicatorsResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: reorderScannerIndicatorsResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as reorderScannerIndicatorsResponseSuccess
+}
+
+
+
+
+
+export const getReorderScannerIndicatorsMutationKey = () => ['reorderScannerIndicators'] as const;
+
+export const getReorderScannerIndicatorsMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderScannerIndicators>>, TError,ReorderScannerIndicatorsMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof reorderScannerIndicators>>, TError,ReorderScannerIndicatorsMutationVariables, TContext> => {
+
+const mutationKey = getReorderScannerIndicatorsMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderScannerIndicators>>, ReorderScannerIndicatorsMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  reorderScannerIndicators(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ReorderScannerIndicatorsMutationResult = NonNullable<Awaited<ReturnType<typeof reorderScannerIndicators>>>
+    export type ReorderScannerIndicatorsMutationBody = ScannerIndicatorOrder
+    export type ReorderScannerIndicatorsMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number }
+    export type ReorderScannerIndicatorsMutationVariables = {data: ScannerIndicatorOrder}
+
+    /**
+ * @summary Set the display order of the scanner indicators
+ */
+export const useReorderScannerIndicators = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderScannerIndicators>>, TError,ReorderScannerIndicatorsMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof reorderScannerIndicators>>,
+        TError,
+        ReorderScannerIndicatorsMutationVariables,
+        TContext
+      > => {
+      return useMutation(getReorderScannerIndicatorsMutationOptions(options), queryClient);
+    }
+
+export type updateScannerIndicatorResponse200 = {
+  data: ScannerIndicator
+  status: 200
+}
+
+export type updateScannerIndicatorResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateScannerIndicatorResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type updateScannerIndicatorResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type updateScannerIndicatorResponse404 = {
+  data: ScannerIndicatorNotFoundResponse
+  status: 404
+}
+
+export type updateScannerIndicatorResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type updateScannerIndicatorResponseSuccess = (updateScannerIndicatorResponse200) & {
+  headers: Headers;
+};
+export type updateScannerIndicatorResponseError = (updateScannerIndicatorResponse400 | updateScannerIndicatorResponse401 | updateScannerIndicatorResponse403 | updateScannerIndicatorResponse404 | updateScannerIndicatorResponse500) & {
+  headers: Headers;
+};
+
+export const getUpdateScannerIndicatorUrl = (indicatorId: number,) => {
+
+
+
+
+  return `/api/v1/admin/scanner-indicators/${encodeURIComponent(String(indicatorId))}`
+}
+
+/**
+ * @summary Change the table visibility and pane scale of a scanner indicator
+ */
+export const updateScannerIndicator = async (indicatorId: number,
+    scannerIndicatorUpdate: ScannerIndicatorUpdate, options?: RequestInit): Promise<updateScannerIndicatorResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getUpdateScannerIndicatorUrl(indicatorId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(scannerIndicatorUpdate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: updateScannerIndicatorResponseError['data'], status?: number} = new globalThis.Error();
+    const data : updateScannerIndicatorResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: updateScannerIndicatorResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateScannerIndicatorResponseSuccess
+}
+
+
+
+
+
+export const getUpdateScannerIndicatorMutationKey = () => ['updateScannerIndicator'] as const;
+
+export const getUpdateScannerIndicatorMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext> => {
+
+const mutationKey = getUpdateScannerIndicatorMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateScannerIndicator>>, UpdateScannerIndicatorMutationVariables> = (props) => {
+          const {indicatorId,data} = props ?? {};
+
+          return  updateScannerIndicator(indicatorId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof updateScannerIndicator>>>
+    export type UpdateScannerIndicatorMutationBody = ScannerIndicatorUpdate
+    export type UpdateScannerIndicatorMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number }
+    export type UpdateScannerIndicatorMutationVariables = {indicatorId: number;data: ScannerIndicatorUpdate}
+
+    /**
+ * @summary Change the table visibility and pane scale of a scanner indicator
+ */
+export const useUpdateScannerIndicator = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateScannerIndicator>>,
+        TError,
+        UpdateScannerIndicatorMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateScannerIndicatorMutationOptions(options), queryClient);
+    }
+
+export type deleteScannerIndicatorResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteScannerIndicatorResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type deleteScannerIndicatorResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type deleteScannerIndicatorResponse404 = {
+  data: ScannerIndicatorNotFoundResponse
+  status: 404
+}
+
+export type deleteScannerIndicatorResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type deleteScannerIndicatorResponseSuccess = (deleteScannerIndicatorResponse204) & {
+  headers: Headers;
+};
+export type deleteScannerIndicatorResponseError = (deleteScannerIndicatorResponse401 | deleteScannerIndicatorResponse403 | deleteScannerIndicatorResponse404 | deleteScannerIndicatorResponse500) & {
+  headers: Headers;
+};
+
+export const getDeleteScannerIndicatorUrl = (indicatorId: number,) => {
+
+
+
+
+  return `/api/v1/admin/scanner-indicators/${encodeURIComponent(String(indicatorId))}`
+}
+
+/**
+ * @summary Remove a scanner indicator
+ */
+export const deleteScannerIndicator = async (indicatorId: number, options?: RequestInit): Promise<deleteScannerIndicatorResponseSuccess> => {
+
+  const res = await fetch(getDeleteScannerIndicatorUrl(indicatorId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: deleteScannerIndicatorResponseError['data'], status?: number} = new globalThis.Error();
+    const data : deleteScannerIndicatorResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: deleteScannerIndicatorResponseSuccess['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteScannerIndicatorResponseSuccess
+}
+
+
+
+
+
+export const getDeleteScannerIndicatorMutationKey = () => ['deleteScannerIndicator'] as const;
+
+export const getDeleteScannerIndicatorMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext> => {
+
+const mutationKey = getDeleteScannerIndicatorMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteScannerIndicator>>, DeleteScannerIndicatorMutationVariables> = (props) => {
+          const {indicatorId} = props ?? {};
+
+          return  deleteScannerIndicator(indicatorId,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof deleteScannerIndicator>>>
+
+    export type DeleteScannerIndicatorMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number }
+    export type DeleteScannerIndicatorMutationVariables = {indicatorId: number}
+
+    /**
+ * @summary Remove a scanner indicator
+ */
+export const useDeleteScannerIndicator = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteScannerIndicator>>,
+        TError,
+        DeleteScannerIndicatorMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteScannerIndicatorMutationOptions(options), queryClient);
     }

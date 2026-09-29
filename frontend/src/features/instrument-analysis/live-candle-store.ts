@@ -29,10 +29,13 @@ const initialState: LiveCandlesState = {
 	freshness: "waiting",
 };
 
-export function createLiveStore(
-	symbol: string,
-	catalog: readonly ChartIndicatorDefinition[],
-) {
+// Each interval has its own backend catalog; a chart validates results against
+// the catalog of its interval.
+export type ChartCatalogs = Readonly<
+	Record<CandleInterval, readonly ChartIndicatorDefinition[]>
+>;
+
+export function createLiveStore(symbol: string, catalogs: ChartCatalogs) {
 	let states: Record<string, LiveCandlesState> = {};
 	let fallback = initialState;
 	const listeners = new Set<() => void>();
@@ -77,7 +80,7 @@ export function createLiveStore(
 				message,
 				symbol,
 				fallback.connection,
-				catalog,
+				message.interval ? catalogs[message.interval] : [],
 			);
 			if (next === states) return;
 			states = next;

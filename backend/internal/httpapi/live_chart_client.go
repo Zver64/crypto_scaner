@@ -17,7 +17,7 @@ import (
 type ChartService interface {
 	Validate([]indicator.Selection) error
 	NewLiveSession(string, market.CandleInterval) *chart.LiveSession
-	Catalog() []chart.CatalogIndicator
+	Catalog(market.CandleInterval) []chart.CatalogIndicator
 }
 
 type chartRange struct {

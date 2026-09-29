@@ -52,6 +52,18 @@ func requireTelegramUser(authenticator InitDataAuthenticator) func(http.Handler)
 	}
 }
 
+// requireAdministrator rejects authenticated users other than the scanner
+// administrator. It runs after requireTelegramUser.
+func requireAdministrator(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		if user, ok := UserFromContext(request.Context()); !ok || !user.Administrator {
+			writeAPIError(response, http.StatusForbidden, "administrator_required", "Only the scanner administrator can change scanner settings", nil)
+			return
+		}
+		next.ServeHTTP(response, request)
+	})
+}
+
 func authorizationInitData(header string) (string, bool) {
 	raw, ok := strings.CutPrefix(header, "tma ")
 	return raw, ok && raw != "" && !strings.ContainsAny(raw, " \t\r\n")

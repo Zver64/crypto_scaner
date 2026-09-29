@@ -33,9 +33,6 @@ export interface LiveCandleClientMessage {
      * @maximum 2000
      */
   limit?: number;
-  /**
-     * @minItems 1
-     * @maxItems 8
-     */
+  /** @maxItems 8 */
   indicators?: IndicatorConfig[];
 }

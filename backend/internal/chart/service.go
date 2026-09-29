@@ -21,8 +21,8 @@ const (
 	// MaxRange bounds the number of closed candles in one chart to the
 	// history the backend keeps.
 	MaxRange = market.HistoryDepth
-	// maxIndicators bounds the indicator selection of one chart.
-	maxIndicators        = 8
+	// MaxIndicators bounds the indicator selection of one chart.
+	MaxIndicators        = 8
 	maxIndicatorLookback = 5000
 )
 
@@ -49,30 +49,26 @@ type Page struct {
 type Service struct {
 	store      Store
 	indicators *indicator.Registry
-	catalog    []CatalogIndicator
+	catalog    CatalogSource
 	logger     *slog.Logger
 }
 
-// NewService validates the indicator catalog against the registry, so an
-// inconsistent catalog fails at startup instead of on the first chart.
-func NewService(store Store, indicators *indicator.Registry, catalog []CatalogIndicator, logger *slog.Logger) (*Service, error) {
-	if store == nil || indicators == nil || logger == nil {
-		return nil, errors.New("chart store, indicator registry, and logger are required")
+func NewService(store Store, indicators *indicator.Registry, catalog CatalogSource, logger *slog.Logger) (*Service, error) {
+	if store == nil || indicators == nil || catalog == nil || logger == nil {
+		return nil, errors.New("chart store, indicator registry, catalog, and logger are required")
 	}
-	if err := validateCatalog(indicators, catalog); err != nil {
-		return nil, fmt.Errorf("invalid chart indicator catalog: %w", err)
-	}
-	return &Service{store: store, indicators: indicators, catalog: slices.Clone(catalog), logger: logger.With("module", "chart")}, nil
+	return &Service{store: store, indicators: indicators, catalog: catalog, logger: logger.With("module", "chart")}, nil
 }
 
-// Catalog returns the indicators clients should request and how to draw them.
-func (service *Service) Catalog() []CatalogIndicator {
-	return slices.Clone(service.catalog)
+// Catalog returns the indicators clients should request on interval charts
+// and how to draw them.
+func (service *Service) Catalog(interval market.CandleInterval) []CatalogIndicator {
+	return service.catalog.ChartCatalog(interval)
 }
 func (service *Service) Build(ctx context.Context, request Request) (Page, error) {
 	symbol := market.NormalizeSymbol(request.Symbol)
-	if service == nil || symbol == "" || !request.Interval.Valid() || request.Limit <= 0 || len(request.Indicators) == 0 {
-		return Page{}, fmt.Errorf("%w: symbol, interval, limit, and indicators are required", ErrInvalidRequest)
+	if service == nil || symbol == "" || !request.Interval.Valid() || request.Limit <= 0 {
+		return Page{}, fmt.Errorf("%w: symbol, interval, and limit are required", ErrInvalidRequest)
 	}
 	if request.Limit > MaxRange {
 		return Page{}, fmt.Errorf("%w: chart range exceeds limit", ErrInvalidRequest)
@@ -105,8 +101,8 @@ func (service *Service) Build(ctx context.Context, request Request) (Page, error
 
 // Validate checks an indicator selection before any history is loaded.
 func (service *Service) Validate(configs []indicator.Selection) error {
-	if len(configs) == 0 || len(configs) > maxIndicators {
-		return fmt.Errorf("%w: indicator count must be between 1 and %d", ErrInvalidRequest, maxIndicators)
+	if len(configs) > MaxIndicators {
+		return fmt.Errorf("%w: indicator count must not exceed %d", ErrInvalidRequest, MaxIndicators)
 	}
 	for _, config := range configs {
 		value, err := service.indicators.Lookback(config.Type, config.Parameters)

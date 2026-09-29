@@ -28,16 +28,19 @@ type Authenticator struct {
 	store    auth.UserStore
 	botToken string
 	maxAge   time.Duration
-	now      func() time.Time
+	// administratorID is the Telegram ID of the scanner administrator.
+	administratorID int64
+	now             func() time.Time
 }
 
-// New creates an authenticator; zero options use the system clock.
-func New(store auth.UserStore, botToken string, maxAge time.Duration, options Options) *Authenticator {
+// New creates an authenticator that marks administratorID as the scanner
+// administrator; zero options use the system clock.
+func New(store auth.UserStore, botToken string, maxAge time.Duration, administratorID int64, options Options) *Authenticator {
 	now := options.Now
 	if now == nil {
 		now = time.Now
 	}
-	return &Authenticator{store: store, botToken: botToken, maxAge: maxAge, now: now}
+	return &Authenticator{store: store, botToken: botToken, maxAge: maxAge, administratorID: administratorID, now: now}
 }
 
 // AuthenticateInitData verifies raw init data and returns the enabled user.
@@ -54,6 +57,7 @@ func (authenticator *Authenticator) AuthenticateInitData(ctx context.Context, ra
 	if err != nil {
 		return auth.User{}, err
 	}
+	user.Administrator = user.TelegramID == authenticator.administratorID
 	return user, nil
 }
 

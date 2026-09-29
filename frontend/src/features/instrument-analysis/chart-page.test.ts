@@ -11,7 +11,7 @@ const rsiCatalog: ChartIndicatorDefinition[] = [
 		lines: [{ color: "blue.5", output: "rsi", title: "RSI 14" }],
 		parameters: { period: 14 },
 		placement: "pane",
-		scale: { levels: [], max: 100, min: 0, precision: 1 },
+		scale: { levels: [], max: 100, min: 0 },
 		type: "rsi",
 	},
 ];

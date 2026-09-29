@@ -48,6 +48,19 @@ type AppPriceAlert struct {
 	UpdatedAt    pgtype.Timestamptz
 }
 
+type AppScannerIndicator struct {
+	ID            int64
+	Interval      string
+	IndicatorType string
+	Parameters    []byte
+	ShowInTable   bool
+	ScaleMin      pgtype.Float8
+	ScaleMax      pgtype.Float8
+	ScaleLevels   []float64
+	CreatedAt     pgtype.Timestamptz
+	Position      int32
+}
+
 type AppSchemaMigration struct {
 	Version                  int64
 	AppliedAt                pgtype.Timestamptz

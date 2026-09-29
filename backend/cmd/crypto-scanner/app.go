@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/markettable"
 	"crypto-scanner/internal/platform/config"
+	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/storage/postgres"
 	"crypto-scanner/internal/telegrambot"
 )
@@ -48,30 +50,51 @@ func (l *listeners) notify() {
 	}
 }
 
-func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Store) (app, error) {
+func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger, store *postgres.Store) (app, error) {
 	indicatorRegistry, err := indicator.NewRegistry(indicatorModules()...)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
-	}
-	marketTable, err := markettable.NewCatalog(indicatorRegistry, defaultTableSort, marketTableColumns()...)
-	if err != nil {
-		return app{}, fmt.Errorf("initialize market table: %w", err)
-	}
-	favoritesTable, err := markettable.NewCatalog(indicatorRegistry, defaultTableSort, favoritesTableColumns()...)
-	if err != nil {
-		return app{}, fmt.Errorf("initialize favorites table: %w", err)
 	}
 	rsi14, err := indicatorRegistry.Normalize(indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": indicatortalib.DefaultRSIPeriod}})
 	if err != nil {
 		return app{}, fmt.Errorf("normalize RSI criterion selection: %w", err)
 	}
-	// Table columns and the RSI criterion read these values; favorites keep
-	// them current without clients.
-	closedTargets := closedTargetsUnion(marketTable.ClosedTargets(), favoritesTable.ClosedTargets(), []closedindicator.Target{
+	// The RSI criterion reads these values whatever the administrator
+	// configures.
+	criterionTargets := []closedindicator.Target{
 		{Interval: market.IntervalDay, Selection: rsi14},
 		{Interval: market.IntervalWeek, Selection: rsi14},
+	}
+	// The tracker is created after the configuration loads; changes before
+	// that are covered by its initial targets.
+	var closedIndicators *closedindicator.Tracker
+	scannerIndicators, err := scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func(targets []closedindicator.Target) {
+		if closedIndicators == nil {
+			return
+		}
+		if err := closedIndicators.SetTargets(closedTargetsUnion(criterionTargets, targets)); err != nil {
+			logger.Error("apply scanner indicator targets failed", "module", "scanner_indicator", "error", err)
+		}
 	})
-	closedIndicators, err := closedindicator.New(store, indicatorRegistry, closedTargets, logger,
+	if err != nil {
+		return app{}, fmt.Errorf("initialize scanner indicators: %w", err)
+	}
+	if err := scannerIndicators.Load(ctx); err != nil {
+		return app{}, err
+	}
+	marketTable, err := markettable.NewCatalog(indicatorRegistry, scannerIndicators, defaultTableSort, marketTableColumns()...)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize market table: %w", err)
+	}
+	favoritesTable, err := markettable.NewCatalog(indicatorRegistry, scannerIndicators, defaultTableSort, favoritesTableColumns()...)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize favorites table: %w", err)
+	}
+	// Tables and the RSI criterion read these values; favorites keep them
+	// current without clients. Static table columns read no indicators, but
+	// their targets are included so a future one is tracked too.
+	closedTargets := closedTargetsUnion(marketTable.ClosedTargets(), favoritesTable.ClosedTargets(), criterionTargets, scannerIndicators.Targets())
+	closedIndicators, err = closedindicator.New(store, indicatorRegistry, closedTargets, logger,
 		closedindicator.InstrumentSource(store.ListMonitoredInstrumentIDs))
 	if err != nil {
 		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
@@ -100,7 +123,7 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 	if err != nil {
 		return app{}, fmt.Errorf("initialize analysis service: %w", err)
 	}
-	chartService, err := chart.NewService(store, indicatorRegistry, chartIndicatorCatalog(), logger)
+	chartService, err := chart.NewService(store, indicatorRegistry, scannerIndicators, logger)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize chart service: %w", err)
 	}
@@ -121,11 +144,14 @@ func buildApp(cfg config.ServerConfig, logger *slog.Logger, store *postgres.Stor
 		Analysis:      analysisService,
 		MarketTables:  markettable.NewService(analysisService, marketTable),
 		History:       store,
-		Authenticator: authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, authtelegram.Options{}),
+		Authenticator: authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, cfg.AdminTelegramID, authtelegram.Options{}),
 		Chart:         chartService,
 		LiveCandles:   liveService,
 		Favorites:     favoriteService,
 		Alerts:        alerts.New(store, alertMonitor),
+
+		ScannerIndicators: scannerIndicators,
+		IndicatorTypes:    indicatorRegistry,
 	}, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled})
 	return app{handler: handler, services: []service{
 		{"market scheduler", scheduler},

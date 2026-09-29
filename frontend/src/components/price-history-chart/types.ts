@@ -57,7 +57,6 @@ export interface ChartIndicatorScale {
 	min?: number;
 	max?: number;
 	levels: readonly { value: number; title: string }[];
-	precision: number;
 }
 // Overlays share the candle pane and price scale; panes get their own pane
 // and value scale below the candles.
@@ -75,7 +74,8 @@ export interface ChartReadoutOptions {
 }
 export interface PriceHistoryChartProps {
 	enabled: boolean;
-	indicators: readonly ChartIndicatorOptions[];
+	// Indicators drawn on the chart of each interval.
+	indicators: Readonly<Record<ChartInterval, readonly ChartIndicatorOptions[]>>;
 	extraReadout?: ChartReadoutOptions;
 	paperPadding: string;
 	source: PriceHistorySource;

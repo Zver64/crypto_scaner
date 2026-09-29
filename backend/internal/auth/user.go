@@ -23,6 +23,9 @@ type User struct {
 	Username    string
 	DisplayName string
 	Enabled     bool
+	// Administrator reports the scanner administrator, who manages global
+	// settings such as the scanner indicators.
+	Administrator bool
 }
 
 // UserStore is the persistence seam used by authentication.

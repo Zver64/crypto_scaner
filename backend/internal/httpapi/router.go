@@ -64,6 +64,9 @@ type Dependencies struct {
 	LiveCandles   LiveCandles
 	Favorites     Favorites
 	Alerts        PriceAlerts
+	// ScannerIndicators and IndicatorTypes serve the administrator settings.
+	ScannerIndicators ScannerIndicators
+	IndicatorTypes    IndicatorTypes
 }
 
 type Options struct {
@@ -79,6 +82,9 @@ type api struct {
 	favorites Favorites
 	alerts    PriceAlerts
 	chart     ChartService
+
+	scannerIndicators ScannerIndicators
+	indicatorTypes    IndicatorTypes
 }
 
 var _ StrictServerInterface = (*api)(nil)
@@ -98,6 +104,18 @@ var protectedRoutes = []string{
 	"POST /api/v1/instruments/{symbol}/alerts",
 	"PATCH /api/v1/alerts/{alert_id}",
 	"DELETE /api/v1/alerts/{alert_id}",
+	"GET /api/v1/me",
+}
+
+// administratorRoutes are the operations only the scanner administrator may
+// call. They are authenticated like protectedRoutes.
+var administratorRoutes = []string{
+	"GET /api/v1/admin/indicator-types",
+	"GET /api/v1/admin/scanner-indicators",
+	"POST /api/v1/admin/scanner-indicators",
+	"PATCH /api/v1/admin/scanner-indicators/{indicator_id}",
+	"DELETE /api/v1/admin/scanner-indicators/{indicator_id}",
+	"PUT /api/v1/admin/scanner-indicator-order",
 }
 
 // New returns the service HTTP handler with process-wide middleware applied.
@@ -107,7 +125,8 @@ func New(logger *slog.Logger, dependencies Dependencies, options Options) http.H
 
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
-	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart}
+	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart,
+		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,
 		ResponseErrorHandlerFunc: func(response http.ResponseWriter, request *http.Request, err error) {
@@ -127,6 +146,10 @@ func newHandler(logger *slog.Logger, dependencies Dependencies, options Options,
 	protectedOperations := authenticate(defaultJSONContentType(limitAnalysisRequestBody(validator(operations))))
 	for _, route := range protectedRoutes {
 		router.Handle(route, protectedOperations)
+	}
+	administratorOperations := authenticate(requireAdministrator(defaultJSONContentType(limitAnalysisRequestBody(validator(operations)))))
+	for _, route := range administratorRoutes {
+		router.Handle(route, administratorOperations)
 	}
 	router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(dependencies.Authenticator, dependencies.LiveCandles, dependencies.Chart, logger))
 	if options.APIDocsEnabled {

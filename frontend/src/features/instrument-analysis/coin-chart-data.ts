@@ -11,6 +11,7 @@ import type {
 	PriceHistorySource,
 } from "@/components/price-history-chart";
 import {
+	type ChartCatalogs,
 	chartIntervals,
 	createLiveStore,
 	type LiveCandlesState,
@@ -23,14 +24,10 @@ const maxLimit = 2000;
 // history or the range changes and a tail update for the current candle.
 export function createCoinChartData(
 	symbol: string,
-	catalog: readonly ChartIndicatorDefinition[],
+	catalogs: ChartCatalogs,
 ): PriceHistorySource {
 	const upper = symbol.toUpperCase();
-	const live = createLiveStore(upper, catalog);
-	const indicators = catalog.map(({ parameters, type }) => ({
-		parameters,
-		type,
-	}));
+	const live = createLiveStore(upper, catalogs);
 	const listeners = new Set<() => void>();
 	type IntervalState = {
 		limit: number;
@@ -51,7 +48,10 @@ export function createCoinChartData(
 			symbol: upper,
 			interval,
 			limit: intervals.get(interval)?.limit ?? initialLimit,
-			indicators,
+			indicators: catalogs[interval].map(({ parameters, type }) => ({
+				parameters,
+				type,
+			})),
 		}));
 	const recompute = (interval: CandleInterval, force = false) => {
 		const current = intervals.get(interval);
@@ -68,7 +68,7 @@ export function createCoinChartData(
 			current.loadingMore = false;
 		current.snapshot = {
 			candles: state.chart?.candles ?? [],
-			indicators: indicatorPoints(state.chart, catalog),
+			indicators: indicatorPoints(state.chart, catalogs[interval]),
 			connection: state.connection,
 			freshness: state.freshness,
 			error: state.error,

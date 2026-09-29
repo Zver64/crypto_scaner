@@ -4,10 +4,11 @@ import (
 	"context"
 
 	"crypto-scanner/internal/chart"
+	"crypto-scanner/internal/market"
 )
 
-func (api *api) ListChartIndicators(context.Context, ListChartIndicatorsRequestObject) (ListChartIndicatorsResponseObject, error) {
-	catalog := api.chart.Catalog()
+func (api *api) ListChartIndicators(_ context.Context, request ListChartIndicatorsRequestObject) (ListChartIndicatorsResponseObject, error) {
+	catalog := api.chart.Catalog(market.CandleInterval(request.Params.Interval))
 	items := make([]ChartIndicatorDefinition, len(catalog))
 	for i, item := range catalog {
 		items[i] = chartIndicatorDTO(item)
@@ -32,7 +33,7 @@ func chartIndicatorDTO(item chart.CatalogIndicator) ChartIndicatorDefinition {
 		for i, level := range item.Scale.Levels {
 			levels[i] = ChartIndicatorLevel{Value: level.Value, Title: level.Title}
 		}
-		definition.Scale = &ChartIndicatorScale{Min: item.Scale.Min, Max: item.Scale.Max, Levels: levels, Precision: item.Scale.Precision}
+		definition.Scale = &ChartIndicatorScale{Min: item.Scale.Min, Max: item.Scale.Max, Levels: levels}
 	}
 	return definition
 }

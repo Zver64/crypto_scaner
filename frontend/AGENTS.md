@@ -104,7 +104,8 @@ tanstackIntent:
 
 - Do not make changes that static analysis cannot verify. Every name used in code must fail `npm run quality` when misspelled.
 - Never write CSS custom properties or `var(--…)` references as strings in TS/TSX: not in props, `style` objects, theme `vars` resolvers, or template strings. Neither TypeScript nor a linter can check them.
-- In TS/TSX, pass style values only as typed JS data whose names TypeScript checks. Before relying on an API, confirm that a deliberate typo fails `npm run typecheck`. Mantine's `theme.colors` and component `vars` resolvers do **not** qualify: `theme.colors.drak[5]`, `theme.colors.dark[15]` and unknown `--tooltip-*` keys all typecheck.
+- In TS/TSX, pass style values only as typed JS data whose names TypeScript checks. Before relying on an API, confirm that a deliberate typo fails `npm run typecheck` (strip ANSI colors before grepping `tsc` output).
+- Reference Mantine CSS variables through `themeToVars` from `@mantine/vanilla-extract` (for example `themeToVars(theme).colors.dark[5]`), not handwritten strings. Verified: shade indexes (`dark[15]`) and component `vars` resolver keys (`--tooltip-bgx`) fail typecheck. Not verified by TypeScript, because Mantine types color names as any string: color names (`colors.drak`) and semantic names (`colors.defaultHovr`) in `themeToVars`, and names and shades in `theme.colors`.
 - CSS custom properties belong only in CSS files, and only once a linter in `npm run quality` validates their names. No such linter exists yet (Biome excludes `src/styles.css` and does not check custom property names), so ask before adding styling that depends on CSS variables.
 
 ## Number formatting

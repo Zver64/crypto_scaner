@@ -1,6 +1,7 @@
-import { Button, Fieldset, Paper, Stack, useMatches } from "@mantine/core";
+import { Button, Paper, Stack, useMatches } from "@mantine/core";
 import { useForm } from "@mantine/form";
-import type { FormEvent } from "react";
+import { type FormEvent, useState } from "react";
+import { CollapsibleFieldset } from "@/components/collapsible-fieldset";
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import { SliderField } from "@/components/slider-field";
 import { applicationConfig } from "@/config";
@@ -50,6 +51,11 @@ export function MarketScanForm({
 		validateInputOnChange: true,
 	});
 	const draftCriteria = criteriaFromValidDraft(form.values);
+	// Collapsed by default; opens when a restored scan already filters by RSI.
+	const [rsiCollapsed, setRsiCollapsed] = useState(
+		initialCriteria.dailyMaxRsi === rsiFilterConstraints.maximum &&
+			initialCriteria.weeklyMaxRsi === rsiFilterConstraints.maximum,
+	);
 
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -136,7 +142,11 @@ export function MarketScanForm({
 					]}
 					title="Market Cap"
 				/>
-				<Fieldset legend="RSI">
+				<CollapsibleFieldset
+					collapsed={rsiCollapsed}
+					legend="RSI"
+					onCollapsedChange={setRsiCollapsed}
+				>
 					<Stack gap="md">
 						<SliderField
 							formatValue={String}
@@ -159,7 +169,7 @@ export function MarketScanForm({
 							value={Number(form.values.weeklyMaxRsi)}
 						/>
 					</Stack>
-				</Fieldset>
+				</CollapsibleFieldset>
 				<Button
 					disabled={disabled || !draftCriteria}
 					loading={isSubmitting}

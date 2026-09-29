@@ -13,6 +13,7 @@ sql:
       - migrations/000009_candle_storage.up.sql
       - migrations/000010_scanner_indicators.up.sql
       - migrations/000011_scanner_indicator_order.up.sql
+      - migrations/000012_delete_disabled_users.up.sql
     queries: internal/storage/postgres/queries
     gen:
       go:

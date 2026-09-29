@@ -141,10 +141,10 @@ func TestNormalServerStartupBootstrapsConfiguredAdministrator(t *testing.T) {
 
 	updatedAt := time.Date(2024, time.March, 4, 5, 6, 7, 0, time.UTC)
 	if _, err := db.Exec(ctx, `
-		INSERT INTO app.users (telegram_id, username, display_name, is_enabled, created_at, updated_at)
-		VALUES (222, 'disabled', 'Disabled User', FALSE, $1, $1)
+		INSERT INTO app.users (telegram_id, username, display_name, created_at, updated_at)
+		VALUES (222, 'other', 'Other User', $1, $1)
 	`, updatedAt); err != nil {
-		t.Fatalf("seed disabled user: %v", err)
+		t.Fatalf("seed other user: %v", err)
 	}
 
 	cfg := config.ServerConfig{
@@ -176,37 +176,34 @@ func TestNormalServerStartupBootstrapsConfiguredAdministrator(t *testing.T) {
 
 	var count int
 	var username, displayName string
-	var enabled bool
 	var gotUpdatedAt time.Time
 	if err := db.QueryRow(ctx, `
-		SELECT count(*) OVER (), username, display_name, is_enabled, updated_at
+		SELECT count(*) OVER (), username, display_name, updated_at
 		FROM app.users
 		WHERE telegram_id = 222
-	`).Scan(&count, &username, &displayName, &enabled, &gotUpdatedAt); err != nil {
+	`).Scan(&count, &username, &displayName, &gotUpdatedAt); err != nil {
 		t.Fatalf("inspect user after startup: %v", err)
 	}
-	if count != 1 || username != "disabled" || displayName != "Disabled User" || enabled || !gotUpdatedAt.Equal(updatedAt) {
-		t.Fatalf("normal startup changed unrelated users: count=%d username=%q display_name=%q enabled=%t updated_at=%s", count, username, displayName, enabled, gotUpdatedAt)
+	if count != 1 || username != "other" || displayName != "Other User" || !gotUpdatedAt.Equal(updatedAt) {
+		t.Fatalf("normal startup changed unrelated users: count=%d username=%q display_name=%q updated_at=%s", count, username, displayName, gotUpdatedAt)
 	}
-	var administratorEnabled bool
-	if err := db.QueryRow(ctx, `SELECT is_enabled FROM app.users WHERE telegram_id = 111`).Scan(&administratorEnabled); err != nil || !administratorEnabled {
-		t.Fatalf("configured administrator was not bootstrapped: enabled=%t error=%v", administratorEnabled, err)
+	var administrators int
+	if err := db.QueryRow(ctx, `SELECT count(*) FROM app.users WHERE telegram_id = 111`).Scan(&administrators); err != nil || administrators != 1 {
+		t.Fatalf("configured administrator was not bootstrapped: rows=%d error=%v", administrators, err)
 	}
-	for _, enabled := range []bool{true, false} {
-		if _, err := db.Exec(ctx, `UPDATE app.users SET username = 'admin', display_name = 'Existing Admin', is_enabled = $1, created_at = $2, updated_at = $2 WHERE telegram_id = 111`, enabled, updatedAt); err != nil {
-			t.Fatal(err)
-		}
-		var before, after string
-		if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = 111`).Scan(&before); err != nil {
-			t.Fatal(err)
-		}
-		startAndStop()
-		if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = 111`).Scan(&after); err != nil {
-			t.Fatal(err)
-		}
-		if after != before {
-			t.Fatalf("restart changed existing administrator (enabled=%t): before=%s after=%s", enabled, before, after)
-		}
+	if _, err := db.Exec(ctx, `UPDATE app.users SET username = 'admin', display_name = 'Existing Admin', created_at = $1, updated_at = $1 WHERE telegram_id = 111`, updatedAt); err != nil {
+		t.Fatal(err)
+	}
+	var before, after string
+	if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = 111`).Scan(&before); err != nil {
+		t.Fatal(err)
+	}
+	startAndStop()
+	if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = 111`).Scan(&after); err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("restart changed existing administrator: before=%s after=%s", before, after)
 	}
 }
 

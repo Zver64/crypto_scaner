@@ -16,6 +16,6 @@
 import type { ErrorResponse } from './errorResponse.ts';
 
 /**
- * The authenticated Telegram user is not enabled.
+ * The authenticated Telegram user has no access.
  */
 export type AccessDeniedResponse = ErrorResponse;

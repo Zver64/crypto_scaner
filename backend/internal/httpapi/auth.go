@@ -17,7 +17,7 @@ type InitDataAuthenticator interface {
 
 type userContextKey struct{}
 
-// UserFromContext returns the enabled user attached by the authentication middleware.
+// UserFromContext returns the application user attached by the authentication middleware.
 func UserFromContext(ctx context.Context) (auth.User, bool) {
 	user, ok := ctx.Value(userContextKey{}).(auth.User)
 	return user, ok

@@ -15,6 +15,7 @@
  */
 
 export * from './accessDeniedResponse.ts';
+export * from './administratorProtectedResponse.ts';
 export * from './administratorRequiredResponse.ts';
 export * from './alertConflictResponse.ts';
 export * from './alertNotFoundResponse.ts';
@@ -110,4 +111,7 @@ export * from './unauthenticatedResponse.ts';
 export * from './unprocessableAnalysisResponse.ts';
 export * from './unresolvedInstrument.ts';
 export * from './unresolvedInstrumentCode.ts';
+export * from './user.ts';
+export * from './userList.ts';
+export * from './userNotFoundResponse.ts';
 export * from './warning.ts';

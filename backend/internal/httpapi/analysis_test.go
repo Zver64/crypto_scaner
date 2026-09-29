@@ -423,8 +423,8 @@ type noConfiguredColumns struct{}
 
 func (noConfiguredColumns) TableColumns() []markettable.Column { return nil }
 
-func (enabledUserStore) FindEnabledByTelegramID(context.Context, int64) (auth.User, error) {
-	return auth.User{ID: 1, TelegramID: 424242, Enabled: true}, nil
+func (enabledUserStore) FindByTelegramID(context.Context, int64) (auth.User, error) {
+	return auth.User{ID: 1, TelegramID: 424242}, nil
 }
 func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysis.Factory) http.Handler {
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)

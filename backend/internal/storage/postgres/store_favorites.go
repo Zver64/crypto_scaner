@@ -32,7 +32,7 @@ func (store *Store) AddFavorite(ctx context.Context, userID int64, symbol string
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	var locked int64
-	if err = tx.QueryRow(ctx, `SELECT id FROM app.users WHERE id=$1 AND is_enabled FOR UPDATE`, userID).Scan(&locked); err != nil {
+	if err = tx.QueryRow(ctx, `SELECT id FROM app.users WHERE id=$1 FOR UPDATE`, userID).Scan(&locked); err != nil {
 		return favorites.Favorite{}, err
 	}
 	var instrumentID int64

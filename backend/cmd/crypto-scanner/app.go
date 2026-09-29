@@ -30,6 +30,7 @@ import (
 	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/storage/postgres"
 	"crypto-scanner/internal/telegrambot"
+	"crypto-scanner/internal/users"
 )
 
 // app is the composed process: the HTTP handler and its background services.
@@ -141,6 +142,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 
 		ScannerIndicators: scannerIndicators,
 		IndicatorTypes:    indicatorRegistry,
+		Users:             users.New(store, cfg.AdminTelegramID, monitoredChanged.notify),
 	}, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled})
 	return app{handler: handler, services: []service{
 		{"market scheduler", scheduler},

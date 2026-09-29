@@ -43,15 +43,15 @@ func New(store auth.UserStore, botToken string, maxAge time.Duration, administra
 	return &Authenticator{store: store, botToken: botToken, maxAge: maxAge, administratorID: administratorID, now: now}
 }
 
-// AuthenticateInitData verifies raw init data and returns the enabled user.
+// AuthenticateInitData verifies raw init data and returns the application user.
 // It fails with auth.ErrUnauthenticated or auth.ErrAccessDenied.
 func (authenticator *Authenticator) AuthenticateInitData(ctx context.Context, rawInitData string) (auth.User, error) {
 	telegramID, ok := authenticator.validate(rawInitData)
 	if !ok {
 		return auth.User{}, auth.ErrUnauthenticated
 	}
-	user, err := authenticator.store.FindEnabledByTelegramID(ctx, telegramID)
-	if errors.Is(err, auth.ErrUserNotFound) || err == nil && !user.Enabled {
+	user, err := authenticator.store.FindByTelegramID(ctx, telegramID)
+	if errors.Is(err, auth.ErrUserNotFound) {
 		return auth.User{}, auth.ErrAccessDenied
 	}
 	if err != nil {

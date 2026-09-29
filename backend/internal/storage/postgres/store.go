@@ -65,7 +65,7 @@ func timePointer(value pgtype.Timestamptz) *time.Time {
 
 func lockUser(ctx context.Context, tx pgx.Tx, userID int64) (int64, error) {
 	var telegramID int64
-	err := tx.QueryRow(ctx, `SELECT telegram_id FROM app.users WHERE id=$1 AND is_enabled FOR UPDATE`, userID).Scan(&telegramID)
+	err := tx.QueryRow(ctx, `SELECT telegram_id FROM app.users WHERE id=$1 FOR UPDATE`, userID).Scan(&telegramID)
 	return telegramID, err
 }
 

@@ -20,7 +20,7 @@ export function AppName({ administrator }: AppNameProps) {
 	if (!administrator) {
 		return name;
 	}
-	if (matchRoute({ to: "/admin" })) {
+	if (matchRoute({ fuzzy: true, to: "/admin" })) {
 		return (
 			<UnstyledButton
 				aria-label="Close scanner settings"

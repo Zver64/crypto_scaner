@@ -154,7 +154,7 @@ func (q *Queries) ListFavorites(ctx context.Context, userID int64) ([]ListFavori
 const listMonitoredInstrumentIDs = `-- name: ListMonitoredInstrumentIDs :many
 SELECT DISTINCT i.id
 FROM app.favorites f
-JOIN app.users u ON u.id = f.user_id AND u.is_enabled
+JOIN app.users u ON u.id = f.user_id
 JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
 ORDER BY i.id
 `
@@ -182,7 +182,7 @@ func (q *Queries) ListMonitoredInstrumentIDs(ctx context.Context) ([]int64, erro
 const listMonitoredSymbols = `-- name: ListMonitoredSymbols :many
 SELECT DISTINCT i.symbol
 FROM app.favorites f
-JOIN app.users u ON u.id = f.user_id AND u.is_enabled
+JOIN app.users u ON u.id = f.user_id
 JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
 ORDER BY i.symbol
 `

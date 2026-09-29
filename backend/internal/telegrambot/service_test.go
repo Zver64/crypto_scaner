@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -31,10 +30,7 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 	}
 
 	service.ProcessUpdate(context.Background(), messageUpdate(100, "/start"))
-	start := transport.lastSendMessage(t)
-	if start.Text != "Administrator menu:" || start.ReplyMarkup.Keyboard[0][0].Text != "List users" || start.ReplyMarkup.Keyboard[1][0].Text != "Add user" || start.ReplyMarkup.Keyboard[2][0].Text != "Revoke access" {
-		t.Fatalf("unexpected administrator menu: %#v", start)
-	}
+	assertMenu(t, transport.lastSendMessage(t))
 
 	service.ProcessUpdate(context.Background(), messageUpdate(100, "Add user"))
 	picker := transport.lastSendMessage(t)
@@ -56,10 +52,10 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 		UsersShared: &models.UsersShared{RequestID: int(requestID), Users: []models.SharedUser{{UserID: 201, FirstName: "Babbage"}}},
 	}})
 	service.ProcessUpdate(context.Background(), callbackUpdate(100, confirm))
-	if _, err := store.FindEnabledByTelegramID(context.Background(), 200); err != nil {
+	if _, err := store.FindByTelegramID(context.Background(), 200); err != nil {
 		t.Fatalf("confirmed user has no access: %v", err)
 	}
-	if _, err := store.FindEnabledByTelegramID(context.Background(), 201); err != auth.ErrUserNotFound {
+	if _, err := store.FindByTelegramID(context.Background(), 201); err != auth.ErrUserNotFound {
 		t.Fatalf("replayed picker selection changed confirmed identity: %v", err)
 	}
 	success := transport.lastSendMessage(t)
@@ -69,15 +65,21 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 	if accessChanges != 1 {
 		t.Fatalf("access change notifications = %d, want 1", accessChanges)
 	}
-	assertReplyKeyboardRemoved(t, success)
+	assertMenu(t, success)
+	if got := transport.buttonRemovals(); got != 1 {
+		t.Fatalf("confirmation button removals = %d, want 1", got)
+	}
 
 	service.ProcessUpdate(context.Background(), callbackUpdate(100, confirm))
 	if got := transport.lastCallback(t).Text; got != "This action is no longer valid." {
 		t.Fatalf("stale callback message = %q", got)
 	}
+	if got := transport.buttonRemovals(); got != 2 {
+		t.Fatalf("stale confirmation button removals = %d, want 2", got)
+	}
 }
 
-func TestAddUserCancelRemovesPickerReplyKeyboard(t *testing.T) {
+func TestAddUserCancelReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
 	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
@@ -94,10 +96,13 @@ func TestAddUserCancelRemovesPickerReplyKeyboard(t *testing.T) {
 	if outcome.Text != "No Scanner Access changes were made." {
 		t.Fatalf("cancel message = %q", outcome.Text)
 	}
-	assertReplyKeyboardRemoved(t, outcome)
+	assertMenu(t, outcome)
+	if got := transport.buttonRemovals(); got != 1 {
+		t.Fatalf("confirmation button removals = %d, want 1", got)
+	}
 }
 
-func TestAddUserGrantErrorRemovesPickerReplyKeyboard(t *testing.T) {
+func TestAddUserGrantErrorReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{grantErr: errors.New("storage unavailable")}
 	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
@@ -115,10 +120,13 @@ func TestAddUserGrantErrorRemovesPickerReplyKeyboard(t *testing.T) {
 	if outcome.Text != "Scanner Access was not changed. Please try again." {
 		t.Fatalf("error message = %q", outcome.Text)
 	}
-	assertReplyKeyboardRemoved(t, outcome)
+	assertMenu(t, outcome)
+	if got := transport.buttonRemovals(); got != 1 {
+		t.Fatalf("confirmation button removals = %d, want 1", got)
+	}
 }
 
-func TestStaleAddUserSelectionRemovesPickerReplyKeyboard(t *testing.T) {
+func TestStaleAddUserSelectionReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
 	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
@@ -134,7 +142,7 @@ func TestStaleAddUserSelectionRemovesPickerReplyKeyboard(t *testing.T) {
 	if outcome.Text != "This selection is no longer valid. Choose Add user again." {
 		t.Fatalf("stale selection message = %q", outcome.Text)
 	}
-	assertReplyKeyboardRemoved(t, outcome)
+	assertMenu(t, outcome)
 }
 
 func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
@@ -161,143 +169,36 @@ func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
 
 func TestAccessAdministrationIsPrivateAndAdministratorOnly(t *testing.T) {
 	transport := newTelegramTransport(t)
-	store := &accessStore{users: map[int64]auth.User{300: {ID: 1, TelegramID: 300, Enabled: true}}}
+	store := &accessStore{users: map[int64]auth.User{300: {ID: 1, TelegramID: 300}}}
 	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
 
-	service.ProcessUpdate(context.Background(), messageUpdate(300, "List users"))
+	service.ProcessUpdate(context.Background(), messageUpdate(300, "Add user"))
 	if got := transport.lastSendMessage(t).Text; got != "Scanner Access is active. Open the existing Main Mini App from this bot's profile." {
 		t.Fatalf("enabled user response = %q", got)
 	}
-	service.ProcessUpdate(context.Background(), messageUpdate(400, "List users"))
+	service.ProcessUpdate(context.Background(), messageUpdate(400, "Add user"))
 	if got := transport.lastSendMessage(t).Text; got != "Access has not been granted. Contact the Administrator." {
 		t.Fatalf("unknown user response = %q", got)
 	}
 
 	before := transport.messageCount()
-	service.ProcessUpdate(context.Background(), &models.Update{Message: &models.Message{From: &models.User{ID: 100}, Chat: models.Chat{ID: -1000, Type: models.ChatTypeGroup}, Text: "List users"}})
+	service.ProcessUpdate(context.Background(), &models.Update{Message: &models.Message{From: &models.User{ID: 100}, Chat: models.Chat{ID: -1000, Type: models.ChatTypeGroup}, Text: "Add user"}})
 	if after := transport.messageCount(); after != before {
 		t.Fatalf("group message disclosed a response: before=%d after=%d", before, after)
 	}
 
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, "scanner-access:delete:forged"))
+	service.ProcessUpdate(context.Background(), callbackUpdate(100, "scanner-access:confirm:forged"))
 	if got := transport.lastCallback(t).Text; got != "This action is no longer valid." {
 		t.Fatalf("forged callback response = %q", got)
 	}
 }
 
-func TestAdministratorCanConfirmUserDeletion(t *testing.T) {
-	transport := newTelegramTransport(t)
-	store := &accessStore{users: map[int64]auth.User{
-		100: {ID: 1, TelegramID: 100, DisplayName: "Administrator", Enabled: true},
-		200: {ID: 2, TelegramID: 200, DisplayName: "Taylor", Enabled: true},
-	}}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
-	if err != nil {
-		t.Fatalf("create bot service: %v", err)
-	}
-
-	service.ProcessUpdate(context.Background(), messageUpdate(100, "Revoke access"))
-	selection := transport.lastSendMessage(t)
-	if selection.Text != "Choose a user whose Scanner Access should be revoked." || len(selection.Inline.InlineKeyboard) != 1 || selection.Inline.InlineKeyboard[0][0].Text != "Taylor (ID 200)" {
-		t.Fatalf("unexpected deletion selection: %#v", selection)
-	}
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, selection.Inline.InlineKeyboard[0][0].CallbackData))
-	confirmation := transport.lastSendMessage(t)
-	if confirmation.Text != "Revoke Scanner Access for Taylor (ID 200)?" {
-		t.Fatalf("unexpected deletion confirmation: %#v", confirmation)
-	}
-	confirm := confirmation.Inline.InlineKeyboard[0][0].CallbackData
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, confirm))
-	if _, err := store.FindEnabledByTelegramID(context.Background(), 200); err != auth.ErrUserNotFound {
-		t.Fatalf("deleted user still has access: %v", err)
-	}
-	if got := transport.lastSendMessage(t).Text; got != "Scanner Access revoked for Taylor (ID 200). Favorites and alerts were preserved." {
-		t.Fatalf("deletion success message = %q", got)
-	}
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, confirm))
-	if got := transport.lastCallback(t).Text; got != "This action is no longer valid." {
-		t.Fatalf("stale deletion callback response = %q", got)
-	}
-}
-
-func TestDeletionInvalidatesOlderAddConfirmation(t *testing.T) {
-	transport := newTelegramTransport(t)
-	store := &accessStore{users: map[int64]auth.User{
-		100: {ID: 1, TelegramID: 100, DisplayName: "Administrator", Enabled: true},
-		200: {ID: 2, TelegramID: 200, DisplayName: "Taylor", Enabled: true},
-	}}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
-	if err != nil {
-		t.Fatalf("create bot service: %v", err)
-	}
-
-	service.ProcessUpdate(context.Background(), messageUpdate(100, "Add user"))
-	requestID := transport.lastSendMessage(t).ReplyMarkup.Keyboard[0][0].RequestUsers.RequestID
-	service.ProcessUpdate(context.Background(), &models.Update{Message: &models.Message{
-		From: &models.User{ID: 100}, Chat: models.Chat{ID: 100, Type: models.ChatTypePrivate},
-		UsersShared: &models.UsersShared{RequestID: int(requestID), Users: []models.SharedUser{{UserID: 200, FirstName: "Taylor"}}},
-	}})
-	staleAddConfirmation := transport.lastSendMessage(t).Inline.InlineKeyboard[0][0].CallbackData
-
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, "scanner-access:delete-page:8"))
-	service.ProcessUpdate(context.Background(), messageUpdate(100, "Revoke access"))
-	deleteSelection := transport.lastSendMessage(t).Inline.InlineKeyboard[0][0].CallbackData
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, deleteSelection))
-	deleteConfirmation := transport.lastSendMessage(t).Inline.InlineKeyboard[0][0].CallbackData
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, deleteConfirmation))
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, staleAddConfirmation))
-
-	if _, err := store.FindEnabledByTelegramID(context.Background(), 200); err != auth.ErrUserNotFound {
-		t.Fatalf("stale add confirmation restored deleted access: %v", err)
-	}
-	if got := transport.lastCallback(t).Text; got != "This action is no longer valid." {
-		t.Fatalf("stale add callback response = %q", got)
-	}
-}
-
-func TestEmptyUserListIdentifiesAdministrator(t *testing.T) {
-	transport := newTelegramTransport(t)
-	store := &accessStore{users: map[int64]auth.User{100: {ID: 1, TelegramID: 100, DisplayName: "Administrator", Enabled: true}}}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
-	if err != nil {
-		t.Fatalf("create bot service: %v", err)
-	}
-	service.ProcessUpdate(context.Background(), messageUpdate(100, "List users"))
-	if got := transport.lastSendMessage(t).Text; got != "Scanner Access users:\nAdministrator — Administrator (ID 100)\nNo other users have Scanner Access." {
-		t.Fatalf("empty list = %q", got)
-	}
-}
-
-func TestAdministratorCanNavigateLongUserList(t *testing.T) {
-	transport := newTelegramTransport(t)
-	store := &accessStore{users: map[int64]auth.User{100: {ID: 1, TelegramID: 100, DisplayName: "Administrator", Enabled: true}}}
-	for index := int64(0); index < 9; index++ {
-		telegramID := 200 + index
-		store.users[telegramID] = auth.User{ID: telegramID, TelegramID: telegramID, DisplayName: fmt.Sprintf("User %d", index+1), Enabled: true}
-	}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
-	if err != nil {
-		t.Fatalf("create bot service: %v", err)
-	}
-
-	service.ProcessUpdate(context.Background(), messageUpdate(100, "List users"))
-	firstPage := transport.lastSendMessage(t)
-	if !strings.Contains(firstPage.Text, "Administrator") || !strings.Contains(firstPage.Text, "User 8") || strings.Contains(firstPage.Text, "User 9") || firstPage.Inline.InlineKeyboard[0][0].Text != "Next" {
-		t.Fatalf("unexpected first page: %#v", firstPage)
-	}
-	service.ProcessUpdate(context.Background(), callbackUpdate(100, firstPage.Inline.InlineKeyboard[0][0].CallbackData))
-	secondPage := transport.lastSendMessage(t)
-	if !strings.Contains(secondPage.Text, "User 9") || secondPage.Inline.InlineKeyboard[0][0].Text != "Previous" {
-		t.Fatalf("unexpected second page: %#v", secondPage)
-	}
-}
-
 func TestPriceAlertRechecksAccessAfterRateLimitWait(t *testing.T) {
 	transport := newTelegramTransport(t)
-	store := &synchronizedAccessStore{user: auth.User{ID: 1, TelegramID: 200, Enabled: true}}
+	store := &synchronizedAccessStore{user: auth.User{ID: 1, TelegramID: 200}}
 	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
 	if err != nil {
 		t.Fatal(err)
@@ -309,11 +210,11 @@ func TestPriceAlertRechecksAccessAfterRateLimitWait(t *testing.T) {
 	result := make(chan error, 1)
 	go func() { result <- service.SendPriceAlert(context.Background(), fired) }()
 	time.Sleep(100 * time.Millisecond)
-	store.disable()
+	store.delete()
 	select {
 	case err := <-result:
 		if err == nil {
-			t.Fatal("notification sent after access was revoked during limiter wait")
+			t.Fatal("notification sent after the user was deleted during limiter wait")
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("SendPriceAlert did not finish after limiter wait")
@@ -324,14 +225,15 @@ func TestPriceAlertRechecksAccessAfterRateLimitWait(t *testing.T) {
 }
 
 type synchronizedAccessStore struct {
-	mu   sync.Mutex
-	user auth.User
+	mu      sync.Mutex
+	user    auth.User
+	deleted bool
 }
 
-func (store *synchronizedAccessStore) FindEnabledByTelegramID(_ context.Context, telegramID int64) (auth.User, error) {
+func (store *synchronizedAccessStore) FindByTelegramID(_ context.Context, telegramID int64) (auth.User, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if !store.user.Enabled || store.user.TelegramID != telegramID {
+	if store.deleted || store.user.TelegramID != telegramID {
 		return auth.User{}, auth.ErrUserNotFound
 	}
 	return store.user, nil
@@ -339,16 +241,9 @@ func (store *synchronizedAccessStore) FindEnabledByTelegramID(_ context.Context,
 func (store *synchronizedAccessStore) GrantAccess(context.Context, int64, string, string) (auth.User, bool, error) {
 	return auth.User{}, false, nil
 }
-func (store *synchronizedAccessStore) ListNonAdministratorUsers(context.Context, int64, int, int) ([]auth.User, error) {
-	return nil, nil
-}
-func (store *synchronizedAccessStore) DeleteUser(context.Context, int64, int64) (bool, error) {
-	store.disable()
-	return true, nil
-}
-func (store *synchronizedAccessStore) disable() {
+func (store *synchronizedAccessStore) delete() {
 	store.mu.Lock()
-	store.user.Enabled = false
+	store.deleted = true
 	store.mu.Unlock()
 }
 
@@ -358,9 +253,9 @@ type accessStore struct {
 	grantErr error
 }
 
-func (store *accessStore) FindEnabledByTelegramID(_ context.Context, telegramID int64) (auth.User, error) {
+func (store *accessStore) FindByTelegramID(_ context.Context, telegramID int64) (auth.User, error) {
 	user, ok := store.users[telegramID]
-	if !ok || !user.Enabled {
+	if !ok {
 		return auth.User{}, auth.ErrUserNotFound
 	}
 	return user, nil
@@ -373,37 +268,13 @@ func (store *accessStore) GrantAccess(_ context.Context, telegramID int64, usern
 	if store.users == nil {
 		store.users = map[int64]auth.User{}
 	}
-	if user, ok := store.users[telegramID]; ok && user.Enabled {
+	if user, ok := store.users[telegramID]; ok {
 		return user, false, nil
 	}
 	store.next++
-	user := auth.User{ID: store.next, TelegramID: telegramID, Username: username, DisplayName: displayName, Enabled: true}
+	user := auth.User{ID: store.next, TelegramID: telegramID, Username: username, DisplayName: displayName}
 	store.users[telegramID] = user
 	return user, true, nil
-}
-
-func (store *accessStore) ListNonAdministratorUsers(_ context.Context, administratorID int64, offset, limit int) ([]auth.User, error) {
-	users := make([]auth.User, 0, len(store.users))
-	for _, user := range store.users {
-		if user.Enabled && user.TelegramID != administratorID {
-			users = append(users, user)
-		}
-	}
-	sort.Slice(users, func(left, right int) bool { return users[left].TelegramID < users[right].TelegramID })
-	if offset >= len(users) {
-		return nil, nil
-	}
-	end := min(offset+limit, len(users))
-	return users[offset:end], nil
-}
-
-func (store *accessStore) DeleteUser(_ context.Context, id, telegramID int64) (bool, error) {
-	user, ok := store.users[telegramID]
-	if !ok || user.ID != id {
-		return false, nil
-	}
-	delete(store.users, telegramID)
-	return true, nil
 }
 
 type telegramTransport struct {
@@ -412,6 +283,7 @@ type telegramTransport struct {
 	mu            sync.Mutex
 	messages      []sendMessage
 	callbacks     []answerCallback
+	removals      int
 	getMeResponse string
 	getMeCalls    int
 }
@@ -480,6 +352,17 @@ func newTelegramTransport(t *testing.T) *telegramTransport {
 			transport.messages = append(transport.messages, message)
 			transport.mu.Unlock()
 			_, _ = response.Write([]byte(`{"ok":true,"result":{"message_id":1,"date":0,"chat":{"id":100,"type":"private"}}}`))
+		case "/bot123456:test-token/editMessageReplyMarkup":
+			if err := request.ParseMultipartForm(1 << 20); err != nil {
+				t.Errorf("parse editMessageReplyMarkup form: %v", err)
+			}
+			if request.FormValue("reply_markup") != "" {
+				t.Errorf("confirmation edit kept a reply markup: %s", request.FormValue("reply_markup"))
+			}
+			transport.mu.Lock()
+			transport.removals++
+			transport.mu.Unlock()
+			_, _ = response.Write([]byte(`{"ok":true,"result":true}`))
 		case "/bot123456:test-token/answerCallbackQuery":
 			if err := request.ParseMultipartForm(1 << 20); err != nil {
 				t.Errorf("parse answerCallbackQuery form: %v", err)
@@ -536,10 +419,18 @@ func (transport *telegramTransport) messageCount() int {
 	return len(transport.messages)
 }
 
-func assertReplyKeyboardRemoved(t *testing.T, message sendMessage) {
+func (transport *telegramTransport) buttonRemovals() int {
+	transport.mu.Lock()
+	defer transport.mu.Unlock()
+	return transport.removals
+}
+
+// assertMenu checks that a message returns the administrator to the menu,
+// which also replaces the user picker keyboard.
+func assertMenu(t *testing.T, message sendMessage) {
 	t.Helper()
-	if got := string(message.replyMarkupWire); got != `{"remove_keyboard":true}` {
-		t.Fatalf("reply markup wire = %s, want reply keyboard removal", got)
+	if len(message.ReplyMarkup.Keyboard) != 1 || len(message.ReplyMarkup.Keyboard[0]) != 1 || message.ReplyMarkup.Keyboard[0][0].Text != "Add user" || message.ReplyMarkup.Keyboard[0][0].RequestUsers != nil {
+		t.Fatalf("reply markup = %s, want the Add user menu", message.replyMarkupWire)
 	}
 }
 
@@ -555,5 +446,5 @@ func messageUpdate(userID int64, text string) *models.Update {
 }
 
 func callbackUpdate(userID int64, data string) *models.Update {
-	return &models.Update{CallbackQuery: &models.CallbackQuery{ID: "callback", From: models.User{ID: userID}, Data: data, Message: models.MaybeInaccessibleMessage{Message: &models.Message{Chat: models.Chat{ID: userID, Type: models.ChatTypePrivate}}}}}
+	return &models.Update{CallbackQuery: &models.CallbackQuery{ID: "callback", From: models.User{ID: userID}, Data: data, Message: models.MaybeInaccessibleMessage{Message: &models.Message{ID: 1, Chat: models.Chat{ID: userID, Type: models.ChatTypePrivate}}}}}
 }

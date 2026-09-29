@@ -39,6 +39,7 @@ import type {
 
 import type {
   AccessDeniedResponse,
+  AdministratorProtectedResponse,
   AdministratorRequiredResponse,
   AlertConflictResponse,
   AlertNotFoundResponse,
@@ -75,7 +76,9 @@ import type {
   ScannerIndicatorUpdate,
   SymbolNotFoundResponse,
   UnauthenticatedResponse,
-  UnprocessableAnalysisResponse
+  UnprocessableAnalysisResponse,
+  UserList,
+  UserNotFoundResponse
 } from './models';
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
@@ -3189,4 +3192,273 @@ export const useDeleteScannerIndicator = <TError = globalThis.Error & { info?: U
         TContext
       > => {
       return useMutation(getDeleteScannerIndicatorMutationOptions(options), queryClient);
+    }
+
+export type listUsersResponse200 = {
+  data: UserList
+  status: 200
+}
+
+export type listUsersResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listUsersResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type listUsersResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listUsersResponseSuccess = (listUsersResponse200) & {
+  headers: Headers;
+};
+export type listUsersResponseError = (listUsersResponse401 | listUsersResponse403 | listUsersResponse500) & {
+  headers: Headers;
+};
+
+export const getListUsersUrl = () => {
+
+
+
+
+  return `/api/v1/admin/users`
+}
+
+/**
+ * Users are added through the Telegram bot. The administrator comes first.
+ * @summary List the application users
+ */
+export const listUsers = async ( options?: RequestInit): Promise<listUsersResponseSuccess> => {
+
+  const res = await fetch(getListUsersUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: listUsersResponseError['data'], status?: number} = new globalThis.Error();
+    const data : listUsersResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: listUsersResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listUsersResponseSuccess
+}
+
+
+
+
+
+export const getListUsersQueryKey = () => {
+    return [
+    `/api/v1/admin/users`
+    ] as const;
+    }
+
+
+export const getListUsersQueryOptions = <TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListUsersQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUsers>>> = ({ signal }) => listUsers({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listUsers>>>
+export type ListUsersQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+
+
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUsers>>,
+          TError,
+          Awaited<ReturnType<typeof listUsers>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listUsers>>,
+          TError,
+          Awaited<ReturnType<typeof listUsers>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the application users
+ */
+
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListUsersQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type deleteUserResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteUserResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type deleteUserResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type deleteUserResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type deleteUserResponse409 = {
+  data: AdministratorProtectedResponse
+  status: 409
+}
+
+export type deleteUserResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type deleteUserResponseSuccess = (deleteUserResponse204) & {
+  headers: Headers;
+};
+export type deleteUserResponseError = (deleteUserResponse401 | deleteUserResponse403 | deleteUserResponse404 | deleteUserResponse409 | deleteUserResponse500) & {
+  headers: Headers;
+};
+
+export const getDeleteUserUrl = (telegramId: number,) => {
+
+
+
+
+  return `/api/v1/admin/users/${encodeURIComponent(String(telegramId))}`
+}
+
+/**
+ * The user loses access, and their favorites and price alerts are deleted. The administrator cannot be deleted.
+ * @summary Delete an application user
+ */
+export const deleteUser = async (telegramId: number, options?: RequestInit): Promise<deleteUserResponseSuccess> => {
+
+  const res = await fetch(getDeleteUserUrl(telegramId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: deleteUserResponseError['data'], status?: number} = new globalThis.Error();
+    const data : deleteUserResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: deleteUserResponseSuccess['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteUserResponseSuccess
+}
+
+
+
+
+
+export const getDeleteUserMutationKey = () => ['deleteUser'] as const;
+
+export const getDeleteUserMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext> => {
+
+const mutationKey = getDeleteUserMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteUser>>, DeleteUserMutationVariables> = (props) => {
+          const {telegramId} = props ?? {};
+
+          return  deleteUser(telegramId,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteUserMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUser>>>
+
+    export type DeleteUserMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number }
+    export type DeleteUserMutationVariables = {telegramId: number}
+
+    /**
+ * @summary Delete an application user
+ */
+export const useDeleteUser = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteUser>>,
+        TError,
+        DeleteUserMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteUserMutationOptions(options), queryClient);
     }

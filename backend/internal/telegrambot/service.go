@@ -1,5 +1,5 @@
-// Package telegrambot implements the private-chat administration interaction
-// for Crypto Scanner's configured Telegram Administrator.
+// Package telegrambot grants Scanner Access through the configured Telegram
+// Administrator's private chat and delivers price alerts.
 package telegrambot
 
 import (
@@ -22,13 +22,11 @@ import (
 )
 
 const (
-	menuListUsers   = "List users"
 	menuAddUser     = "Add user"
-	menuDeleteUser  = "Revoke access"
-	pageSize        = 8
 	callbackPrefix  = "scanner-access:"
 	callbackConfirm = "confirm"
 	callbackCancel  = "cancel"
+	menuText        = "Add users here. Delete them in the Mini App settings."
 )
 
 // Options makes the bot boundary testable without changing its production
@@ -58,29 +56,21 @@ type Service struct {
 	accessChanged func()
 }
 
-type operationKind string
-
-const (
-	operationAdd    operationKind = "add"
-	operationDelete operationKind = "delete"
-)
-
+// operation is one Add user flow: a picker request, then the chosen person
+// awaiting confirmation.
 type operation struct {
-	kind      operationKind
 	chatID    int64
 	requestID int32
 	user      auth.User
 	busy      bool
-}
-
-type userPage struct {
-	users []auth.User
-	more  bool
+	// confirmationID is the message with the Confirm and Cancel buttons, or
+	// zero before it is sent.
+	confirmationID int
 }
 
 // New constructs a Telegram Bot API client without changing any BotFather
-// settings. The configured administrator ID is the only authority for access
-// management; enabled application users never gain that authority.
+// settings. The configured administrator ID is the only authority for granting
+// access; other application users never gain that authority.
 func New(token string, administratorID int64, store auth.AccessStore, logger *slog.Logger, options Options) (*Service, error) {
 	if administratorID <= 0 {
 		return nil, fmt.Errorf("administrator Telegram ID must be positive")
@@ -153,38 +143,37 @@ func (service *Service) handleMessage(ctx context.Context, client *telegram.Bot,
 		service.handleSharedUser(ctx, client, message)
 		return
 	}
-	switch message.Text {
-	case "/start":
-		service.sendMenu(ctx, client, message.Chat.ID, "Administrator menu:")
-	case "/help":
-		service.sendMenu(ctx, client, message.Chat.ID, "Choose an access-management action:")
-	case menuListUsers:
-		service.listUsers(ctx, client, message.Chat.ID, 0)
-	case menuAddUser:
+	if message.Text == menuAddUser {
 		service.requestUser(ctx, client, message.Chat.ID)
-	case menuDeleteUser:
-		service.selectUserForDeletion(ctx, client, message.Chat.ID, 0)
-	default:
-		service.sendMenu(ctx, client, message.Chat.ID, "Use the menu to manage Scanner Access.")
+		return
 	}
+	// Any other message abandons an unfinished Add user flow.
+	service.mu.Lock()
+	abandoned := service.invalidateChatOperations(message.Chat.ID)
+	service.mu.Unlock()
+	service.removeAllButtons(ctx, client, message.Chat.ID, abandoned)
+	service.sendMenu(ctx, client, message.Chat.ID, menuText)
 }
 
 func (service *Service) handleNonAdministrator(ctx context.Context, client *telegram.Bot, message *models.Message) {
-	if _, err := service.store.FindEnabledByTelegramID(ctx, message.From.ID); err == nil {
+	if _, err := service.store.FindByTelegramID(ctx, message.From.ID); err == nil {
 		service.send(ctx, client, message.Chat.ID, "Scanner Access is active. Open the existing Main Mini App from this bot's profile.", nil)
 		return
 	}
 	service.send(ctx, client, message.Chat.ID, "Access has not been granted. Contact the Administrator.", nil)
 }
 
+// sendMenu also replaces the picker keyboard, so every finished flow returns
+// the administrator to the menu.
 func (service *Service) sendMenu(ctx context.Context, client *telegram.Bot, chatID int64, text string) {
 	service.send(ctx, client, chatID, text, &models.ReplyKeyboardMarkup{ResizeKeyboard: true, Keyboard: [][]models.KeyboardButton{
-		{{Text: menuListUsers}}, {{Text: menuAddUser}}, {{Text: menuDeleteUser}},
+		{{Text: menuAddUser}},
 	}})
 }
 
 func (service *Service) requestUser(ctx context.Context, client *telegram.Bot, chatID int64) {
-	requestID := service.newPickerOperation(chatID)
+	requestID, abandoned := service.newPickerOperation(chatID)
+	service.removeAllButtons(ctx, client, chatID, abandoned)
 	service.send(ctx, client, chatID, "Choose one person to grant Scanner Access.", &models.ReplyKeyboardMarkup{ResizeKeyboard: true, OneTimeKeyboard: true, Keyboard: [][]models.KeyboardButton{{{
 		Text: "Choose a person",
 		RequestUsers: &models.KeyboardButtonRequestUsers{
@@ -205,114 +194,38 @@ func (service *Service) handleSharedUser(ctx context.Context, client *telegram.B
 	service.mu.Lock()
 	var token string
 	for candidate, operation := range service.operations {
-		if operation.kind == operationAdd && operation.chatID == message.Chat.ID && operation.requestID == int32(shared.RequestID) && operation.user.TelegramID == 0 && !operation.busy {
+		if operation.chatID == message.Chat.ID && operation.requestID == int32(shared.RequestID) && operation.user.TelegramID == 0 && !operation.busy {
 			token = candidate
 			break
 		}
 	}
 	if token == "" {
-		hasPendingPicker := false
-		for _, operation := range service.operations {
-			if operation.kind == operationAdd && operation.chatID == message.Chat.ID && operation.user.TelegramID == 0 && !operation.busy {
-				hasPendingPicker = true
-				break
-			}
-		}
 		service.mu.Unlock()
-		if hasPendingPicker {
-			service.send(ctx, client, message.Chat.ID, "This selection is no longer valid. Choose Add user again.", nil)
-			return
-		}
-		service.sendWithoutReplyKeyboard(ctx, client, message.Chat.ID, "This selection is no longer valid. Choose Add user again.")
+		service.sendMenu(ctx, client, message.Chat.ID, "This selection is no longer valid. Choose Add user again.")
 		return
 	}
 	selected := shared.Users[0]
-	service.operations[token].user = auth.User{TelegramID: selected.UserID, Username: selected.Username, DisplayName: displayName(selected.FirstName, selected.LastName), Enabled: true}
-	operation := service.operations[token]
+	service.operations[token].user = auth.User{TelegramID: selected.UserID, Username: selected.Username, DisplayName: displayName(selected.FirstName, selected.LastName)}
+	user := service.operations[token].user
 	service.mu.Unlock()
-	service.sendConfirmation(ctx, client, message.Chat.ID, operation, token)
-}
-
-func (service *Service) listUsers(ctx context.Context, client *telegram.Bot, chatID int64, offset int) {
-	administrator, err := service.store.FindEnabledByTelegramID(ctx, service.administratorID)
+	confirmation, err := client.SendMessage(ctx, &telegram.SendMessageParams{ChatID: message.Chat.ID, Text: "Grant Scanner Access to " + formatUser(user) + "?", ReplyMarkup: &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
+		{Text: "Confirm", CallbackData: callbackPrefix + callbackConfirm + ":" + token},
+		{Text: "Cancel", CallbackData: callbackPrefix + callbackCancel + ":" + token},
+	}}}})
 	if err != nil {
-		service.send(ctx, client, chatID, "Could not list Scanner Access users. Please try again.", nil)
+		service.logger.WarnContext(ctx, "Telegram message failed", "module", "telegram_bot", "operation", "send_message", "error", err)
 		return
 	}
-	page, err := service.nonAdministratorPage(ctx, offset)
-	if err != nil {
-		service.send(ctx, client, chatID, "Could not list Scanner Access users. Please try again.", nil)
-		return
-	}
-	if len(page.users) == 0 && offset == 0 {
-		service.send(ctx, client, chatID, "Scanner Access users:\nAdministrator — "+formatUser(administrator)+"\nNo other users have Scanner Access.", nil)
-		return
-	}
-	rows := make([]string, 0, len(page.users)+1)
-	if offset == 0 {
-		rows = append(rows, "Administrator — "+formatUser(administrator))
-	}
-	for _, user := range page.users {
-		rows = append(rows, formatUser(user))
-	}
-	keyboard := &models.InlineKeyboardMarkup{}
-	if offset > 0 || page.more {
-		buttons := []models.InlineKeyboardButton{}
-		if offset > 0 {
-			buttons = append(buttons, models.InlineKeyboardButton{Text: "Previous", CallbackData: fmt.Sprintf("%slist:%d", callbackPrefix, max(offset-pageSize, 0))})
-		}
-		if page.more {
-			buttons = append(buttons, models.InlineKeyboardButton{Text: "Next", CallbackData: fmt.Sprintf("%slist:%d", callbackPrefix, offset+pageSize)})
-		}
-		keyboard.InlineKeyboard = [][]models.InlineKeyboardButton{buttons}
-	}
-	service.send(ctx, client, chatID, "Scanner Access users:\n"+strings.Join(rows, "\n"), keyboard)
-}
-
-func (service *Service) selectUserForDeletion(ctx context.Context, client *telegram.Bot, chatID int64, offset int) {
 	service.mu.Lock()
-	service.invalidateChatOperations(chatID)
+	operation := service.operations[token]
+	if operation != nil {
+		operation.confirmationID = confirmation.ID
+	}
 	service.mu.Unlock()
-	page, err := service.nonAdministratorPage(ctx, offset)
-	if err != nil {
-		service.send(ctx, client, chatID, "Could not list Scanner Access users. Please try again.", nil)
-		return
+	if operation == nil {
+		// The flow was abandoned while the confirmation was being sent.
+		service.removeButtons(ctx, client, message.Chat.ID, confirmation.ID)
 	}
-	buttons := make([][]models.InlineKeyboardButton, 0, len(page.users)+1)
-	for _, user := range page.users {
-		if user.TelegramID == service.administratorID {
-			continue
-		}
-		token := service.newDeleteOperation(chatID, user)
-		buttons = append(buttons, []models.InlineKeyboardButton{{Text: formatUser(user), CallbackData: callbackPrefix + "delete:" + token}})
-	}
-	if len(buttons) == 0 {
-		service.send(ctx, client, chatID, "No other users have active access to revoke.", nil)
-		return
-	}
-	navigation := []models.InlineKeyboardButton{}
-	if offset > 0 {
-		navigation = append(navigation, models.InlineKeyboardButton{Text: "Previous", CallbackData: fmt.Sprintf("%sdelete-page:%d", callbackPrefix, max(offset-pageSize, 0))})
-	}
-	if page.more {
-		navigation = append(navigation, models.InlineKeyboardButton{Text: "Next", CallbackData: fmt.Sprintf("%sdelete-page:%d", callbackPrefix, offset+pageSize)})
-	}
-	if len(navigation) > 0 {
-		buttons = append(buttons, navigation)
-	}
-	service.send(ctx, client, chatID, "Choose a user whose Scanner Access should be revoked.", &models.InlineKeyboardMarkup{InlineKeyboard: buttons})
-}
-
-func (service *Service) nonAdministratorPage(ctx context.Context, offset int) (userPage, error) {
-	users, err := service.store.ListNonAdministratorUsers(ctx, service.administratorID, offset, pageSize+1)
-	if err != nil {
-		return userPage{}, err
-	}
-	page := userPage{users: users, more: len(users) > pageSize}
-	if page.more {
-		page.users = page.users[:pageSize]
-	}
-	return page, nil
 }
 
 func (service *Service) handleCallback(ctx context.Context, client *telegram.Bot, callback *models.CallbackQuery) {
@@ -321,161 +234,114 @@ func (service *Service) handleCallback(ctx context.Context, client *telegram.Bot
 		service.answer(ctx, client, callback.ID, "This action is not available.")
 		return
 	}
-	if strings.HasPrefix(callback.Data, callbackPrefix+"list:") {
-		var offset int
-		if _, err := fmt.Sscanf(strings.TrimPrefix(callback.Data, callbackPrefix+"list:"), "%d", &offset); err == nil && offset >= 0 {
-			service.answer(ctx, client, callback.ID, "")
-			service.listUsers(ctx, client, chat.ID, offset)
-			return
-		}
-	}
-	if strings.HasPrefix(callback.Data, callbackPrefix+"delete-page:") {
-		var offset int
-		if _, err := fmt.Sscanf(strings.TrimPrefix(callback.Data, callbackPrefix+"delete-page:"), "%d", &offset); err == nil && offset >= 0 {
-			service.answer(ctx, client, callback.ID, "")
-			service.selectUserForDeletion(ctx, client, chat.ID, offset)
-			return
-		}
-	}
-	parts := strings.Split(callback.Data, ":")
-	if len(parts) == 3 && parts[0] == "scanner-access" && parts[1] == "delete" {
-		service.beginDeletionConfirmation(ctx, client, callback, chat.ID, parts[2])
-		return
-	}
-	if len(parts) == 4 && parts[0] == "scanner-access" && (parts[1] == string(operationAdd) || parts[1] == string(operationDelete)) {
-		service.confirmOrCancel(ctx, client, callback, chat.ID, operationKind(parts[1]), parts[2], parts[3])
-		return
-	}
-	service.answer(ctx, client, callback.ID, "This action is no longer valid.")
-}
-
-func (service *Service) beginDeletionConfirmation(ctx context.Context, client *telegram.Bot, callback *models.CallbackQuery, chatID int64, token string) {
+	action, token, _ := strings.Cut(strings.TrimPrefix(callback.Data, callbackPrefix), ":")
 	service.mu.Lock()
 	operation := service.operations[token]
-	if operation == nil || operation.kind != operationDelete || operation.chatID != chatID || operation.busy || operation.user.TelegramID == service.administratorID {
+	valid := strings.HasPrefix(callback.Data, callbackPrefix) && (action == callbackConfirm || action == callbackCancel) &&
+		operation != nil && operation.chatID == chat.ID && operation.user.TelegramID != 0
+	if !valid || operation.busy {
+		pending := service.hasChatOperations(chat.ID)
 		service.mu.Unlock()
 		service.answer(ctx, client, callback.ID, "This action is no longer valid.")
-		return
-	}
-	service.mu.Unlock()
-	service.answer(ctx, client, callback.ID, "")
-	service.sendConfirmation(ctx, client, chatID, operation, token)
-}
-
-func (service *Service) confirmOrCancel(ctx context.Context, client *telegram.Bot, callback *models.CallbackQuery, chatID int64, kind operationKind, action, token string) {
-	service.mu.Lock()
-	operation := service.operations[token]
-	if operation == nil || operation.kind != kind || operation.chatID != chatID || operation.busy {
-		service.mu.Unlock()
-		service.answer(ctx, client, callback.ID, "This action is no longer valid.")
+		if !valid {
+			// Buttons of a finished or forgotten flow, such as one from before
+			// a restart, must not linger, and the picker keyboard must give way
+			// to the menu unless a newer flow is using it.
+			service.removeButtons(ctx, client, chat.ID, callback.Message.Message.ID)
+			if !pending {
+				service.sendMenu(ctx, client, chat.ID, "This confirmation has expired. Choose Add user again.")
+			}
+		}
 		return
 	}
 	if action == callbackCancel {
 		delete(service.operations, token)
 		service.mu.Unlock()
 		service.answer(ctx, client, callback.ID, "Cancelled.")
-		if kind == operationAdd {
-			service.sendWithoutReplyKeyboard(ctx, client, chatID, "No Scanner Access changes were made.")
-			return
-		}
-		service.send(ctx, client, chatID, "No Scanner Access changes were made.", nil)
-		return
-	}
-	if action != callbackConfirm {
-		service.mu.Unlock()
-		service.answer(ctx, client, callback.ID, "This action is no longer valid.")
+		service.removeButtons(ctx, client, chat.ID, callback.Message.Message.ID)
+		service.sendMenu(ctx, client, chat.ID, "No Scanner Access changes were made.")
 		return
 	}
 	operation.busy = true
 	service.mu.Unlock()
 
-	var err error
-	var deleted bool
-	var created bool
-	if kind == operationAdd {
-		_, created, err = service.store.GrantAccess(ctx, operation.user.TelegramID, operation.user.Username, operation.user.DisplayName)
-	} else if operation.user.TelegramID == service.administratorID {
-		err = fmt.Errorf("administrator removal is prohibited")
-	} else {
-		deleted, err = service.store.DeleteUser(ctx, operation.user.ID, operation.user.TelegramID)
-	}
+	_, created, err := service.store.GrantAccess(ctx, operation.user.TelegramID, operation.user.Username, operation.user.DisplayName)
 	service.mu.Lock()
-	if kind == operationAdd || (err == nil && deleted) {
-		delete(service.operations, token)
-	} else if current := service.operations[token]; current != nil {
-		current.busy = false
-	}
+	delete(service.operations, token)
 	service.mu.Unlock()
-	if err != nil || kind == operationDelete && !deleted {
+	service.removeButtons(ctx, client, chat.ID, callback.Message.Message.ID)
+	if err != nil {
+		service.logger.ErrorContext(ctx, "Scanner Access grant failed", "module", "telegram_bot", "error", err)
 		service.answer(ctx, client, callback.ID, "This action could not be completed.")
-		if kind == operationAdd {
-			service.sendWithoutReplyKeyboard(ctx, client, chatID, "Scanner Access was not changed. Please try again.")
-			return
-		}
-		service.send(ctx, client, chatID, "Scanner Access was not changed. Please try again.", nil)
+		service.sendMenu(ctx, client, chat.ID, "Scanner Access was not changed. Please try again.")
 		return
 	}
 	service.answer(ctx, client, callback.ID, "")
-	if service.accessChanged != nil && (created || deleted) {
+	if !created {
+		service.sendMenu(ctx, client, chat.ID, formatUser(operation.user)+" already has Scanner Access.")
+		return
+	}
+	if service.accessChanged != nil {
 		service.accessChanged()
 	}
-	if kind == operationAdd && !created {
-		service.sendWithoutReplyKeyboard(ctx, client, chatID, formatUser(operation.user)+" already has Scanner Access.")
-		return
-	}
-	if kind == operationAdd {
-		service.sendWithoutReplyKeyboard(ctx, client, chatID, "Scanner Access granted to "+formatUser(operation.user)+".")
-		return
-	}
-	service.send(ctx, client, chatID, "Scanner Access revoked for "+formatUser(operation.user)+". Favorites and alerts were preserved.", nil)
+	service.sendMenu(ctx, client, chat.ID, "Scanner Access granted to "+formatUser(operation.user)+".")
 }
 
-func (service *Service) sendConfirmation(ctx context.Context, client *telegram.Bot, chatID int64, operation *operation, token string) {
-	verb := "Grant Scanner Access to "
-	if operation.kind == operationDelete {
-		verb = "Revoke Scanner Access for "
-	}
-	service.send(ctx, client, chatID, verb+formatUser(operation.user)+"?", &models.InlineKeyboardMarkup{InlineKeyboard: [][]models.InlineKeyboardButton{{
-		{Text: "Confirm", CallbackData: fmt.Sprintf("%s%s:%s:%s", callbackPrefix, operation.kind, callbackConfirm, token)},
-		{Text: "Cancel", CallbackData: fmt.Sprintf("%s%s:%s:%s", callbackPrefix, operation.kind, callbackCancel, token)},
-	}}})
-}
-
-func (service *Service) newPickerOperation(chatID int64) int32 {
+// newPickerOperation starts an Add user flow and returns its picker request ID
+// and the confirmations of the flows it abandoned.
+func (service *Service) newPickerOperation(chatID int64) (int32, []int) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
-	service.invalidateChatOperations(chatID)
+	abandoned := service.invalidateChatOperations(chatID)
 	service.nextPicker++
 	if service.nextPicker <= 0 {
 		service.nextPicker = 1
 	}
-	service.operations[newToken()] = &operation{kind: operationAdd, chatID: chatID, requestID: service.nextPicker}
-	return service.nextPicker
+	service.operations[newToken()] = &operation{chatID: chatID, requestID: service.nextPicker}
+	return service.nextPicker, abandoned
 }
 
-func (service *Service) newDeleteOperation(chatID int64, user auth.User) string {
-	service.mu.Lock()
-	defer service.mu.Unlock()
-	token := newToken()
-	service.operations[token] = &operation{kind: operationDelete, chatID: chatID, user: user}
-	return token
-}
-
-func (service *Service) invalidateChatOperations(chatID int64) {
+// invalidateChatOperations abandons the chat's idle flows and returns the
+// confirmation messages whose buttons must be removed. The caller holds mu.
+func (service *Service) invalidateChatOperations(chatID int64) []int {
+	var confirmations []int
 	for token, operation := range service.operations {
-		if operation.chatID == chatID {
+		if operation.chatID == chatID && !operation.busy {
 			delete(service.operations, token)
+			if operation.confirmationID != 0 {
+				confirmations = append(confirmations, operation.confirmationID)
+			}
 		}
 	}
+	return confirmations
 }
 
-func (service *Service) sendWithoutReplyKeyboard(ctx context.Context, client *telegram.Bot, chatID int64, text string) {
-	service.send(ctx, client, chatID, text, &models.ReplyKeyboardRemove{RemoveKeyboard: true})
+// hasChatOperations reports an unfinished flow in the chat. The caller holds mu.
+func (service *Service) hasChatOperations(chatID int64) bool {
+	for _, operation := range service.operations {
+		if operation.chatID == chatID {
+			return true
+		}
+	}
+	return false
 }
 
 func (service *Service) send(ctx context.Context, client *telegram.Bot, chatID int64, text string, markup models.ReplyMarkup) {
 	if _, err := client.SendMessage(ctx, &telegram.SendMessageParams{ChatID: chatID, Text: text, ReplyMarkup: markup}); err != nil {
 		service.logger.WarnContext(ctx, "Telegram message failed", "module", "telegram_bot", "operation", "send_message", "error", err)
+	}
+}
+
+func (service *Service) removeAllButtons(ctx context.Context, client *telegram.Bot, chatID int64, messageIDs []int) {
+	for _, messageID := range messageIDs {
+		service.removeButtons(ctx, client, chatID, messageID)
+	}
+}
+
+// removeButtons strips the inline keyboard from a confirmation message.
+func (service *Service) removeButtons(ctx context.Context, client *telegram.Bot, chatID int64, messageID int) {
+	if _, err := client.EditMessageReplyMarkup(ctx, &telegram.EditMessageReplyMarkupParams{ChatID: chatID, MessageID: messageID}); err != nil {
+		service.logger.WarnContext(ctx, "Telegram message edit failed", "module", "telegram_bot", "operation", "edit_message_reply_markup", "error", err)
 	}
 }
 
@@ -532,14 +398,12 @@ func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) 
 	if err := limiter.Wait(ctx); err != nil {
 		return err
 	}
-	user, err := service.store.FindEnabledByTelegramID(ctx, fired.Alert.TelegramID)
-	if errors.Is(err, auth.ErrUserNotFound) || err == nil && !user.Enabled {
-		return fmt.Errorf("alert owner is no longer enabled")
-	}
-	if err != nil {
+	if _, err := service.store.FindByTelegramID(ctx, fired.Alert.TelegramID); errors.Is(err, auth.ErrUserNotFound) {
+		return fmt.Errorf("alert owner no longer has access")
+	} else if err != nil {
 		return fmt.Errorf("look up alert owner: %w", err)
 	}
-	_, err = service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: fired.Alert.TelegramID, Text: priceAlertText(fired)})
+	_, err := service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: fired.Alert.TelegramID, Text: priceAlertText(fired)})
 	return err
 }
 

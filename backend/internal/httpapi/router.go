@@ -67,6 +67,8 @@ type Dependencies struct {
 	// ScannerIndicators and IndicatorTypes serve the administrator settings.
 	ScannerIndicators ScannerIndicators
 	IndicatorTypes    IndicatorTypes
+	// Users serves the administrator's user management.
+	Users Users
 }
 
 type Options struct {
@@ -85,6 +87,7 @@ type api struct {
 
 	scannerIndicators ScannerIndicators
 	indicatorTypes    IndicatorTypes
+	users             Users
 }
 
 var _ StrictServerInterface = (*api)(nil)
@@ -117,6 +120,8 @@ var administratorRoutes = []string{
 	"PATCH /api/v1/admin/scanner-indicators/{indicator_id}",
 	"DELETE /api/v1/admin/scanner-indicators/{indicator_id}",
 	"PUT /api/v1/admin/scanner-indicator-order",
+	"GET /api/v1/admin/users",
+	"DELETE /api/v1/admin/users/{telegram_id}",
 }
 
 // New returns the service HTTP handler with process-wide middleware applied.
@@ -127,7 +132,7 @@ func New(logger *slog.Logger, dependencies Dependencies, options Options) http.H
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
 	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart,
-		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes}
+		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes, users: dependencies.Users}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,
 		ResponseErrorHandlerFunc: func(response http.ResponseWriter, request *http.Request, err error) {

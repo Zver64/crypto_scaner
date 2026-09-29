@@ -13,9 +13,8 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ErrorResponse } from './errorResponse.ts';
+import type { User } from './user.ts';
 
-/**
- * The user has no access or is not the scanner administrator.
- */
-export type AdministratorRequiredResponse = ErrorResponse;
+export interface UserList {
+  items: User[];
+}

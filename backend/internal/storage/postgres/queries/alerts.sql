@@ -10,7 +10,7 @@ ORDER BY a.target, a.id;
 SELECT a.id, a.user_id, u.telegram_id, a.instrument_id, i.symbol,
        a.target::text AS target, a.version, a.created_at, a.updated_at
 FROM app.price_alerts a
-JOIN app.users u ON u.id = a.user_id AND u.is_enabled
+JOIN app.users u ON u.id = a.user_id
 JOIN binance_spot.instruments i ON i.id = a.instrument_id AND i.is_active
 ORDER BY i.symbol, a.target, a.id;
 
@@ -31,5 +31,5 @@ DELETE FROM app.price_alerts WHERE id = $1 AND user_id = $2;
 -- name: FirePriceAlert :one
 DELETE FROM app.price_alerts a
 USING app.users u
-WHERE a.id = $1 AND a.version = $2 AND a.user_id = u.id AND u.is_enabled
+WHERE a.id = $1 AND a.version = $2 AND a.user_id = u.id
 RETURNING a.id, a.user_id, a.instrument_id, a.target::text AS target;

@@ -16,6 +16,6 @@
 import type { ErrorResponse } from './errorResponse.ts';
 
 /**
- * The user has no access or is not the scanner administrator.
+ * The user does not exist.
  */
-export type AdministratorRequiredResponse = ErrorResponse;
+export type UserNotFoundResponse = ErrorResponse;

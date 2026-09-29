@@ -33,13 +33,13 @@ SELECT count(*) FROM app.price_alerts WHERE user_id = $1 AND instrument_id = $2;
 -- name: ListMonitoredSymbols :many
 SELECT DISTINCT i.symbol
 FROM app.favorites f
-JOIN app.users u ON u.id = f.user_id AND u.is_enabled
+JOIN app.users u ON u.id = f.user_id
 JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
 ORDER BY i.symbol;
 
 -- name: ListMonitoredInstrumentIDs :many
 SELECT DISTINCT i.id
 FROM app.favorites f
-JOIN app.users u ON u.id = f.user_id AND u.is_enabled
+JOIN app.users u ON u.id = f.user_id
 JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
 ORDER BY i.id;

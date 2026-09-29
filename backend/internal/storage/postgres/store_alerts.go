@@ -144,7 +144,7 @@ func (store *Store) ListMonitoredSymbols(ctx context.Context) ([]string, error) 
 	return store.queries.ListMonitoredSymbols(ctx)
 }
 
-// ListMonitoredInstrumentIDs returns active instruments favorited by enabled users.
+// ListMonitoredInstrumentIDs returns active instruments favorited by users.
 func (store *Store) ListMonitoredInstrumentIDs(ctx context.Context) ([]int64, error) {
 	return store.queries.ListMonitoredInstrumentIDs(ctx)
 }

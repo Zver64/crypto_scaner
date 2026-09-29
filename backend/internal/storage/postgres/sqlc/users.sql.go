@@ -12,8 +12,8 @@ import (
 )
 
 const bootstrapAdministrator = `-- name: BootstrapAdministrator :exec
-INSERT INTO app.users (telegram_id, is_enabled)
-VALUES ($1, TRUE)
+INSERT INTO app.users (telegram_id)
+VALUES ($1)
 ON CONFLICT (telegram_id) DO NOTHING
 `
 
@@ -22,61 +22,49 @@ func (q *Queries) BootstrapAdministrator(ctx context.Context, telegramID int64) 
 	return err
 }
 
-const disableUserByID = `-- name: DisableUserByID :one
-UPDATE app.users
-SET is_enabled = FALSE, updated_at = now()
-WHERE id = $1 AND telegram_id = $2 AND is_enabled = TRUE
+const deleteUserByTelegramID = `-- name: DeleteUserByTelegramID :one
+DELETE FROM app.users
+WHERE telegram_id = $1
 RETURNING id
 `
 
-type DisableUserByIDParams struct {
-	ID         int64
-	TelegramID int64
-}
-
-func (q *Queries) DisableUserByID(ctx context.Context, arg DisableUserByIDParams) (int64, error) {
-	row := q.db.QueryRow(ctx, disableUserByID, arg.ID, arg.TelegramID)
+func (q *Queries) DeleteUserByTelegramID(ctx context.Context, telegramID int64) (int64, error) {
+	row := q.db.QueryRow(ctx, deleteUserByTelegramID, telegramID)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
 }
 
-const findEnabledUserByTelegramID = `-- name: FindEnabledUserByTelegramID :one
-SELECT id, telegram_id, username, display_name, is_enabled
+const findUserByTelegramID = `-- name: FindUserByTelegramID :one
+SELECT id, telegram_id, username, display_name
 FROM app.users
-WHERE telegram_id = $1 AND is_enabled = TRUE
+WHERE telegram_id = $1
 `
 
-type FindEnabledUserByTelegramIDRow struct {
+type FindUserByTelegramIDRow struct {
 	ID          int64
 	TelegramID  int64
 	Username    pgtype.Text
 	DisplayName pgtype.Text
-	IsEnabled   bool
 }
 
-func (q *Queries) FindEnabledUserByTelegramID(ctx context.Context, telegramID int64) (FindEnabledUserByTelegramIDRow, error) {
-	row := q.db.QueryRow(ctx, findEnabledUserByTelegramID, telegramID)
-	var i FindEnabledUserByTelegramIDRow
+func (q *Queries) FindUserByTelegramID(ctx context.Context, telegramID int64) (FindUserByTelegramIDRow, error) {
+	row := q.db.QueryRow(ctx, findUserByTelegramID, telegramID)
+	var i FindUserByTelegramIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.TelegramID,
 		&i.Username,
 		&i.DisplayName,
-		&i.IsEnabled,
 	)
 	return i, err
 }
 
 const grantUserAccess = `-- name: GrantUserAccess :one
-INSERT INTO app.users (telegram_id, username, display_name, is_enabled)
-VALUES ($1, $2, $3, TRUE)
-ON CONFLICT (telegram_id) DO UPDATE
-SET username = EXCLUDED.username,
-    display_name = EXCLUDED.display_name,
-    is_enabled = TRUE,
-    updated_at = now()
-RETURNING id, telegram_id, username, display_name, is_enabled
+INSERT INTO app.users (telegram_id, username, display_name)
+VALUES ($1, $2, $3)
+ON CONFLICT (telegram_id) DO NOTHING
+RETURNING id, telegram_id, username, display_name
 `
 
 type GrantUserAccessParams struct {
@@ -90,7 +78,6 @@ type GrantUserAccessRow struct {
 	TelegramID  int64
 	Username    pgtype.Text
 	DisplayName pgtype.Text
-	IsEnabled   bool
 }
 
 func (q *Queries) GrantUserAccess(ctx context.Context, arg GrantUserAccessParams) (GrantUserAccessRow, error) {
@@ -101,48 +88,37 @@ func (q *Queries) GrantUserAccess(ctx context.Context, arg GrantUserAccessParams
 		&i.TelegramID,
 		&i.Username,
 		&i.DisplayName,
-		&i.IsEnabled,
 	)
 	return i, err
 }
 
-const listNonAdministratorUsers = `-- name: ListNonAdministratorUsers :many
-SELECT id, telegram_id, username, display_name, is_enabled
+const listUsers = `-- name: ListUsers :many
+SELECT id, telegram_id, username, display_name
 FROM app.users
-WHERE is_enabled = TRUE AND telegram_id <> $1
 ORDER BY telegram_id ASC
-LIMIT $2 OFFSET $3
 `
 
-type ListNonAdministratorUsersParams struct {
-	TelegramID int64
-	Limit      int32
-	Offset     int32
-}
-
-type ListNonAdministratorUsersRow struct {
+type ListUsersRow struct {
 	ID          int64
 	TelegramID  int64
 	Username    pgtype.Text
 	DisplayName pgtype.Text
-	IsEnabled   bool
 }
 
-func (q *Queries) ListNonAdministratorUsers(ctx context.Context, arg ListNonAdministratorUsersParams) ([]ListNonAdministratorUsersRow, error) {
-	rows, err := q.db.Query(ctx, listNonAdministratorUsers, arg.TelegramID, arg.Limit, arg.Offset)
+func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
+	rows, err := q.db.Query(ctx, listUsers)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListNonAdministratorUsersRow
+	var items []ListUsersRow
 	for rows.Next() {
-		var i ListNonAdministratorUsersRow
+		var i ListUsersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.TelegramID,
 			&i.Username,
 			&i.DisplayName,
-			&i.IsEnabled,
 		); err != nil {
 			return nil, err
 		}

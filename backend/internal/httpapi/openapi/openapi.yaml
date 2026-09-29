@@ -465,6 +465,35 @@ paths:
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/ScannerIndicatorNotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/users:
+    get:
+      operationId: listUsers
+      summary: List the application users
+      description: Users are added through the Telegram bot. The administrator comes first.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      responses:
+        "200":
+          description: Application users.
+          content: { application/json: { schema: { $ref: "#/components/schemas/UserList" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/users/{telegram_id}:
+    delete:
+      operationId: deleteUser
+      summary: Delete an application user
+      description: The user loses access, and their favorites and price alerts are deleted. The administrator cannot be deleted.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      parameters: [{ $ref: "#/components/parameters/TelegramID" }]
+      responses:
+        "204": { description: User deleted. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+        "409": { $ref: "#/components/responses/AdministratorProtected" }
+        "500": { $ref: "#/components/responses/InternalError" }
 components:
   securitySchemes:
     telegramInitData:
@@ -505,6 +534,14 @@ components:
         type: integer
         format: int64
         minimum: 1
+    TelegramID:
+      name: telegram_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
   headers:
     RequestID:
       description: Correlation ID assigned to the request.
@@ -512,6 +549,12 @@ components:
       schema:
         type: string
   responses:
+    UserNotFound:
+      description: The user does not exist.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    AdministratorProtected:
+      description: The administrator cannot be deleted.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     BadRequest:
       description: The request is malformed or contains an unsupported argument.
       headers:
@@ -531,7 +574,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     AccessDenied:
-      description: The authenticated Telegram user is not enabled.
+      description: The authenticated Telegram user has no access.
       headers:
         X-Request-ID:
           $ref: "#/components/headers/RequestID"
@@ -588,7 +631,7 @@ components:
       description: Duplicate target or per-instrument alert limit.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     AdministratorRequired:
-      description: The user is not enabled or is not the scanner administrator.
+      description: The user has no access or is not the scanner administrator.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     ScannerIndicatorNotFound:
       description: The scanner indicator does not exist.
@@ -1226,6 +1269,7 @@ components:
           type: string
           enum:
             - access_denied
+            - administrator_protected
             - administrator_required
             - alert_limit
             - alert_not_found
@@ -1246,6 +1290,7 @@ components:
             - scanner_indicator_not_found
             - symbol_not_found
             - unauthenticated
+            - user_not_found
         message:
           type: string
         details: {}
@@ -1266,6 +1311,25 @@ components:
         administrator:
           type: boolean
           description: Whether the user manages the global scanner settings.
+    UserList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/User" }
+    User:
+      type: object
+      additionalProperties: false
+      required: [telegram_id, administrator]
+      properties:
+        telegram_id: { type: integer, format: int64 }
+        username: { type: string }
+        display_name: { type: string }
+        administrator:
+          type: boolean
+          description: Whether the user is the scanner administrator, who cannot be deleted.
     IndicatorTypeCatalog:
       type: object
       additionalProperties: false

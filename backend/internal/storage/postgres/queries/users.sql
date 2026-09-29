@@ -1,32 +1,25 @@
--- name: FindEnabledUserByTelegramID :one
-SELECT id, telegram_id, username, display_name, is_enabled
+-- name: FindUserByTelegramID :one
+SELECT id, telegram_id, username, display_name
 FROM app.users
-WHERE telegram_id = $1 AND is_enabled = TRUE;
+WHERE telegram_id = $1;
 
 -- name: GrantUserAccess :one
-INSERT INTO app.users (telegram_id, username, display_name, is_enabled)
-VALUES ($1, $2, $3, TRUE)
-ON CONFLICT (telegram_id) DO UPDATE
-SET username = EXCLUDED.username,
-    display_name = EXCLUDED.display_name,
-    is_enabled = TRUE,
-    updated_at = now()
-RETURNING id, telegram_id, username, display_name, is_enabled;
+INSERT INTO app.users (telegram_id, username, display_name)
+VALUES ($1, $2, $3)
+ON CONFLICT (telegram_id) DO NOTHING
+RETURNING id, telegram_id, username, display_name;
 
--- name: ListNonAdministratorUsers :many
-SELECT id, telegram_id, username, display_name, is_enabled
+-- name: ListUsers :many
+SELECT id, telegram_id, username, display_name
 FROM app.users
-WHERE is_enabled = TRUE AND telegram_id <> $1
-ORDER BY telegram_id ASC
-LIMIT $2 OFFSET $3;
+ORDER BY telegram_id ASC;
 
--- name: DisableUserByID :one
-UPDATE app.users
-SET is_enabled = FALSE, updated_at = now()
-WHERE id = $1 AND telegram_id = $2 AND is_enabled = TRUE
+-- name: DeleteUserByTelegramID :one
+DELETE FROM app.users
+WHERE telegram_id = $1
 RETURNING id;
 
 -- name: BootstrapAdministrator :exec
-INSERT INTO app.users (telegram_id, is_enabled)
-VALUES ($1, TRUE)
+INSERT INTO app.users (telegram_id)
+VALUES ($1)
 ON CONFLICT (telegram_id) DO NOTHING;

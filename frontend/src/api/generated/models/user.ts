@@ -13,9 +13,11 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ErrorResponse } from './errorResponse.ts';
 
-/**
- * The user has no access or is not the scanner administrator.
- */
-export type AdministratorRequiredResponse = ErrorResponse;
+export interface User {
+  telegram_id: number;
+  username?: string;
+  display_name?: string;
+  /** Whether the user is the scanner administrator, who cannot be deleted. */
+  administrator: boolean;
+}

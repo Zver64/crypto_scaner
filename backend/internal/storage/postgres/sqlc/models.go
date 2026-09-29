@@ -73,7 +73,6 @@ type AppUser struct {
 	TelegramID  int64
 	Username    pgtype.Text
 	DisplayName pgtype.Text
-	IsEnabled   bool
 	CreatedAt   pgtype.Timestamptz
 	UpdatedAt   pgtype.Timestamptz
 }

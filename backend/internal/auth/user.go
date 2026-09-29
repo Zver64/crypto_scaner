@@ -6,13 +6,13 @@ import (
 	"errors"
 )
 
-// ErrUserNotFound means that no enabled application user matches an identity.
-var ErrUserNotFound = errors.New("enabled user not found")
+// ErrUserNotFound means that no application user matches an identity.
+var ErrUserNotFound = errors.New("user not found")
 
 var (
 	// ErrUnauthenticated means that presented credentials are invalid or expired.
 	ErrUnauthenticated = errors.New("Telegram authentication is invalid or expired")
-	// ErrAccessDenied means that a valid identity is not an enabled user.
+	// ErrAccessDenied means that a valid identity is not an application user.
 	ErrAccessDenied = errors.New("Telegram user is not allowed")
 )
 
@@ -22,7 +22,6 @@ type User struct {
 	TelegramID  int64
 	Username    string
 	DisplayName string
-	Enabled     bool
 	// Administrator reports the scanner administrator, who manages global
 	// settings such as the scanner indicators.
 	Administrator bool
@@ -30,5 +29,5 @@ type User struct {
 
 // UserStore is the persistence seam used by authentication.
 type UserStore interface {
-	FindEnabledByTelegramID(context.Context, int64) (User, error)
+	FindByTelegramID(context.Context, int64) (User, error)
 }

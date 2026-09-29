@@ -19,6 +19,7 @@ export type APIErrorCode = typeof APIErrorCode[keyof typeof APIErrorCode];
 
 export const APIErrorCode = {
   access_denied: 'access_denied',
+  administrator_protected: 'administrator_protected',
   administrator_required: 'administrator_required',
   alert_limit: 'alert_limit',
   alert_not_found: 'alert_not_found',
@@ -39,4 +40,5 @@ export const APIErrorCode = {
   scanner_indicator_not_found: 'scanner_indicator_not_found',
   symbol_not_found: 'symbol_not_found',
   unauthenticated: 'unauthenticated',
+  user_not_found: 'user_not_found',
 } as const;

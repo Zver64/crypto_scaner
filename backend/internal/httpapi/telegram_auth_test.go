@@ -27,7 +27,7 @@ const (
 var fixtureNow = time.Date(2026, time.August, 5, 4, 10, 0, 0, time.UTC)
 
 func TestEnabledTelegramUserCanReachProtectedHandler(t *testing.T) {
-	want := auth.User{ID: 7, TelegramID: 424242, Username: "alice", DisplayName: "Alice", Enabled: true}
+	want := auth.User{ID: 7, TelegramID: 424242, Username: "alice", DisplayName: "Alice"}
 	middleware := httpapi.RequireTelegramUser(telegram.New(
 		userStoreStub{find: func(_ context.Context, telegramID int64) (auth.User, error) {
 			if telegramID != want.TelegramID {
@@ -113,7 +113,7 @@ func TestInvalidTelegramCredentialsAreUnauthenticated(t *testing.T) {
 	}
 }
 
-func TestTelegramUserMustBeEnabledInTheStore(t *testing.T) {
+func TestTelegramUserMustExistInTheStore(t *testing.T) {
 	tests := []struct {
 		name       string
 		storeReply auth.User
@@ -122,7 +122,6 @@ func TestTelegramUserMustBeEnabledInTheStore(t *testing.T) {
 		wantCode   string
 	}{
 		{name: "unknown", storeError: auth.ErrUserNotFound, wantStatus: http.StatusForbidden, wantCode: "access_denied"},
-		{name: "disabled", storeReply: auth.User{TelegramID: 424242}, wantStatus: http.StatusForbidden, wantCode: "access_denied"},
 		{name: "store failure", storeError: errors.New("database unavailable: secret detail"), wantStatus: http.StatusInternalServerError, wantCode: "internal_error"},
 	}
 	for _, test := range tests {
@@ -184,7 +183,7 @@ type userStoreStub struct {
 	find func(context.Context, int64) (auth.User, error)
 }
 
-func (stub userStoreStub) FindEnabledByTelegramID(ctx context.Context, telegramID int64) (auth.User, error) {
+func (stub userStoreStub) FindByTelegramID(ctx context.Context, telegramID int64) (auth.User, error) {
 	return stub.find(ctx, telegramID)
 }
 

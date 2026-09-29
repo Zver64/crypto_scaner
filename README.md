@@ -8,7 +8,7 @@ A Telegram Mini App for scanning cryptocurrency markets and inspecting individua
 - Browse leading cryptocurrencies by market cap
 - Inspect price history and volatility statistics for an instrument
 - Estimate spot-grid parameters from recent market behavior
-- Manage application access through a Telegram bot
+- Add users through the Telegram bot and manage them in the app settings
 
 ## Tech stack
 

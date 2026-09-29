@@ -62,7 +62,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 				t.Errorf("clean administrator fixture: %v", err)
 			}
 		})
-		// Concurrent starts must create only one enabled administrator.
+		// Concurrent starts must create only one administrator.
 		results := make(chan error, 8)
 		for range cap(results) {
 			go func() { results <- store.BootstrapAdministrator(ctx, adminID) }()
@@ -73,53 +73,48 @@ func TestPostgresStoreContracts(t *testing.T) {
 			}
 		}
 		var count int
-		if err := db.QueryRow(ctx, `SELECT count(*) FROM app.users WHERE telegram_id = $1 AND is_enabled`, adminID).Scan(&count); err != nil || count != 1 {
+		if err := db.QueryRow(ctx, `SELECT count(*) FROM app.users WHERE telegram_id = $1`, adminID).Scan(&count); err != nil || count != 1 {
 			t.Fatalf("created administrators = %d, error = %v", count, err)
 		}
-		for _, enabled := range []bool{true, false} {
-			if _, err := db.Exec(ctx, `UPDATE app.users SET username = 'existing-admin', display_name = 'Existing Admin', is_enabled = $2, created_at = '2024-01-01', updated_at = '2024-02-01' WHERE telegram_id = $1`, adminID, enabled); err != nil {
+		if _, err := db.Exec(ctx, `UPDATE app.users SET username = 'existing-admin', display_name = 'Existing Admin', created_at = '2024-01-01', updated_at = '2024-02-01' WHERE telegram_id = $1`, adminID); err != nil {
+			t.Fatal(err)
+		}
+		var before, after string
+		if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = $1`, adminID).Scan(&before); err != nil {
+			t.Fatal(err)
+		}
+		for range 2 {
+			if err := store.BootstrapAdministrator(ctx, adminID); err != nil {
 				t.Fatal(err)
 			}
-			var before, after string
-			if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = $1`, adminID).Scan(&before); err != nil {
-				t.Fatal(err)
-			}
-			for range 2 {
-				if err := store.BootstrapAdministrator(ctx, adminID); err != nil {
-					t.Fatal(err)
-				}
-			}
-			if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = $1`, adminID).Scan(&after); err != nil {
-				t.Fatal(err)
-			}
-			if after != before {
-				t.Errorf("bootstrap changed existing administrator (enabled=%t): before=%s after=%s", enabled, before, after)
-			}
+		}
+		if err := db.QueryRow(ctx, `SELECT row_to_json(u)::text FROM app.users u WHERE telegram_id = $1`, adminID).Scan(&after); err != nil {
+			t.Fatal(err)
+		}
+		if after != before {
+			t.Errorf("bootstrap changed existing administrator: before=%s after=%s", before, after)
 		}
 	})
 
-	t.Run("enabled user lookup", func(t *testing.T) {
-		if _, err := db.Exec(ctx, `INSERT INTO app.users (telegram_id, username, display_name, is_enabled) VALUES (101, 'alice', 'Alice', true), (102, 'bob', 'Bob', false)`); err != nil {
+	t.Run("user lookup", func(t *testing.T) {
+		if _, err := db.Exec(ctx, `INSERT INTO app.users (telegram_id, username, display_name) VALUES (101, 'alice', 'Alice')`); err != nil {
 			t.Fatalf("seed users: %v", err)
 		}
-		user, err := store.FindEnabledByTelegramID(ctx, 101)
+		user, err := store.FindByTelegramID(ctx, 101)
 		if err != nil {
-			t.Fatalf("FindEnabledByTelegramID() error = %v", err)
+			t.Fatalf("FindByTelegramID() error = %v", err)
 		}
-		if user.TelegramID != 101 || user.Username != "alice" || user.DisplayName != "Alice" || !user.Enabled {
+		if user.TelegramID != 101 || user.Username != "alice" || user.DisplayName != "Alice" {
 			t.Fatalf("user = %#v", user)
 		}
-		if _, err := store.FindEnabledByTelegramID(ctx, 102); !errors.Is(err, auth.ErrUserNotFound) {
-			t.Fatalf("disabled user error = %v, want ErrUserNotFound", err)
-		}
-		if _, err := store.FindEnabledByTelegramID(ctx, 999); !errors.Is(err, auth.ErrUserNotFound) {
+		if _, err := store.FindByTelegramID(ctx, 999); !errors.Is(err, auth.ErrUserNotFound) {
 			t.Fatalf("unknown user error = %v, want ErrUserNotFound", err)
 		}
 	})
 
-	t.Run("access management grants lists and deactivates users", func(t *testing.T) {
+	t.Run("access management grants lists and deletes users", func(t *testing.T) {
 		granted, changed, err := store.GrantAccess(ctx, 201, "ada", "Ada")
-		if err != nil || !changed || granted.TelegramID != 201 || !granted.Enabled {
+		if err != nil || !changed || granted.TelegramID != 201 {
 			t.Fatalf("GrantAccess() = %#v, %t, %v", granted, changed, err)
 		}
 		again, changed, err := store.GrantAccess(ctx, 201, "different", "Different")
@@ -129,28 +124,26 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if _, changed, err = store.GrantAccess(ctx, 202, "", "Same Name"); err != nil || !changed {
 			t.Fatalf("second GrantAccess() changed=%t error=%v", changed, err)
 		}
-		users, err := store.ListNonAdministratorUsers(ctx, 999, 0, 10)
+		users, err := store.ListUsers(ctx)
 		if err != nil || len(users) < 3 {
-			t.Fatalf("ListEnabledUsers() = %#v, %v", users, err)
+			t.Fatalf("ListUsers() = %#v, %v", users, err)
 		}
-		deleted, err := store.DeleteUser(ctx, granted.ID, granted.TelegramID)
+		deleted, err := store.DeleteUser(ctx, granted.TelegramID)
 		if err != nil || !deleted {
 			t.Fatalf("DeleteUser() = %t, %v", deleted, err)
 		}
-		if _, err := store.FindEnabledByTelegramID(ctx, 201); !errors.Is(err, auth.ErrUserNotFound) {
-			t.Fatalf("deactivated user still has access: %v", err)
-		}
-		var persistedID int64
-		var enabled bool
-		if err := db.QueryRow(ctx, `SELECT id, is_enabled FROM app.users WHERE telegram_id = 201`).Scan(&persistedID, &enabled); err != nil || persistedID != granted.ID || enabled {
-			t.Fatalf("deactivated row = id %d enabled %t, error = %v", persistedID, enabled, err)
+		if _, err := store.FindByTelegramID(ctx, 201); !errors.Is(err, auth.ErrUserNotFound) {
+			t.Fatalf("deleted user still has access: %v", err)
 		}
 		fresh, changed, err := store.GrantAccess(ctx, 201, "ada", "Ada")
-		if err != nil || !changed || fresh.ID != granted.ID {
-			t.Fatalf("restore after deactivation = %#v, %t, %v", fresh, changed, err)
+		if err != nil || !changed || fresh.ID == granted.ID {
+			t.Fatalf("grant after deletion = %#v, %t, %v", fresh, changed, err)
 		}
-		if deactivated, err := store.DeleteUser(ctx, granted.ID, granted.TelegramID); err != nil || !deactivated {
-			t.Fatalf("second deactivation = %t, %v", deactivated, err)
+		if deleted, err := store.DeleteUser(ctx, granted.TelegramID); err != nil || !deleted {
+			t.Fatalf("second deletion = %t, %v", deleted, err)
+		}
+		if deleted, err := store.DeleteUser(ctx, granted.TelegramID); err != nil || deleted {
+			t.Fatalf("deletion of a missing user = %t, %v", deleted, err)
 		}
 	})
 
@@ -207,7 +200,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 	})
 
 	t.Run("favorites and alerts preserve ownership and transactional invariants", func(t *testing.T) {
-		owner, err := store.FindEnabledByTelegramID(ctx, 202)
+		owner, err := store.FindByTelegramID(ctx, 202)
 		if err != nil {
 			t.Fatalf("find alert owner: %v", err)
 		}

@@ -26,6 +26,7 @@
     "@mantine/form": "^9.5.1",
     "@mantine/hooks": "^9.5.1",
     "@mantine/notifications": "^9.5.1",
+    "@mantine/vanilla-extract": "^9.5.1",
     "@microcharts/react": "^0.18.1",
     "@tabler/icons-react": "^3.48.0",
     "@tanstack/react-devtools": "latest",

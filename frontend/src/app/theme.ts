@@ -3,7 +3,9 @@ import {
 	DEFAULT_THEME,
 	mergeMantineTheme,
 	NumberInput,
+	Tooltip,
 } from "@mantine/core";
+import { themeToVars } from "@mantine/vanilla-extract";
 
 export const theme = createTheme({
 	defaultRadius: "md",
@@ -12,6 +14,19 @@ export const theme = createTheme({
 	primaryColor: "teal",
 	components: {
 		NumberInput: NumberInput.extend({ defaultProps: { hideControls: true } }),
+		// Mantine inverts tooltip colors in the dark scheme (light gray, black
+		// text); use the dark surface instead so tooltips match the app.
+		Tooltip: Tooltip.extend({
+			vars: (theme) => {
+				const { colors } = themeToVars(theme);
+				return {
+					tooltip: {
+						"--tooltip-bg": colors.dark[5],
+						"--tooltip-color": colors.dark[0],
+					},
+				};
+			},
+		}),
 	},
 });
 

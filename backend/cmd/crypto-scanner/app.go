@@ -11,7 +11,6 @@ import (
 	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/analysis"
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/marketcap"
-	rsicriterion "crypto-scanner/internal/analysis/criteria/rsi"
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/chart"
@@ -21,7 +20,6 @@ import (
 	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/httpapi"
 	"crypto-scanner/internal/indicator"
-	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 	marketlive "crypto-scanner/internal/market/live"
 	"crypto-scanner/internal/market/marketsync"
@@ -55,24 +53,15 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
 	}
-	rsi14, err := indicatorRegistry.Normalize(indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": indicatortalib.DefaultRSIPeriod}})
-	if err != nil {
-		return app{}, fmt.Errorf("normalize RSI criterion selection: %w", err)
-	}
-	// The RSI criterion reads these values whatever the administrator
-	// configures.
-	criterionTargets := []closedindicator.Target{
-		{Interval: market.IntervalDay, Selection: rsi14},
-		{Interval: market.IntervalWeek, Selection: rsi14},
-	}
 	// The tracker is created after the configuration loads; changes before
 	// that are covered by its initial targets.
 	var closedIndicators *closedindicator.Tracker
+	var tableTargets []closedindicator.Target
 	scannerIndicators, err := scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func(targets []closedindicator.Target) {
 		if closedIndicators == nil {
 			return
 		}
-		if err := closedIndicators.SetTargets(closedTargetsUnion(criterionTargets, targets)); err != nil {
+		if err := closedIndicators.SetTargets(closedTargetsUnion(tableTargets, targets)); err != nil {
 			logger.Error("apply scanner indicator targets failed", "module", "scanner_indicator", "error", err)
 		}
 	})
@@ -90,11 +79,11 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites table: %w", err)
 	}
-	// Tables and the RSI criterion read these values; favorites keep them
-	// current without clients. Static table columns read no indicators, but
-	// their targets are included so a future one is tracked too.
-	closedTargets := closedTargetsUnion(marketTable.ClosedTargets(), favoritesTable.ClosedTargets(), criterionTargets, scannerIndicators.Targets())
-	closedIndicators, err = closedindicator.New(store, indicatorRegistry, closedTargets, logger,
+	// Tables read these values; favorites keep them current without clients.
+	// Static table columns read no indicators, but their targets are included
+	// so a future one is tracked too.
+	tableTargets = closedTargetsUnion(marketTable.ClosedTargets(), favoritesTable.ClosedTargets())
+	closedIndicators, err = closedindicator.New(store, indicatorRegistry, closedTargetsUnion(tableTargets, scannerIndicators.Targets()), logger,
 		closedindicator.InstrumentSource(store.ListMonitoredInstrumentIDs))
 	if err != nil {
 		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
@@ -119,7 +108,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize coin metadata synchronizer: %w", err)
 	}
-	analysisService, err := analysis.NewService(store, closedIndicators, volatility.New(), marketcapcriterion.New(), rsicriterion.New(rsi14))
+	analysisService, err := analysis.NewService(store, closedIndicators, volatility.New(), marketcapcriterion.New())
 	if err != nil {
 		return app{}, fmt.Errorf("initialize analysis service: %w", err)
 	}

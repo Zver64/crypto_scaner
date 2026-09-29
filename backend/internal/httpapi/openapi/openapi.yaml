@@ -408,7 +408,7 @@ paths:
     delete:
       operationId: clearScannerIndicators
       summary: Remove every scanner indicator
-      description: Charts and tables then show no configured indicators; criterion values stay tracked.
+      description: Charts and tables then show no configured indicators, and their values are no longer tracked.
       tags: [Administration]
       security: [{ telegramInitData: [] }]
       responses:

@@ -19,7 +19,6 @@ const criteria = {
 };
 
 const search = {
-	daily_max_rsi: 100,
 	hourly_minimum_range_percent: 2.5,
 	hourly_percentile: 90,
 	hourly_period: 72,
@@ -27,7 +26,6 @@ const search = {
 	minimum_range_percent: 5.5,
 	percentile: 70,
 	period: 12,
-	weekly_max_rsi: 100,
 };
 
 describe("scan criteria URL state", () => {

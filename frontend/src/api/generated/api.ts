@@ -2712,7 +2712,7 @@ export const getClearScannerIndicatorsUrl = () => {
 }
 
 /**
- * Charts and tables then show no configured indicators; criterion values stay tracked.
+ * Charts and tables then show no configured indicators, and their values are no longer tracked.
  * @summary Remove every scanner indicator
  */
 export const clearScannerIndicators = async ( options?: RequestInit): Promise<clearScannerIndicatorsResponseSuccess> => {

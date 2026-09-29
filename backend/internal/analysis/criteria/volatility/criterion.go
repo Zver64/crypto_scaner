@@ -49,7 +49,6 @@ func (criterion) Name() string { return Name }
 func (c criterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: c.unit, Count: c.period}}
 }
-func (criterion) UsesClosedIndicators() bool { return false }
 
 func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	candles := input.Candles[c.unit]

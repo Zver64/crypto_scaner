@@ -15,15 +15,12 @@ export function criteriaFromValidDraft(
 		typeof values.minimumRangePercent !== "number" ||
 		typeof values.hourlyPeriod !== "number" ||
 		typeof values.hourlyPercentile !== "number" ||
-		typeof values.hourlyMinimumRangePercent !== "number" ||
-		typeof values.dailyMaxRsi !== "number" ||
-		typeof values.weeklyMaxRsi !== "number"
+		typeof values.hourlyMinimumRangePercent !== "number"
 	) {
 		return undefined;
 	}
 
 	return {
-		dailyMaxRsi: values.dailyMaxRsi,
 		hourlyMinimumRangePercent: values.hourlyMinimumRangePercent,
 		hourlyPercentile: values.hourlyPercentile,
 		hourlyPeriod: values.hourlyPeriod,
@@ -31,6 +28,5 @@ export function criteriaFromValidDraft(
 		minimumRangePercent: values.minimumRangePercent,
 		percentile: values.percentile,
 		period: values.period,
-		weeklyMaxRsi: values.weeklyMaxRsi,
 	};
 }

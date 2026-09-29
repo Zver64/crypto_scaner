@@ -15,11 +15,9 @@ describe("Top Market Cap criteria", () => {
 
 		expect(buildTopCoinsScanCriteria(settings)).toEqual({
 			...settings,
-			dailyMaxRsi: 100,
 			hourlyMinimumRangePercent: 0,
 			minimumMarketCapMillions: 0,
 			minimumRangePercent: 0,
-			weeklyMaxRsi: 100,
 		});
 		expect(
 			buildTopCoinsCriteria(settings).map(({ parameters }) => parameters),

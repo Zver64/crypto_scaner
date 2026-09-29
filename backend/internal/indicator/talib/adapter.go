@@ -18,8 +18,6 @@ const (
 	RSIType indicator.Type = "rsi"
 	// EMAType is the stable registry identifier for the exponential moving average.
 	EMAType indicator.Type = "ema"
-	// DefaultRSIPeriod is the period used by the chart experience.
-	DefaultRSIPeriod = 14
 )
 
 // ErrInvalidRequest indicates invalid parameters or inputs supplied to a

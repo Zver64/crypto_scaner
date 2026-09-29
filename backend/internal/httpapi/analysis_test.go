@@ -499,7 +499,6 @@ type httpMarketCapCriterion struct{}
 
 func (httpMarketCapCriterion) Name() string                               { return "market_cap" }
 func (httpMarketCapCriterion) Requirements() []analysis.CandleRequirement { return nil }
-func (httpMarketCapCriterion) UsesClosedIndicators() bool                 { return false }
 func (httpMarketCapCriterion) MinimumMarketCapUSD() float64               { return 0 }
 func (httpMarketCapCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
 	return analysis.Evaluation{Matched: true, Metrics: map[string]float64{"market_cap_usd": 1}}, nil

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"time"
 
-	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
 )
 
@@ -64,14 +63,11 @@ type Factory interface {
 type Criterion interface {
 	Name() string
 	Requirements() []CandleRequirement
-	// UsesClosedIndicators reports whether Evaluate reads Input.ClosedIndicators.
-	UsesClosedIndicators() bool
 	Evaluate(context.Context, Input) (Evaluation, error)
 }
 type Input struct {
-	Instrument       market.Instrument
-	Candles          map[Unit][]market.Candle
-	ClosedIndicators []closedindicator.Value
+	Instrument market.Instrument
+	Candles    map[Unit][]market.Candle
 }
 type Warning struct{ Code, Message string }
 

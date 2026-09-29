@@ -229,7 +229,7 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Clear removes every indicator; the tracker keeps only the criterion values.
+// Clear removes every indicator, so the tracker stops tracking their values.
 func (service *Service) Clear(ctx context.Context) error {
 	service.writes.Lock()
 	defer service.writes.Unlock()

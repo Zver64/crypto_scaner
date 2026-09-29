@@ -9,9 +9,12 @@ import (
 )
 
 func TestRSIBindingProducesKnownWilderSequenceWithoutWarmupZeros(t *testing.T) {
-	implementation := indicatortalib.NewRSI()
+	registry, err := indicator.NewRegistry(indicatortalib.New()...)
+	if err != nil {
+		t.Fatal(err)
+	}
 	closeValues := []float64{54.8, 56.8, 57.85, 59.85, 60.57, 61.1, 62.17, 60.6, 62.35, 62.15, 62.35, 61.45, 62.8, 61.37, 62.5, 62.57, 60.8, 59.37, 60.35, 62.35}
-	result, err := implementation.Calculate(indicator.Parameters{"period": 14}, indicator.Inputs{"close": closeValues})
+	result, err := registry.Calculate(indicator.Request{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}, Inputs: indicator.Inputs{"close": closeValues}})
 	if err != nil {
 		t.Fatalf("Calculate() error = %v", err)
 	}
@@ -28,7 +31,7 @@ func TestRSIBindingProducesKnownWilderSequenceWithoutWarmupZeros(t *testing.T) {
 			t.Errorf("Values[%d] = %.12f, want %.12f", index, series.Values[index], want[index])
 		}
 	}
-	lookback, err := implementation.Lookback(indicator.Parameters{"period": float64(14)})
+	lookback, err := registry.Lookback(indicatortalib.RSIType, indicator.Parameters{"period": float64(14)})
 	if err != nil || lookback != 14 {
 		t.Fatalf("Lookback() = %d, %v; want 14, nil", lookback, err)
 	}

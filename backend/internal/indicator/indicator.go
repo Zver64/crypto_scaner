@@ -45,15 +45,82 @@ type Result struct {
 	Outputs Outputs
 }
 
+// ParameterKind is the value domain of one parameter.
+type ParameterKind string
+
+const (
+	ParameterInteger ParameterKind = "integer"
+	ParameterReal    ParameterKind = "real"
+	// ParameterChoice is an integer limited to the listed Choices.
+	ParameterChoice ParameterKind = "choice"
+)
+
+// Choice is one allowed value of a ParameterChoice parameter.
+type Choice struct {
+	Value int
+	Title string
+}
+
+// ParameterDescriptor describes one parameter accepted by Normalize.
+type ParameterDescriptor struct {
+	Key         string
+	Title       string
+	Description string
+	Kind        ParameterKind
+	Default     float64
+	// Minimum and Maximum bound integer and real parameters.
+	Minimum float64
+	Maximum float64
+	Choices []Choice
+}
+
+// OutputStyle suggests how clients draw an output series.
+type OutputStyle string
+
+const (
+	OutputLine       OutputStyle = "line"
+	OutputDashedLine OutputStyle = "dashed_line"
+	OutputHistogram  OutputStyle = "histogram"
+	OutputUpperLimit OutputStyle = "upper_limit"
+	OutputLowerLimit OutputStyle = "lower_limit"
+)
+
+// OutputDescriptor describes one output series returned by Calculate.
+type OutputDescriptor struct {
+	Name  string
+	Style OutputStyle
+}
+
+// Descriptor is the self-description of an implementation. Registries use it
+// to dispatch and validate results, and clients use it to build settings.
+type Descriptor struct {
+	Type  Type
+	Title string
+	Group string
+	// Overlay reports outputs on the price scale.
+	Overlay bool
+	// Pattern reports a candlestick pattern: an output is non-zero on candles
+	// where the pattern is found, positive when bullish and negative when
+	// bearish.
+	Pattern bool
+	// Unstable reports that values depend on all preceding history, not only
+	// on Lookback, so comparable values need the same history depth.
+	Unstable bool
+	// Inputs names the candle fields consumed by Calculate.
+	Inputs     []string
+	Parameters []ParameterDescriptor
+	// Outputs names the series returned by Calculate, for example "rsi".
+	Outputs []OutputDescriptor
+}
+
 // Implementation is the contract implemented by a concrete indicator adapter.
 // Parameter and input validation specific to an indicator belongs in the
 // implementation, while Registry validates the common result contract.
 type Implementation interface {
-	Type() Type
-	// Inputs names the candle fields consumed by this implementation.
-	Inputs() []string
-	// Outputs names the series returned by Calculate, for example "rsi".
-	Outputs() []string
+	Describe() Descriptor
+	// Normalize validates parameters and returns their canonical form with
+	// defaults filled in, so equal settings compare equal.
+	Normalize(parameters Parameters) (Parameters, error)
 	Lookback(parameters Parameters) (int, error)
 	Calculate(parameters Parameters, inputs Inputs) (Result, error)
 }

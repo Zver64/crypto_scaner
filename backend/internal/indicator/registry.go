@@ -3,6 +3,7 @@ package indicator
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"crypto-scanner/internal/platform/numeric"
@@ -25,7 +26,13 @@ var (
 // registry is immutable after construction and is safe for concurrent use when
 // its implementations are safe for concurrent use.
 type Registry struct {
-	implementations map[Type]Implementation
+	implementations map[Type]registered
+}
+
+type registered struct {
+	implementation Implementation
+	descriptor     Descriptor
+	outputs        []string
 }
 
 // NewRegistry creates a calculator from concrete implementations. At least one
@@ -35,38 +42,43 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 		return nil, ErrEmptyRegistration
 	}
 
-	registered := make(map[Type]Implementation, len(implementations))
+	byType := make(map[Type]registered, len(implementations))
 	for index, implementation := range implementations {
 		if implementation == nil {
 			return nil, fmt.Errorf("%w at index %d", ErrEmptyRegistration, index)
 		}
 
-		indicatorType := implementation.Type()
+		descriptor := implementation.Describe()
+		indicatorType := descriptor.Type
 		if strings.TrimSpace(string(indicatorType)) == "" {
 			return nil, fmt.Errorf("%w at index %d: type is empty", ErrEmptyRegistration, index)
 		}
-		if _, exists := registered[indicatorType]; exists {
+		if _, exists := byType[indicatorType]; exists {
 			return nil, fmt.Errorf("%w: %q", ErrDuplicateRegistration, indicatorType)
 		}
-		if err := validateOutputs(implementation.Outputs()); err != nil {
+		outputs := make([]string, len(descriptor.Outputs))
+		for position, output := range descriptor.Outputs {
+			outputs[position] = output.Name
+		}
+		if err := validateOutputs(outputs); err != nil {
 			return nil, fmt.Errorf("%w: %q: %v", ErrEmptyRegistration, indicatorType, err)
 		}
-		registered[indicatorType] = implementation
+		byType[indicatorType] = registered{implementation: implementation, descriptor: descriptor, outputs: outputs}
 	}
 
-	return &Registry{implementations: registered}, nil
+	return &Registry{implementations: byType}, nil
 }
 
 // Lookback reports the number of preceding input values required by the
 // selected implementation. A negative value is an invalid implementation
 // result.
 func (r *Registry) Lookback(indicatorType Type, parameters Parameters) (int, error) {
-	implementation, err := r.implementation(indicatorType)
+	entry, err := r.entry(indicatorType)
 	if err != nil {
 		return 0, err
 	}
 
-	lookback, err := implementation.Lookback(parameters)
+	lookback, err := entry.implementation.Lookback(parameters)
 	if err != nil {
 		return 0, err
 	}
@@ -79,49 +91,78 @@ func (r *Registry) Lookback(indicatorType Type, parameters Parameters) (int, err
 
 // Inputs returns the named candle fields required by the selected module.
 func (r *Registry) Inputs(indicatorType Type) ([]string, error) {
-	implementation, err := r.implementation(indicatorType)
+	entry, err := r.entry(indicatorType)
 	if err != nil {
 		return nil, err
 	}
-	return append([]string(nil), implementation.Inputs()...), nil
+	return slices.Clone(entry.descriptor.Inputs), nil
 }
 
 // Outputs returns the named series produced by the selected module.
 func (r *Registry) Outputs(indicatorType Type) ([]string, error) {
-	implementation, err := r.implementation(indicatorType)
+	entry, err := r.entry(indicatorType)
 	if err != nil {
 		return nil, err
 	}
-	return append([]string(nil), implementation.Outputs()...), nil
+	return slices.Clone(entry.outputs), nil
+}
+
+// Normalize returns the selection with canonical parameters, so selections
+// with equal settings compare and deduplicate equally.
+func (r *Registry) Normalize(selection Selection) (Selection, error) {
+	entry, err := r.entry(selection.Type)
+	if err != nil {
+		return Selection{}, err
+	}
+	parameters, err := entry.implementation.Normalize(selection.Parameters)
+	if err != nil {
+		return Selection{}, err
+	}
+	return Selection{Type: selection.Type, Parameters: parameters}, nil
+}
+
+// Descriptors describes every registered module, ordered by type.
+func (r *Registry) Descriptors() []Descriptor {
+	if r == nil {
+		return nil
+	}
+	result := make([]Descriptor, 0, len(r.implementations))
+	for _, entry := range r.implementations {
+		// Describe returns fresh slices, so callers cannot change the
+		// registered inputs.
+		result = append(result, entry.implementation.Describe())
+	}
+	slices.SortFunc(result, func(left, right Descriptor) int { return strings.Compare(string(left.Type), string(right.Type)) })
+	return result
 }
 
 // Calculate dispatches a request and validates the implementation's result.
 func (r *Registry) Calculate(request Request) (Result, error) {
-	implementation, err := r.implementation(request.Type)
+	entry, err := r.entry(request.Type)
 	if err != nil {
 		return Result{}, err
 	}
 
-	result, err := implementation.Calculate(request.Parameters, request.Inputs)
+	result, err := entry.implementation.Calculate(request.Parameters, request.Inputs)
 	if err != nil {
 		return Result{}, err
 	}
-	if err := validateResult(result, implementation.Outputs()); err != nil {
+	if err := validateResult(result, entry.outputs); err != nil {
 		return Result{}, fmt.Errorf("%w: indicator %q: %v", ErrInvalidResult, request.Type, err)
 	}
 
 	return result, nil
 }
 
-func (r *Registry) implementation(indicatorType Type) (Implementation, error) {
+func (r *Registry) entry(indicatorType Type) (registered, error) {
 	if r == nil {
-		return nil, fmt.Errorf("%w: %q", ErrUnknownType, indicatorType)
+		return registered{}, fmt.Errorf("%w: %q", ErrUnknownType, indicatorType)
 	}
-	implementation, exists := r.implementations[indicatorType]
+	entry, exists := r.implementations[indicatorType]
 	if !exists {
-		return nil, fmt.Errorf("%w: %q", ErrUnknownType, indicatorType)
+		return registered{}, fmt.Errorf("%w: %q", ErrUnknownType, indicatorType)
 	}
-	return implementation, nil
+	return entry, nil
 }
 
 func validateOutputs(outputs []string) error {

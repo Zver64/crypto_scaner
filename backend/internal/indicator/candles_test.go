@@ -10,7 +10,7 @@ import (
 )
 
 func TestCalculateCandlesKeepsClosedHistoryIndependentOfLiveContext(t *testing.T) {
-	registry, err := indicator.NewRegistry(talib.NewRSI())
+	registry, err := indicator.NewRegistry(talib.New()...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,7 +47,7 @@ func TestCalculateCandlesKeepsClosedHistoryIndependentOfLiveContext(t *testing.T
 }
 
 func TestCalculateCandlesDoesNotWarmAcrossGaps(t *testing.T) {
-	registry, _ := indicator.NewRegistry(talib.NewRSI())
+	registry, _ := indicator.NewRegistry(talib.New()...)
 	candles := make([]market.Candle, 16)
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	for i := range candles {

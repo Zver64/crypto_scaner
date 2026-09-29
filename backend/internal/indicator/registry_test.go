@@ -19,13 +19,17 @@ type fakeImplementation struct {
 	inputs        indicator.Inputs
 }
 
-func (f *fakeImplementation) Type() indicator.Type {
-	return f.indicatorType
+func (f *fakeImplementation) Describe() indicator.Descriptor {
+	return indicator.Descriptor{
+		Type:    f.indicatorType,
+		Inputs:  []string{"close"},
+		Outputs: []indicator.OutputDescriptor{{Name: "value", Style: indicator.OutputLine}},
+	}
 }
 
-func (f *fakeImplementation) Inputs() []string { return []string{"close"} }
-
-func (f *fakeImplementation) Outputs() []string { return []string{"value"} }
+func (f *fakeImplementation) Normalize(parameters indicator.Parameters) (indicator.Parameters, error) {
+	return parameters, nil
+}
 
 func (f *fakeImplementation) Lookback(parameters indicator.Parameters) (int, error) {
 	f.parameters = parameters

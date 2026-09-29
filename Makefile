@@ -8,7 +8,7 @@ prepare:
 generate: generate-backend generate-frontend generate-sqlc
 
 generate-backend:
-	go -C backend generate ./internal/httpapi/openapi
+	go -C backend generate ./internal/httpapi/openapi ./internal/indicator/talib
 
 generate-sqlc:
 	go -C backend generate ./internal/storage/postgres

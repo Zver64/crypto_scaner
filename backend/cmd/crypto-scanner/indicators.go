@@ -8,14 +8,11 @@ import (
 	indicatortalib "crypto-scanner/internal/indicator/talib"
 )
 
-// indicatorModules are the calculation algorithms available to every consumer.
-// A new algorithm needs a module here; a new chart line only needs a catalog
-// entry below.
+// indicatorModules are the calculation algorithms available to every consumer:
+// every TA-Lib function generated in the talib package. A new chart line only
+// needs a catalog entry below.
 func indicatorModules() []indicator.Implementation {
-	return []indicator.Implementation{
-		indicatortalib.NewRSI(),
-		indicatortalib.NewEMA(),
-	}
+	return indicatortalib.New()
 }
 
 // chartIndicatorCatalog lists what every chart shows and how clients draw it.

@@ -8,6 +8,7 @@ tool (
 )
 
 require (
+	github.com/TA-Lib/ta-lib-cgo v0.2.0
 	github.com/binance/binance-connector-go v0.8.0
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-telegram/bot v1.25.0
@@ -15,7 +16,6 @@ require (
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/joho/godotenv v1.5.1
-	github.com/markcheno/go-talib v0.0.0-20260617004048-4ff5e103edd9
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/oapi-codegen/runtime v1.7.0
 	github.com/swaggest/swgui v1.8.9

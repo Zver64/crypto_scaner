@@ -109,7 +109,9 @@ export const volumePriceScaleOptions = {
 export const overlayIndicatorSeriesOptions = {
 	// Moving averages and similar lines should not hide the candles.
 	lineWidth: 1,
-	lastValueVisible: true,
+	// The price axis keeps only the candle labels; overlay values are in the
+	// legend.
+	lastValueVisible: false,
 	priceLineVisible: false,
 } satisfies LineSeriesPartialOptions;
 

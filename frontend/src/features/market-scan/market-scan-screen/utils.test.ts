@@ -31,6 +31,7 @@ const criteriaB: MarketScanCriteria = {
 function response(matchedCount: number): MarketAnalysisResponse {
 	return {
 		analyzed_count: matchedCount,
+		insufficient_data: [],
 		insufficient_data_count: 0,
 		items: [],
 		matched_count: matchedCount,

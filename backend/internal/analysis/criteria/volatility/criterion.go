@@ -47,7 +47,7 @@ func (criterion) UsesClosedIndicators() bool { return false }
 func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	candles := input.Candles[c.unit]
 	if len(candles) < c.period {
-		return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Criterion: c.Name(), Required: c.period, Available: len(candles)}
+		return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Criterion: c.Name(), Unit: c.unit, Required: c.period, Available: len(candles)}
 	}
 	candles = candles[len(candles)-c.period:]
 	ranges := make([]float64, len(candles))

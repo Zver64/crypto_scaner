@@ -5,9 +5,13 @@ import {
 	Text,
 	TextInput,
 	Title,
+	Tooltip,
 	useMatches,
 } from "@mantine/core";
-import type { MarketAnalysisResponse } from "@/api/generated/models";
+import type {
+	InsufficientDataInstrument,
+	MarketAnalysisResponse,
+} from "@/api/generated/models";
 import { DataTable } from "@/components/data-table";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
@@ -18,6 +22,22 @@ import {
 	toMarketScanRows,
 } from "@/features/market-scan/results-table/utils";
 import type { MarketScanSort } from "@/features/market-scan/sort";
+
+const unitSuffixes: Record<InsufficientDataInstrument["unit"], string> = {
+	days: "d",
+	hours: "h",
+};
+
+function formatInsufficientData(
+	instruments: readonly InsufficientDataInstrument[],
+): string {
+	return instruments
+		.map(
+			({ available, required, symbol, unit }) =>
+				`${symbol} ${available}/${required}${unitSuffixes[unit]}`,
+		)
+		.join(", ");
+}
 
 interface MarketScanResultsProps {
 	criteria: MarketScanCriteria;
@@ -56,10 +76,18 @@ export function MarketScanResults({
 						<Text size={textSize}>
 							Analyzed <Text component="strong">{result.analyzed_count}</Text>
 						</Text>
-						<Text size={textSize}>
-							Insufficient data{" "}
-							<Text component="strong">{result.insufficient_data_count}</Text>
-						</Text>
+						<Tooltip
+							disabled={result.insufficient_data.length === 0}
+							events={{ focus: true, hover: true, touch: true }}
+							label={formatInsufficientData(result.insufficient_data)}
+							maw={320}
+							multiline
+						>
+							<Text size={textSize}>
+								Insufficient data{" "}
+								<Text component="strong">{result.insufficient_data_count}</Text>
+							</Text>
+						</Tooltip>
 					</Group>
 				</Paper>
 				<TextInput

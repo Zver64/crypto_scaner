@@ -16,6 +16,7 @@ var ErrInvalidArgument = errors.New("invalid analysis argument")
 // InsufficientHistoryError identifies the criterion whose required history is unavailable.
 type InsufficientHistoryError struct {
 	Criterion string
+	Unit      Unit
 	Required  int
 	Available int
 }

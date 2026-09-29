@@ -724,6 +724,23 @@ components:
           enum: [mapping_conflict, mapping_not_found, mapping_provider_unavailable, market_cap_missing]
         message:
           type: string
+    InsufficientDataInstrument:
+      description: An instrument skipped because a criterion lacked closed candle history.
+      type: object
+      additionalProperties: false
+      required: [symbol, unit, required, available]
+      properties:
+        symbol:
+          type: string
+        unit:
+          type: string
+          enum: [days, hours]
+        required:
+          type: integer
+          minimum: 1
+        available:
+          type: integer
+          minimum: 0
     MarketAnalysisResponse:
       type: object
       additionalProperties: false
@@ -732,6 +749,7 @@ components:
         - matched_count
         - analyzed_count
         - insufficient_data_count
+        - insufficient_data
         - items
         - unresolved
         - warnings
@@ -747,6 +765,10 @@ components:
         insufficient_data_count:
           type: integer
           minimum: 0
+        insufficient_data:
+          type: array
+          items:
+            $ref: "#/components/schemas/InsufficientDataInstrument"
         items:
           type: array
           items:

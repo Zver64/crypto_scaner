@@ -52,6 +52,8 @@ export * from './indicatorPoint.ts';
 export * from './indicatorSeries.ts';
 export * from './instrumentAnalysisRequest.ts';
 export * from './instrumentAnalysisResponse.ts';
+export * from './insufficientDataInstrument.ts';
+export * from './insufficientDataInstrumentUnit.ts';
 export * from './insufficientDataResponse.ts';
 export * from './internalErrorResponse.ts';
 export * from './listInstrumentCandlesParams.ts';

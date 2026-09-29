@@ -65,11 +65,20 @@ type SearchResult struct {
 	MatchedCount          int
 	AnalyzedCount         int
 	InsufficientDataCount int
+	InsufficientData      []InsufficientItem
 	Items                 []SearchItem
 	Unresolved            []UnresolvedItem
 	Warnings              []Warning
 }
 type UnresolvedItem struct{ Symbol, Code, Message string }
+
+// InsufficientItem is an instrument skipped because a criterion lacked history.
+type InsufficientItem struct {
+	Symbol    string
+	Unit      Unit
+	Required  int
+	Available int
+}
 
 type Service struct {
 	store                Store
@@ -207,6 +216,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 			var insufficient *InsufficientHistoryError
 			if errors.As(evaluateErr, &insufficient) {
 				result.InsufficientDataCount++
+				result.InsufficientData = append(result.InsufficientData, InsufficientItem{Symbol: instrument.Symbol, Unit: insufficient.Unit, Required: insufficient.Required, Available: insufficient.Available})
 				continue
 			}
 			var unresolved *UnresolvedError

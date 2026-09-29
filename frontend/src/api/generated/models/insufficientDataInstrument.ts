@@ -13,22 +13,16 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { InsufficientDataInstrument } from './insufficientDataInstrument.ts';
-import type { MarketAnalysisItem } from './marketAnalysisItem.ts';
-import type { PriceHistoryWindow } from './priceHistoryWindow.ts';
-import type { UnresolvedInstrument } from './unresolvedInstrument.ts';
-import type { Warning } from './warning.ts';
+import type { InsufficientDataInstrumentUnit } from './insufficientDataInstrumentUnit.ts';
 
-export interface MarketAnalysisResponse {
-  price_history_window: PriceHistoryWindow;
+/**
+ * An instrument skipped because a criterion lacked closed candle history.
+ */
+export interface InsufficientDataInstrument {
+  symbol: string;
+  unit: InsufficientDataInstrumentUnit;
+  /** @minimum 1 */
+  required: number;
   /** @minimum 0 */
-  matched_count: number;
-  /** @minimum 0 */
-  analyzed_count: number;
-  /** @minimum 0 */
-  insufficient_data_count: number;
-  insufficient_data: InsufficientDataInstrument[];
-  items: MarketAnalysisItem[];
-  unresolved: UnresolvedInstrument[];
-  warnings: Warning[];
+  available: number;
 }

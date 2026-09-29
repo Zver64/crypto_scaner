@@ -56,6 +56,7 @@ const marketCapEvaluation: Evaluation = {
 function marketResult(evaluations: Evaluation[]): MarketAnalysisResponse {
 	return {
 		analyzed_count: 1,
+		insufficient_data: [],
 		insufficient_data_count: 0,
 		items: [
 			{

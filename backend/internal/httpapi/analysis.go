@@ -72,10 +72,15 @@ func marketAnalysisResponse(result analysis.SearchResult) MarketAnalysisResponse
 	for i, item := range result.Unresolved {
 		unresolved[i] = UnresolvedInstrument{Symbol: item.Symbol, Code: UnresolvedInstrumentCode(item.Code), Message: item.Message}
 	}
+	insufficient := make([]InsufficientDataInstrument, len(result.InsufficientData))
+	for i, item := range result.InsufficientData {
+		insufficient[i] = InsufficientDataInstrument{Symbol: item.Symbol, Unit: InsufficientDataInstrumentUnit(item.Unit), Required: item.Required, Available: item.Available}
+	}
 	return MarketAnalysisResponse{
 		PriceHistoryWindow: PriceHistoryWindow{From: result.PriceHistoryWindow.From, To: result.PriceHistoryWindow.To},
 		MatchedCount:       result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount,
-		Items: items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings),
+		InsufficientData: insufficient,
+		Items:            items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings),
 	}
 }
 

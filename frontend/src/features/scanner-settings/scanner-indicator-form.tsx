@@ -55,7 +55,12 @@ export function ScannerIndicatorForm({
 		event.preventDefault();
 		if (!type) return;
 		const input = scannerIndicatorInput(draft, type);
-		if (input) onSubmit(input, () => setDraft(emptyDraft));
+		// The next indicator is usually added on the same interval.
+		if (input) {
+			onSubmit(input, () =>
+				setDraft((current) => ({ ...emptyDraft, interval: current.interval })),
+			);
+		}
 	};
 	const selectType = (value: string | null) => {
 		const next = types.find((item) => item.type === value);

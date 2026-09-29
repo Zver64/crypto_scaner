@@ -3,11 +3,10 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  workflow_call:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -41,7 +40,6 @@ jobs:
   # Build the production images without pushing, so a broken Dockerfile or
   # frontend build fails the pull request instead of a release.
   images:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:

@@ -31,13 +31,9 @@ jobs:
           manifest-file: .release-please-manifest.json
           token: ${{ secrets.RELEASE_PLEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
-  quality:
+  build:
     needs: release
     if: needs.release.outputs.created == 'true'
-    uses: ./.github/workflows/ci.yaml
-
-  build:
-    needs: [release, quality]
     permissions:
       contents: read
       packages: write

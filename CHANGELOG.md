@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.24.0](https://github.com/Zver64/crypto_scaner/compare/v0.23.0...v0.24.0) (2026-09-29)
+
+
+### Features
+
+* calculate every TA-Lib indicator through one generic adapter ([d706354](https://github.com/Zver64/crypto_scaner/commit/d706354a078692c7c1c55ddd949619fe23b7bd04))
+* collapse the market scan RSI filter block by default ([151cdf4](https://github.com/Zver64/crypto_scaner/commit/151cdf44b694e1b2881d0fee2fe8b39a9a9ce5e5))
+* list instruments with insufficient history in the scan summary tooltip ([bae3e2a](https://github.com/Zver64/crypto_scaner/commit/bae3e2a56a80c9828e3b62a7dd998e2f5e1ae318))
+
+
+### Bug Fixes
+
+* link libm for TA-Lib on Linux ([37d51e9](https://github.com/Zver64/crypto_scaner/commit/37d51e904a556ac1d130484705f46b30eefd3f05))
+* use dark surface colors for tooltips in the dark theme ([ec76ba1](https://github.com/Zver64/crypto_scaner/commit/ec76ba135fe73a580f522a134a4bfbf86ac0810a))
+
 ## [0.23.0](https://github.com/Zver64/crypto_scaner/compare/v0.22.0...v0.23.0) (2026-09-28)
 
 

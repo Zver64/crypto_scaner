@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.25.0](https://github.com/Zver64/crypto_scaner/compare/v0.24.0...v0.25.0) (2026-09-29)
+
+
+### Features
+
+* let the administrator configure scanner indicators ([4f6ea8a](https://github.com/Zver64/crypto_scaner/commit/4f6ea8a5ab09a56053643212d284187f8bc2cd7d))
+* render market tables from backend-defined columns ([880775e](https://github.com/Zver64/crypto_scaner/commit/880775e6e8c2370cda49fe57444631a8c5e98fe3))
+
+
+### Bug Fixes
+
+* hide overlay indicator values on the price axis ([8a20316](https://github.com/Zver64/crypto_scaner/commit/8a203165bdc313bec7d4f242eb02c39063a52e22))
+
 ## [0.24.0](https://github.com/Zver64/crypto_scaner/compare/v0.23.0...v0.24.0) (2026-09-29)
 
 

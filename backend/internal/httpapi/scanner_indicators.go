@@ -13,9 +13,10 @@ import (
 // ScannerIndicators manages the global indicator configuration.
 type ScannerIndicators interface {
 	List() []scannerindicator.Entry
-	Create(context.Context, scannerindicator.Indicator) (scannerindicator.Entry, error)
+	Create(context.Context, []scannerindicator.Indicator) ([]scannerindicator.Entry, error)
 	Update(context.Context, int64, bool, scannerindicator.Scale) (scannerindicator.Entry, error)
 	Delete(context.Context, int64) error
+	Clear(context.Context) error
 	Reorder(context.Context, []int64) ([]scannerindicator.Entry, error)
 }
 
@@ -51,19 +52,20 @@ func scannerIndicatorListDTO(entries []scannerindicator.Entry) ScannerIndicatorL
 }
 
 func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScannerIndicatorRequestObject) (CreateScannerIndicatorResponseObject, error) {
-	entry, err := api.scannerIndicators.Create(ctx, scannerindicator.Indicator{
-		Interval:    market.CandleInterval(request.Body.Interval),
-		Selection:   indicator.Selection{Type: indicator.Type(request.Body.Type), Parameters: indicator.Parameters(request.Body.Parameters)},
-		ShowInTable: request.Body.ShowInTable,
-		Scale:       scaleFromDTO(request.Body.Scale),
-	})
+	selection := indicator.Selection{Type: indicator.Type(request.Body.Type), Parameters: indicator.Parameters(request.Body.Parameters)}
+	scale := scaleFromDTO(request.Body.Scale)
+	items := make([]scannerindicator.Indicator, len(request.Body.Intervals))
+	for i, interval := range request.Body.Intervals {
+		items[i] = scannerindicator.Indicator{Interval: market.CandleInterval(interval.Interval), Selection: selection, ShowInTable: interval.ShowInTable, Scale: scale}
+	}
+	entries, err := api.scannerIndicators.Create(ctx, items)
 	switch {
 	case err == nil:
-		return CreateScannerIndicator201JSONResponse(scannerIndicatorDTO(entry)), nil
+		return CreateScannerIndicator201JSONResponse(scannerIndicatorListDTO(entries)), nil
 	case errors.Is(err, scannerindicator.ErrInvalidArgument):
 		return CreateScannerIndicator400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, scannerindicator.ErrConflict):
-		return CreateScannerIndicator409JSONResponse{ScannerIndicatorConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_exists", "The interval already has this indicator", nil).body)}, nil
+		return CreateScannerIndicator409JSONResponse{ScannerIndicatorConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_exists", err.Error(), nil).body)}, nil
 	case errors.Is(err, scannerindicator.ErrLimit):
 		return CreateScannerIndicator409JSONResponse{ScannerIndicatorConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_limit", err.Error(), nil).body)}, nil
 	default:
@@ -97,6 +99,13 @@ func (api *api) ReorderScannerIndicators(ctx context.Context, request ReorderSca
 	default:
 		return ReorderScannerIndicators500JSONResponse{api.internalError(ctx, "reorder_scanner_indicators", err)}, nil
 	}
+}
+
+func (api *api) ClearScannerIndicators(ctx context.Context, _ ClearScannerIndicatorsRequestObject) (ClearScannerIndicatorsResponseObject, error) {
+	if err := api.scannerIndicators.Clear(ctx); err != nil {
+		return ClearScannerIndicators500JSONResponse{api.internalError(ctx, "clear_scanner_indicators", err)}, nil
+	}
+	return ClearScannerIndicators204Response{}, nil
 }
 
 func (api *api) DeleteScannerIndicator(ctx context.Context, request DeleteScannerIndicatorRequestObject) (DeleteScannerIndicatorResponseObject, error) {

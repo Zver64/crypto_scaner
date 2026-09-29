@@ -11,6 +11,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deleteAllScannerIndicators = `-- name: DeleteAllScannerIndicators :exec
+DELETE FROM app.scanner_indicators
+`
+
+func (q *Queries) DeleteAllScannerIndicators(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, deleteAllScannerIndicators)
+	return err
+}
+
 const deleteScannerIndicator = `-- name: DeleteScannerIndicator :execrows
 DELETE FROM app.scanner_indicators WHERE id = $1
 `

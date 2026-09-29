@@ -1,4 +1,4 @@
-import { Loader, Stack, Text } from "@mantine/core";
+import { Button, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -6,6 +6,7 @@ import {
 	getAnalyzeMarketQueryKey,
 	getListChartIndicatorsQueryKey,
 	getListScannerIndicatorsQueryKey,
+	useClearScannerIndicators,
 	useCreateScannerIndicator,
 	useDeleteScannerIndicator,
 	useListIndicatorTypes,
@@ -27,6 +28,7 @@ import {
 export function ScannerSettings() {
 	const queryClient = useQueryClient();
 	const [removing, setRemoving] = useState<ScannerIndicator>();
+	const [clearing, setClearing] = useState(false);
 	const types = useListIndicatorTypes({
 		fetch: telegramRequestOptions(),
 		query: {
@@ -83,6 +85,15 @@ export function ScannerSettings() {
 		},
 	});
 
+	const clearMutation = useClearScannerIndicators({
+		fetch: telegramRequestOptions(),
+		mutation: {
+			onError: failed,
+			onSettled: () => setClearing(false),
+			onSuccess: refresh,
+		},
+	});
+
 	if (types.isPending || indicators.isPending) {
 		return <Loader aria-label="Loading scanner settings" />;
 	}
@@ -97,16 +108,31 @@ export function ScannerSettings() {
 		<Stack gap="md">
 			<ScannerIndicatorForm
 				isSaving={createMutation.isPending}
-				onSubmit={(data, reset) =>
-					createMutation.mutate({ data }, { onSuccess: reset })
-				}
+				onSubmit={(data) => createMutation.mutate({ data })}
 				types={types.data}
 			/>
+			<Group justify="space-between">
+				<Title order={2} size="h4">
+					Indicators
+				</Title>
+				{indicators.data.length > 0 ? (
+					<Button
+						color="red"
+						disabled={clearMutation.isPending}
+						onClick={() => setClearing(true)}
+						size="compact-sm"
+						variant="subtle"
+					>
+						Remove all
+					</Button>
+				) : null}
+			</Group>
 			<ScannerIndicatorList
 				disabled={
 					updateMutation.isPending ||
 					deleteMutation.isPending ||
-					reorderMutation.isPending
+					reorderMutation.isPending ||
+					clearMutation.isPending
 				}
 				indicators={orderIndicators(
 					indicators.data,
@@ -129,7 +155,13 @@ export function ScannerSettings() {
 				onConfirm={() => {
 					if (removing) deleteMutation.mutate({ indicatorId: removing.id });
 				}}
-				title={removing?.title}
+				subject={removing?.title}
+			/>
+			<ScannerIndicatorRemovalConfirmation
+				isPending={clearMutation.isPending}
+				onCancel={() => setClearing(false)}
+				onConfirm={() => clearMutation.mutate()}
+				subject={clearing ? "all indicators" : undefined}
 			/>
 		</Stack>
 	);

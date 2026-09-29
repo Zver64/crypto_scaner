@@ -65,12 +65,15 @@ type Entry struct {
 
 type Store interface {
 	ListScannerIndicators(context.Context) ([]Indicator, error)
-	// CreateScannerIndicator fails with ErrConflict for a duplicate selection.
-	CreateScannerIndicator(context.Context, Indicator) (int64, error)
+	// CreateScannerIndicators appends the indicators to the display order in
+	// one transaction and returns their ids in order. It fails with
+	// ErrConflict for a duplicate selection.
+	CreateScannerIndicators(context.Context, []Indicator) ([]int64, error)
 	// UpdateScannerIndicator and DeleteScannerIndicator fail with
 	// ErrNotFound for an unknown id.
 	UpdateScannerIndicator(context.Context, Indicator) error
 	DeleteScannerIndicator(context.Context, int64) error
+	DeleteAllScannerIndicators(context.Context) error
 	// ReorderScannerIndicators stores ids as the display order.
 	ReorderScannerIndicators(context.Context, []int64) error
 }
@@ -137,33 +140,54 @@ func (service *Service) Targets() []closedindicator.Target {
 	return targets(service.entries)
 }
 
-// Create validates, stores, and applies a new indicator.
-func (service *Service) Create(ctx context.Context, item Indicator) (Entry, error) {
-	entry, err := service.entry(item)
-	if err != nil {
-		return Entry{}, err
+// Create validates, stores, and applies new indicators, such as one
+// selection on several intervals. Either all of them are added or none.
+func (service *Service) Create(ctx context.Context, items []Indicator) ([]Entry, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("%w: choose at least one interval", ErrInvalidArgument)
+	}
+	entries := make([]Entry, len(items))
+	for i, item := range items {
+		entry, err := service.entry(item)
+		if err != nil {
+			return nil, err
+		}
+		if slices.ContainsFunc(entries[:i], func(earlier Entry) bool { return earlier.Target().Equal(entry.Target()) }) {
+			return nil, fmt.Errorf("%w: choose each interval once", ErrInvalidArgument)
+		}
+		entries[i] = entry
 	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
-	count := 0
-	for _, existing := range current {
-		if existing.Interval != entry.Interval {
-			continue
+	for _, entry := range entries {
+		count := 0
+		for _, existing := range current {
+			if existing.Interval != entry.Interval {
+				continue
+			}
+			if existing.Target().Equal(entry.Target()) {
+				return nil, fmt.Errorf("%w: %s already has %s", ErrConflict, entry.Interval, entry.lineTitle)
+			}
+			count++
 		}
-		if existing.Target().Equal(entry.Target()) {
-			return Entry{}, ErrConflict
+		if count >= chart.MaxIndicators {
+			return nil, fmt.Errorf("%w: %s charts draw at most %d indicators", ErrLimit, entry.Interval, chart.MaxIndicators)
 		}
-		count++
 	}
-	if count >= chart.MaxIndicators {
-		return Entry{}, fmt.Errorf("%w: %s charts draw at most %d indicators", ErrLimit, entry.Interval, chart.MaxIndicators)
+	indicators := make([]Indicator, len(entries))
+	for i, entry := range entries {
+		indicators[i] = entry.Indicator
 	}
-	if entry.ID, err = service.store.CreateScannerIndicator(ctx, entry.Indicator); err != nil {
-		return Entry{}, err
+	ids, err := service.store.CreateScannerIndicators(ctx, indicators)
+	if err != nil {
+		return nil, err
 	}
-	service.replace(append(current, entry))
-	return entry, nil
+	for i := range entries {
+		entries[i].ID = ids[i]
+	}
+	service.replace(append(current, entries...))
+	return entries, nil
 }
 
 // Update changes whether the indicator is a table column and its pane scale.
@@ -202,6 +226,17 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 		return err
 	}
 	service.replace(slices.Delete(current, index, index+1))
+	return nil
+}
+
+// Clear removes every indicator; the tracker keeps only the criterion values.
+func (service *Service) Clear(ctx context.Context) error {
+	service.writes.Lock()
+	defer service.writes.Unlock()
+	if err := service.store.DeleteAllScannerIndicators(ctx); err != nil {
+		return err
+	}
+	service.replace(nil)
 	return nil
 }
 

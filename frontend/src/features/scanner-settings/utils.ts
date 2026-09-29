@@ -1,4 +1,5 @@
 import type {
+	CandleInterval,
 	IndicatorType,
 	ScannerIndicator,
 	ScannerIndicatorInput,
@@ -6,6 +7,7 @@ import type {
 } from "@/api/generated/models";
 import type {
 	ParameterValues,
+	PeriodChoices,
 	ScannerIndicatorDraft,
 } from "@/features/scanner-settings/types";
 
@@ -33,25 +35,45 @@ export function tableColumnAllowed(type: IndicatorType | undefined): boolean {
 	return type?.outputs.length === 1;
 }
 
+// Keeps the chosen periods and clears their table column choices.
+export function withoutTableColumns(periods: PeriodChoices): PeriodChoices {
+	return Object.fromEntries(
+		Object.keys(periods).map((interval) => [interval, { showInTable: false }]),
+	);
+}
+
 export function parseLevels(levels: readonly string[]): number[] | undefined {
 	const values = levels.map((level) => Number(level.trim()));
 	return values.every(Number.isFinite) ? values : undefined;
 }
 
-// Builds the create request; returns undefined while a level is not a number.
+// Builds the create request, one entry per chosen period in the given order;
+// returns undefined while no period is chosen or a level is not a number.
 export function scannerIndicatorInput(
 	draft: ScannerIndicatorDraft,
 	type: IndicatorType,
+	periods: readonly CandleInterval[],
 ): ScannerIndicatorInput | undefined {
+	const intervals = periods.flatMap((interval) => {
+		const choice = draft.periods[interval];
+		return choice
+			? [
+					{
+						interval,
+						show_in_table: choice.showInTable && tableColumnAllowed(type),
+					},
+				]
+			: [];
+	});
+	if (intervals.length === 0) return undefined;
 	const parameters = Object.fromEntries(
 		Object.entries(draft.parameters).flatMap(([key, value]) =>
 			value === "" ? [] : [[key, Number(value)]],
 		),
 	);
 	const input: ScannerIndicatorInput = {
-		interval: draft.interval,
+		intervals,
 		parameters,
-		show_in_table: draft.showInTable && tableColumnAllowed(type),
 		type: type.type,
 	};
 	if (type.overlay) return input;

@@ -90,6 +90,7 @@ export * from './scannerIndicator.ts';
 export * from './scannerIndicatorConflictResponse.ts';
 export * from './scannerIndicatorInput.ts';
 export * from './scannerIndicatorInputParameters.ts';
+export * from './scannerIndicatorIntervalInput.ts';
 export * from './scannerIndicatorList.ts';
 export * from './scannerIndicatorNotFoundResponse.ts';
 export * from './scannerIndicatorOrder.ts';

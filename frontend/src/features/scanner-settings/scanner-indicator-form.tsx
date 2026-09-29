@@ -1,15 +1,12 @@
 import {
 	Button,
-	Checkbox,
 	Group,
 	NumberInput,
 	Paper,
-	SegmentedControl,
 	Select,
 	Stack,
 	TagsInput,
 	Text,
-	Title,
 } from "@mantine/core";
 import { type FormEvent, useState } from "react";
 import type {
@@ -18,6 +15,7 @@ import type {
 } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/components/price-history-chart/config";
 import { ScannerIndicatorParameterField } from "@/features/scanner-settings/scanner-indicator-parameter-field";
+import { ScannerIndicatorPeriodsField } from "@/features/scanner-settings/scanner-indicator-periods-field";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 import {
 	defaultParameterValues,
@@ -25,21 +23,23 @@ import {
 	parseLevels,
 	scannerIndicatorInput,
 	tableColumnAllowed,
+	withoutTableColumns,
 } from "@/features/scanner-settings/utils";
 
 const emptyDraft: ScannerIndicatorDraft = {
-	interval: "1d",
 	levels: [],
 	parameters: {},
+	periods: {},
 	scaleMax: "",
 	scaleMin: "",
-	showInTable: false,
 	type: null,
 };
 
+const periodOrder = chartIntervalOptions.map(({ value }) => value);
+
 interface ScannerIndicatorFormProps {
 	isSaving: boolean;
-	onSubmit(input: ScannerIndicatorInput, reset: () => void): void;
+	onSubmit(input: ScannerIndicatorInput): void;
 	types: readonly IndicatorType[];
 }
 
@@ -54,13 +54,10 @@ export function ScannerIndicatorForm({
 	const submit = (event: FormEvent) => {
 		event.preventDefault();
 		if (!type) return;
-		const input = scannerIndicatorInput(draft, type);
-		// The next indicator is usually added on the same interval.
-		if (input) {
-			onSubmit(input, () =>
-				setDraft((current) => ({ ...emptyDraft, interval: current.interval })),
-			);
-		}
+		// The form keeps its values after adding, so a similar indicator needs
+		// only the changed fields.
+		const input = scannerIndicatorInput(draft, type, periodOrder);
+		if (input) onSubmit(input);
 	};
 	const selectType = (value: string | null) => {
 		const next = types.find((item) => item.type === value);
@@ -70,7 +67,10 @@ export function ScannerIndicatorForm({
 			parameters: next ? defaultParameterValues(next) : {},
 			scaleMax: "",
 			scaleMin: "",
-			showInTable: current.showInTable && tableColumnAllowed(next),
+			// A table choice made for a single-output type does not carry over.
+			periods: tableColumnAllowed(next)
+				? current.periods
+				: withoutTableColumns(current.periods),
 			type: value,
 		}));
 	};
@@ -78,32 +78,14 @@ export function ScannerIndicatorForm({
 	return (
 		<Paper p="sm" radius="md" withBorder>
 			<Stack component="form" gap="sm" onSubmit={submit}>
-				<Title order={2} size="h4">
-					Add indicator
-				</Title>
 				<Select
+					aria-label="Indicator"
 					data={indicatorTypeOptions(types)}
-					label="Indicator"
 					nothingFoundMessage="No indicators found"
 					onChange={selectType}
 					placeholder="Search indicators"
 					searchable
 					value={draft.type}
-				/>
-				<SegmentedControl
-					data={chartIntervalOptions.map(({ label, value }) => ({
-						label,
-						value,
-					}))}
-					onChange={(value) =>
-						setDraft((current) => ({
-							...current,
-							interval:
-								chartIntervalOptions.find((option) => option.value === value)
-									?.value ?? current.interval,
-						}))
-					}
-					value={draft.interval}
 				/>
 				{type?.parameters.map((parameter) => (
 					<ScannerIndicatorParameterField
@@ -127,15 +109,12 @@ export function ScannerIndicatorForm({
 						Outputs: {type.outputs.join(", ")}
 					</Text>
 				) : null}
-				<Checkbox
-					checked={draft.showInTable && tableColumnAllowed(type)}
-					description="Only indicators with one output can be table columns."
-					disabled={!tableColumnAllowed(type)}
-					label="Show in tables"
-					onChange={(event) => {
-						const { checked } = event.currentTarget;
-						setDraft((current) => ({ ...current, showInTable: checked }));
-					}}
+				<ScannerIndicatorPeriodsField
+					onChange={(periods) =>
+						setDraft((current) => ({ ...current, periods }))
+					}
+					tableAllowed={tableColumnAllowed(type)}
+					value={draft.periods}
 				/>
 				{type && !type.overlay ? (
 					<>
@@ -170,7 +149,9 @@ export function ScannerIndicatorForm({
 				) : null}
 				<Group justify="flex-end">
 					<Button
-						disabled={!type || !levelsValid}
+						disabled={
+							!type || !levelsValid || Object.keys(draft.periods).length === 0
+						}
 						loading={isSaving}
 						type="submit"
 					>

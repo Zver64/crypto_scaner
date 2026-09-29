@@ -389,7 +389,8 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
     post:
       operationId: createScannerIndicator
-      summary: Add a scanner indicator
+      summary: Add a scanner indicator on one or more intervals
+      description: Adds one indicator per chosen interval, all or none, at the end of the display order.
       tags: [Administration]
       security: [{ telegramInitData: [] }]
       requestBody:
@@ -397,12 +398,23 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorInput" } } }
       responses:
         "201":
-          description: Indicator added.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicator" } } }
+          description: Added indicators, in interval request order.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorList" } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "409": { $ref: "#/components/responses/ScannerIndicatorConflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: clearScannerIndicators
+      summary: Remove every scanner indicator
+      description: Charts and tables then show no configured indicators; criterion values stay tracked.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      responses:
+        "204": { description: All indicators removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
         "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/scanner-indicator-order:
     put:
@@ -1319,18 +1331,29 @@ components:
     ScannerIndicatorInput:
       type: object
       additionalProperties: false
-      required: [interval, type, parameters, show_in_table]
+      required: [type, parameters, intervals]
       properties:
-        interval: { $ref: "#/components/schemas/CandleInterval" }
         type: { type: string, minLength: 1 }
         parameters:
           type: object
           additionalProperties: true
           description: Parameter values by key; omitted keys take their defaults.
+        intervals:
+          type: array
+          minItems: 1
+          maxItems: 4
+          description: Intervals to add the indicator on, each once.
+          items: { $ref: "#/components/schemas/ScannerIndicatorIntervalInput" }
+        scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
+    ScannerIndicatorIntervalInput:
+      type: object
+      additionalProperties: false
+      required: [interval, show_in_table]
+      properties:
+        interval: { $ref: "#/components/schemas/CandleInterval" }
         show_in_table:
           type: boolean
           description: Only indicators with one output can be table columns.
-        scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
     ScannerIndicatorUpdate:
       type: object
       additionalProperties: false

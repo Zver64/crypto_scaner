@@ -2537,7 +2537,7 @@ export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listS
 
 
 export type createScannerIndicatorResponse201 = {
-  data: ScannerIndicator
+  data: ScannerIndicatorList
   status: 201
 }
 
@@ -2582,7 +2582,8 @@ export const getCreateScannerIndicatorUrl = () => {
 }
 
 /**
- * @summary Add a scanner indicator
+ * Adds one indicator per chosen interval, all or none, at the end of the display order.
+ * @summary Add a scanner indicator on one or more intervals
  */
 export const createScannerIndicator = async (scannerIndicatorInput: ScannerIndicatorInput, options?: RequestInit): Promise<createScannerIndicatorResponseSuccess> => {
 
@@ -2662,7 +2663,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
     export type CreateScannerIndicatorMutationVariables = {data: ScannerIndicatorInput}
 
     /**
- * @summary Add a scanner indicator
+ * @summary Add a scanner indicator on one or more intervals
  */
 export const useCreateScannerIndicator = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse; status?: number },
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
@@ -2673,6 +2674,122 @@ export const useCreateScannerIndicator = <TError = globalThis.Error & { info?: B
         TContext
       > => {
       return useMutation(getCreateScannerIndicatorMutationOptions(options), queryClient);
+    }
+
+export type clearScannerIndicatorsResponse204 = {
+  data: void
+  status: 204
+}
+
+export type clearScannerIndicatorsResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type clearScannerIndicatorsResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type clearScannerIndicatorsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type clearScannerIndicatorsResponseSuccess = (clearScannerIndicatorsResponse204) & {
+  headers: Headers;
+};
+export type clearScannerIndicatorsResponseError = (clearScannerIndicatorsResponse401 | clearScannerIndicatorsResponse403 | clearScannerIndicatorsResponse500) & {
+  headers: Headers;
+};
+
+export const getClearScannerIndicatorsUrl = () => {
+
+
+
+
+  return `/api/v1/admin/scanner-indicators`
+}
+
+/**
+ * Charts and tables then show no configured indicators; criterion values stay tracked.
+ * @summary Remove every scanner indicator
+ */
+export const clearScannerIndicators = async ( options?: RequestInit): Promise<clearScannerIndicatorsResponseSuccess> => {
+
+  const res = await fetch(getClearScannerIndicatorsUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: clearScannerIndicatorsResponseError['data'], status?: number} = new globalThis.Error();
+    const data : clearScannerIndicatorsResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: clearScannerIndicatorsResponseSuccess['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as clearScannerIndicatorsResponseSuccess
+}
+
+
+
+
+
+export const getClearScannerIndicatorsMutationKey = () => ['clearScannerIndicators'] as const;
+
+export const getClearScannerIndicatorsMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext> => {
+
+const mutationKey = getClearScannerIndicatorsMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearScannerIndicators>>, void> = () => {
+
+
+          return  clearScannerIndicators(fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ClearScannerIndicatorsMutationResult = NonNullable<Awaited<ReturnType<typeof clearScannerIndicators>>>
+
+    export type ClearScannerIndicatorsMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+
+
+    /**
+ * @summary Remove every scanner indicator
+ */
+export const useClearScannerIndicators = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof clearScannerIndicators>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getClearScannerIndicatorsMutationOptions(options), queryClient);
     }
 
 export type reorderScannerIndicatorsResponse200 = {

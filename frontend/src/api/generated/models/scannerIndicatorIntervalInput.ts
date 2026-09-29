@@ -13,20 +13,10 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ScannerIndicatorInputParameters } from './scannerIndicatorInputParameters.ts';
-import type { ScannerIndicatorIntervalInput } from './scannerIndicatorIntervalInput.ts';
-import type { ScannerIndicatorScale } from './scannerIndicatorScale.ts';
+import type { CandleInterval } from './candleInterval.ts';
 
-export interface ScannerIndicatorInput {
-  /** @minLength 1 */
-  type: string;
-  /** Parameter values by key; omitted keys take their defaults. */
-  parameters: ScannerIndicatorInputParameters;
-  /**
-     * Intervals to add the indicator on, each once.
-     * @minItems 1
-     * @maxItems 4
-     */
-  intervals: ScannerIndicatorIntervalInput[];
-  scale?: ScannerIndicatorScale;
+export interface ScannerIndicatorIntervalInput {
+  interval: CandleInterval;
+  /** Only indicators with one output can be table columns. */
+  show_in_table: boolean;
 }

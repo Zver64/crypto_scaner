@@ -35,24 +35,39 @@ func (store *Store) ListScannerIndicators(ctx context.Context) ([]scannerindicat
 	return items, nil
 }
 
-func (store *Store) CreateScannerIndicator(ctx context.Context, item scannerindicator.Indicator) (int64, error) {
-	parameters, err := json.Marshal(item.Selection.Parameters)
+func (store *Store) CreateScannerIndicators(ctx context.Context, items []scannerindicator.Indicator) ([]int64, error) {
+	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("encode scanner indicator parameters: %w", err)
+		return nil, err
 	}
-	id, err := store.queries.InsertScannerIndicator(ctx, generated.InsertScannerIndicatorParams{
-		Interval:      string(item.Interval),
-		IndicatorType: string(item.Selection.Type),
-		Parameters:    parameters,
-		ShowInTable:   item.ShowInTable,
-		ScaleMin:      float8(item.Scale.Min),
-		ScaleMax:      float8(item.Scale.Max),
-		ScaleLevels:   append([]float64{}, item.Scale.Levels...),
-	})
-	if duplicateViolation(err) {
-		return 0, scannerindicator.ErrConflict
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	queries := store.queries.WithTx(tx)
+	ids := make([]int64, len(items))
+	for i, item := range items {
+		parameters, err := json.Marshal(item.Selection.Parameters)
+		if err != nil {
+			return nil, fmt.Errorf("encode scanner indicator parameters: %w", err)
+		}
+		ids[i], err = queries.InsertScannerIndicator(ctx, generated.InsertScannerIndicatorParams{
+			Interval:      string(item.Interval),
+			IndicatorType: string(item.Selection.Type),
+			Parameters:    parameters,
+			ShowInTable:   item.ShowInTable,
+			ScaleMin:      float8(item.Scale.Min),
+			ScaleMax:      float8(item.Scale.Max),
+			ScaleLevels:   append([]float64{}, item.Scale.Levels...),
+		})
+		if duplicateViolation(err) {
+			return nil, scannerindicator.ErrConflict
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
-	return id, err
+	if err := tx.Commit(ctx); err != nil {
+		return nil, err
+	}
+	return ids, nil
 }
 
 func (store *Store) UpdateScannerIndicator(ctx context.Context, item scannerindicator.Indicator) error {
@@ -83,6 +98,10 @@ func (store *Store) ReorderScannerIndicators(ctx context.Context, ids []int64) e
 		return scannerindicator.ErrNotFound
 	}
 	return nil
+}
+
+func (store *Store) DeleteAllScannerIndicators(ctx context.Context) error {
+	return store.queries.DeleteAllScannerIndicators(ctx)
 }
 
 func (store *Store) DeleteScannerIndicator(ctx context.Context, id int64) error {

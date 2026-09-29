@@ -22,3 +22,6 @@ UPDATE app.scanner_indicators AS indicators
 SET position = (ordered.position - 1)::INTEGER
 FROM unnest(@ids::BIGINT[]) WITH ORDINALITY AS ordered(id, position)
 WHERE indicators.id = ordered.id;
+
+-- name: DeleteAllScannerIndicators :exec
+DELETE FROM app.scanner_indicators;

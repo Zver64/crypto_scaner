@@ -113,6 +113,7 @@ var administratorRoutes = []string{
 	"GET /api/v1/admin/indicator-types",
 	"GET /api/v1/admin/scanner-indicators",
 	"POST /api/v1/admin/scanner-indicators",
+	"DELETE /api/v1/admin/scanner-indicators",
 	"PATCH /api/v1/admin/scanner-indicators/{indicator_id}",
 	"DELETE /api/v1/admin/scanner-indicators/{indicator_id}",
 	"PUT /api/v1/admin/scanner-indicator-order",

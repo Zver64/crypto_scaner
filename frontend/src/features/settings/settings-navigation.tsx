@@ -3,6 +3,7 @@ import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 
 const pages = [
 	{ label: "Indicators", value: "/admin" },
+	{ label: "Strategies", value: "/admin/strategies" },
 	{ label: "Users", value: "/admin/users" },
 ] as const;
 
@@ -13,7 +14,9 @@ export function SettingsNavigation() {
 	const navigate = useNavigate();
 	const current: SettingsPage = matchRoute({ to: "/admin/users" })
 		? "/admin/users"
-		: "/admin";
+		: matchRoute({ to: "/admin/strategies" })
+			? "/admin/strategies"
+			: "/admin";
 	return (
 		<SegmentedControl
 			data={pages.map(({ label, value }) => ({ label, value }))}

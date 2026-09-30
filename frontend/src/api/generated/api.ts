@@ -69,16 +69,26 @@ import type {
   RemoveFavoriteParams,
   ScannerIndicator,
   ScannerIndicatorConflictResponse,
+  ScannerIndicatorInUseResponse,
   ScannerIndicatorInput,
   ScannerIndicatorList,
   ScannerIndicatorNotFoundResponse,
   ScannerIndicatorOrder,
   ScannerIndicatorUpdate,
+  Strategy,
+  StrategyConflictResponse,
+  StrategyEnabled,
+  StrategyInput,
+  StrategyList,
+  StrategyNotFoundResponse,
+  StrategyUpdate,
+  StrategyVariableList,
   SymbolNotFoundResponse,
   UnauthenticatedResponse,
   UnprocessableAnalysisResponse,
   UserList,
-  UserNotFoundResponse
+  UserNotFoundResponse,
+  UserUpdate
 } from './models';
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
@@ -2694,6 +2704,11 @@ export type clearScannerIndicatorsResponse403 = {
   status: 403
 }
 
+export type clearScannerIndicatorsResponse409 = {
+  data: ScannerIndicatorInUseResponse
+  status: 409
+}
+
 export type clearScannerIndicatorsResponse500 = {
   data: InternalErrorResponse
   status: 500
@@ -2702,7 +2717,7 @@ export type clearScannerIndicatorsResponse500 = {
 export type clearScannerIndicatorsResponseSuccess = (clearScannerIndicatorsResponse204) & {
   headers: Headers;
 };
-export type clearScannerIndicatorsResponseError = (clearScannerIndicatorsResponse401 | clearScannerIndicatorsResponse403 | clearScannerIndicatorsResponse500) & {
+export type clearScannerIndicatorsResponseError = (clearScannerIndicatorsResponse401 | clearScannerIndicatorsResponse403 | clearScannerIndicatorsResponse409 | clearScannerIndicatorsResponse500) & {
   headers: Headers;
 };
 
@@ -2715,7 +2730,8 @@ export const getClearScannerIndicatorsUrl = () => {
 }
 
 /**
- * Charts and tables then show no configured indicators, and their values are no longer tracked.
+ * Charts and tables then show no configured indicators, and their values
+ * are no longer tracked. Rejected while a strategy reads any indicator.
  * @summary Remove every scanner indicator
  */
 export const clearScannerIndicators = async ( options?: RequestInit): Promise<clearScannerIndicatorsResponseSuccess> => {
@@ -2749,7 +2765,7 @@ export const clearScannerIndicators = async ( options?: RequestInit): Promise<cl
 
 export const getClearScannerIndicatorsMutationKey = () => ['clearScannerIndicators'] as const;
 
-export const getClearScannerIndicatorsMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number },
+export const getClearScannerIndicatorsMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number },
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, fetch?: RequestInit}
 ): UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext> => {
 
@@ -2778,13 +2794,13 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type ClearScannerIndicatorsMutationResult = NonNullable<Awaited<ReturnType<typeof clearScannerIndicators>>>
 
-    export type ClearScannerIndicatorsMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+    export type ClearScannerIndicatorsMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number }
 
 
     /**
  * @summary Remove every scanner indicator
  */
-export const useClearScannerIndicators = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number },
+export const useClearScannerIndicators = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number },
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, fetch?: RequestInit}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof clearScannerIndicators>>,
@@ -3094,6 +3110,11 @@ export type deleteScannerIndicatorResponse404 = {
   status: 404
 }
 
+export type deleteScannerIndicatorResponse409 = {
+  data: ScannerIndicatorInUseResponse
+  status: 409
+}
+
 export type deleteScannerIndicatorResponse500 = {
   data: InternalErrorResponse
   status: 500
@@ -3102,7 +3123,7 @@ export type deleteScannerIndicatorResponse500 = {
 export type deleteScannerIndicatorResponseSuccess = (deleteScannerIndicatorResponse204) & {
   headers: Headers;
 };
-export type deleteScannerIndicatorResponseError = (deleteScannerIndicatorResponse401 | deleteScannerIndicatorResponse403 | deleteScannerIndicatorResponse404 | deleteScannerIndicatorResponse500) & {
+export type deleteScannerIndicatorResponseError = (deleteScannerIndicatorResponse401 | deleteScannerIndicatorResponse403 | deleteScannerIndicatorResponse404 | deleteScannerIndicatorResponse409 | deleteScannerIndicatorResponse500) & {
   headers: Headers;
 };
 
@@ -3115,6 +3136,7 @@ export const getDeleteScannerIndicatorUrl = (indicatorId: number,) => {
 }
 
 /**
+ * Rejected while a strategy reads the indicator.
  * @summary Remove a scanner indicator
  */
 export const deleteScannerIndicator = async (indicatorId: number, options?: RequestInit): Promise<deleteScannerIndicatorResponseSuccess> => {
@@ -3148,7 +3170,7 @@ export const deleteScannerIndicator = async (indicatorId: number, options?: Requ
 
 export const getDeleteScannerIndicatorMutationKey = () => ['deleteScannerIndicator'] as const;
 
-export const getDeleteScannerIndicatorMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
+export const getDeleteScannerIndicatorMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number },
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext> => {
 
@@ -3177,13 +3199,13 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type DeleteScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof deleteScannerIndicator>>>
 
-    export type DeleteScannerIndicatorMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number }
+    export type DeleteScannerIndicatorMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number }
     export type DeleteScannerIndicatorMutationVariables = {indicatorId: number}
 
     /**
  * @summary Remove a scanner indicator
  */
-export const useDeleteScannerIndicator = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
+export const useDeleteScannerIndicator = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number },
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteScannerIndicator>>,
@@ -3337,6 +3359,147 @@ export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TErr
 
 
 
+export type updateUserResponse204 = {
+  data: void
+  status: 204
+}
+
+export type updateUserResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type updateUserResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type updateUserResponse404 = {
+  data: UserNotFoundResponse
+  status: 404
+}
+
+export type updateUserResponse409 = {
+  data: AdministratorProtectedResponse
+  status: 409
+}
+
+export type updateUserResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type updateUserResponseSuccess = (updateUserResponse204) & {
+  headers: Headers;
+};
+export type updateUserResponseError = (updateUserResponse401 | updateUserResponse403 | updateUserResponse404 | updateUserResponse409 | updateUserResponse500) & {
+  headers: Headers;
+};
+
+export const getUpdateUserUrl = (telegramId: number,) => {
+
+
+
+
+  return `/api/v1/admin/users/${encodeURIComponent(String(telegramId))}`
+}
+
+/**
+ * The administrator always receives them and cannot be changed.
+ * @summary Choose whether a user receives strategy alerts
+ */
+export const updateUser = async (telegramId: number,
+    userUpdate: UserUpdate, options?: RequestInit): Promise<updateUserResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getUpdateUserUrl(telegramId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(userUpdate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: updateUserResponseError['data'], status?: number} = new globalThis.Error();
+    const data : updateUserResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: updateUserResponseSuccess['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as updateUserResponseSuccess
+}
+
+
+
+
+
+export const getUpdateUserMutationKey = () => ['updateUser'] as const;
+
+export const getUpdateUserMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUser>>, TError,UpdateUserMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof updateUser>>, TError,UpdateUserMutationVariables, TContext> => {
+
+const mutationKey = getUpdateUserMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateUser>>, UpdateUserMutationVariables> = (props) => {
+          const {telegramId,data} = props ?? {};
+
+          return  updateUser(telegramId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateUserMutationResult = NonNullable<Awaited<ReturnType<typeof updateUser>>>
+    export type UpdateUserMutationBody = UserUpdate
+    export type UpdateUserMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number }
+    export type UpdateUserMutationVariables = {telegramId: number;data: UserUpdate}
+
+    /**
+ * @summary Choose whether a user receives strategy alerts
+ */
+export const useUpdateUser = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUser>>, TError,UpdateUserMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateUser>>,
+        TError,
+        UpdateUserMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateUserMutationOptions(options), queryClient);
+    }
+
 export type deleteUserResponse204 = {
   data: void
   status: 204
@@ -3461,4 +3624,834 @@ export const useDeleteUser = <TError = globalThis.Error & { info?: Unauthenticat
         TContext
       > => {
       return useMutation(getDeleteUserMutationOptions(options), queryClient);
+    }
+
+export type listStrategyVariablesResponse200 = {
+  data: StrategyVariableList
+  status: 200
+}
+
+export type listStrategyVariablesResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listStrategyVariablesResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type listStrategyVariablesResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listStrategyVariablesResponseSuccess = (listStrategyVariablesResponse200) & {
+  headers: Headers;
+};
+export type listStrategyVariablesResponseError = (listStrategyVariablesResponse401 | listStrategyVariablesResponse403 | listStrategyVariablesResponse500) & {
+  headers: Headers;
+};
+
+export const getListStrategyVariablesUrl = () => {
+
+
+
+
+  return `/api/v1/admin/strategy-variables`
+}
+
+/**
+ * One variable per output of every configured indicator, in display order.
+ * @summary List the indicator values strategy expressions can read
+ */
+export const listStrategyVariables = async ( options?: RequestInit): Promise<listStrategyVariablesResponseSuccess> => {
+
+  const res = await fetch(getListStrategyVariablesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: listStrategyVariablesResponseError['data'], status?: number} = new globalThis.Error();
+    const data : listStrategyVariablesResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: listStrategyVariablesResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listStrategyVariablesResponseSuccess
+}
+
+
+
+
+
+export const getListStrategyVariablesQueryKey = () => {
+    return [
+    `/api/v1/admin/strategy-variables`
+    ] as const;
+    }
+
+
+export const getListStrategyVariablesQueryOptions = <TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStrategyVariablesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategyVariables>>> = ({ signal }) => listStrategyVariables({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListStrategyVariablesQueryResult = NonNullable<Awaited<ReturnType<typeof listStrategyVariables>>>
+export type ListStrategyVariablesQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+
+
+export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStrategyVariables>>,
+          TError,
+          Awaited<ReturnType<typeof listStrategyVariables>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStrategyVariables>>,
+          TError,
+          Awaited<ReturnType<typeof listStrategyVariables>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the indicator values strategy expressions can read
+ */
+
+export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListStrategyVariablesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listStrategiesResponse200 = {
+  data: StrategyList
+  status: 200
+}
+
+export type listStrategiesResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listStrategiesResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type listStrategiesResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listStrategiesResponseSuccess = (listStrategiesResponse200) & {
+  headers: Headers;
+};
+export type listStrategiesResponseError = (listStrategiesResponse401 | listStrategiesResponse403 | listStrategiesResponse500) & {
+  headers: Headers;
+};
+
+export const getListStrategiesUrl = () => {
+
+
+
+
+  return `/api/v1/admin/strategies`
+}
+
+/**
+ * Enabled strategies are evaluated over the favorites of every user on
+ * closed candles. The administrator and users with strategy alerts get
+ * a Telegram message when an instrument starts matching.
+ * @summary List the strategies
+ */
+export const listStrategies = async ( options?: RequestInit): Promise<listStrategiesResponseSuccess> => {
+
+  const res = await fetch(getListStrategiesUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: listStrategiesResponseError['data'], status?: number} = new globalThis.Error();
+    const data : listStrategiesResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: listStrategiesResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as listStrategiesResponseSuccess
+}
+
+
+
+
+
+export const getListStrategiesQueryKey = () => {
+    return [
+    `/api/v1/admin/strategies`
+    ] as const;
+    }
+
+
+export const getListStrategiesQueryOptions = <TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, fetch?: RequestInit}
+) => {
+
+const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStrategiesQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategies>>> = ({ signal }) => listStrategies({ signal, ...fetchOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListStrategiesQueryResult = NonNullable<Awaited<ReturnType<typeof listStrategies>>>
+export type ListStrategiesQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+
+
+export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStrategies>>,
+          TError,
+          Awaited<ReturnType<typeof listStrategies>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStrategies>>,
+          TError,
+          Awaited<ReturnType<typeof listStrategies>>
+        > , 'initialData'
+      >, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the strategies
+ */
+
+export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, fetch?: RequestInit}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListStrategiesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type createStrategyResponse201 = {
+  data: Strategy
+  status: 201
+}
+
+export type createStrategyResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createStrategyResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type createStrategyResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type createStrategyResponse409 = {
+  data: StrategyConflictResponse
+  status: 409
+}
+
+export type createStrategyResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createStrategyResponseSuccess = (createStrategyResponse201) & {
+  headers: Headers;
+};
+export type createStrategyResponseError = (createStrategyResponse400 | createStrategyResponse401 | createStrategyResponse403 | createStrategyResponse409 | createStrategyResponse500) & {
+  headers: Headers;
+};
+
+export const getCreateStrategyUrl = () => {
+
+
+
+
+  return `/api/v1/admin/strategies`
+}
+
+/**
+ * An enabled strategy announces the instruments matching it now, then alerts on new matches.
+ * @summary Add a strategy
+ */
+export const createStrategy = async (strategyInput: StrategyInput, options?: RequestInit): Promise<createStrategyResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getCreateStrategyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(strategyInput)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: createStrategyResponseError['data'], status?: number} = new globalThis.Error();
+    const data : createStrategyResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: createStrategyResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as createStrategyResponseSuccess
+}
+
+
+
+
+
+export const getCreateStrategyMutationKey = () => ['createStrategy'] as const;
+
+export const getCreateStrategyMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStrategy>>, TError,CreateStrategyMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof createStrategy>>, TError,CreateStrategyMutationVariables, TContext> => {
+
+const mutationKey = getCreateStrategyMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createStrategy>>, CreateStrategyMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createStrategy(data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof createStrategy>>>
+    export type CreateStrategyMutationBody = StrategyInput
+    export type CreateStrategyMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse; status?: number }
+    export type CreateStrategyMutationVariables = {data: StrategyInput}
+
+    /**
+ * @summary Add a strategy
+ */
+export const useCreateStrategy = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStrategy>>, TError,CreateStrategyMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createStrategy>>,
+        TError,
+        CreateStrategyMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateStrategyMutationOptions(options), queryClient);
+    }
+
+export type updateStrategyResponse200 = {
+  data: Strategy
+  status: 200
+}
+
+export type updateStrategyResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type updateStrategyResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type updateStrategyResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type updateStrategyResponse404 = {
+  data: StrategyNotFoundResponse
+  status: 404
+}
+
+export type updateStrategyResponse409 = {
+  data: StrategyConflictResponse
+  status: 409
+}
+
+export type updateStrategyResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type updateStrategyResponseSuccess = (updateStrategyResponse200) & {
+  headers: Headers;
+};
+export type updateStrategyResponseError = (updateStrategyResponse400 | updateStrategyResponse401 | updateStrategyResponse403 | updateStrategyResponse404 | updateStrategyResponse409 | updateStrategyResponse500) & {
+  headers: Headers;
+};
+
+export const getUpdateStrategyUrl = (strategyId: number,) => {
+
+
+
+
+  return `/api/v1/admin/strategies/${encodeURIComponent(String(strategyId))}`
+}
+
+/**
+ * A changed expression of an enabled strategy announces its current matches again.
+ * @summary Change the name and expression of a strategy
+ */
+export const updateStrategy = async (strategyId: number,
+    strategyUpdate: StrategyUpdate, options?: RequestInit): Promise<updateStrategyResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getUpdateStrategyUrl(strategyId),
+  {
+    ...options,
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(strategyUpdate)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: updateStrategyResponseError['data'], status?: number} = new globalThis.Error();
+    const data : updateStrategyResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: updateStrategyResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as updateStrategyResponseSuccess
+}
+
+
+
+
+
+export const getUpdateStrategyMutationKey = () => ['updateStrategy'] as const;
+
+export const getUpdateStrategyMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext> => {
+
+const mutationKey = getUpdateStrategyMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateStrategy>>, UpdateStrategyMutationVariables> = (props) => {
+          const {strategyId,data} = props ?? {};
+
+          return  updateStrategy(strategyId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type UpdateStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof updateStrategy>>>
+    export type UpdateStrategyMutationBody = StrategyUpdate
+    export type UpdateStrategyMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse; status?: number }
+    export type UpdateStrategyMutationVariables = {strategyId: number;data: StrategyUpdate}
+
+    /**
+ * @summary Change the name and expression of a strategy
+ */
+export const useUpdateStrategy = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof updateStrategy>>,
+        TError,
+        UpdateStrategyMutationVariables,
+        TContext
+      > => {
+      return useMutation(getUpdateStrategyMutationOptions(options), queryClient);
+    }
+
+export type setStrategyEnabledResponse200 = {
+  data: Strategy
+  status: 200
+}
+
+export type setStrategyEnabledResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type setStrategyEnabledResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type setStrategyEnabledResponse404 = {
+  data: StrategyNotFoundResponse
+  status: 404
+}
+
+export type setStrategyEnabledResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type setStrategyEnabledResponseSuccess = (setStrategyEnabledResponse200) & {
+  headers: Headers;
+};
+export type setStrategyEnabledResponseError = (setStrategyEnabledResponse401 | setStrategyEnabledResponse403 | setStrategyEnabledResponse404 | setStrategyEnabledResponse500) & {
+  headers: Headers;
+};
+
+export const getSetStrategyEnabledUrl = (strategyId: number,) => {
+
+
+
+
+  return `/api/v1/admin/strategies/${encodeURIComponent(String(strategyId))}`
+}
+
+/**
+ * Enabling announces the current matches; disabling forgets them.
+ * @summary Turn a strategy on or off
+ */
+export const setStrategyEnabled = async (strategyId: number,
+    strategyEnabled: StrategyEnabled, options?: RequestInit): Promise<setStrategyEnabledResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+const res = await fetch(getSetStrategyEnabledUrl(strategyId),
+  {
+    ...options,
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(strategyEnabled)
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: setStrategyEnabledResponseError['data'], status?: number} = new globalThis.Error();
+    const data : setStrategyEnabledResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: setStrategyEnabledResponseSuccess['data'] = body ? JSON.parse(body) : {}
+  return { data, status: res.status, headers: res.headers } as setStrategyEnabledResponseSuccess
+}
+
+
+
+
+
+export const getSetStrategyEnabledMutationKey = () => ['setStrategyEnabled'] as const;
+
+export const getSetStrategyEnabledMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext> => {
+
+const mutationKey = getSetStrategyEnabledMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStrategyEnabled>>, SetStrategyEnabledMutationVariables> = (props) => {
+          const {strategyId,data} = props ?? {};
+
+          return  setStrategyEnabled(strategyId,data,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type SetStrategyEnabledMutationResult = NonNullable<Awaited<ReturnType<typeof setStrategyEnabled>>>
+    export type SetStrategyEnabledMutationBody = StrategyEnabled
+    export type SetStrategyEnabledMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number }
+    export type SetStrategyEnabledMutationVariables = {strategyId: number;data: StrategyEnabled}
+
+    /**
+ * @summary Turn a strategy on or off
+ */
+export const useSetStrategyEnabled = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof setStrategyEnabled>>,
+        TError,
+        SetStrategyEnabledMutationVariables,
+        TContext
+      > => {
+      return useMutation(getSetStrategyEnabledMutationOptions(options), queryClient);
+    }
+
+export type deleteStrategyResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteStrategyResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type deleteStrategyResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type deleteStrategyResponse404 = {
+  data: StrategyNotFoundResponse
+  status: 404
+}
+
+export type deleteStrategyResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type deleteStrategyResponseSuccess = (deleteStrategyResponse204) & {
+  headers: Headers;
+};
+export type deleteStrategyResponseError = (deleteStrategyResponse401 | deleteStrategyResponse403 | deleteStrategyResponse404 | deleteStrategyResponse500) & {
+  headers: Headers;
+};
+
+export const getDeleteStrategyUrl = (strategyId: number,) => {
+
+
+
+
+  return `/api/v1/admin/strategies/${encodeURIComponent(String(strategyId))}`
+}
+
+/**
+ * @summary Remove a strategy
+ */
+export const deleteStrategy = async (strategyId: number, options?: RequestInit): Promise<deleteStrategyResponseSuccess> => {
+
+  const res = await fetch(getDeleteStrategyUrl(strategyId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+)
+
+
+  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
+  if (!res.ok) {
+
+    const err: globalThis.Error & {info?: deleteStrategyResponseError['data'], status?: number} = new globalThis.Error();
+    const data : deleteStrategyResponseError['data'] = body ? JSON.parse(body) : {}
+    err.info = data;
+    err.status = res.status;
+    throw err;
+  }
+  const data: deleteStrategyResponseSuccess['data'] = body ? JSON.parse(body) : undefined
+  return { data, status: res.status, headers: res.headers } as deleteStrategyResponseSuccess
+}
+
+
+
+
+
+export const getDeleteStrategyMutationKey = () => ['deleteStrategy'] as const;
+
+export const getDeleteStrategyMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStrategy>>, TError,DeleteStrategyMutationVariables, TContext>, fetch?: RequestInit}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteStrategy>>, TError,DeleteStrategyMutationVariables, TContext> => {
+
+const mutationKey = getDeleteStrategyMutationKey();
+const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, fetch: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteStrategy>>, DeleteStrategyMutationVariables> = (props) => {
+          const {strategyId} = props ?? {};
+
+          return  deleteStrategy(strategyId,fetchOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof deleteStrategy>>>
+
+    export type DeleteStrategyMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number }
+    export type DeleteStrategyMutationVariables = {strategyId: number}
+
+    /**
+ * @summary Remove a strategy
+ */
+export const useDeleteStrategy = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number },
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStrategy>>, TError,DeleteStrategyMutationVariables, TContext>, fetch?: RequestInit}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteStrategy>>,
+        TError,
+        DeleteStrategyMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteStrategyMutationOptions(options), queryClient);
     }

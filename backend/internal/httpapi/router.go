@@ -69,6 +69,8 @@ type Dependencies struct {
 	IndicatorTypes    IndicatorTypes
 	// Users serves the administrator's user management.
 	Users Users
+	// Strategies serves the administrator's strategies.
+	Strategies Strategies
 }
 
 type Options struct {
@@ -88,6 +90,7 @@ type api struct {
 	scannerIndicators ScannerIndicators
 	indicatorTypes    IndicatorTypes
 	users             Users
+	strategies        Strategies
 }
 
 var _ StrictServerInterface = (*api)(nil)
@@ -121,7 +124,14 @@ var administratorRoutes = []string{
 	"DELETE /api/v1/admin/scanner-indicators/{indicator_id}",
 	"PUT /api/v1/admin/scanner-indicator-order",
 	"GET /api/v1/admin/users",
+	"PATCH /api/v1/admin/users/{telegram_id}",
 	"DELETE /api/v1/admin/users/{telegram_id}",
+	"GET /api/v1/admin/strategy-variables",
+	"GET /api/v1/admin/strategies",
+	"POST /api/v1/admin/strategies",
+	"PUT /api/v1/admin/strategies/{strategy_id}",
+	"PATCH /api/v1/admin/strategies/{strategy_id}",
+	"DELETE /api/v1/admin/strategies/{strategy_id}",
 }
 
 // New returns the service HTTP handler with process-wide middleware applied.
@@ -132,7 +142,7 @@ func New(logger *slog.Logger, dependencies Dependencies, options Options) http.H
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
 	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart,
-		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes, users: dependencies.Users}
+		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes, users: dependencies.Users, strategies: dependencies.Strategies}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,
 		ResponseErrorHandlerFunc: func(response http.ResponseWriter, request *http.Request, err error) {

@@ -9,6 +9,7 @@ import {
 	Switch,
 	Text,
 } from "@mantine/core";
+import { themeToVars } from "@mantine/vanilla-extract";
 import { IconGripVertical } from "@tabler/icons-react";
 import type { ScannerIndicator } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/components/price-history-chart/config";
@@ -32,8 +33,19 @@ export function ScannerIndicatorRow({
 	onDelete,
 	onShowInTableChange,
 }: ScannerIndicatorRowProps) {
+	const used = indicator.strategies.length > 0;
 	return (
-		<Paper p="xs" radius="sm" withBorder>
+		<Paper
+			p="xs"
+			radius="sm"
+			// Strategies keep the indicators they read.
+			style={
+				used
+					? (theme) => ({ borderColor: themeToVars(theme).colors.teal[7] })
+					: undefined
+			}
+			withBorder
+		>
 			<Group align="flex-start" gap="xs" wrap="nowrap">
 				<Box
 					{...dragHandleProps}
@@ -56,7 +68,7 @@ export function ScannerIndicatorRow({
 						</Group>
 						<Button
 							color="red"
-							disabled={disabled}
+							disabled={disabled || used}
 							onClick={onDelete}
 							size="compact-xs"
 							variant="subtle"
@@ -64,6 +76,11 @@ export function ScannerIndicatorRow({
 							Delete
 						</Button>
 					</Group>
+					{used ? (
+						<Text c="teal" size="xs">
+							Used by {indicator.strategies.join(", ")}
+						</Text>
+					) : null}
 					<Text c="dimmed" size="xs">
 						{indicator.type.toUpperCase()} ·{" "}
 						{formatParameters(indicator.parameters)}

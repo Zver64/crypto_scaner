@@ -101,11 +101,18 @@ func (store *Store) ReorderScannerIndicators(ctx context.Context, ids []int64) e
 }
 
 func (store *Store) DeleteAllScannerIndicators(ctx context.Context) error {
-	return store.queries.DeleteAllScannerIndicators(ctx)
+	err := store.queries.DeleteAllScannerIndicators(ctx)
+	if foreignKeyViolation(err) {
+		return scannerindicator.ErrInUse
+	}
+	return err
 }
 
 func (store *Store) DeleteScannerIndicator(ctx context.Context, id int64) error {
 	deleted, err := store.queries.DeleteScannerIndicator(ctx, id)
+	if foreignKeyViolation(err) {
+		return scannerindicator.ErrInUse
+	}
 	if err != nil {
 		return err
 	}

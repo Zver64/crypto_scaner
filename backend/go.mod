@@ -8,6 +8,7 @@ tool (
 )
 
 require (
+	cel.dev/cel-go v0.32.0
 	github.com/TA-Lib/ta-lib-cgo v0.2.0
 	github.com/binance/binance-connector-go v0.8.0
 	github.com/getkin/kin-openapi v0.142.0

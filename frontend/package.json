@@ -37,7 +37,8 @@
     "decimal.js": "^10.6.0",
     "lightweight-charts": "^5.2.1",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-querybuilder": "^8.24.3"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",

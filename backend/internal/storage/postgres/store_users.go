@@ -7,6 +7,7 @@ import (
 
 	"crypto-scanner/internal/auth"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
+	"crypto-scanner/internal/users"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -53,16 +54,25 @@ func (store *Store) GrantAccess(ctx context.Context, telegramID int64, username,
 }
 
 // ListUsers returns every application user ordered by Telegram ID.
-func (store *Store) ListUsers(ctx context.Context) ([]auth.User, error) {
+func (store *Store) ListUsers(ctx context.Context) ([]users.User, error) {
 	rows, err := store.queries.ListUsers(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list users: %w", err)
 	}
-	users := make([]auth.User, 0, len(rows))
+	items := make([]users.User, 0, len(rows))
 	for _, row := range rows {
-		users = append(users, userFromColumns(row.ID, row.TelegramID, row.Username, row.DisplayName))
+		items = append(items, users.User{User: userFromColumns(row.ID, row.TelegramID, row.Username, row.DisplayName), StrategyAlerts: row.StrategyAlerts})
 	}
-	return users, nil
+	return items, nil
+}
+
+// SetUserStrategyAlerts reports whether the user exists.
+func (store *Store) SetUserStrategyAlerts(ctx context.Context, telegramID int64, enabled bool) (bool, error) {
+	updated, err := store.queries.SetUserStrategyAlerts(ctx, generated.SetUserStrategyAlertsParams{TelegramID: telegramID, StrategyAlerts: enabled})
+	if err != nil {
+		return false, err
+	}
+	return updated > 0, nil
 }
 
 // DeleteUser deletes a user together with their favorites and price alerts.

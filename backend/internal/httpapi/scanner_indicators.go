@@ -18,6 +18,8 @@ type ScannerIndicators interface {
 	Delete(context.Context, int64) error
 	Clear(context.Context) error
 	Reorder(context.Context, []int64) ([]scannerindicator.Entry, error)
+	// Usage maps indicator ids to the names of the strategies that read them.
+	Usage() map[int64][]string
 }
 
 // IndicatorTypes describes every indicator the scanner can calculate.
@@ -40,13 +42,14 @@ func (api *api) ListIndicatorTypes(context.Context, ListIndicatorTypesRequestObj
 }
 
 func (api *api) ListScannerIndicators(context.Context, ListScannerIndicatorsRequestObject) (ListScannerIndicatorsResponseObject, error) {
-	return ListScannerIndicators200JSONResponse(scannerIndicatorListDTO(api.scannerIndicators.List())), nil
+	return ListScannerIndicators200JSONResponse(api.scannerIndicatorListDTO(api.scannerIndicators.List())), nil
 }
 
-func scannerIndicatorListDTO(entries []scannerindicator.Entry) ScannerIndicatorList {
+func (api *api) scannerIndicatorListDTO(entries []scannerindicator.Entry) ScannerIndicatorList {
+	usage := api.scannerIndicators.Usage()
 	items := make([]ScannerIndicator, len(entries))
 	for i, entry := range entries {
-		items[i] = scannerIndicatorDTO(entry)
+		items[i] = scannerIndicatorDTO(entry, usage)
 	}
 	return ScannerIndicatorList{Items: items}
 }
@@ -61,7 +64,7 @@ func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScanne
 	entries, err := api.scannerIndicators.Create(ctx, items)
 	switch {
 	case err == nil:
-		return CreateScannerIndicator201JSONResponse(scannerIndicatorListDTO(entries)), nil
+		return CreateScannerIndicator201JSONResponse(api.scannerIndicatorListDTO(entries)), nil
 	case errors.Is(err, scannerindicator.ErrInvalidArgument):
 		return CreateScannerIndicator400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, scannerindicator.ErrConflict):
@@ -77,7 +80,7 @@ func (api *api) UpdateScannerIndicator(ctx context.Context, request UpdateScanne
 	entry, err := api.scannerIndicators.Update(ctx, request.IndicatorId, request.Body.ShowInTable, scaleFromDTO(request.Body.Scale))
 	switch {
 	case err == nil:
-		return UpdateScannerIndicator200JSONResponse(scannerIndicatorDTO(entry)), nil
+		return UpdateScannerIndicator200JSONResponse(scannerIndicatorDTO(entry, api.scannerIndicators.Usage())), nil
 	case errors.Is(err, scannerindicator.ErrInvalidArgument):
 		return UpdateScannerIndicator400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, scannerindicator.ErrNotFound):
@@ -91,7 +94,7 @@ func (api *api) ReorderScannerIndicators(ctx context.Context, request ReorderSca
 	entries, err := api.scannerIndicators.Reorder(ctx, request.Body.Ids)
 	switch {
 	case err == nil:
-		return ReorderScannerIndicators200JSONResponse(scannerIndicatorListDTO(entries)), nil
+		return ReorderScannerIndicators200JSONResponse(api.scannerIndicatorListDTO(entries)), nil
 	case errors.Is(err, scannerindicator.ErrInvalidArgument):
 		return ReorderScannerIndicators400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, scannerindicator.ErrNotFound):
@@ -102,10 +105,15 @@ func (api *api) ReorderScannerIndicators(ctx context.Context, request ReorderSca
 }
 
 func (api *api) ClearScannerIndicators(ctx context.Context, _ ClearScannerIndicatorsRequestObject) (ClearScannerIndicatorsResponseObject, error) {
-	if err := api.scannerIndicators.Clear(ctx); err != nil {
+	err := api.scannerIndicators.Clear(ctx)
+	switch {
+	case err == nil:
+		return ClearScannerIndicators204Response{}, nil
+	case errors.Is(err, scannerindicator.ErrInUse):
+		return ClearScannerIndicators409JSONResponse{scannerIndicatorInUse(ctx)}, nil
+	default:
 		return ClearScannerIndicators500JSONResponse{api.internalError(ctx, "clear_scanner_indicators", err)}, nil
 	}
-	return ClearScannerIndicators204Response{}, nil
 }
 
 func (api *api) DeleteScannerIndicator(ctx context.Context, request DeleteScannerIndicatorRequestObject) (DeleteScannerIndicatorResponseObject, error) {
@@ -115,6 +123,8 @@ func (api *api) DeleteScannerIndicator(ctx context.Context, request DeleteScanne
 		return DeleteScannerIndicator204Response{}, nil
 	case errors.Is(err, scannerindicator.ErrNotFound):
 		return DeleteScannerIndicator404JSONResponse{ScannerIndicatorNotFoundJSONResponse(scannerIndicatorNotFound(ctx).body)}, nil
+	case errors.Is(err, scannerindicator.ErrInUse):
+		return DeleteScannerIndicator409JSONResponse{scannerIndicatorInUse(ctx)}, nil
 	default:
 		return DeleteScannerIndicator500JSONResponse{api.internalError(ctx, "delete_scanner_indicator", err)}, nil
 	}
@@ -124,6 +134,10 @@ func scannerIndicatorNotFound(ctx context.Context) apiError {
 	return newAPIError(ctx, http.StatusNotFound, "scanner_indicator_not_found", "Scanner indicator does not exist", nil)
 }
 
+func scannerIndicatorInUse(ctx context.Context) ScannerIndicatorInUseJSONResponse {
+	return ScannerIndicatorInUseJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_in_use", "A strategy reads the indicator", nil).body)
+}
+
 func scaleFromDTO(scale *ScannerIndicatorScale) scannerindicator.Scale {
 	if scale == nil {
 		return scannerindicator.Scale{}
@@ -131,7 +145,7 @@ func scaleFromDTO(scale *ScannerIndicatorScale) scannerindicator.Scale {
 	return scannerindicator.Scale{Min: scale.Min, Max: scale.Max, Levels: scale.Levels}
 }
 
-func scannerIndicatorDTO(entry scannerindicator.Entry) ScannerIndicator {
+func scannerIndicatorDTO(entry scannerindicator.Entry, usage map[int64][]string) ScannerIndicator {
 	return ScannerIndicator{
 		Id:          entry.ID,
 		Interval:    CandleInterval(entry.Interval),
@@ -142,6 +156,7 @@ func scannerIndicatorDTO(entry scannerindicator.Entry) ScannerIndicator {
 		Title:       entry.Title,
 		Placement:   ScannerIndicatorPlacement(entry.Placement),
 		Outputs:     entry.Outputs,
+		Strategies:  append([]string{}, usage[entry.ID]...),
 	}
 }
 

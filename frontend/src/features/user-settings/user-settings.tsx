@@ -6,6 +6,7 @@ import {
 	getListUsersQueryKey,
 	useDeleteUser,
 	useListUsers,
+	useUpdateUser,
 } from "@/api/generated/api";
 import type { User } from "@/api/generated/models";
 import { telegramRequestOptions } from "@/app/telegram";
@@ -14,6 +15,7 @@ import { UserRow } from "@/features/user-settings/user-row";
 import {
 	deleteUserErrorMessage,
 	formatUserName,
+	updateUserErrorMessage,
 } from "@/features/user-settings/utils";
 
 export function UserSettings() {
@@ -41,6 +43,20 @@ export function UserSettings() {
 			},
 		},
 	});
+	const updateMutation = useUpdateUser({
+		fetch: telegramRequestOptions(),
+		mutation: {
+			onError: (error) => {
+				notifications.show({
+					color: "red",
+					message: updateUserErrorMessage(error),
+					title: "User was not changed",
+				});
+			},
+			onSettled: () =>
+				queryClient.invalidateQueries({ queryKey: getListUsersQueryKey() }),
+		},
+	});
 
 	if (users.isPending) {
 		return <Loader aria-label="Loading users" />;
@@ -59,9 +75,15 @@ export function UserSettings() {
 			</Text>
 			{users.data.map((user) => (
 				<UserRow
-					disabled={deleteMutation.isPending}
+					disabled={deleteMutation.isPending || updateMutation.isPending}
 					key={user.telegram_id}
 					onDelete={() => setRemoving(user)}
+					onStrategyAlertsChange={(enabled) =>
+						updateMutation.mutate({
+							data: { strategy_alerts: enabled },
+							telegramId: user.telegram_id,
+						})
+					}
 					user={user}
 				/>
 			))}

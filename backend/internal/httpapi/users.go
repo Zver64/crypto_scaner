@@ -9,10 +9,11 @@ import (
 	"crypto-scanner/internal/users"
 )
 
-// Users lists and deletes application users for the administrator.
+// Users lists, updates, and deletes application users for the administrator.
 type Users interface {
-	List(context.Context) ([]auth.User, error)
+	List(context.Context) ([]users.User, error)
 	Delete(context.Context, int64) error
+	SetStrategyAlerts(ctx context.Context, telegramID int64, enabled bool) error
 }
 
 func (api *api) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListUsersResponseObject, error) {
@@ -22,7 +23,7 @@ func (api *api) ListUsers(ctx context.Context, _ ListUsersRequestObject) (ListUs
 	}
 	body := UserList{Items: make([]User, len(items))}
 	for i, user := range items {
-		body.Items[i] = User{TelegramId: user.TelegramID, Username: optionalString(user.Username), DisplayName: optionalString(user.DisplayName), Administrator: user.Administrator}
+		body.Items[i] = User{TelegramId: user.TelegramID, Username: optionalString(user.Username), DisplayName: optionalString(user.DisplayName), Administrator: user.Administrator, StrategyAlerts: user.StrategyAlerts}
 	}
 	return ListUsers200JSONResponse(body), nil
 }
@@ -38,6 +39,20 @@ func (api *api) DeleteUser(ctx context.Context, request DeleteUserRequestObject)
 		return DeleteUser409JSONResponse{AdministratorProtectedJSONResponse(newAPIError(ctx, http.StatusConflict, "administrator_protected", "The administrator cannot be deleted", nil).body)}, nil
 	default:
 		return DeleteUser500JSONResponse{api.internalError(ctx, "delete_user", err)}, nil
+	}
+}
+
+func (api *api) UpdateUser(ctx context.Context, request UpdateUserRequestObject) (UpdateUserResponseObject, error) {
+	err := api.users.SetStrategyAlerts(ctx, request.TelegramId, request.Body.StrategyAlerts)
+	switch {
+	case err == nil:
+		return UpdateUser204Response{}, nil
+	case errors.Is(err, auth.ErrUserNotFound):
+		return UpdateUser404JSONResponse{UserNotFoundJSONResponse(newAPIError(ctx, http.StatusNotFound, "user_not_found", "User does not exist", nil).body)}, nil
+	case errors.Is(err, users.ErrAdministratorProtected):
+		return UpdateUser409JSONResponse{AdministratorProtectedJSONResponse(newAPIError(ctx, http.StatusConflict, "administrator_protected", "The administrator always receives strategy alerts", nil).body)}, nil
+	default:
+		return UpdateUser500JSONResponse{api.internalError(ctx, "update_user", err)}, nil
 	}
 }
 

@@ -11,6 +11,7 @@ import (
 	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/marketcap"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
+	"crypto-scanner/internal/strategy"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -27,12 +28,14 @@ type Store struct {
 func NewStore(db *DB) *Store { return &Store{db: db, queries: generated.New(db)} }
 
 var (
-	_ auth.UserStore      = (*Store)(nil)
-	_ auth.AccessStore    = (*Store)(nil)
-	_ favorites.Store     = (*Store)(nil)
-	_ alerts.CRUDStore    = (*Store)(nil)
-	_ alerts.MonitorStore = (*Store)(nil)
-	_ marketcap.Store     = (*Store)(nil)
+	_ auth.UserStore        = (*Store)(nil)
+	_ auth.AccessStore      = (*Store)(nil)
+	_ favorites.Store       = (*Store)(nil)
+	_ alerts.CRUDStore      = (*Store)(nil)
+	_ alerts.MonitorStore   = (*Store)(nil)
+	_ marketcap.Store       = (*Store)(nil)
+	_ strategy.Store        = (*Store)(nil)
+	_ strategy.MonitorStore = (*Store)(nil)
 )
 
 func (store *Store) DatabaseReady(ctx context.Context) bool { return store.db.Ping(ctx) == nil }

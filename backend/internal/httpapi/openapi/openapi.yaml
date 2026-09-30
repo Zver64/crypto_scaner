@@ -408,13 +408,16 @@ paths:
     delete:
       operationId: clearScannerIndicators
       summary: Remove every scanner indicator
-      description: Charts and tables then show no configured indicators, and their values are no longer tracked.
+      description: |
+        Charts and tables then show no configured indicators, and their values
+        are no longer tracked. Rejected while a strategy reads any indicator.
       tags: [Administration]
       security: [{ telegramInitData: [] }]
       responses:
         "204": { description: All indicators removed. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "409": { $ref: "#/components/responses/ScannerIndicatorInUse" }
         "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/scanner-indicator-order:
     put:
@@ -456,6 +459,7 @@ paths:
     delete:
       operationId: deleteScannerIndicator
       summary: Remove a scanner indicator
+      description: Rejected while a strategy reads the indicator.
       tags: [Administration]
       security: [{ telegramInitData: [] }]
       parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
@@ -464,6 +468,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/ScannerIndicatorNotFound" }
+        "409": { $ref: "#/components/responses/ScannerIndicatorInUse" }
         "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/users:
     get:
@@ -480,6 +485,23 @@ paths:
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/users/{telegram_id}:
+    patch:
+      operationId: updateUser
+      summary: Choose whether a user receives strategy alerts
+      description: The administrator always receives them and cannot be changed.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      parameters: [{ $ref: "#/components/parameters/TelegramID" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/UserUpdate" } } }
+      responses:
+        "204": { description: User updated. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/UserNotFound" }
+        "409": { $ref: "#/components/responses/AdministratorProtected" }
+        "500": { $ref: "#/components/responses/InternalError" }
     delete:
       operationId: deleteUser
       summary: Delete an application user
@@ -493,6 +515,106 @@ paths:
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/UserNotFound" }
         "409": { $ref: "#/components/responses/AdministratorProtected" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/strategy-variables:
+    get:
+      operationId: listStrategyVariables
+      summary: List the indicator values strategy expressions can read
+      description: One variable per output of every configured indicator, in display order.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      responses:
+        "200":
+          description: Strategy variables.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StrategyVariableList" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/strategies:
+    get:
+      operationId: listStrategies
+      summary: List the strategies
+      description: |
+        Enabled strategies are evaluated over the favorites of every user on
+        closed candles. The administrator and users with strategy alerts get
+        a Telegram message when an instrument starts matching.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      responses:
+        "200":
+          description: Strategies ordered by creation.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StrategyList" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createStrategy
+      summary: Add a strategy
+      description: An enabled strategy announces the instruments matching it now, then alerts on new matches.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StrategyInput" } } }
+      responses:
+        "201":
+          description: Added strategy.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Strategy" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "409": { $ref: "#/components/responses/StrategyConflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/strategies/{strategy_id}:
+    put:
+      operationId: updateStrategy
+      summary: Change the name and expression of a strategy
+      description: A changed expression of an enabled strategy announces its current matches again.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      parameters: [{ $ref: "#/components/parameters/StrategyID" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StrategyUpdate" } } }
+      responses:
+        "200":
+          description: Updated strategy.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Strategy" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/StrategyNotFound" }
+        "409": { $ref: "#/components/responses/StrategyConflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    patch:
+      operationId: setStrategyEnabled
+      summary: Turn a strategy on or off
+      description: Enabling announces the current matches; disabling forgets them.
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      parameters: [{ $ref: "#/components/parameters/StrategyID" }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StrategyEnabled" } } }
+      responses:
+        "200":
+          description: Updated strategy.
+          content: { application/json: { schema: { $ref: "#/components/schemas/Strategy" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/StrategyNotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteStrategy
+      summary: Remove a strategy
+      tags: [Administration]
+      security: [{ telegramInitData: [] }]
+      parameters: [{ $ref: "#/components/parameters/StrategyID" }]
+      responses:
+        "204": { description: Strategy removed. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/StrategyNotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
 components:
   securitySchemes:
@@ -534,6 +656,14 @@ components:
         type: integer
         format: int64
         minimum: 1
+    StrategyID:
+      name: strategy_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
     TelegramID:
       name: telegram_id
       in: path
@@ -553,7 +683,7 @@ components:
       description: The user does not exist.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     AdministratorProtected:
-      description: The administrator cannot be deleted.
+      description: The administrator cannot be deleted and always receives strategy alerts.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     BadRequest:
       description: The request is malformed or contains an unsupported argument.
@@ -638,6 +768,15 @@ components:
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     ScannerIndicatorConflict:
       description: The interval already has this indicator or its charts draw the maximum number of indicators.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    ScannerIndicatorInUse:
+      description: A strategy reads the indicator.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    StrategyNotFound:
+      description: The strategy does not exist.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    StrategyConflict:
+      description: Another strategy has the name.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     AnalysisUnavailable:
       description: Required market data or market-capitalization data is unavailable.
@@ -1286,8 +1425,11 @@ components:
             - market_cap_unavailable
             - market_data_unavailable
             - scanner_indicator_exists
+            - scanner_indicator_in_use
             - scanner_indicator_limit
             - scanner_indicator_not_found
+            - strategy_exists
+            - strategy_not_found
             - symbol_not_found
             - unauthenticated
             - user_not_found
@@ -1322,7 +1464,7 @@ components:
     User:
       type: object
       additionalProperties: false
-      required: [telegram_id, administrator]
+      required: [telegram_id, administrator, strategy_alerts]
       properties:
         telegram_id: { type: integer, format: int64 }
         username: { type: string }
@@ -1330,6 +1472,86 @@ components:
         administrator:
           type: boolean
           description: Whether the user is the scanner administrator, who cannot be deleted.
+        strategy_alerts:
+          type: boolean
+          description: Whether the user receives strategy alerts; always true for the administrator.
+    UserUpdate:
+      type: object
+      additionalProperties: false
+      required: [strategy_alerts]
+      properties:
+        strategy_alerts: { type: boolean }
+    StrategyVariableList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/StrategyVariable" }
+    StrategyVariable:
+      type: object
+      additionalProperties: false
+      required: [name, label, indicator_id, interval]
+      properties:
+        name:
+          type: string
+          description: CEL identifier, such as `d_rsi` or `h_macd_macdsignal`.
+        label:
+          type: string
+          description: Indicator title and output, such as `d-rsi` or `h-macd macdsignal`.
+        indicator_id: { type: integer, format: int64 }
+        interval: { $ref: "#/components/schemas/CandleInterval" }
+    StrategyList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/Strategy" }
+    Strategy:
+      type: object
+      additionalProperties: false
+      required: [id, name, expression, enabled, valid]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        expression:
+          type: string
+          description: CEL expression, such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
+        enabled: { type: boolean }
+        valid:
+          type: boolean
+          description: False when the stored expression no longer compiles; such a strategy is not evaluated.
+    StrategyUpdate:
+      type: object
+      additionalProperties: false
+      required: [name, expression]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        expression:
+          type: string
+          minLength: 1
+          maxLength: 2000
+          description: |
+            CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
+            variables with numbers or variables, `crosses_above(a, b)`,
+            `crosses_below(a, b)`, `&&`, `||`, and `!`.
+    StrategyInput:
+      type: object
+      additionalProperties: false
+      required: [name, expression, enabled]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 64 }
+        expression: { type: string, minLength: 1, maxLength: 2000 }
+        enabled: { type: boolean }
+    StrategyEnabled:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled: { type: boolean }
     IndicatorTypeCatalog:
       type: object
       additionalProperties: false
@@ -1445,7 +1667,7 @@ components:
     ScannerIndicator:
       type: object
       additionalProperties: false
-      required: [id, interval, type, parameters, show_in_table, scale, title, placement, outputs]
+      required: [id, interval, type, parameters, show_in_table, scale, title, placement, outputs, strategies]
       properties:
         id: { type: integer, format: int64 }
         interval: { $ref: "#/components/schemas/CandleInterval" }
@@ -1464,4 +1686,8 @@ components:
           enum: [overlay, pane]
         outputs:
           type: array
+          items: { type: string }
+        strategies:
+          type: array
+          description: Names of the strategies that read the indicator, which cannot be removed meanwhile.
           items: { type: string }

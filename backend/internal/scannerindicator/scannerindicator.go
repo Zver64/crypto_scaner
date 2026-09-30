@@ -29,6 +29,8 @@ var (
 	// ErrLimit means the interval charts already draw the maximum number of
 	// indicators.
 	ErrLimit = errors.New("scanner indicator limit reached")
+	// ErrInUse means a strategy reads the indicator.
+	ErrInUse = errors.New("scanner indicator is used by a strategy")
 )
 
 // Scale is the optional value axis of an indicator pane. Overlays share the
@@ -70,7 +72,8 @@ type Store interface {
 	// ErrConflict for a duplicate selection.
 	CreateScannerIndicators(context.Context, []Indicator) ([]int64, error)
 	// UpdateScannerIndicator and DeleteScannerIndicator fail with
-	// ErrNotFound for an unknown id.
+	// ErrNotFound for an unknown id. Deletions fail with ErrInUse while a
+	// strategy reads an indicator.
 	UpdateScannerIndicator(context.Context, Indicator) error
 	DeleteScannerIndicator(context.Context, int64) error
 	DeleteAllScannerIndicators(context.Context) error
@@ -85,6 +88,7 @@ type Service struct {
 	palette        []string
 	logger         *slog.Logger
 	targetsChanged func([]closedindicator.Target)
+	usage          func() map[int64][]string
 
 	// writes serializes changes, so limit and duplicate checks see every
 	// earlier change.
@@ -95,12 +99,13 @@ type Service struct {
 
 // New creates an empty service; Load reads the stored configuration. Chart
 // lines take palette colors (theme tokens) in turn. targetsChanged receives
-// every indicator target after each change and must not block.
-func New(store Store, registry *indicator.Registry, palette []string, logger *slog.Logger, targetsChanged func([]closedindicator.Target)) (*Service, error) {
-	if store == nil || registry == nil || len(palette) == 0 || logger == nil || targetsChanged == nil {
-		return nil, errors.New("scanner indicator store, registry, palette, logger, and change listener are required")
+// every indicator target after each change and must not block. usage maps
+// indicator ids to the names of the strategies that read them.
+func New(store Store, registry *indicator.Registry, palette []string, logger *slog.Logger, targetsChanged func([]closedindicator.Target), usage func() map[int64][]string) (*Service, error) {
+	if store == nil || registry == nil || len(palette) == 0 || logger == nil || targetsChanged == nil || usage == nil {
+		return nil, errors.New("scanner indicator store, registry, palette, logger, change listener, and usage are required")
 	}
-	return &Service{store: store, registry: registry, palette: slices.Clone(palette), logger: logger.With("module", "scanner_indicator"), targetsChanged: targetsChanged}, nil
+	return &Service{store: store, registry: registry, palette: slices.Clone(palette), logger: logger.With("module", "scanner_indicator"), targetsChanged: targetsChanged, usage: usage}, nil
 }
 
 // Load replaces the configuration with the stored one. Indicators the
@@ -132,6 +137,9 @@ func (service *Service) List() []Entry {
 	defer service.mu.RUnlock()
 	return slices.Clone(service.entries)
 }
+
+// Usage maps indicator ids to the names of the strategies that read them.
+func (service *Service) Usage() map[int64][]string { return service.usage() }
 
 // Targets returns the background calculation of every indicator.
 func (service *Service) Targets() []closedindicator.Target {
@@ -168,6 +176,10 @@ func (service *Service) Create(ctx context.Context, items []Indicator) ([]Entry,
 			}
 			if existing.Target().Equal(entry.Target()) {
 				return nil, fmt.Errorf("%w: %s already has %s", ErrConflict, entry.Interval, entry.lineTitle)
+			}
+			// Titles name table columns and strategy variables.
+			if existing.Title == entry.Title {
+				return nil, fmt.Errorf("%w: another indicator is titled %s", ErrConflict, entry.Title)
 			}
 			count++
 		}
@@ -222,6 +234,9 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 	if index < 0 {
 		return ErrNotFound
 	}
+	if names := service.usage()[id]; len(names) > 0 {
+		return fmt.Errorf("%w: %s", ErrInUse, strings.Join(names, ", "))
+	}
 	if err := service.store.DeleteScannerIndicator(ctx, id); err != nil {
 		return err
 	}
@@ -230,9 +245,13 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 }
 
 // Clear removes every indicator, so the tracker stops tracking their values.
+// It fails with ErrInUse while a strategy reads any of them.
 func (service *Service) Clear(ctx context.Context) error {
 	service.writes.Lock()
 	defer service.writes.Unlock()
+	if len(service.usage()) > 0 {
+		return ErrInUse
+	}
 	if err := service.store.DeleteAllScannerIndicators(ctx); err != nil {
 		return err
 	}

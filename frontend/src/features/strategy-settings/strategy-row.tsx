@@ -1,0 +1,73 @@
+import {
+	Badge,
+	Button,
+	Code,
+	Group,
+	Paper,
+	Stack,
+	Switch,
+	Text,
+} from "@mantine/core";
+import type { Strategy } from "@/api/generated/models";
+
+interface StrategyRowProps {
+	disabled: boolean;
+	onDelete(): void;
+	onEdit(): void;
+	onEnabledChange(enabled: boolean): void;
+	strategy: Strategy;
+}
+
+export function StrategyRow({
+	disabled,
+	onDelete,
+	onEdit,
+	onEnabledChange,
+	strategy,
+}: StrategyRowProps) {
+	return (
+		<Paper p="xs" radius="sm" withBorder>
+			<Stack gap={6}>
+				<Group justify="space-between" wrap="nowrap">
+					<Group gap="xs" miw={0} wrap="nowrap">
+						<Text fw={700} truncate>
+							{strategy.name}
+						</Text>
+						{strategy.valid ? null : (
+							<Badge color="red" size="xs" variant="light">
+								Invalid
+							</Badge>
+						)}
+					</Group>
+					<Switch
+						aria-label={`Evaluate ${strategy.name}`}
+						checked={strategy.enabled}
+						disabled={disabled}
+						onChange={(event) => onEnabledChange(event.currentTarget.checked)}
+						size="sm"
+					/>
+				</Group>
+				<Code block>{strategy.expression}</Code>
+				<Group gap="xs" justify="flex-end">
+					<Button
+						disabled={disabled}
+						onClick={onEdit}
+						size="compact-xs"
+						variant="subtle"
+					>
+						Edit
+					</Button>
+					<Button
+						color="red"
+						disabled={disabled}
+						onClick={onDelete}
+						size="compact-xs"
+						variant="subtle"
+					>
+						Delete
+					</Button>
+				</Group>
+			</Stack>
+		</Paper>
+	);
+}

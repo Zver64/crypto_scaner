@@ -30,4 +30,6 @@ export interface ScannerIndicator {
   title: string;
   placement: ScannerIndicatorPlacement;
   outputs: string[];
+  /** Names of the strategies that read the indicator, which cannot be removed meanwhile. */
+  strategies: string[];
 }

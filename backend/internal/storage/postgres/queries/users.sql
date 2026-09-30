@@ -10,9 +10,14 @@ ON CONFLICT (telegram_id) DO NOTHING
 RETURNING id, telegram_id, username, display_name;
 
 -- name: ListUsers :many
-SELECT id, telegram_id, username, display_name
+SELECT id, telegram_id, username, display_name, strategy_alerts
 FROM app.users
 ORDER BY telegram_id ASC;
+
+-- name: SetUserStrategyAlerts :execrows
+UPDATE app.users
+SET strategy_alerts = $2, updated_at = now()
+WHERE telegram_id = $1;
 
 -- name: DeleteUserByTelegramID :one
 DELETE FROM app.users

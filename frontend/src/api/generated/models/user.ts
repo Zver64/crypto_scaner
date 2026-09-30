@@ -20,4 +20,6 @@ export interface User {
   display_name?: string;
   /** Whether the user is the scanner administrator, who cannot be deleted. */
   administrator: boolean;
+  /** Whether the user receives strategy alerts; always true for the administrator. */
+  strategy_alerts: boolean;
 }

@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as TopCoinsRouteImport } from './routes/top-coins'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminStrategiesRouteImport } from './routes/admin.strategies'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as InstrumentsSymbolRouteImport } from './routes/instruments.$symbol'
 
@@ -42,6 +43,11 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminStrategiesRoute = AdminStrategiesRouteImport.update({
+  id: '/strategies',
+  path: '/strategies',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
   id: '/users',
   path: '/users',
@@ -58,6 +64,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRouteWithChildren
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
+  '/admin/strategies': typeof AdminStrategiesRoute
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin/': typeof AdminIndexRoute
@@ -66,6 +73,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
+  '/admin/strategies': typeof AdminStrategiesRoute
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin': typeof AdminIndexRoute
@@ -76,6 +84,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
+  '/admin/strategies': typeof AdminStrategiesRoute
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin/': typeof AdminIndexRoute
@@ -87,6 +96,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/favorites'
     | '/top-coins'
+    | '/admin/strategies'
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin/'
@@ -95,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/favorites'
     | '/top-coins'
+    | '/admin/strategies'
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin'
@@ -104,6 +115,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/favorites'
     | '/top-coins'
+    | '/admin/strategies'
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin/'
@@ -154,6 +166,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/strategies': {
+      id: '/admin/strategies'
+      path: '/strategies'
+      fullPath: '/admin/strategies'
+      preLoaderRoute: typeof AdminStrategiesRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/users': {
       id: '/admin/users'
       path: '/users'
@@ -172,11 +191,13 @@ declare module '@tanstack/react-router' {
 }
 
 interface AdminRouteChildren {
+  AdminStrategiesRoute: typeof AdminStrategiesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminStrategiesRoute: AdminStrategiesRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
 }

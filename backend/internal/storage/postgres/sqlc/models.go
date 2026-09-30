@@ -68,13 +68,36 @@ type AppSchemaMigration struct {
 	BinanceSpotSchemaCreated bool
 }
 
+type AppStrategy struct {
+	ID              int64
+	Name            string
+	Expression      string
+	Enabled         bool
+	BaselinePending bool
+	Revision        int64
+	CreatedAt       pgtype.Timestamptz
+	UpdatedAt       pgtype.Timestamptz
+}
+
+type AppStrategyIndicator struct {
+	StrategyID  int64
+	IndicatorID int64
+}
+
+type AppStrategyMatch struct {
+	StrategyID   int64
+	InstrumentID int64
+	MatchedAt    pgtype.Timestamptz
+}
+
 type AppUser struct {
-	ID          int64
-	TelegramID  int64
-	Username    pgtype.Text
-	DisplayName pgtype.Text
-	CreatedAt   pgtype.Timestamptz
-	UpdatedAt   pgtype.Timestamptz
+	ID             int64
+	TelegramID     int64
+	Username       pgtype.Text
+	DisplayName    pgtype.Text
+	CreatedAt      pgtype.Timestamptz
+	UpdatedAt      pgtype.Timestamptz
+	StrategyAlerts bool
 }
 
 type BinanceSpotCandle struct {

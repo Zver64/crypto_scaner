@@ -93,16 +93,17 @@ func (q *Queries) GrantUserAccess(ctx context.Context, arg GrantUserAccessParams
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, telegram_id, username, display_name
+SELECT id, telegram_id, username, display_name, strategy_alerts
 FROM app.users
 ORDER BY telegram_id ASC
 `
 
 type ListUsersRow struct {
-	ID          int64
-	TelegramID  int64
-	Username    pgtype.Text
-	DisplayName pgtype.Text
+	ID             int64
+	TelegramID     int64
+	Username       pgtype.Text
+	DisplayName    pgtype.Text
+	StrategyAlerts bool
 }
 
 func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
@@ -119,6 +120,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 			&i.TelegramID,
 			&i.Username,
 			&i.DisplayName,
+			&i.StrategyAlerts,
 		); err != nil {
 			return nil, err
 		}
@@ -128,4 +130,23 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const setUserStrategyAlerts = `-- name: SetUserStrategyAlerts :execrows
+UPDATE app.users
+SET strategy_alerts = $2, updated_at = now()
+WHERE telegram_id = $1
+`
+
+type SetUserStrategyAlertsParams struct {
+	TelegramID     int64
+	StrategyAlerts bool
+}
+
+func (q *Queries) SetUserStrategyAlerts(ctx context.Context, arg SetUserStrategyAlertsParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setUserStrategyAlerts, arg.TelegramID, arg.StrategyAlerts)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

@@ -16,6 +16,6 @@
 import type { ErrorResponse } from './errorResponse.ts';
 
 /**
- * The administrator cannot be deleted.
+ * The administrator cannot be deleted and always receives strategy alerts.
  */
 export type AdministratorProtectedResponse = ErrorResponse;

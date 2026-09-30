@@ -43,8 +43,11 @@ const (
 	APIErrorCodeMarketCapUnavailable       APIErrorCode = "market_cap_unavailable"
 	APIErrorCodeMarketDataUnavailable      APIErrorCode = "market_data_unavailable"
 	APIErrorCodeScannerIndicatorExists     APIErrorCode = "scanner_indicator_exists"
+	APIErrorCodeScannerIndicatorInUse      APIErrorCode = "scanner_indicator_in_use"
 	APIErrorCodeScannerIndicatorLimit      APIErrorCode = "scanner_indicator_limit"
 	APIErrorCodeScannerIndicatorNotFound   APIErrorCode = "scanner_indicator_not_found"
+	APIErrorCodeStrategyExists             APIErrorCode = "strategy_exists"
+	APIErrorCodeStrategyNotFound           APIErrorCode = "strategy_not_found"
 	APIErrorCodeSymbolNotFound             APIErrorCode = "symbol_not_found"
 	APIErrorCodeUnauthenticated            APIErrorCode = "unauthenticated"
 	APIErrorCodeUserNotFound               APIErrorCode = "user_not_found"
@@ -89,9 +92,15 @@ func (e APIErrorCode) Valid() bool {
 		return true
 	case APIErrorCodeScannerIndicatorExists:
 		return true
+	case APIErrorCodeScannerIndicatorInUse:
+		return true
 	case APIErrorCodeScannerIndicatorLimit:
 		return true
 	case APIErrorCodeScannerIndicatorNotFound:
+		return true
+	case APIErrorCodeStrategyExists:
+		return true
+	case APIErrorCodeStrategyNotFound:
 		return true
 	case APIErrorCodeSymbolNotFound:
 		return true
@@ -896,6 +905,9 @@ type ScannerIndicator struct {
 	Scale       ScannerIndicatorScale `json:"scale"`
 	ShowInTable bool                  `json:"show_in_table"`
 
+	// Strategies Names of the strategies that read the indicator, which cannot be removed meanwhile.
+	Strategies []string `json:"strategies"`
+
 	// Title Table column title, such as `d-rsi`.
 	Title string `json:"title"`
 	Type  string `json:"type"`
@@ -948,6 +960,62 @@ type ScannerIndicatorUpdate struct {
 	// Scale Optional value axis of a pane indicator; overlays have none.
 	Scale       *ScannerIndicatorScale `json:"scale,omitempty"`
 	ShowInTable bool                   `json:"show_in_table"`
+}
+
+// Strategy defines model for Strategy.
+type Strategy struct {
+	Enabled bool `json:"enabled"`
+
+	// Expression CEL expression, such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
+	Expression string `json:"expression"`
+	Id         int64  `json:"id"`
+	Name       string `json:"name"`
+
+	// Valid False when the stored expression no longer compiles; such a strategy is not evaluated.
+	Valid bool `json:"valid"`
+}
+
+// StrategyEnabled defines model for StrategyEnabled.
+type StrategyEnabled struct {
+	Enabled bool `json:"enabled"`
+}
+
+// StrategyInput defines model for StrategyInput.
+type StrategyInput struct {
+	Enabled    bool   `json:"enabled"`
+	Expression string `json:"expression"`
+	Name       string `json:"name"`
+}
+
+// StrategyList defines model for StrategyList.
+type StrategyList struct {
+	Items []Strategy `json:"items"`
+}
+
+// StrategyUpdate defines model for StrategyUpdate.
+type StrategyUpdate struct {
+	// Expression CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
+	// variables with numbers or variables, `crosses_above(a, b)`,
+	// `crosses_below(a, b)`, `&&`, `||`, and `!`.
+	Expression string `json:"expression"`
+	Name       string `json:"name"`
+}
+
+// StrategyVariable defines model for StrategyVariable.
+type StrategyVariable struct {
+	IndicatorId int64          `json:"indicator_id"`
+	Interval    CandleInterval `json:"interval"`
+
+	// Label Indicator title and output, such as `d-rsi` or `h-macd macdsignal`.
+	Label string `json:"label"`
+
+	// Name CEL identifier, such as `d_rsi` or `h_macd_macdsignal`.
+	Name string `json:"name"`
+}
+
+// StrategyVariableList defines model for StrategyVariableList.
+type StrategyVariableList struct {
+	Items []StrategyVariable `json:"items"`
 }
 
 // TableCell Holds the field its column kind reads; the field is omitted when its value is unavailable.
@@ -1009,13 +1077,21 @@ type User struct {
 	// Administrator Whether the user is the scanner administrator, who cannot be deleted.
 	Administrator bool    `json:"administrator"`
 	DisplayName   *string `json:"display_name,omitempty"`
-	TelegramId    int64   `json:"telegram_id"`
-	Username      *string `json:"username,omitempty"`
+
+	// StrategyAlerts Whether the user receives strategy alerts; always true for the administrator.
+	StrategyAlerts bool    `json:"strategy_alerts"`
+	TelegramId     int64   `json:"telegram_id"`
+	Username       *string `json:"username,omitempty"`
 }
 
 // UserList defines model for UserList.
 type UserList struct {
 	Items []User `json:"items"`
+}
+
+// UserUpdate defines model for UserUpdate.
+type UserUpdate struct {
+	StrategyAlerts bool `json:"strategy_alerts"`
 }
 
 // Warning defines model for Warning.
@@ -1032,6 +1108,9 @@ type RequestID = string
 
 // ScannerIndicatorID defines model for ScannerIndicatorID.
 type ScannerIndicatorID = int64
+
+// StrategyID defines model for StrategyID.
+type StrategyID = int64
 
 // Symbol defines model for Symbol.
 type Symbol = string
@@ -1075,8 +1154,17 @@ type InternalError = ErrorResponse
 // ScannerIndicatorConflict defines model for ScannerIndicatorConflict.
 type ScannerIndicatorConflict = ErrorResponse
 
+// ScannerIndicatorInUse defines model for ScannerIndicatorInUse.
+type ScannerIndicatorInUse = ErrorResponse
+
 // ScannerIndicatorNotFound defines model for ScannerIndicatorNotFound.
 type ScannerIndicatorNotFound = ErrorResponse
+
+// StrategyConflict defines model for StrategyConflict.
+type StrategyConflict = ErrorResponse
+
+// StrategyNotFound defines model for StrategyNotFound.
+type StrategyNotFound = ErrorResponse
 
 // SymbolNotFound defines model for SymbolNotFound.
 type SymbolNotFound = ErrorResponse
@@ -1148,6 +1236,18 @@ type CreateScannerIndicatorJSONRequestBody = ScannerIndicatorInput
 // UpdateScannerIndicatorJSONRequestBody defines body for UpdateScannerIndicator for application/json ContentType.
 type UpdateScannerIndicatorJSONRequestBody = ScannerIndicatorUpdate
 
+// CreateStrategyJSONRequestBody defines body for CreateStrategy for application/json ContentType.
+type CreateStrategyJSONRequestBody = StrategyInput
+
+// SetStrategyEnabledJSONRequestBody defines body for SetStrategyEnabled for application/json ContentType.
+type SetStrategyEnabledJSONRequestBody = StrategyEnabled
+
+// UpdateStrategyJSONRequestBody defines body for UpdateStrategy for application/json ContentType.
+type UpdateStrategyJSONRequestBody = StrategyUpdate
+
+// UpdateUserJSONRequestBody defines body for UpdateUser for application/json ContentType.
+type UpdateUserJSONRequestBody = UserUpdate
+
 // UpdatePriceAlertJSONRequestBody defines body for UpdatePriceAlert for application/json ContentType.
 type UpdatePriceAlertJSONRequestBody = PriceAlertInput
 
@@ -1186,12 +1286,33 @@ type ServerInterface interface {
 	// UpdateScannerIndicator Change the table visibility and pane scale of a scanner indicator
 	// (PATCH /api/v1/admin/scanner-indicators/{indicator_id})
 	UpdateScannerIndicator(w http.ResponseWriter, r *http.Request, indicatorId ScannerIndicatorID)
+	// ListStrategies List the strategies
+	// (GET /api/v1/admin/strategies)
+	ListStrategies(w http.ResponseWriter, r *http.Request)
+	// CreateStrategy Add a strategy
+	// (POST /api/v1/admin/strategies)
+	CreateStrategy(w http.ResponseWriter, r *http.Request)
+	// DeleteStrategy Remove a strategy
+	// (DELETE /api/v1/admin/strategies/{strategy_id})
+	DeleteStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID)
+	// SetStrategyEnabled Turn a strategy on or off
+	// (PATCH /api/v1/admin/strategies/{strategy_id})
+	SetStrategyEnabled(w http.ResponseWriter, r *http.Request, strategyId StrategyID)
+	// UpdateStrategy Change the name and expression of a strategy
+	// (PUT /api/v1/admin/strategies/{strategy_id})
+	UpdateStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID)
+	// ListStrategyVariables List the indicator values strategy expressions can read
+	// (GET /api/v1/admin/strategy-variables)
+	ListStrategyVariables(w http.ResponseWriter, r *http.Request)
 	// ListUsers List the application users
 	// (GET /api/v1/admin/users)
 	ListUsers(w http.ResponseWriter, r *http.Request)
 	// DeleteUser Delete an application user
 	// (DELETE /api/v1/admin/users/{telegram_id})
 	DeleteUser(w http.ResponseWriter, r *http.Request, telegramId TelegramID)
+	// UpdateUser Choose whether a user receives strategy alerts
+	// (PATCH /api/v1/admin/users/{telegram_id})
+	UpdateUser(w http.ResponseWriter, r *http.Request, telegramId TelegramID)
 
 	// (DELETE /api/v1/alerts/{alert_id})
 	DeletePriceAlert(w http.ResponseWriter, r *http.Request, alertId AlertID)
@@ -1370,6 +1491,126 @@ func (siw *ServerInterfaceWrapper) UpdateScannerIndicator(w http.ResponseWriter,
 	handler.ServeHTTP(w, r)
 }
 
+// ListStrategies operation middleware
+func (siw *ServerInterfaceWrapper) ListStrategies(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListStrategies(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateStrategy operation middleware
+func (siw *ServerInterfaceWrapper) CreateStrategy(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateStrategy(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteStrategy operation middleware
+func (siw *ServerInterfaceWrapper) DeleteStrategy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "strategy_id" -------------
+	var strategyId StrategyID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "strategy_id", r.PathValue("strategy_id"), &strategyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "strategy_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteStrategy(w, r, strategyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetStrategyEnabled operation middleware
+func (siw *ServerInterfaceWrapper) SetStrategyEnabled(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "strategy_id" -------------
+	var strategyId StrategyID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "strategy_id", r.PathValue("strategy_id"), &strategyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "strategy_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetStrategyEnabled(w, r, strategyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateStrategy operation middleware
+func (siw *ServerInterfaceWrapper) UpdateStrategy(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "strategy_id" -------------
+	var strategyId StrategyID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "strategy_id", r.PathValue("strategy_id"), &strategyId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "strategy_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateStrategy(w, r, strategyId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListStrategyVariables operation middleware
+func (siw *ServerInterfaceWrapper) ListStrategyVariables(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListStrategyVariables(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListUsers operation middleware
 func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
 
@@ -1401,6 +1642,32 @@ func (siw *ServerInterfaceWrapper) DeleteUser(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DeleteUser(w, r, telegramId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateUser operation middleware
+func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "telegram_id" -------------
+	var telegramId TelegramID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "telegram_id", r.PathValue("telegram_id"), &telegramId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "telegram_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateUser(w, r, telegramId)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2063,6 +2330,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/admin/scanner-indicators/{indicator_id}", wrapper.UpdateScannerIndicator)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/users", wrapper.ListUsers)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/admin/users/{telegram_id}", wrapper.DeleteUser)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/admin/users/{telegram_id}", wrapper.UpdateUser)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategy-variables", wrapper.ListStrategyVariables)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategies", wrapper.ListStrategies)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/strategies", wrapper.CreateStrategy)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.DeleteStrategy)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.SetStrategyEnabled)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.UpdateStrategy)
 
 	return m
 }
@@ -2126,7 +2400,13 @@ type InternalErrorJSONResponse struct {
 
 type ScannerIndicatorConflictJSONResponse ErrorResponse
 
+type ScannerIndicatorInUseJSONResponse ErrorResponse
+
 type ScannerIndicatorNotFoundJSONResponse ErrorResponse
+
+type StrategyConflictJSONResponse ErrorResponse
+
+type StrategyNotFoundJSONResponse ErrorResponse
 
 type SymbolNotFoundResponseHeaders struct {
 	XRequestID string
@@ -2365,6 +2645,22 @@ func (response ClearScannerIndicators403JSONResponse) VisitClearScannerIndicator
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClearScannerIndicators409JSONResponse struct {
+	ScannerIndicatorInUseJSONResponse
+}
+
+func (response ClearScannerIndicators409JSONResponse) VisitClearScannerIndicatorsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -2613,6 +2909,22 @@ func (response DeleteScannerIndicator404JSONResponse) VisitDeleteScannerIndicato
 	return err
 }
 
+type DeleteScannerIndicator409JSONResponse struct {
+	ScannerIndicatorInUseJSONResponse
+}
+
+func (response DeleteScannerIndicator409JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response DeleteScannerIndicator500JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
@@ -2716,6 +3028,508 @@ func (response UpdateScannerIndicator404JSONResponse) VisitUpdateScannerIndicato
 type UpdateScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response UpdateScannerIndicator500JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStrategiesRequestObject struct {
+}
+
+type ListStrategiesResponseObject interface {
+	VisitListStrategiesResponse(w http.ResponseWriter) error
+}
+
+type ListStrategies200JSONResponse StrategyList
+
+func (response ListStrategies200JSONResponse) VisitListStrategiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStrategies401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListStrategies401JSONResponse) VisitListStrategiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStrategies403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response ListStrategies403JSONResponse) VisitListStrategiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStrategies500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListStrategies500JSONResponse) VisitListStrategiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStrategyRequestObject struct {
+	Body *CreateStrategyJSONRequestBody
+}
+
+type CreateStrategyResponseObject interface {
+	VisitCreateStrategyResponse(w http.ResponseWriter) error
+}
+
+type CreateStrategy201JSONResponse Strategy
+
+func (response CreateStrategy201JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStrategy400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateStrategy400JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateStrategy401JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStrategy403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response CreateStrategy403JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStrategy409JSONResponse struct{ StrategyConflictJSONResponse }
+
+func (response CreateStrategy409JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateStrategy500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateStrategy500JSONResponse) VisitCreateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStrategyRequestObject struct {
+	StrategyId StrategyID `json:"strategy_id"`
+}
+
+type DeleteStrategyResponseObject interface {
+	VisitDeleteStrategyResponse(w http.ResponseWriter) error
+}
+
+type DeleteStrategy204Response struct {
+}
+
+func (response DeleteStrategy204Response) VisitDeleteStrategyResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteStrategy401JSONResponse) VisitDeleteStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStrategy403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response DeleteStrategy403JSONResponse) VisitDeleteStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStrategy404JSONResponse struct{ StrategyNotFoundJSONResponse }
+
+func (response DeleteStrategy404JSONResponse) VisitDeleteStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteStrategy500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteStrategy500JSONResponse) VisitDeleteStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetStrategyEnabledRequestObject struct {
+	StrategyId StrategyID `json:"strategy_id"`
+	Body       *SetStrategyEnabledJSONRequestBody
+}
+
+type SetStrategyEnabledResponseObject interface {
+	VisitSetStrategyEnabledResponse(w http.ResponseWriter) error
+}
+
+type SetStrategyEnabled200JSONResponse Strategy
+
+func (response SetStrategyEnabled200JSONResponse) VisitSetStrategyEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetStrategyEnabled401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response SetStrategyEnabled401JSONResponse) VisitSetStrategyEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetStrategyEnabled403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response SetStrategyEnabled403JSONResponse) VisitSetStrategyEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetStrategyEnabled404JSONResponse struct{ StrategyNotFoundJSONResponse }
+
+func (response SetStrategyEnabled404JSONResponse) VisitSetStrategyEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetStrategyEnabled500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response SetStrategyEnabled500JSONResponse) VisitSetStrategyEnabledResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateStrategyRequestObject struct {
+	StrategyId StrategyID `json:"strategy_id"`
+	Body       *UpdateStrategyJSONRequestBody
+}
+
+type UpdateStrategyResponseObject interface {
+	VisitUpdateStrategyResponse(w http.ResponseWriter) error
+}
+
+type UpdateStrategy200JSONResponse Strategy
+
+func (response UpdateStrategy200JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateStrategy400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response UpdateStrategy400JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateStrategy401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateStrategy401JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateStrategy403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response UpdateStrategy403JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateStrategy404JSONResponse struct{ StrategyNotFoundJSONResponse }
+
+func (response UpdateStrategy404JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateStrategy409JSONResponse struct{ StrategyConflictJSONResponse }
+
+func (response UpdateStrategy409JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateStrategy500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateStrategy500JSONResponse) VisitUpdateStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStrategyVariablesRequestObject struct {
+}
+
+type ListStrategyVariablesResponseObject interface {
+	VisitListStrategyVariablesResponse(w http.ResponseWriter) error
+}
+
+type ListStrategyVariables200JSONResponse StrategyVariableList
+
+func (response ListStrategyVariables200JSONResponse) VisitListStrategyVariablesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStrategyVariables401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListStrategyVariables401JSONResponse) VisitListStrategyVariablesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStrategyVariables403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response ListStrategyVariables403JSONResponse) VisitListStrategyVariablesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListStrategyVariables500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListStrategyVariables500JSONResponse) VisitListStrategyVariablesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -2875,6 +3689,99 @@ func (response DeleteUser409JSONResponse) VisitDeleteUserResponse(w http.Respons
 type DeleteUser500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response DeleteUser500JSONResponse) VisitDeleteUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUserRequestObject struct {
+	TelegramId TelegramID `json:"telegram_id"`
+	Body       *UpdateUserJSONRequestBody
+}
+
+type UpdateUserResponseObject interface {
+	VisitUpdateUserResponse(w http.ResponseWriter) error
+}
+
+type UpdateUser204Response struct {
+}
+
+func (response UpdateUser204Response) VisitUpdateUserResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UpdateUser401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response UpdateUser401JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response UpdateUser403JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser404JSONResponse struct{ UserNotFoundJSONResponse }
+
+func (response UpdateUser404JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser409JSONResponse struct {
+	AdministratorProtectedJSONResponse
+}
+
+func (response UpdateUser409JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateUser500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response UpdateUser500JSONResponse) VisitUpdateUserResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -4233,12 +5140,33 @@ type StrictServerInterface interface {
 	// UpdateScannerIndicator Change the table visibility and pane scale of a scanner indicator
 	// (PATCH /api/v1/admin/scanner-indicators/{indicator_id})
 	UpdateScannerIndicator(ctx context.Context, request UpdateScannerIndicatorRequestObject) (UpdateScannerIndicatorResponseObject, error)
+	// ListStrategies List the strategies
+	// (GET /api/v1/admin/strategies)
+	ListStrategies(ctx context.Context, request ListStrategiesRequestObject) (ListStrategiesResponseObject, error)
+	// CreateStrategy Add a strategy
+	// (POST /api/v1/admin/strategies)
+	CreateStrategy(ctx context.Context, request CreateStrategyRequestObject) (CreateStrategyResponseObject, error)
+	// DeleteStrategy Remove a strategy
+	// (DELETE /api/v1/admin/strategies/{strategy_id})
+	DeleteStrategy(ctx context.Context, request DeleteStrategyRequestObject) (DeleteStrategyResponseObject, error)
+	// SetStrategyEnabled Turn a strategy on or off
+	// (PATCH /api/v1/admin/strategies/{strategy_id})
+	SetStrategyEnabled(ctx context.Context, request SetStrategyEnabledRequestObject) (SetStrategyEnabledResponseObject, error)
+	// UpdateStrategy Change the name and expression of a strategy
+	// (PUT /api/v1/admin/strategies/{strategy_id})
+	UpdateStrategy(ctx context.Context, request UpdateStrategyRequestObject) (UpdateStrategyResponseObject, error)
+	// ListStrategyVariables List the indicator values strategy expressions can read
+	// (GET /api/v1/admin/strategy-variables)
+	ListStrategyVariables(ctx context.Context, request ListStrategyVariablesRequestObject) (ListStrategyVariablesResponseObject, error)
 	// ListUsers List the application users
 	// (GET /api/v1/admin/users)
 	ListUsers(ctx context.Context, request ListUsersRequestObject) (ListUsersResponseObject, error)
 	// DeleteUser Delete an application user
 	// (DELETE /api/v1/admin/users/{telegram_id})
 	DeleteUser(ctx context.Context, request DeleteUserRequestObject) (DeleteUserResponseObject, error)
+	// UpdateUser Choose whether a user receives strategy alerts
+	// (PATCH /api/v1/admin/users/{telegram_id})
+	UpdateUser(ctx context.Context, request UpdateUserRequestObject) (UpdateUserResponseObject, error)
 
 	// (DELETE /api/v1/alerts/{alert_id})
 	DeletePriceAlert(ctx context.Context, request DeletePriceAlertRequestObject) (DeletePriceAlertResponseObject, error)
@@ -4518,6 +5446,177 @@ func (sh *strictHandler) UpdateScannerIndicator(w http.ResponseWriter, r *http.R
 	}
 }
 
+// ListStrategies operation middleware
+func (sh *strictHandler) ListStrategies(w http.ResponseWriter, r *http.Request) {
+	var request ListStrategiesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListStrategies(ctx, request.(ListStrategiesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListStrategies")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListStrategiesResponseObject); ok {
+		if err := validResponse.VisitListStrategiesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateStrategy operation middleware
+func (sh *strictHandler) CreateStrategy(w http.ResponseWriter, r *http.Request) {
+	var request CreateStrategyRequestObject
+
+	var body CreateStrategyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateStrategy(ctx, request.(CreateStrategyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateStrategy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateStrategyResponseObject); ok {
+		if err := validResponse.VisitCreateStrategyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteStrategy operation middleware
+func (sh *strictHandler) DeleteStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID) {
+	var request DeleteStrategyRequestObject
+
+	request.StrategyId = strategyId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteStrategy(ctx, request.(DeleteStrategyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteStrategy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteStrategyResponseObject); ok {
+		if err := validResponse.VisitDeleteStrategyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetStrategyEnabled operation middleware
+func (sh *strictHandler) SetStrategyEnabled(w http.ResponseWriter, r *http.Request, strategyId StrategyID) {
+	var request SetStrategyEnabledRequestObject
+
+	request.StrategyId = strategyId
+
+	var body SetStrategyEnabledJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetStrategyEnabled(ctx, request.(SetStrategyEnabledRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetStrategyEnabled")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetStrategyEnabledResponseObject); ok {
+		if err := validResponse.VisitSetStrategyEnabledResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateStrategy operation middleware
+func (sh *strictHandler) UpdateStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID) {
+	var request UpdateStrategyRequestObject
+
+	request.StrategyId = strategyId
+
+	var body UpdateStrategyJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateStrategy(ctx, request.(UpdateStrategyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateStrategy")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateStrategyResponseObject); ok {
+		if err := validResponse.VisitUpdateStrategyResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListStrategyVariables operation middleware
+func (sh *strictHandler) ListStrategyVariables(w http.ResponseWriter, r *http.Request) {
+	var request ListStrategyVariablesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListStrategyVariables(ctx, request.(ListStrategyVariablesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListStrategyVariables")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListStrategyVariablesResponseObject); ok {
+		if err := validResponse.VisitListStrategyVariablesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListUsers operation middleware
 func (sh *strictHandler) ListUsers(w http.ResponseWriter, r *http.Request) {
 	var request ListUsersRequestObject
@@ -4561,6 +5660,39 @@ func (sh *strictHandler) DeleteUser(w http.ResponseWriter, r *http.Request, tele
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DeleteUserResponseObject); ok {
 		if err := validResponse.VisitDeleteUserResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateUser operation middleware
+func (sh *strictHandler) UpdateUser(w http.ResponseWriter, r *http.Request, telegramId TelegramID) {
+	var request UpdateUserRequestObject
+
+	request.TelegramId = telegramId
+
+	var body UpdateUserJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateUser(ctx, request.(UpdateUserRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateUser")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateUserResponseObject); ok {
+		if err := validResponse.VisitUpdateUserResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -4995,117 +6127,135 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"pB2229Vq9x/u/y8AAP//",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

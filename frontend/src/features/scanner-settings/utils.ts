@@ -143,6 +143,8 @@ export function mutationErrorMessage(error: unknown): string {
 				: "The indicator could not be saved.";
 		case "scanner_indicator_not_found":
 			return "This indicator no longer exists.";
+		case "scanner_indicator_in_use":
+			return "A strategy uses this indicator. Change or delete the strategy first.";
 		case "administrator_required":
 		case "access_denied":
 			return "Only the scanner administrator can change indicators.";

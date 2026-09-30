@@ -1,5 +1,5 @@
 // Package telegrambot grants Scanner Access through the configured Telegram
-// Administrator's private chat and delivers price alerts.
+// Administrator's private chat and delivers price and strategy alerts.
 package telegrambot
 
 import (
@@ -382,10 +382,20 @@ func newToken() string {
 // SendPriceAlert performs one best-effort Telegram API request. It rechecks
 // access immediately before sending and intentionally has no retry.
 func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) error {
+	return service.deliver(ctx, fired.Alert.TelegramID, priceAlertText(fired))
+}
+
+// SendStrategyMessage delivers a strategy alert or summary like a price alert.
+func (service *Service) SendStrategyMessage(ctx context.Context, telegramID int64, text string) error {
+	return service.deliver(ctx, telegramID, text)
+}
+
+// deliver respects the bot-wide and per-user rate limits and rechecks access.
+func (service *Service) deliver(ctx context.Context, telegramID int64, text string) error {
 	service.mu.Lock()
 	// A fixed shard set keeps limiter memory bounded. Hash collisions only make
 	// delivery more conservative; they can never let one user exceed the limit.
-	shard := uint64(fired.Alert.TelegramID) % uint64(len(service.userLimiters))
+	shard := uint64(telegramID) % uint64(len(service.userLimiters))
 	limiter := service.userLimiters[shard]
 	if limiter == nil {
 		limiter = rate.NewLimiter(rate.Every(time.Second), 1)
@@ -398,12 +408,12 @@ func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) 
 	if err := limiter.Wait(ctx); err != nil {
 		return err
 	}
-	if _, err := service.store.FindByTelegramID(ctx, fired.Alert.TelegramID); errors.Is(err, auth.ErrUserNotFound) {
-		return fmt.Errorf("alert owner no longer has access")
+	if _, err := service.store.FindByTelegramID(ctx, telegramID); errors.Is(err, auth.ErrUserNotFound) {
+		return fmt.Errorf("recipient no longer has access")
 	} else if err != nil {
-		return fmt.Errorf("look up alert owner: %w", err)
+		return fmt.Errorf("look up recipient: %w", err)
 	}
-	_, err := service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: fired.Alert.TelegramID, Text: priceAlertText(fired)})
+	_, err := service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: telegramID, Text: text})
 	return err
 }
 

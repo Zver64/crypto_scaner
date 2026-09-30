@@ -6,6 +6,8 @@ import {
 	getAnalyzeMarketQueryKey,
 	getListChartIndicatorsQueryKey,
 	getListScannerIndicatorsQueryKey,
+	getListStrategiesQueryKey,
+	getListStrategyVariablesQueryKey,
 	useClearScannerIndicators,
 	useCreateScannerIndicator,
 	useDeleteScannerIndicator,
@@ -49,6 +51,13 @@ export function ScannerSettings() {
 		});
 		void queryClient.invalidateQueries({
 			queryKey: getListChartIndicatorsQueryKey(),
+		});
+		// Strategies read indicators as variables.
+		void queryClient.invalidateQueries({
+			queryKey: getListStrategyVariablesQueryKey(),
+		});
+		void queryClient.invalidateQueries({
+			queryKey: getListStrategiesQueryKey(),
 		});
 		void queryClient.invalidateQueries({
 			queryKey: getAnalyzeMarketQueryKey().slice(0, 2),
@@ -118,7 +127,10 @@ export function ScannerSettings() {
 				{indicators.data.length > 0 ? (
 					<Button
 						color="red"
-						disabled={clearMutation.isPending}
+						disabled={
+							clearMutation.isPending ||
+							indicators.data.some(({ strategies }) => strategies.length > 0)
+						}
 						onClick={() => setClearing(true)}
 						size="compact-sm"
 						variant="subtle"

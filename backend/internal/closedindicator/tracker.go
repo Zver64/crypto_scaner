@@ -45,14 +45,17 @@ type Output struct {
 
 // Value holds the named outputs at the latest stored closed candle. Outputs is
 // empty when the continuous history ending at that candle is too short.
+// Previous holds the outputs at the closed candle before it, when that
+// candle is stored too.
 type Value struct {
 	Target   Target
 	OpenTime time.Time
 	Outputs  []Output
+	Previous []Output
 }
 
 func (value Value) equal(other Value) bool {
-	return value.OpenTime.Equal(other.OpenTime) && slices.Equal(value.Outputs, other.Outputs)
+	return value.OpenTime.Equal(other.OpenTime) && slices.Equal(value.Outputs, other.Outputs) && slices.Equal(value.Previous, other.Previous)
 }
 
 // Change reports a background recalculation of a tracked pair whose value
@@ -276,6 +279,31 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 	return result
 }
 
+// Snapshot returns the known values of targets for each instrument, in target
+// order, without calculating anything. A pair that is neither tracked nor
+// cached has no outputs.
+func (tracker *Tracker) Snapshot(instrumentIDs []int64, targets []Target) map[int64][]Value {
+	keys := make([]string, len(targets))
+	for index, target := range targets {
+		keys[index] = target.id()
+	}
+	result := make(map[int64][]Value, len(instrumentIDs))
+	tracker.mu.Lock()
+	defer tracker.mu.Unlock()
+	for _, id := range instrumentIDs {
+		values := make([]Value, len(targets))
+		for index, target := range targets {
+			value, ok := tracker.values[pairKey{id, keys[index]}]
+			if !ok {
+				value = Value{Target: target}
+			}
+			values[index] = value
+		}
+		result[id] = values
+	}
+	return result
+}
+
 // Run keeps tracked pairs current until ctx is cancelled.
 func (tracker *Tracker) Run(ctx context.Context) error {
 	tracker.Refresh()
@@ -448,7 +476,9 @@ func (tracker *Tracker) depth(target Target) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("closed indicator %q: %w", target.Selection.Type, err)
 	}
-	return max(minimumHistory, lookback+1), nil
+	// Two points: the latest closed candle and the previous one, which
+	// strategy crossings compare.
+	return max(minimumHistory, lookback+2), nil
 }
 
 // calculate batch-loads closed history per target and evaluates each pair.
@@ -495,10 +525,14 @@ func (tracker *Tracker) value(target Target, candles []market.Candle) (Value, er
 	if err != nil {
 		return Value{}, fmt.Errorf("calculate closed %s: %w", target.Selection.Type, err)
 	}
+	previous := target.Interval.PreviousOpenTime(last)
 	for _, series := range results[0].Series {
-		if count := len(series.Points); count > 0 && series.Points[count-1].Time.Equal(last) &&
-			numeric.Finite(series.Points[count-1].Value) {
+		count := len(series.Points)
+		if count > 0 && series.Points[count-1].Time.Equal(last) && numeric.Finite(series.Points[count-1].Value) {
 			value.Outputs = append(value.Outputs, Output{Name: series.Name, Value: series.Points[count-1].Value})
+		}
+		if count > 1 && series.Points[count-2].Time.Equal(previous) && numeric.Finite(series.Points[count-2].Value) {
+			value.Previous = append(value.Previous, Output{Name: series.Name, Value: series.Points[count-2].Value})
 		}
 	}
 	return value, nil

@@ -29,6 +29,7 @@ import (
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/storage/postgres"
+	"crypto-scanner/internal/strategy"
 	"crypto-scanner/internal/telegrambot"
 	"crypto-scanner/internal/users"
 )
@@ -58,6 +59,9 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	// that are covered by its initial targets.
 	var closedIndicators *closedindicator.Tracker
 	var tableTargets []closedindicator.Target
+	// Strategies read the configured indicators, which stay while in use.
+	var strategies *strategy.Service
+	var strategyMonitor *strategy.Monitor
 	scannerIndicators, err := scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func(targets []closedindicator.Target) {
 		if closedIndicators == nil {
 			return
@@ -65,11 +69,28 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		if err := closedIndicators.SetTargets(closedTargetsUnion(tableTargets, targets)); err != nil {
 			logger.Error("apply scanner indicator targets failed", "module", "scanner_indicator", "error", err)
 		}
+	}, func() map[int64][]string {
+		if strategies == nil {
+			return nil
+		}
+		return strategies.IndicatorUsage()
 	})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize scanner indicators: %w", err)
 	}
 	if err := scannerIndicators.Load(ctx); err != nil {
+		return app{}, err
+	}
+	// Changes before the monitor exists are covered by its first evaluation.
+	strategies, err = strategy.NewService(store, scannerIndicators, logger, func(baselines []int64) {
+		if strategyMonitor != nil {
+			strategyMonitor.StrategiesChanged(baselines)
+		}
+	})
+	if err != nil {
+		return app{}, fmt.Errorf("initialize strategies: %w", err)
+	}
+	if err := strategies.Load(ctx); err != nil {
 		return app{}, err
 	}
 	marketTable, err := markettable.NewCatalog(indicatorRegistry, scannerIndicators, defaultTableSort, marketTableColumns()...)
@@ -126,7 +147,8 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	}
 	tradeStream := binance.NewTradeStream(logger, dialLimiter)
 	alertMonitor := alerts.NewMonitor(store, tradeStream, botService, logger)
-	monitoredChanged = append(monitoredChanged, alertMonitor.Changed, closedIndicators.Refresh)
+	strategyMonitor = strategy.NewMonitor(store, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
+	monitoredChanged = append(monitoredChanged, alertMonitor.Changed, closedIndicators.Refresh, strategyMonitor.Changed)
 	favoriteService := favorites.New(store, monitoredChanged.notify, analysisService, closedIndicators, favoritesTable)
 
 	handler := httpapi.New(logger, httpapi.Dependencies{
@@ -143,6 +165,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		ScannerIndicators: scannerIndicators,
 		IndicatorTypes:    indicatorRegistry,
 		Users:             users.New(store, cfg.AdminTelegramID, monitoredChanged.notify),
+		Strategies:        strategies,
 	}, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled})
 	return app{handler: handler, services: []service{
 		{"market scheduler", scheduler},
@@ -151,6 +174,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		{"live trade stream", tradeStream},
 		{"alert monitor", alertMonitor},
 		{"closed indicator tracker", closedIndicators},
+		{"strategy monitor", strategyMonitor},
 		{"Telegram bot", botService},
 		{"coin metadata synchronizer", coinMetadataSynchronizer},
 		{"market retention", retention.New(store, logger, market.HistoryDepth)},

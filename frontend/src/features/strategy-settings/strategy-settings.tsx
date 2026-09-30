@@ -1,4 +1,4 @@
-import { Button, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { Button, Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -92,30 +92,26 @@ export function StrategySettings() {
 	const busy = enabledMutation.isPending || deleteMutation.isPending;
 	return (
 		<Stack gap="md">
-			<Group justify="space-between">
-				<Title order={2} size="h4">
-					Strategies
-				</Title>
-				<Button
-					disabled={variables.data.length === 0}
-					onClick={() =>
-						setDraft({ id: undefined, name: "", query: emptyStrategyQuery() })
-					}
-					size="compact-sm"
-				>
-					Add strategy
-				</Button>
-			</Group>
-			{variables.data.length === 0 ? (
-				<Text c="dimmed" size="sm">
-					Strategies compare configured indicators. Add indicators first.
-				</Text>
-			) : null}
 			{strategies.data.length === 0 ? (
 				<Text c="dimmed" size="sm">
 					No strategies yet.
 				</Text>
-			) : (
+			) : null}
+			{variables.data.length === 0 ? (
+				<Text c="dimmed" size="sm">
+					Add indicators first.
+				</Text>
+			) : null}
+			<Button
+				disabled={variables.data.length === 0}
+				fullWidth
+				onClick={() =>
+					setDraft({ id: undefined, name: "", query: emptyStrategyQuery() })
+				}
+			>
+				Add strategy
+			</Button>
+			{strategies.data.length === 0 ? null : (
 				<Stack gap="xs">
 					{strategies.data.map((strategy) => (
 						<StrategyRow

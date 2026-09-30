@@ -27,13 +27,15 @@ export function StrategyFormContent({
 	const [name, setName] = useState(draft.name);
 	const [query, setQuery] = useState(draft.query);
 	const expression = strategyExpression(query);
-	const complete = name.trim() !== "" && strategyQueryComplete(query);
+	const named = name.trim() !== "";
+	const conditionsComplete = strategyQueryComplete(query);
 	return (
 		<Stack gap="md">
 			<TextInput
 				disabled={isSaving}
 				label="Name"
 				maxLength={64}
+				withAsterisk
 				onChange={(event) => setName(event.currentTarget.value)}
 				value={name}
 			/>
@@ -48,11 +50,16 @@ export function StrategyFormContent({
 					variables={variables}
 				/>
 			</Stack>
-			{complete ? (
+			{conditionsComplete ? (
 				<Code block>{expression}</Code>
 			) : (
 				<Text c="dimmed" size="xs">
 					Add at least one condition and fill every value.
+				</Text>
+			)}
+			{named ? null : (
+				<Text c="dimmed" size="xs">
+					Enter a name to save the strategy.
 				</Text>
 			)}
 			<Group justify="flex-end">
@@ -60,7 +67,7 @@ export function StrategyFormContent({
 					Cancel
 				</Button>
 				<Button
-					disabled={!complete}
+					disabled={!named || !conditionsComplete}
 					loading={isSaving}
 					onClick={() => onSubmit(name.trim(), expression)}
 				>

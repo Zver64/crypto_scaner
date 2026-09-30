@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.26.0](https://github.com/Zver64/crypto_scaner/compare/v0.25.0...v0.26.0) (2026-09-30)
+
+
+### Features
+
+* add scanner indicators on several periods and clear them all ([011841b](https://github.com/Zver64/crypto_scaner/commit/011841b81cb874e95d8adc4c525cdef043b7714b))
+* add strategy screener alerts ([c7b557d](https://github.com/Zver64/crypto_scaner/commit/c7b557d16820a72dd7191f68f7d67c430cc67ab2))
+* manage users in the Mini App settings ([e0acf75](https://github.com/Zver64/crypto_scaner/commit/e0acf757a99bf1971358a04eb5d239d4b26e3faf))
+* remove the hardcoded RSI filter from market scan ([8517c06](https://github.com/Zver64/crypto_scaner/commit/8517c0692ed78f6eebd67bec1fc657959ef68adc))
+
+
+### Bug Fixes
+
+* keep the selected interval after adding a scanner indicator ([4764de6](https://github.com/Zver64/crypto_scaner/commit/4764de6b97ace6795fb99e2e8002d0815da26273))
+* name the missing strategy name when saving is disabled ([735dd81](https://github.com/Zver64/crypto_scaner/commit/735dd815ff2a3f307b257d51c6e872c0313e6a10))
+
 ## [0.25.0](https://github.com/Zver64/crypto_scaner/compare/v0.24.0...v0.25.0) (2026-09-29)
 
 

@@ -3,6 +3,7 @@ import { devtools } from "@tanstack/devtools-vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
 import viteReact from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
+import { qrcode } from "vite-plugin-qrcode";
 
 const repositoryRoot = fileURLToPath(new URL("..", import.meta.url));
 
@@ -29,6 +30,7 @@ const config = defineConfig(({ mode }) => {
 				},
 			}),
 			viteReact(),
+			qrcode(),
 			mode === "development" && {
 				name: "telegram-development-init-data",
 				transformIndexHtml() {

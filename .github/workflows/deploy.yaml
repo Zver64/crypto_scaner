@@ -77,6 +77,12 @@ jobs:
             org.opencontainers.image.version=${{ needs.release.outputs.tag }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+      - name: Keep the latest 20 ${{ matrix.name }} images
+        uses: dataaxiom/ghcr-cleanup-action@d52806a0dc70b430571a37da1fde39733ffd640f # v1.2.2
+        with:
+          package: ${{ github.event.repository.name }}-${{ matrix.name }}
+          keep-n-tagged: 20
+          delete-untagged: true
 
   deploy:
     needs: [release, build]

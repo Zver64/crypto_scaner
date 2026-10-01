@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.27.0](https://github.com/Zver64/crypto_scaner/compare/v0.26.0...v0.27.0) (2026-10-01)
+
+
+### Features
+
+* filter indicator types by group in scanner settings ([1a55d80](https://github.com/Zver64/crypto_scaner/commit/1a55d806490268ed2e1e71f2fe95ba7e573df41d))
+
+
+### Bug Fixes
+
+* load coin charts faster ([7fc1f67](https://github.com/Zver64/crypto_scaner/commit/7fc1f6793ddc77933cb4d314474a8f8b134845fc))
+
+
+### Performance Improvements
+
+* calculate background indicators only for enabled strategies ([6a84d9e](https://github.com/Zver64/crypto_scaner/commit/6a84d9ecb879f4bce856c0d632c7e063f053245b))
+
 ## [0.26.0](https://github.com/Zver64/crypto_scaner/compare/v0.25.0...v0.26.0) (2026-09-30)
 
 

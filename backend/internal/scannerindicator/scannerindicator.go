@@ -1,6 +1,6 @@
 // Package scannerindicator holds the global indicator configuration the
-// administrator manages: every configured indicator is calculated in the
-// background, drawn on the charts of its interval, and optionally shown as a
+// administrator manages: every configured indicator is drawn on the charts of
+// its interval, can be read by strategies, and is optionally shown as a
 // market table column.
 package scannerindicator
 
@@ -50,7 +50,7 @@ type Indicator struct {
 	Scale       Scale
 }
 
-// Target is the background calculation of the indicator.
+// Target is the closed-candle calculation of the indicator.
 func (item Indicator) Target() closedindicator.Target {
 	return closedindicator.Target{Interval: item.Interval, Selection: item.Selection}
 }
@@ -83,12 +83,12 @@ type Store interface {
 
 // Service keeps the configuration in memory and persists every change.
 type Service struct {
-	store          Store
-	registry       *indicator.Registry
-	palette        []string
-	logger         *slog.Logger
-	targetsChanged func([]closedindicator.Target)
-	usage          func() map[int64][]string
+	store    Store
+	registry *indicator.Registry
+	palette  []string
+	logger   *slog.Logger
+	changed  func()
+	usage    func() map[int64][]string
 
 	// writes serializes changes, so limit and duplicate checks see every
 	// earlier change.
@@ -98,14 +98,14 @@ type Service struct {
 }
 
 // New creates an empty service; Load reads the stored configuration. Chart
-// lines take palette colors (theme tokens) in turn. targetsChanged receives
-// every indicator target after each change and must not block. usage maps
-// indicator ids to the names of the strategies that read them.
-func New(store Store, registry *indicator.Registry, palette []string, logger *slog.Logger, targetsChanged func([]closedindicator.Target), usage func() map[int64][]string) (*Service, error) {
-	if store == nil || registry == nil || len(palette) == 0 || logger == nil || targetsChanged == nil || usage == nil {
+// lines take palette colors (theme tokens) in turn. changed is called after
+// each change and must not block. usage maps indicator ids to the names of
+// the strategies that read them.
+func New(store Store, registry *indicator.Registry, palette []string, logger *slog.Logger, changed func(), usage func() map[int64][]string) (*Service, error) {
+	if store == nil || registry == nil || len(palette) == 0 || logger == nil || changed == nil || usage == nil {
 		return nil, errors.New("scanner indicator store, registry, palette, logger, change listener, and usage are required")
 	}
-	return &Service{store: store, registry: registry, palette: slices.Clone(palette), logger: logger.With("module", "scanner_indicator"), targetsChanged: targetsChanged, usage: usage}, nil
+	return &Service{store: store, registry: registry, palette: slices.Clone(palette), logger: logger.With("module", "scanner_indicator"), changed: changed, usage: usage}, nil
 }
 
 // Load replaces the configuration with the stored one. Indicators the
@@ -140,13 +140,6 @@ func (service *Service) List() []Entry {
 
 // Usage maps indicator ids to the names of the strategies that read them.
 func (service *Service) Usage() map[int64][]string { return service.usage() }
-
-// Targets returns the background calculation of every indicator.
-func (service *Service) Targets() []closedindicator.Target {
-	service.mu.RLock()
-	defer service.mu.RUnlock()
-	return targets(service.entries)
-}
 
 // Create validates, stores, and applies new indicators, such as one
 // selection on several intervals. Either all of them are added or none.
@@ -225,7 +218,7 @@ func (service *Service) Update(ctx context.Context, id int64, showInTable bool, 
 	return entry, nil
 }
 
-// Delete removes the indicator and stops its background calculation.
+// Delete removes the indicator.
 func (service *Service) Delete(ctx context.Context, id int64) error {
 	service.writes.Lock()
 	defer service.writes.Unlock()
@@ -244,8 +237,8 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Clear removes every indicator, so the tracker stops tracking their values.
-// It fails with ErrInUse while a strategy reads any of them.
+// Clear removes every indicator. It fails with ErrInUse while a strategy
+// reads any of them.
 func (service *Service) Clear(ctx context.Context) error {
 	service.writes.Lock()
 	defer service.writes.Unlock()
@@ -331,15 +324,7 @@ func (service *Service) replace(entries []Entry) {
 	service.mu.Lock()
 	service.entries = entries
 	service.mu.Unlock()
-	service.targetsChanged(targets(entries))
-}
-
-func targets(entries []Entry) []closedindicator.Target {
-	result := make([]closedindicator.Target, len(entries))
-	for i, entry := range entries {
-		result[i] = entry.Target()
-	}
-	return result
+	service.changed()
 }
 
 // entry validates an indicator and derives its presentation.

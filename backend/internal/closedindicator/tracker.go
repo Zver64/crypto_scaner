@@ -258,7 +258,13 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 	for _, subscription := range missing {
 		key := pairKey{subscription.InstrumentID, subscription.Target.id()}
 		history := historyKey{subscription.InstrumentID, subscription.Target.Interval}
-		if _, exists := tracker.values[key]; !failed && !exists && tracker.versions[history] == versions[history] {
+		// A value calculated before a history change is stale; a newer
+		// cached value or none is returned instead.
+		if tracker.versions[history] != versions[history] {
+			delete(computed, key)
+			continue
+		}
+		if _, exists := tracker.values[key]; !failed && !exists {
 			tracker.values[key] = computed[key]
 		}
 	}
@@ -281,27 +287,35 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 
 // Snapshot returns the known values of targets for each instrument, in target
 // order, without calculating anything. A pair that is neither tracked nor
-// cached has no outputs.
-func (tracker *Tracker) Snapshot(instrumentIDs []int64, targets []Target) map[int64][]Value {
+// cached has no outputs, and its target is listed in missing, so results that
+// depend on it are not final yet.
+func (tracker *Tracker) Snapshot(instrumentIDs []int64, targets []Target) (values map[int64][]Value, missing []Target) {
 	keys := make([]string, len(targets))
 	for index, target := range targets {
 		keys[index] = target.id()
 	}
-	result := make(map[int64][]Value, len(instrumentIDs))
+	values = make(map[int64][]Value, len(instrumentIDs))
+	absent := make([]bool, len(targets))
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
 	for _, id := range instrumentIDs {
-		values := make([]Value, len(targets))
+		row := make([]Value, len(targets))
 		for index, target := range targets {
 			value, ok := tracker.values[pairKey{id, keys[index]}]
 			if !ok {
 				value = Value{Target: target}
+				absent[index] = true
 			}
-			values[index] = value
+			row[index] = value
 		}
-		result[id] = values
+		values[id] = row
 	}
-	return result
+	for index, target := range targets {
+		if absent[index] {
+			missing = append(missing, target)
+		}
+	}
+	return values, missing
 }
 
 // Run keeps tracked pairs current until ctx is cancelled.

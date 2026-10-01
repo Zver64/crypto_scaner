@@ -48,7 +48,8 @@ type MonitorStore interface {
 // Values supplies the tracked closed indicator values.
 type Values interface {
 	Listen(func(closedindicator.Change))
-	Snapshot([]int64, []closedindicator.Target) map[int64][]closedindicator.Value
+	// Snapshot also lists the targets some instrument has no value for yet.
+	Snapshot([]int64, []closedindicator.Target) (map[int64][]closedindicator.Value, []closedindicator.Target)
 }
 
 // Strategies supplies the current strategies. A change requests its
@@ -235,7 +236,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 	var strategies []Entry
 	monitor.mu.Lock()
 	for _, entry := range listed {
-		if _, queued := monitor.baselines[entry.ID]; entry.Enabled && entry.Compiled != nil && !queued {
+		if _, queued := monitor.baselines[entry.ID]; entry.evaluated() && !queued {
 			strategies = append(strategies, entry)
 		}
 	}
@@ -277,7 +278,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		}
 	}
 	targets, positions := targetsOf(strategies)
-	values := monitor.values.Snapshot(instrumentIDs(instruments), targets)
+	values, missing := monitor.values.Snapshot(instrumentIDs(instruments), targets)
 	now := monitor.now()
 
 	for _, entry := range strategies {
@@ -305,6 +306,15 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		}
 
 		if _, baseline := baselines[entry.ID]; baseline {
+			// The baseline waits for the first calculation of what it reads,
+			// so it never leaves out instruments that match; that calculation
+			// reports changes, which evaluate again.
+			if reads(entry, missing) {
+				monitor.mu.Lock()
+				monitor.baselines[entry.ID] = struct{}{}
+				monitor.mu.Unlock()
+				continue
+			}
 			monitor.baseline(ctx, state, entry, instruments, values, positions, now, recipients)
 			continue
 		}
@@ -462,6 +472,14 @@ func targetsOf(strategies []Entry) ([]closedindicator.Target, map[string]int) {
 		}
 	}
 	return targets, positions
+}
+
+// reads reports whether entry reads any of targets.
+func reads(entry Entry, targets []closedindicator.Target) bool {
+	read, _ := targetsOf([]Entry{entry})
+	return slices.ContainsFunc(read, func(target closedindicator.Target) bool {
+		return slices.ContainsFunc(targets, target.Equal)
+	})
 }
 
 func targetKey(target closedindicator.Target) string {

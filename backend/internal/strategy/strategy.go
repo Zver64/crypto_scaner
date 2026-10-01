@@ -13,6 +13,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/scannerindicator"
 )
 
@@ -45,6 +46,9 @@ type Entry struct {
 	Strategy
 	Compiled *Expression
 }
+
+// evaluated reports whether the monitor evaluates the strategy.
+func (entry Entry) evaluated() bool { return entry.Enabled && entry.Compiled != nil }
 
 type Store interface {
 	ListStrategies(context.Context) ([]Strategy, error)
@@ -141,6 +145,19 @@ func (service *Service) IndicatorUsage() map[int64][]string {
 		}
 	}
 	return usage
+}
+
+// Targets returns the indicator targets enabled strategies read, which must
+// stay current in the background.
+func (service *Service) Targets() []closedindicator.Target {
+	var evaluated []Entry
+	for _, entry := range service.List() {
+		if entry.evaluated() {
+			evaluated = append(evaluated, entry)
+		}
+	}
+	targets, _ := targetsOf(evaluated)
+	return targets
 }
 
 // Create validates and stores a strategy.

@@ -178,11 +178,11 @@ func NewCatalog(registry *indicator.Registry, configured ColumnSource, defaultSo
 	return Catalog{columns: normalized, defaultSort: defaultSort, configured: configured}, nil
 }
 
-// ClosedTargets returns the closed indicator targets the columns read, so the
-// background tracker keeps them current.
+// ClosedTargets returns the closed indicator targets the current columns
+// read, including the configured indicator columns.
 func (catalog Catalog) ClosedTargets() []closedindicator.Target {
 	var targets []closedindicator.Target
-	for _, column := range catalog.columns {
+	for _, column := range catalog.expand() {
 		if source, ok := column.Source.(ClosedIndicator); ok {
 			if !slices.ContainsFunc(targets, source.Target.Equal) {
 				targets = append(targets, source.Target)

@@ -58,16 +58,16 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	// The tracker is created after the configuration loads; changes before
 	// that are covered by its initial targets.
 	var closedIndicators *closedindicator.Tracker
-	var tableTargets []closedindicator.Target
+	var tables []markettable.Catalog
 	// Strategies read the configured indicators, which stay while in use.
 	var strategies *strategy.Service
 	var strategyMonitor *strategy.Monitor
-	scannerIndicators, err := scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func(targets []closedindicator.Target) {
+	scannerIndicators, err := scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func() {
 		if closedIndicators == nil {
 			return
 		}
-		if err := closedIndicators.SetTargets(closedTargetsUnion(tableTargets, targets)); err != nil {
-			logger.Error("apply scanner indicator targets failed", "module", "scanner_indicator", "error", err)
+		if err := closedIndicators.SetTargets(tableTargets(tables)); err != nil {
+			logger.Error("apply table indicator targets failed", "module", "scanner_indicator", "error", err)
 		}
 	}, func() map[int64][]string {
 		if strategies == nil {
@@ -83,6 +83,9 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	}
 	// Changes before the monitor exists are covered by its first evaluation.
 	strategies, err = strategy.NewService(store, scannerIndicators, logger, func(baselines []int64) {
+		if closedIndicators != nil {
+			closedIndicators.Refresh()
+		}
 		if strategyMonitor != nil {
 			strategyMonitor.StrategiesChanged(baselines)
 		}
@@ -101,12 +104,11 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites table: %w", err)
 	}
-	// Tables read these values; favorites keep them current without clients.
-	// Static table columns read no indicators, but their targets are included
-	// so a future one is tracked too.
-	tableTargets = closedTargetsUnion(marketTable.ClosedTargets(), favoritesTable.ClosedTargets())
-	closedIndicators, err = closedindicator.New(store, indicatorRegistry, closedTargetsUnion(tableTargets, scannerIndicators.Targets()), logger,
-		closedindicator.InstrumentSource(store.ListMonitoredInstrumentIDs))
+	// Tables calculate the values they show on demand; only the values
+	// enabled strategies read stay current in the background.
+	tables = []markettable.Catalog{marketTable, favoritesTable}
+	closedIndicators, err = closedindicator.New(store, indicatorRegistry, tableTargets(tables), logger,
+		strategySource{closedindicator.InstrumentSource(store.ListMonitoredInstrumentIDs), strategies})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
 	}
@@ -181,10 +183,22 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	}}, nil
 }
 
-func closedTargetsUnion(groups ...[]closedindicator.Target) []closedindicator.Target {
+// strategySource keeps the values enabled strategies read current on every
+// monitored instrument.
+type strategySource struct {
+	instruments closedindicator.InstrumentSource
+	strategies  *strategy.Service
+}
+
+func (source strategySource) Subscriptions(ctx context.Context, _ []closedindicator.Target) ([]closedindicator.Subscription, error) {
+	return source.instruments.Subscriptions(ctx, source.strategies.Targets())
+}
+
+// tableTargets returns the distinct closed indicator targets the tables read.
+func tableTargets(tables []markettable.Catalog) []closedindicator.Target {
 	var targets []closedindicator.Target
-	for _, group := range groups {
-		for _, target := range group {
+	for _, table := range tables {
+		for _, target := range table.ClosedTargets() {
 			if !slices.ContainsFunc(targets, target.Equal) {
 				targets = append(targets, target)
 			}

@@ -5,7 +5,7 @@ import type {
 	PriceHistorySource,
 } from "@/components/price-history-chart/types";
 
-// Subscribes to the source for one interval while the chart is enabled.
+// Streams the interval on screen from the source while the chart is enabled.
 export function usePriceHistory(
 	source: PriceHistorySource,
 	interval: ChartInterval,
@@ -16,6 +16,9 @@ export function usePriceHistory(
 		() => source.getSnapshot(interval),
 		() => source.getSnapshot(interval),
 	);
+	useEffect(() => {
+		source.show(interval);
+	}, [source, interval]);
 	useEffect(() => {
 		if (!enabled) return;
 		source.start();

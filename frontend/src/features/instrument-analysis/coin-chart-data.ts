@@ -21,7 +21,8 @@ const initialLimit = 200;
 const maxLimit = 2000;
 
 // The backend owns each chart range: it sends a full snapshot whenever closed
-// history or the range changes and a tail update for the current candle.
+// history or the range changes and a tail update for the current candle. Only
+// the interval on screen is subscribed; others keep their last chart as stale.
 export function createCoinChartData(
 	symbol: string,
 	catalogs: ChartCatalogs,
@@ -43,16 +44,21 @@ export function createCoinChartData(
 	);
 	let connection: LiveCandlesClient | undefined;
 	let unsubscribeLive: (() => void) | undefined;
+	let shown: CandleInterval | undefined;
 	const subscriptions = () =>
-		chartIntervals.map((interval) => ({
-			symbol: upper,
-			interval,
-			limit: intervals.get(interval)?.limit ?? initialLimit,
-			indicators: catalogs[interval].map(({ parameters, type }) => ({
-				parameters,
-				type,
-			})),
-		}));
+		shown
+			? [
+					{
+						symbol: upper,
+						interval: shown,
+						limit: intervals.get(shown)?.limit ?? initialLimit,
+						indicators: catalogs[shown].map(({ parameters, type }) => ({
+							parameters,
+							type,
+						})),
+					},
+				]
+			: [];
 	const recompute = (interval: CandleInterval, force = false) => {
 		const current = intervals.get(interval);
 		if (!current) return;
@@ -114,11 +120,18 @@ export function createCoinChartData(
 				recompute(interval, true);
 			}
 		},
+		show(interval) {
+			const selected = chartIntervals.find((item) => item === interval);
+			if (!selected || selected === shown) return;
+			shown = selected;
+			connection?.setSubscriptions(subscriptions());
+		},
 		loadOlder(interval) {
 			const selected = chartIntervals.find((item) => item === interval);
 			const current = selected && intervals.get(selected);
 			if (
 				!selected ||
+				selected !== shown ||
 				!current ||
 				!current.snapshot?.hasMore ||
 				current.loadingMore ||

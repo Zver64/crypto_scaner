@@ -37,6 +37,8 @@ export interface PriceHistorySource {
 	subscribe(listener: () => void): () => void;
 	start(): void;
 	stop(): void;
+	// Selects the interval on screen; the source streams only that interval.
+	show(interval: ChartInterval): void;
 	loadOlder(interval: ChartInterval): void;
 }
 export interface ChartIntervalOption {

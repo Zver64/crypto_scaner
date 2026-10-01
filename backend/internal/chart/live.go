@@ -2,6 +2,7 @@ package chart
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"time"
 
@@ -14,17 +15,25 @@ const (
 	// A failed history build is retried on trades no more often than this.
 	liveRetryDelay   = 10 * time.Second
 	liveBuildTimeout = 5 * time.Second
+	// tailReloadSize is how many of the newest closed candles a stream event
+	// rereads from storage; it matches the live service's retained candles.
+	tailReloadSize = 16
 )
 
 // Trigger is the stream event that asks a live session for a new frame.
+// Triggers are ordered by strength, so a batch of events needs only one frame
+// for the strongest of them.
 type Trigger int
 
 const (
 	// TriggerTrade is a non-final update of the forming candle. It keeps the
 	// closed range intact and yields a tail frame.
 	TriggerTrade Trigger = iota
-	// TriggerStream is a snapshot, final candle, or correction. It rebuilds
-	// the closed range.
+	// TriggerClose is a final candle from the stream. It rereads only the
+	// newest stored candles of a complete cached range.
+	TriggerClose
+	// TriggerStream is a snapshot or correction, such as committed sync
+	// history. It rebuilds the closed range.
 	TriggerStream
 	// TriggerRange is an explicit client range request. It always rebuilds
 	// and always reports failures.
@@ -48,6 +57,8 @@ type LiveSession struct {
 	states   map[time.Time]marketlive.CandleState
 	closed   *Page
 	retryAt  time.Time
+	// instrument is resolved by the first successful load.
+	instrument *market.Instrument
 }
 
 // NewLiveSession starts an empty session for one symbol and interval.
@@ -69,7 +80,7 @@ func (session *LiveSession) Apply(message marketlive.Message) (trigger Trigger, 
 	}
 	session.observe(*message.Candle)
 	if message.Candle.Final {
-		return TriggerStream, true
+		return TriggerClose, true
 	}
 	return TriggerTrade, true
 }
@@ -115,7 +126,13 @@ func (session *LiveSession) Next(ctx context.Context, trigger Trigger, limit int
 		return Frame{}, false, nil
 	}
 	if rebuild {
-		loaded, err := session.load(ctx, limit, configs, session.closed)
+		var loaded Page
+		var err error
+		if cached && trigger == TriggerClose {
+			loaded, err = session.reloadTail(ctx, limit, configs, session.closed)
+		} else {
+			loaded, err = session.load(ctx, limit, configs, session.closed)
+		}
 		if err != nil && ctx.Err() != nil {
 			// The client is gone; its cancellation is not a history failure.
 			return Frame{}, false, nil
@@ -140,20 +157,10 @@ func (session *LiveSession) Next(ctx context.Context, trigger Trigger, limit int
 		}
 		page = loaded
 	}
-	candles, pending := session.merge(page.Candles)
-	// The initial range stays fixed; an extended one keeps its oldest candle
-	// but never exceeds the maximum chart range.
-	keep := MaxRange
-	if limit == DefaultRange {
-		keep = limit
-	}
-	if len(candles) > keep {
-		// Candles leaving the range still warm up the indicators.
-		page.warmup = append(slices.Clip(page.warmup), candles[:len(candles)-keep]...)
-		candles = candles[len(candles)-keep:]
-		page.HasMore = true
-	}
-	page.Candles = candles
+	var pending *market.Candle
+	page.Candles, pending = session.merge(page.Candles)
+	page.keepNewest(rangeSize(limit))
+	candles := page.Candles
 	page.NextBefore = market.CandlePage{Candles: candles, HasMore: page.HasMore}.NextBefore()
 	if pending != nil && len(candles) > 0 {
 		last := candles[len(candles)-1].OpenTime
@@ -167,6 +174,9 @@ func (session *LiveSession) Next(ctx context.Context, trigger Trigger, limit int
 	}
 	extended, err := session.service.extend(page, session.interval, pending, configs)
 	if err != nil {
+		if trigger == TriggerRange {
+			return Frame{}, false, fmt.Errorf("%w: calculate: %w", ErrInvalidRequest, err)
+		}
 		return Frame{}, false, nil
 	}
 	frame = Frame{Page: extended, Snapshot: rebuild}
@@ -186,7 +196,7 @@ func (session *LiveSession) load(ctx context.Context, limit int, configs []indic
 	if extended && len(cached.Candles) > limit {
 		request.Limit = min(len(cached.Candles), MaxRange)
 	}
-	loaded, err := session.service.Build(ctx, request)
+	loaded, err := session.build(ctx, request)
 	if err != nil || !extended || len(loaded.Candles) == 0 || !loaded.HasMore {
 		return loaded, err
 	}
@@ -197,9 +207,89 @@ func (session *LiveSession) load(ctx context.Context, limit int, configs []indic
 		cursor = session.interval.NextOpenTime(cursor)
 	}
 	if cursor.After(oldest) {
-		return session.service.Build(ctx, request)
+		return session.build(ctx, request)
 	}
 	return loaded, nil
+}
+
+// build loads the closed range, resolving the symbol only once per session.
+func (session *LiveSession) build(ctx context.Context, request Request) (Page, error) {
+	page, err := session.service.build(ctx, session.instrument, request, false)
+	if err == nil {
+		session.instrument = &page.instrument
+	}
+	return page, err
+}
+
+// reloadTail rereads only the newest closed candles of the cached range after
+// a candle closes. An incomplete range or warm-up may have been backfilled and
+// a gap repaired in storage since, so those fall back to a full load, as does
+// a tail that does not line up. Older corrections arrive as stream snapshots.
+func (session *LiveSession) reloadTail(ctx context.Context, limit int, configs []indicator.Selection, cached *Page) (Page, error) {
+	warmup, err := session.service.warmup(configs)
+	if err != nil || session.instrument == nil || len(cached.Candles) < max(limit, tailReloadSize) ||
+		len(cached.warmup) < warmup || !session.contiguous(cached) {
+		return session.load(ctx, limit, configs, cached)
+	}
+	loadCtx, cancel := context.WithTimeout(ctx, liveBuildTimeout)
+	defer cancel()
+	tail, err := session.service.store.ListCandlePage(loadCtx, session.instrument.ID, session.interval, nil, tailReloadSize)
+	if err != nil {
+		return Page{}, fmt.Errorf("list chart tail: %w", err)
+	}
+	if len(tail.Candles) == 0 {
+		return session.load(ctx, limit, configs, cached)
+	}
+	index, found := slices.BinarySearchFunc(cached.Candles, tail.Candles[0].OpenTime, func(candle market.Candle, target time.Time) int {
+		return candle.OpenTime.Compare(target)
+	})
+	if !found {
+		return session.load(ctx, limit, configs, cached)
+	}
+	page := *cached
+	page.Candles = append(slices.Clip(cached.Candles[:index]), tail.Candles...)
+	page.keepNewest(rangeSize(limit))
+	// A full load reads exactly the largest lookback before the range.
+	if len(page.warmup) > warmup {
+		page.warmup = page.warmup[len(page.warmup)-warmup:]
+	}
+	return page, nil
+}
+
+// rangeSize is the most closed candles a range of limit shows. The initial
+// range stays fixed; an extended one keeps its oldest candle but never exceeds
+// the maximum chart range.
+func rangeSize(limit int) int {
+	if limit == DefaultRange {
+		return limit
+	}
+	return MaxRange
+}
+
+// keepNewest moves candles beyond the newest count into the warm-up, since
+// candles leaving the range still warm up the indicators.
+func (page *Page) keepNewest(count int) {
+	if len(page.Candles) <= count {
+		return
+	}
+	shift := len(page.Candles) - count
+	page.warmup = append(slices.Clip(page.warmup), page.Candles[:shift]...)
+	page.Candles = page.Candles[shift:]
+	page.HasMore = true
+}
+
+// contiguous reports whether the warm-up and range candles have no gaps.
+func (session *LiveSession) contiguous(page *Page) bool {
+	var previous time.Time
+	for _, candles := range [][]market.Candle{page.warmup, page.Candles} {
+		for _, candle := range candles {
+			if !previous.IsZero() && !session.interval.NextOpenTime(previous).Equal(candle.OpenTime) {
+				return false
+			}
+			previous = candle.OpenTime
+		}
+	}
+	return true
 }
 
 // merge applies stream states to closed history. Final WS candles take

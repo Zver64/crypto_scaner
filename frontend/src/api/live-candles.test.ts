@@ -53,7 +53,7 @@ it("subscribes to every chart interval on one socket and retains them while swit
 	client.connect();
 	const socket = FakeSocket.instances[0]!;
 	socket.emit("open");
-	socket.emit("message", JSON.stringify({ type: "authenticated" }));
+	// Subscriptions follow authenticate without waiting for its reply.
 	expect(socket.messages).toEqual([
 		{ type: "authenticate", init_data: "signed-data" },
 		...subscriptions.map((subscription) => ({
@@ -62,6 +62,7 @@ it("subscribes to every chart interval on one socket and retains them while swit
 		})),
 	]);
 
+	socket.emit("message", JSON.stringify({ type: "authenticated" }));
 	client.setSubscriptions(subscriptions);
 	expect(FakeSocket.instances).toHaveLength(1);
 	expect(socket.messages).toHaveLength(5);

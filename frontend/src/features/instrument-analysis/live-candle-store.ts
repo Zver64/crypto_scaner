@@ -150,6 +150,11 @@ export function applyServerMessage(
 			},
 		};
 	}
+	// The last chart of an interval no longer on screen stays visible as stale
+	// until a new subscription sends a fresh snapshot.
+	if (message.type === "unsubscribed") {
+		return { ...states, [key]: { ...previous, freshness: "stale" } };
+	}
 	if (message.type === "status" && message.freshness) {
 		return { ...states, [key]: { ...previous, freshness: message.freshness } };
 	}

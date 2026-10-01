@@ -82,7 +82,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 		return
 	}
 	client := newLiveSocketClient(newRequestID(), connection)
-	subscriber := newChartClient(request.Context(), client, handler.charts)
+	subscriber := newChartClient(request.Context(), client, handler.charts, handler.logger)
 	defer func() { handler.service.RemoveClient(client.ID()); subscriber.Close() }()
 	connection.SetReadLimit(maxClientMessage)
 	_ = connection.SetReadDeadline(time.Now().Add(clientAuthTimeout))
@@ -154,10 +154,13 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 				client.enqueueKeyError(key, "invalid_argument", "Invalid indicator selection")
 				continue
 			}
-			// Subscribing again to the same key only changes the chart range.
+			// The range is set first, so the snapshot of a new subscription
+			// builds the chart once. Subscribing again to the same key only
+			// changes the chart range.
+			subscriber.setRange(key, limit, configs)
 			err := handler.service.Subscribe(request.Context(), subscriber, key.Symbol, key.Interval)
-			if err == nil {
-				subscriber.setRange(key, limit, configs)
+			if err != nil {
+				subscriber.forget(key)
 			}
 			switch {
 			case errors.Is(err, marketlive.ErrInactiveSymbol):
@@ -257,9 +260,12 @@ func (client *liveSocketClient) enqueueError(code, message string) {
 	client.enqueueWire(LiveCandleServerMessage{Type: Error, Code: &c, Message: &message})
 }
 func (client *liveSocketClient) enqueueKeyError(key kline.Key, code, message string) {
+	client.enqueueWire(keyErrorMessage(key, code, message))
+}
+func keyErrorMessage(key kline.Key, code, message string) LiveCandleServerMessage {
 	c := LiveCandleServerMessageCode(code)
 	symbol, interval := key.Symbol, CandleInterval(key.Interval)
-	client.enqueueWire(LiveCandleServerMessage{Type: Error, Code: &c, Message: &message, Symbol: &symbol, Interval: &interval})
+	return LiveCandleServerMessage{Type: Error, Code: &c, Message: &message, Symbol: &symbol, Interval: &interval}
 }
 func (client *liveSocketClient) writeError(code, message string) {
 	client.writeMu.Lock()

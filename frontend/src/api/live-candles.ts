@@ -21,7 +21,9 @@ interface LiveCandlesClientOptions {
 }
 
 export class LiveCandlesClient {
-	private authenticated = false;
+	// The socket sent authenticate. The server reads messages in order, so
+	// subscriptions follow it at once instead of waiting for authenticated.
+	private ready = false;
 	private reconnectAttempt = 0;
 	private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 	private socket: WebSocket | undefined;
@@ -40,7 +42,7 @@ export class LiveCandlesClient {
 	setSubscriptions(subscriptions: readonly LiveCandleSubscription[]): void {
 		const previous = this.subscriptions;
 		this.subscriptions = subscriptions;
-		if (!this.authenticated) return;
+		if (!this.ready) return;
 		for (const subscription of previous) {
 			if (!subscriptions.some((next) => sameSubscription(subscription, next))) {
 				this.send({ type: "unsubscribe", ...subscription });
@@ -66,12 +68,12 @@ export class LiveCandlesClient {
 		this.stopped = true;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = undefined;
-		if (this.authenticated) {
+		if (this.ready) {
 			for (const subscription of this.subscriptions) {
 				this.send({ type: "unsubscribe", ...subscription });
 			}
 		}
-		this.authenticated = false;
+		this.ready = false;
 		const socket = this.socket;
 		this.socket = undefined;
 		socket?.close(1000, "Page closed");
@@ -90,18 +92,18 @@ export class LiveCandlesClient {
 				return;
 			}
 			this.send({ type: "authenticate", init_data: initData });
+			this.ready = true;
+			for (const subscription of this.subscriptions) {
+				this.send({ type: "subscribe", ...subscription });
+			}
 		});
 		socket.addEventListener("message", (event) => {
 			if (this.socket !== socket || this.stopped) return;
 			const message = parseLiveMessage(event.data);
 			if (!message) return;
 			if (message.type === "authenticated") {
-				this.authenticated = true;
 				this.reconnectAttempt = 0;
 				this.options.onConnectionChange("connected");
-				for (const subscription of this.subscriptions) {
-					this.send({ type: "subscribe", ...subscription });
-				}
 				return;
 			}
 			this.options.onMessage(message);
@@ -109,7 +111,7 @@ export class LiveCandlesClient {
 		socket.addEventListener("close", () => {
 			if (this.socket !== socket) return;
 			this.socket = undefined;
-			this.authenticated = false;
+			this.ready = false;
 			if (this.stopped) return;
 			this.options.onConnectionChange("disconnected");
 			const delay = Math.min(30_000, 1_000 * 2 ** this.reconnectAttempt);

@@ -36,14 +36,19 @@ class FakeSocket {
 	readyState = FakeSocket.OPEN;
 	sent: LiveCandleClientMessage[] = [];
 	private onMessage?: (event: { data: string }) => void;
+	private onOpen?: () => void;
 	constructor() {
 		FakeSocket.current = this;
 	}
 	addEventListener(type: string, callback: (event: { data: string }) => void) {
 		if (type === "message") this.onMessage = callback;
+		if (type === "open") this.onOpen = () => callback({ data: "" });
 	}
 	send(data: string) {
 		this.sent.push(JSON.parse(data));
+	}
+	emitOpen() {
+		this.onOpen?.();
 	}
 	emitMessage(message: unknown) {
 		this.onMessage?.({ data: JSON.stringify(message) });
@@ -104,23 +109,26 @@ function chart(
 }
 
 it("renders backend snapshots, merges current-candle tails, and extends the range over WebSocket", () => {
-	vi.stubGlobal("window", { location: { href: "https://example.com/coin" } });
+	vi.stubGlobal("window", {
+		location: { href: "https://example.com/coin" },
+		Telegram: { WebApp: { initData: "signed-data" } },
+	});
 	vi.stubGlobal("WebSocket", FakeSocket);
 	const fetch = vi.fn();
 	vi.stubGlobal("fetch", fetch);
 	const source = createCoinChartData("btcusdt", rsiCatalogs);
 	try {
+		source.show("1h");
 		source.start();
 		const socket = FakeSocket.current;
 		if (!socket) throw new Error("Missing socket");
+		socket.emitOpen();
 		socket.emitMessage({ type: "authenticated" });
 		expect(
 			socket.sent.map(({ type, interval, limit }) => [type, interval, limit]),
 		).toEqual([
+			["authenticate", undefined, undefined],
 			["subscribe", "1h", 200],
-			["subscribe", "1d", 200],
-			["subscribe", "1w", 200],
-			["subscribe", "1M", 200],
 		]);
 		expect(source.getSnapshot("1h").isLoading).toBe(true);
 
@@ -170,6 +178,51 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 		expect(rsiValues(source)).toEqual([50, 61, 73]);
 		expect(source.getSnapshot("1d")).toBe(daily);
 		expect(fetch).not.toHaveBeenCalled();
+	} finally {
+		source.stop();
+	}
+});
+
+it("streams only the interval on screen and keeps the last chart of others as stale", () => {
+	vi.stubGlobal("window", {
+		location: { href: "https://example.com/coin" },
+		Telegram: { WebApp: { initData: "signed-data" } },
+	});
+	vi.stubGlobal("WebSocket", FakeSocket);
+	const source = createCoinChartData("btcusdt", rsiCatalogs);
+	try {
+		source.show("1h");
+		source.start();
+		const socket = FakeSocket.current;
+		if (!socket) throw new Error("Missing socket");
+		socket.emitOpen();
+		socket.emitMessage({ type: "authenticated" });
+		socket.emitMessage({
+			type: "snapshot",
+			symbol: "BTCUSDT",
+			interval: "1h",
+			version: 1,
+			chart: chart([candle(1), candle(2)], [60, 70], true),
+		});
+		source.loadOlder("1d");
+		source.show("1d");
+		expect(
+			socket.sent.map(({ type, interval, limit }) => [type, interval, limit]),
+		).toEqual([
+			["authenticate", undefined, undefined],
+			["subscribe", "1h", 200],
+			["unsubscribe", "1h", 200],
+			["subscribe", "1d", 200],
+		]);
+
+		socket.emitMessage({
+			type: "unsubscribed",
+			symbol: "BTCUSDT",
+			interval: "1h",
+		});
+		const hourly = source.getSnapshot("1h");
+		expect(hourly.candles).toHaveLength(2);
+		expect(hourly.freshness).toBe("stale");
 	} finally {
 		source.stop();
 	}

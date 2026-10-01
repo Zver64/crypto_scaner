@@ -45,6 +45,8 @@ type Page struct {
 	// warmup holds the closed candles before Candles that indicators need to
 	// settle. They are calculated over but never returned to clients.
 	warmup []market.Candle
+	// instrument lets live sessions rebuild without resolving the symbol again.
+	instrument market.Instrument
 }
 type Service struct {
 	store      Store
@@ -65,7 +67,15 @@ func NewService(store Store, indicators *indicator.Registry, catalog CatalogSour
 func (service *Service) Catalog(interval market.CandleInterval) []CatalogIndicator {
 	return service.catalog.ChartCatalog(interval)
 }
+
+// Build resolves the symbol and loads the chart range with indicator warm-up.
 func (service *Service) Build(ctx context.Context, request Request) (Page, error) {
+	return service.build(ctx, nil, request, true)
+}
+
+// build loads the chart range. A resolved instrument skips the symbol lookup;
+// live sessions skip indicators here because extend calculates them per frame.
+func (service *Service) build(ctx context.Context, instrument *market.Instrument, request Request, indicators bool) (Page, error) {
 	symbol := market.NormalizeSymbol(request.Symbol)
 	if service == nil || symbol == "" || !request.Interval.Valid() || request.Limit <= 0 {
 		return Page{}, fmt.Errorf("%w: symbol, interval, and limit are required", ErrInvalidRequest)
@@ -77,25 +87,35 @@ func (service *Service) Build(ctx context.Context, request Request) (Page, error
 	if err != nil {
 		return Page{}, err
 	}
-	instrument, err := service.store.GetActiveInstrumentBySymbol(ctx, symbol)
-	if err != nil {
-		return Page{}, fmt.Errorf("resolve chart instrument: %w", err)
+	if instrument == nil {
+		resolved, err := service.store.GetActiveInstrumentBySymbol(ctx, symbol)
+		if err != nil {
+			return Page{}, fmt.Errorf("resolve chart instrument: %w", err)
+		}
+		instrument = &resolved
 	}
+	started := time.Now()
 	stored, err := service.store.ListCandlePage(ctx, instrument.ID, request.Interval, nil, request.Limit+warmup)
 	if err != nil {
 		return Page{}, fmt.Errorf("list chart candles: %w", err)
 	}
+	loadDuration := time.Since(started)
 	split := max(0, len(stored.Candles)-request.Limit)
 	page := Page{
-		Symbol:  instrument.Symbol,
-		Candles: stored.Candles[split:],
-		HasMore: stored.HasMore || split > 0,
-		warmup:  stored.Candles[:split],
+		Symbol:     instrument.Symbol,
+		Candles:    stored.Candles[split:],
+		HasMore:    stored.HasMore || split > 0,
+		warmup:     stored.Candles[:split],
+		instrument: *instrument,
 	}
 	page.NextBefore = market.CandlePage{Candles: page.Candles, HasMore: page.HasMore}.NextBefore()
-	if page.Indicators, err = service.calculate(request.Interval, page.warmup, page.Candles, request.Indicators); err != nil {
-		return Page{}, fmt.Errorf("%w: calculate: %w", ErrInvalidRequest, err)
+	if indicators {
+		if page.Indicators, err = service.calculate(request.Interval, page.warmup, page.Candles, request.Indicators); err != nil {
+			return Page{}, fmt.Errorf("%w: calculate: %w", ErrInvalidRequest, err)
+		}
 	}
+	service.logger.DebugContext(ctx, "chart range loaded", "symbol", page.Symbol, "interval", request.Interval, "limit", request.Limit, "warmup", warmup,
+		"candles", len(stored.Candles), "load_duration", loadDuration)
 	return page, nil
 }
 

@@ -19,6 +19,7 @@ import { ScannerIndicatorPeriodsField } from "@/features/scanner-settings/scanne
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 import {
 	defaultParameterValues,
+	indicatorGroups,
 	indicatorTypeOptions,
 	parseLevels,
 	scannerIndicatorInput,
@@ -37,6 +38,8 @@ const emptyDraft: ScannerIndicatorDraft = {
 
 const periodOrder = chartIntervalOptions.map(({ value }) => value);
 
+const allGroups = "all";
+
 interface ScannerIndicatorFormProps {
 	isSaving: boolean;
 	onSubmit(input: ScannerIndicatorInput): void;
@@ -49,7 +52,10 @@ export function ScannerIndicatorForm({
 	types,
 }: ScannerIndicatorFormProps) {
 	const [draft, setDraft] = useState(emptyDraft);
+	const [group, setGroup] = useState(allGroups);
 	const type = types.find((item) => item.type === draft.type);
+	const groupTypes =
+		group === allGroups ? types : types.filter((item) => item.group === group);
 	const levelsValid = parseLevels(draft.levels) !== undefined;
 	const submit = (event: FormEvent) => {
 		event.preventDefault();
@@ -75,12 +81,32 @@ export function ScannerIndicatorForm({
 		}));
 	};
 
+	const selectGroup = (value: string | null) => {
+		const next = value ?? allGroups;
+		setGroup(next);
+		// The chosen indicator is cleared when the group no longer offers it.
+		if (type && next !== allGroups && type.group !== next) selectType(null);
+	};
+
 	return (
 		<Paper p="sm" radius="md" withBorder>
 			<Stack component="form" gap="sm" onSubmit={submit}>
 				<Select
+					allowDeselect={false}
+					aria-label="Indicator group"
+					data={[
+						{ label: "All", value: allGroups },
+						...indicatorGroups(types).map((item) => ({
+							label: item,
+							value: item,
+						})),
+					]}
+					onChange={selectGroup}
+					value={group}
+				/>
+				<Select
 					aria-label="Indicator"
-					data={indicatorTypeOptions(types)}
+					data={indicatorTypeOptions(groupTypes)}
 					nothingFoundMessage="No indicators found"
 					onChange={selectType}
 					placeholder="Search indicators"

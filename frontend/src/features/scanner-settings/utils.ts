@@ -31,6 +31,11 @@ export function indicatorTypeOptions(types: readonly IndicatorType[]) {
 	return [...groups].map(([group, items]) => ({ group, items }));
 }
 
+// Distinct indicator groups in catalog order.
+export function indicatorGroups(types: readonly IndicatorType[]): string[] {
+	return [...new Set(types.map((type) => type.group))];
+}
+
 export function tableColumnAllowed(type: IndicatorType | undefined): boolean {
 	return type?.outputs.length === 1;
 }

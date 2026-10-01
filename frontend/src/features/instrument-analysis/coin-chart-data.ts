@@ -17,6 +17,12 @@ import {
 	type LiveCandlesState,
 } from "@/features/instrument-analysis/live-candle-store";
 
+// The chart source also reports the current price for blocks outside the
+// chart: the close of the live candle on screen.
+export interface CoinChartData extends PriceHistorySource {
+	getCurrentPrice(): number | undefined;
+}
+
 const initialLimit = 200;
 const maxLimit = 2000;
 
@@ -26,7 +32,7 @@ const maxLimit = 2000;
 export function createCoinChartData(
 	symbol: string,
 	catalogs: ChartCatalogs,
-): PriceHistorySource {
+): CoinChartData {
 	const upper = symbol.toUpperCase();
 	const live = createLiveStore(upper, catalogs);
 	const listeners = new Set<() => void>();
@@ -88,6 +94,9 @@ export function createCoinChartData(
 		getSnapshot(interval) {
 			const selected = chartIntervals.find((item) => item === interval);
 			return (selected && intervals.get(selected)?.snapshot) ?? emptySnapshot;
+		},
+		getCurrentPrice() {
+			return shown && intervals.get(shown)?.snapshot?.candles.at(-1)?.close;
 		},
 		subscribe(listener) {
 			listeners.add(listener);

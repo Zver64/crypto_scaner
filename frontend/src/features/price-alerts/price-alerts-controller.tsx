@@ -1,7 +1,13 @@
-import { Paper, Stack, Text, Title } from "@mantine/core";
+import { Group, Paper, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
-import { type FormEvent, useCallback, useEffect, useState } from "react";
+import {
+	type FormEvent,
+	type ReactNode,
+	useCallback,
+	useEffect,
+	useState,
+} from "react";
 import {
 	getListPriceAlertsQueryKey,
 	useCreatePriceAlert,
@@ -38,11 +44,13 @@ function mutationErrorMessage(error: unknown): string {
 }
 
 interface PriceAlertsControllerProps {
+	currentPrice?: ReactNode;
 	scope: string;
 	symbol: string;
 }
 
 export function PriceAlertsController({
+	currentPrice,
 	scope,
 	symbol,
 }: PriceAlertsControllerProps) {
@@ -134,11 +142,12 @@ export function PriceAlertsController({
 	return (
 		<Paper component="section" p={{ base: "xs", sm: "md" }}>
 			<Stack gap="md">
-				<div>
+				<Group justify="space-between" wrap="nowrap">
 					<Title order={2} size="h4">
 						Price alerts
 					</Title>
-				</div>
+					{currentPrice}
+				</Group>
 				<PriceAlertList
 					alerts={query.data?.items ?? []}
 					deletingID={

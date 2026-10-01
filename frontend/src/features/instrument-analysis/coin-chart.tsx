@@ -1,25 +1,33 @@
-import { useMemo } from "react";
-import { PriceHistoryChart } from "@/components/price-history-chart";
-import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
+import type { CandleInterval } from "@/api/generated/models";
+import {
+	type ChartIndicatorOptions,
+	PriceHistoryChart,
+} from "@/components/price-history-chart";
+import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { CoinChartPlaceholder } from "@/features/instrument-analysis/coin-chart-placeholder";
 import { rangeReadout } from "@/features/instrument-analysis/coin-chart-presentation";
-import { useChartIndicators } from "@/features/instrument-analysis/use-chart-indicators";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 
 interface CoinChartProps {
 	enabled: boolean;
+	failed: boolean;
+	indicators: Readonly<
+		Record<CandleInterval, readonly ChartIndicatorOptions[]>
+	>;
+	source: CoinChartData | undefined;
 	symbol: string;
 }
 
 // The live chart waits for the backend indicator catalogs of every interval,
 // which define both what it subscribes to and what it draws.
-export function CoinChart({ enabled, symbol }: CoinChartProps) {
+export function CoinChart({
+	enabled,
+	failed,
+	indicators,
+	source,
+	symbol,
+}: CoinChartProps) {
 	const { paperPadding } = useCoinPageLayout();
-	const { catalogs, failed, indicators } = useChartIndicators(enabled);
-	const source = useMemo(
-		() => catalogs && createCoinChartData(symbol, catalogs),
-		[catalogs, symbol],
-	);
 	if (!source) {
 		return <CoinChartPlaceholder failed={failed} paperPadding={paperPadding} />;
 	}

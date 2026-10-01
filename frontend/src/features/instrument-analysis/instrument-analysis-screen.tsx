@@ -1,13 +1,17 @@
 import { Center, Container, Loader, Stack } from "@mantine/core";
+import { useMemo } from "react";
 import type { CriterionRequest } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import { CoinBackButton } from "@/features/instrument-analysis/coin-back-button";
 import { CoinChart } from "@/features/instrument-analysis/coin-chart";
+import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { CoinOverview } from "@/features/instrument-analysis/coin-overview";
+import { CurrentPrice } from "@/features/instrument-analysis/current-price";
 import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
 import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
+import { useChartIndicators } from "@/features/instrument-analysis/use-chart-indicators";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 import { useHourlyHistory } from "@/features/instrument-analysis/use-hourly-history";
 import { useInstrumentAnalysis } from "@/features/instrument-analysis/use-instrument-analysis";
@@ -34,6 +38,12 @@ export function InstrumentAnalysisScreen({
 		permission.allowed,
 	);
 	const hourlyHistory = useHourlyHistory(symbol, permission.allowed);
+	const chart = useChartIndicators(permission.allowed);
+	// Shared by the chart and the price alerts, which show its current price.
+	const chartSource = useMemo(
+		() => chart.catalogs && createCoinChartData(symbol, chart.catalogs),
+		[chart.catalogs, symbol],
+	);
 
 	const sevenDayChange = result
 		? sevenDayChangePercent(currentSevenDayHourlyCloses(hourlyHistory.candles))
@@ -66,7 +76,13 @@ export function InstrumentAnalysisScreen({
 						<Stack gap={contentSpacing}>
 							<CoinOverview result={result} sevenDayChange={sevenDayChange} />
 							{result ? (
-								<CoinChart enabled={permission.allowed} symbol={symbol} />
+								<CoinChart
+									enabled={permission.allowed}
+									failed={chart.failed}
+									indicators={chart.indicators}
+									source={chartSource}
+									symbol={symbol}
+								/>
 							) : null}
 							<SpotGridEstimator
 								candles={
@@ -85,7 +101,14 @@ export function InstrumentAnalysisScreen({
 						</Stack>
 					</RefreshingOverlay>
 				) : null}
-				{permission.allowed ? <PriceAlertsPanel symbol={symbol} /> : null}
+				{permission.allowed ? (
+					<PriceAlertsPanel
+						currentPrice={
+							chartSource ? <CurrentPrice source={chartSource} /> : null
+						}
+						symbol={symbol}
+					/>
+				) : null}
 			</Stack>
 		</Container>
 	);

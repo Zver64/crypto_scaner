@@ -96,6 +96,7 @@ export type ChartIndicatorSlot =
 // One entry of the indicator legend above the chart.
 export interface ChartLegendItem {
 	key: string;
+	placement: ChartIndicatorOptions["placement"];
 	title: string;
 	color: string;
 	value: string | null;

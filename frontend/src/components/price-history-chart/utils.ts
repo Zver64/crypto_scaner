@@ -219,7 +219,7 @@ export function createIndicatorLegend(
 						? formatNumber(slot.value)
 						: formatPrice(slot.value)
 					: null;
-			return { color, key, title, value };
+			return { color, key, placement: indicator.placement, title, value };
 		}),
 	);
 }

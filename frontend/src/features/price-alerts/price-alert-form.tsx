@@ -1,5 +1,7 @@
-import { Button, Group, NumberInput, Stack, Text } from "@mantine/core";
+import { Box, Button, Group, NumberInput, Stack, Text } from "@mantine/core";
 import type { FormEvent } from "react";
+import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
+import { TargetChange } from "@/features/price-alerts/target-change";
 
 interface PriceAlertFormProps {
 	isEditing: boolean;
@@ -9,6 +11,8 @@ interface PriceAlertFormProps {
 	onCancel(): void;
 	onSubmit(event: FormEvent<HTMLFormElement>): void;
 	onTargetChange(target: string): void;
+	// Live price the target's percent change is measured from.
+	priceSource?: CoinChartData;
 	target: string;
 	targetError?: string;
 }
@@ -21,9 +25,11 @@ export function PriceAlertForm({
 	onCancel,
 	onSubmit,
 	onTargetChange,
+	priceSource,
 	target,
 	targetError,
 }: PriceAlertFormProps) {
+	const formLocked = limitReached && !isEditing;
 	return (
 		<form onSubmit={onSubmit}>
 			<Stack gap="sm">
@@ -31,8 +37,14 @@ export function PriceAlertForm({
 					allowNegative={false}
 					decimalScale={18}
 					description="Positive USDT price, up to 18 decimal places"
-					disabled={isSaving || (limitReached && !isEditing)}
+					disabled={isSaving || formLocked}
 					error={targetError}
+					inputContainer={(input) => (
+						<Group gap="sm" wrap="nowrap">
+							<Box flex={1}>{input}</Box>
+							<TargetChange source={priceSource} target={target} />
+						</Group>
+					)}
 					label={isEditing ? "Edit target" : "New target"}
 					// onChange converts to a JS number; the raw string keeps all 18 decimals.
 					onValueChange={({ value }) => onTargetChange(value)}
@@ -46,14 +58,14 @@ export function PriceAlertForm({
 						</Button>
 					) : null}
 					<Button
-						disabled={limitReached && !isEditing}
+						disabled={formLocked || target.trim() === ""}
 						loading={isSaving}
 						type="submit"
 					>
 						{isEditing ? "Save alert" : "Create alert"}
 					</Button>
 				</Group>
-				{limitReached && !isEditing ? (
+				{formLocked ? (
 					<Text c="dimmed" size="sm">
 						The limit of {limit} alerts has been reached.
 					</Text>

@@ -18,6 +18,7 @@ import {
 import { useFavorites } from "@/features/favorites/favorites-provider";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
+import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { PriceAlertForm } from "@/features/price-alerts/price-alert-form";
 import { PriceAlertList } from "@/features/price-alerts/price-alert-list";
 import { normalizePriceTarget } from "@/features/price-alerts/target";
@@ -45,12 +46,14 @@ function mutationErrorMessage(error: unknown): string {
 
 interface PriceAlertsControllerProps {
 	currentPrice?: ReactNode;
+	priceSource?: CoinChartData;
 	scope: string;
 	symbol: string;
 }
 
 export function PriceAlertsController({
 	currentPrice,
+	priceSource,
 	scope,
 	symbol,
 }: PriceAlertsControllerProps) {
@@ -161,6 +164,7 @@ export function PriceAlertsController({
 						setTarget(alert.target);
 						setTargetError(undefined);
 					}}
+					priceSource={priceSource}
 				/>
 				{query.isPending ? <Text c="dimmed">Loading alerts…</Text> : null}
 				{query.isError ? (
@@ -176,6 +180,7 @@ export function PriceAlertsController({
 					onCancel={resetEditor}
 					onSubmit={submit}
 					onTargetChange={setTarget}
+					priceSource={priceSource}
 					target={target}
 					targetError={targetError}
 				/>

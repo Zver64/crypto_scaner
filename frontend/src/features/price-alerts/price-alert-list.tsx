@@ -1,12 +1,16 @@
 import { ActionIcon, Group, Text, Tooltip } from "@mantine/core";
 import { IconPencil, IconTrash } from "@tabler/icons-react";
 import type { PriceAlert } from "@/api/generated/models";
+import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
+import { TargetChange } from "@/features/price-alerts/target-change";
+import { sortAlertsDescending } from "@/features/price-alerts/utils";
 
 interface PriceAlertListProps {
 	alerts: readonly PriceAlert[];
 	deletingID?: number;
 	onDelete(alertID: number): void;
 	onEdit(alert: PriceAlert): void;
+	priceSource?: CoinChartData;
 }
 
 export function PriceAlertList({
@@ -14,13 +18,15 @@ export function PriceAlertList({
 	deletingID,
 	onDelete,
 	onEdit,
+	priceSource,
 }: PriceAlertListProps) {
-	return alerts.map((alert) => (
+	return sortAlertsDescending(alerts).map((alert) => (
 		<Group justify="space-between" key={alert.id} wrap="nowrap">
 			<Text ff="monospace" fw={600}>
 				{alert.target} USDT
 			</Text>
 			<Group gap="xs" wrap="nowrap">
+				<TargetChange source={priceSource} target={alert.target} />
 				<Tooltip label="Edit alert">
 					<ActionIcon
 						aria-label={`Edit ${alert.target} USDT alert`}

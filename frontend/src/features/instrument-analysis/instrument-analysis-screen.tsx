@@ -106,6 +106,7 @@ export function InstrumentAnalysisScreen({
 						currentPrice={
 							chartSource ? <CurrentPrice source={chartSource} /> : null
 						}
+						priceSource={chartSource}
 						symbol={symbol}
 					/>
 				) : null}

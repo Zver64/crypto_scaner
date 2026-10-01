@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.28.0](https://github.com/Zver64/crypto_scaner/compare/v0.27.0...v0.28.0) (2026-10-01)
+
+
+### Features
+
+* exchange Telegram init data for server sessions ([dece942](https://github.com/Zver64/crypto_scaner/commit/dece942e69ee7b7207104d210e6971c2b265b17c))
+* separate overlay and pane indicator values in chart legend ([cdcb3de](https://github.com/Zver64/crypto_scaner/commit/cdcb3dea93c6ba2b06eea009c5336fd35b287596))
+* show current price in price alerts ([bfcd57b](https://github.com/Zver64/crypto_scaner/commit/bfcd57b0289faac893564971f36cf9c7a9078404))
+* show target percent change in price alerts ([3126029](https://github.com/Zver64/crypto_scaner/commit/31260294d0f2964c908a362a82d2875109fd87b1))
+
 ## [0.27.0](https://github.com/Zver64/crypto_scaner/compare/v0.26.0...v0.27.0) (2026-10-01)
 
 

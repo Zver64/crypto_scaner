@@ -11,8 +11,11 @@ generator writes `TELEGRAM_DEV_INIT_DATA` to the gitignored root `.env.local`
 before Vite starts. It does not print the bot token or generated credential.
 During development, Vite places the stored credential in the launch hash before
 the Telegram SDK loads. The SDK then exposes it through
-`Telegram.WebApp.initData`, so HTTP requests and WebSocket authentication use
-the same frontend path as they do inside Telegram.
+`Telegram.WebApp.initData`, so the session exchange (`POST /api/v1/auth/session`)
+uses the same frontend path as it does inside Telegram. The generated API client
+(`src/api/fetch.ts`) and the live candle WebSocket then authenticate with the
+session token, which `src/api/session.ts` keeps in `sessionStorage` and renews
+once when the backend rejects it.
 
 The init data can still be refreshed without starting Vite:
 
@@ -23,9 +26,10 @@ npm run generate:dev-init-data
 Restart Vite after manually refreshing the init data so it loads the new private
 credential.
 
-The backend accepts the generated value for the duration configured by the
-required root `TELEGRAM_INIT_DATA_MAX_AGE` environment variable. The local
-example config sets it to 24 hours (`24h`).
+The backend exchanges init data for a session only while it is younger than
+`TELEGRAM_INIT_DATA_MAX_AGE` from the root `.env`. The example config sets it to
+15 minutes, so open the app within 15 minutes of starting Vite; an existing
+session keeps working after that.
 
 ## Run
 

@@ -3,7 +3,6 @@ import type { InfiniteData } from "@tanstack/react-query";
 import { useEffect, useMemo } from "react";
 import { useListInstrumentCandlesInfinite } from "@/api/generated/api";
 import type { CandlePageResponse } from "@/api/generated/models";
-import { telegramRequestOptions } from "@/app/telegram";
 import { apiErrorMessage } from "@/features/analysis/api-error";
 import {
 	nextCandlePageParam,
@@ -18,7 +17,6 @@ export function useHourlyHistory(symbol: string, enabled: boolean) {
 		symbol,
 		{ interval: "1h", limit: 200 },
 		{
-			fetch: telegramRequestOptions(),
 			query: {
 				enabled,
 				getNextPageParam: nextCandlePageParam,

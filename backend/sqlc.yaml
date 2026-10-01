@@ -15,6 +15,7 @@ sql:
       - migrations/000011_scanner_indicator_order.up.sql
       - migrations/000012_delete_disabled_users.up.sql
       - migrations/000013_strategies.up.sql
+      - migrations/000014_sessions.up.sql
     queries: internal/storage/postgres/queries
     gen:
       go:

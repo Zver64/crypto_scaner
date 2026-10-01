@@ -15,7 +15,6 @@ import (
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	"crypto-scanner/internal/auth"
-	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/httpapi"
 	"crypto-scanner/internal/indicator"
 	indicatortalib "crypto-scanner/internal/indicator/talib"
@@ -24,7 +23,7 @@ import (
 	"crypto-scanner/internal/platform/logging"
 )
 
-const analysisInitData = "auth_date=1785902400&query_id=AAHdF6IQAAAAAN0XogcAAAAA&user=%7B%22id%22%3A424242%2C%22first_name%22%3A%22Alice%22%2C%22username%22%3A%22alice%22%7D&hash=3787d0e46c1919cd293ec89f766ac33375446dbd7311acc07e422fecfc07812b"
+const analysisSessionToken = "analysis-session-token"
 const analysisBody = `{"criteria":[{"key":"daily_volatility","name":"volatility","label":"Daily Volatility","parameters":{"unit":"days","period":2,"percentile":50,"minimum_range_percent":0}}]}`
 
 func TestAuthenticatedUserCanAnalyzeOneInstrument(t *testing.T) {
@@ -167,7 +166,7 @@ func TestAuthenticatedUserCanRequestSortedLimitedMarketScan(t *testing.T) {
 func TestAnalysisRejectsMalformedAndUnknownJSON(t *testing.T) {
 	for _, body := range []string{"{", `{"criteria":[],"extra":true}`, `{"criteria":[],"exclude_stablecoins":false}`, `{"criteria":[{"key":"volatility","name":"volatility","label":"Volatility","parameters":{},"extra":true}]}`, `{"criteria":[],"sort":{"field":"market_cap_usd","direction":"desc","extra":true}}`} {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/analysis/market", bytes.NewBufferString(body))
-		req.Header.Set("Authorization", "tma "+analysisInitData)
+		req.Header.Set("Authorization", "Bearer "+analysisSessionToken)
 		res := httptest.NewRecorder()
 		newAnalysisHTTPHandler(httpStore{}).ServeHTTP(res, req)
 		if res.Code != http.StatusBadRequest {
@@ -363,7 +362,7 @@ func TestAnalysisPublicEndpointsReturnCanonicalErrors(t *testing.T) {
 func analysisRequestTo(t *testing.T, handler http.Handler, path, body string) *httptest.ResponseRecorder {
 	t.Helper()
 	request := httptest.NewRequest(http.MethodPost, path, bytes.NewBufferString(body))
-	request.Header.Set("Authorization", "tma "+analysisInitData)
+	request.Header.Set("Authorization", "Bearer "+analysisSessionToken)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	return response
@@ -416,16 +415,26 @@ func (service *countingAnalysis) Search(_ context.Context, request analysis.Sear
 	return markettable.Result{}, analysis.ErrInvalidArgument
 }
 
-type enabledUserStore struct{}
+// analysisSessions accepts only analysisSessionToken.
+type analysisSessions struct{}
 
 // noConfiguredColumns is a table without admin-configured indicator columns.
 type noConfiguredColumns struct{}
 
 func (noConfiguredColumns) TableColumns() []markettable.Column { return nil }
 
-func (enabledUserStore) FindByTelegramID(context.Context, int64) (auth.User, error) {
+func (analysisSessions) Exchange(context.Context, string) (auth.IssuedSession, error) {
+	return auth.IssuedSession{}, auth.ErrUnauthenticated
+}
+
+func (analysisSessions) Authenticate(_ context.Context, token string) (auth.User, error) {
+	if token != analysisSessionToken {
+		return auth.User{}, auth.ErrUnauthenticated
+	}
 	return auth.User{ID: 1, TelegramID: 424242}, nil
 }
+
+func (analysisSessions) Revoke(context.Context, string) error { return nil }
 func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysis.Factory) http.Handler {
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
 	service, _ := analysis.NewService(store, nil, factories...)
@@ -438,8 +447,7 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	if err != nil {
 		panic(err)
 	}
-	authenticator := authtelegram.New(enabledUserStore{}, fixtureBotToken, 15*time.Minute, 0, authtelegram.Options{Now: func() time.Time { return time.Date(2026, 8, 5, 4, 10, 0, 0, time.UTC) }})
-	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: markettable.NewService(service, table), Authenticator: authenticator}, httpapi.Options{})
+	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: markettable.NewService(service, table), Sessions: analysisSessions{}}, httpapi.Options{})
 }
 
 type httpStore struct {

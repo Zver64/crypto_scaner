@@ -1,19 +1,10 @@
-import { getTelegramInitData } from "@/app/telegram";
+import { getTelegramInitData, telegramUserID } from "@/app/telegram";
 
 const unknownUserScope = "telegram-user:unknown";
 
 export function telegramUserScope(initData = getTelegramInitData()): string {
-	if (!initData) return unknownUserScope;
-	try {
-		const rawUser = new URLSearchParams(initData).get("user");
-		if (!rawUser) return unknownUserScope;
-		const user = JSON.parse(rawUser) as { id?: unknown };
-		return typeof user.id === "number" && Number.isSafeInteger(user.id)
-			? `telegram-user:${user.id}`
-			: unknownUserScope;
-	} catch {
-		return unknownUserScope;
-	}
+	const userID = telegramUserID(initData);
+	return userID === undefined ? unknownUserScope : `telegram-user:${userID}`;
 }
 
 export function scopedUserQueryKey(

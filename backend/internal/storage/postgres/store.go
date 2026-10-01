@@ -30,6 +30,7 @@ func NewStore(db *DB) *Store { return &Store{db: db, queries: generated.New(db)}
 var (
 	_ auth.UserStore        = (*Store)(nil)
 	_ auth.AccessStore      = (*Store)(nil)
+	_ auth.SessionStore     = (*Store)(nil)
 	_ favorites.Store       = (*Store)(nil)
 	_ alerts.CRUDStore      = (*Store)(nil)
 	_ alerts.MonitorStore   = (*Store)(nil)

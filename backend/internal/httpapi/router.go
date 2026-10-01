@@ -58,12 +58,13 @@ type Dependencies struct {
 	Analysis     Analysis
 	MarketTables MarketTables
 	History      CandleHistory
-	// Authenticator verifies Telegram init data for HTTP and WebSocket requests.
-	Authenticator InitDataAuthenticator
-	Chart         ChartService
-	LiveCandles   LiveCandles
-	Favorites     Favorites
-	Alerts        PriceAlerts
+	// Sessions issues session tokens and authenticates HTTP and WebSocket
+	// requests by them.
+	Sessions    Sessions
+	Chart       ChartService
+	LiveCandles LiveCandles
+	Favorites   Favorites
+	Alerts      PriceAlerts
 	// ScannerIndicators and IndicatorTypes serve the administrator settings.
 	ScannerIndicators ScannerIndicators
 	IndicatorTypes    IndicatorTypes
@@ -86,6 +87,7 @@ type api struct {
 	favorites Favorites
 	alerts    PriceAlerts
 	chart     ChartService
+	sessions  Sessions
 
 	scannerIndicators ScannerIndicators
 	indicatorTypes    IndicatorTypes
@@ -111,6 +113,7 @@ var protectedRoutes = []string{
 	"PATCH /api/v1/alerts/{alert_id}",
 	"DELETE /api/v1/alerts/{alert_id}",
 	"GET /api/v1/me",
+	"DELETE /api/v1/auth/session",
 }
 
 // administratorRoutes are the operations only the scanner administrator may
@@ -136,12 +139,12 @@ var administratorRoutes = []string{
 
 // New returns the service HTTP handler with process-wide middleware applied.
 func New(logger *slog.Logger, dependencies Dependencies, options Options) http.Handler {
-	return newHandler(logger, dependencies, options, requireTelegramUser(dependencies.Authenticator))
+	return newHandler(logger, dependencies, options, requireSession(dependencies.Sessions, logger))
 }
 
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
-	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart,
+	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart, sessions: dependencies.Sessions,
 		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes, users: dependencies.Users, strategies: dependencies.Strategies}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,
@@ -159,6 +162,7 @@ func newHandler(logger *slog.Logger, dependencies Dependencies, options Options,
 
 	router := http.NewServeMux()
 	router.Handle("/health/", operations)
+	router.Handle("POST /api/v1/auth/session", requireInitData(validator(operations)))
 	protectedOperations := authenticate(defaultJSONContentType(limitAnalysisRequestBody(validator(operations))))
 	for _, route := range protectedRoutes {
 		router.Handle(route, protectedOperations)
@@ -167,7 +171,7 @@ func newHandler(logger *slog.Logger, dependencies Dependencies, options Options,
 	for _, route := range administratorRoutes {
 		router.Handle(route, administratorOperations)
 	}
-	router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(dependencies.Authenticator, dependencies.LiveCandles, dependencies.Chart, logger))
+	router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(dependencies.Sessions, dependencies.LiveCandles, dependencies.Chart, logger))
 	if options.APIDocsEnabled {
 		registerDocs(router)
 	}

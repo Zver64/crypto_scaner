@@ -35,13 +35,14 @@ afterEach(() => {
 	FakeSocket.instances = [];
 });
 
-it("subscribes to every chart interval on one socket and retains them while switching views", () => {
+it("subscribes to every chart interval on one socket and retains them while switching views", async () => {
 	vi.stubGlobal("window", {
 		location: { href: "https://example.com/instruments/BTC" },
 	});
 	vi.stubGlobal("WebSocket", FakeSocket);
 	const client = new LiveCandlesClient({
-		getInitData: () => "signed-data",
+		getToken: async () => "session-token",
+		invalidateToken: () => {},
 		onConnectionChange: () => {},
 		onMessage: () => {},
 	});
@@ -53,9 +54,10 @@ it("subscribes to every chart interval on one socket and retains them while swit
 	client.connect();
 	const socket = FakeSocket.instances[0]!;
 	socket.emit("open");
+	await vi.waitFor(() => expect(socket.messages).not.toHaveLength(0));
 	// Subscriptions follow authenticate without waiting for its reply.
 	expect(socket.messages).toEqual([
-		{ type: "authenticate", init_data: "signed-data" },
+		{ type: "authenticate", token: "session-token" },
 		...subscriptions.map((subscription) => ({
 			type: "subscribe",
 			...subscription,
@@ -69,11 +71,12 @@ it("subscribes to every chart interval on one socket and retains them while swit
 	client.disconnect();
 });
 
-it("updates only changed subscriptions without reopening the socket", () => {
+it("updates only changed subscriptions without reopening the socket", async () => {
 	vi.stubGlobal("window", { location: { href: "https://example.com/" } });
 	vi.stubGlobal("WebSocket", FakeSocket);
 	const client = new LiveCandlesClient({
-		getInitData: () => "signed-data",
+		getToken: async () => "session-token",
+		invalidateToken: () => {},
 		onConnectionChange: () => {},
 		onMessage: () => {},
 	});
@@ -81,6 +84,7 @@ it("updates only changed subscriptions without reopening the socket", () => {
 	client.connect();
 	const socket = FakeSocket.instances[0]!;
 	socket.emit("open");
+	await vi.waitFor(() => expect(socket.messages).toHaveLength(2));
 	socket.emit("message", JSON.stringify({ type: "authenticated" }));
 	client.setSubscriptions([{ symbol: "ETH", interval: "1h" }]);
 	expect(socket.messages.slice(2)).toEqual([

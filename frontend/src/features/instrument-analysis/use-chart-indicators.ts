@@ -11,7 +11,6 @@ import type {
 	CandleInterval,
 	ChartIndicatorDefinition,
 } from "@/api/generated/models";
-import { telegramRequestOptions } from "@/app/telegram";
 import type { ChartIndicatorOptions } from "@/components/price-history-chart";
 import { unexpectedApiError } from "@/features/analysis/api-error";
 import {
@@ -30,7 +29,6 @@ export function useChartIndicators(enabled: boolean) {
 			getListChartIndicatorsQueryOptions(
 				{ interval },
 				{
-					fetch: telegramRequestOptions(),
 					query: {
 						enabled,
 						select: (response) => validateCatalog(response.data.items),

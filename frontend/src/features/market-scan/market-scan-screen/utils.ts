@@ -10,15 +10,10 @@ import {
 	type MarketScanCriteria,
 } from "@/features/market-scan/pipeline";
 
-function validatedMarketScanQueryOptions(
-	criteria: MarketScanCriteria,
-	fetchOptions?: RequestInit,
-) {
+function validatedMarketScanQueryOptions(criteria: MarketScanCriteria) {
 	const selections = criterionSelections(criteria);
 	const request = { criteria: selections };
-	const generatedOptions = getAnalyzeMarketQueryOptions(request, {
-		fetch: fetchOptions,
-	});
+	const generatedOptions = getAnalyzeMarketQueryOptions(request);
 	const generatedQueryFn = generatedOptions.queryFn;
 	if (typeof generatedQueryFn !== "function") {
 		throw new Error("Analyze Market query function is unavailable");
@@ -36,12 +31,9 @@ function validatedMarketScanQueryOptions(
 	};
 }
 
-export function marketScanObserverOptions(
-	criteria: MarketScanCriteria,
-	fetchOptions?: RequestInit,
-) {
+export function marketScanObserverOptions(criteria: MarketScanCriteria) {
 	return {
-		...validatedMarketScanQueryOptions(criteria, fetchOptions),
+		...validatedMarketScanQueryOptions(criteria),
 		gcTime: Number.POSITIVE_INFINITY,
 		refetchOnMount: false as const,
 		refetchOnReconnect: false as const,
@@ -56,23 +48,19 @@ export function marketScanObserverOptions(
 export function fetchFreshMarketScan(
 	queryClient: QueryClient,
 	criteria: MarketScanCriteria,
-	fetchOptions?: RequestInit,
 ) {
 	return queryClient.fetchQuery({
-		...validatedMarketScanQueryOptions(criteria, fetchOptions),
+		...validatedMarketScanQueryOptions(criteria),
 		gcTime: Number.POSITIVE_INFINITY,
 		retry: false,
 		staleTime: 0,
 	});
 }
 
-export function marketScanMutationOptions(
-	queryClient: QueryClient,
-	fetchOptions?: RequestInit,
-) {
+export function marketScanMutationOptions(queryClient: QueryClient) {
 	return {
 		mutationFn: (criteria: MarketScanCriteria) =>
-			fetchFreshMarketScan(queryClient, criteria, fetchOptions),
+			fetchFreshMarketScan(queryClient, criteria),
 		retry: false as const,
 	};
 }

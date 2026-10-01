@@ -2,12 +2,10 @@
 package telegram
 
 import (
-	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"net/url"
 	"slices"
 	"strconv"
@@ -17,83 +15,65 @@ import (
 	"crypto-scanner/internal/auth"
 )
 
+// futureSkew tolerates init data dated slightly ahead of this server's clock.
+const futureSkew = 30 * time.Second
+
 // Options exposes the time boundary used to validate init-data age.
 type Options struct {
 	Now func() time.Time
 }
 
-// Authenticator verifies Telegram Mini App init data and authorizes the
-// Telegram identity against the application user store.
-type Authenticator struct {
-	store    auth.UserStore
-	botToken string
-	maxAge   time.Duration
-	// administratorID is the Telegram ID of the scanner administrator.
-	administratorID int64
-	now             func() time.Time
+// Verifier checks the signature and age of Telegram Mini App init data.
+type Verifier struct {
+	// secretKey is HMAC-SHA-256("WebAppData", bot token), derived once.
+	secretKey []byte
+	maxAge    time.Duration
+	now       func() time.Time
 }
 
-// New creates an authenticator that marks administratorID as the scanner
-// administrator; zero options use the system clock.
-func New(store auth.UserStore, botToken string, maxAge time.Duration, administratorID int64, options Options) *Authenticator {
+// New creates a verifier for init data issued to the bot with botToken at
+// most maxAge ago; zero options use the system clock.
+func New(botToken string, maxAge time.Duration, options Options) *Verifier {
 	now := options.Now
 	if now == nil {
 		now = time.Now
 	}
-	return &Authenticator{store: store, botToken: botToken, maxAge: maxAge, administratorID: administratorID, now: now}
+	secretMAC := hmac.New(sha256.New, []byte("WebAppData"))
+	_, _ = secretMAC.Write([]byte(botToken))
+	return &Verifier{secretKey: secretMAC.Sum(nil), maxAge: maxAge, now: now}
 }
 
-// AuthenticateInitData verifies raw init data and returns the application user.
-// It fails with auth.ErrUnauthenticated or auth.ErrAccessDenied.
-func (authenticator *Authenticator) AuthenticateInitData(ctx context.Context, rawInitData string) (auth.User, error) {
-	telegramID, ok := authenticator.validate(rawInitData)
-	if !ok {
-		return auth.User{}, auth.ErrUnauthenticated
-	}
-	user, err := authenticator.store.FindByTelegramID(ctx, telegramID)
-	if errors.Is(err, auth.ErrUserNotFound) {
-		return auth.User{}, auth.ErrAccessDenied
-	}
-	if err != nil {
-		return auth.User{}, err
-	}
-	user.Administrator = user.TelegramID == authenticator.administratorID
-	return user, nil
-}
-
-func (authenticator *Authenticator) validate(raw string) (int64, bool) {
+// Verify returns the Telegram user ID of valid init data. It fails with
+// auth.ErrUnauthenticated.
+func (verifier *Verifier) Verify(raw string) (int64, error) {
 	values, err := url.ParseQuery(raw)
 	if err != nil || !singleValues(values) {
-		return 0, false
+		return 0, auth.ErrUnauthenticated
 	}
 	receivedHash, err := hex.DecodeString(values.Get("hash"))
 	if err != nil || len(receivedHash) != sha256.Size {
-		return 0, false
+		return 0, auth.ErrUnauthenticated
 	}
-	dataCheckString := makeDataCheckString(values)
-	secretMAC := hmac.New(sha256.New, []byte("WebAppData"))
-	_, _ = secretMAC.Write([]byte(authenticator.botToken))
-	dataMAC := hmac.New(sha256.New, secretMAC.Sum(nil))
-	_, _ = dataMAC.Write([]byte(dataCheckString))
+	dataMAC := hmac.New(sha256.New, verifier.secretKey)
+	_, _ = dataMAC.Write([]byte(makeDataCheckString(values)))
 	if !hmac.Equal(receivedHash, dataMAC.Sum(nil)) {
-		return 0, false
+		return 0, auth.ErrUnauthenticated
 	}
 	authUnix, err := strconv.ParseInt(values.Get("auth_date"), 10, 64)
 	if err != nil {
-		return 0, false
+		return 0, auth.ErrUnauthenticated
 	}
-	authTime := time.Unix(authUnix, 0)
-	age := authenticator.now().Sub(authTime)
-	if age < 0 || age > authenticator.maxAge {
-		return 0, false
+	age := verifier.now().Sub(time.Unix(authUnix, 0))
+	if age < -futureSkew || age > verifier.maxAge {
+		return 0, auth.ErrUnauthenticated
 	}
 	var telegramUser struct {
 		ID int64 `json:"id"`
 	}
 	if err := json.Unmarshal([]byte(values.Get("user")), &telegramUser); err != nil || telegramUser.ID <= 0 {
-		return 0, false
+		return 0, auth.ErrUnauthenticated
 	}
-	return telegramUser.ID, true
+	return telegramUser.ID, nil
 }
 
 func singleValues(values url.Values) bool {

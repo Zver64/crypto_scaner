@@ -6,8 +6,12 @@ info:
     HTTP API for service health, cryptocurrency market analysis, and candle history.
 
     Live candles use the same-origin WebSocket endpoint `/api/v1/live/candles`.
-    The client first sends `LiveCandleClientMessage` with type `authenticate`; the
-    Telegram init data is never placed in the URL. After `authenticated`, the
+    Clients exchange Telegram Mini App init data for a session token with
+    `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
+    other operation. A request rejected with `401` needs a new session.
+
+    The client first sends `LiveCandleClientMessage` with type `authenticate` and
+    the session token; the token is never placed in the URL. After `authenticated`, the
     connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
     `LiveCandleServerMessage` snapshots, updates, freshness changes, acknowledgements,
     and bounded errors. One connection may switch subscriptions without reconnecting.
@@ -15,6 +19,7 @@ servers:
   - url: /
 tags:
   - name: Health
+  - name: Authentication
   - name: Analysis
   - name: Market Data
   - name: Favorites
@@ -64,13 +69,43 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ReadinessResponse"
+  /api/v1/auth/session:
+    post:
+      operationId: createSession
+      summary: Exchange Telegram init data for a session token
+      tags: [Authentication]
+      security: [{ telegramInitData: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "201":
+          description: Session created.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content: { application/json: { schema: { $ref: "#/components/schemas/Session" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AccessDenied" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    delete:
+      operationId: deleteSession
+      summary: Revoke the current session
+      tags: [Authentication]
+      security: [{ sessionToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+      responses:
+        "204": { description: Session revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AccessDenied" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/analysis/instruments/{symbol}:
     post:
       operationId: analyzeInstrument
       summary: Analyze one active instrument
       tags: [Analysis]
       security:
-        - telegramInitData: []
+        - sessionToken: []
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Symbol"
@@ -112,7 +147,7 @@ paths:
       summary: Analyze active instruments in the market
       tags: [Analysis]
       security:
-        - telegramInitData: []
+        - sessionToken: []
       parameters:
         - $ref: "#/components/parameters/RequestID"
       requestBody:
@@ -149,7 +184,7 @@ paths:
       summary: List a chronological page of closed candles
       tags: [Market Data]
       security:
-        - telegramInitData: []
+        - sessionToken: []
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Symbol"
@@ -204,7 +239,7 @@ paths:
         and `parameters`, in this order, and draw the returned series as described
         here. The administrator configures the catalog, so it may be empty.
       tags: [Market Data]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters:
         - name: interval
           in: query
@@ -221,7 +256,7 @@ paths:
     get:
       operationId: listFavorites
       tags: [Favorites]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       responses:
         "200":
           description: Current user's favorites.
@@ -233,7 +268,7 @@ paths:
     put:
       operationId: addFavorite
       tags: [Favorites]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/Symbol" }]
       responses:
         "200":
@@ -246,7 +281,7 @@ paths:
     delete:
       operationId: removeFavorite
       tags: [Favorites]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters:
         - { $ref: "#/components/parameters/Symbol" }
         - name: confirm_alerts
@@ -265,7 +300,7 @@ paths:
       operationId: analyzeFavorites
       summary: Analyze the current user's active favorite instruments
       tags: [Favorites]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       requestBody:
         required: true
         content:
@@ -285,7 +320,7 @@ paths:
     get:
       operationId: listPriceAlerts
       tags: [Price Alerts]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/Symbol" }]
       responses:
         "200":
@@ -297,7 +332,7 @@ paths:
     post:
       operationId: createPriceAlert
       tags: [Price Alerts]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/Symbol" }]
       requestBody:
         required: true
@@ -316,7 +351,7 @@ paths:
     patch:
       operationId: updatePriceAlert
       tags: [Price Alerts]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/AlertID" }]
       requestBody:
         required: true
@@ -334,7 +369,7 @@ paths:
     delete:
       operationId: deletePriceAlert
       tags: [Price Alerts]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/AlertID" }]
       responses:
         "204": { description: Alert deleted. }
@@ -347,7 +382,7 @@ paths:
       operationId: getCurrentUser
       summary: Describe the authenticated user
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       responses:
         "200":
           description: Current user.
@@ -361,7 +396,7 @@ paths:
       summary: List every indicator the scanner can calculate
       description: Self-descriptions of the registered indicators, used to build the scanner indicator form.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       responses:
         "200":
           description: Indicator types ordered by type.
@@ -379,7 +414,7 @@ paths:
         `show_in_table` is set. Items are in display order, which orders the
         table columns and the chart indicators.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       responses:
         "200":
           description: Configured indicators.
@@ -392,7 +427,7 @@ paths:
       summary: Add a scanner indicator on one or more intervals
       description: Adds one indicator per chosen interval, all or none, at the end of the display order.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorInput" } } }
@@ -412,7 +447,7 @@ paths:
         Charts and tables then show no configured indicators, and their values
         are no longer tracked. Rejected while a strategy reads any indicator.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       responses:
         "204": { description: All indicators removed. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -424,7 +459,7 @@ paths:
       operationId: reorderScannerIndicators
       summary: Set the display order of the scanner indicators
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorOrder" } } }
@@ -442,7 +477,7 @@ paths:
       operationId: updateScannerIndicator
       summary: Change the table visibility and pane scale of a scanner indicator
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
       requestBody:
         required: true
@@ -461,7 +496,7 @@ paths:
       summary: Remove a scanner indicator
       description: Rejected while a strategy reads the indicator.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
       responses:
         "204": { description: Indicator removed. }
@@ -476,7 +511,7 @@ paths:
       summary: List the application users
       description: Users are added through the Telegram bot. The administrator comes first.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       responses:
         "200":
           description: Application users.
@@ -490,7 +525,7 @@ paths:
       summary: Choose whether a user receives strategy alerts
       description: The administrator always receives them and cannot be changed.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/TelegramID" }]
       requestBody:
         required: true
@@ -507,7 +542,7 @@ paths:
       summary: Delete an application user
       description: The user loses access, and their favorites and price alerts are deleted. The administrator cannot be deleted.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/TelegramID" }]
       responses:
         "204": { description: User deleted. }
@@ -522,7 +557,7 @@ paths:
       summary: List the indicator values strategy expressions can read
       description: One variable per output of every configured indicator, in display order.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       responses:
         "200":
           description: Strategy variables.
@@ -539,7 +574,7 @@ paths:
         closed candles. The administrator and users with strategy alerts get
         a Telegram message when an instrument starts matching.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       responses:
         "200":
           description: Strategies ordered by creation.
@@ -552,7 +587,7 @@ paths:
       summary: Add a strategy
       description: An enabled strategy announces the instruments matching it now, then alerts on new matches.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/StrategyInput" } } }
@@ -571,7 +606,7 @@ paths:
       summary: Change the name and expression of a strategy
       description: A changed expression of an enabled strategy announces its current matches again.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/StrategyID" }]
       requestBody:
         required: true
@@ -591,7 +626,7 @@ paths:
       summary: Turn a strategy on or off
       description: Enabling announces the current matches; disabling forgets them.
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/StrategyID" }]
       requestBody:
         required: true
@@ -608,7 +643,7 @@ paths:
       operationId: deleteStrategy
       summary: Remove a strategy
       tags: [Administration]
-      security: [{ telegramInitData: [] }]
+      security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/StrategyID" }]
       responses:
         "204": { description: Strategy removed. }
@@ -622,7 +657,11 @@ components:
       type: apiKey
       in: header
       name: Authorization
-      description: Telegram Mini App init data prefixed with `tma `.
+      description: Telegram Mini App init data prefixed with `tma `; accepted only by `createSession`.
+    sessionToken:
+      type: http
+      scheme: bearer
+      description: Session token issued by `createSession`.
   parameters:
     RequestID:
       name: X-Request-ID
@@ -695,7 +734,7 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
     Unauthenticated:
-      description: Telegram authentication is missing, invalid, or expired.
+      description: The session or Telegram init data is missing, invalid, or expired.
       headers:
         X-Request-ID:
           $ref: "#/components/headers/RequestID"
@@ -788,6 +827,18 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    Session:
+      type: object
+      additionalProperties: false
+      required: [token, expires_at]
+      properties:
+        token:
+          type: string
+          description: Opaque bearer token; it also expires after a period without use.
+        expires_at:
+          type: string
+          format: date-time
+          description: Time after which the session ends regardless of use.
     Favorite:
       type: object
       additionalProperties: false
@@ -1349,9 +1400,10 @@ components:
         type:
           type: string
           enum: [authenticate, subscribe, unsubscribe]
-        init_data:
+        token:
           type: string
           minLength: 1
+          description: Session token of an `authenticate` message.
         symbol:
           type: string
           minLength: 1

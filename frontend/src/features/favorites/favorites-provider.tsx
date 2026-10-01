@@ -17,7 +17,6 @@ import {
 	useRemoveFavorite,
 } from "@/api/generated/api";
 import type { Favorite } from "@/api/generated/models";
-import { telegramRequestOptions } from "@/app/telegram";
 import { FavoriteRemovalConfirmation } from "@/features/favorites/favorite-removal-confirmation";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import {
@@ -90,7 +89,6 @@ export function FavoritesProvider({
 		[clearScope],
 	);
 	const query = useListFavorites({
-		fetch: telegramRequestOptions(),
 		query: {
 			enabled: enabled && !accessBlocked,
 			queryKey: scopedUserQueryKey(getListFavoritesQueryKey(), scope),
@@ -127,7 +125,6 @@ export function FavoritesProvider({
 
 	const refreshFavorites = () => invalidateFavoriteQueries(queryClient);
 	const addMutation = useAddFavorite({
-		fetch: telegramRequestOptions(),
 		mutation: {
 			onError: (error) => {
 				handleAccessError(error);
@@ -141,7 +138,6 @@ export function FavoritesProvider({
 		},
 	});
 	const removeMutation = useRemoveFavorite({
-		fetch: telegramRequestOptions(),
 		mutation: { onSuccess: refreshFavorites },
 	});
 	const favorites = useMemo(

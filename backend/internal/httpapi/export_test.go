@@ -6,10 +6,10 @@ import (
 )
 
 // NewWithAuthentication builds the handler with a test authentication
-// middleware in place of Telegram init-data verification.
+// middleware in place of session verification.
 func NewWithAuthentication(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	return newHandler(logger, dependencies, options, authenticate)
 }
 
-// RequireTelegramUser exposes the Telegram authentication middleware to tests.
-var RequireTelegramUser = requireTelegramUser
+// RequireSession exposes the session authentication middleware to tests.
+var RequireSession = requireSession

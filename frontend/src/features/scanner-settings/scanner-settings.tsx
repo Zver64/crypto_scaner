@@ -17,7 +17,6 @@ import {
 	useUpdateScannerIndicator,
 } from "@/api/generated/api";
 import type { ScannerIndicator } from "@/api/generated/models";
-import { telegramRequestOptions } from "@/app/telegram";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { ScannerIndicatorForm } from "@/features/scanner-settings/scanner-indicator-form";
 import { ScannerIndicatorList } from "@/features/scanner-settings/scanner-indicator-list";
@@ -32,7 +31,6 @@ export function ScannerSettings() {
 	const [removing, setRemoving] = useState<ScannerIndicator>();
 	const [clearing, setClearing] = useState(false);
 	const types = useListIndicatorTypes({
-		fetch: telegramRequestOptions(),
 		query: {
 			retry: false,
 			select: (response) => response.data.items,
@@ -40,7 +38,6 @@ export function ScannerSettings() {
 		},
 	});
 	const indicators = useListScannerIndicators({
-		fetch: telegramRequestOptions(),
 		query: { retry: false, select: (response) => response.data.items },
 	});
 	// Indicators change charts and table columns everywhere. The returned
@@ -73,20 +70,16 @@ export function ScannerSettings() {
 		});
 	};
 	const createMutation = useCreateScannerIndicator({
-		fetch: telegramRequestOptions(),
 		mutation: { onError: failed, onSuccess: refresh },
 	});
 	const updateMutation = useUpdateScannerIndicator({
-		fetch: telegramRequestOptions(),
 		mutation: { onError: failed, onSuccess: refresh },
 	});
 	// The dragged order shows until the refreshed list arrives.
 	const reorderMutation = useReorderScannerIndicators({
-		fetch: telegramRequestOptions(),
 		mutation: { onError: failed, onSuccess: refresh },
 	});
 	const deleteMutation = useDeleteScannerIndicator({
-		fetch: telegramRequestOptions(),
 		mutation: {
 			onError: failed,
 			onSettled: () => setRemoving(undefined),
@@ -95,7 +88,6 @@ export function ScannerSettings() {
 	});
 
 	const clearMutation = useClearScannerIndicators({
-		fetch: telegramRequestOptions(),
 		mutation: {
 			onError: failed,
 			onSettled: () => setClearing(false),

@@ -12,6 +12,8 @@ export default defineConfig({
 			clean: true,
 			urlEncodeParameters: true,
 			override: {
+				// Authenticates every operation with the session token.
+				mutator: { path: "./src/api/fetch.ts", name: "apiFetch" },
 				fetch: {
 					// Reject non-2xx responses before TanStack Query can cache them as successful data.
 					forceSuccessResponse: true,

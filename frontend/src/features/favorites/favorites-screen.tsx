@@ -18,7 +18,6 @@ import {
 import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
-import { telegramRequestOptions } from "@/app/telegram";
 import { SettingsForm } from "@/components/settings-form";
 import { apiErrorMessage } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
@@ -70,7 +69,6 @@ export function FavoritesScreen({
 	const criteria = buildTopCoinsCriteria(settings);
 	const request = { criteria, ...topCoinsRequestOptions };
 	const query = useAnalyzeFavorites<MarketAnalysisResponse>(request, {
-		fetch: telegramRequestOptions(),
 		query: {
 			enabled: permission.allowed && !isLoading && hasFavorites,
 			queryKey: scopedUserQueryKey(

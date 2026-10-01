@@ -13,11 +13,13 @@ import (
 )
 
 const (
-	defaultHTTPAddress       = "127.0.0.1:8080"
-	defaultLogLevel          = "info"
-	defaultSyncWorkers       = 4
-	defaultSyncRetryAttempts = 5
-	defaultShutdownTimeout   = 15 * time.Second
+	defaultHTTPAddress        = "127.0.0.1:8080"
+	defaultLogLevel           = "info"
+	defaultSyncWorkers        = 4
+	defaultSyncRetryAttempts  = 5
+	defaultShutdownTimeout    = 15 * time.Second
+	defaultSessionIdleTTL     = 12 * time.Hour
+	defaultSessionAbsoluteTTL = 7 * 24 * time.Hour
 )
 
 // ServerConfig is the single source of truth for environment-derived server
@@ -29,6 +31,8 @@ type ServerConfig struct {
 	HTTPAddress            string
 	LogLevel               string
 	TelegramInitDataMaxAge time.Duration
+	SessionIdleTTL         time.Duration
+	SessionAbsoluteTTL     time.Duration
 	SyncWorkers            int
 	SyncRetryAttempts      int
 	ShutdownTimeout        time.Duration
@@ -64,6 +68,15 @@ func LoadServer() (ServerConfig, error) {
 	}
 	if cfg.TelegramInitDataMaxAge, err = requiredPositiveDuration("TELEGRAM_INIT_DATA_MAX_AGE"); err != nil {
 		return ServerConfig{}, err
+	}
+	if cfg.SessionIdleTTL, err = positiveDuration("SESSION_IDLE_TTL", defaultSessionIdleTTL); err != nil {
+		return ServerConfig{}, err
+	}
+	if cfg.SessionAbsoluteTTL, err = positiveDuration("SESSION_ABSOLUTE_TTL", defaultSessionAbsoluteTTL); err != nil {
+		return ServerConfig{}, err
+	}
+	if cfg.SessionIdleTTL > cfg.SessionAbsoluteTTL {
+		return ServerConfig{}, fmt.Errorf("SESSION_IDLE_TTL must not exceed SESSION_ABSOLUTE_TTL")
 	}
 	if cfg.SyncWorkers, err = positiveInt("SYNC_WORKERS", defaultSyncWorkers); err != nil {
 		return ServerConfig{}, err

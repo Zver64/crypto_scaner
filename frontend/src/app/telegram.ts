@@ -102,14 +102,25 @@ export function useTelegramMiniApp() {
 }
 
 export function getTelegramInitData() {
+	if (typeof window === "undefined") return undefined;
 	return window.Telegram?.WebApp?.initData;
 }
 
-export function telegramRequestOptions(): RequestInit | undefined {
-	const initData = getTelegramInitData()?.trim();
-	return initData
-		? { headers: { Authorization: `tma ${initData}` } }
-		: undefined;
+/** Telegram user ID that init data claims; the backend verifies it. */
+export function telegramUserID(
+	initData = getTelegramInitData(),
+): number | undefined {
+	if (!initData) return undefined;
+	try {
+		const rawUser = new URLSearchParams(initData).get("user");
+		if (!rawUser) return undefined;
+		const user = JSON.parse(rawUser) as { id?: unknown };
+		return typeof user.id === "number" && Number.isSafeInteger(user.id)
+			? user.id
+			: undefined;
+	} catch {
+		return undefined;
+	}
 }
 
 export function openTelegramExternalLink(url: string): boolean {

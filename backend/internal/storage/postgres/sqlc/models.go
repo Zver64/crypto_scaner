@@ -68,6 +68,14 @@ type AppSchemaMigration struct {
 	BinanceSpotSchemaCreated bool
 }
 
+type AppSession struct {
+	TokenHash         []byte
+	UserID            int64
+	CreatedAt         pgtype.Timestamptz
+	IdleExpiresAt     pgtype.Timestamptz
+	AbsoluteExpiresAt pgtype.Timestamptz
+}
+
 type AppStrategy struct {
 	ID              int64
 	Name            string

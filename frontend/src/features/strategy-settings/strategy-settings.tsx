@@ -13,7 +13,6 @@ import {
 	useUpdateStrategy,
 } from "@/api/generated/api";
 import type { Strategy } from "@/api/generated/models";
-import { telegramRequestOptions } from "@/app/telegram";
 import { StrategyForm } from "@/features/strategy-settings/strategy-form";
 import { StrategyRemovalConfirmation } from "@/features/strategy-settings/strategy-removal-confirmation";
 import { StrategyRow } from "@/features/strategy-settings/strategy-row";
@@ -29,11 +28,9 @@ export function StrategySettings() {
 	const [draft, setDraft] = useState<StrategyDraft>();
 	const [removing, setRemoving] = useState<Strategy>();
 	const strategies = useListStrategies({
-		fetch: telegramRequestOptions(),
 		query: { retry: false, select: (response) => response.data.items },
 	});
 	const variables = useListStrategyVariables({
-		fetch: telegramRequestOptions(),
 		query: { retry: false, select: (response) => response.data.items },
 	});
 	// Strategies decide which indicators are in use.
@@ -57,19 +54,15 @@ export function StrategySettings() {
 		return refresh();
 	};
 	const createMutation = useCreateStrategy({
-		fetch: telegramRequestOptions(),
 		mutation: { onError: failed, onSuccess: saved },
 	});
 	const updateMutation = useUpdateStrategy({
-		fetch: telegramRequestOptions(),
 		mutation: { onError: failed, onSuccess: saved },
 	});
 	const enabledMutation = useSetStrategyEnabled({
-		fetch: telegramRequestOptions(),
 		mutation: { onError: failed, onSettled: refresh },
 	});
 	const deleteMutation = useDeleteStrategy({
-		fetch: telegramRequestOptions(),
 		mutation: {
 			onError: failed,
 			onSettled: () => {

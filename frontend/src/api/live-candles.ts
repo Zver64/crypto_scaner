@@ -15,7 +15,9 @@ export interface LiveCandleSubscription {
 }
 
 interface LiveCandlesClientOptions {
-	getInitData(): string | undefined;
+	getToken(): Promise<string | undefined>;
+	// Forgets a token the server rejected, so the reconnect gets a new one.
+	invalidateToken(token: string): void;
 	onConnectionChange(connection: LiveCandleConnection): void;
 	onMessage(message: LiveCandleServerMessage): void;
 }
@@ -28,6 +30,7 @@ export class LiveCandlesClient {
 	private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 	private socket: WebSocket | undefined;
 	private stopped = true;
+	private token: string | undefined;
 	private subscriptions: readonly LiveCandleSubscription[] = [];
 
 	constructor(private readonly options: LiveCandlesClientOptions) {}
@@ -85,17 +88,7 @@ export class LiveCandlesClient {
 		const socket = new WebSocket(liveWebSocketURL());
 		this.socket = socket;
 		socket.addEventListener("open", () => {
-			if (this.socket !== socket || this.stopped) return;
-			const initData = this.options.getInitData()?.trim();
-			if (!initData) {
-				socket.close(1008, "Telegram authentication is required");
-				return;
-			}
-			this.send({ type: "authenticate", init_data: initData });
-			this.ready = true;
-			for (const subscription of this.subscriptions) {
-				this.send({ type: "subscribe", ...subscription });
-			}
+			void this.authenticate(socket);
 		});
 		socket.addEventListener("message", (event) => {
 			if (this.socket !== socket || this.stopped) return;
@@ -105,6 +98,13 @@ export class LiveCandlesClient {
 				this.reconnectAttempt = 0;
 				this.options.onConnectionChange("connected");
 				return;
+			}
+			if (
+				message.type === "error" &&
+				message.code === "unauthenticated" &&
+				this.token
+			) {
+				this.options.invalidateToken(this.token);
 			}
 			this.options.onMessage(message);
 		});
@@ -118,6 +118,26 @@ export class LiveCandlesClient {
 			this.reconnectAttempt += 1;
 			this.reconnectTimer = setTimeout(() => this.open(), delay);
 		});
+	}
+
+	private async authenticate(socket: WebSocket): Promise<void> {
+		let token: string | undefined;
+		try {
+			token = await this.options.getToken();
+		} catch {
+			token = undefined;
+		}
+		if (this.socket !== socket || this.stopped) return;
+		if (!token) {
+			socket.close(1008, "Authentication is required");
+			return;
+		}
+		this.token = token;
+		this.send({ type: "authenticate", token });
+		this.ready = true;
+		for (const subscription of this.subscriptions) {
+			this.send({ type: "subscribe", ...subscription });
+		}
 	}
 
 	private send(message: LiveCandleClientMessage): void {

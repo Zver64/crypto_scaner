@@ -12,6 +12,7 @@ import (
 	"crypto-scanner/internal/analysis"
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/marketcap"
 	"crypto-scanner/internal/analysis/criteria/volatility"
+	"crypto-scanner/internal/auth"
 	authtelegram "crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/closedindicator"
@@ -153,16 +154,18 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	monitoredChanged = append(monitoredChanged, alertMonitor.Changed, closedIndicators.Refresh, strategyMonitor.Changed)
 	favoriteService := favorites.New(store, monitoredChanged.notify, analysisService, closedIndicators, favoritesTable)
 
+	sessions := auth.NewSessions(store, authtelegram.New(cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, authtelegram.Options{}),
+		cfg.AdminTelegramID, cfg.SessionIdleTTL, cfg.SessionAbsoluteTTL, logger, auth.SessionOptions{})
 	handler := httpapi.New(logger, httpapi.Dependencies{
-		Readiness:     store,
-		Analysis:      analysisService,
-		MarketTables:  markettable.NewService(analysisService, marketTable),
-		History:       store,
-		Authenticator: authtelegram.New(store, cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, cfg.AdminTelegramID, authtelegram.Options{}),
-		Chart:         chartService,
-		LiveCandles:   liveService,
-		Favorites:     favoriteService,
-		Alerts:        alerts.New(store, alertMonitor),
+		Readiness:    store,
+		Analysis:     analysisService,
+		MarketTables: markettable.NewService(analysisService, marketTable),
+		History:      store,
+		Sessions:     sessions,
+		Chart:        chartService,
+		LiveCandles:  liveService,
+		Favorites:    favoriteService,
+		Alerts:       alerts.New(store, alertMonitor),
 
 		ScannerIndicators: scannerIndicators,
 		IndicatorTypes:    indicatorRegistry,
@@ -180,6 +183,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		{"Telegram bot", botService},
 		{"coin metadata synchronizer", coinMetadataSynchronizer},
 		{"market retention", retention.New(store, logger, market.HistoryDepth)},
+		{"session pruner", sessions},
 	}}, nil
 }
 

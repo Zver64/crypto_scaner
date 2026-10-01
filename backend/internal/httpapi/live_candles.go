@@ -33,7 +33,11 @@ const (
 	clientPongTimeout         = 60 * time.Second
 	clientPingPeriod          = 25 * time.Second
 	clientAuthTimeout         = 5 * time.Second
-	maxClientMessage          = 16 << 10
+	// sessionCheckPeriod bounds how long a connection outlives its session,
+	// for example after the user is deleted.
+	sessionCheckPeriod  = time.Minute
+	sessionCheckTimeout = 5 * time.Second
+	maxClientMessage    = 16 << 10
 )
 
 type LiveCandles interface {
@@ -44,18 +48,18 @@ type LiveCandles interface {
 }
 
 type liveCandleHandler struct {
-	authenticator InitDataAuthenticator
-	service       LiveCandles
-	charts        ChartService
-	logger        *slog.Logger
-	upgrader      websocket.Upgrader
-	connections   chan struct{}
-	userMu        sync.Mutex
-	userCounts    map[int64]int
+	sessions    Sessions
+	service     LiveCandles
+	charts      ChartService
+	logger      *slog.Logger
+	upgrader    websocket.Upgrader
+	connections chan struct{}
+	userMu      sync.Mutex
+	userCounts  map[int64]int
 }
 
-func newLiveCandleHandler(authenticator InitDataAuthenticator, service LiveCandles, charts ChartService, logger *slog.Logger) http.Handler {
-	handler := &liveCandleHandler{authenticator: authenticator, service: service, charts: charts, logger: logger, connections: make(chan struct{}, maxLiveConnections), userCounts: make(map[int64]int)}
+func newLiveCandleHandler(sessions Sessions, service LiveCandles, charts ChartService, logger *slog.Logger) http.Handler {
+	handler := &liveCandleHandler{sessions: sessions, service: service, charts: charts, logger: logger, connections: make(chan struct{}, maxLiveConnections), userCounts: make(map[int64]int)}
 	handler.upgrader = websocket.Upgrader{HandshakeTimeout: 5 * time.Second, CheckOrigin: sameWebSocketOrigin, EnableCompression: false}
 	return handler
 }
@@ -87,18 +91,14 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 	connection.SetReadLimit(maxClientMessage)
 	_ = connection.SetReadDeadline(time.Now().Add(clientAuthTimeout))
 	message, err := readLiveClientMessage(connection)
-	if err != nil || message.Type != Authenticate || message.InitData == nil {
+	if err != nil || message.Type != Authenticate || message.Token == nil {
 		client.writeError("unauthenticated", authenticationRequiredMessage)
 		return
 	}
-	user, err := handler.authenticator.AuthenticateInitData(request.Context(), *message.InitData)
+	token := *message.Token
+	user, err := handler.sessions.Authenticate(request.Context(), token)
 	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrAccessDenied):
-			client.writeError("access_denied", auth.ErrAccessDenied.Error())
-		default:
-			client.writeError("unauthenticated", auth.ErrUnauthenticated.Error())
-		}
+		handler.writeAuthenticationError(request.Context(), client, err)
 		return
 	}
 	if !handler.acquireUser(user.ID) {
@@ -112,6 +112,16 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 	_ = connection.SetReadDeadline(time.Now().Add(clientPongTimeout))
 	connection.SetPongHandler(func(string) error { return connection.SetReadDeadline(time.Now().Add(clientPongTimeout)) })
 	go client.writeLoop()
+	// A hijacked request's context lives until the handler returns, so the
+	// watch gets its own context to cancel an in-flight check on disconnect.
+	watchCtx, cancelWatch := context.WithCancel(request.Context())
+	sessionWatched := make(chan struct{})
+	go func() {
+		defer close(sessionWatched)
+		handler.watchSession(watchCtx, client, token)
+	}()
+	// Closing the client unblocks the read loop; cancelling stops the watch.
+	defer func() { client.Close(); cancelWatch(); <-sessionWatched }()
 	if !client.enqueueWire(LiveCandleServerMessage{Type: Authenticated}) {
 		return
 	}
@@ -183,6 +193,42 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			client.enqueueError("invalid_message", "Unsupported WebSocket message")
 		}
 	}
+}
+
+// watchSession closes the connection once its session is no longer valid. It
+// returns when the client closes or ctx is cancelled.
+func (handler *liveCandleHandler) watchSession(ctx context.Context, client *liveSocketClient, token string) {
+	ticker := time.NewTicker(sessionCheckPeriod)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-client.done:
+			return
+		case <-ticker.C:
+			checkCtx, cancel := context.WithTimeout(ctx, sessionCheckTimeout)
+			_, err := handler.sessions.Authenticate(checkCtx, token)
+			cancel()
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				handler.writeAuthenticationError(ctx, client, err)
+				client.Close()
+				return
+			}
+		}
+	}
+}
+
+func (handler *liveCandleHandler) writeAuthenticationError(ctx context.Context, client *liveSocketClient, err error) {
+	if errors.Is(err, auth.ErrUnauthenticated) {
+		client.writeError("unauthenticated", sessionInvalidMessage)
+		return
+	}
+	handler.logger.ErrorContext(ctx, "live candle authentication failed", "module", "httpapi", "operation", "authenticate", "error", err)
+	client.writeError("unavailable", "Live candles are temporarily unavailable")
 }
 
 func (handler *liveCandleHandler) acquireUser(userID int64) bool {

@@ -4,7 +4,6 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
-import { telegramRequestOptions } from "@/app/telegram";
 import { type ApiError, apiErrorMessage } from "@/features/analysis/api-error";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanForm } from "@/features/market-scan/form";
@@ -50,17 +49,13 @@ export function MarketScanScreen({
 	const permission = useBusinessRequestPermission();
 	const queryClient = useQueryClient();
 	const [committedCriteria, setCommittedCriteria] = useState(initialCriteria);
-	const requestOptions = telegramRequestOptions();
 	const query = useQuery({
 		...marketScanObserverOptions(
 			committedCriteria ?? defaultMarketScanCriteria,
-			requestOptions,
 		),
 		enabled: permission.allowed && committedCriteria !== undefined,
 	});
-	const mutation = useMutation(
-		marketScanMutationOptions(queryClient, requestOptions),
-	);
+	const mutation = useMutation(marketScanMutationOptions(queryClient));
 
 	useEffect(() => {
 		if (committedCriteria && query.isLoadingError) {

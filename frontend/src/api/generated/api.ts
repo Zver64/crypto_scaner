@@ -5,8 +5,12 @@
  * HTTP API for service health, cryptocurrency market analysis, and candle history.
  *
  * Live candles use the same-origin WebSocket endpoint `/api/v1/live/candles`.
- * The client first sends `LiveCandleClientMessage` with type `authenticate`; the
- * Telegram init data is never placed in the URL. After `authenticated`, the
+ * Clients exchange Telegram Mini App init data for a session token with
+ * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
+ * other operation. A request rejected with `401` needs a new session.
+ *
+ * The client first sends `LiveCandleClientMessage` with type `authenticate` and
+ * the session token; the token is never placed in the URL. After `authenticated`, the
  * connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
  * `LiveCandleServerMessage` snapshots, updates, freshness changes, acknowledgements,
  * and bounded errors. One connection may switch subscriptions without reconnecting.
@@ -75,6 +79,7 @@ import type {
   ScannerIndicatorNotFoundResponse,
   ScannerIndicatorOrder,
   ScannerIndicatorUpdate,
+  Session,
   Strategy,
   StrategyConflictResponse,
   StrategyEnabled,
@@ -90,6 +95,12 @@ import type {
   UserNotFoundResponse,
   UserUpdate
 } from './models';
+
+import { apiFetch } from '../fetch.ts';
+import type { ErrorType } from '../fetch.ts';
+type SecondParameter<T extends (...args: never) => unknown> = Parameters<T>[1];
+
+
 
 const withQueryKey = <T extends object, K>(query: T, queryKey: K): T & { queryKey: K } => {
   const result = { queryKey } as T & { queryKey: K };
@@ -127,30 +138,16 @@ export const getGetLivenessUrl = () => {
 /**
  * @summary Check whether the process is alive
  */
-export const getLiveness = async ( options?: RequestInit): Promise<getLivenessResponseSuccess> => {
+export const getLiveness = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getLivenessResponseSuccess> => {
 
-  const res = await fetch(getGetLivenessUrl(),
+  return apiFetch<getLivenessResponseSuccess>(getGetLivenessUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: any, status?: number} = new globalThis.Error();
-    const data  = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: getLivenessResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getLivenessResponseSuccess
-}
+);}
 
 
 
@@ -163,16 +160,16 @@ export const getGetLivenessQueryKey = () => {
     }
 
 
-export const getGetLivenessQueryOptions = <TData = Awaited<ReturnType<typeof getLiveness>>, TError = globalThis.Error & { info?: unknown; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveness>>, TError, TData>>, fetch?: RequestInit}
+export const getGetLivenessQueryOptions = <TData = Awaited<ReturnType<typeof getLiveness>>, TError = ErrorType<unknown>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveness>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetLivenessQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLiveness>>> = ({ signal }) => getLiveness({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getLiveness>>> = ({ signal }) => getLiveness({ signal, ...requestOptions });
 
 
 
@@ -182,39 +179,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type GetLivenessQueryResult = NonNullable<Awaited<ReturnType<typeof getLiveness>>>
-export type GetLivenessQueryError = globalThis.Error & { info?: unknown; status?: number }
+export type GetLivenessQueryError = ErrorType<unknown>
 
 
-export function useGetLiveness<TData = Awaited<ReturnType<typeof getLiveness>>, TError = globalThis.Error & { info?: unknown; status?: number }>(
+export function useGetLiveness<TData = Awaited<ReturnType<typeof getLiveness>>, TError = ErrorType<unknown>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveness>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getLiveness>>,
           TError,
           Awaited<ReturnType<typeof getLiveness>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLiveness<TData = Awaited<ReturnType<typeof getLiveness>>, TError = globalThis.Error & { info?: unknown; status?: number }>(
+export function useGetLiveness<TData = Awaited<ReturnType<typeof getLiveness>>, TError = ErrorType<unknown>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveness>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getLiveness>>,
           TError,
           Awaited<ReturnType<typeof getLiveness>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetLiveness<TData = Awaited<ReturnType<typeof getLiveness>>, TError = globalThis.Error & { info?: unknown; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveness>>, TError, TData>>, fetch?: RequestInit}
+export function useGetLiveness<TData = Awaited<ReturnType<typeof getLiveness>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveness>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Check whether the process is alive
  */
 
-export function useGetLiveness<TData = Awaited<ReturnType<typeof getLiveness>>, TError = globalThis.Error & { info?: unknown; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveness>>, TError, TData>>, fetch?: RequestInit}
+export function useGetLiveness<TData = Awaited<ReturnType<typeof getLiveness>>, TError = ErrorType<unknown>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getLiveness>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -259,30 +256,16 @@ export const getGetReadinessUrl = () => {
 /**
  * @summary Check whether required service dependencies are ready
  */
-export const getReadiness = async ( options?: RequestInit): Promise<getReadinessResponseSuccess> => {
+export const getReadiness = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getReadinessResponseSuccess> => {
 
-  const res = await fetch(getGetReadinessUrl(),
+  return apiFetch<getReadinessResponseSuccess>(getGetReadinessUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: getReadinessResponseError['data'], status?: number} = new globalThis.Error();
-    const data : getReadinessResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: getReadinessResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getReadinessResponseSuccess
-}
+);}
 
 
 
@@ -295,16 +278,16 @@ export const getGetReadinessQueryKey = () => {
     }
 
 
-export const getGetReadinessQueryOptions = <TData = Awaited<ReturnType<typeof getReadiness>>, TError = globalThis.Error & { info?: ReadinessResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>, fetch?: RequestInit}
+export const getGetReadinessQueryOptions = <TData = Awaited<ReturnType<typeof getReadiness>>, TError = ErrorType<ReadinessResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetReadinessQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReadiness>>> = ({ signal }) => getReadiness({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getReadiness>>> = ({ signal }) => getReadiness({ signal, ...requestOptions });
 
 
 
@@ -314,39 +297,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type GetReadinessQueryResult = NonNullable<Awaited<ReturnType<typeof getReadiness>>>
-export type GetReadinessQueryError = globalThis.Error & { info?: ReadinessResponse; status?: number }
+export type GetReadinessQueryError = ErrorType<ReadinessResponse>
 
 
-export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>, TError = globalThis.Error & { info?: ReadinessResponse; status?: number }>(
+export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>, TError = ErrorType<ReadinessResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getReadiness>>,
           TError,
           Awaited<ReturnType<typeof getReadiness>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>, TError = globalThis.Error & { info?: ReadinessResponse; status?: number }>(
+export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>, TError = ErrorType<ReadinessResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getReadiness>>,
           TError,
           Awaited<ReturnType<typeof getReadiness>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>, TError = globalThis.Error & { info?: ReadinessResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>, fetch?: RequestInit}
+export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>, TError = ErrorType<ReadinessResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Check whether required service dependencies are ready
  */
 
-export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>, TError = globalThis.Error & { info?: ReadinessResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>, fetch?: RequestInit}
+export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>, TError = ErrorType<ReadinessResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getReadiness>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -362,6 +345,208 @@ export function useGetReadiness<TData = Awaited<ReturnType<typeof getReadiness>>
 
 
 
+
+export type createSessionResponse201 = {
+  data: Session
+  status: 201
+}
+
+export type createSessionResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type createSessionResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type createSessionResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createSessionResponseSuccess = (createSessionResponse201) & {
+  headers: Headers;
+};
+export type createSessionResponseError = (createSessionResponse401 | createSessionResponse403 | createSessionResponse500) & {
+  headers: Headers;
+};
+
+export const getCreateSessionUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session`
+}
+
+/**
+ * @summary Exchange Telegram init data for a session token
+ */
+export const createSession = async ( options?: Parameters<typeof apiFetch>[1]): Promise<createSessionResponseSuccess> => {
+
+  return apiFetch<createSessionResponseSuccess>(getCreateSessionUrl(),
+  {
+    ...options,
+    method: 'POST'
+
+
+  }
+);}
+
+
+
+
+
+export const getCreateSessionMutationKey = () => ['createSession'] as const;
+
+export const getCreateSessionMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSession>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createSession>>, TError,void, TContext> => {
+
+const mutationKey = getCreateSessionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createSession>>, void> = () => {
+
+
+          return  createSession(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateSessionMutationResult = NonNullable<Awaited<ReturnType<typeof createSession>>>
+
+    export type CreateSessionMutationError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
+
+
+    /**
+ * @summary Exchange Telegram init data for a session token
+ */
+export const useCreateSession = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createSession>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createSession>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getCreateSessionMutationOptions(options), queryClient);
+    }
+
+export type deleteSessionResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteSessionResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type deleteSessionResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type deleteSessionResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type deleteSessionResponseSuccess = (deleteSessionResponse204) & {
+  headers: Headers;
+};
+export type deleteSessionResponseError = (deleteSessionResponse401 | deleteSessionResponse403 | deleteSessionResponse500) & {
+  headers: Headers;
+};
+
+export const getDeleteSessionUrl = () => {
+
+
+
+
+  return `/api/v1/auth/session`
+}
+
+/**
+ * @summary Revoke the current session
+ */
+export const deleteSession = async ( options?: Parameters<typeof apiFetch>[1]): Promise<deleteSessionResponseSuccess> => {
+
+  return apiFetch<deleteSessionResponseSuccess>(getDeleteSessionUrl(),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteSessionMutationKey = () => ['deleteSession'] as const;
+
+export const getDeleteSessionMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSession>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteSession>>, TError,void, TContext> => {
+
+const mutationKey = getDeleteSessionMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteSession>>, void> = () => {
+
+
+          return  deleteSession(requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteSessionMutationResult = NonNullable<Awaited<ReturnType<typeof deleteSession>>>
+
+    export type DeleteSessionMutationError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
+
+
+    /**
+ * @summary Revoke the current session
+ */
+export const useDeleteSession = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteSession>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteSession>>,
+        TError,
+        void,
+        TContext
+      > => {
+      return useMutation(getDeleteSessionMutationOptions(options), queryClient);
+    }
 
 export type analyzeInstrumentResponse200 = {
   data: InstrumentAnalysisResponse
@@ -427,7 +612,7 @@ export const getAnalyzeInstrumentUrl = (symbol: string,) => {
  * @summary Analyze one active instrument
  */
 export const analyzeInstrument = async (symbol: string,
-    instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: RequestInit): Promise<analyzeInstrumentResponseSuccess> => {
+    instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: Parameters<typeof apiFetch>[1]): Promise<analyzeInstrumentResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -443,28 +628,14 @@ export const analyzeInstrument = async (symbol: string,
     }
     return headers;
   };
-const res = await fetch(getAnalyzeInstrumentUrl(symbol),
+return apiFetch<analyzeInstrumentResponseSuccess>(getAnalyzeInstrumentUrl(symbol),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(instrumentAnalysisRequest)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: analyzeInstrumentResponseError['data'], status?: number} = new globalThis.Error();
-    const data : analyzeInstrumentResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: analyzeInstrumentResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as analyzeInstrumentResponseSuccess
-}
+);}
 
 
 
@@ -478,17 +649,17 @@ export const getAnalyzeInstrumentQueryKey = (symbol: string,
     }
 
 
-export const getAnalyzeInstrumentQueryOptions = <TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(symbol: string,
-    instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeInstrument>>, TError, TData>>, fetch?: RequestInit}
+export const getAnalyzeInstrumentQueryOptions = <TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(symbol: string,
+    instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeInstrument>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAnalyzeInstrumentQueryKey(symbol,instrumentAnalysisRequest);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof analyzeInstrument>>> = ({ signal }) => analyzeInstrument(symbol,instrumentAnalysisRequest, { signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof analyzeInstrument>>> = ({ signal }) => analyzeInstrument(symbol,instrumentAnalysisRequest, { signal, ...requestOptions });
 
 
 
@@ -498,10 +669,10 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type AnalyzeInstrumentQueryResult = NonNullable<Awaited<ReturnType<typeof analyzeInstrument>>>
-export type AnalyzeInstrumentQueryError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }
+export type AnalyzeInstrumentQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>
 
 
-export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
  symbol: string,
     instrumentAnalysisRequest: InstrumentAnalysisRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeInstrument>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -509,10 +680,10 @@ export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeIn
           TError,
           Awaited<ReturnType<typeof analyzeInstrument>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
  symbol: string,
     instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeInstrument>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -520,21 +691,21 @@ export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeIn
           TError,
           Awaited<ReturnType<typeof analyzeInstrument>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
  symbol: string,
-    instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeInstrument>>, TError, TData>>, fetch?: RequestInit}
+    instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeInstrument>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Analyze one active instrument
  */
 
-export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+export function useAnalyzeInstrument<TData = Awaited<ReturnType<typeof analyzeInstrument>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InsufficientDataResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
  symbol: string,
-    instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeInstrument>>, TError, TData>>, fetch?: RequestInit}
+    instrumentAnalysisRequest: InstrumentAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeInstrument>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -604,7 +775,7 @@ export const getAnalyzeMarketUrl = () => {
 /**
  * @summary Analyze active instruments in the market
  */
-export const analyzeMarket = async (marketAnalysisRequest: MarketAnalysisRequest, options?: RequestInit): Promise<analyzeMarketResponseSuccess> => {
+export const analyzeMarket = async (marketAnalysisRequest: MarketAnalysisRequest, options?: Parameters<typeof apiFetch>[1]): Promise<analyzeMarketResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -620,28 +791,14 @@ export const analyzeMarket = async (marketAnalysisRequest: MarketAnalysisRequest
     }
     return headers;
   };
-const res = await fetch(getAnalyzeMarketUrl(),
+return apiFetch<analyzeMarketResponseSuccess>(getAnalyzeMarketUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(marketAnalysisRequest)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: analyzeMarketResponseError['data'], status?: number} = new globalThis.Error();
-    const data : analyzeMarketResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: analyzeMarketResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as analyzeMarketResponseSuccess
-}
+);}
 
 
 
@@ -654,16 +811,16 @@ export const getAnalyzeMarketQueryKey = (marketAnalysisRequest?: MarketAnalysisR
     }
 
 
-export const getAnalyzeMarketQueryOptions = <TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeMarket>>, TError, TData>>, fetch?: RequestInit}
+export const getAnalyzeMarketQueryOptions = <TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeMarket>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAnalyzeMarketQueryKey(marketAnalysisRequest);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof analyzeMarket>>> = ({ signal }) => analyzeMarket(marketAnalysisRequest, { signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof analyzeMarket>>> = ({ signal }) => analyzeMarket(marketAnalysisRequest, { signal, ...requestOptions });
 
 
 
@@ -673,39 +830,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type AnalyzeMarketQueryResult = NonNullable<Awaited<ReturnType<typeof analyzeMarket>>>
-export type AnalyzeMarketQueryError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }
+export type AnalyzeMarketQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>
 
 
-export function useAnalyzeMarket<TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+export function useAnalyzeMarket<TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
  marketAnalysisRequest: MarketAnalysisRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeMarket>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof analyzeMarket>>,
           TError,
           Awaited<ReturnType<typeof analyzeMarket>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAnalyzeMarket<TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+export function useAnalyzeMarket<TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
  marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeMarket>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof analyzeMarket>>,
           TError,
           Awaited<ReturnType<typeof analyzeMarket>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAnalyzeMarket<TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
- marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeMarket>>, TError, TData>>, fetch?: RequestInit}
+export function useAnalyzeMarket<TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeMarket>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Analyze active instruments in the market
  */
 
-export function useAnalyzeMarket<TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
- marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeMarket>>, TError, TData>>, fetch?: RequestInit}
+export function useAnalyzeMarket<TData = Awaited<ReturnType<typeof analyzeMarket>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeMarket>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -779,30 +936,16 @@ export const getListInstrumentCandlesUrl = (symbol: string,
  * @summary List a chronological page of closed candles
  */
 export const listInstrumentCandles = async (symbol: string,
-    params: ListInstrumentCandlesParams, options?: RequestInit): Promise<listInstrumentCandlesResponseSuccess> => {
+    params: ListInstrumentCandlesParams, options?: Parameters<typeof apiFetch>[1]): Promise<listInstrumentCandlesResponseSuccess> => {
 
-  const res = await fetch(getListInstrumentCandlesUrl(symbol,params),
+  return apiFetch<listInstrumentCandlesResponseSuccess>(getListInstrumentCandlesUrl(symbol,params),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listInstrumentCandlesResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listInstrumentCandlesResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listInstrumentCandlesResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listInstrumentCandlesResponseSuccess
-}
+);}
 
 
 
@@ -816,17 +959,17 @@ export const getListInstrumentCandlesInfiniteQueryKey = (symbol: string,
     }
 
 
-export const getListInstrumentCandlesInfiniteQueryOptions = <TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(symbol: string,
-    params: ListInstrumentCandlesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listInstrumentCandles>>, TError, TData, QueryKey, ListInstrumentCandlesParams['before']>>, fetch?: RequestInit}
+export const getListInstrumentCandlesInfiniteQueryOptions = <TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>>(symbol: string,
+    params: ListInstrumentCandlesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listInstrumentCandles>>, TError, TData, QueryKey, ListInstrumentCandlesParams['before']>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListInstrumentCandlesInfiniteQueryKey(symbol,params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstrumentCandles>>, QueryKey, ListInstrumentCandlesParams['before']> = ({ signal, pageParam }) => listInstrumentCandles(symbol,{...params, 'before': pageParam ?? params?.['before']}, { signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstrumentCandles>>, QueryKey, ListInstrumentCandlesParams['before']> = ({ signal, pageParam }) => listInstrumentCandles(symbol,{...params, 'before': pageParam ?? params?.['before']}, { signal, ...requestOptions });
 
 
 
@@ -836,10 +979,10 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListInstrumentCandlesInfiniteQueryResult = NonNullable<Awaited<ReturnType<typeof listInstrumentCandles>>>
-export type ListInstrumentCandlesInfiniteQueryError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }
+export type ListInstrumentCandlesInfiniteQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>
 
 
-export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(
+export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>>(
  symbol: string,
     params: ListInstrumentCandlesParams, options: { query:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listInstrumentCandles>>, TError, TData, QueryKey, ListInstrumentCandlesParams['before']>> & Pick<
         DefinedInitialDataOptions<
@@ -847,10 +990,10 @@ export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<Re
           TError,
           Awaited<ReturnType<typeof listInstrumentCandles>>, QueryKey
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(
+export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>>(
  symbol: string,
     params: ListInstrumentCandlesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listInstrumentCandles>>, TError, TData, QueryKey, ListInstrumentCandlesParams['before']>> & Pick<
         UndefinedInitialDataOptions<
@@ -858,21 +1001,21 @@ export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<Re
           TError,
           Awaited<ReturnType<typeof listInstrumentCandles>>, QueryKey
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(
+export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>>(
  symbol: string,
-    params: ListInstrumentCandlesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listInstrumentCandles>>, TError, TData, QueryKey, ListInstrumentCandlesParams['before']>>, fetch?: RequestInit}
+    params: ListInstrumentCandlesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listInstrumentCandles>>, TError, TData, QueryKey, ListInstrumentCandlesParams['before']>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List a chronological page of closed candles
  */
 
-export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }>(
+export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<ReturnType<typeof listInstrumentCandles>>, ListInstrumentCandlesParams['before']>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>>(
  symbol: string,
-    params: ListInstrumentCandlesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listInstrumentCandles>>, TError, TData, QueryKey, ListInstrumentCandlesParams['before']>>, fetch?: RequestInit}
+    params: ListInstrumentCandlesParams, options?: { query?:Partial<UseInfiniteQueryOptions<Awaited<ReturnType<typeof listInstrumentCandles>>, TError, TData, QueryKey, ListInstrumentCandlesParams['before']>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -937,30 +1080,16 @@ export const getListChartIndicatorsUrl = (params: ListChartIndicatorsParams,) =>
  * here. The administrator configures the catalog, so it may be empty.
  * @summary List the indicators charts of an interval request and how to draw them
  */
-export const listChartIndicators = async (params: ListChartIndicatorsParams, options?: RequestInit): Promise<listChartIndicatorsResponseSuccess> => {
+export const listChartIndicators = async (params: ListChartIndicatorsParams, options?: Parameters<typeof apiFetch>[1]): Promise<listChartIndicatorsResponseSuccess> => {
 
-  const res = await fetch(getListChartIndicatorsUrl(params),
+  return apiFetch<listChartIndicatorsResponseSuccess>(getListChartIndicatorsUrl(params),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listChartIndicatorsResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listChartIndicatorsResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listChartIndicatorsResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listChartIndicatorsResponseSuccess
-}
+);}
 
 
 
@@ -973,16 +1102,16 @@ export const getListChartIndicatorsQueryKey = (params?: ListChartIndicatorsParam
     }
 
 
-export const getListChartIndicatorsQueryOptions = <TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+export const getListChartIndicatorsQueryOptions = <TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListChartIndicatorsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChartIndicators>>> = ({ signal }) => listChartIndicators(params, { signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listChartIndicators>>> = ({ signal }) => listChartIndicators(params, { signal, ...requestOptions });
 
 
 
@@ -992,39 +1121,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListChartIndicatorsQueryResult = NonNullable<Awaited<ReturnType<typeof listChartIndicators>>>
-export type ListChartIndicatorsQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }
+export type ListChartIndicatorsQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
 
 
-export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
  params: ListChartIndicatorsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listChartIndicators>>,
           TError,
           Awaited<ReturnType<typeof listChartIndicators>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
  params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listChartIndicators>>,
           TError,
           Awaited<ReturnType<typeof listChartIndicators>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
- params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+ params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List the indicators charts of an interval request and how to draw them
  */
 
-export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
- params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, fetch?: RequestInit}
+export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+ params: ListChartIndicatorsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listChartIndicators>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -1076,30 +1205,16 @@ export const getListFavoritesUrl = () => {
   return `/api/v1/favorites`
 }
 
-export const listFavorites = async ( options?: RequestInit): Promise<listFavoritesResponseSuccess> => {
+export const listFavorites = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listFavoritesResponseSuccess> => {
 
-  const res = await fetch(getListFavoritesUrl(),
+  return apiFetch<listFavoritesResponseSuccess>(getListFavoritesUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listFavoritesResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listFavoritesResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listFavoritesResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listFavoritesResponseSuccess
-}
+);}
 
 
 
@@ -1112,16 +1227,16 @@ export const getListFavoritesQueryKey = () => {
     }
 
 
-export const getListFavoritesQueryOptions = <TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, fetch?: RequestInit}
+export const getListFavoritesQueryOptions = <TData = Awaited<ReturnType<typeof listFavorites>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListFavoritesQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFavorites>>> = ({ signal }) => listFavorites({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listFavorites>>> = ({ signal }) => listFavorites({ signal, ...requestOptions });
 
 
 
@@ -1131,36 +1246,36 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListFavoritesQueryResult = NonNullable<Awaited<ReturnType<typeof listFavorites>>>
-export type ListFavoritesQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }
+export type ListFavoritesQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
 
 
-export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listFavorites>>,
           TError,
           Awaited<ReturnType<typeof listFavorites>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listFavorites>>,
           TError,
           Awaited<ReturnType<typeof listFavorites>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, fetch?: RequestInit}
+export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 
-export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, fetch?: RequestInit}
+export function useListFavorites<TData = Awaited<ReturnType<typeof listFavorites>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listFavorites>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -1217,30 +1332,16 @@ export const getAddFavoriteUrl = (symbol: string,) => {
   return `/api/v1/favorites/${encodeURIComponent(String(symbol))}`
 }
 
-export const addFavorite = async (symbol: string, options?: RequestInit): Promise<addFavoriteResponseSuccess> => {
+export const addFavorite = async (symbol: string, options?: Parameters<typeof apiFetch>[1]): Promise<addFavoriteResponseSuccess> => {
 
-  const res = await fetch(getAddFavoriteUrl(symbol),
+  return apiFetch<addFavoriteResponseSuccess>(getAddFavoriteUrl(symbol),
   {
     ...options,
     method: 'PUT'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: addFavoriteResponseError['data'], status?: number} = new globalThis.Error();
-    const data : addFavoriteResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: addFavoriteResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as addFavoriteResponseSuccess
-}
+);}
 
 
 
@@ -1248,16 +1349,16 @@ export const addFavorite = async (symbol: string, options?: RequestInit): Promis
 
 export const getAddFavoriteMutationKey = () => ['addFavorite'] as const;
 
-export const getAddFavoriteMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addFavorite>>, TError,AddFavoriteMutationVariables, TContext>, fetch?: RequestInit}
+export const getAddFavoriteMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addFavorite>>, TError,AddFavoriteMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof addFavorite>>, TError,AddFavoriteMutationVariables, TContext> => {
 
 const mutationKey = getAddFavoriteMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -1265,7 +1366,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof addFavorite>>, AddFavoriteMutationVariables> = (props) => {
           const {symbol} = props ?? {};
 
-          return  addFavorite(symbol,fetchOptions)
+          return  addFavorite(symbol,requestOptions)
         }
 
 
@@ -1277,11 +1378,11 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type AddFavoriteMutationResult = NonNullable<Awaited<ReturnType<typeof addFavorite>>>
 
-    export type AddFavoriteMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number }
+    export type AddFavoriteMutationError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>
     export type AddFavoriteMutationVariables = {symbol: string}
 
-    export const useAddFavorite = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addFavorite>>, TError,AddFavoriteMutationVariables, TContext>, fetch?: RequestInit}
+    export const useAddFavorite = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof addFavorite>>, TError,AddFavoriteMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof addFavorite>>,
         TError,
@@ -1345,30 +1446,16 @@ export const getRemoveFavoriteUrl = (symbol: string,
 }
 
 export const removeFavorite = async (symbol: string,
-    params?: RemoveFavoriteParams, options?: RequestInit): Promise<removeFavoriteResponseSuccess> => {
+    params?: RemoveFavoriteParams, options?: Parameters<typeof apiFetch>[1]): Promise<removeFavoriteResponseSuccess> => {
 
-  const res = await fetch(getRemoveFavoriteUrl(symbol,params),
+  return apiFetch<removeFavoriteResponseSuccess>(getRemoveFavoriteUrl(symbol,params),
   {
     ...options,
     method: 'DELETE'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: removeFavoriteResponseError['data'], status?: number} = new globalThis.Error();
-    const data : removeFavoriteResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: removeFavoriteResponseSuccess['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as removeFavoriteResponseSuccess
-}
+);}
 
 
 
@@ -1376,16 +1463,16 @@ export const removeFavorite = async (symbol: string,
 
 export const getRemoveFavoriteMutationKey = () => ['removeFavorite'] as const;
 
-export const getRemoveFavoriteMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext>, fetch?: RequestInit}
+export const getRemoveFavoriteMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext> => {
 
 const mutationKey = getRemoveFavoriteMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -1393,7 +1480,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof removeFavorite>>, RemoveFavoriteMutationVariables> = (props) => {
           const {symbol,params} = props ?? {};
 
-          return  removeFavorite(symbol,params,fetchOptions)
+          return  removeFavorite(symbol,params,requestOptions)
         }
 
 
@@ -1405,11 +1492,11 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type RemoveFavoriteMutationResult = NonNullable<Awaited<ReturnType<typeof removeFavorite>>>
 
-    export type RemoveFavoriteMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse; status?: number }
+    export type RemoveFavoriteMutationError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse>
     export type RemoveFavoriteMutationVariables = {symbol: string;params?: RemoveFavoriteParams}
 
-    export const useRemoveFavorite = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext>, fetch?: RequestInit}
+    export const useRemoveFavorite = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof removeFavorite>>,
         TError,
@@ -1472,7 +1559,7 @@ export const getAnalyzeFavoritesUrl = () => {
 /**
  * @summary Analyze the current user's active favorite instruments
  */
-export const analyzeFavorites = async (marketAnalysisRequest: MarketAnalysisRequest, options?: RequestInit): Promise<analyzeFavoritesResponseSuccess> => {
+export const analyzeFavorites = async (marketAnalysisRequest: MarketAnalysisRequest, options?: Parameters<typeof apiFetch>[1]): Promise<analyzeFavoritesResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -1488,28 +1575,14 @@ export const analyzeFavorites = async (marketAnalysisRequest: MarketAnalysisRequ
     }
     return headers;
   };
-const res = await fetch(getAnalyzeFavoritesUrl(),
+return apiFetch<analyzeFavoritesResponseSuccess>(getAnalyzeFavoritesUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(marketAnalysisRequest)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: analyzeFavoritesResponseError['data'], status?: number} = new globalThis.Error();
-    const data : analyzeFavoritesResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: analyzeFavoritesResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as analyzeFavoritesResponseSuccess
-}
+);}
 
 
 
@@ -1522,16 +1595,16 @@ export const getAnalyzeFavoritesQueryKey = (marketAnalysisRequest?: MarketAnalys
     }
 
 
-export const getAnalyzeFavoritesQueryOptions = <TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, fetch?: RequestInit}
+export const getAnalyzeFavoritesQueryOptions = <TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getAnalyzeFavoritesQueryKey(marketAnalysisRequest);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof analyzeFavorites>>> = ({ signal }) => analyzeFavorites(marketAnalysisRequest, { signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof analyzeFavorites>>> = ({ signal }) => analyzeFavorites(marketAnalysisRequest, { signal, ...requestOptions });
 
 
 
@@ -1541,39 +1614,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type AnalyzeFavoritesQueryResult = NonNullable<Awaited<ReturnType<typeof analyzeFavorites>>>
-export type AnalyzeFavoritesQueryError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }
+export type AnalyzeFavoritesQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>
 
 
-export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
  marketAnalysisRequest: MarketAnalysisRequest, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof analyzeFavorites>>,
           TError,
           Awaited<ReturnType<typeof analyzeFavorites>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
+export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
  marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof analyzeFavorites>>,
           TError,
           Awaited<ReturnType<typeof analyzeFavorites>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
- marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, fetch?: RequestInit}
+export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Analyze the current user's active favorite instruments
  */
 
-export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse; status?: number }>(
- marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, fetch?: RequestInit}
+export function useAnalyzeFavorites<TData = Awaited<ReturnType<typeof analyzeFavorites>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | UnprocessableAnalysisResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ marketAnalysisRequest: MarketAnalysisRequest, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof analyzeFavorites>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -1625,30 +1698,16 @@ export const getListPriceAlertsUrl = (symbol: string,) => {
   return `/api/v1/instruments/${encodeURIComponent(String(symbol))}/alerts`
 }
 
-export const listPriceAlerts = async (symbol: string, options?: RequestInit): Promise<listPriceAlertsResponseSuccess> => {
+export const listPriceAlerts = async (symbol: string, options?: Parameters<typeof apiFetch>[1]): Promise<listPriceAlertsResponseSuccess> => {
 
-  const res = await fetch(getListPriceAlertsUrl(symbol),
+  return apiFetch<listPriceAlertsResponseSuccess>(getListPriceAlertsUrl(symbol),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listPriceAlertsResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listPriceAlertsResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listPriceAlertsResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listPriceAlertsResponseSuccess
-}
+);}
 
 
 
@@ -1661,16 +1720,16 @@ export const getListPriceAlertsQueryKey = (symbol: string,) => {
     }
 
 
-export const getListPriceAlertsQueryOptions = <TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, fetch?: RequestInit}
+export const getListPriceAlertsQueryOptions = <TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListPriceAlertsQueryKey(symbol);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPriceAlerts>>> = ({ signal }) => listPriceAlerts(symbol, { signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listPriceAlerts>>> = ({ signal }) => listPriceAlerts(symbol, { signal, ...requestOptions });
 
 
 
@@ -1680,36 +1739,36 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListPriceAlertsQueryResult = NonNullable<Awaited<ReturnType<typeof listPriceAlerts>>>
-export type ListPriceAlertsQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }
+export type ListPriceAlertsQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
 
 
-export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
  symbol: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPriceAlerts>>,
           TError,
           Awaited<ReturnType<typeof listPriceAlerts>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
  symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listPriceAlerts>>,
           TError,
           Awaited<ReturnType<typeof listPriceAlerts>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
- symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, fetch?: RequestInit}
+export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+ symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 
-export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
- symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, fetch?: RequestInit}
+export function useListPriceAlerts<TData = Awaited<ReturnType<typeof listPriceAlerts>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+ symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listPriceAlerts>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -1777,7 +1836,7 @@ export const getCreatePriceAlertUrl = (symbol: string,) => {
 }
 
 export const createPriceAlert = async (symbol: string,
-    priceAlertInput: PriceAlertInput, options?: RequestInit): Promise<createPriceAlertResponseSuccess> => {
+    priceAlertInput: PriceAlertInput, options?: Parameters<typeof apiFetch>[1]): Promise<createPriceAlertResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -1793,28 +1852,14 @@ export const createPriceAlert = async (symbol: string,
     }
     return headers;
   };
-const res = await fetch(getCreatePriceAlertUrl(symbol),
+return apiFetch<createPriceAlertResponseSuccess>(getCreatePriceAlertUrl(symbol),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(priceAlertInput)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: createPriceAlertResponseError['data'], status?: number} = new globalThis.Error();
-    const data : createPriceAlertResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: createPriceAlertResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createPriceAlertResponseSuccess
-}
+);}
 
 
 
@@ -1822,16 +1867,16 @@ const res = await fetch(getCreatePriceAlertUrl(symbol),
 
 export const getCreatePriceAlertMutationKey = () => ['createPriceAlert'] as const;
 
-export const getCreatePriceAlertMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPriceAlert>>, TError,CreatePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+export const getCreatePriceAlertMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPriceAlert>>, TError,CreatePriceAlertMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createPriceAlert>>, TError,CreatePriceAlertMutationVariables, TContext> => {
 
 const mutationKey = getCreatePriceAlertMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -1839,7 +1884,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createPriceAlert>>, CreatePriceAlertMutationVariables> = (props) => {
           const {symbol,data} = props ?? {};
 
-          return  createPriceAlert(symbol,data,fetchOptions)
+          return  createPriceAlert(symbol,data,requestOptions)
         }
 
 
@@ -1851,11 +1896,11 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type CreatePriceAlertMutationResult = NonNullable<Awaited<ReturnType<typeof createPriceAlert>>>
     export type CreatePriceAlertMutationBody = PriceAlertInput
-    export type CreatePriceAlertMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number }
+    export type CreatePriceAlertMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse>
     export type CreatePriceAlertMutationVariables = {symbol: string;data: PriceAlertInput}
 
-    export const useCreatePriceAlert = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPriceAlert>>, TError,CreatePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+    export const useCreatePriceAlert = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | AlertConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createPriceAlert>>, TError,CreatePriceAlertMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createPriceAlert>>,
         TError,
@@ -1916,7 +1961,7 @@ export const getUpdatePriceAlertUrl = (alertId: number,) => {
 }
 
 export const updatePriceAlert = async (alertId: number,
-    priceAlertInput: PriceAlertInput, options?: RequestInit): Promise<updatePriceAlertResponseSuccess> => {
+    priceAlertInput: PriceAlertInput, options?: Parameters<typeof apiFetch>[1]): Promise<updatePriceAlertResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -1932,28 +1977,14 @@ export const updatePriceAlert = async (alertId: number,
     }
     return headers;
   };
-const res = await fetch(getUpdatePriceAlertUrl(alertId),
+return apiFetch<updatePriceAlertResponseSuccess>(getUpdatePriceAlertUrl(alertId),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(priceAlertInput)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: updatePriceAlertResponseError['data'], status?: number} = new globalThis.Error();
-    const data : updatePriceAlertResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: updatePriceAlertResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updatePriceAlertResponseSuccess
-}
+);}
 
 
 
@@ -1961,16 +1992,16 @@ const res = await fetch(getUpdatePriceAlertUrl(alertId),
 
 export const getUpdatePriceAlertMutationKey = () => ['updatePriceAlert'] as const;
 
-export const getUpdatePriceAlertMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePriceAlert>>, TError,UpdatePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+export const getUpdatePriceAlertMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePriceAlert>>, TError,UpdatePriceAlertMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updatePriceAlert>>, TError,UpdatePriceAlertMutationVariables, TContext> => {
 
 const mutationKey = getUpdatePriceAlertMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -1978,7 +2009,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updatePriceAlert>>, UpdatePriceAlertMutationVariables> = (props) => {
           const {alertId,data} = props ?? {};
 
-          return  updatePriceAlert(alertId,data,fetchOptions)
+          return  updatePriceAlert(alertId,data,requestOptions)
         }
 
 
@@ -1990,11 +2021,11 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type UpdatePriceAlertMutationResult = NonNullable<Awaited<ReturnType<typeof updatePriceAlert>>>
     export type UpdatePriceAlertMutationBody = PriceAlertInput
-    export type UpdatePriceAlertMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number }
+    export type UpdatePriceAlertMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse>
     export type UpdatePriceAlertMutationVariables = {alertId: number;data: PriceAlertInput}
 
-    export const useUpdatePriceAlert = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePriceAlert>>, TError,UpdatePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+    export const useUpdatePriceAlert = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | AlertConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updatePriceAlert>>, TError,UpdatePriceAlertMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updatePriceAlert>>,
         TError,
@@ -2044,30 +2075,16 @@ export const getDeletePriceAlertUrl = (alertId: number,) => {
   return `/api/v1/alerts/${encodeURIComponent(String(alertId))}`
 }
 
-export const deletePriceAlert = async (alertId: number, options?: RequestInit): Promise<deletePriceAlertResponseSuccess> => {
+export const deletePriceAlert = async (alertId: number, options?: Parameters<typeof apiFetch>[1]): Promise<deletePriceAlertResponseSuccess> => {
 
-  const res = await fetch(getDeletePriceAlertUrl(alertId),
+  return apiFetch<deletePriceAlertResponseSuccess>(getDeletePriceAlertUrl(alertId),
   {
     ...options,
     method: 'DELETE'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: deletePriceAlertResponseError['data'], status?: number} = new globalThis.Error();
-    const data : deletePriceAlertResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: deletePriceAlertResponseSuccess['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deletePriceAlertResponseSuccess
-}
+);}
 
 
 
@@ -2075,16 +2092,16 @@ export const deletePriceAlert = async (alertId: number, options?: RequestInit): 
 
 export const getDeletePriceAlertMutationKey = () => ['deletePriceAlert'] as const;
 
-export const getDeletePriceAlertMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePriceAlert>>, TError,DeletePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+export const getDeletePriceAlertMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePriceAlert>>, TError,DeletePriceAlertMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deletePriceAlert>>, TError,DeletePriceAlertMutationVariables, TContext> => {
 
 const mutationKey = getDeletePriceAlertMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -2092,7 +2109,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deletePriceAlert>>, DeletePriceAlertMutationVariables> = (props) => {
           const {alertId} = props ?? {};
 
-          return  deletePriceAlert(alertId,fetchOptions)
+          return  deletePriceAlert(alertId,requestOptions)
         }
 
 
@@ -2104,11 +2121,11 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type DeletePriceAlertMutationResult = NonNullable<Awaited<ReturnType<typeof deletePriceAlert>>>
 
-    export type DeletePriceAlertMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse; status?: number }
+    export type DeletePriceAlertMutationError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse>
     export type DeletePriceAlertMutationVariables = {alertId: number}
 
-    export const useDeletePriceAlert = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePriceAlert>>, TError,DeletePriceAlertMutationVariables, TContext>, fetch?: RequestInit}
+    export const useDeletePriceAlert = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | AlertNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deletePriceAlert>>, TError,DeletePriceAlertMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deletePriceAlert>>,
         TError,
@@ -2156,30 +2173,16 @@ export const getGetCurrentUserUrl = () => {
 /**
  * @summary Describe the authenticated user
  */
-export const getCurrentUser = async ( options?: RequestInit): Promise<getCurrentUserResponseSuccess> => {
+export const getCurrentUser = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getCurrentUserResponseSuccess> => {
 
-  const res = await fetch(getGetCurrentUserUrl(),
+  return apiFetch<getCurrentUserResponseSuccess>(getGetCurrentUserUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: getCurrentUserResponseError['data'], status?: number} = new globalThis.Error();
-    const data : getCurrentUserResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: getCurrentUserResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as getCurrentUserResponseSuccess
-}
+);}
 
 
 
@@ -2192,16 +2195,16 @@ export const getGetCurrentUserQueryKey = () => {
     }
 
 
-export const getGetCurrentUserQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, fetch?: RequestInit}
+export const getGetCurrentUserQueryOptions = <TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getGetCurrentUserQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentUser>>> = ({ signal }) => getCurrentUser({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCurrentUser>>> = ({ signal }) => getCurrentUser({ signal, ...requestOptions });
 
 
 
@@ -2211,39 +2214,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type GetCurrentUserQueryResult = NonNullable<Awaited<ReturnType<typeof getCurrentUser>>>
-export type GetCurrentUserQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }
+export type GetCurrentUserQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
 
 
-export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof getCurrentUser>>,
           TError,
           Awaited<ReturnType<typeof getCurrentUser>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof getCurrentUser>>,
           TError,
           Awaited<ReturnType<typeof getCurrentUser>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, fetch?: RequestInit}
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary Describe the authenticated user
  */
 
-export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, fetch?: RequestInit}
+export function useGetCurrentUser<TData = Awaited<ReturnType<typeof getCurrentUser>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCurrentUser>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -2299,30 +2302,16 @@ export const getListIndicatorTypesUrl = () => {
  * Self-descriptions of the registered indicators, used to build the scanner indicator form.
  * @summary List every indicator the scanner can calculate
  */
-export const listIndicatorTypes = async ( options?: RequestInit): Promise<listIndicatorTypesResponseSuccess> => {
+export const listIndicatorTypes = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listIndicatorTypesResponseSuccess> => {
 
-  const res = await fetch(getListIndicatorTypesUrl(),
+  return apiFetch<listIndicatorTypesResponseSuccess>(getListIndicatorTypesUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listIndicatorTypesResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listIndicatorTypesResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listIndicatorTypesResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listIndicatorTypesResponseSuccess
-}
+);}
 
 
 
@@ -2335,16 +2324,16 @@ export const getListIndicatorTypesQueryKey = () => {
     }
 
 
-export const getListIndicatorTypesQueryOptions = <TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, fetch?: RequestInit}
+export const getListIndicatorTypesQueryOptions = <TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListIndicatorTypesQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listIndicatorTypes>>> = ({ signal }) => listIndicatorTypes({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listIndicatorTypes>>> = ({ signal }) => listIndicatorTypes({ signal, ...requestOptions });
 
 
 
@@ -2354,39 +2343,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListIndicatorTypesQueryResult = NonNullable<Awaited<ReturnType<typeof listIndicatorTypes>>>
-export type ListIndicatorTypesQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+export type ListIndicatorTypesQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
 
 
-export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listIndicatorTypes>>,
           TError,
           Awaited<ReturnType<typeof listIndicatorTypes>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listIndicatorTypes>>,
           TError,
           Awaited<ReturnType<typeof listIndicatorTypes>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, fetch?: RequestInit}
+export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List every indicator the scanner can calculate
  */
 
-export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, fetch?: RequestInit}
+export function useListIndicatorTypes<TData = Awaited<ReturnType<typeof listIndicatorTypes>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listIndicatorTypes>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -2445,30 +2434,16 @@ export const getListScannerIndicatorsUrl = () => {
  * table columns and the chart indicators.
  * @summary List the configured scanner indicators
  */
-export const listScannerIndicators = async ( options?: RequestInit): Promise<listScannerIndicatorsResponseSuccess> => {
+export const listScannerIndicators = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listScannerIndicatorsResponseSuccess> => {
 
-  const res = await fetch(getListScannerIndicatorsUrl(),
+  return apiFetch<listScannerIndicatorsResponseSuccess>(getListScannerIndicatorsUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listScannerIndicatorsResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listScannerIndicatorsResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listScannerIndicatorsResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listScannerIndicatorsResponseSuccess
-}
+);}
 
 
 
@@ -2481,16 +2456,16 @@ export const getListScannerIndicatorsQueryKey = () => {
     }
 
 
-export const getListScannerIndicatorsQueryOptions = <TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, fetch?: RequestInit}
+export const getListScannerIndicatorsQueryOptions = <TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListScannerIndicatorsQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listScannerIndicators>>> = ({ signal }) => listScannerIndicators({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listScannerIndicators>>> = ({ signal }) => listScannerIndicators({ signal, ...requestOptions });
 
 
 
@@ -2500,39 +2475,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListScannerIndicatorsQueryResult = NonNullable<Awaited<ReturnType<typeof listScannerIndicators>>>
-export type ListScannerIndicatorsQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+export type ListScannerIndicatorsQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
 
 
-export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listScannerIndicators>>,
           TError,
           Awaited<ReturnType<typeof listScannerIndicators>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listScannerIndicators>>,
           TError,
           Awaited<ReturnType<typeof listScannerIndicators>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, fetch?: RequestInit}
+export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List the configured scanner indicators
  */
 
-export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, fetch?: RequestInit}
+export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listScannerIndicators>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listScannerIndicators>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -2598,7 +2573,7 @@ export const getCreateScannerIndicatorUrl = () => {
  * Adds one indicator per chosen interval, all or none, at the end of the display order.
  * @summary Add a scanner indicator on one or more intervals
  */
-export const createScannerIndicator = async (scannerIndicatorInput: ScannerIndicatorInput, options?: RequestInit): Promise<createScannerIndicatorResponseSuccess> => {
+export const createScannerIndicator = async (scannerIndicatorInput: ScannerIndicatorInput, options?: Parameters<typeof apiFetch>[1]): Promise<createScannerIndicatorResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -2614,28 +2589,14 @@ export const createScannerIndicator = async (scannerIndicatorInput: ScannerIndic
     }
     return headers;
   };
-const res = await fetch(getCreateScannerIndicatorUrl(),
+return apiFetch<createScannerIndicatorResponseSuccess>(getCreateScannerIndicatorUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(scannerIndicatorInput)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: createScannerIndicatorResponseError['data'], status?: number} = new globalThis.Error();
-    const data : createScannerIndicatorResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: createScannerIndicatorResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createScannerIndicatorResponseSuccess
-}
+);}
 
 
 
@@ -2643,16 +2604,16 @@ const res = await fetch(getCreateScannerIndicatorUrl(),
 
 export const getCreateScannerIndicatorMutationKey = () => ['createScannerIndicator'] as const;
 
-export const getCreateScannerIndicatorMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+export const getCreateScannerIndicatorMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext> => {
 
 const mutationKey = getCreateScannerIndicatorMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -2660,7 +2621,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createScannerIndicator>>, CreateScannerIndicatorMutationVariables> = (props) => {
           const {data} = props ?? {};
 
-          return  createScannerIndicator(data,fetchOptions)
+          return  createScannerIndicator(data,requestOptions)
         }
 
 
@@ -2672,14 +2633,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type CreateScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof createScannerIndicator>>>
     export type CreateScannerIndicatorMutationBody = ScannerIndicatorInput
-    export type CreateScannerIndicatorMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse; status?: number }
+    export type CreateScannerIndicatorMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>
     export type CreateScannerIndicatorMutationVariables = {data: ScannerIndicatorInput}
 
     /**
  * @summary Add a scanner indicator on one or more intervals
  */
-export const useCreateScannerIndicator = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+export const useCreateScannerIndicator = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createScannerIndicator>>,
         TError,
@@ -2734,30 +2695,16 @@ export const getClearScannerIndicatorsUrl = () => {
  * are no longer tracked. Rejected while a strategy reads any indicator.
  * @summary Remove every scanner indicator
  */
-export const clearScannerIndicators = async ( options?: RequestInit): Promise<clearScannerIndicatorsResponseSuccess> => {
+export const clearScannerIndicators = async ( options?: Parameters<typeof apiFetch>[1]): Promise<clearScannerIndicatorsResponseSuccess> => {
 
-  const res = await fetch(getClearScannerIndicatorsUrl(),
+  return apiFetch<clearScannerIndicatorsResponseSuccess>(getClearScannerIndicatorsUrl(),
   {
     ...options,
     method: 'DELETE'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: clearScannerIndicatorsResponseError['data'], status?: number} = new globalThis.Error();
-    const data : clearScannerIndicatorsResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: clearScannerIndicatorsResponseSuccess['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as clearScannerIndicatorsResponseSuccess
-}
+);}
 
 
 
@@ -2765,16 +2712,16 @@ export const clearScannerIndicators = async ( options?: RequestInit): Promise<cl
 
 export const getClearScannerIndicatorsMutationKey = () => ['clearScannerIndicators'] as const;
 
-export const getClearScannerIndicatorsMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, fetch?: RequestInit}
+export const getClearScannerIndicatorsMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext> => {
 
 const mutationKey = getClearScannerIndicatorsMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -2782,7 +2729,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearScannerIndicators>>, void> = () => {
 
 
-          return  clearScannerIndicators(fetchOptions)
+          return  clearScannerIndicators(requestOptions)
         }
 
 
@@ -2794,14 +2741,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type ClearScannerIndicatorsMutationResult = NonNullable<Awaited<ReturnType<typeof clearScannerIndicators>>>
 
-    export type ClearScannerIndicatorsMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number }
+    export type ClearScannerIndicatorsMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>
 
 
     /**
  * @summary Remove every scanner indicator
  */
-export const useClearScannerIndicators = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, fetch?: RequestInit}
+export const useClearScannerIndicators = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof clearScannerIndicators>>,
         TError,
@@ -2859,7 +2806,7 @@ export const getReorderScannerIndicatorsUrl = () => {
 /**
  * @summary Set the display order of the scanner indicators
  */
-export const reorderScannerIndicators = async (scannerIndicatorOrder: ScannerIndicatorOrder, options?: RequestInit): Promise<reorderScannerIndicatorsResponseSuccess> => {
+export const reorderScannerIndicators = async (scannerIndicatorOrder: ScannerIndicatorOrder, options?: Parameters<typeof apiFetch>[1]): Promise<reorderScannerIndicatorsResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -2875,28 +2822,14 @@ export const reorderScannerIndicators = async (scannerIndicatorOrder: ScannerInd
     }
     return headers;
   };
-const res = await fetch(getReorderScannerIndicatorsUrl(),
+return apiFetch<reorderScannerIndicatorsResponseSuccess>(getReorderScannerIndicatorsUrl(),
   {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(scannerIndicatorOrder)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: reorderScannerIndicatorsResponseError['data'], status?: number} = new globalThis.Error();
-    const data : reorderScannerIndicatorsResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: reorderScannerIndicatorsResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as reorderScannerIndicatorsResponseSuccess
-}
+);}
 
 
 
@@ -2904,16 +2837,16 @@ const res = await fetch(getReorderScannerIndicatorsUrl(),
 
 export const getReorderScannerIndicatorsMutationKey = () => ['reorderScannerIndicators'] as const;
 
-export const getReorderScannerIndicatorsMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderScannerIndicators>>, TError,ReorderScannerIndicatorsMutationVariables, TContext>, fetch?: RequestInit}
+export const getReorderScannerIndicatorsMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderScannerIndicators>>, TError,ReorderScannerIndicatorsMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof reorderScannerIndicators>>, TError,ReorderScannerIndicatorsMutationVariables, TContext> => {
 
 const mutationKey = getReorderScannerIndicatorsMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -2921,7 +2854,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof reorderScannerIndicators>>, ReorderScannerIndicatorsMutationVariables> = (props) => {
           const {data} = props ?? {};
 
-          return  reorderScannerIndicators(data,fetchOptions)
+          return  reorderScannerIndicators(data,requestOptions)
         }
 
 
@@ -2933,14 +2866,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type ReorderScannerIndicatorsMutationResult = NonNullable<Awaited<ReturnType<typeof reorderScannerIndicators>>>
     export type ReorderScannerIndicatorsMutationBody = ScannerIndicatorOrder
-    export type ReorderScannerIndicatorsMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number }
+    export type ReorderScannerIndicatorsMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>
     export type ReorderScannerIndicatorsMutationVariables = {data: ScannerIndicatorOrder}
 
     /**
  * @summary Set the display order of the scanner indicators
  */
-export const useReorderScannerIndicators = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderScannerIndicators>>, TError,ReorderScannerIndicatorsMutationVariables, TContext>, fetch?: RequestInit}
+export const useReorderScannerIndicators = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof reorderScannerIndicators>>, TError,ReorderScannerIndicatorsMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof reorderScannerIndicators>>,
         TError,
@@ -2999,7 +2932,7 @@ export const getUpdateScannerIndicatorUrl = (indicatorId: number,) => {
  * @summary Change the table visibility and pane scale of a scanner indicator
  */
 export const updateScannerIndicator = async (indicatorId: number,
-    scannerIndicatorUpdate: ScannerIndicatorUpdate, options?: RequestInit): Promise<updateScannerIndicatorResponseSuccess> => {
+    scannerIndicatorUpdate: ScannerIndicatorUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateScannerIndicatorResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -3015,28 +2948,14 @@ export const updateScannerIndicator = async (indicatorId: number,
     }
     return headers;
   };
-const res = await fetch(getUpdateScannerIndicatorUrl(indicatorId),
+return apiFetch<updateScannerIndicatorResponseSuccess>(getUpdateScannerIndicatorUrl(indicatorId),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(scannerIndicatorUpdate)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: updateScannerIndicatorResponseError['data'], status?: number} = new globalThis.Error();
-    const data : updateScannerIndicatorResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: updateScannerIndicatorResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateScannerIndicatorResponseSuccess
-}
+);}
 
 
 
@@ -3044,16 +2963,16 @@ const res = await fetch(getUpdateScannerIndicatorUrl(indicatorId),
 
 export const getUpdateScannerIndicatorMutationKey = () => ['updateScannerIndicator'] as const;
 
-export const getUpdateScannerIndicatorMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+export const getUpdateScannerIndicatorMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext> => {
 
 const mutationKey = getUpdateScannerIndicatorMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -3061,7 +2980,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateScannerIndicator>>, UpdateScannerIndicatorMutationVariables> = (props) => {
           const {indicatorId,data} = props ?? {};
 
-          return  updateScannerIndicator(indicatorId,data,fetchOptions)
+          return  updateScannerIndicator(indicatorId,data,requestOptions)
         }
 
 
@@ -3073,14 +2992,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type UpdateScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof updateScannerIndicator>>>
     export type UpdateScannerIndicatorMutationBody = ScannerIndicatorUpdate
-    export type UpdateScannerIndicatorMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number }
+    export type UpdateScannerIndicatorMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>
     export type UpdateScannerIndicatorMutationVariables = {indicatorId: number;data: ScannerIndicatorUpdate}
 
     /**
  * @summary Change the table visibility and pane scale of a scanner indicator
  */
-export const useUpdateScannerIndicator = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+export const useUpdateScannerIndicator = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateScannerIndicator>>,
         TError,
@@ -3139,30 +3058,16 @@ export const getDeleteScannerIndicatorUrl = (indicatorId: number,) => {
  * Rejected while a strategy reads the indicator.
  * @summary Remove a scanner indicator
  */
-export const deleteScannerIndicator = async (indicatorId: number, options?: RequestInit): Promise<deleteScannerIndicatorResponseSuccess> => {
+export const deleteScannerIndicator = async (indicatorId: number, options?: Parameters<typeof apiFetch>[1]): Promise<deleteScannerIndicatorResponseSuccess> => {
 
-  const res = await fetch(getDeleteScannerIndicatorUrl(indicatorId),
+  return apiFetch<deleteScannerIndicatorResponseSuccess>(getDeleteScannerIndicatorUrl(indicatorId),
   {
     ...options,
     method: 'DELETE'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: deleteScannerIndicatorResponseError['data'], status?: number} = new globalThis.Error();
-    const data : deleteScannerIndicatorResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: deleteScannerIndicatorResponseSuccess['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteScannerIndicatorResponseSuccess
-}
+);}
 
 
 
@@ -3170,16 +3075,16 @@ export const deleteScannerIndicator = async (indicatorId: number, options?: Requ
 
 export const getDeleteScannerIndicatorMutationKey = () => ['deleteScannerIndicator'] as const;
 
-export const getDeleteScannerIndicatorMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+export const getDeleteScannerIndicatorMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext> => {
 
 const mutationKey = getDeleteScannerIndicatorMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -3187,7 +3092,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteScannerIndicator>>, DeleteScannerIndicatorMutationVariables> = (props) => {
           const {indicatorId} = props ?? {};
 
-          return  deleteScannerIndicator(indicatorId,fetchOptions)
+          return  deleteScannerIndicator(indicatorId,requestOptions)
         }
 
 
@@ -3199,14 +3104,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type DeleteScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof deleteScannerIndicator>>>
 
-    export type DeleteScannerIndicatorMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number }
+    export type DeleteScannerIndicatorMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>
     export type DeleteScannerIndicatorMutationVariables = {indicatorId: number}
 
     /**
  * @summary Remove a scanner indicator
  */
-export const useDeleteScannerIndicator = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, fetch?: RequestInit}
+export const useDeleteScannerIndicator = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteScannerIndicator>>,
         TError,
@@ -3255,30 +3160,16 @@ export const getListUsersUrl = () => {
  * Users are added through the Telegram bot. The administrator comes first.
  * @summary List the application users
  */
-export const listUsers = async ( options?: RequestInit): Promise<listUsersResponseSuccess> => {
+export const listUsers = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listUsersResponseSuccess> => {
 
-  const res = await fetch(getListUsersUrl(),
+  return apiFetch<listUsersResponseSuccess>(getListUsersUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listUsersResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listUsersResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listUsersResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listUsersResponseSuccess
-}
+);}
 
 
 
@@ -3291,16 +3182,16 @@ export const getListUsersQueryKey = () => {
     }
 
 
-export const getListUsersQueryOptions = <TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, fetch?: RequestInit}
+export const getListUsersQueryOptions = <TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListUsersQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUsers>>> = ({ signal }) => listUsers({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listUsers>>> = ({ signal }) => listUsers({ signal, ...requestOptions });
 
 
 
@@ -3310,39 +3201,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListUsersQueryResult = NonNullable<Awaited<ReturnType<typeof listUsers>>>
-export type ListUsersQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+export type ListUsersQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
 
 
-export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listUsers>>,
           TError,
           Awaited<ReturnType<typeof listUsers>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listUsers>>,
           TError,
           Awaited<ReturnType<typeof listUsers>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, fetch?: RequestInit}
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List the application users
  */
 
-export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, fetch?: RequestInit}
+export function useListUsers<TData = Awaited<ReturnType<typeof listUsers>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listUsers>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -3409,7 +3300,7 @@ export const getUpdateUserUrl = (telegramId: number,) => {
  * @summary Choose whether a user receives strategy alerts
  */
 export const updateUser = async (telegramId: number,
-    userUpdate: UserUpdate, options?: RequestInit): Promise<updateUserResponseSuccess> => {
+    userUpdate: UserUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateUserResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -3425,28 +3316,14 @@ export const updateUser = async (telegramId: number,
     }
     return headers;
   };
-const res = await fetch(getUpdateUserUrl(telegramId),
+return apiFetch<updateUserResponseSuccess>(getUpdateUserUrl(telegramId),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(userUpdate)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: updateUserResponseError['data'], status?: number} = new globalThis.Error();
-    const data : updateUserResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: updateUserResponseSuccess['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as updateUserResponseSuccess
-}
+);}
 
 
 
@@ -3454,16 +3331,16 @@ const res = await fetch(getUpdateUserUrl(telegramId),
 
 export const getUpdateUserMutationKey = () => ['updateUser'] as const;
 
-export const getUpdateUserMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUser>>, TError,UpdateUserMutationVariables, TContext>, fetch?: RequestInit}
+export const getUpdateUserMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUser>>, TError,UpdateUserMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateUser>>, TError,UpdateUserMutationVariables, TContext> => {
 
 const mutationKey = getUpdateUserMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -3471,7 +3348,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateUser>>, UpdateUserMutationVariables> = (props) => {
           const {telegramId,data} = props ?? {};
 
-          return  updateUser(telegramId,data,fetchOptions)
+          return  updateUser(telegramId,data,requestOptions)
         }
 
 
@@ -3483,14 +3360,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type UpdateUserMutationResult = NonNullable<Awaited<ReturnType<typeof updateUser>>>
     export type UpdateUserMutationBody = UserUpdate
-    export type UpdateUserMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number }
+    export type UpdateUserMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse>
     export type UpdateUserMutationVariables = {telegramId: number;data: UserUpdate}
 
     /**
  * @summary Choose whether a user receives strategy alerts
  */
-export const useUpdateUser = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUser>>, TError,UpdateUserMutationVariables, TContext>, fetch?: RequestInit}
+export const useUpdateUser = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateUser>>, TError,UpdateUserMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateUser>>,
         TError,
@@ -3549,30 +3426,16 @@ export const getDeleteUserUrl = (telegramId: number,) => {
  * The user loses access, and their favorites and price alerts are deleted. The administrator cannot be deleted.
  * @summary Delete an application user
  */
-export const deleteUser = async (telegramId: number, options?: RequestInit): Promise<deleteUserResponseSuccess> => {
+export const deleteUser = async (telegramId: number, options?: Parameters<typeof apiFetch>[1]): Promise<deleteUserResponseSuccess> => {
 
-  const res = await fetch(getDeleteUserUrl(telegramId),
+  return apiFetch<deleteUserResponseSuccess>(getDeleteUserUrl(telegramId),
   {
     ...options,
     method: 'DELETE'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: deleteUserResponseError['data'], status?: number} = new globalThis.Error();
-    const data : deleteUserResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: deleteUserResponseSuccess['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteUserResponseSuccess
-}
+);}
 
 
 
@@ -3580,16 +3443,16 @@ export const deleteUser = async (telegramId: number, options?: RequestInit): Pro
 
 export const getDeleteUserMutationKey = () => ['deleteUser'] as const;
 
-export const getDeleteUserMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext>, fetch?: RequestInit}
+export const getDeleteUserMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext> => {
 
 const mutationKey = getDeleteUserMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -3597,7 +3460,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteUser>>, DeleteUserMutationVariables> = (props) => {
           const {telegramId} = props ?? {};
 
-          return  deleteUser(telegramId,fetchOptions)
+          return  deleteUser(telegramId,requestOptions)
         }
 
 
@@ -3609,14 +3472,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type DeleteUserMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUser>>>
 
-    export type DeleteUserMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number }
+    export type DeleteUserMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse>
     export type DeleteUserMutationVariables = {telegramId: number}
 
     /**
  * @summary Delete an application user
  */
-export const useDeleteUser = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext>, fetch?: RequestInit}
+export const useDeleteUser = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | UserNotFoundResponse | AdministratorProtectedResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUser>>, TError,DeleteUserMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteUser>>,
         TError,
@@ -3665,30 +3528,16 @@ export const getListStrategyVariablesUrl = () => {
  * One variable per output of every configured indicator, in display order.
  * @summary List the indicator values strategy expressions can read
  */
-export const listStrategyVariables = async ( options?: RequestInit): Promise<listStrategyVariablesResponseSuccess> => {
+export const listStrategyVariables = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listStrategyVariablesResponseSuccess> => {
 
-  const res = await fetch(getListStrategyVariablesUrl(),
+  return apiFetch<listStrategyVariablesResponseSuccess>(getListStrategyVariablesUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listStrategyVariablesResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listStrategyVariablesResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listStrategyVariablesResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listStrategyVariablesResponseSuccess
-}
+);}
 
 
 
@@ -3701,16 +3550,16 @@ export const getListStrategyVariablesQueryKey = () => {
     }
 
 
-export const getListStrategyVariablesQueryOptions = <TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, fetch?: RequestInit}
+export const getListStrategyVariablesQueryOptions = <TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListStrategyVariablesQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategyVariables>>> = ({ signal }) => listStrategyVariables({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategyVariables>>> = ({ signal }) => listStrategyVariables({ signal, ...requestOptions });
 
 
 
@@ -3720,39 +3569,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListStrategyVariablesQueryResult = NonNullable<Awaited<ReturnType<typeof listStrategyVariables>>>
-export type ListStrategyVariablesQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+export type ListStrategyVariablesQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
 
 
-export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listStrategyVariables>>,
           TError,
           Awaited<ReturnType<typeof listStrategyVariables>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listStrategyVariables>>,
           TError,
           Awaited<ReturnType<typeof listStrategyVariables>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, fetch?: RequestInit}
+export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List the indicator values strategy expressions can read
  */
 
-export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, fetch?: RequestInit}
+export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -3810,30 +3659,16 @@ export const getListStrategiesUrl = () => {
  * a Telegram message when an instrument starts matching.
  * @summary List the strategies
  */
-export const listStrategies = async ( options?: RequestInit): Promise<listStrategiesResponseSuccess> => {
+export const listStrategies = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listStrategiesResponseSuccess> => {
 
-  const res = await fetch(getListStrategiesUrl(),
+  return apiFetch<listStrategiesResponseSuccess>(getListStrategiesUrl(),
   {
     ...options,
     method: 'GET'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: listStrategiesResponseError['data'], status?: number} = new globalThis.Error();
-    const data : listStrategiesResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: listStrategiesResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as listStrategiesResponseSuccess
-}
+);}
 
 
 
@@ -3846,16 +3681,16 @@ export const getListStrategiesQueryKey = () => {
     }
 
 
-export const getListStrategiesQueryOptions = <TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, fetch?: RequestInit}
+export const getListStrategiesQueryOptions = <TData = Awaited<ReturnType<typeof listStrategies>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
-const {query: queryOptions, fetch: fetchOptions} = options ?? {};
+const {query: queryOptions, request: requestOptions} = options ?? {};
 
   const queryKey =  queryOptions?.queryKey ?? getListStrategiesQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategies>>> = ({ signal }) => listStrategies({ signal, ...fetchOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategies>>> = ({ signal }) => listStrategies({ signal, ...requestOptions });
 
 
 
@@ -3865,39 +3700,39 @@ const {query: queryOptions, fetch: fetchOptions} = options ?? {};
 }
 
 export type ListStrategiesQueryResult = NonNullable<Awaited<ReturnType<typeof listStrategies>>>
-export type ListStrategiesQueryError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }
+export type ListStrategiesQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
 
 
-export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listStrategies>>,
           TError,
           Awaited<ReturnType<typeof listStrategies>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
+export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
   options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listStrategies>>,
           TError,
           Awaited<ReturnType<typeof listStrategies>>
         > , 'initialData'
-      >, fetch?: RequestInit}
+      >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, fetch?: RequestInit}
+export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List the strategies
  */
 
-export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse; status?: number }>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, fetch?: RequestInit}
+export function useListStrategies<TData = Awaited<ReturnType<typeof listStrategies>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategies>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
@@ -3963,7 +3798,7 @@ export const getCreateStrategyUrl = () => {
  * An enabled strategy announces the instruments matching it now, then alerts on new matches.
  * @summary Add a strategy
  */
-export const createStrategy = async (strategyInput: StrategyInput, options?: RequestInit): Promise<createStrategyResponseSuccess> => {
+export const createStrategy = async (strategyInput: StrategyInput, options?: Parameters<typeof apiFetch>[1]): Promise<createStrategyResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -3979,28 +3814,14 @@ export const createStrategy = async (strategyInput: StrategyInput, options?: Req
     }
     return headers;
   };
-const res = await fetch(getCreateStrategyUrl(),
+return apiFetch<createStrategyResponseSuccess>(getCreateStrategyUrl(),
   {
     ...options,
     method: 'POST',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(strategyInput)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: createStrategyResponseError['data'], status?: number} = new globalThis.Error();
-    const data : createStrategyResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: createStrategyResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as createStrategyResponseSuccess
-}
+);}
 
 
 
@@ -4008,16 +3829,16 @@ const res = await fetch(getCreateStrategyUrl(),
 
 export const getCreateStrategyMutationKey = () => ['createStrategy'] as const;
 
-export const getCreateStrategyMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStrategy>>, TError,CreateStrategyMutationVariables, TContext>, fetch?: RequestInit}
+export const getCreateStrategyMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStrategy>>, TError,CreateStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof createStrategy>>, TError,CreateStrategyMutationVariables, TContext> => {
 
 const mutationKey = getCreateStrategyMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -4025,7 +3846,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof createStrategy>>, CreateStrategyMutationVariables> = (props) => {
           const {data} = props ?? {};
 
-          return  createStrategy(data,fetchOptions)
+          return  createStrategy(data,requestOptions)
         }
 
 
@@ -4037,14 +3858,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type CreateStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof createStrategy>>>
     export type CreateStrategyMutationBody = StrategyInput
-    export type CreateStrategyMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse; status?: number }
+    export type CreateStrategyMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse>
     export type CreateStrategyMutationVariables = {data: StrategyInput}
 
     /**
  * @summary Add a strategy
  */
-export const useCreateStrategy = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStrategy>>, TError,CreateStrategyMutationVariables, TContext>, fetch?: RequestInit}
+export const useCreateStrategy = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createStrategy>>, TError,CreateStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof createStrategy>>,
         TError,
@@ -4109,7 +3930,7 @@ export const getUpdateStrategyUrl = (strategyId: number,) => {
  * @summary Change the name and expression of a strategy
  */
 export const updateStrategy = async (strategyId: number,
-    strategyUpdate: StrategyUpdate, options?: RequestInit): Promise<updateStrategyResponseSuccess> => {
+    strategyUpdate: StrategyUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateStrategyResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -4125,28 +3946,14 @@ export const updateStrategy = async (strategyId: number,
     }
     return headers;
   };
-const res = await fetch(getUpdateStrategyUrl(strategyId),
+return apiFetch<updateStrategyResponseSuccess>(getUpdateStrategyUrl(strategyId),
   {
     ...options,
     method: 'PUT',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(strategyUpdate)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: updateStrategyResponseError['data'], status?: number} = new globalThis.Error();
-    const data : updateStrategyResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: updateStrategyResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as updateStrategyResponseSuccess
-}
+);}
 
 
 
@@ -4154,16 +3961,16 @@ const res = await fetch(getUpdateStrategyUrl(strategyId),
 
 export const getUpdateStrategyMutationKey = () => ['updateStrategy'] as const;
 
-export const getUpdateStrategyMutationOptions = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext>, fetch?: RequestInit}
+export const getUpdateStrategyMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext> => {
 
 const mutationKey = getUpdateStrategyMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -4171,7 +3978,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof updateStrategy>>, UpdateStrategyMutationVariables> = (props) => {
           const {strategyId,data} = props ?? {};
 
-          return  updateStrategy(strategyId,data,fetchOptions)
+          return  updateStrategy(strategyId,data,requestOptions)
         }
 
 
@@ -4183,14 +3990,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type UpdateStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof updateStrategy>>>
     export type UpdateStrategyMutationBody = StrategyUpdate
-    export type UpdateStrategyMutationError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse; status?: number }
+    export type UpdateStrategyMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse>
     export type UpdateStrategyMutationVariables = {strategyId: number;data: StrategyUpdate}
 
     /**
  * @summary Change the name and expression of a strategy
  */
-export const useUpdateStrategy = <TError = globalThis.Error & { info?: BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext>, fetch?: RequestInit}
+export const useUpdateStrategy = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateStrategy>>,
         TError,
@@ -4245,7 +4052,7 @@ export const getSetStrategyEnabledUrl = (strategyId: number,) => {
  * @summary Turn a strategy on or off
  */
 export const setStrategyEnabled = async (strategyId: number,
-    strategyEnabled: StrategyEnabled, options?: RequestInit): Promise<setStrategyEnabledResponseSuccess> => {
+    strategyEnabled: StrategyEnabled, options?: Parameters<typeof apiFetch>[1]): Promise<setStrategyEnabledResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
     if (!h) return {};
@@ -4261,28 +4068,14 @@ export const setStrategyEnabled = async (strategyId: number,
     }
     return headers;
   };
-const res = await fetch(getSetStrategyEnabledUrl(strategyId),
+return apiFetch<setStrategyEnabledResponseSuccess>(getSetStrategyEnabledUrl(strategyId),
   {
     ...options,
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
     body: JSON.stringify(strategyEnabled)
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: setStrategyEnabledResponseError['data'], status?: number} = new globalThis.Error();
-    const data : setStrategyEnabledResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: setStrategyEnabledResponseSuccess['data'] = body ? JSON.parse(body) : {}
-  return { data, status: res.status, headers: res.headers } as setStrategyEnabledResponseSuccess
-}
+);}
 
 
 
@@ -4290,16 +4083,16 @@ const res = await fetch(getSetStrategyEnabledUrl(strategyId),
 
 export const getSetStrategyEnabledMutationKey = () => ['setStrategyEnabled'] as const;
 
-export const getSetStrategyEnabledMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext>, fetch?: RequestInit}
+export const getSetStrategyEnabledMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext> => {
 
 const mutationKey = getSetStrategyEnabledMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -4307,7 +4100,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof setStrategyEnabled>>, SetStrategyEnabledMutationVariables> = (props) => {
           const {strategyId,data} = props ?? {};
 
-          return  setStrategyEnabled(strategyId,data,fetchOptions)
+          return  setStrategyEnabled(strategyId,data,requestOptions)
         }
 
 
@@ -4319,14 +4112,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type SetStrategyEnabledMutationResult = NonNullable<Awaited<ReturnType<typeof setStrategyEnabled>>>
     export type SetStrategyEnabledMutationBody = StrategyEnabled
-    export type SetStrategyEnabledMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number }
+    export type SetStrategyEnabledMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>
     export type SetStrategyEnabledMutationVariables = {strategyId: number;data: StrategyEnabled}
 
     /**
  * @summary Turn a strategy on or off
  */
-export const useSetStrategyEnabled = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext>, fetch?: RequestInit}
+export const useSetStrategyEnabled = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof setStrategyEnabled>>,
         TError,
@@ -4379,30 +4172,16 @@ export const getDeleteStrategyUrl = (strategyId: number,) => {
 /**
  * @summary Remove a strategy
  */
-export const deleteStrategy = async (strategyId: number, options?: RequestInit): Promise<deleteStrategyResponseSuccess> => {
+export const deleteStrategy = async (strategyId: number, options?: Parameters<typeof apiFetch>[1]): Promise<deleteStrategyResponseSuccess> => {
 
-  const res = await fetch(getDeleteStrategyUrl(strategyId),
+  return apiFetch<deleteStrategyResponseSuccess>(getDeleteStrategyUrl(strategyId),
   {
     ...options,
     method: 'DELETE'
 
 
   }
-)
-
-
-  const body = [204, 205, 304].includes(res.status) ? null : await res.text();
-  if (!res.ok) {
-
-    const err: globalThis.Error & {info?: deleteStrategyResponseError['data'], status?: number} = new globalThis.Error();
-    const data : deleteStrategyResponseError['data'] = body ? JSON.parse(body) : {}
-    err.info = data;
-    err.status = res.status;
-    throw err;
-  }
-  const data: deleteStrategyResponseSuccess['data'] = body ? JSON.parse(body) : undefined
-  return { data, status: res.status, headers: res.headers } as deleteStrategyResponseSuccess
-}
+);}
 
 
 
@@ -4410,16 +4189,16 @@ export const deleteStrategy = async (strategyId: number, options?: RequestInit):
 
 export const getDeleteStrategyMutationKey = () => ['deleteStrategy'] as const;
 
-export const getDeleteStrategyMutationOptions = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStrategy>>, TError,DeleteStrategyMutationVariables, TContext>, fetch?: RequestInit}
+export const getDeleteStrategyMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStrategy>>, TError,DeleteStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteStrategy>>, TError,DeleteStrategyMutationVariables, TContext> => {
 
 const mutationKey = getDeleteStrategyMutationKey();
-const {mutation: mutationOptions, fetch: fetchOptions} = options ?
+const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
       : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, fetch: undefined};
+      : {mutation: { mutationKey, }, request: undefined};
 
 
 
@@ -4427,7 +4206,7 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
       const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteStrategy>>, DeleteStrategyMutationVariables> = (props) => {
           const {strategyId} = props ?? {};
 
-          return  deleteStrategy(strategyId,fetchOptions)
+          return  deleteStrategy(strategyId,requestOptions)
         }
 
 
@@ -4439,14 +4218,14 @@ const {mutation: mutationOptions, fetch: fetchOptions} = options ?
 
     export type DeleteStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof deleteStrategy>>>
 
-    export type DeleteStrategyMutationError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number }
+    export type DeleteStrategyMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>
     export type DeleteStrategyMutationVariables = {strategyId: number}
 
     /**
  * @summary Remove a strategy
  */
-export const useDeleteStrategy = <TError = globalThis.Error & { info?: UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse; status?: number },
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStrategy>>, TError,DeleteStrategyMutationVariables, TContext>, fetch?: RequestInit}
+export const useDeleteStrategy = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteStrategy>>, TError,DeleteStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteStrategy>>,
         TError,

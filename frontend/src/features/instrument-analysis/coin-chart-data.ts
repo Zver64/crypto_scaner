@@ -4,7 +4,7 @@ import type {
 	ChartPageResponse,
 } from "@/api/generated/models";
 import { LiveCandlesClient } from "@/api/live-candles";
-import { getTelegramInitData } from "@/app/telegram";
+import { getSessionToken, invalidateSessionToken } from "@/api/session";
 import type {
 	ChartIndicatorPoints,
 	PriceHistorySnapshot,
@@ -102,7 +102,8 @@ export function createCoinChartData(
 				for (const interval of chartIntervals) recompute(interval);
 			});
 			connection = new LiveCandlesClient({
-				getInitData: getTelegramInitData,
+				getToken: getSessionToken,
+				invalidateToken: invalidateSessionToken,
 				onConnectionChange: live.connection,
 				onMessage: live.message,
 			});

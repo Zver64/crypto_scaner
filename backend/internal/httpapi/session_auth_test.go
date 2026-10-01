@@ -7,17 +7,20 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"sort"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/auth/telegram"
 	"crypto-scanner/internal/httpapi"
+	"crypto-scanner/internal/platform/logging"
 )
 
 const (
@@ -26,30 +29,60 @@ const (
 
 var fixtureNow = time.Date(2026, time.August, 5, 4, 10, 0, 0, time.UTC)
 
-func TestEnabledTelegramUserCanReachProtectedHandler(t *testing.T) {
+func newTestSessions(store *memorySessionStore, maxAge time.Duration) *auth.Sessions {
+	return auth.NewSessions(store, telegram.New(fixtureBotToken, maxAge, telegram.Options{Now: func() time.Time { return fixtureNow }}),
+		0, time.Hour, 24*time.Hour, logging.New(io.Discard, "error"), auth.SessionOptions{Now: func() time.Time { return fixtureNow }})
+}
+
+func newSessionHandler(sessions httpapi.Sessions) http.Handler {
+	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Sessions: sessions}, httpapi.Options{})
+}
+
+func exchange(handler http.Handler, authorization string) *httptest.ResponseRecorder {
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/session", nil)
+	if authorization != "" {
+		request.Header.Set("Authorization", authorization)
+	}
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
+
+func TestExchangedSessionReachesProtectedHandler(t *testing.T) {
 	want := auth.User{ID: 7, TelegramID: 424242, Username: "alice", DisplayName: "Alice"}
-	middleware := httpapi.RequireTelegramUser(telegram.New(
-		userStoreStub{find: func(_ context.Context, telegramID int64) (auth.User, error) {
-			if telegramID != want.TelegramID {
-				t.Fatalf("telegram ID = %d, want %d", telegramID, want.TelegramID)
-			}
-			return want, nil
-		}},
-		fixtureBotToken,
-		15*time.Minute,
-		0,
-		telegram.Options{Now: func() time.Time { return fixtureNow }},
-	))
-	handler := middleware(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	store := &memorySessionStore{find: func(_ context.Context, telegramID int64) (auth.User, error) {
+		if telegramID != want.TelegramID {
+			t.Fatalf("telegram ID = %d, want %d", telegramID, want.TelegramID)
+		}
+		return want, nil
+	}}
+	sessions := newTestSessions(store, 15*time.Minute)
+
+	exchanged := exchange(newSessionHandler(sessions), "tma "+validInitData)
+	if exchanged.Code != http.StatusCreated {
+		t.Fatalf("exchange status = %d, body = %s", exchanged.Code, exchanged.Body.String())
+	}
+	var session struct {
+		Token string `json:"token"`
+	}
+	if err := json.Unmarshal(exchanged.Body.Bytes(), &session); err != nil || session.Token == "" {
+		t.Fatalf("decode session: %v, %q", err, exchanged.Body.String())
+	}
+	for hash := range store.sessions {
+		if strings.Contains(hash, session.Token) {
+			t.Fatal("session store holds the raw token")
+		}
+	}
+
+	handler := httpapi.RequireSession(sessions, logging.New(io.Discard, "error"))(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		got, ok := httpapi.UserFromContext(request.Context())
 		if !ok || got != want {
 			t.Fatalf("authenticated user = %#v, %t; want %#v, true", got, ok, want)
 		}
 		response.WriteHeader(http.StatusNoContent)
 	}))
-
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
-	request.Header.Set("Authorization", "tma "+validInitData)
+	request.Header.Set("Authorization", "Bearer "+session.Token)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 
@@ -78,31 +111,20 @@ func TestInvalidTelegramCredentialsAreUnauthenticated(t *testing.T) {
 		{name: "missing auth date", authorization: "tma " + signedInitData(without(validValues, "auth_date"))},
 		{name: "malformed auth date", authorization: "tma " + signedInitData(replacing(validValues, "auth_date", "yesterday"))},
 		{name: "expired auth date", authorization: "tma " + signedInitData(replacing(validValues, "auth_date", "1785902399"))},
-		{name: "future auth date", authorization: "tma " + signedInitData(replacing(validValues, "auth_date", "1785903001"))},
+		{name: "future auth date", authorization: "tma " + signedInitData(replacing(validValues, "auth_date", "1785903031"))},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			middleware := httpapi.RequireTelegramUser(telegram.New(
-				userStoreStub{find: func(context.Context, int64) (auth.User, error) {
-					t.Fatal("user store called for unauthenticated request")
-					return auth.User{}, nil
-				}},
-				fixtureBotToken,
-				10*time.Minute,
-				0,
-				telegram.Options{Now: func() time.Time { return fixtureNow }},
-			))
-			reached := false
-			handler := middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { reached = true }))
-			request := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
-			request.Header.Set("Authorization", test.authorization)
-			response := httptest.NewRecorder()
+			store := &memorySessionStore{find: func(context.Context, int64) (auth.User, error) {
+				t.Fatal("user store called for unauthenticated request")
+				return auth.User{}, nil
+			}}
 
-			handler.ServeHTTP(response, request)
+			response := exchange(newSessionHandler(newTestSessions(store, 10*time.Minute)), test.authorization)
 
 			assertErrorResponse(t, response, http.StatusUnauthorized, "unauthenticated")
-			if reached {
-				t.Fatal("protected handler was reached")
+			if len(store.sessions) != 0 {
+				t.Fatal("session was created")
 			}
 			body := response.Body.String()
 			if strings.Contains(body, fixtureBotToken) || strings.Contains(body, validInitData) ||
@@ -126,21 +148,9 @@ func TestTelegramUserMustExistInTheStore(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			middleware := httpapi.RequireTelegramUser(telegram.New(
-				userStoreStub{find: func(context.Context, int64) (auth.User, error) { return test.storeReply, test.storeError }},
-				fixtureBotToken,
-				15*time.Minute,
-				0,
-				telegram.Options{Now: func() time.Time { return fixtureNow }},
-			))
-			handler := middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
-				t.Fatal("protected handler was reached")
-			}))
-			request := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
-			request.Header.Set("Authorization", "tma "+validInitData)
-			response := httptest.NewRecorder()
+			store := &memorySessionStore{find: func(context.Context, int64) (auth.User, error) { return test.storeReply, test.storeError }}
 
-			handler.ServeHTTP(response, request)
+			response := exchange(newSessionHandler(newTestSessions(store, 15*time.Minute)), "tma "+validInitData)
 
 			assertErrorResponse(t, response, test.wantStatus, test.wantCode)
 			if strings.Contains(response.Body.String(), "secret detail") {
@@ -151,15 +161,17 @@ func TestTelegramUserMustExistInTheStore(t *testing.T) {
 }
 
 func TestAuthenticationErrorCarriesTheRequestIDWithoutExposingCredentials(t *testing.T) {
-	middleware := httpapi.RequireTelegramUser(telegram.New(userStoreStub{find: func(context.Context, int64) (auth.User, error) {
-		t.Fatal("user store called for invalid signature")
+	store := &memorySessionStore{find: func(context.Context, int64) (auth.User, error) {
+		t.Fatal("user store called for an unknown session")
 		return auth.User{}, nil
-	}}, fixtureBotToken, 15*time.Minute, 0, telegram.Options{}))
+	}}
+	middleware := httpapi.RequireSession(newTestSessions(store, 15*time.Minute), logging.New(io.Discard, "error"))
 	handler := middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("protected handler was reached")
 	}))
+	const unknownToken = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 	request := httptest.NewRequest(http.MethodGet, "/api/v1/protected", nil)
-	request.Header.Set("Authorization", "tma "+strings.Replace(validInitData, "alice", "mallory", 1))
+	request.Header.Set("Authorization", "Bearer "+unknownToken)
 	response := httptest.NewRecorder()
 	response.Header().Set("X-Request-ID", "request-11")
 
@@ -167,24 +179,84 @@ func TestAuthenticationErrorCarriesTheRequestIDWithoutExposingCredentials(t *tes
 
 	var body struct {
 		RequestID string `json:"request_id"`
+		Error     struct {
+			Code string `json:"code"`
+		} `json:"error"`
 	}
 	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
+	if response.Code != http.StatusUnauthorized || body.Error.Code != "unauthenticated" {
+		t.Errorf("status = %d, code = %q; want 401 unauthenticated", response.Code, body.Error.Code)
+	}
 	if body.RequestID != "request-11" {
 		t.Errorf("request_id = %q, want request-11", body.RequestID)
 	}
-	if strings.Contains(response.Body.String(), validInitData) || strings.Contains(response.Body.String(), fixtureBotToken) {
+	if strings.Contains(response.Body.String(), unknownToken) {
 		t.Fatalf("response exposed authentication material: %q", response.Body.String())
 	}
 }
 
-type userStoreStub struct {
-	find func(context.Context, int64) (auth.User, error)
+// memorySessionStore keeps sessions in memory, keyed by token hash.
+type memorySessionStore struct {
+	find     func(context.Context, int64) (auth.User, error)
+	mu       sync.Mutex
+	sessions map[string]auth.NewSession
+	users    map[int64]auth.User
 }
 
-func (stub userStoreStub) FindByTelegramID(ctx context.Context, telegramID int64) (auth.User, error) {
-	return stub.find(ctx, telegramID)
+func (store *memorySessionStore) FindByTelegramID(ctx context.Context, telegramID int64) (auth.User, error) {
+	user, err := store.find(ctx, telegramID)
+	if err == nil {
+		store.mu.Lock()
+		defer store.mu.Unlock()
+		if store.users == nil {
+			store.users = make(map[int64]auth.User)
+		}
+		store.users[user.ID] = user
+	}
+	return user, err
+}
+
+func (store *memorySessionStore) CreateSession(_ context.Context, session auth.NewSession) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.sessions == nil {
+		store.sessions = make(map[string]auth.NewSession)
+	}
+	store.sessions[string(session.TokenHash)] = session
+	return nil
+}
+
+func (store *memorySessionStore) FindSession(_ context.Context, tokenHash []byte) (auth.Session, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	session, ok := store.sessions[string(tokenHash)]
+	if !ok {
+		return auth.Session{}, auth.ErrSessionNotFound
+	}
+	return auth.Session{User: store.users[session.UserID], IdleExpiresAt: session.IdleExpiresAt, AbsoluteExpiresAt: session.AbsoluteExpiresAt}, nil
+}
+
+func (store *memorySessionStore) ExtendSession(_ context.Context, tokenHash []byte, idleExpiresAt time.Time, minimumExtension time.Duration) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if session, ok := store.sessions[string(tokenHash)]; ok && !session.IdleExpiresAt.After(idleExpiresAt.Add(-minimumExtension)) {
+		session.IdleExpiresAt = idleExpiresAt
+		store.sessions[string(tokenHash)] = session
+	}
+	return nil
+}
+
+func (store *memorySessionStore) DeleteSession(_ context.Context, tokenHash []byte) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	delete(store.sessions, string(tokenHash))
+	return nil
+}
+
+func (store *memorySessionStore) DeleteExpiredSessions(context.Context, time.Time) (int64, error) {
+	return 0, nil
 }
 
 func assertErrorResponse(t *testing.T, response *httptest.ResponseRecorder, wantStatus int, wantCode string) {

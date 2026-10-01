@@ -9,7 +9,6 @@ import {
 	useListPriceAlerts,
 	useUpdatePriceAlert,
 } from "@/api/generated/api";
-import { telegramRequestOptions } from "@/app/telegram";
 import { useFavorites } from "@/features/favorites/favorites-provider";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
@@ -50,7 +49,6 @@ export function PriceAlertsController({
 	const queryClient = useQueryClient();
 	const { handleAccessError } = useFavorites();
 	const query = useListPriceAlerts(symbol, {
-		fetch: telegramRequestOptions(),
 		query: {
 			queryKey: scopedUserQueryKey(getListPriceAlertsQueryKey(symbol), scope),
 			refetchInterval: 15_000,
@@ -98,15 +96,12 @@ export function PriceAlertsController({
 		});
 	};
 	const createMutation = useCreatePriceAlert({
-		fetch: telegramRequestOptions(),
 		mutation: { onError: failed, onSuccess: complete },
 	});
 	const updateMutation = useUpdatePriceAlert({
-		fetch: telegramRequestOptions(),
 		mutation: { onError: failed, onSuccess: complete },
 	});
 	const deleteMutation = useDeletePriceAlert({
-		fetch: telegramRequestOptions(),
 		mutation: {
 			onError: failed,
 			onSuccess: (_response, variables) => {

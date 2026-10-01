@@ -6,7 +6,6 @@ import type {
 	CriterionRequest,
 	InstrumentAnalysisResponse,
 } from "@/api/generated/models";
-import { telegramRequestOptions } from "@/app/telegram";
 import {
 	apiErrorCode,
 	apiErrorMessage,
@@ -26,7 +25,6 @@ export function useInstrumentAnalysis(
 		symbol,
 		{ criteria: [...criterionSelections] },
 		{
-			fetch: telegramRequestOptions(),
 			query: {
 				enabled,
 				placeholderData: keepPreviousData,

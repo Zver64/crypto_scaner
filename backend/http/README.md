@@ -18,8 +18,11 @@ cp backend/http/http-client.private.env.json.example \
 ```
 
 Open `backend/http/http-client.private.env.json` and replace the placeholder
-with the exact value of `window.Telegram.WebApp.initData` from the Mini App.
-The Telegram user must exist and be enabled in the application database.
+with the exact value of `window.Telegram.WebApp.initData` from the Mini App
+(or `TELEGRAM_DEV_INIT_DATA` from the root `.env.local`). The Telegram user must
+exist in the application database, and the init data must be younger than
+`TELEGRAM_INIT_DATA_MAX_AGE`. Send `createSession` in `analysis.http` first; the
+other requests reuse the session token it returns.
 
 Open either `.http` file in Neovim, place the cursor within a request, and use
 Kulala's **Send request** action. Select the `default` environment if another
@@ -28,7 +31,7 @@ Kulala environment is active.
 ## Files
 
 - `health.http` covers liveness and readiness.
-- `analysis.http` covers symbol analysis, market search, authentication, and
+- `analysis.http` covers the session exchange, symbol analysis, market search, and
   argument-validation usage.
 - `http-client.env.json` contains safe committed defaults.
 - `http-client.private.env.json` contains local Telegram credentials and must

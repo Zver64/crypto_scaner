@@ -5,8 +5,12 @@
  * HTTP API for service health, cryptocurrency market analysis, and candle history.
  *
  * Live candles use the same-origin WebSocket endpoint `/api/v1/live/candles`.
- * The client first sends `LiveCandleClientMessage` with type `authenticate`; the
- * Telegram init data is never placed in the URL. After `authenticated`, the
+ * Clients exchange Telegram Mini App init data for a session token with
+ * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
+ * other operation. A request rejected with `401` needs a new session.
+ *
+ * The client first sends `LiveCandleClientMessage` with type `authenticate` and
+ * the session token; the token is never placed in the URL. After `authenticated`, the
  * connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
  * `LiveCandleServerMessage` snapshots, updates, freshness changes, acknowledgements,
  * and bounded errors. One connection may switch subscriptions without reconnecting.

@@ -9,7 +9,6 @@ import {
 	useUpdateUser,
 } from "@/api/generated/api";
 import type { User } from "@/api/generated/models";
-import { telegramRequestOptions } from "@/app/telegram";
 import { UserRemovalConfirmation } from "@/features/user-settings/user-removal-confirmation";
 import { UserRow } from "@/features/user-settings/user-row";
 import {
@@ -22,11 +21,9 @@ export function UserSettings() {
 	const queryClient = useQueryClient();
 	const [removing, setRemoving] = useState<User>();
 	const users = useListUsers({
-		fetch: telegramRequestOptions(),
 		query: { retry: false, select: (response) => response.data.items },
 	});
 	const deleteMutation = useDeleteUser({
-		fetch: telegramRequestOptions(),
 		mutation: {
 			onError: (error) => {
 				notifications.show({
@@ -44,7 +41,6 @@ export function UserSettings() {
 		},
 	});
 	const updateMutation = useUpdateUser({
-		fetch: telegramRequestOptions(),
 		mutation: {
 			onError: (error) => {
 				notifications.show({

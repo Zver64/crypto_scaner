@@ -14,7 +14,6 @@ import { useAnalyzeMarket } from "@/api/generated/api";
 import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
-import { telegramRequestOptions } from "@/app/telegram";
 import { SettingsForm } from "@/components/settings-form";
 import {
 	apiErrorMessage,
@@ -66,7 +65,6 @@ export function TopCoinsScreen({
 	const query = useAnalyzeMarket<MarketAnalysisResponse>(
 		{ criteria, ...topCoinsRequestOptions },
 		{
-			fetch: telegramRequestOptions(),
 			query: {
 				enabled: permission.allowed,
 				gcTime: Number.POSITIVE_INFINITY,

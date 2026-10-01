@@ -30,6 +30,11 @@ const rsiValues = (source: ReturnType<typeof createCoinChartData>) =>
 		(point) => point.value,
 	);
 
+vi.mock("@/api/session", () => ({
+	getSessionToken: async () => "session-token",
+	invalidateSessionToken: () => {},
+}));
+
 class FakeSocket {
 	static OPEN = 1;
 	static current: FakeSocket | undefined;
@@ -108,7 +113,7 @@ function chart(
 	};
 }
 
-it("renders backend snapshots, merges current-candle tails, and extends the range over WebSocket", () => {
+it("renders backend snapshots, merges current-candle tails, and extends the range over WebSocket", async () => {
 	vi.stubGlobal("window", {
 		location: { href: "https://example.com/coin" },
 		Telegram: { WebApp: { initData: "signed-data" } },
@@ -123,6 +128,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 		const socket = FakeSocket.current;
 		if (!socket) throw new Error("Missing socket");
 		socket.emitOpen();
+		await vi.waitFor(() => expect(socket.sent).not.toHaveLength(0));
 		socket.emitMessage({ type: "authenticated" });
 		expect(
 			socket.sent.map(({ type, interval, limit }) => [type, interval, limit]),
@@ -183,7 +189,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 	}
 });
 
-it("streams only the interval on screen and keeps the last chart of others as stale", () => {
+it("streams only the interval on screen and keeps the last chart of others as stale", async () => {
 	vi.stubGlobal("window", {
 		location: { href: "https://example.com/coin" },
 		Telegram: { WebApp: { initData: "signed-data" } },
@@ -196,6 +202,7 @@ it("streams only the interval on screen and keeps the last chart of others as st
 		const socket = FakeSocket.current;
 		if (!socket) throw new Error("Missing socket");
 		socket.emitOpen();
+		await vi.waitFor(() => expect(socket.sent).not.toHaveLength(0));
 		socket.emitMessage({ type: "authenticated" });
 		socket.emitMessage({
 			type: "snapshot",

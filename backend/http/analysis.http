@@ -1,6 +1,7 @@
 # Crypto Scanner analysis endpoints
 #
-# Both endpoints require fresh Telegram Mini App initData from an enabled user:
+# Both endpoints require a session token. Send createSession first; it
+# exchanges fresh Telegram Mini App initData of an existing user:
 #   Authorization: tma <window.Telegram.WebApp.initData>
 #
 # Copy http-client.private.env.json.example to http-client.private.env.json and
@@ -8,13 +9,20 @@
 
 @symbol = BTCUSDT
 
+### Exchange Telegram init data for a session token
+# @name createSession
+POST {{BASE_URL}}/api/v1/auth/session HTTP/1.1
+Accept: application/json
+Authorization: tma {{TELEGRAM_INIT_DATA}}
+X-Request-ID: kulala-create-session
+
 ### Analyze one active symbol
 # Criterion instance keys must be nonempty and unique within the request. Labels
 # are presentation identity; names select reusable criterion implementations.
 # @name analyzeSymbol
 POST {{BASE_URL}}/api/v1/analysis/instruments/{{symbol}} HTTP/1.1
 Accept: application/json
-Authorization: tma {{TELEGRAM_INIT_DATA}}
+Authorization: Bearer {{createSession.response.body.$.token}}
 Content-Type: application/json
 X-Request-ID: kulala-analysis-symbol
 
@@ -50,7 +58,7 @@ X-Request-ID: kulala-analysis-symbol
 # @name searchMarket
 POST {{BASE_URL}}/api/v1/analysis/market HTTP/1.1
 Accept: application/json
-Authorization: tma {{TELEGRAM_INIT_DATA}}
+Authorization: Bearer {{createSession.response.body.$.token}}
 Content-Type: application/json
 X-Request-ID: kulala-analysis-search
 
@@ -83,7 +91,7 @@ X-Request-ID: kulala-analysis-search
 # @name analyzeWithInvalidArguments
 POST {{BASE_URL}}/api/v1/analysis/instruments/{{symbol}} HTTP/1.1
 Accept: application/json
-Authorization: tma {{TELEGRAM_INIT_DATA}}
+Authorization: Bearer {{createSession.response.body.$.token}}
 Content-Type: application/json
 X-Request-ID: kulala-analysis-invalid
 

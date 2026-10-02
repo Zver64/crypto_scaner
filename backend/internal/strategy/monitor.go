@@ -50,9 +50,10 @@ type MonitorStore interface {
 // Values supplies the tracked closed indicator values.
 type Values interface {
 	Listen(func(closedindicator.Change))
-	// Snapshot also lists the targets some instrument has no value for yet,
-	// or none calculated with the demanded points.
-	Snapshot([]int64, []closedindicator.Demand) (map[int64][]closedindicator.Value, []closedindicator.Target)
+	// Snapshot returns the value of each subscription and also lists the
+	// targets some subscribed instrument has no value for yet, or none
+	// calculated with the subscribed points.
+	Snapshot([]closedindicator.Subscription) ([]closedindicator.Value, []closedindicator.Target)
 }
 
 // Strategies supplies the current strategies. A change requests its
@@ -288,13 +289,9 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		}
 		return changed
 	}
-	demands, positions := demandsOf(strategies)
-	current := snapshot{positions: positions, now: monitor.now(), bySymbol: make(map[string]int64, len(instruments))}
-	for _, instrument := range instruments {
-		current.bySymbol[instrument.Symbol] = instrument.ID
-	}
+	current := snapshot{reads: readsOf(strategies, instruments), now: monitor.now(), bySymbol: bySymbol(instruments)}
 	var missing []closedindicator.Target
-	current.values, missing = monitor.values.Snapshot(instrumentIDs(instruments), demands)
+	current.values, missing = monitor.values.Snapshot(current.reads.subscriptions)
 
 	for _, entry := range strategies {
 		matched := state[entry.ID]
@@ -324,7 +321,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 			// The baseline waits for the first calculation of what it reads,
 			// so it never leaves out instruments that match; that calculation
 			// reports changes, which evaluate again.
-			if reads(entry, missing) {
+			if readsAny(entry, missing) {
 				monitor.mu.Lock()
 				monitor.baselines[entry.ID] = struct{}{}
 				monitor.mu.Unlock()
@@ -415,9 +412,9 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 
 // snapshot is the tracked values of one evaluation round.
 type snapshot struct {
-	// values holds the values of each monitored instrument at positions.
-	values    map[int64][]closedindicator.Value
-	positions map[string]int
+	reads reads
+	// values holds the value of each subscription of reads.
+	values []closedindicator.Value
 	// bySymbol finds the monitored instruments read through of.
 	bySymbol map[string]int64
 	now      time.Time
@@ -427,7 +424,7 @@ type snapshot struct {
 // instruments it reads through of.
 func (current snapshot) match(entry Entry, instrumentID int64) (bool, bool) {
 	return entry.Compiled.Evaluate(func(read Read) (float64, bool) {
-		output, ok := current.output(read, instrumentID)
+		output, ok := current.output(entry, read, instrumentID)
 		if !ok {
 			return 0, false
 		}
@@ -438,19 +435,18 @@ func (current snapshot) match(entry Entry, instrumentID int64) (bool, bool) {
 // output returns the fresh output read reads of the evaluated instrument or
 // of the instrument read names. Values whose latest candle is older are stale
 // and left out.
-func (current snapshot) output(read Read, instrumentID int64) (closedindicator.Output, bool) {
+func (current snapshot) output(entry Entry, read Read, instrumentID int64) (closedindicator.Output, bool) {
 	if read.Symbol != "" {
 		var ok bool
 		if instrumentID, ok = current.bySymbol[read.Symbol]; !ok {
 			return closedindicator.Output{}, false
 		}
 	}
-	values := current.values[instrumentID]
-	position, ok := current.positions[targetKey(read.Variable.Target)]
-	if !ok || position >= len(values) {
+	position, ok := current.reads.positions[pair{instrumentID, current.reads.keys[entry.ID][read.Variable.Name]}]
+	if !ok {
 		return closedindicator.Output{}, false
 	}
-	value := values[position]
+	value := current.values[position]
 	if !value.OpenTime.Equal(read.Variable.Target.Interval.LastClosedOpenTime(current.now)) {
 		return closedindicator.Output{}, false
 	}
@@ -488,49 +484,73 @@ func (monitor *Monitor) sendLoop(ctx context.Context) {
 	}
 }
 
-// demandsOf returns the distinct targets strategies read, each with the
-// points its deepest read needs, and each target's position.
-func demandsOf(strategies []Entry) ([]closedindicator.Demand, map[string]int) {
-	var demands []closedindicator.Demand
-	positions := map[string]int{}
-	for _, entry := range strategies {
-		for _, read := range entry.Compiled.Reads() {
-			key := targetKey(read.Variable.Target)
-			position, ok := positions[key]
-			if !ok {
-				position = len(demands)
-				positions[key] = position
-				demands = append(demands, closedindicator.Demand{Target: read.Variable.Target})
-			}
-			demands[position].Points = max(demands[position].Points, read.Shift+1)
-		}
-	}
-	return demands, positions
+// pair identifies the value of one target of one instrument.
+type pair struct {
+	instrumentID int64
+	target       string
 }
 
-// reads reports whether entry reads any of targets.
-func reads(entry Entry, targets []closedindicator.Target) bool {
-	demands, _ := demandsOf([]Entry{entry})
-	return slices.ContainsFunc(demands, func(demand closedindicator.Demand) bool {
-		return slices.ContainsFunc(targets, demand.Target.Equal)
+// reads are the values strategies read in one round.
+type reads struct {
+	// subscriptions are the distinct pairs, each with the points its deepest
+	// read needs.
+	subscriptions []closedindicator.Subscription
+	positions     map[pair]int
+	// keys maps the variables of each strategy to the keys of their targets.
+	keys map[int64]map[string]string
+}
+
+// readsOf subscribes every read of the evaluated instrument on each of
+// instruments and every read through of only on the instrument it names.
+func readsOf(strategies []Entry, instruments []Instrument) reads {
+	result := reads{positions: map[pair]int{}, keys: make(map[int64]map[string]string, len(strategies))}
+	symbols := bySymbol(instruments)
+	subscribe := func(instrumentID int64, read Read, key string) {
+		at := pair{instrumentID, key}
+		position, ok := result.positions[at]
+		if !ok {
+			position = len(result.subscriptions)
+			result.positions[at] = position
+			result.subscriptions = append(result.subscriptions, closedindicator.Subscription{InstrumentID: instrumentID, Target: read.Variable.Target})
+		}
+		result.subscriptions[position].Points = max(result.subscriptions[position].Points, read.Shift+1)
+	}
+	for _, entry := range strategies {
+		keys := map[string]string{}
+		result.keys[entry.ID] = keys
+		for _, read := range entry.Compiled.Reads() {
+			key, ok := keys[read.Variable.Name]
+			if !ok {
+				key = read.Variable.Target.Key()
+				keys[read.Variable.Name] = key
+			}
+			if read.Symbol != "" {
+				if id, ok := symbols[read.Symbol]; ok {
+					subscribe(id, read, key)
+				}
+				continue
+			}
+			for _, instrument := range instruments {
+				subscribe(instrument.ID, read, key)
+			}
+		}
+	}
+	return result
+}
+
+// readsAny reports whether entry reads any of targets.
+func readsAny(entry Entry, targets []closedindicator.Target) bool {
+	return slices.ContainsFunc(entry.Compiled.Reads(), func(read Read) bool {
+		return slices.ContainsFunc(targets, read.Variable.Target.Equal)
 	})
 }
 
-func targetKey(target closedindicator.Target) string {
-	key := string(target.Interval) + "|" + string(target.Selection.Type)
-	for _, name := range sortedKeys(target.Selection.Parameters) {
-		key += fmt.Sprintf("|%s=%v", name, target.Selection.Parameters[name])
+func bySymbol(instruments []Instrument) map[string]int64 {
+	result := make(map[string]int64, len(instruments))
+	for _, instrument := range instruments {
+		result[instrument.Symbol] = instrument.ID
 	}
-	return key
-}
-
-func sortedKeys[V any](values map[string]V) []string {
-	keys := make([]string, 0, len(values))
-	for key := range values {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	return keys
+	return result
 }
 
 func set(ids []int64) map[int64]struct{} {
@@ -601,7 +621,7 @@ func alertText(entry Entry, instrument Instrument, current snapshot) string {
 			continue
 		}
 		shown[name] = struct{}{}
-		if output, ok := current.output(read, instrument.ID); ok {
+		if output, ok := current.output(entry, read, instrument.ID); ok {
 			readings = append(readings, name+" "+strconv.FormatFloat(output.Value, 'g', 6, 64))
 		}
 	}

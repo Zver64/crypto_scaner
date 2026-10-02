@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -140,15 +141,22 @@ func (service *Service) compile(source string, variables []Variable) (*Expressio
 	if err != nil {
 		return nil, err
 	}
-	demands, _ := demandsOf([]Entry{{Compiled: compiled}})
+	deepest := map[string]Read{}
+	for _, read := range compiled.Reads() {
+		key := read.Variable.Target.Key()
+		if current, ok := deepest[key]; !ok || read.Shift > current.Shift {
+			deepest[key] = read
+		}
+	}
 	var problems []string
-	for _, demand := range demands {
-		depth, err := closedindicator.Depth(service.registry, demand)
+	for _, key := range slices.Sorted(maps.Keys(deepest)) {
+		target := deepest[key].Variable.Target
+		depth, err := closedindicator.Depth(service.registry, target, deepest[key].Shift+1)
 		if err != nil {
 			return nil, err
 		}
 		if depth > market.HistoryDepth {
-			problems = append(problems, fmt.Sprintf("%s %s needs %d closed candles, %d are kept", demand.Target.Interval, demand.Target.Selection.Type, depth, market.HistoryDepth))
+			problems = append(problems, fmt.Sprintf("%s %s needs %d closed candles, %d are kept", target.Interval, target.Selection.Type, depth, market.HistoryDepth))
 		}
 	}
 	if len(problems) > 0 {
@@ -233,16 +241,6 @@ func (service *Service) Symbols(ctx context.Context) ([]string, error) {
 	return symbols, nil
 }
 
-// InstrumentIDs lists the instruments strategies evaluate: the
-// administrator's active favorites.
-func (service *Service) InstrumentIDs(ctx context.Context) ([]int64, error) {
-	instruments, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
-	if err != nil {
-		return nil, err
-	}
-	return instrumentIDs(instruments), nil
-}
-
 // IndicatorUsage maps each indicator id to the names of the strategies that
 // read it.
 func (service *Service) IndicatorUsage() map[int64][]string {
@@ -260,17 +258,22 @@ func (service *Service) IndicatorUsage() map[int64][]string {
 	return usage
 }
 
-// Targets returns the targets enabled strategies read, with the points they
-// need, which must stay current in the background.
-func (service *Service) Targets() []closedindicator.Demand {
+// Subscriptions returns the values enabled strategies read, with the points
+// they need, which must stay current in the background: each value of the
+// evaluated instrument on every instrument they evaluate, and each value read
+// through of only on the instrument it names.
+func (service *Service) Subscriptions(ctx context.Context) ([]closedindicator.Subscription, error) {
+	instruments, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
+	if err != nil {
+		return nil, err
+	}
 	var evaluated []Entry
 	for _, entry := range service.List() {
 		if entry.evaluated() {
 			evaluated = append(evaluated, entry)
 		}
 	}
-	demands, _ := demandsOf(evaluated)
-	return demands
+	return readsOf(evaluated, instruments).subscriptions, nil
 }
 
 // Create validates and stores a strategy.

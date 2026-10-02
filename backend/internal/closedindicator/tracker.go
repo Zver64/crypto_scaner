@@ -4,10 +4,11 @@ package closedindicator
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -31,11 +32,16 @@ type Target struct {
 }
 
 // Equal reports whether both targets identify the same interval and selection.
-func (target Target) Equal(other Target) bool { return target.id() == other.id() }
+func (target Target) Equal(other Target) bool { return target.Key() == other.Key() }
 
-func (target Target) id() string {
-	parameters, _ := json.Marshal(target.Selection.Parameters)
-	return string(target.Interval) + "|" + string(target.Selection.Type) + "|" + string(parameters)
+// Key identifies the interval and the canonical selection of target.
+func (target Target) Key() string {
+	var key strings.Builder
+	key.WriteString(string(target.Interval) + "|" + string(target.Selection.Type))
+	for _, name := range slices.Sorted(maps.Keys(target.Selection.Parameters)) {
+		fmt.Fprintf(&key, "|%s=%v", name, target.Selection.Parameters[name])
+	}
+	return key.String()
 }
 
 // Output is one named output at the latest stored closed candle. Earlier
@@ -91,45 +97,12 @@ type Subscription struct {
 	Points       int
 }
 
-// Demand is a target and the number of latest closed candles whose values
-// are kept.
-type Demand struct {
-	Target Target
-	Points int
-}
-
 func (subscription Subscription) points() int { return max(1, subscription.Points) }
 
 // Source supplies the pairs that must stay current without any clients.
 // targets are the tracker's table targets; a source may track other ones.
 type Source interface {
 	Subscriptions(ctx context.Context, targets []Target) ([]Subscription, error)
-}
-
-// InstrumentSource tracks every table target for each listed instrument.
-type InstrumentSource func(context.Context) ([]int64, error)
-
-func (source InstrumentSource) Subscriptions(ctx context.Context, targets []Target) ([]Subscription, error) {
-	demands := make([]Demand, len(targets))
-	for index, target := range targets {
-		demands[index] = Demand{Target: target, Points: 1}
-	}
-	return source.Track(ctx, demands)
-}
-
-// Track tracks every demand for each listed instrument.
-func (source InstrumentSource) Track(ctx context.Context, demands []Demand) ([]Subscription, error) {
-	ids, err := source(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]Subscription, 0, len(ids)*len(demands))
-	for _, id := range ids {
-		for _, demand := range demands {
-			result = append(result, Subscription{InstrumentID: id, Target: demand.Target, Points: demand.Points})
-		}
-	}
-	return result, nil
 }
 
 type Store interface {
@@ -148,8 +121,9 @@ type historyKey struct {
 	interval     market.CandleInterval
 }
 
-// Tracker recalculates tracked pairs whenever their closed history changes and
-// caches on-demand table values until the history of their instrument changes.
+// Tracker recalculates tracked pairs once a synchronization round changed
+// their closed history and caches on-demand table values until the history of
+// their instrument changes.
 type Tracker struct {
 	store    Store
 	registry *indicator.Registry
@@ -160,12 +134,20 @@ type Tracker struct {
 	// touches them.
 	retries []func()
 
-	mu        sync.Mutex
-	targets   []Target
+	mu      sync.Mutex
+	targets []Target
+	// tableKeys holds the keys of targets by interval; every cached value
+	// that is not tracked belongs to one of them.
+	tableKeys map[market.CandleInterval][]string
 	tracked   map[pairKey]Subscription
-	values    map[pairKey]Value
-	versions  map[historyKey]uint64
-	dirty     map[historyKey]struct{}
+	// trackedHistories are the histories of the tracked pairs.
+	trackedHistories map[historyKey]struct{}
+	values           map[pairKey]Value
+	versions         map[historyKey]uint64
+	dirty            map[historyKey]struct{}
+	// synced lets the next step recalculate the dirty histories, which
+	// otherwise wait for the end of the synchronization round.
+	synced    bool
 	refresh   bool
 	listeners []func(Change)
 }
@@ -177,16 +159,24 @@ func New(store Store, registry *indicator.Registry, targets []Target, logger *sl
 		return nil, fmt.Errorf("closed indicator store, indicator registry, and logger are required")
 	}
 	tracker := &Tracker{
-		store: store, registry: registry, targets: targets, sources: sources, logger: logger,
-		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, values: map[pairKey]Value{},
+		store: store, registry: registry, targets: targets, tableKeys: keysByInterval(targets), sources: sources, logger: logger,
+		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, trackedHistories: map[historyKey]struct{}{}, values: map[pairKey]Value{},
 		versions: map[historyKey]uint64{}, dirty: map[historyKey]struct{}{},
 	}
 	for _, target := range targets {
-		if _, err := tracker.depth(target, 1); err != nil {
+		if _, err := Depth(registry, target, 1); err != nil {
 			return nil, err
 		}
 	}
 	return tracker, nil
+}
+
+func keysByInterval(targets []Target) map[market.CandleInterval][]string {
+	result := map[market.CandleInterval][]string{}
+	for _, target := range targets {
+		result[target.Interval] = append(result[target.Interval], target.Key())
+	}
+	return result
 }
 
 // Listen registers a consumer of recalculated tracked values. It is called
@@ -201,16 +191,17 @@ func (tracker *Tracker) Listen(listener func(Change)) {
 // and reloads the tracked pairs.
 func (tracker *Tracker) SetTargets(targets []Target) error {
 	for _, target := range targets {
-		if _, err := tracker.depth(target, 1); err != nil {
+		if _, err := Depth(tracker.registry, target, 1); err != nil {
 			return err
 		}
 	}
 	kept := make(map[string]struct{}, len(targets))
 	for _, target := range targets {
-		kept[target.id()] = struct{}{}
+		kept[target.Key()] = struct{}{}
 	}
 	tracker.mu.Lock()
 	tracker.targets = slices.Clone(targets)
+	tracker.tableKeys = keysByInterval(targets)
 	for pair := range tracker.values {
 		if _, ok := kept[pair.target]; !ok {
 			if _, tracked := tracker.tracked[pair]; !tracked {
@@ -232,33 +223,38 @@ func (tracker *Tracker) Refresh() {
 	tracker.signal()
 }
 
-// HistoryChanged invalidates values after committed closed-candle changes. It
-// never waits for recalculation.
+// HistoryChanged invalidates values after committed closed-candle changes and
+// marks tracked histories for the recalculation HistorySynced starts. It never
+// waits for recalculation.
 func (tracker *Tracker) HistoryChanged(candles []market.Candle) {
 	touched := map[historyKey]struct{}{}
 	for _, candle := range candles {
 		touched[historyKey{candle.InstrumentID, candle.Interval}] = struct{}{}
 	}
 	tracker.mu.Lock()
-	marked := false
+	defer tracker.mu.Unlock()
 	for key := range touched {
 		tracker.versions[key]++
-	}
-	for pair, subscription := range tracker.tracked {
-		key := historyKey{pair.instrumentID, subscription.Target.Interval}
-		if _, ok := touched[key]; ok {
+		if _, ok := tracker.trackedHistories[key]; ok {
 			tracker.dirty[key] = struct{}{}
-			marked = true
 		}
-	}
-	// Tracked values stay available until recalculated; cached ones expire.
-	for pair, value := range tracker.values {
-		if _, ok := touched[historyKey{pair.instrumentID, value.Target.Interval}]; ok {
+		// Tracked values stay available until recalculated; cached ones
+		// expire.
+		for _, target := range tracker.tableKeys[key.interval] {
+			pair := pairKey{key.instrumentID, target}
 			if _, tracked := tracker.tracked[pair]; !tracked {
 				delete(tracker.values, pair)
 			}
 		}
 	}
+}
+
+// HistorySynced recalculates the tracked pairs whose history changed, once a
+// synchronization round has committed all its changes. It never blocks.
+func (tracker *Tracker) HistorySynced() {
+	tracker.mu.Lock()
+	marked := len(tracker.dirty) > 0
+	tracker.synced = tracker.synced || marked
 	tracker.mu.Unlock()
 	if marked {
 		tracker.signal()
@@ -272,9 +268,13 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 	var missing []Subscription
 	tracker.mu.Lock()
 	targets := tracker.targets
+	keys := make([]string, len(targets))
+	for index, target := range targets {
+		keys[index] = target.Key()
+	}
 	for _, id := range instrumentIDs {
-		for _, target := range targets {
-			if _, ok := tracker.values[pairKey{id, target.id()}]; !ok {
+		for index, target := range targets {
+			if _, ok := tracker.values[pairKey{id, keys[index]}]; !ok {
 				missing = append(missing, Subscription{InstrumentID: id, Target: target})
 			}
 		}
@@ -293,7 +293,7 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
 	for _, subscription := range missing {
-		key := pairKey{subscription.InstrumentID, subscription.Target.id()}
+		key := pairKey{subscription.InstrumentID, subscription.Target.Key()}
 		history := historyKey{subscription.InstrumentID, subscription.Target.Interval}
 		// A value calculated before a history change is stale; a newer
 		// cached value or none is returned instead.
@@ -301,14 +301,17 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 			delete(computed, key)
 			continue
 		}
-		if _, exists := tracker.values[key]; !failed && !exists {
+		// Only values of current targets are cached, so history changes
+		// expire every cached value.
+		current := slices.Contains(tracker.tableKeys[subscription.Target.Interval], key.target)
+		if _, exists := tracker.values[key]; !failed && !exists && current {
 			tracker.values[key] = computed[key]
 		}
 	}
 	for _, id := range instrumentIDs {
 		values := make([]Value, len(targets))
 		for index, target := range targets {
-			key := pairKey{id, target.id()}
+			key := pairKey{id, keys[index]}
 			if value, ok := computed[key]; ok {
 				values[index] = value
 			} else if value, ok := tracker.values[key]; ok {
@@ -322,38 +325,29 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 	return result
 }
 
-// Snapshot returns the known values of the demanded targets for each
-// instrument, in demand order, without calculating anything. A pair that is
-// neither tracked nor cached has no outputs, and its target is listed in
-// missing, so results that depend on it are not final yet; so is a target
-// whose value was calculated for fewer points than demanded.
-func (tracker *Tracker) Snapshot(instrumentIDs []int64, demands []Demand) (values map[int64][]Value, missing []Target) {
-	keys := make([]string, len(demands))
-	for index, demand := range demands {
-		keys[index] = demand.Target.id()
-	}
-	values = make(map[int64][]Value, len(instrumentIDs))
-	absent := make([]bool, len(demands))
+// Snapshot returns the known value of each subscription, in subscription
+// order, without calculating anything. A pair that is neither tracked nor
+// cached has no outputs, and its target is listed in missing, so results that
+// depend on it are not final yet; so is a target whose value was calculated
+// for fewer points than subscribed.
+func (tracker *Tracker) Snapshot(subscriptions []Subscription) (values []Value, missing []Target) {
+	values = make([]Value, len(subscriptions))
+	absent := map[string]Target{}
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
-	for _, id := range instrumentIDs {
-		row := make([]Value, len(demands))
-		for index, demand := range demands {
-			value, ok := tracker.values[pairKey{id, keys[index]}]
-			if !ok {
-				value = Value{Target: demand.Target}
-				absent[index] = true
-			} else if value.points < demand.Points {
-				absent[index] = true
-			}
-			row[index] = value
+	for index, subscription := range subscriptions {
+		key := subscription.Target.Key()
+		value, ok := tracker.values[pairKey{subscription.InstrumentID, key}]
+		if !ok {
+			value = Value{Target: subscription.Target}
+			absent[key] = subscription.Target
+		} else if value.points < subscription.points() {
+			absent[key] = subscription.Target
 		}
-		values[id] = row
+		values[index] = value
 	}
-	for index, demand := range demands {
-		if absent[index] {
-			missing = append(missing, demand.Target)
-		}
+	for _, key := range slices.Sorted(maps.Keys(absent)) {
+		missing = append(missing, absent[key])
 	}
 	return values, missing
 }
@@ -402,8 +396,13 @@ func (tracker *Tracker) signal() {
 
 func (tracker *Tracker) step(ctx context.Context) {
 	tracker.mu.Lock()
-	refresh, dirty := tracker.refresh, tracker.dirty
-	tracker.refresh, tracker.dirty = false, map[historyKey]struct{}{}
+	refresh := tracker.refresh
+	tracker.refresh = false
+	var dirty map[historyKey]struct{}
+	if tracker.synced {
+		dirty = tracker.dirty
+		tracker.synced, tracker.dirty = false, map[historyKey]struct{}{}
+	}
 	tracker.mu.Unlock()
 	pending := map[pairKey]Subscription{}
 	if refresh {
@@ -415,7 +414,7 @@ func (tracker *Tracker) step(ctx context.Context) {
 			tracker.mu.Lock()
 			next := make(map[pairKey]Subscription, len(subscriptions))
 			for _, subscription := range subscriptions {
-				key := pairKey{subscription.InstrumentID, subscription.Target.id()}
+				key := pairKey{subscription.InstrumentID, subscription.Target.Key()}
 				if existing, ok := next[key]; ok {
 					subscription.Points = max(subscription.points(), existing.points())
 				}
@@ -435,6 +434,10 @@ func (tracker *Tracker) step(ctx context.Context) {
 				}
 			}
 			tracker.tracked = next
+			tracker.trackedHistories = make(map[historyKey]struct{}, len(next))
+			for key, subscription := range next {
+				tracker.trackedHistories[historyKey{key.instrumentID, subscription.Target.Interval}] = struct{}{}
+			}
 			tracker.mu.Unlock()
 		}
 	}
@@ -460,6 +463,7 @@ func (tracker *Tracker) step(ctx context.Context) {
 			for _, subscription := range subscriptions {
 				tracker.dirty[historyKey{subscription.InstrumentID, subscription.Target.Interval}] = struct{}{}
 			}
+			tracker.synced = true
 		})
 		return
 	}
@@ -502,7 +506,7 @@ func (tracker *Tracker) collect(ctx context.Context) ([]Subscription, error) {
 			return nil, err
 		}
 		for _, subscription := range subscriptions {
-			if _, err := tracker.depth(subscription.Target, subscription.points()); err != nil {
+			if _, err := Depth(tracker.registry, subscription.Target, subscription.points()); err != nil {
 				tracker.logger.WarnContext(ctx, "skip invalid closed indicator subscription", "module", "closed_indicator", "instrument_id", subscription.InstrumentID, "error", err)
 				continue
 			}
@@ -528,17 +532,12 @@ func (tracker *Tracker) versionSnapshot(subscriptions []Subscription) map[histor
 	return result
 }
 
-func (tracker *Tracker) depth(target Target, points int) (int, error) {
-	return Depth(tracker.registry, Demand{Target: target, Points: points})
-}
-
-// Depth is the number of closed candles loaded to calculate the demanded
-// points. Every point gets the warm-up of the latest one, so unstable
+// Depth is the number of closed candles loaded to calculate points values of
+// target. Every point gets the warm-up of the latest one, so unstable
 // indicators agree with charts on all of them. A depth beyond
 // market.HistoryDepth only loads the kept candles, so the values it needs
 // stay missing.
-func Depth(registry *indicator.Registry, demand Demand) (int, error) {
-	target := demand.Target
+func Depth(registry *indicator.Registry, target Target, points int) (int, error) {
 	if !target.Interval.Valid() {
 		return 0, fmt.Errorf("closed indicator interval %q is unsupported", target.Interval)
 	}
@@ -546,42 +545,53 @@ func Depth(registry *indicator.Registry, demand Demand) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("closed indicator %q: %w", target.Selection.Type, err)
 	}
-	return max(minimumHistory, lookback+1) + max(1, demand.Points) - 1, nil
+	return max(minimumHistory, lookback+1) + max(1, points) - 1, nil
 }
 
-// calculate batch-loads closed history per target and evaluates each pair.
+// calculate loads the closed history of each interval once, as deep as its
+// deepest pair needs, and evaluates every pair over its own latest candles.
 func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscription) (map[pairKey]Value, error) {
-	groups := map[string][]Subscription{}
-	for _, subscription := range subscriptions {
-		id := subscription.Target.id()
-		groups[id] = append(groups[id], subscription)
+	type group struct {
+		ids   []int64
+		seen  map[int64]struct{}
+		depth int
 	}
-	result := make(map[pairKey]Value, len(subscriptions))
-	for id, group := range groups {
-		target := group[0].Target
-		points := 1
-		for _, subscription := range group {
-			points = max(points, subscription.points())
-		}
-		depth, err := tracker.depth(target, points)
+	groups := map[market.CandleInterval]*group{}
+	depths := make([]int, len(subscriptions))
+	for index, subscription := range subscriptions {
+		depth, err := Depth(tracker.registry, subscription.Target, subscription.points())
 		if err != nil {
 			return nil, err
 		}
-		ids := make([]int64, len(group))
-		for index, subscription := range group {
-			ids[index] = subscription.InstrumentID
+		depths[index] = depth
+		interval := subscription.Target.Interval
+		if groups[interval] == nil {
+			groups[interval] = &group{seen: map[int64]struct{}{}}
 		}
-		candles, err := tracker.store.ListLatestCandles(ctx, ids, target.Interval, depth)
+		current := groups[interval]
+		current.depth = max(current.depth, depth)
+		if _, ok := current.seen[subscription.InstrumentID]; !ok {
+			current.seen[subscription.InstrumentID] = struct{}{}
+			current.ids = append(current.ids, subscription.InstrumentID)
+		}
+	}
+	histories := make(map[market.CandleInterval]map[int64][]market.Candle, len(groups))
+	for interval, current := range groups {
+		candles, err := tracker.store.ListLatestCandles(ctx, current.ids, interval, current.depth)
 		if err != nil {
-			return nil, fmt.Errorf("load closed %s history: %w", target.Interval, err)
+			return nil, fmt.Errorf("load closed %s history: %w", interval, err)
 		}
-		for index, instrumentID := range ids {
-			value, err := tracker.value(target, candles[instrumentID], group[index].points())
-			if err != nil {
-				return nil, err
-			}
-			result[pairKey{instrumentID, id}] = value
+		histories[interval] = candles
+	}
+	result := make(map[pairKey]Value, len(subscriptions))
+	for index, subscription := range subscriptions {
+		candles := histories[subscription.Target.Interval][subscription.InstrumentID]
+		candles = candles[max(0, len(candles)-depths[index]):]
+		value, err := tracker.value(subscription.Target, candles, subscription.points())
+		if err != nil {
+			return nil, err
 		}
+		result[pairKey{subscription.InstrumentID, subscription.Target.Key()}] = value
 	}
 	return result, nil
 }

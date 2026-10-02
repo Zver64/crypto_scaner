@@ -108,8 +108,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	// Tables calculate the values they show on demand; only the values
 	// enabled strategies read stay current in the background.
 	tables = []markettable.Catalog{marketTable, favoritesTable}
-	closedIndicators, err = closedindicator.New(store, indicatorRegistry, tableTargets(tables), logger,
-		strategySource{closedindicator.InstrumentSource(strategies.InstrumentIDs), strategies})
+	closedIndicators, err = closedindicator.New(store, indicatorRegistry, tableTargets(tables), logger, strategySource{strategies})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
 	}
@@ -125,7 +124,11 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	}}
 	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
 	for _, interval := range market.CandleIntervals() {
-		synchronizers[interval] = marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.HistoryDepth, market.BinanceSpotSyncProfile(interval))
+		// The tracker recalculates once a round has committed all its changes.
+		synchronizers[interval] = marketsync.ObservableRunner{
+			Runner: marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.HistoryDepth, market.BinanceSpotSyncProfile(interval)),
+			Synced: closedIndicators.HistorySynced,
+		}
 	}
 	scheduler := marketsync.NewScheduler(synchronizers, logger)
 
@@ -187,15 +190,14 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	}}, nil
 }
 
-// strategySource keeps the values enabled strategies read current on every
-// instrument they evaluate, the administrator's favorites.
+// strategySource keeps the values enabled strategies read current on the
+// instruments that read them, among the administrator's favorites.
 type strategySource struct {
-	instruments closedindicator.InstrumentSource
-	strategies  *strategy.Service
+	strategies *strategy.Service
 }
 
 func (source strategySource) Subscriptions(ctx context.Context, _ []closedindicator.Target) ([]closedindicator.Subscription, error) {
-	return source.instruments.Track(ctx, source.strategies.Targets())
+	return source.strategies.Subscriptions(ctx)
 }
 
 // tableTargets returns the distinct closed indicator targets the tables read.

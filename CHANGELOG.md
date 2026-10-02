@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.30.0](https://github.com/Zver64/crypto_scaner/compare/v0.29.0...v0.30.0) (2026-10-02)
+
+
+### Features
+
+* clear indicator and coin selections ([08aa3c5](https://github.com/Zver64/crypto_scaner/commit/08aa3c5942415a44dd4f2e6aad6e4d06d4b6fc67))
+* custom Telegram message for strategies ([796c021](https://github.com/Zver64/crypto_scaner/commit/796c021f62e7e007548ff9e373ac007076f92523))
+
+
+### Bug Fixes
+
+* draw average deviation in its own pane ([d369e54](https://github.com/Zver64/crypto_scaner/commit/d369e54e18b85905a1590c5cd7b7ea23dcdb000f))
+
+
+### Performance Improvements
+
+* recalculate strategy indicators once per sync round ([fd80514](https://github.com/Zver64/crypto_scaner/commit/fd80514adba3a82f20fa3f5ce2984cc5710e81c5))
+
 ## [0.29.0](https://github.com/Zver64/crypto_scaner/compare/v0.28.0...v0.29.0) (2026-10-02)
 
 

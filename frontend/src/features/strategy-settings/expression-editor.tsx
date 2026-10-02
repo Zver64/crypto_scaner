@@ -1,9 +1,11 @@
 import {
 	Group,
 	NumberInput,
+	Paper,
 	SegmentedControl,
 	Select,
 	Stack,
+	useMantineTheme,
 } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import type { ReactNode } from "react";
@@ -17,6 +19,7 @@ import {
 	withCoin,
 } from "@/features/strategy-settings/expressions";
 import { FunctionEditor } from "@/features/strategy-settings/function-editor";
+import { nestingBorder } from "@/features/strategy-settings/nesting-colors";
 import { variableSelectData } from "@/features/strategy-settings/utils";
 
 export interface ExpressionEditorProps {
@@ -36,6 +39,9 @@ export interface ExpressionEditorProps {
 	// Hides the coin kind inside an operand of another coin, since of
 	// cannot contain of.
 	withoutCoin?: boolean;
+	// How many groups and functions enclose the operand, which picks the
+	// border color of its function.
+	depth?: number;
 	// A control beside the kind selector, such as a remove button, which
 	// leaves the full width to the operand below.
 	action?: ReactNode;
@@ -61,8 +67,10 @@ export function ExpressionEditor({
 	withoutCoin = false,
 	defaultField,
 	action,
+	depth = 0,
 }: ExpressionEditorProps) {
 	const kind = operandKind(node);
+	const border = nestingBorder(useMantineTheme(), depth);
 	// A kind already chosen stays selectable, so the control shows it.
 	const kinds: { label: string; value: OperandKind }[] = [
 		{ label: "Indicator", value: "field" },
@@ -79,7 +87,7 @@ export function ExpressionEditor({
 		kind: "field",
 		field: firstField(node) ?? defaultField ?? variables[0]?.name ?? "",
 	};
-	return (
+	const editor = (
 		<Stack gap={4}>
 			<Group gap="xs" wrap="nowrap">
 				<SegmentedControl
@@ -106,6 +114,7 @@ export function ExpressionEditor({
 						onChange={(symbol) => onChange(withCoin(node, symbol))}
 					/>
 					<ExpressionEditor
+						depth={depth}
 						disabled={disabled}
 						label={`${label} of the coin`}
 						node={node.args[1] ?? field}
@@ -119,6 +128,7 @@ export function ExpressionEditor({
 				</Stack>
 			) : node.kind === "func" ? (
 				<FunctionEditor
+					depth={depth}
 					disabled={disabled}
 					node={node}
 					onChange={onChange}
@@ -156,5 +166,13 @@ export function ExpressionEditor({
 				/>
 			)}
 		</Stack>
+	);
+	// A function is framed as a whole, with its kind, name, and arguments.
+	return kind === "func" ? (
+		<Paper p="xs" radius="sm" style={{ borderColor: border }} withBorder>
+			{editor}
+		</Paper>
+	) : (
+		editor
 	);
 }

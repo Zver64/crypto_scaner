@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Paper, Select, Stack } from "@mantine/core";
+import { ActionIcon, Button, Select, Stack } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconPlus, IconX } from "@tabler/icons-react";
 import {
@@ -20,9 +20,10 @@ export interface FunctionEditorProps
 	node: Extract<ExpressionNode, { kind: "func" }>;
 }
 
-// A function and its arguments, indented below it. Changing the function
-// keeps the arguments that still fit.
+// A function and its arguments below it; the operand editor frames them as a
+// whole. Changing the function keeps the arguments that still fit.
 export function FunctionEditor({
+	depth = 0,
 	disabled,
 	node,
 	onChange,
@@ -51,56 +52,55 @@ export function FunctionEditor({
 				size="sm"
 				value={node.fn}
 			/>
-			<Paper p="xs" radius="sm" withBorder>
-				<Stack gap="xs">
-					{node.args.map((arg, index) => (
-						<ExpressionEditor
-							action={
-								definition?.variadic && node.args.length > 2 ? (
-									<ActionIcon
-										aria-label="Remove value"
-										color="red"
-										disabled={disabled}
-										onClick={() =>
-											onChange({
-												...node,
-												args: node.args.filter((_, i) => i !== index),
-											})
-										}
-										variant="subtle"
-									>
-										<IconX size={16} />
-									</ActionIcon>
-								) : null
-							}
-							disabled={disabled}
-							// biome-ignore lint/suspicious/noArrayIndexKey: arguments are positional; an argument is its position.
-							key={index}
-							label={titles[Math.min(index, titles.length - 1)] ?? "Value"}
-							node={arg}
-							onChange={(next) => replaceArg(index, next)}
-							variables={variables}
-							withoutCoin={withoutCoin}
-						/>
-					))}
-					{definition?.variadic && node.args.length < maxVariadicArguments ? (
-						<Button
-							disabled={disabled}
-							leftSection={<IconPlus size={14} />}
-							onClick={() =>
-								onChange({
-									...node,
-									args: [...node.args, { kind: "value", value: 0 }],
-								})
-							}
-							size="xs"
-							variant="subtle"
-						>
-							Add value
-						</Button>
-					) : null}
-				</Stack>
-			</Paper>
+			<Stack gap="xs">
+				{node.args.map((arg, index) => (
+					<ExpressionEditor
+						action={
+							definition?.variadic && node.args.length > 2 ? (
+								<ActionIcon
+									aria-label="Remove value"
+									color="red"
+									disabled={disabled}
+									onClick={() =>
+										onChange({
+											...node,
+											args: node.args.filter((_, i) => i !== index),
+										})
+									}
+									variant="subtle"
+								>
+									<IconX size={16} />
+								</ActionIcon>
+							) : null
+						}
+						depth={depth + 1}
+						disabled={disabled}
+						// biome-ignore lint/suspicious/noArrayIndexKey: arguments are positional; an argument is its position.
+						key={index}
+						label={titles[Math.min(index, titles.length - 1)] ?? "Value"}
+						node={arg}
+						onChange={(next) => replaceArg(index, next)}
+						variables={variables}
+						withoutCoin={withoutCoin}
+					/>
+				))}
+				{definition?.variadic && node.args.length < maxVariadicArguments ? (
+					<Button
+						disabled={disabled}
+						leftSection={<IconPlus size={14} />}
+						onClick={() =>
+							onChange({
+								...node,
+								args: [...node.args, { kind: "value", value: 0 }],
+							})
+						}
+						size="xs"
+						variant="subtle"
+					>
+						Add value
+					</Button>
+				) : null}
+			</Stack>
 		</Stack>
 	);
 }

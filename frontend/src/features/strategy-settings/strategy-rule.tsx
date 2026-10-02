@@ -1,11 +1,4 @@
-import {
-	ActionIcon,
-	Group,
-	NumberInput,
-	Paper,
-	Select,
-	Stack,
-} from "@mantine/core";
+import { ActionIcon, Group, NumberInput, Select, Stack } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconX } from "@tabler/icons-react";
 import type { RuleProps } from "react-querybuilder";
@@ -97,81 +90,81 @@ export function StrategyRule({
 		);
 	};
 	return (
-		<Paper mt="xs" p="xs" radius="sm" withBorder>
-			<Stack gap="xs">
-				{/* The remove button shares the row of the kind selector, so the
+		// No frame of its own: operands lie on the group like nested functions
+		// lie on their parent, and a wider gap separates conditions.
+		<Stack gap="xs" mt="md">
+			{/* The remove button shares the row of the kind selector, so the
 				    editor below takes the full width. */}
-				<ExpressionEditor
-					action={
-						<ActionIcon
-							aria-label="Remove condition"
-							color="red"
+			<ExpressionEditor
+				depth={path.length}
+				action={
+					<ActionIcon
+						aria-label="Remove condition"
+						color="red"
+						disabled={disabled}
+						onClick={() => actions.onRuleRemove(path)}
+						variant="subtle"
+					>
+						<IconX size={16} />
+					</ActionIcon>
+				}
+				disabled={disabled === true}
+				label="Compared value"
+				node={lhs}
+				onChange={changeLeft}
+				variables={variables}
+				withoutNumber
+			/>
+			<Select
+				aria-label="Comparison"
+				allowDeselect={false}
+				data={operatorOptions}
+				disabled={disabled}
+				onChange={(value) => {
+					if (!value) return;
+					change("operator", value);
+					const source = isRangeOperator(value) ? "value" : rule.valueSource;
+					if (source !== rule.valueSource) change("valueSource", source);
+					change("value", valueForOperator(value, rule.value, source));
+				}}
+				size="sm"
+				value={rule.operator}
+			/>
+			{range ? (
+				<Group gap="xs" grow wrap="nowrap">
+					{[0, 1].map((index) => (
+						<NumberInput
+							aria-label={index === 0 ? "From" : "To"}
 							disabled={disabled}
-							onClick={() => actions.onRuleRemove(path)}
-							variant="subtle"
-						>
-							<IconX size={16} />
-						</ActionIcon>
-					}
+							key={index}
+							onChange={(value) => {
+								const bounds: unknown[] = Array.isArray(rule.value)
+									? [...rule.value]
+									: [0, 0];
+								bounds[index] = value;
+								change("value", bounds);
+							}}
+							placeholder={index === 0 ? "From" : "To"}
+							size="sm"
+							value={Array.isArray(rule.value) ? rule.value[index] : ""}
+						/>
+					))}
+				</Group>
+			) : (
+				<ExpressionEditor
+					depth={path.length}
 					disabled={disabled === true}
-					label="Compared value"
-					node={lhs}
-					onChange={changeLeft}
+					label={
+						isCrossOperator(rule.operator)
+							? "Crossed value"
+							: "Value compared with"
+					}
+					defaultField={variables.find(({ name }) => name !== rule.field)?.name}
+					node={right}
+					onChange={changeRight}
 					variables={variables}
-					withoutNumber
 				/>
-				<Select
-					aria-label="Comparison"
-					allowDeselect={false}
-					data={operatorOptions}
-					disabled={disabled}
-					onChange={(value) => {
-						if (!value) return;
-						change("operator", value);
-						const source = isRangeOperator(value) ? "value" : rule.valueSource;
-						if (source !== rule.valueSource) change("valueSource", source);
-						change("value", valueForOperator(value, rule.value, source));
-					}}
-					size="sm"
-					value={rule.operator}
-				/>
-				{range ? (
-					<Group gap="xs" grow wrap="nowrap">
-						{[0, 1].map((index) => (
-							<NumberInput
-								aria-label={index === 0 ? "From" : "To"}
-								disabled={disabled}
-								key={index}
-								onChange={(value) => {
-									const bounds: unknown[] = Array.isArray(rule.value)
-										? [...rule.value]
-										: [0, 0];
-									bounds[index] = value;
-									change("value", bounds);
-								}}
-								placeholder={index === 0 ? "From" : "To"}
-								size="sm"
-								value={Array.isArray(rule.value) ? rule.value[index] : ""}
-							/>
-						))}
-					</Group>
-				) : (
-					<ExpressionEditor
-						disabled={disabled === true}
-						label={
-							isCrossOperator(rule.operator)
-								? "Crossed value"
-								: "Value compared with"
-						}
-						defaultField={
-							variables.find(({ name }) => name !== rule.field)?.name
-						}
-						node={right}
-						onChange={changeRight}
-						variables={variables}
-					/>
-				)}
-			</Stack>
-		</Paper>
+			)}
+		</Stack>
 	);
 }

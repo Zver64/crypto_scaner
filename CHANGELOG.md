@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.29.0](https://github.com/Zver64/crypto_scaner/compare/v0.28.0...v0.29.0) (2026-10-02)
+
+
+### Features
+
+* clear strategy conditions from the import button ([6f7f648](https://github.com/Zver64/crypto_scaner/commit/6f7f6480fbf2b3bb3f26a1aa75afe32dcf3a0398))
+* color strategy blocks by nesting depth ([f5e3711](https://github.com/Zver64/crypto_scaner/commit/f5e37117a77e64e212261f757450c0ab1f5348ad))
+* compare strategies with another coin ([6a52ab9](https://github.com/Zver64/crypto_scaner/commit/6a52ab94ad9e00ba65aca017b7a4d3dbf0aa44d3))
+* extend strategy language and indicator sources ([7367fac](https://github.com/Zver64/crypto_scaner/commit/7367face977e315e5b85c8b6179013cdd12694ca))
+* import strategies from an expression ([9dc1d79](https://github.com/Zver64/crypto_scaner/commit/9dc1d79e8c87e20a6404086c901b4acf94314fd0))
+
+
+### Performance Improvements
+
+* compress live chart WebSocket messages ([0433523](https://github.com/Zver64/crypto_scaner/commit/0433523d74b8fafcae9ad046e21ae110d2decfc8))
+
 ## [0.28.0](https://github.com/Zver64/crypto_scaner/compare/v0.27.0...v0.28.0) (2026-10-01)
 
 

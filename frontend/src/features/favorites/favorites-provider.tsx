@@ -23,6 +23,7 @@ import {
 	scopedUserQueryKey,
 	telegramUserScope,
 } from "@/features/favorites/user-query-scope";
+import { instrumentUsesMessage } from "@/features/favorites/utils";
 
 interface FavoritesContextValue {
 	favorites: ReadonlyMap<string, Favorite>;
@@ -144,6 +145,14 @@ export function FavoritesProvider({
 		() => new Map((query.data?.items ?? []).map((item) => [item.symbol, item])),
 		[query.data],
 	);
+	const removalFailed = (error: unknown) => {
+		notifications.show({
+			color: "red",
+			message:
+				instrumentUsesMessage(error) ?? "The favorite could not be removed.",
+			title: "Favorite update failed",
+		});
+	};
 	const remove = (symbol: string, confirmAlerts: boolean) => {
 		removeMutation.mutate(
 			{ symbol, params: { confirm_alerts: confirmAlerts } },
@@ -155,11 +164,7 @@ export function FavoritesProvider({
 						setConfirmation({ symbol, alertCount });
 						return;
 					}
-					notifications.show({
-						color: "red",
-						message: "The favorite could not be removed.",
-						title: "Favorite update failed",
-					});
+					removalFailed(error);
 				},
 			},
 		);
@@ -184,11 +189,9 @@ export function FavoritesProvider({
 			{
 				onError: (error) => {
 					handleAccessError(error);
-					notifications.show({
-						color: "red",
-						message: "The favorite could not be removed.",
-						title: "Favorite update failed",
-					});
+					// Confirming again cannot help while strategies read the coin.
+					if (instrumentUsesMessage(error)) setConfirmation(undefined);
+					removalFailed(error);
 				},
 				onSuccess: () => setConfirmation(undefined),
 			},

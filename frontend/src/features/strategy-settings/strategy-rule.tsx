@@ -3,7 +3,6 @@ import {
 	Group,
 	NumberInput,
 	Paper,
-	SegmentedControl,
 	Select,
 	Stack,
 } from "@mantine/core";
@@ -18,7 +17,6 @@ import {
 	isCrossOperator,
 	isRangeOperator,
 	valueForOperator,
-	variableSelectData,
 } from "@/features/strategy-settings/utils";
 
 const operatorOptions: { label: string; value: StrategyOperator }[] = [
@@ -36,9 +34,10 @@ interface StrategyRuleProps extends RuleProps {
 	variables: readonly StrategyVariable[];
 }
 
-// One comparison, stacked vertically for phones: an indicator or an
-// expression, the operator, then a number, a range, another indicator, or an
-// expression.
+// One comparison, stacked vertically for phones: the compared operand, the
+// operator, then a range or the operand it is compared with. Each operand is
+// an indicator, a number (right side only), a function, or an indicator of
+// another coin.
 export function StrategyRule({
 	actions,
 	disabled,
@@ -56,33 +55,63 @@ export function StrategyRule({
 		const field = lhs ? firstField(lhs) : undefined;
 		if (field) change("field", field);
 	};
-	const variableOptions = variableSelectData(variables);
 	const range = isRangeOperator(rule.operator);
-	const byIndicator = rule.valueSource === "field";
-	const byExpression = rule.valueSource === "expression";
-	const fieldNode: ExpressionNode = {
+	// Plain indicators and numbers stay plain rule fields and values; other
+	// operands are expressions.
+	const lhs: ExpressionNode = (rule.lhs as ExpressionNode | undefined) ?? {
 		kind: "field",
 		field: rule.field || (variables[0]?.name ?? ""),
+	};
+	const changeLeft = (node: ExpressionNode) => {
+		if (node.kind === "field") {
+			change("lhs", undefined);
+			change("field", node.field);
+		} else {
+			changeLhs(node);
+		}
+	};
+	const right: ExpressionNode =
+		rule.valueSource === "expression"
+			? (rule.value as ExpressionNode)
+			: rule.valueSource === "field"
+				? { kind: "field", field: String(rule.value ?? "") }
+				: {
+						kind: "value",
+						value: typeof rule.value === "number" ? rule.value : Number.NaN,
+					};
+	const changeRight = (node: ExpressionNode) => {
+		const source =
+			node.kind === "field"
+				? "field"
+				: node.kind === "value"
+					? "value"
+					: "expression";
+		if (source !== rule.valueSource) change("valueSource", source);
+		change(
+			"value",
+			node.kind === "field"
+				? node.field
+				: node.kind === "value"
+					? node.value
+					: node,
+		);
 	};
 	return (
 		<Paper mt="xs" p="xs" radius="sm" withBorder>
 			<Stack gap="xs">
-				{/* The remove button shares the first row, so the controls below
-				    take the full width. */}
-				<Group gap="xs" wrap="nowrap">
-					<SegmentedControl
-						data={[
-							{ label: "Indicator", value: "field" },
-							{ label: "Expression", value: "expression" },
-						]}
-						disabled={disabled}
-						flex={1}
-						onChange={(source) =>
-							changeLhs(source === "expression" ? fieldNode : undefined)
-						}
-						size="xs"
-						value={rule.lhs ? "expression" : "field"}
-					/>
+				{/* The remove button shares the first row, so the editor below
+				    takes the full width. */}
+				<Group align="flex-start" gap="xs" wrap="nowrap">
+					<Stack flex={1} miw={0}>
+						<ExpressionEditor
+							disabled={disabled === true}
+							label="Compared value"
+							node={lhs}
+							onChange={changeLeft}
+							variables={variables}
+							withoutNumber
+						/>
+					</Stack>
 					<ActionIcon
 						aria-label="Remove condition"
 						color="red"
@@ -93,27 +122,6 @@ export function StrategyRule({
 						<IconX size={16} />
 					</ActionIcon>
 				</Group>
-				{rule.lhs ? (
-					<ExpressionEditor
-						disabled={disabled === true}
-						label="Compared value"
-						node={rule.lhs as ExpressionNode}
-						onChange={changeLhs}
-						variables={variables}
-					/>
-				) : (
-					<Select
-						aria-label="Indicator"
-						data={variableOptions}
-						disabled={disabled}
-						onChange={(value) => {
-							if (value) change("field", value);
-						}}
-						searchable
-						size="sm"
-						value={rule.field || null}
-					/>
-				)}
 				<Select
 					aria-label="Comparison"
 					allowDeselect={false}
@@ -129,36 +137,6 @@ export function StrategyRule({
 					size="sm"
 					value={rule.operator}
 				/>
-				{range ? null : (
-					<SegmentedControl
-						data={[
-							{ label: "Number", value: "value" },
-							{ label: "Indicator", value: "field" },
-							{ label: "Expression", value: "expression" },
-						]}
-						disabled={disabled}
-						onChange={(source) => {
-							const other =
-								variables.find(({ name }) => name !== rule.field)?.name ?? "";
-							change("valueSource", source);
-							change(
-								"value",
-								source === "field"
-									? other
-									: source === "expression"
-										? ({
-												kind: "field",
-												field: other,
-											} satisfies ExpressionNode)
-										: 0,
-							);
-						}}
-						size="xs"
-						value={
-							byExpression ? "expression" : byIndicator ? "field" : "value"
-						}
-					/>
-				)}
 				{range ? (
 					<Group gap="xs" grow wrap="nowrap">
 						{[0, 1].map((index) => (
@@ -179,7 +157,7 @@ export function StrategyRule({
 							/>
 						))}
 					</Group>
-				) : byExpression ? (
+				) : (
 					<ExpressionEditor
 						disabled={disabled === true}
 						label={
@@ -187,37 +165,12 @@ export function StrategyRule({
 								? "Crossed value"
 								: "Value compared with"
 						}
-						node={rule.value as ExpressionNode}
-						onChange={(node) => change("value", node)}
+						defaultField={
+							variables.find(({ name }) => name !== rule.field)?.name
+						}
+						node={right}
+						onChange={changeRight}
 						variables={variables}
-					/>
-				) : byIndicator ? (
-					<Select
-						aria-label={
-							isCrossOperator(rule.operator)
-								? "Crossed indicator"
-								: "Compared indicator"
-						}
-						data={variableOptions}
-						disabled={disabled}
-						onChange={(value) => {
-							if (value) change("value", value);
-						}}
-						searchable
-						size="sm"
-						value={
-							typeof rule.value === "string" && rule.value !== ""
-								? rule.value
-								: null
-						}
-					/>
-				) : (
-					<NumberInput
-						aria-label="Number"
-						disabled={disabled}
-						onChange={(value) => change("value", value)}
-						size="sm"
-						value={typeof rule.value === "number" ? rule.value : ""}
 					/>
 				)}
 			</Stack>

@@ -98,6 +98,11 @@ type AppStrategyMatch struct {
 	MatchedAt    pgtype.Timestamptz
 }
 
+type AppStrategySymbol struct {
+	StrategyID   int64
+	InstrumentID int64
+}
+
 type AppUser struct {
 	ID             int64
 	TelegramID     int64

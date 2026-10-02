@@ -23,7 +23,9 @@ func (storeStub) ListFavorites(context.Context, int64) ([]Favorite, error) {
 func (storeStub) AddFavorite(context.Context, int64, string) (Favorite, error) {
 	return Favorite{}, nil
 }
-func (storeStub) RemoveFavorite(context.Context, int64, string, bool) (int, error) { return 0, nil }
+func (storeStub) RemoveFavorite(context.Context, int64, int64, string, bool) (int, error) {
+	return 0, nil
+}
 
 type analyzerStub struct{ symbols []string }
 
@@ -54,7 +56,7 @@ func TestAnalyzeOrchestratesFavoriteSelectionOutsideHTTP(t *testing.T) {
 		t.Fatal(err)
 	}
 	analyzer := &analyzerStub{}
-	service := New(storeStub{}, nil, analyzer, closedStub{}, table)
+	service := New(storeStub{}, 1, nil, analyzer, closedStub{}, table)
 	result, err := service.Analyze(context.Background(), 42, analysis.SearchRequest{})
 	if err != nil {
 		t.Fatal(err)

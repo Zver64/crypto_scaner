@@ -83,7 +83,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		return app{}, err
 	}
 	// Changes before the monitor exists are covered by its first evaluation.
-	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, logger, func(baselines []int64) {
+	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, cfg.AdminTelegramID, logger, func(baselines []int64) {
 		if closedIndicators != nil {
 			closedIndicators.Refresh()
 		}
@@ -109,7 +109,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	// enabled strategies read stay current in the background.
 	tables = []markettable.Catalog{marketTable, favoritesTable}
 	closedIndicators, err = closedindicator.New(store, indicatorRegistry, tableTargets(tables), logger,
-		strategySource{closedindicator.InstrumentSource(store.ListMonitoredInstrumentIDs), strategies})
+		strategySource{closedindicator.InstrumentSource(strategies.InstrumentIDs), strategies})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
 	}
@@ -152,7 +152,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	alertMonitor := alerts.NewMonitor(store, tradeStream, botService, logger)
 	strategyMonitor = strategy.NewMonitor(store, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
 	monitoredChanged = append(monitoredChanged, alertMonitor.Changed, closedIndicators.Refresh, strategyMonitor.Changed)
-	favoriteService := favorites.New(store, monitoredChanged.notify, analysisService, closedIndicators, favoritesTable)
+	favoriteService := favorites.New(store, cfg.AdminTelegramID, monitoredChanged.notify, analysisService, closedIndicators, favoritesTable)
 
 	sessions := auth.NewSessions(store, authtelegram.New(cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, authtelegram.Options{}),
 		cfg.AdminTelegramID, cfg.SessionIdleTTL, cfg.SessionAbsoluteTTL, logger, auth.SessionOptions{})
@@ -188,7 +188,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 }
 
 // strategySource keeps the values enabled strategies read current on every
-// monitored instrument.
+// instrument they evaluate, the administrator's favorites.
 type strategySource struct {
 	instruments closedindicator.InstrumentSource
 	strategies  *strategy.Service

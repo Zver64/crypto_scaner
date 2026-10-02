@@ -115,6 +115,15 @@ func (q *Queries) DeleteStrategyMatches(ctx context.Context, arg DeleteStrategyM
 	return err
 }
 
+const deleteStrategySymbols = `-- name: DeleteStrategySymbols :exec
+DELETE FROM app.strategy_symbols WHERE strategy_id = $1
+`
+
+func (q *Queries) DeleteStrategySymbols(ctx context.Context, strategyID int64) error {
+	_, err := q.db.Exec(ctx, deleteStrategySymbols, strategyID)
+	return err
+}
+
 const insertStrategy = `-- name: InsertStrategy :one
 INSERT INTO app.strategies (name, expression, enabled, baseline_pending)
 VALUES ($1, $2, $3, $3)
@@ -167,37 +176,20 @@ func (q *Queries) InsertStrategyMatches(ctx context.Context, arg InsertStrategyM
 	return err
 }
 
-const listMonitoredInstruments = `-- name: ListMonitoredInstruments :many
-SELECT DISTINCT i.id, i.symbol
-FROM app.favorites f
-JOIN app.users u ON u.id = f.user_id
-JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
-ORDER BY i.id
+const insertStrategySymbols = `-- name: InsertStrategySymbols :exec
+INSERT INTO app.strategy_symbols (strategy_id, instrument_id)
+SELECT $1::BIGINT, instrument_id
+FROM unnest($2::BIGINT[]) AS ids(instrument_id)
 `
 
-type ListMonitoredInstrumentsRow struct {
-	ID     int64
-	Symbol string
+type InsertStrategySymbolsParams struct {
+	StrategyID    int64
+	InstrumentIds []int64
 }
 
-func (q *Queries) ListMonitoredInstruments(ctx context.Context) ([]ListMonitoredInstrumentsRow, error) {
-	rows, err := q.db.Query(ctx, listMonitoredInstruments)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListMonitoredInstrumentsRow
-	for rows.Next() {
-		var i ListMonitoredInstrumentsRow
-		if err := rows.Scan(&i.ID, &i.Symbol); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) InsertStrategySymbols(ctx context.Context, arg InsertStrategySymbolsParams) error {
+	_, err := q.db.Exec(ctx, insertStrategySymbols, arg.StrategyID, arg.InstrumentIds)
+	return err
 }
 
 const listStrategies = `-- name: ListStrategies :many
@@ -235,6 +227,110 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStrategiesReading = `-- name: ListStrategiesReading :many
+SELECT i.symbol, s.name
+FROM app.strategy_symbols ss
+JOIN app.strategies s ON s.id = ss.strategy_id
+JOIN binance_spot.instruments i ON i.id = ss.instrument_id AND i.is_active
+WHERE ss.instrument_id = $1
+ORDER BY s.name
+`
+
+type ListStrategiesReadingRow struct {
+	Symbol string
+	Name   string
+}
+
+// The strategies that read the active instrument through of; a delisted one
+// leaves them unknown anyway. Runs after LockInstrument.
+func (q *Queries) ListStrategiesReading(ctx context.Context, instrumentID int64) ([]ListStrategiesReadingRow, error) {
+	rows, err := q.db.Query(ctx, listStrategiesReading, instrumentID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStrategiesReadingRow
+	for rows.Next() {
+		var i ListStrategiesReadingRow
+		if err := rows.Scan(&i.Symbol, &i.Name); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStrategyInstruments = `-- name: ListStrategyInstruments :many
+SELECT i.id, i.symbol
+FROM app.favorites f
+JOIN app.users u ON u.id = f.user_id AND u.telegram_id = $1::BIGINT
+JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
+ORDER BY i.id
+`
+
+type ListStrategyInstrumentsRow struct {
+	ID     int64
+	Symbol string
+}
+
+// Strategies evaluate the active favorites of the administrator.
+func (q *Queries) ListStrategyInstruments(ctx context.Context, administratorTelegramID int64) ([]ListStrategyInstrumentsRow, error) {
+	rows, err := q.db.Query(ctx, listStrategyInstruments, administratorTelegramID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListStrategyInstrumentsRow
+	for rows.Next() {
+		var i ListStrategyInstrumentsRow
+		if err := rows.Scan(&i.ID, &i.Symbol); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStrategyInstrumentsAmong = `-- name: ListStrategyInstrumentsAmong :many
+SELECT i.id
+FROM app.favorites f
+JOIN app.users u ON u.id = f.user_id AND u.telegram_id = $1::BIGINT
+JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
+WHERE i.id = ANY($2::BIGINT[])
+`
+
+type ListStrategyInstrumentsAmongParams struct {
+	AdministratorTelegramID int64
+	InstrumentIds           []int64
+}
+
+// Runs after LockStrategySymbols, so it sees favorites removed meanwhile.
+func (q *Queries) ListStrategyInstrumentsAmong(ctx context.Context, arg ListStrategyInstrumentsAmongParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listStrategyInstrumentsAmong, arg.AdministratorTelegramID, arg.InstrumentIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -293,6 +389,77 @@ func (q *Queries) ListStrategyRecipients(ctx context.Context, administratorTeleg
 			return nil, err
 		}
 		items = append(items, telegram_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStrategySymbolIDs = `-- name: ListStrategySymbolIDs :many
+SELECT instrument_id FROM app.strategy_symbols WHERE strategy_id = $1
+`
+
+func (q *Queries) ListStrategySymbolIDs(ctx context.Context, strategyID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listStrategySymbolIDs, strategyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var instrument_id int64
+		if err := rows.Scan(&instrument_id); err != nil {
+			return nil, err
+		}
+		items = append(items, instrument_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const lockInstrument = `-- name: LockInstrument :exec
+SELECT id FROM binance_spot.instruments WHERE id = $1 FOR NO KEY UPDATE
+`
+
+// Orders a favorite removal with strategy writes, which lock the instruments
+// they read FOR SHARE. NO KEY UPDATE conflicts with that but not with the
+// KEY SHARE locks of foreign key inserts, such as candles and favorites.
+func (q *Queries) LockInstrument(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, lockInstrument, id)
+	return err
+}
+
+const lockStrategySymbols = `-- name: LockStrategySymbols :many
+SELECT id, symbol
+FROM binance_spot.instruments
+WHERE symbol = ANY($1::TEXT[])
+ORDER BY id
+FOR SHARE
+`
+
+type LockStrategySymbolsRow struct {
+	ID     int64
+	Symbol string
+}
+
+// Locks the instruments an expression reads through of against their
+// removal from the administrator's favorites, then lists them.
+func (q *Queries) LockStrategySymbols(ctx context.Context, symbols []string) ([]LockStrategySymbolsRow, error) {
+	rows, err := q.db.Query(ctx, lockStrategySymbols, symbols)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LockStrategySymbolsRow
+	for rows.Next() {
+		var i LockStrategySymbolsRow
+		if err := rows.Scan(&i.ID, &i.Symbol); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

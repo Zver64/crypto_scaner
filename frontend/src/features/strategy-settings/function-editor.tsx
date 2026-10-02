@@ -6,8 +6,8 @@ import {
 	type ExpressionEditorProps,
 } from "@/features/strategy-settings/expression-editor";
 import {
-	functionCall,
 	maxVariadicArguments,
+	replaceFunction,
 	strategyFunctions,
 } from "@/features/strategy-settings/expressions";
 
@@ -27,6 +27,7 @@ export function FunctionEditor({
 	node,
 	onChange,
 	variables,
+	withoutCoin,
 }: FunctionEditorProps) {
 	const definition = strategyFunctions[node.fn];
 	const titles = definition?.args ?? [];
@@ -43,18 +44,9 @@ export function FunctionEditor({
 				data={functionOptions}
 				disabled={disabled}
 				onChange={(name) => {
-					const next = name ? strategyFunctions[name] : undefined;
-					if (!name || !next) return;
-					const call = functionCall(
-						name,
-						node.args[0] ?? { kind: "value", value: 0 },
-					);
-					const kept = call.kind === "func" ? call.args : [];
-					onChange({
-						kind: "func",
-						fn: name,
-						args: kept.map((arg, index) => node.args[index] ?? arg),
-					});
+					if (name && strategyFunctions[name]) {
+						onChange(replaceFunction(node, name));
+					}
 				}}
 				size="sm"
 				value={node.fn}
@@ -76,6 +68,7 @@ export function FunctionEditor({
 									node={arg}
 									onChange={(next) => replaceArg(index, next)}
 									variables={variables}
+									withoutCoin={withoutCoin}
 								/>
 							</Stack>
 							{definition?.variadic && node.args.length > 2 ? (

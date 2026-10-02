@@ -12,6 +12,7 @@ import (
 type Strategies interface {
 	List() []strategy.Entry
 	Variables() []strategy.Variable
+	Symbols(context.Context) ([]string, error)
 	Create(context.Context, strategy.Strategy) (strategy.Entry, error)
 	Update(ctx context.Context, id int64, name, expression string) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
@@ -28,6 +29,14 @@ func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequ
 		}
 	}
 	return ListStrategyVariables200JSONResponse{Items: items}, nil
+}
+
+func (api *api) ListStrategySymbols(ctx context.Context, _ ListStrategySymbolsRequestObject) (ListStrategySymbolsResponseObject, error) {
+	symbols, err := api.strategies.Symbols(ctx)
+	if err != nil {
+		return ListStrategySymbols500JSONResponse{api.internalError(ctx, "list_strategy_symbols", err)}, nil
+	}
+	return ListStrategySymbols200JSONResponse{Items: symbols}, nil
 }
 
 func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (ListStrategiesResponseObject, error) {

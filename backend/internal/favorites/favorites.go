@@ -29,7 +29,10 @@ type Favorite struct {
 type Store interface {
 	ListFavorites(context.Context, int64) ([]Favorite, error)
 	AddFavorite(context.Context, int64, string) (Favorite, error)
-	RemoveFavorite(context.Context, int64, string, bool) (int, error)
+	// RemoveFavorite fails with strategy.InstrumentsInUseError when the user
+	// is the administrator, administratorTelegramID, and strategies read the
+	// coin.
+	RemoveFavorite(ctx context.Context, userID, administratorTelegramID int64, symbol string, confirm bool) (int, error)
 }
 
 type Analyzer interface {
@@ -37,15 +40,17 @@ type Analyzer interface {
 }
 
 type Service struct {
-	store    Store
-	changed  func()
-	analyzer Analyzer
-	closed   analysis.ClosedIndicators
-	table    markettable.Catalog
+	store Store
+	// administratorID cannot remove favorites that strategies read.
+	administratorID int64
+	changed         func()
+	analyzer        Analyzer
+	closed          analysis.ClosedIndicators
+	table           markettable.Catalog
 }
 
-func New(store Store, changed func(), analyzer Analyzer, closed analysis.ClosedIndicators, table markettable.Catalog) *Service {
-	return &Service{store: store, changed: changed, analyzer: analyzer, closed: closed, table: table}
+func New(store Store, administratorID int64, changed func(), analyzer Analyzer, closed analysis.ClosedIndicators, table markettable.Catalog) *Service {
+	return &Service{store: store, administratorID: administratorID, changed: changed, analyzer: analyzer, closed: closed, table: table}
 }
 func (s *Service) List(ctx context.Context, userID int64) ([]Favorite, error) {
 	return s.store.ListFavorites(ctx, userID)
@@ -102,7 +107,7 @@ func (s *Service) Add(ctx context.Context, userID int64, symbol string) (Favorit
 	return item, err
 }
 func (s *Service) Remove(ctx context.Context, userID int64, symbol string, confirm bool) (int, error) {
-	count, err := s.store.RemoveFavorite(ctx, userID, symbol, confirm)
+	count, err := s.store.RemoveFavorite(ctx, userID, s.administratorID, symbol, confirm)
 	if err == nil && s.changed != nil {
 		s.changed()
 	}

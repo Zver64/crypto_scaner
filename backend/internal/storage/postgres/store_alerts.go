@@ -144,11 +144,6 @@ func (store *Store) ListMonitoredSymbols(ctx context.Context) ([]string, error) 
 	return store.queries.ListMonitoredSymbols(ctx)
 }
 
-// ListMonitoredInstrumentIDs returns active instruments favorited by users.
-func (store *Store) ListMonitoredInstrumentIDs(ctx context.Context) ([]int64, error) {
-	return store.queries.ListMonitoredInstrumentIDs(ctx)
-}
-
 func alertFromInsert(r generated.InsertPriceAlertRow, symbol, target string, telegramID int64) alerts.Alert {
 	return alerts.Alert{ID: r.ID, UserID: r.UserID, TelegramID: telegramID, InstrumentID: r.InstrumentID, Symbol: symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()}
 }

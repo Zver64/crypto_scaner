@@ -21,15 +21,17 @@ const (
 	sendWorkers  = 4
 )
 
-// Instrument is one monitored instrument.
+// Instrument is one instrument strategies evaluate: an active favorite of
+// the administrator.
 type Instrument struct {
 	ID     int64
 	Symbol string
 }
 
 type MonitorStore interface {
-	// ListMonitoredInstruments returns the active favorites of every user.
-	ListMonitoredInstruments(context.Context) ([]Instrument, error)
+	// ListStrategyInstruments returns the active favorites of the
+	// administrator, which strategies evaluate.
+	ListStrategyInstruments(ctx context.Context, administratorTelegramID int64) ([]Instrument, error)
 	// ListStrategyMatches maps strategy ids to their matching instruments.
 	ListStrategyMatches(context.Context) (map[int64][]int64, error)
 	// ReplaceStrategyMatches stores the announced matches of revision and
@@ -251,7 +253,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 	if len(strategies) == 0 {
 		return
 	}
-	instruments, err := monitor.store.ListMonitoredInstruments(ctx)
+	instruments, err := monitor.store.ListStrategyInstruments(ctx, monitor.administratorID)
 	if err != nil {
 		monitor.logger.WarnContext(ctx, "load monitored instruments failed", "error", err)
 		requeue()
@@ -269,18 +271,30 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 	for _, instrument := range instruments {
 		monitored[instrument.ID] = instrument
 	}
-	candidates := instruments
-	if !full {
-		candidates = nil
-		for id := range pending {
-			if instrument, ok := monitored[id]; ok {
-				candidates = append(candidates, instrument)
-			}
+	var changed []Instrument
+	for id := range pending {
+		if instrument, ok := monitored[id]; ok {
+			changed = append(changed, instrument)
 		}
 	}
+	// A change of an instrument a strategy reads through of changes its
+	// results for every instrument.
+	candidatesOf := func(entry Entry) []Instrument {
+		symbols := entry.Compiled.Symbols()
+		if full || slices.ContainsFunc(changed, func(instrument Instrument) bool {
+			return slices.Contains(symbols, instrument.Symbol)
+		}) {
+			return instruments
+		}
+		return changed
+	}
 	demands, positions := demandsOf(strategies)
-	values, missing := monitor.values.Snapshot(instrumentIDs(instruments), demands)
-	now := monitor.now()
+	current := snapshot{positions: positions, now: monitor.now(), bySymbol: make(map[string]int64, len(instruments))}
+	for _, instrument := range instruments {
+		current.bySymbol[instrument.Symbol] = instrument.ID
+	}
+	var missing []closedindicator.Target
+	current.values, missing = monitor.values.Snapshot(instrumentIDs(instruments), demands)
 
 	for _, entry := range strategies {
 		matched := state[entry.ID]
@@ -316,13 +330,13 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 				monitor.mu.Unlock()
 				continue
 			}
-			monitor.baseline(ctx, state, entry, instruments, values, positions, now, recipients)
+			monitor.baseline(ctx, state, entry, instruments, current, recipients)
 			continue
 		}
 
 		var started, stopped []Instrument
-		for _, instrument := range candidates {
-			result, known := monitor.match(entry, values[instrument.ID], positions, now)
+		for _, instrument := range candidatesOf(entry) {
+			result, known := current.match(entry, instrument.ID)
 			if !known {
 				continue
 			}
@@ -365,7 +379,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 				continue
 			}
 			matched[instrument.ID] = struct{}{}
-			monitor.send(ctx, recipients, alertText(entry, instrument, values[instrument.ID], positions))
+			monitor.send(ctx, recipients, alertText(entry, instrument, current))
 		}
 	}
 }
@@ -373,10 +387,10 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 // baseline replaces the matches of entry with the instruments matching now
 // and announces them. Instruments with unknown results are left out and alert
 // once they match.
-func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]struct{}, entry Entry, instruments []Instrument, values map[int64][]closedindicator.Value, positions map[string]int, now time.Time, recipients []int64) {
+func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]struct{}, entry Entry, instruments []Instrument, current snapshot, recipients []int64) {
 	var matching []Instrument
 	for _, instrument := range instruments {
-		if result, known := monitor.match(entry, values[instrument.ID], positions, now); known && result {
+		if result, known := current.match(entry, instrument.ID); known && result {
 			matching = append(matching, instrument)
 		}
 	}
@@ -396,33 +410,56 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 		return
 	}
 	state[entry.ID] = set(instrumentIDs(matching))
-	monitor.send(ctx, recipients, summaryText(entry, matching))
+	monitor.send(ctx, recipients, summaryText(entry, matching, current))
 }
 
-// match evaluates entry over the fresh values of one instrument.
-func (monitor *Monitor) match(entry Entry, values []closedindicator.Value, positions map[string]int, now time.Time) (bool, bool) {
-	return entry.Compiled.Evaluate(func(variable Variable, shift int) (float64, bool) {
-		return readValue(variable, shift, values, positions, now)
+// snapshot is the tracked values of one evaluation round.
+type snapshot struct {
+	// values holds the values of each monitored instrument at positions.
+	values    map[int64][]closedindicator.Value
+	positions map[string]int
+	// bySymbol finds the monitored instruments read through of.
+	bySymbol map[string]int64
+	now      time.Time
+}
+
+// match evaluates entry over the fresh values of one instrument and the
+// instruments it reads through of.
+func (current snapshot) match(entry Entry, instrumentID int64) (bool, bool) {
+	return entry.Compiled.Evaluate(func(read Read) (float64, bool) {
+		output, ok := current.output(read, instrumentID)
+		if !ok {
+			return 0, false
+		}
+		return output.At(read.Shift)
 	})
 }
 
-// readValue returns the value of variable shift closed candles before the
-// latest one. Values whose latest candle is older are stale and left out.
-func readValue(variable Variable, shift int, values []closedindicator.Value, positions map[string]int, now time.Time) (float64, bool) {
-	position, ok := positions[targetKey(variable.Target)]
-	if !ok || position >= len(values) {
-		return 0, false
-	}
-	value := values[position]
-	if !value.OpenTime.Equal(variable.Target.Interval.LastClosedOpenTime(now)) {
-		return 0, false
-	}
-	for _, output := range value.Outputs {
-		if output.Name == variable.Output {
-			return output.At(shift)
+// output returns the fresh output read reads of the evaluated instrument or
+// of the instrument read names. Values whose latest candle is older are stale
+// and left out.
+func (current snapshot) output(read Read, instrumentID int64) (closedindicator.Output, bool) {
+	if read.Symbol != "" {
+		var ok bool
+		if instrumentID, ok = current.bySymbol[read.Symbol]; !ok {
+			return closedindicator.Output{}, false
 		}
 	}
-	return 0, false
+	values := current.values[instrumentID]
+	position, ok := current.positions[targetKey(read.Variable.Target)]
+	if !ok || position >= len(values) {
+		return closedindicator.Output{}, false
+	}
+	value := values[position]
+	if !value.OpenTime.Equal(read.Variable.Target.Interval.LastClosedOpenTime(current.now)) {
+		return closedindicator.Output{}, false
+	}
+	for _, output := range value.Outputs {
+		if output.Name == read.Variable.Output {
+			return output, true
+		}
+	}
+	return closedindicator.Output{}, false
 }
 
 func (monitor *Monitor) send(ctx context.Context, recipients []int64, text string) {
@@ -517,9 +554,19 @@ func instrumentIDs(instruments []Instrument) []int64 {
 const maxSummaryLength = 4000
 
 // summaryText announces the instruments matching an enabled or changed
-// strategy.
-func summaryText(entry Entry, matching []Instrument) string {
+// strategy and warns about instruments it reads that are not monitored, such
+// as delisted ones, which leave its results unknown.
+func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	text := "🎯 " + entry.Name + " is active\n" + entry.Expression + "\n"
+	var absent []string
+	for _, symbol := range entry.Compiled.Symbols() {
+		if _, ok := current.bySymbol[symbol]; !ok {
+			absent = append(absent, symbol)
+		}
+	}
+	if len(absent) > 0 {
+		text += "⚠️ Not in favorites: " + strings.Join(absent, ", ") + "\n"
+	}
 	if len(matching) == 0 {
 		return text + "No coins match now."
 	}
@@ -539,19 +586,23 @@ func summaryText(entry Entry, matching []Instrument) string {
 	return strings.TrimSuffix(text, ", ")
 }
 
-// alertText names the strategy, the instrument, and the values it read.
-func alertText(entry Entry, instrument Instrument, values []closedindicator.Value, positions map[string]int) string {
+// alertText names the strategy, the instrument, and the latest values it
+// read, those of other instruments after their symbol.
+func alertText(entry Entry, instrument Instrument, current snapshot) string {
 	lines := []string{"🎯 " + entry.Name + ": " + instrument.Symbol, entry.Expression}
 	var readings []string
-	for _, variable := range entry.Compiled.Variables() {
-		position, ok := positions[targetKey(variable.Target)]
-		if !ok || position >= len(values) {
+	shown := map[string]struct{}{}
+	for _, read := range entry.Compiled.Reads() {
+		name := read.Variable.Name
+		if read.Symbol != "" {
+			name = read.Symbol + " " + name
+		}
+		if _, ok := shown[name]; ok {
 			continue
 		}
-		for _, output := range values[position].Outputs {
-			if output.Name == variable.Output {
-				readings = append(readings, variable.Name+" "+strconv.FormatFloat(output.Value, 'g', 6, 64))
-			}
+		shown[name] = struct{}{}
+		if output, ok := current.output(read, instrument.ID); ok {
+			readings = append(readings, name+" "+strconv.FormatFloat(output.Value, 'g', 6, 64))
 		}
 	}
 	if len(readings) > 0 {

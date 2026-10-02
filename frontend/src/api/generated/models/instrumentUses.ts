@@ -17,9 +17,11 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ErrorResponse } from './errorResponse.ts';
+import type { InstrumentUse } from './instrumentUse.ts';
 
 /**
- * Confirmation is required because alerts exist.
+ * Details of `instrument_used_by_strategy`.
  */
-export type FavoriteAlertsConflictResponse = ErrorResponse;
+export interface InstrumentUses {
+  uses: InstrumentUse[];
+}

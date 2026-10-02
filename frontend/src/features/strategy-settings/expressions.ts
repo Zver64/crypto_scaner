@@ -4,6 +4,7 @@ import {
 	type ExpressionNode,
 	getExpressionParserCEL,
 	getExpressionRuleProcessorCEL,
+	quoteLeaf,
 	type SQLSerializerRegistry,
 	serializeInfix,
 } from "@react-querybuilder/expr";
@@ -19,6 +20,8 @@ interface StrategyFunction {
 	variadic?: boolean;
 	minArgs?: number;
 }
+
+type FunctionNode = Extract<ExpressionNode, { kind: "func" }>;
 
 const number = (value: number): ExpressionNode => ({ kind: "value", value });
 
@@ -69,6 +72,11 @@ export const strategyFunctions: Record<string, StrategyFunction> = {
 	},
 };
 
+// of("BTCUSDT", x) reads the operand x of another coin. It is not a
+// function over values, so the builder offers it as an operand kind of its
+// own rather than among strategyFunctions.
+const coinFunction = "of";
+
 // min and max take up to ten values on the backend.
 export const maxVariadicArguments = 10;
 
@@ -79,19 +87,30 @@ function argumentRange(definition: StrategyFunction): [number, number] {
 		: [definition.minArgs ?? definition.args.length, definition.args.length];
 }
 
-const functionMeta: ExpressionFunctionMetaRegistry = Object.fromEntries(
-	Object.entries(strategyFunctions).map(([name, definition]) => [
-		name,
-		{
-			label: definition.label,
-			arity: argumentRange(definition),
-		},
-	]),
-);
+const functionMeta: ExpressionFunctionMetaRegistry = {
+	...Object.fromEntries(
+		Object.entries(strategyFunctions).map(([name, definition]) => [
+			name,
+			{
+				label: definition.label,
+				arity: argumentRange(definition),
+			},
+		]),
+	),
+	[coinFunction]: { label: "another coin", arity: [2, 2] },
+};
 
 // Named functions are written as calls, which the backend compiles and the
 // parser reads back.
-const callNames = ["min", "max", "abs", "mod", "prev", "percentile"];
+const callNames = [
+	"min",
+	"max",
+	"abs",
+	"mod",
+	"prev",
+	"percentile",
+	coinFunction,
+];
 
 const serializers: SQLSerializerRegistry = {
 	...defaultCELSerializers,
@@ -117,20 +136,54 @@ export const expressionParser = getExpressionParserCEL(
 export function expressionSource(node: ExpressionNode): string {
 	return serializeInfix(node, serializers, {
 		renderField: (field) => field,
-		renderLeaf: (leaf) => String(leaf.value),
+		// Coins are quoted; numbers stay bare.
+		renderLeaf: (leaf, options) => quoteLeaf(leaf, `"`, options),
 	});
 }
 
 // The node a function call starts with when chosen around node.
-export function functionCall(
-	name: string,
-	node: ExpressionNode,
-): ExpressionNode {
-	const definition = strategyFunctions[name];
+export function functionCall(name: string, node: ExpressionNode): FunctionNode {
 	return {
 		kind: "func",
 		fn: name,
-		args: [node, ...(definition?.defaults ?? [])],
+		args: [node, ...(strategyFunctions[name]?.defaults ?? [])],
+	};
+}
+
+// node read from another coin, which is still to be chosen.
+export function coinCall(node: ExpressionNode): FunctionNode {
+	return { kind: "func", fn: coinFunction, args: [coin(""), node] };
+}
+
+// node read from symbol instead of the coin of call.
+export function withCoin(call: FunctionNode, symbol: string): FunctionNode {
+	return { ...call, args: [coin(symbol), ...call.args.slice(1)] };
+}
+
+const coin = (symbol: string): ExpressionNode => ({
+	kind: "value",
+	value: symbol,
+});
+
+// The coin node reads from, empty while it is not chosen, or undefined when
+// node reads the evaluated coin.
+export function coinOf(node: ExpressionNode): string | undefined {
+	if (node.kind !== "func" || node.fn !== coinFunction) return undefined;
+	const [symbol] = node.args;
+	return symbol?.kind === "value" && typeof symbol.value === "string"
+		? symbol.value
+		: "";
+}
+
+// The call of name that replaces node, keeping the arguments that still fit.
+export function replaceFunction(
+	node: FunctionNode,
+	name: string,
+): FunctionNode {
+	const call = functionCall(name, node.args[0] ?? number(0));
+	return {
+		...call,
+		args: call.args.map((arg, index) => node.args[index] ?? arg),
 	};
 }
 
@@ -143,6 +196,15 @@ export function expressionComplete(node: ExpressionNode): boolean {
 		case "value":
 			return typeof node.value === "number" && Number.isFinite(node.value);
 		case "func": {
+			if (node.fn === coinFunction) {
+				const [, operand, ...rest] = node.args;
+				return (
+					coinOf(node) !== "" &&
+					operand !== undefined &&
+					rest.length === 0 &&
+					expressionComplete(operand)
+				);
+			}
 			const definition = strategyFunctions[node.fn];
 			if (!definition) return false;
 			const [fewest, most] = argumentRange(definition);

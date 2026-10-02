@@ -293,7 +293,7 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AccessDenied" }
         "404": { $ref: "#/components/responses/FavoriteNotFound" }
-        "409": { $ref: "#/components/responses/FavoriteAlertsConflict" }
+        "409": { $ref: "#/components/responses/FavoriteConflict" }
         "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/favorites/analysis:
     post:
@@ -565,6 +565,20 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/strategy-symbols:
+    get:
+      operationId: listStrategySymbols
+      summary: List the coins strategy expressions can read through of
+      description: The active coins in the administrator's favorites, ascending.
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      responses:
+        "200":
+          description: Strategy symbols.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StrategySymbolList" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/strategies:
     get:
       operationId: listStrategies
@@ -793,8 +807,12 @@ components:
     AlertNotFound:
       description: Alert is not owned by the current user.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
-    FavoriteAlertsConflict:
-      description: Confirmation is required because alerts exist.
+    FavoriteConflict:
+      description: |
+        `favorite_has_alerts`: confirmation is required because alerts exist
+        (`details.alert_count`). `instrument_used_by_strategy`: the
+        administrator's favorite is a coin strategies read through `of`
+        (`details.uses`, see `InstrumentUses`).
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     AlertConflict:
       description: Duplicate target or per-instrument alert limit.
@@ -1467,6 +1485,7 @@ components:
             - duplicate_target
             - favorite_has_alerts
             - favorite_not_found
+            - instrument_used_by_strategy
             - insufficient_data
             - internal_error
             - invalid_argument
@@ -1541,6 +1560,33 @@ components:
         items:
           type: array
           items: { $ref: "#/components/schemas/StrategyVariable" }
+    StrategySymbolList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { type: string }
+    InstrumentUses:
+      type: object
+      additionalProperties: false
+      required: [uses]
+      description: Details of `instrument_used_by_strategy`.
+      properties:
+        uses:
+          type: array
+          items: { $ref: "#/components/schemas/InstrumentUse" }
+    InstrumentUse:
+      type: object
+      additionalProperties: false
+      required: [symbol, strategies]
+      properties:
+        symbol: { type: string }
+        strategies:
+          type: array
+          items: { type: string }
+          description: Names of the strategies that read the coin.
     StrategyVariable:
       type: object
       additionalProperties: false
@@ -1597,7 +1643,8 @@ components:
             `percentile(x, n, p)` is the nearest-rank `p`-th percentile of `x`
             over the `n` closed candles before the latest one;
             `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
-            previous candle.
+            previous candle. `of("BTCUSDT", x)` reads `x` of another coin,
+            which must be in the administrator's favorites.
     StrategyInput:
       type: object
       additionalProperties: false

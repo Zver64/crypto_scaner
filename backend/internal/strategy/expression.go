@@ -41,6 +41,10 @@ const (
 	// shiftMarker joins a variable name and its shift in the hidden
 	// variables holding earlier values, such as h_rsi__shift1.
 	shiftMarker = "__shift"
+	// symbolMarker joins a variable name and the coin of follows in the
+	// hidden variables of another instrument, such as
+	// h_rsi__of_BTCUSDT__shift1; the shift comes last.
+	symbolMarker = "__of_"
 	// divideFunction and percentileFunction are the internal functions that
 	// division and percentile windows compile into.
 	divideFunction     = "__divide__"
@@ -61,11 +65,15 @@ type Variable struct {
 }
 
 // Read is a variable read at the closed candle shift candles before the
-// latest one.
+// latest one, of the instrument named Symbol or, when Symbol is empty, of
+// the evaluated instrument.
 type Read struct {
 	Variable Variable
+	Symbol   string
 	Shift    int
 }
+
+var symbolPattern = regexp.MustCompile(`^[A-Z0-9]{2,30}$`)
 
 // candleVariables name the built-in candle field variables after their
 // field, such as h_close or d_quote_volume.
@@ -86,7 +94,8 @@ var invalidNameCharacters = regexp.MustCompile(`[^A-Za-z0-9_]`)
 // output of the configured indicators in display order. Candle field names
 // are reserved, and indicator creation rejects duplicate titles; should two
 // outputs still share a name, the older indicator keeps it, so reordering
-// never rebinds an expression.
+// never rebinds an expression. Names containing the reserved markers of
+// hidden variables are left out.
 func Variables(entries []scannerindicator.Entry) []Variable {
 	var result []Variable
 	taken := map[string]struct{}{}
@@ -112,7 +121,7 @@ func Variables(entries []scannerindicator.Entry) []Variable {
 			if len(entry.Outputs) > 1 {
 				name += "_" + invalidNameCharacters.ReplaceAllString(output, "_")
 			}
-			if _, duplicate := taken[name]; duplicate || strings.Contains(name, shiftMarker) {
+			if _, duplicate := taken[name]; duplicate || strings.Contains(name, shiftMarker) || strings.Contains(name, symbolMarker) {
 				continue
 			}
 			taken[name] = struct{}{}
@@ -155,26 +164,28 @@ func (expression *Expression) IndicatorIDs() []int64 {
 	return ids
 }
 
-// Variables lists the variables the expression reads, by name.
-func (expression *Expression) Variables() []Variable {
-	var result []Variable
-	for _, read := range expression.Reads() {
-		if !slices.ContainsFunc(result, func(known Variable) bool { return known.Name == read.Variable.Name }) {
-			result = append(result, read.Variable)
+// Symbols lists the other instruments the expression reads through of,
+// ascending.
+func (expression *Expression) Symbols() []string {
+	var symbols []string
+	for _, read := range expression.reads {
+		if read.Symbol != "" && !slices.Contains(symbols, read.Symbol) {
+			symbols = append(symbols, read.Symbol)
 		}
 	}
-	return result
+	slices.Sort(symbols)
+	return symbols
 }
 
-// Reads lists every variable and shift the expression reads, by name and
-// shift.
+// Reads lists every variable, instrument, and shift the expression reads, by
+// name, symbol, and shift.
 func (expression *Expression) Reads() []Read {
 	result := make([]Read, 0, len(expression.reads))
 	for _, read := range expression.reads {
 		result = append(result, read)
 	}
 	slices.SortFunc(result, func(left, right Read) int {
-		return cmp.Or(cmp.Compare(left.Variable.Name, right.Variable.Name), cmp.Compare(left.Shift, right.Shift))
+		return cmp.Or(cmp.Compare(left.Variable.Name, right.Variable.Name), cmp.Compare(left.Symbol, right.Symbol), cmp.Compare(left.Shift, right.Shift))
 	})
 	return result
 }
@@ -183,10 +194,10 @@ func (expression *Expression) Reads() []Read {
 // stay unbound, so CEL's commutative logic still decides branches that do not
 // need them; known is false when the result depends on a missing value or a
 // division by zero.
-func (expression *Expression) Evaluate(value func(Variable, int) (float64, bool)) (result bool, known bool) {
+func (expression *Expression) Evaluate(value func(Read) (float64, bool)) (result bool, known bool) {
 	activation := make(map[string]any, len(expression.reads))
 	for name, read := range expression.reads {
-		if number, ok := value(read.Variable, read.Shift); ok {
+		if number, ok := value(read); ok {
 			activation[name] = number
 		}
 	}
@@ -201,7 +212,8 @@ func (expression *Expression) Evaluate(value func(Variable, int) (float64, bool)
 // Compile checks source against the variables and prepares it for
 // evaluation. Conditions are comparisons of arithmetic, abs, mod, min, and
 // max over variables and numbers, combined with &&, ||, and !; prev,
-// percentile, crosses_above, and crosses_below read earlier closed candles.
+// percentile, crosses_above, and crosses_below read earlier closed candles,
+// and of reads another instrument.
 func Compile(source string, variables []Variable) (*Expression, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
@@ -210,9 +222,12 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 	if len(source) > maxExpressionLength {
 		return nil, fmt.Errorf("%w: the expression is longer than %d characters", ErrInvalidArgument, maxExpressionLength)
 	}
-	// Earlier values are read only through prev, percentile, and crossings.
-	if strings.Contains(source, shiftMarker) {
-		return nil, fmt.Errorf("%w: names containing %s are reserved", ErrInvalidArgument, shiftMarker)
+	// Earlier values are read only through prev, percentile, and crossings,
+	// and other instruments only through of.
+	for _, marker := range []string{shiftMarker, symbolMarker} {
+		if strings.Contains(source, marker) {
+			return nil, fmt.Errorf("%w: names containing %s are reserved", ErrInvalidArgument, marker)
+		}
 	}
 	byName := make(map[string]Variable, len(variables))
 	for _, variable := range variables {
@@ -224,6 +239,7 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 			parser.NewGlobalMacro("prev", 1, prevMacro),
 			parser.NewGlobalMacro("prev", 2, prevMacro),
 			parser.NewGlobalMacro("percentile", 3, percentileMacro),
+			parser.NewGlobalMacro("of", 2, ofMacro),
 			crossesMacro("crosses_above", operators.LessEquals, operators.Greater),
 			crossesMacro("crosses_below", operators.GreaterEquals, operators.Less),
 		),
@@ -274,6 +290,15 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 	if walker.comparisons > maxComparisons {
 		return nil, fmt.Errorf("%w: the expression has too many comparisons", ErrInvalidArgument)
 	}
+	// An expression that reads only other coins has the same result for
+	// every evaluated coin, so all of them would match and alert at once.
+	evaluated := false
+	for _, read := range walker.reads {
+		evaluated = evaluated || read.Symbol == ""
+	}
+	if !evaluated {
+		return nil, fmt.Errorf("%w: the expression must also read the evaluated coin, not only coins read through of", ErrInvalidArgument)
+	}
 	program, err := env.Program(checked)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
@@ -291,7 +316,8 @@ func issueMessage(issues *cel.Issues) string {
 // rewrite turns integer literals into doubles, since CEL has no mixed
 // arithmetic, and division into divideFunction, which reports a zero divisor
 // as an error. It records every identifier with what it reads, such as
-// h_rsi__shift1; an identifier that names no variable reads a zero Variable.
+// h_rsi__of_BTCUSDT__shift1; an identifier that names no variable reads a
+// zero Variable.
 func rewrite(expr ast.Expr, factory ast.ExprFactory, variables map[string]Variable, identifiers map[string]Read) {
 	switch expr.Kind() {
 	case ast.LiteralKind:
@@ -302,8 +328,8 @@ func rewrite(expr ast.Expr, factory ast.ExprFactory, variables map[string]Variab
 			expr.SetKindCase(factory.NewLiteral(expr.ID(), types.Double(literal)))
 		}
 	case ast.IdentKind:
-		name, shift := splitShift(expr.AsIdent())
-		identifiers[expr.AsIdent()] = Read{Variable: variables[name], Shift: shift}
+		name, symbol, shift := splitIdentifier(expr.AsIdent())
+		identifiers[expr.AsIdent()] = Read{Variable: variables[name], Symbol: symbol, Shift: shift}
 	case ast.CallKind:
 		call := expr.AsCall()
 		for _, arg := range call.Args() {
@@ -389,8 +415,24 @@ func percentile(rank, values ref.Val) ref.Val {
 	return types.Double(numbers[min(max(position, 0), len(numbers)-1)])
 }
 
-// splitShift splits a hidden identifier such as h_rsi__shift3 into its
-// variable name and shift.
+// splitIdentifier splits a hidden identifier such as
+// h_rsi__of_BTCUSDT__shift3 into its variable name, symbol, and shift.
+func splitIdentifier(identifier string) (string, string, int) {
+	name, shift := splitShift(identifier)
+	name, symbol, _ := strings.Cut(name, symbolMarker)
+	return name, symbol, shift
+}
+
+// hiddenIdentifier joins name, which may name an instrument, and shift.
+func hiddenIdentifier(name string, shift int) string {
+	if shift == 0 {
+		return name
+	}
+	return name + shiftMarker + strconv.Itoa(shift)
+}
+
+// splitShift splits a hidden identifier such as h_rsi__shift3 into the rest
+// of the name and the shift.
 func splitShift(identifier string) (string, int) {
 	name, suffix, found := strings.Cut(identifier, shiftMarker)
 	if !found {
@@ -407,28 +449,42 @@ func splitShift(identifier string) (string, int) {
 // candles earlier.
 func shifted(helper parser.ExprHelper, expr ast.Expr, by int) ast.Expr {
 	result := helper.Copy(expr)
-	shiftIdentifiers(helper, result, by)
+	renameIdentifiers(helper, result, func(identifier string) string {
+		name, shift := splitShift(identifier)
+		return hiddenIdentifier(name, shift+by)
+	})
 	return result
 }
 
-func shiftIdentifiers(helper parser.ExprHelper, expr ast.Expr, by int) {
+// renameIdentifiers replaces every identifier of expr with rename of it.
+func renameIdentifiers(helper parser.ExprHelper, expr ast.Expr, rename func(string) string) {
 	switch expr.Kind() {
 	case ast.IdentKind:
-		name, shift := splitShift(expr.AsIdent())
-		expr.SetKindCase(helper.NewIdent(name + shiftMarker + strconv.Itoa(shift+by)))
+		expr.SetKindCase(helper.NewIdent(rename(expr.AsIdent())))
 	case ast.CallKind:
 		call := expr.AsCall()
 		if call.IsMemberFunction() {
-			shiftIdentifiers(helper, call.Target(), by)
+			renameIdentifiers(helper, call.Target(), rename)
 		}
 		for _, arg := range call.Args() {
-			shiftIdentifiers(helper, arg, by)
+			renameIdentifiers(helper, arg, rename)
 		}
 	case ast.ListKind:
 		for _, element := range expr.AsList().Elements() {
-			shiftIdentifiers(helper, element, by)
+			renameIdentifiers(helper, element, rename)
 		}
 	}
+}
+
+// containsIdentifier reports whether an identifier of expr contains part.
+func containsIdentifier(expr ast.Expr, part string) bool {
+	found := false
+	ast.PreOrderVisit(expr, ast.NewExprVisitor(func(node ast.Expr) {
+		if node.Kind() == ast.IdentKind && strings.Contains(node.AsIdent(), part) {
+			found = true
+		}
+	}))
+	return found
 }
 
 // nodeCount counts the nodes of expr, including those inside map and
@@ -498,6 +554,29 @@ func percentileMacro(helper parser.ExprHelper, _ ast.Expr, args []ast.Expr) (ast
 		elements[index] = shifted(helper, args[0], index+1)
 	}
 	return helper.NewCall(percentileFunction, helper.NewLiteral(types.Double(rank)), helper.NewList(elements...)), nil
+}
+
+// ofMacro expands of("BTCUSDT", x) into x read from that instrument. The
+// symbol goes before the shift, so of and prev nest in either order.
+func ofMacro(helper parser.ExprHelper, _ ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+	var symbol string
+	if args[0].Kind() == ast.LiteralKind {
+		if value, ok := args[0].AsLiteral().(types.String); ok {
+			symbol = market.NormalizeSymbol(string(value))
+		}
+	}
+	if !symbolPattern.MatchString(symbol) {
+		return nil, helper.NewError(args[0].ID(), `of takes a coin symbol in quotes, such as "BTCUSDT"`)
+	}
+	if containsIdentifier(args[1], symbolMarker) {
+		return nil, helper.NewError(args[1].ID(), "of cannot contain of")
+	}
+	result := helper.Copy(args[1])
+	renameIdentifiers(helper, result, func(identifier string) string {
+		name, shift := splitShift(identifier)
+		return hiddenIdentifier(name+symbolMarker+symbol, shift)
+	})
+	return result, nil
 }
 
 // crossesMacro expands name(a, b) into "a was before (a b) at the previous
@@ -597,7 +676,7 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 	case ast.IdentKind:
 		read := walker.identifiers[expr.AsIdent()]
 		if read.Variable.Name == "" {
-			name, _ := splitShift(expr.AsIdent())
+			name, _, _ := splitIdentifier(expr.AsIdent())
 			return fmt.Errorf("%s is not a configured indicator or candle field", name)
 		}
 		walker.reads[expr.AsIdent()] = read

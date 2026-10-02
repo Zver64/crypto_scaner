@@ -30,6 +30,7 @@ export const APIErrorCode = {
   duplicate_target: 'duplicate_target',
   favorite_has_alerts: 'favorite_has_alerts',
   favorite_not_found: 'favorite_not_found',
+  instrument_used_by_strategy: 'instrument_used_by_strategy',
   insufficient_data: 'insufficient_data',
   internal_error: 'internal_error',
   invalid_argument: 'invalid_argument',

@@ -7,6 +7,7 @@ import (
 	"net/http"
 
 	"crypto-scanner/internal/analysis"
+	"crypto-scanner/internal/strategy"
 )
 
 // apiError is an error body with its HTTP status. The helpers below convert it
@@ -47,6 +48,20 @@ func (e apiError) internal() InternalErrorJSONResponse {
 
 func invalidArgument(ctx context.Context, message string) apiError {
 	return newAPIError(ctx, http.StatusBadRequest, "invalid_argument", message, nil)
+}
+
+// instrumentsInUse maps strategy.InstrumentsInUseError to the conflict that
+// names the strategies reading each coin.
+func instrumentsInUse(ctx context.Context, err error) (apiError, bool) {
+	var inUse *strategy.InstrumentsInUseError
+	if !errors.As(err, &inUse) {
+		return apiError{}, false
+	}
+	details := InstrumentUses{Uses: make([]InstrumentUse, len(inUse.Uses))}
+	for i, use := range inUse.Uses {
+		details.Uses[i] = InstrumentUse{Symbol: use.Symbol, Strategies: use.Strategies}
+	}
+	return newAPIError(ctx, http.StatusConflict, "instrument_used_by_strategy", "Strategies read these coins; delete or change those strategies first", details), true
 }
 
 func symbolNotFound(ctx context.Context) apiError {

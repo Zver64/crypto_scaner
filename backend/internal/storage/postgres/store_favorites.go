@@ -59,13 +59,16 @@ func favoriteFromRow(r generated.GetFavoriteRow) favorites.Favorite {
 	return favorites.Favorite{InstrumentID: r.InstrumentID, Symbol: r.Symbol, BaseAsset: r.BaseAsset, QuoteAsset: r.QuoteAsset, Active: r.IsActive, AlertCount: int(r.AlertCount), CreatedAt: r.CreatedAt.Time.UTC()}
 }
 
-func (store *Store) RemoveFavorite(ctx context.Context, userID int64, symbol string, confirm bool) (int, error) {
+// RemoveFavorite fails with strategy.InstrumentsInUseError when the
+// administrator removes a coin that strategies read through of.
+func (store *Store) RemoveFavorite(ctx context.Context, userID, administratorTelegramID int64, symbol string, confirm bool) (int, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	if _, err = lockUser(ctx, tx, userID); err != nil {
+	telegramID, err := lockUser(ctx, tx, userID)
+	if err != nil {
 		return 0, err
 	}
 	var instrumentID int64
@@ -75,6 +78,11 @@ func (store *Store) RemoveFavorite(ctx context.Context, userID int64, symbol str
 		return 0, err
 	}
 	q := store.queries.WithTx(tx)
+	if telegramID == administratorTelegramID {
+		if err := strategiesReading(ctx, q, instrumentID); err != nil {
+			return 0, err
+		}
+	}
 	count, err := q.CountFavoriteAlerts(ctx, generated.CountFavoriteAlertsParams{UserID: userID, InstrumentID: instrumentID})
 	if err != nil {
 		return 0, err

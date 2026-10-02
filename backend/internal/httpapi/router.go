@@ -130,6 +130,7 @@ var administratorRoutes = []string{
 	"PATCH /api/v1/admin/users/{telegram_id}",
 	"DELETE /api/v1/admin/users/{telegram_id}",
 	"GET /api/v1/admin/strategy-variables",
+	"GET /api/v1/admin/strategy-symbols",
 	"GET /api/v1/admin/strategies",
 	"POST /api/v1/admin/strategies",
 	"PUT /api/v1/admin/strategies/{strategy_id}",

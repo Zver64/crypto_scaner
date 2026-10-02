@@ -26,7 +26,33 @@ var (
 	ErrNotFound        = errors.New("strategy not found")
 	// ErrConflict means another strategy already has the name.
 	ErrConflict = errors.New("strategy name already exists")
+	// ErrInstrumentsInUse means that a change would take instruments that
+	// strategies read out of the administrator's favorites;
+	// InstrumentsInUseError names them.
+	ErrInstrumentsInUse = errors.New("strategies read the instruments")
 )
+
+// InstrumentUse names the strategies that read one instrument.
+type InstrumentUse struct {
+	Symbol     string
+	Strategies []string
+}
+
+// InstrumentsInUseError lists the instruments strategies read that a removal
+// from the administrator's favorites would take away from them.
+type InstrumentsInUseError struct {
+	Uses []InstrumentUse
+}
+
+func (err *InstrumentsInUseError) Error() string {
+	parts := make([]string, len(err.Uses))
+	for i, use := range err.Uses {
+		parts[i] = use.Symbol + " (" + strings.Join(use.Strategies, ", ") + ")"
+	}
+	return ErrInstrumentsInUse.Error() + ": " + strings.Join(parts, "; ")
+}
+
+func (err *InstrumentsInUseError) Is(target error) bool { return target == ErrInstrumentsInUse }
 
 // Strategy is one stored strategy.
 type Strategy struct {
@@ -55,17 +81,22 @@ func (entry Entry) evaluated() bool { return entry.Enabled && entry.Compiled != 
 type Store interface {
 	ListStrategies(context.Context) ([]Strategy, error)
 	// CreateStrategy stores the strategy, at revision 1, with the indicators
-	// it reads and returns its id. It fails with ErrConflict for a taken name and with
-	// ErrInvalidArgument when an indicator no longer exists.
-	CreateStrategy(context.Context, Strategy, []int64) (int64, error)
-	// UpdateStrategy replaces the name, expression, and indicators and
-	// returns the revision; baseline marks the matches for announcement. It
-	// fails like CreateStrategy, or with ErrNotFound.
-	UpdateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, baseline bool) (int64, error)
+	// and the other instruments it reads and returns its id. It fails with
+	// ErrConflict for a taken name and with ErrInvalidArgument when an
+	// indicator no longer exists or an instrument it starts reading is not
+	// in the favorites of administratorTelegramID.
+	CreateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64) (int64, error)
+	// UpdateStrategy replaces the name, expression, indicators, and
+	// instruments and returns the revision; baseline marks the matches for
+	// announcement. It fails like CreateStrategy, or with ErrNotFound.
+	UpdateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64, baseline bool) (int64, error)
 	// SetStrategyEnabled returns the revision and fails with ErrNotFound.
 	// Enabling marks the matches for announcement; disabling forgets them.
 	SetStrategyEnabled(context.Context, int64, bool) (int64, error)
 	DeleteStrategy(context.Context, int64) error
+	// ListStrategyInstruments returns the active favorites of the
+	// administrator.
+	ListStrategyInstruments(ctx context.Context, administratorTelegramID int64) ([]Instrument, error)
 }
 
 // Indicators supplies the configured indicators expressions may read.
@@ -81,6 +112,9 @@ type Service struct {
 	registry *indicator.Registry
 	logger   *slog.Logger
 	changed  func(baselines []int64)
+	// administratorID keeps in favorites the coins expressions read
+	// through of.
+	administratorID int64
 
 	// writes serializes changes, so name checks see every earlier change.
 	writes  sync.Mutex
@@ -89,13 +123,14 @@ type Service struct {
 }
 
 // NewService creates an empty service; Load reads the stored strategies.
-// changed receives the ids of strategies whose current matches must be
-// announced after each change and must not block.
-func NewService(store Store, indicators Indicators, registry *indicator.Registry, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
+// Expressions read through of the coins in the favorites of
+// administratorID. changed receives the ids of strategies whose current
+// matches must be announced after each change and must not block.
+func NewService(store Store, indicators Indicators, registry *indicator.Registry, administratorID int64, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
 	if store == nil || indicators == nil || registry == nil || logger == nil || changed == nil {
 		return nil, errors.New("strategy store, indicators, registry, logger, and change listener are required")
 	}
-	return &Service{store: store, indicators: indicators, registry: registry, logger: logger.With("module", "strategy"), changed: changed}, nil
+	return &Service{store: store, indicators: indicators, registry: registry, administratorID: administratorID, logger: logger.With("module", "strategy"), changed: changed}, nil
 }
 
 // compile compiles source and checks that the kept history covers its
@@ -154,6 +189,31 @@ func (service *Service) Variables() []Variable {
 	return Variables(service.indicators.List())
 }
 
+// Symbols lists the instruments of can read: the administrator's active
+// favorites, ascending.
+func (service *Service) Symbols(ctx context.Context) ([]string, error) {
+	instruments, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
+	if err != nil {
+		return nil, err
+	}
+	symbols := make([]string, len(instruments))
+	for i, instrument := range instruments {
+		symbols[i] = instrument.Symbol
+	}
+	slices.Sort(symbols)
+	return symbols, nil
+}
+
+// InstrumentIDs lists the instruments strategies evaluate: the
+// administrator's active favorites.
+func (service *Service) InstrumentIDs(ctx context.Context) ([]int64, error) {
+	instruments, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
+	if err != nil {
+		return nil, err
+	}
+	return instrumentIDs(instruments), nil
+}
+
 // IndicatorUsage maps each indicator id to the names of the strategies that
 // read it.
 func (service *Service) IndicatorUsage() map[int64][]string {
@@ -192,7 +252,7 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
-	entry.ID, err = service.store.CreateStrategy(ctx, entry.Strategy, entry.Compiled.IndicatorIDs())
+	entry.ID, err = service.store.CreateStrategy(ctx, entry.Strategy, entry.Compiled.IndicatorIDs(), entry.Compiled.Symbols(), service.administratorID)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -224,7 +284,7 @@ func (service *Service) Update(ctx context.Context, id int64, name, expression s
 	if entry.Enabled && (previous.Expression != entry.Expression || previous.Compiled == nil) {
 		baselines = []int64{id}
 	}
-	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, entry.Compiled.IndicatorIDs(), len(baselines) > 0)
+	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, entry.Compiled.IndicatorIDs(), entry.Compiled.Symbols(), service.administratorID, len(baselines) > 0)
 	if err != nil {
 		return Entry{}, err
 	}

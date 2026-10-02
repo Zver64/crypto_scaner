@@ -17,25 +17,12 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { ErrorResponse } from './errorResponse.ts';
 
-export interface StrategyUpdate {
-  /**
-     * @minLength 1
-     * @maxLength 64
-     */
-  name: string;
-  /**
-     * CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
-     * arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and
-     * numbers, combined with `&&`, `||`, and `!`. `prev(x)` and
-     * `prev(x, n)` read `x` one or `n` closed candles earlier;
-     * `percentile(x, n, p)` is the nearest-rank `p`-th percentile of `x`
-     * over the `n` closed candles before the latest one;
-     * `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
-     * previous candle. `of("BTCUSDT", x)` reads `x` of another coin,
-     * which must be in the administrator's favorites.
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
-}
+/**
+ * `favorite_has_alerts`: confirmation is required because alerts exist
+ * (`details.alert_count`). `instrument_used_by_strategy`: the
+ * administrator's favorite is a coin strategies read through `of`
+ * (`details.uses`, see `InstrumentUses`).
+ */
+export type FavoriteConflictResponse = ErrorResponse;

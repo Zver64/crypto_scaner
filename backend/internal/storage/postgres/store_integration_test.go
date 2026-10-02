@@ -234,14 +234,14 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "11"); !errors.Is(err, alerts.ErrLimit) {
 			t.Fatalf("eleventh alert error = %v", err)
 		}
-		if count, err := store.RemoveFavorite(ctx, owner.ID, "BTCUSDT", false); !errors.Is(err, favorites.ErrAlertsExist) || count != alerts.MaxPerInstrument {
+		if count, err := store.RemoveFavorite(ctx, owner.ID, 0, "BTCUSDT", false); !errors.Is(err, favorites.ErrAlertsExist) || count != alerts.MaxPerInstrument {
 			t.Fatalf("unconfirmed RemoveFavorite() = %d, %v", count, err)
 		}
 		items, err := store.ListAlerts(ctx, owner.ID, "BTCUSDT")
 		if err != nil || len(items) != alerts.MaxPerInstrument {
 			t.Fatalf("alerts after rejected removal = %d, %v", len(items), err)
 		}
-		if count, err := store.RemoveFavorite(ctx, owner.ID, "BTCUSDT", true); err != nil || count != alerts.MaxPerInstrument {
+		if count, err := store.RemoveFavorite(ctx, owner.ID, 0, "BTCUSDT", true); err != nil || count != alerts.MaxPerInstrument {
 			t.Fatalf("confirmed RemoveFavorite() = %d, %v", count, err)
 		}
 		if items, err = store.ListAlerts(ctx, owner.ID, "BTCUSDT"); err != nil || len(items) != 0 {
@@ -287,7 +287,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if succeeded != alerts.MaxPerInstrument || limited != 1 {
 			t.Fatalf("concurrent creates succeeded=%d limited=%d", succeeded, limited)
 		}
-		if _, err := store.RemoveFavorite(ctx, owner.ID, "ETHUSDT", true); err != nil {
+		if _, err := store.RemoveFavorite(ctx, owner.ID, 0, "ETHUSDT", true); err != nil {
 			t.Fatalf("clean concurrent alerts: %v", err)
 		}
 	})

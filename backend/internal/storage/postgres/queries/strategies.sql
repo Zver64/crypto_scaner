@@ -71,10 +71,11 @@ RETURNING instrument_id;
 DELETE FROM app.strategy_matches
 WHERE strategy_id = @strategy_id::BIGINT AND instrument_id = ANY(@instrument_ids::BIGINT[]);
 
--- name: ListMonitoredInstruments :many
-SELECT DISTINCT i.id, i.symbol
+-- name: ListStrategyInstruments :many
+-- Strategies evaluate the active favorites of the administrator.
+SELECT i.id, i.symbol
 FROM app.favorites f
-JOIN app.users u ON u.id = f.user_id
+JOIN app.users u ON u.id = f.user_id AND u.telegram_id = @administrator_telegram_id::BIGINT
 JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
 ORDER BY i.id;
 
@@ -83,3 +84,47 @@ SELECT telegram_id
 FROM app.users
 WHERE strategy_alerts OR telegram_id = @administrator_telegram_id::BIGINT
 ORDER BY telegram_id;
+
+-- name: LockStrategySymbols :many
+-- Locks the instruments an expression reads through of against their
+-- removal from the administrator's favorites, then lists them.
+SELECT id, symbol
+FROM binance_spot.instruments
+WHERE symbol = ANY(@symbols::TEXT[])
+ORDER BY id
+FOR SHARE;
+
+-- name: ListStrategyInstrumentsAmong :many
+-- Runs after LockStrategySymbols, so it sees favorites removed meanwhile.
+SELECT i.id
+FROM app.favorites f
+JOIN app.users u ON u.id = f.user_id AND u.telegram_id = @administrator_telegram_id::BIGINT
+JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
+WHERE i.id = ANY(@instrument_ids::BIGINT[]);
+
+-- name: ListStrategySymbolIDs :many
+SELECT instrument_id FROM app.strategy_symbols WHERE strategy_id = $1;
+
+-- name: DeleteStrategySymbols :exec
+DELETE FROM app.strategy_symbols WHERE strategy_id = $1;
+
+-- name: InsertStrategySymbols :exec
+INSERT INTO app.strategy_symbols (strategy_id, instrument_id)
+SELECT @strategy_id::BIGINT, instrument_id
+FROM unnest(@instrument_ids::BIGINT[]) AS ids(instrument_id);
+
+-- name: LockInstrument :exec
+-- Orders a favorite removal with strategy writes, which lock the instruments
+-- they read FOR SHARE. NO KEY UPDATE conflicts with that but not with the
+-- KEY SHARE locks of foreign key inserts, such as candles and favorites.
+SELECT id FROM binance_spot.instruments WHERE id = $1 FOR NO KEY UPDATE;
+
+-- name: ListStrategiesReading :many
+-- The strategies that read the active instrument through of; a delisted one
+-- leaves them unknown anyway. Runs after LockInstrument.
+SELECT i.symbol, s.name
+FROM app.strategy_symbols ss
+JOIN app.strategies s ON s.id = ss.strategy_id
+JOIN binance_spot.instruments i ON i.id = ss.instrument_id AND i.is_active
+WHERE ss.instrument_id = $1
+ORDER BY s.name;

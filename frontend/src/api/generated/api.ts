@@ -53,7 +53,7 @@ import type {
   ChartIndicatorCatalog,
   CurrentUser,
   Favorite,
-  FavoriteAlertsConflictResponse,
+  FavoriteConflictResponse,
   FavoriteNotFoundResponse,
   FavoritesResponse,
   IndicatorTypeCatalog,
@@ -86,6 +86,7 @@ import type {
   StrategyInput,
   StrategyList,
   StrategyNotFoundResponse,
+  StrategySymbolList,
   StrategyUpdate,
   StrategyVariableList,
   SymbolNotFoundResponse,
@@ -1413,7 +1414,7 @@ export type removeFavoriteResponse404 = {
 }
 
 export type removeFavoriteResponse409 = {
-  data: FavoriteAlertsConflictResponse
+  data: FavoriteConflictResponse
   status: 409
 }
 
@@ -1463,7 +1464,7 @@ export const removeFavorite = async (symbol: string,
 
 export const getRemoveFavoriteMutationKey = () => ['removeFavorite'] as const;
 
-export const getRemoveFavoriteMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse>,
+export const getRemoveFavoriteMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteConflictResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext> => {
 
@@ -1492,10 +1493,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type RemoveFavoriteMutationResult = NonNullable<Awaited<ReturnType<typeof removeFavorite>>>
 
-    export type RemoveFavoriteMutationError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse>
+    export type RemoveFavoriteMutationError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteConflictResponse | InternalErrorResponse>
     export type RemoveFavoriteMutationVariables = {symbol: string;params?: RemoveFavoriteParams}
 
-    export const useRemoveFavorite = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteAlertsConflictResponse | InternalErrorResponse>,
+    export const useRemoveFavorite = <TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | FavoriteNotFoundResponse | FavoriteConflictResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof removeFavorite>>, TError,RemoveFavoriteMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof removeFavorite>>,
@@ -3606,6 +3607,135 @@ export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listS
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListStrategyVariablesQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listStrategySymbolsResponse200 = {
+  data: StrategySymbolList
+  status: 200
+}
+
+export type listStrategySymbolsResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listStrategySymbolsResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type listStrategySymbolsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listStrategySymbolsResponseSuccess = (listStrategySymbolsResponse200) & {
+  headers: Headers;
+};
+export type listStrategySymbolsResponseError = (listStrategySymbolsResponse401 | listStrategySymbolsResponse403 | listStrategySymbolsResponse500) & {
+  headers: Headers;
+};
+
+export const getListStrategySymbolsUrl = () => {
+
+
+
+
+  return `/api/v1/admin/strategy-symbols`
+}
+
+/**
+ * The active coins in the administrator's favorites, ascending.
+ * @summary List the coins strategy expressions can read through of
+ */
+export const listStrategySymbols = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listStrategySymbolsResponseSuccess> => {
+
+  return apiFetch<listStrategySymbolsResponseSuccess>(getListStrategySymbolsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListStrategySymbolsQueryKey = () => {
+    return [
+    `/api/v1/admin/strategy-symbols`
+    ] as const;
+    }
+
+
+export const getListStrategySymbolsQueryOptions = <TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListStrategySymbolsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategySymbols>>> = ({ signal }) => listStrategySymbols({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListStrategySymbolsQueryResult = NonNullable<Awaited<ReturnType<typeof listStrategySymbols>>>
+export type ListStrategySymbolsQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
+
+
+export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStrategySymbols>>,
+          TError,
+          Awaited<ReturnType<typeof listStrategySymbols>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listStrategySymbols>>,
+          TError,
+          Awaited<ReturnType<typeof listStrategySymbols>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the coins strategy expressions can read through of
+ */
+
+export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListStrategySymbolsQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 

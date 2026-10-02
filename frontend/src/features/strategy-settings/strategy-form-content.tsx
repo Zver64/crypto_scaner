@@ -57,6 +57,16 @@ export function StrategyFormContent({
 				onChange={(event) => setName(event.currentTarget.value)}
 				value={name}
 			/>
+			<Textarea
+				autosize
+				description="Sent in Telegram after the strategy name and coin instead of the expression and its values. Leave empty for the default text."
+				disabled={isSaving}
+				label="Message"
+				maxLength={1000}
+				minRows={2}
+				onChange={(event) => setMessage(event.currentTarget.value)}
+				value={message}
+			/>
 			{draft.incomplete ? (
 				<Alert color="yellow" variant="light">
 					Part of the stored expression cannot be shown here. Saving keeps only
@@ -124,16 +134,6 @@ export function StrategyFormContent({
 					Add at least one condition and fill every value.
 				</Text>
 			)}
-			<Textarea
-				autosize
-				description="Sent in Telegram after the strategy name and coin instead of the expression and its values. Leave empty for the default text."
-				disabled={isSaving}
-				label="Message"
-				maxLength={1000}
-				minRows={2}
-				onChange={(event) => setMessage(event.currentTarget.value)}
-				value={message}
-			/>
 			{named ? null : (
 				<Text c="dimmed" size="xs">
 					Enter a name to save the strategy.

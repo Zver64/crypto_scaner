@@ -60,7 +60,9 @@ type liveCandleHandler struct {
 
 func newLiveCandleHandler(sessions Sessions, service LiveCandles, charts ChartService, logger *slog.Logger) http.Handler {
 	handler := &liveCandleHandler{sessions: sessions, service: service, charts: charts, logger: logger, connections: make(chan struct{}, maxLiveConnections), userCounts: make(map[int64]int)}
-	handler.upgrader = websocket.Upgrader{HandshakeTimeout: 5 * time.Second, CheckOrigin: sameWebSocketOrigin, EnableCompression: false}
+	// Chart snapshots are large, repetitive JSON; compressing them saves round
+	// trips on high-latency links, where TCP slow start dominates delivery.
+	handler.upgrader = websocket.Upgrader{HandshakeTimeout: 5 * time.Second, CheckOrigin: sameWebSocketOrigin, EnableCompression: true}
 	return handler
 }
 

@@ -16,6 +16,7 @@ import { StrategyImport } from "@/features/strategy-settings/strategy-import";
 import { StrategyRuleBuilder } from "@/features/strategy-settings/strategy-rule-builder";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
+	emptyStrategyQuery,
 	strategyExpression,
 	strategyQueryComplete,
 } from "@/features/strategy-settings/utils";
@@ -40,6 +41,7 @@ export function StrategyFormContent({
 	const [query, setQuery] = useState(draft.query);
 	const [importing, setImporting] = useState(false);
 	const clipboard = useClipboard({ timeout: 1500 });
+	const empty = query.rules.length === 0;
 	const expression = strategyExpression(query);
 	const named = name.trim() !== "";
 	const conditionsComplete = strategyQueryComplete(query);
@@ -64,14 +66,28 @@ export function StrategyFormContent({
 					<Text fw={500} size="sm">
 						Conditions
 					</Text>
-					<Button
-						disabled={isSaving}
-						onClick={() => setImporting(true)}
-						size="compact-sm"
-						variant="subtle"
-					>
-						Import
-					</Button>
+					{/* An empty builder imports an expression; conditions are
+					    cleared first, so an import never replaces them. */}
+					{empty ? (
+						<Button
+							disabled={isSaving}
+							onClick={() => setImporting(true)}
+							size="compact-sm"
+							variant="subtle"
+						>
+							Import
+						</Button>
+					) : (
+						<Button
+							color="red"
+							disabled={isSaving}
+							onClick={() => setQuery(emptyStrategyQuery())}
+							size="compact-sm"
+							variant="subtle"
+						>
+							Clear
+						</Button>
+					)}
 				</Group>
 				<StrategyRuleBuilder
 					disabled={isSaving}
@@ -115,7 +131,6 @@ export function StrategyFormContent({
 				onClose={() => setImporting(false)}
 				onImport={setQuery}
 				opened={importing}
-				replaces={query.rules.length > 0}
 			/>
 			<Group justify="flex-end">
 				<Button disabled={isSaving} onClick={onCancel} variant="default">

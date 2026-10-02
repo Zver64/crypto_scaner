@@ -1,12 +1,4 @@
-import {
-	Alert,
-	Button,
-	Group,
-	List,
-	Modal,
-	Text,
-	Textarea,
-} from "@mantine/core";
+import { Alert, Button, Group, List, Modal, Textarea } from "@mantine/core";
 import { useState } from "react";
 import { useValidateStrategy } from "@/api/generated/api";
 import type { StrategyQuery } from "@/features/strategy-settings/types";
@@ -16,8 +8,6 @@ interface StrategyImportProps {
 	onClose(): void;
 	onImport(query: StrategyQuery): void;
 	opened: boolean;
-	// Whether the builder already has conditions the import replaces.
-	replaces: boolean;
 }
 
 // Imports a whole expression into the builder once the backend finds no
@@ -26,7 +16,6 @@ export function StrategyImport({
 	onClose,
 	onImport,
 	opened,
-	replaces,
 }: StrategyImportProps) {
 	const [expression, setExpression] = useState("");
 	const [problems, setProblems] = useState<string[]>([]);
@@ -80,11 +69,6 @@ export function StrategyImport({
 				})}
 				value={expression}
 			/>
-			{replaces ? (
-				<Text c="dimmed" mt="xs" size="xs">
-					The imported expression replaces the current conditions.
-				</Text>
-			) : null}
 			{problems.length > 0 ? (
 				<Alert
 					color="red"

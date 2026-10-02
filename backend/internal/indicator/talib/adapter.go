@@ -31,12 +31,31 @@ var maTypes = []indicator.Choice{
 	{Value: 6, Title: "KAMA"}, {Value: 7, Title: "MAMA"}, {Value: 8, Title: "T3"},
 }
 
+// sourceChoices are the candle fields a series input can read, in
+// indicator.CandleFields order.
+var sourceChoices = func() []indicator.Choice {
+	titles := map[string]string{
+		"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume",
+		"quote_asset_volume": "Quote Asset Volume", "trade_count": "Trade Count",
+	}
+	choices := make([]indicator.Choice, len(indicator.CandleFields))
+	for index, field := range indicator.CandleFields {
+		choices[index] = indicator.Choice{Value: index, Title: titles[field], Name: field}
+	}
+	return choices
+}()
+
+// sourceClose is the default source: the close price.
+var sourceClose = float64(slices.Index(indicator.CandleFields, "close"))
+
 type paramKind int
 
 const (
 	paramInteger paramKind = iota
 	paramReal
 	paramMAType
+	// paramSource chooses the candle field of the input named by its key.
+	paramSource
 )
 
 type param struct {
@@ -54,9 +73,11 @@ type output struct {
 	style indicator.OutputStyle
 }
 
-// spec is one generated TA-Lib function. Parameter values reach lookback and
-// call in params order; call receives inputs in inputs order and returns
-// outputs in outputs order, each as long as the inputs.
+// spec is one generated TA-Lib function. Option values reach lookback and
+// call in params order, followed by the source parameters they ignore; call
+// receives inputs in inputs order and returns outputs in outputs order, each
+// as long as the inputs. An input named after a source parameter reads the
+// field that parameter chooses.
 type spec struct {
 	name          string
 	indicatorType indicator.Type
@@ -110,6 +131,9 @@ func (f *function) Describe() indicator.Descriptor {
 		case paramMAType:
 			parameter.Kind = indicator.ParameterChoice
 			parameter.Choices = slices.Clone(maTypes)
+		case paramSource:
+			parameter.Kind = indicator.ParameterChoice
+			parameter.Choices = slices.Clone(sourceChoices)
 		}
 		descriptor.Parameters = append(descriptor.Parameters, parameter)
 	}
@@ -135,6 +159,26 @@ func (f *function) Normalize(parameters indicator.Parameters) (indicator.Paramet
 	return result, nil
 }
 
+func (f *function) Fields(parameters indicator.Parameters) ([]string, error) {
+	values, err := f.values(parameters)
+	if err != nil {
+		return nil, err
+	}
+	return f.fields(values), nil
+}
+
+// fields resolves the inputs to candle fields.
+func (f *function) fields(values []float64) []string {
+	fields := slices.Clone(f.spec.inputs)
+	for index, name := range fields {
+		position := slices.IndexFunc(f.spec.params, func(p param) bool { return p.kind == paramSource && p.key == name })
+		if position >= 0 {
+			fields[index] = indicator.CandleFields[int(values[position])]
+		}
+	}
+	return fields
+}
+
 func (f *function) Lookback(parameters indicator.Parameters) (int, error) {
 	values, err := f.values(parameters)
 	if err != nil {
@@ -158,7 +202,7 @@ func (f *function) Calculate(parameters indicator.Parameters, inputs indicator.I
 	}
 	series := make([][]float64, len(f.spec.inputs))
 	length := 0
-	for index, name := range f.spec.inputs {
+	for index, name := range f.fields(values) {
 		input, exists := inputs[name]
 		if !exists {
 			return indicator.Result{}, fmt.Errorf("%w: %s input is required", ErrInvalidRequest, name)
@@ -242,8 +286,13 @@ func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 				return nil, fmt.Errorf("%w: %s must be between %g and %g", ErrInvalidRequest, p.key, p.minimum, p.maximum)
 			}
 		case paramMAType:
-			if math.Trunc(value) != value || value < 0 || int(value) >= len(maTypes) {
+			// Compared before converting, which could overflow.
+			if math.Trunc(value) != value || value < 0 || value >= float64(len(maTypes)) {
 				return nil, fmt.Errorf("%w: %s must be a moving average type between 0 and %d", ErrInvalidRequest, p.key, len(maTypes)-1)
+			}
+		case paramSource:
+			if math.Trunc(value) != value || value < 0 || value >= float64(len(sourceChoices)) {
+				return nil, fmt.Errorf("%w: %s must be a candle field between 0 and %d", ErrInvalidRequest, p.key, len(sourceChoices)-1)
 			}
 		}
 		values[index] = value

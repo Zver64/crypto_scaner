@@ -29,16 +29,20 @@
     "@mantine/notifications": "^9.5.1",
     "@mantine/vanilla-extract": "^9.5.1",
     "@microcharts/react": "^0.18.1",
+    "@react-querybuilder/expr": "^8.24.3",
     "@tabler/icons-react": "^3.48.0",
     "@tanstack/react-devtools": "latest",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-router": "latest",
     "@tanstack/react-router-devtools": "latest",
     "decimal.js": "^10.6.0",
+    "json-logic-js": "^2.0.5",
+    "jsonata": "^2.2.2",
     "lightweight-charts": "^5.2.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "react-querybuilder": "^8.24.3"
+    "react-querybuilder": "^8.24.3",
+    "spel2js": "^0.2.9"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.5",

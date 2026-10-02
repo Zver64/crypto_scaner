@@ -26,8 +26,13 @@ export interface StrategyUpdate {
   name: string;
   /**
      * CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
-     * variables with numbers or variables, `crosses_above(a, b)`,
-     * `crosses_below(a, b)`, `&&`, `||`, and `!`.
+     * arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and
+     * numbers, combined with `&&`, `||`, and `!`. `prev(x)` and
+     * `prev(x, n)` read `x` one or `n` closed candles earlier;
+     * `percentile(x, n, p)` is the nearest-rank `p`-th percentile of `x`
+     * over the `n` closed candles before the latest one;
+     * `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
+     * previous candle.
      * @minLength 1
      * @maxLength 2000
      */

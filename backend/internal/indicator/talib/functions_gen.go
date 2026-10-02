@@ -46,6 +46,25 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "ADD",
+		indicatorType: "add",
+		title:         "Vector Arithmetic Add",
+		group:         "Math Operators",
+		inputs:        []string{"source_0", "source_1"},
+		params: []param{
+			{key: "source_0", title: "First Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+			{key: "source_1", title: "Second Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "add", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.AddLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Add(in[0], in[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "ADOSC",
 		indicatorType: "adosc",
 		title:         "Chaikin A/D Oscillator",
@@ -107,11 +126,12 @@ var functions = []spec{
 		indicatorType: "apo",
 		title:         "Absolute Price Oscillator",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
 			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
 			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "apo", style: indicator.OutputLine},
@@ -200,9 +220,10 @@ var functions = []spec{
 		title:         "Average Deviation",
 		group:         "Price Transform",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "avgdev", style: indicator.OutputLine},
@@ -219,12 +240,13 @@ var functions = []spec{
 		title:         "Bollinger Bands",
 		group:         "Overlap Studies",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
 			{key: "deviations_up", title: "Deviations up", description: "Deviation multiplier for upper band", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
 			{key: "deviations_down", title: "Deviations down", description: "Deviation multiplier for lower band", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
 			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "upperband", style: indicator.OutputUpperLimit},
@@ -235,6 +257,26 @@ var functions = []spec{
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0, o1, o2 := ta.Bbands(in[0], int(p[0]), p[1], p[2], int(p[3]), nil, nil, nil)
 			return [][]float64{o0, o1, o2}
+		},
+	},
+	{
+		name:          "BETA",
+		indicatorType: "beta",
+		title:         "Beta",
+		group:         "Statistic Functions",
+		inputs:        []string{"source_0", "source_1"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
+			{key: "source_0", title: "First Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+			{key: "source_1", title: "Second Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "beta", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.BetaLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Beta(in[0], in[1], int(p[0]), nil)
+			return [][]float64{o0}
 		},
 	},
 	{
@@ -1273,9 +1315,10 @@ var functions = []spec{
 		title:         "Chande Momentum Oscillator",
 		group:         "Momentum Indicators",
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "cmo", style: indicator.OutputLine},
@@ -1287,14 +1330,35 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "CORREL",
+		indicatorType: "correl",
+		title:         "Pearson's Correlation Coefficient (r)",
+		group:         "Statistic Functions",
+		inputs:        []string{"source_0", "source_1"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "source_0", title: "First Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+			{key: "source_1", title: "Second Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "correl", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CorrelLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Correl(in[0], in[1], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "DEMA",
 		indicatorType: "dema",
 		title:         "Double Exponential Moving Average",
 		group:         "Overlap Studies",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "dema", style: indicator.OutputLine},
@@ -1331,9 +1395,10 @@ var functions = []spec{
 		group:         "Overlap Studies",
 		overlap:       true,
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "ema", style: indicator.OutputLine},
@@ -1350,7 +1415,10 @@ var functions = []spec{
 		title:         "Hilbert Transform - Dominant Cycle Period",
 		group:         "Cycle Indicators",
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
 		outputs: []output{
 			{name: "ht_dcperiod", style: indicator.OutputLine},
 		},
@@ -1366,7 +1434,10 @@ var functions = []spec{
 		title:         "Hilbert Transform - Dominant Cycle Phase",
 		group:         "Cycle Indicators",
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
 		outputs: []output{
 			{name: "ht_dcphase", style: indicator.OutputLine},
 		},
@@ -1382,7 +1453,10 @@ var functions = []spec{
 		title:         "Hilbert Transform - Phasor Components",
 		group:         "Cycle Indicators",
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
 		outputs: []output{
 			{name: "inphase", style: indicator.OutputLine},
 			{name: "quadrature", style: indicator.OutputDashedLine},
@@ -1399,7 +1473,10 @@ var functions = []spec{
 		title:         "Hilbert Transform - SineWave",
 		group:         "Cycle Indicators",
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
 		outputs: []output{
 			{name: "sine", style: indicator.OutputLine},
 			{name: "leadsine", style: indicator.OutputDashedLine},
@@ -1417,7 +1494,10 @@ var functions = []spec{
 		group:         "Overlap Studies",
 		overlap:       true,
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
 		outputs: []output{
 			{name: "ht_trendline", style: indicator.OutputLine},
 		},
@@ -1433,7 +1513,10 @@ var functions = []spec{
 		title:         "Hilbert Transform - Trend vs Cycle Mode",
 		group:         "Cycle Indicators",
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
 		outputs: []output{
 			{name: "ht_trendmode", style: indicator.OutputLine},
 		},
@@ -1450,9 +1533,10 @@ var functions = []spec{
 		group:         "Overlap Studies",
 		overlap:       true,
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "kama", style: indicator.OutputLine},
@@ -1469,9 +1553,10 @@ var functions = []spec{
 		title:         "Linear Regression",
 		group:         "Statistic Functions",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "linearreg", style: indicator.OutputLine},
@@ -1487,9 +1572,10 @@ var functions = []spec{
 		indicatorType: "linearreg_angle",
 		title:         "Linear Regression Angle",
 		group:         "Statistic Functions",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "linearreg_angle", style: indicator.OutputLine},
@@ -1506,9 +1592,10 @@ var functions = []spec{
 		title:         "Linear Regression Intercept",
 		group:         "Statistic Functions",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "linearreg_intercept", style: indicator.OutputLine},
@@ -1524,9 +1611,10 @@ var functions = []spec{
 		indicatorType: "linearreg_slope",
 		title:         "Linear Regression Slope",
 		group:         "Statistic Functions",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "linearreg_slope", style: indicator.OutputLine},
@@ -1543,10 +1631,11 @@ var functions = []spec{
 		title:         "Moving average",
 		group:         "Overlap Studies",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "ma", style: indicator.OutputLine},
@@ -1562,11 +1651,12 @@ var functions = []spec{
 		indicatorType: "macd",
 		title:         "Moving Average Convergence/Divergence",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
 			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
 			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "macd", style: indicator.OutputLine},
@@ -1584,7 +1674,7 @@ var functions = []spec{
 		indicatorType: "macdext",
 		title:         "MACD with controllable MA type",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
 			{key: "fast_ma", title: "Fast MA", description: "Type of Moving Average for fast MA", kind: paramMAType, defaultValue: 0},
@@ -1592,6 +1682,7 @@ var functions = []spec{
 			{key: "slow_ma", title: "Slow MA", description: "Type of Moving Average for slow MA", kind: paramMAType, defaultValue: 0},
 			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
 			{key: "signal_ma", title: "Signal MA", description: "Type of Moving Average for signal line", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "macd", style: indicator.OutputLine},
@@ -1611,9 +1702,10 @@ var functions = []spec{
 		indicatorType: "macdfix",
 		title:         "Moving Average Convergence/Divergence Fix 12/26",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "macd", style: indicator.OutputLine},
@@ -1633,10 +1725,11 @@ var functions = []spec{
 		group:         "Overlap Studies",
 		overlap:       true,
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "fast_limit", title: "Fast Limit", description: "Upper limit use in the adaptive algorithm", kind: paramReal, minimum: 0.01, maximum: 0.99, defaultValue: 0.5},
 			{key: "slow_limit", title: "Slow Limit", description: "Lower limit use in the adaptive algorithm", kind: paramReal, minimum: 0.01, maximum: 0.99, defaultValue: 0.05},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "mama", style: indicator.OutputLine},
@@ -1654,9 +1747,10 @@ var functions = []spec{
 		title:         "Highest value over a specified period",
 		group:         "Math Operators",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "max", style: indicator.OutputLine},
@@ -1708,9 +1802,10 @@ var functions = []spec{
 		title:         "MidPoint over period",
 		group:         "Overlap Studies",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "midpoint", style: indicator.OutputLine},
@@ -1746,9 +1841,10 @@ var functions = []spec{
 		title:         "Lowest value over a specified period",
 		group:         "Math Operators",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "min", style: indicator.OutputLine},
@@ -1765,9 +1861,10 @@ var functions = []spec{
 		title:         "Lowest and highest values over a specified period",
 		group:         "Math Operators",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "min", style: indicator.OutputLine},
@@ -1822,9 +1919,10 @@ var functions = []spec{
 		indicatorType: "mom",
 		title:         "Momentum",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "mom", style: indicator.OutputLine},
@@ -1832,6 +1930,25 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.MomLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Mom(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "MULT",
+		indicatorType: "mult",
+		title:         "Vector Arithmetic Mult",
+		group:         "Math Operators",
+		inputs:        []string{"source_0", "source_1"},
+		params: []param{
+			{key: "source_0", title: "First Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+			{key: "source_1", title: "Second Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "mult", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.MultLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Mult(in[0], in[1], nil)
 			return [][]float64{o0}
 		},
 	},
@@ -1859,7 +1976,10 @@ var functions = []spec{
 		indicatorType: "obv",
 		title:         "On Balance Volume",
 		group:         "Volume Indicators",
-		inputs:        []string{"close", "volume"},
+		inputs:        []string{"source", "volume"},
+		params: []param{
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
 		outputs: []output{
 			{name: "obv", style: indicator.OutputLine},
 		},
@@ -1912,11 +2032,12 @@ var functions = []spec{
 		indicatorType: "ppo",
 		title:         "Percentage Price Oscillator",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
 			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
 			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "ppo", style: indicator.OutputLine},
@@ -1932,9 +2053,10 @@ var functions = []spec{
 		indicatorType: "roc",
 		title:         "Rate of change : ((price/prevPrice)-1)*100",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "roc", style: indicator.OutputLine},
@@ -1950,9 +2072,10 @@ var functions = []spec{
 		indicatorType: "rocp",
 		title:         "Rate of change Percentage: (price-prevPrice)/prevPrice",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "rocp", style: indicator.OutputLine},
@@ -1968,9 +2091,10 @@ var functions = []spec{
 		indicatorType: "rocr",
 		title:         "Rate of change ratio: (price/prevPrice)",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "rocr", style: indicator.OutputLine},
@@ -1986,9 +2110,10 @@ var functions = []spec{
 		indicatorType: "rocr100",
 		title:         "Rate of change ratio 100 scale: (price/prevPrice)*100",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "rocr100", style: indicator.OutputLine},
@@ -2005,9 +2130,10 @@ var functions = []spec{
 		title:         "Relative Strength Index",
 		group:         "Momentum Indicators",
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "rsi", style: indicator.OutputLine},
@@ -2070,9 +2196,10 @@ var functions = []spec{
 		title:         "Simple Moving Average",
 		group:         "Overlap Studies",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "sma", style: indicator.OutputLine},
@@ -2088,10 +2215,11 @@ var functions = []spec{
 		indicatorType: "stddev",
 		title:         "Standard Deviation",
 		group:         "Statistic Functions",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
 			{key: "deviations", title: "Deviations", description: "Nb of deviations", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 1},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "stddev", style: indicator.OutputLine},
@@ -2152,12 +2280,13 @@ var functions = []spec{
 		title:         "Stochastic Relative Strength Index",
 		group:         "Momentum Indicators",
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 			{key: "fast_k_period", title: "Fast-K Period", description: "Time period for building the Fast-K line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
 			{key: "fast_d_period", title: "Fast-D Period", description: "Smoothing for making the Fast-D line. Usually set to 3", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 3},
 			{key: "fast_d_ma", title: "Fast-D MA", description: "Type of Moving Average for Fast-D", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "fastk", style: indicator.OutputLine},
@@ -2170,13 +2299,33 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "SUB",
+		indicatorType: "sub",
+		title:         "Vector Arithmetic Subtraction",
+		group:         "Math Operators",
+		inputs:        []string{"source_0", "source_1"},
+		params: []param{
+			{key: "source_0", title: "First Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+			{key: "source_1", title: "Second Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "sub", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.SubLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Sub(in[0], in[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "SUM",
 		indicatorType: "sum",
 		title:         "Summation",
 		group:         "Math Operators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "sum", style: indicator.OutputLine},
@@ -2194,10 +2343,11 @@ var functions = []spec{
 		group:         "Overlap Studies",
 		overlap:       true,
 		unstable:      true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
 			{key: "volume_factor", title: "Volume Factor", description: "Volume Factor", kind: paramReal, minimum: 0, maximum: 1, defaultValue: 0.7},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "t3", style: indicator.OutputLine},
@@ -2214,9 +2364,10 @@ var functions = []spec{
 		title:         "Triple Exponential Moving Average",
 		group:         "Overlap Studies",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "tema", style: indicator.OutputLine},
@@ -2248,9 +2399,10 @@ var functions = []spec{
 		title:         "Triangular Moving Average",
 		group:         "Overlap Studies",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "trima", style: indicator.OutputLine},
@@ -2266,9 +2418,10 @@ var functions = []spec{
 		indicatorType: "trix",
 		title:         "1-day Rate-Of-Change (ROC) of a Triple Smooth EMA",
 		group:         "Momentum Indicators",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "trix", style: indicator.OutputLine},
@@ -2285,9 +2438,10 @@ var functions = []spec{
 		title:         "Time Series Forecast",
 		group:         "Statistic Functions",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "tsf", style: indicator.OutputLine},
@@ -2339,10 +2493,11 @@ var functions = []spec{
 		indicatorType: "var",
 		title:         "Variance",
 		group:         "Statistic Functions",
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
 			{key: "deviations", title: "Deviations", description: "Nb of deviations", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 1},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "var", style: indicator.OutputLine},
@@ -2393,9 +2548,10 @@ var functions = []spec{
 		title:         "Weighted Moving Average",
 		group:         "Overlap Studies",
 		overlap:       true,
-		inputs:        []string{"close"},
+		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
 			{name: "wma", style: indicator.OutputLine},

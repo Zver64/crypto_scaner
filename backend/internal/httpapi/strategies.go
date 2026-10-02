@@ -22,7 +22,10 @@ func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequ
 	variables := api.strategies.Variables()
 	items := make([]StrategyVariable, len(variables))
 	for i, variable := range variables {
-		items[i] = StrategyVariable{Name: variable.Name, Label: variable.Label, IndicatorId: variable.IndicatorID, Interval: CandleInterval(variable.Target.Interval)}
+		items[i] = StrategyVariable{Name: variable.Name, Label: variable.Label, Interval: CandleInterval(variable.Target.Interval)}
+		if variable.IndicatorID != 0 {
+			items[i].IndicatorId = &variable.IndicatorID
+		}
 	}
 	return ListStrategyVariables200JSONResponse{Items: items}, nil
 }

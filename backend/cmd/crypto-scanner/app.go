@@ -83,7 +83,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		return app{}, err
 	}
 	// Changes before the monitor exists are covered by its first evaluation.
-	strategies, err = strategy.NewService(store, scannerIndicators, logger, func(baselines []int64) {
+	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, logger, func(baselines []int64) {
 		if closedIndicators != nil {
 			closedIndicators.Refresh()
 		}
@@ -195,7 +195,7 @@ type strategySource struct {
 }
 
 func (source strategySource) Subscriptions(ctx context.Context, _ []closedindicator.Target) ([]closedindicator.Subscription, error) {
-	return source.instruments.Subscriptions(ctx, source.strategies.Targets())
+	return source.instruments.Track(ctx, source.strategies.Targets())
 }
 
 // tableTargets returns the distinct closed indicator targets the tables read.

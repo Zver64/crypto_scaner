@@ -89,13 +89,22 @@ func (r *Registry) Lookback(indicatorType Type, parameters Parameters) (int, err
 	return lookback, nil
 }
 
-// Inputs returns the named candle fields required by the selected module.
-func (r *Registry) Inputs(indicatorType Type) ([]string, error) {
-	entry, err := r.entry(indicatorType)
+// Fields returns the candle fields the selection reads.
+func (r *Registry) Fields(selection Selection) ([]string, error) {
+	entry, err := r.entry(selection.Type)
 	if err != nil {
 		return nil, err
 	}
-	return slices.Clone(entry.descriptor.Inputs), nil
+	fields, err := entry.implementation.Fields(selection.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	for _, field := range fields {
+		if !slices.Contains(CandleFields, field) {
+			return nil, fmt.Errorf("%w: indicator %q reads unsupported field %q", ErrInvalidResult, selection.Type, field)
+		}
+	}
+	return fields, nil
 }
 
 // Outputs returns the named series produced by the selected module.
@@ -130,13 +139,17 @@ func (r *Registry) Describe(indicatorType Type) (Descriptor, error) {
 	return entry.implementation.Describe(), nil
 }
 
-// Descriptors describes every registered module, ordered by type.
+// Descriptors describes every module clients can configure, ordered by
+// type. Internal modules are left out.
 func (r *Registry) Descriptors() []Descriptor {
 	if r == nil {
 		return nil
 	}
 	result := make([]Descriptor, 0, len(r.implementations))
 	for _, entry := range r.implementations {
+		if entry.descriptor.Internal {
+			continue
+		}
 		// Describe returns fresh slices, so callers cannot change the
 		// registered inputs.
 		result = append(result, entry.implementation.Describe())

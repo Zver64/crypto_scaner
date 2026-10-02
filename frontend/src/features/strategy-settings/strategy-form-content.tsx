@@ -1,4 +1,12 @@
-import { Button, Code, Group, Stack, Text, TextInput } from "@mantine/core";
+import {
+	Alert,
+	Button,
+	Code,
+	Group,
+	Stack,
+	Text,
+	TextInput,
+} from "@mantine/core";
 import { useState } from "react";
 import type { StrategyVariable } from "@/api/generated/models";
 import { StrategyRuleBuilder } from "@/features/strategy-settings/strategy-rule-builder";
@@ -39,6 +47,12 @@ export function StrategyFormContent({
 				onChange={(event) => setName(event.currentTarget.value)}
 				value={name}
 			/>
+			{draft.incomplete ? (
+				<Alert color="yellow" variant="light">
+					Part of the stored expression cannot be shown here. Saving keeps only
+					the conditions below.
+				</Alert>
+			) : null}
 			<Stack gap={4}>
 				<Text fw={500} size="sm">
 					Conditions

@@ -341,6 +341,13 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 	if err != nil {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
 	}
+	if descriptor.Internal {
+		return Entry{}, fmt.Errorf("%w: %s cannot be configured", ErrInvalidArgument, selection.Type)
+	}
+	fields, err := service.registry.Fields(selection)
+	if err != nil {
+		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+	}
 	defaults, err := service.registry.Normalize(indicator.Selection{Type: selection.Type})
 	if err != nil {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
@@ -349,7 +356,8 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 	for i, output := range descriptor.Outputs {
 		entry.Outputs[i] = output.Name
 	}
-	if descriptor.Overlay {
+	// An overlay of volumes or trade counts would not fit the price scale.
+	if descriptor.Overlay && !slices.ContainsFunc(fields, func(field string) bool { return !indicator.PriceField(field) }) {
 		entry.Placement = chart.PlacementOverlay
 	}
 	if item.ShowInTable && len(entry.Outputs) != 1 {
@@ -359,7 +367,7 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 		return Entry{}, err
 	}
 	entry.Title = tableTitle(item.Interval, descriptor, selection.Parameters, defaults.Parameters)
-	entry.lineTitle = lineTitle(descriptor, selection.Parameters)
+	entry.lineTitle = lineTitle(descriptor, selection.Parameters, defaults.Parameters)
 	if err := chart.ValidateIndicator(service.registry, service.catalogIndicator(entry, 0)); err != nil {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
 	}
@@ -413,12 +421,15 @@ func (service *Service) catalogIndicator(entry Entry, firstLine int) chart.Catal
 }
 
 // tableTitle is "<interval>-<type>", followed by the parameter values that
-// differ from the defaults, such as "d-rsi" or "d-rsi-21".
+// differ from the defaults, such as "d-rsi", "d-rsi-21", or
+// "h-sma-20-volume". Once one of several named choices differs, all of them
+// appear in order, so "h-beta-high-close" and "h-beta-close-high" differ.
 func tableTitle(interval market.CandleInterval, descriptor indicator.Descriptor, parameters, defaults indicator.Parameters) string {
-	parts := []string{intervalPrefix(interval), string(descriptor.Type)}
+	parts := []string{IntervalPrefix(interval), string(descriptor.Type)}
+	named := namedChoicesChanged(descriptor, parameters, defaults)
 	for _, parameter := range descriptor.Parameters {
-		value := formatValue(parameters[parameter.Key])
-		if value != formatValue(defaults[parameter.Key]) {
+		value := parameterValue(parameter, parameters[parameter.Key])
+		if (namedChoice(parameter) && named) || value != parameterValue(parameter, defaults[parameter.Key]) {
 			parts = append(parts, value)
 		}
 	}
@@ -426,20 +437,51 @@ func tableTitle(interval market.CandleInterval, descriptor indicator.Descriptor,
 }
 
 // lineTitle is the upper-case type followed by every parameter value, such as
-// "RSI 14" or "MACD 12 26 9".
-func lineTitle(descriptor indicator.Descriptor, parameters indicator.Parameters) string {
+// "RSI 14" or "MACD 12 26 9". Named choices, such as the candle field, appear
+// only once one of them differs from the default, as in "SMA 20 volume".
+func lineTitle(descriptor indicator.Descriptor, parameters, defaults indicator.Parameters) string {
 	parts := []string{strings.ToUpper(string(descriptor.Type))}
+	named := namedChoicesChanged(descriptor, parameters, defaults)
 	for _, parameter := range descriptor.Parameters {
-		parts = append(parts, formatValue(parameters[parameter.Key]))
+		if !namedChoice(parameter) || named {
+			parts = append(parts, parameterValue(parameter, parameters[parameter.Key]))
+		}
 	}
 	return strings.Join(parts, " ")
+}
+
+// namedChoicesChanged reports whether a named choice differs from its
+// default.
+func namedChoicesChanged(descriptor indicator.Descriptor, parameters, defaults indicator.Parameters) bool {
+	return slices.ContainsFunc(descriptor.Parameters, func(parameter indicator.ParameterDescriptor) bool {
+		return namedChoice(parameter) && parameterValue(parameter, parameters[parameter.Key]) != parameterValue(parameter, defaults[parameter.Key])
+	})
+}
+
+// parameterValue formats a value, naming named choices such as "volume".
+// Plain choices, such as moving average types, stay numbers, which keeps the
+// titles strategies read stable.
+func parameterValue(parameter indicator.ParameterDescriptor, value any) string {
+	if namedChoice(parameter) {
+		for _, choice := range parameter.Choices {
+			if formatValue(choice.Value) == formatValue(value) {
+				return choice.Name
+			}
+		}
+	}
+	return formatValue(value)
+}
+
+func namedChoice(parameter indicator.ParameterDescriptor) bool {
+	return parameter.Kind == indicator.ParameterChoice && len(parameter.Choices) > 0 && parameter.Choices[0].Name != ""
 }
 
 func formatValue(value any) string {
 	return fmt.Sprintf("%v", value)
 }
 
-func intervalPrefix(interval market.CandleInterval) string {
+// IntervalPrefix is the short interval name that starts titles, such as "h".
+func IntervalPrefix(interval market.CandleInterval) string {
 	switch interval {
 	case market.IntervalHour:
 		return "h"

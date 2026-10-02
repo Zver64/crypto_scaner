@@ -52,7 +52,7 @@ func TestAdapterValidatesParametersAndInputs(t *testing.T) {
 
 func TestAdapterNormalizesEqualSettingsEqually(t *testing.T) {
 	registry := newRegistry(t)
-	want := indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}
+	want := indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14, "source": 3}}
 	for _, parameters := range []indicator.Parameters{nil, {"period": 14}, {"period": float64(14)}, {"period": int64(14)}} {
 		got, err := registry.Normalize(indicator.Selection{Type: indicatortalib.RSIType, Parameters: parameters})
 		if err != nil {

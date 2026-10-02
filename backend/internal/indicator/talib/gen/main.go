@@ -41,6 +41,12 @@ var skippedFunctions = map[string]bool{
 	// TA-Lib divides by zero without a guard when every candle in the window
 	// has open equal to close, which is common for illiquid pairs.
 	"IMI": true,
+	// TA-Lib divides without a guard, and a zero volume is common; strategy
+	// expressions divide safely instead.
+	"DIV": true,
+	// The second series holds a period for every candle, which no candle
+	// field provides.
+	"MAVP": true,
 }
 
 // optionAliases maps metadata option names to wrapper parameter names where
@@ -75,9 +81,11 @@ var optionAliases = map[string]string{
 
 var inputFields = map[string]string{
 	"Open": "open", "High": "high", "Low": "low", "Close": "close", "Volume": "volume",
-	// Single-series functions are applied to the close price.
-	"Double Array": "close",
 }
+
+// seriesInput is the metadata type of an arbitrary series. Each such input
+// reads the candle field chosen by its own source parameter.
+const seriesInput = "Double Array"
 
 var outputStyles = map[string]string{
 	"Line":        "indicator.OutputLine",
@@ -163,18 +171,24 @@ func main() {
 }
 
 func skip(fn function) bool {
-	if skippedGroups[fn.Group] || skippedFunctions[fn.Abbreviation] {
-		return true
-	}
-	series := 0
+	return skippedGroups[fn.Group] || skippedFunctions[fn.Abbreviation]
+}
+
+// sourceKeys names the source parameters of the series inputs: "source" for
+// one series, "source_0" and "source_1" for two (BETA, CORREL).
+func sourceKeys(fn function) []string {
+	var keys []string
 	for _, input := range fn.Inputs {
-		if input.Type == "Double Array" {
-			series++
+		if input.Type == seriesInput {
+			keys = append(keys, "source")
 		}
 	}
-	// Functions of two arbitrary series (BETA, CORREL, ADD, MAVP) have no
-	// single-candle-series meaning.
-	return series > 1
+	if len(keys) > 1 {
+		for index := range keys {
+			keys[index] = fmt.Sprintf("source_%d", index)
+		}
+	}
+	return keys
 }
 
 type signature struct {
@@ -263,10 +277,19 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 		}
 	}
 
+	sources := sourceKeys(fn)
+	if len(sources) > 2 {
+		return fmt.Errorf("%d series inputs are unsupported", len(sources))
+	}
 	body.WriteString("\tinputs: []string{")
 	seen := map[string]bool{}
+	series := 0
 	for index, input := range fn.Inputs {
 		field, ok := inputFields[input.Type]
+		if input.Type == seriesInput {
+			field, ok = sources[series], true
+			series++
+		}
 		if !ok {
 			return fmt.Errorf("unknown input type %q", input.Type)
 		}
@@ -281,12 +304,22 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 	}
 	body.WriteString("},\n")
 
-	if len(fn.Options) > 0 {
+	// Source parameters follow the options, so p indexes the options in
+	// lookback and call.
+	if len(fn.Options) > 0 || len(sources) > 0 {
 		body.WriteString("\tparams: []param{\n")
 		for _, option := range fn.Options {
 			if err := writeParam(body, option); err != nil {
 				return err
 			}
+		}
+		for index, key := range sources {
+			title := "Source"
+			if len(sources) > 1 {
+				title = []string{"First Source", "Second Source"}[index]
+			}
+			fmt.Fprintf(body, "\t\t{key: %q, title: %q, description: %q, kind: paramSource, defaultValue: sourceClose},\n",
+				key, title, "Candle field the series is read from")
 		}
 		body.WriteString("\t},\n")
 	}

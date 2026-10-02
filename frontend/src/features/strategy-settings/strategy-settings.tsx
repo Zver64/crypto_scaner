@@ -21,6 +21,7 @@ import {
 	emptyStrategyQuery,
 	strategyErrorMessage,
 	strategyQuery,
+	strategyQueryDropped,
 } from "@/features/strategy-settings/utils";
 
 export function StrategySettings() {
@@ -99,7 +100,12 @@ export function StrategySettings() {
 				disabled={variables.data.length === 0}
 				fullWidth
 				onClick={() =>
-					setDraft({ id: undefined, name: "", query: emptyStrategyQuery() })
+					setDraft({
+						id: undefined,
+						name: "",
+						query: emptyStrategyQuery(),
+						incomplete: false,
+					})
 				}
 			>
 				Add strategy
@@ -111,13 +117,15 @@ export function StrategySettings() {
 							disabled={busy}
 							key={strategy.id}
 							onDelete={() => setRemoving(strategy)}
-							onEdit={() =>
+							onEdit={() => {
+								const query = strategyQuery(strategy.expression);
 								setDraft({
 									id: strategy.id,
 									name: strategy.name,
-									query: strategyQuery(strategy.expression),
-								})
-							}
+									query,
+									incomplete: strategyQueryDropped(strategy.expression, query),
+								});
+							}}
 							onEnabledChange={(enabled) =>
 								enabledMutation.mutate({
 									data: { enabled },

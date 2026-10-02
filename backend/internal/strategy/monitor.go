@@ -48,8 +48,9 @@ type MonitorStore interface {
 // Values supplies the tracked closed indicator values.
 type Values interface {
 	Listen(func(closedindicator.Change))
-	// Snapshot also lists the targets some instrument has no value for yet.
-	Snapshot([]int64, []closedindicator.Target) (map[int64][]closedindicator.Value, []closedindicator.Target)
+	// Snapshot also lists the targets some instrument has no value for yet,
+	// or none calculated with the demanded points.
+	Snapshot([]int64, []closedindicator.Demand) (map[int64][]closedindicator.Value, []closedindicator.Target)
 }
 
 // Strategies supplies the current strategies. A change requests its
@@ -277,8 +278,8 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 			}
 		}
 	}
-	targets, positions := targetsOf(strategies)
-	values, missing := monitor.values.Snapshot(instrumentIDs(instruments), targets)
+	demands, positions := demandsOf(strategies)
+	values, missing := monitor.values.Snapshot(instrumentIDs(instruments), demands)
 	now := monitor.now()
 
 	for _, entry := range strategies {
@@ -400,35 +401,28 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 
 // match evaluates entry over the fresh values of one instrument.
 func (monitor *Monitor) match(entry Entry, values []closedindicator.Value, positions map[string]int, now time.Time) (bool, bool) {
-	current := readValues(entry.Compiled.Variables(), values, positions, now, false)
-	previous := readValues(entry.Compiled.PreviousVariables(), values, positions, now, true)
-	return entry.Compiled.Evaluate(current, previous)
+	return entry.Compiled.Evaluate(func(variable Variable, shift int) (float64, bool) {
+		return readValue(variable, shift, values, positions, now)
+	})
 }
 
-// readValues returns the values of variables at the latest closed candle, or
-// at the one before it. Values of an older candle are stale and left out.
-func readValues(variables []Variable, values []closedindicator.Value, positions map[string]int, now time.Time, previous bool) map[string]float64 {
-	result := make(map[string]float64, len(variables))
-	for _, variable := range variables {
-		position, ok := positions[targetKey(variable.Target)]
-		if !ok || position >= len(values) {
-			continue
-		}
-		value := values[position]
-		if !value.OpenTime.Equal(variable.Target.Interval.LastClosedOpenTime(now)) {
-			continue
-		}
-		outputs := value.Outputs
-		if previous {
-			outputs = value.Previous
-		}
-		for _, output := range outputs {
-			if output.Name == variable.Output {
-				result[variable.Name] = output.Value
-			}
+// readValue returns the value of variable shift closed candles before the
+// latest one. Values whose latest candle is older are stale and left out.
+func readValue(variable Variable, shift int, values []closedindicator.Value, positions map[string]int, now time.Time) (float64, bool) {
+	position, ok := positions[targetKey(variable.Target)]
+	if !ok || position >= len(values) {
+		return 0, false
+	}
+	value := values[position]
+	if !value.OpenTime.Equal(variable.Target.Interval.LastClosedOpenTime(now)) {
+		return 0, false
+	}
+	for _, output := range value.Outputs {
+		if output.Name == variable.Output {
+			return output.At(shift)
 		}
 	}
-	return result
+	return 0, false
 }
 
 func (monitor *Monitor) send(ctx context.Context, recipients []int64, text string) {
@@ -457,28 +451,31 @@ func (monitor *Monitor) sendLoop(ctx context.Context) {
 	}
 }
 
-// targetsOf returns the distinct targets strategies read, with each target's
-// position.
-func targetsOf(strategies []Entry) ([]closedindicator.Target, map[string]int) {
-	var targets []closedindicator.Target
+// demandsOf returns the distinct targets strategies read, each with the
+// points its deepest read needs, and each target's position.
+func demandsOf(strategies []Entry) ([]closedindicator.Demand, map[string]int) {
+	var demands []closedindicator.Demand
 	positions := map[string]int{}
 	for _, entry := range strategies {
-		for _, variable := range slices.Concat(entry.Compiled.Variables(), entry.Compiled.PreviousVariables()) {
-			key := targetKey(variable.Target)
-			if _, ok := positions[key]; !ok {
-				positions[key] = len(targets)
-				targets = append(targets, variable.Target)
+		for _, read := range entry.Compiled.Reads() {
+			key := targetKey(read.Variable.Target)
+			position, ok := positions[key]
+			if !ok {
+				position = len(demands)
+				positions[key] = position
+				demands = append(demands, closedindicator.Demand{Target: read.Variable.Target})
 			}
+			demands[position].Points = max(demands[position].Points, read.Shift+1)
 		}
 	}
-	return targets, positions
+	return demands, positions
 }
 
 // reads reports whether entry reads any of targets.
 func reads(entry Entry, targets []closedindicator.Target) bool {
-	read, _ := targetsOf([]Entry{entry})
-	return slices.ContainsFunc(read, func(target closedindicator.Target) bool {
-		return slices.ContainsFunc(targets, target.Equal)
+	demands, _ := demandsOf([]Entry{entry})
+	return slices.ContainsFunc(demands, func(demand closedindicator.Demand) bool {
+		return slices.ContainsFunc(targets, demand.Target.Equal)
 	})
 }
 

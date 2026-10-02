@@ -21,4 +21,7 @@ export interface StrategyDraft {
 	id: number | undefined;
 	name: string;
 	query: StrategyQuery;
+	// Whether the builder dropped parts of the stored expression it cannot
+	// show, which saving would remove.
+	incomplete: boolean;
 }

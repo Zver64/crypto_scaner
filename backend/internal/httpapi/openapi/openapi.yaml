@@ -1544,15 +1544,18 @@ components:
     StrategyVariable:
       type: object
       additionalProperties: false
-      required: [name, label, indicator_id, interval]
+      required: [name, label, interval]
       properties:
         name:
           type: string
-          description: CEL identifier, such as `d_rsi` or `h_macd_macdsignal`.
+          description: CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, or the candle field `h_close`.
         label:
           type: string
-          description: Indicator title and output, such as `d-rsi` or `h-macd macdsignal`.
-        indicator_id: { type: integer, format: int64 }
+          description: Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, or the candle field, such as `h-close`.
+        indicator_id:
+          type: integer
+          format: int64
+          description: The indicator the variable reads; absent for candle fields, which every interval has.
         interval: { $ref: "#/components/schemas/CandleInterval" }
     StrategyList:
       type: object
@@ -1588,8 +1591,13 @@ components:
           maxLength: 2000
           description: |
             CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
-            variables with numbers or variables, `crosses_above(a, b)`,
-            `crosses_below(a, b)`, `&&`, `||`, and `!`.
+            arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and
+            numbers, combined with `&&`, `||`, and `!`. `prev(x)` and
+            `prev(x, n)` read `x` one or `n` closed candles earlier;
+            `percentile(x, n, p)` is the nearest-rank `p`-th percentile of `x`
+            over the `n` closed candles before the latest one;
+            `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
+            previous candle.
     StrategyInput:
       type: object
       additionalProperties: false

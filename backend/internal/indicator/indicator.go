@@ -55,10 +55,13 @@ const (
 	ParameterChoice ParameterKind = "choice"
 )
 
-// Choice is one allowed value of a ParameterChoice parameter.
+// Choice is one allowed value of a ParameterChoice parameter. Name is the
+// stable identifier of a named value, such as the candle field "volume", and
+// is empty for plain enumerations.
 type Choice struct {
 	Value int
 	Title string
+	Name  string
 }
 
 // ParameterDescriptor describes one parameter accepted by Normalize.
@@ -106,7 +109,11 @@ type Descriptor struct {
 	// Unstable reports that values depend on all preceding history, not only
 	// on Lookback, so comparable values need the same history depth.
 	Unstable bool
-	// Inputs names the candle fields consumed by Calculate.
+	// Internal reports a module the backend uses itself; clients cannot
+	// configure it.
+	Internal bool
+	// Inputs names the input slots consumed by Calculate: candle fields, or
+	// the key of the parameter that chooses the field. Fields resolves them.
 	Inputs     []string
 	Parameters []ParameterDescriptor
 	// Outputs names the series returned by Calculate, for example "rsi".
@@ -121,6 +128,9 @@ type Implementation interface {
 	// Normalize validates parameters and returns their canonical form with
 	// defaults filled in, so equal settings compare equal.
 	Normalize(parameters Parameters) (Parameters, error)
+	// Fields returns the candle fields Calculate reads, in input order and
+	// keyed by those names in Inputs.
+	Fields(parameters Parameters) ([]string, error)
 	Lookback(parameters Parameters) (int, error)
 	Calculate(parameters Parameters, inputs Inputs) (Result, error)
 }

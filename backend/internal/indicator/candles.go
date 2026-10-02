@@ -8,6 +8,18 @@ import (
 	"crypto-scanner/internal/market"
 )
 
+// CandleFields are the candle fields indicators can read, in display order.
+var CandleFields = []string{"open", "high", "low", "close", "volume", "quote_asset_volume", "trade_count"}
+
+// PriceField reports whether field is on the candle price scale.
+func PriceField(field string) bool {
+	switch field {
+	case "open", "high", "low", "close":
+		return true
+	}
+	return false
+}
+
 // Selection identifies an algorithm and its parameters independently of a chart.
 type Selection struct {
 	Type       Type
@@ -40,7 +52,7 @@ func (r *Registry) CalculateCandles(interval market.CandleInterval, candles []ma
 	starts = append(starts, len(candles))
 	results := make([]Calculation, 0, len(selections))
 	for _, selection := range selections {
-		fields, err := r.Inputs(selection.Type)
+		fields, err := r.Fields(selection)
 		if err != nil {
 			return nil, err
 		}
@@ -69,8 +81,6 @@ func (r *Registry) CalculateCandles(interval market.CandleInterval, candles []ma
 						values[i-start] = candles[i].QuoteAssetVolume
 					case "trade_count":
 						values[i-start] = float64(candles[i].TradeCount)
-					default:
-						return nil, fmt.Errorf("indicator %q requires unsupported input %q", selection.Type, field)
 					}
 				}
 				inputs[field] = values

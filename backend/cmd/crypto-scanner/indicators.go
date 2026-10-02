@@ -2,14 +2,16 @@ package main
 
 import (
 	"crypto-scanner/internal/indicator"
+	"crypto-scanner/internal/indicator/candle"
 	indicatortalib "crypto-scanner/internal/indicator/talib"
 )
 
 // indicatorModules are the calculation algorithms available to every consumer:
-// every TA-Lib function generated in the talib package. The administrator
-// chooses which of them the scanner calculates, charts draw, and tables show.
+// every TA-Lib function generated in the talib package, which the
+// administrator chooses for the scanner, charts, and tables, and the internal
+// candle fields strategies read.
 func indicatorModules() []indicator.Implementation {
-	return indicatortalib.New()
+	return append(indicatortalib.New(), candle.New())
 }
 
 // chartPalette colors the chart lines of the configured indicators in turn.

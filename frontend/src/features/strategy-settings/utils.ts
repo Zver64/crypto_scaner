@@ -1,5 +1,5 @@
+import type { ExpressionNode } from "@react-querybuilder/expr";
 import {
-	defaultRuleProcessorCEL,
 	formatQuery,
 	isRuleGroup,
 	type RuleGroupType,
@@ -13,6 +13,13 @@ import {
 } from "react-querybuilder/parseCEL";
 import type { StrategyVariable } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/components/price-history-chart/config";
+import {
+	expressionComplete,
+	expressionParser,
+	expressionRuleProcessor,
+	expressionSource,
+	firstField,
+} from "@/features/strategy-settings/expressions";
 import type {
 	StrategyOperator,
 	StrategyQuery,
@@ -31,7 +38,7 @@ export function emptyStrategyQuery(): StrategyQuery {
 }
 
 // The value a rule takes after its operator changes: ranges take two numbers,
-// other operators one number or indicator.
+// other operators one number, indicator, or expression.
 export function valueForOperator(
 	operator: string,
 	value: unknown,
@@ -43,7 +50,9 @@ export function valueForOperator(
 			: [numberOrZero(value), numberOrZero(value)];
 	}
 	if (Array.isArray(value)) return numberOrZero(value[0]);
-	return valueSource === "field" ? value : numberOrZero(value);
+	return valueSource === "field" || valueSource === "expression"
+		? value
+		: numberOrZero(value);
 }
 
 function numberOrZero(value: unknown): number {
@@ -74,19 +83,46 @@ function crossOperator(name: string): StrategyOperator | undefined {
 	}
 }
 
-function crossProcessor(
+// Crossings take any operands, and ranges of an expression are written like
+// the stock ranges of a field; other rules go to the expression processor,
+// which exports plain rules as before.
+function strategyRuleProcessor(
 	rule: Parameters<RuleProcessor>[0],
 	options: Parameters<RuleProcessor>[1],
 ): string {
+	if (rule.lhs && isRangeOperator(rule.operator)) {
+		return expressionRange(rule.lhs, rule.operator, rule.value);
+	}
 	const name = crossFunction(rule.operator);
-	return name
-		? `${name}(${rule.field}, ${String(rule.value)})`
-		: defaultRuleProcessorCEL(rule, options);
+	if (!name) return expressionRuleProcessor(rule, options);
+	const left = rule.lhs ? expressionSource(rule.lhs) : rule.field;
+	const right =
+		rule.valueSource === "expression"
+			? expressionSource(rule.value as ExpressionNode)
+			: String(rule.value);
+	return `${name}(${left}, ${right})`;
+}
+
+// A range of an expression with its bounds in ascending order.
+function expressionRange(
+	lhs: ExpressionNode,
+	operator: string,
+	value: unknown,
+): string {
+	const bounds = Array.isArray(value) ? value.map(Number) : [];
+	const [low, high] = [Math.min(...bounds), Math.max(...bounds)];
+	const left = expressionSource(lhs);
+	return operator === "between"
+		? `(${left} >= ${low} && ${left} <= ${high})`
+		: `(${left} < ${low} || ${left} > ${high})`;
 }
 
 // The CEL expression the backend evaluates.
 export function strategyExpression(query: StrategyQuery): string {
-	return formatQuery(query, { format: "cel", ruleProcessor: crossProcessor });
+	return formatQuery(query, {
+		format: "cel",
+		ruleProcessor: strategyRuleProcessor,
+	});
 }
 
 // Restores the builder query from a stored expression. Unknown parts are
@@ -94,8 +130,27 @@ export function strategyExpression(query: StrategyQuery): string {
 export function strategyQuery(expression: string): StrategyQuery {
 	const parsed = parseCEL(expression, {
 		customExpressionHandler: crossRule,
+		getExpression: expressionParser,
 	});
 	return normalizeGroup(parsed) as StrategyQuery;
+}
+
+const anyField = { fieldExists: () => true };
+
+// Whether restoring expression dropped conditions the builder cannot show.
+// The builder may rewrite kept conditions, such as dropping outer parentheses
+// or swapping the sides of a comparison, so only the comparisons are counted.
+export function strategyQueryDropped(
+	expression: string,
+	query: StrategyQuery,
+): boolean {
+	return (
+		comparisonCount(strategyExpression(query)) < comparisonCount(expression)
+	);
+}
+
+function comparisonCount(expression: string): number {
+	return expression.match(/crosses_(?:above|below)\(|[<>]=?/g)?.length ?? 0;
 }
 
 function crossRule(expression: CELExpression): RuleType | null {
@@ -103,17 +158,28 @@ function crossRule(expression: CELExpression): RuleType | null {
 	const call = expression as CELFunctionCall;
 	const operator = crossOperator(call.name.value);
 	const [left, right] = call.args.value;
-	if (!operator || left?.type !== "Identifier" || !right) return null;
-	const field = (left as CELExpression & { value: string }).value;
+	if (!operator || !left || !right) return null;
+	let field: string;
+	let lhs: ExpressionNode | undefined;
+	if (left.type === "Identifier") {
+		field = (left as CELExpression & { value: string }).value;
+	} else {
+		lhs = expressionParser(left, anyField) ?? undefined;
+		field = lhs ? (firstField(lhs) ?? "") : "";
+		if (!lhs) return null;
+	}
 	const value = (right as CELExpression & { value: unknown }).value;
+	const rule: RuleType = { field, operator, value, ...(lhs ? { lhs } : {}) };
 	switch (right.type) {
 		case "Identifier":
-			return { field, operator, value, valueSource: "field" };
+			return { ...rule, valueSource: "field" };
 		case "IntegerLiteral":
 		case "FloatLiteral":
-			return { field, operator, value };
-		default:
-			return null;
+			return rule;
+		default: {
+			const node = expressionParser(right, anyField);
+			return node ? { ...rule, value: node, valueSource: "expression" } : null;
+		}
 	}
 }
 
@@ -140,6 +206,8 @@ function rangeRule(group: RuleGroupType): RuleGroupType | RuleType {
 		isRuleGroup(low) ||
 		isRuleGroup(high) ||
 		low.field !== high.field ||
+		// Comparisons of expressions are a range only of the same expression.
+		JSON.stringify(low.lhs) !== JSON.stringify(high.lhs) ||
 		low.valueSource === "field" ||
 		high.valueSource === "field" ||
 		typeof low.value !== "number" ||
@@ -157,13 +225,13 @@ function rangeRule(group: RuleGroupType): RuleGroupType | RuleType {
 			: pair === "or < >"
 				? "notBetween"
 				: undefined;
-	return operator
-		? { field: low.field, operator, value: [low.value, high.value] }
-		: group;
+	if (!operator) return group;
+	const range = { field: low.field, operator, value: [low.value, high.value] };
+	return low.lhs ? { ...range, lhs: low.lhs } : range;
 }
 
-// Whether every rule names an indicator and has numeric values, and the query
-// has at least one rule.
+// Whether every rule names an indicator or a complete expression and has
+// numeric values, and the query has at least one rule.
 export function strategyQueryComplete(query: RuleGroupType): boolean {
 	return (
 		query.rules.length > 0 &&
@@ -174,7 +242,10 @@ export function strategyQueryComplete(query: RuleGroupType): boolean {
 }
 
 function ruleComplete(rule: RuleType): boolean {
-	if (!rule.field) return false;
+	if (rule.lhs ? !expressionComplete(rule.lhs) : !rule.field) return false;
+	if (rule.valueSource === "expression") {
+		return expressionComplete(rule.value as ExpressionNode);
+	}
 	if (rule.valueSource === "field") {
 		return typeof rule.value === "string" && rule.value !== "";
 	}

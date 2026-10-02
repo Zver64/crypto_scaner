@@ -26,7 +26,7 @@ export function StrategyRuleBuilder({
 			variables.map(({ label, name }) => ({
 				label,
 				name,
-				valueSources: ["value", "field"],
+				valueSources: ["value", "field", "expression"],
 			})),
 		[variables],
 	);

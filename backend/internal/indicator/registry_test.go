@@ -31,6 +31,10 @@ func (f *fakeImplementation) Normalize(parameters indicator.Parameters) (indicat
 	return parameters, nil
 }
 
+func (f *fakeImplementation) Fields(indicator.Parameters) ([]string, error) {
+	return []string{"close"}, nil
+}
+
 func (f *fakeImplementation) Lookback(parameters indicator.Parameters) (int, error) {
 	f.parameters = parameters
 	return f.lookback, f.lookbackErr

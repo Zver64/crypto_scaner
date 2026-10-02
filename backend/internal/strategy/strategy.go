@@ -14,6 +14,8 @@ import (
 	"unicode/utf8"
 
 	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/indicator"
+	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
 )
 
@@ -75,8 +77,10 @@ type Indicators interface {
 type Service struct {
 	store      Store
 	indicators Indicators
-	logger     *slog.Logger
-	changed    func(baselines []int64)
+	// registry checks that the history kept covers what expressions read.
+	registry *indicator.Registry
+	logger   *slog.Logger
+	changed  func(baselines []int64)
 
 	// writes serializes changes, so name checks see every earlier change.
 	writes  sync.Mutex
@@ -87,11 +91,31 @@ type Service struct {
 // NewService creates an empty service; Load reads the stored strategies.
 // changed receives the ids of strategies whose current matches must be
 // announced after each change and must not block.
-func NewService(store Store, indicators Indicators, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
-	if store == nil || indicators == nil || logger == nil || changed == nil {
-		return nil, errors.New("strategy store, indicators, logger, and change listener are required")
+func NewService(store Store, indicators Indicators, registry *indicator.Registry, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
+	if store == nil || indicators == nil || registry == nil || logger == nil || changed == nil {
+		return nil, errors.New("strategy store, indicators, registry, logger, and change listener are required")
 	}
-	return &Service{store: store, indicators: indicators, logger: logger.With("module", "strategy"), changed: changed}, nil
+	return &Service{store: store, indicators: indicators, registry: registry, logger: logger.With("module", "strategy"), changed: changed}, nil
+}
+
+// compile compiles source and checks that the kept history covers its
+// deepest reads, so a strategy never waits for values that cannot exist.
+func (service *Service) compile(source string, variables []Variable) (*Expression, error) {
+	compiled, err := Compile(source, variables)
+	if err != nil {
+		return nil, err
+	}
+	demands, _ := demandsOf([]Entry{{Compiled: compiled}})
+	for _, demand := range demands {
+		depth, err := closedindicator.Depth(service.registry, demand)
+		if err != nil {
+			return nil, err
+		}
+		if depth > market.HistoryDepth {
+			return nil, fmt.Errorf("%w: %s %s needs %d closed candles, %d are kept", ErrInvalidArgument, demand.Target.Interval, demand.Target.Selection.Type, depth, market.HistoryDepth)
+		}
+	}
+	return compiled, nil
 }
 
 // Load replaces the strategies with the stored ones. A strategy that no
@@ -105,7 +129,7 @@ func (service *Service) Load(ctx context.Context) error {
 	entries := make([]Entry, len(stored))
 	for i, item := range stored {
 		entries[i] = Entry{Strategy: item}
-		compiled, err := Compile(item.Expression, variables)
+		compiled, err := service.compile(item.Expression, variables)
 		if err != nil {
 			service.logger.WarnContext(ctx, "skip invalid strategy", "strategy_id", item.ID, "error", err)
 			continue
@@ -147,17 +171,17 @@ func (service *Service) IndicatorUsage() map[int64][]string {
 	return usage
 }
 
-// Targets returns the indicator targets enabled strategies read, which must
-// stay current in the background.
-func (service *Service) Targets() []closedindicator.Target {
+// Targets returns the targets enabled strategies read, with the points they
+// need, which must stay current in the background.
+func (service *Service) Targets() []closedindicator.Demand {
 	var evaluated []Entry
 	for _, entry := range service.List() {
 		if entry.evaluated() {
 			evaluated = append(evaluated, entry)
 		}
 	}
-	targets, _ := targetsOf(evaluated)
-	return targets
+	demands, _ := demandsOf(evaluated)
+	return demands
 }
 
 // Create validates and stores a strategy.
@@ -267,7 +291,7 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 		return Entry{}, fmt.Errorf("%w: the name must have 1 to %d characters", ErrInvalidArgument, maxNameLength)
 	}
 	item.Expression = strings.TrimSpace(item.Expression)
-	compiled, err := Compile(item.Expression, service.Variables())
+	compiled, err := service.compile(item.Expression, service.Variables())
 	if err != nil {
 		return Entry{}, err
 	}

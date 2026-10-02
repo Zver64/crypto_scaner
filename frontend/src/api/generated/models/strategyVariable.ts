@@ -20,10 +20,11 @@
 import type { CandleInterval } from './candleInterval.ts';
 
 export interface StrategyVariable {
-  /** CEL identifier, such as `d_rsi` or `h_macd_macdsignal`. */
+  /** CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, or the candle field `h_close`. */
   name: string;
-  /** Indicator title and output, such as `d-rsi` or `h-macd macdsignal`. */
+  /** Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, or the candle field, such as `h-close`. */
   label: string;
-  indicator_id: number;
+  /** The indicator the variable reads; absent for candle fields, which every interval has. */
+  indicator_id?: number;
   interval: CandleInterval;
 }

@@ -38,24 +38,40 @@ func (target Target) id() string {
 	return string(target.Interval) + "|" + string(target.Selection.Type) + "|" + string(parameters)
 }
 
+// Output is one named output at the latest stored closed candle. Earlier
+// holds its values at the closed candles before it, newest first, as far as
+// the requested points reach and the history is continuous.
 type Output struct {
-	Name  string
-	Value float64
+	Name    string
+	Value   float64
+	Earlier []float64
+}
+
+// At returns the value shift closed candles before the latest one.
+func (output Output) At(shift int) (float64, bool) {
+	if shift == 0 {
+		return output.Value, true
+	}
+	if shift < 0 || shift > len(output.Earlier) {
+		return 0, false
+	}
+	return output.Earlier[shift-1], true
 }
 
 // Value holds the named outputs at the latest stored closed candle. Outputs is
 // empty when the continuous history ending at that candle is too short.
-// Previous holds the outputs at the closed candle before it, when that
-// candle is stored too.
 type Value struct {
 	Target   Target
 	OpenTime time.Time
 	Outputs  []Output
-	Previous []Output
+	// points is the number of points the value was calculated for.
+	points int
 }
 
 func (value Value) equal(other Value) bool {
-	return value.OpenTime.Equal(other.OpenTime) && slices.Equal(value.Outputs, other.Outputs) && slices.Equal(value.Previous, other.Previous)
+	return value.OpenTime.Equal(other.OpenTime) && slices.EqualFunc(value.Outputs, other.Outputs, func(left, right Output) bool {
+		return left.Name == right.Name && left.Value == right.Value && slices.Equal(left.Earlier, right.Earlier)
+	})
 }
 
 // Change reports a background recalculation of a tracked pair whose value
@@ -67,10 +83,22 @@ type Change struct {
 }
 
 // Subscription requests background tracking of one target for one instrument.
+// Points is the number of latest closed candles whose values are kept; zero
+// keeps only the latest one.
 type Subscription struct {
 	InstrumentID int64
 	Target       Target
+	Points       int
 }
+
+// Demand is a target and the number of latest closed candles whose values
+// are kept.
+type Demand struct {
+	Target Target
+	Points int
+}
+
+func (subscription Subscription) points() int { return max(1, subscription.Points) }
 
 // Source supplies the pairs that must stay current without any clients.
 // targets are the tracker's table targets; a source may track other ones.
@@ -82,14 +110,23 @@ type Source interface {
 type InstrumentSource func(context.Context) ([]int64, error)
 
 func (source InstrumentSource) Subscriptions(ctx context.Context, targets []Target) ([]Subscription, error) {
+	demands := make([]Demand, len(targets))
+	for index, target := range targets {
+		demands[index] = Demand{Target: target, Points: 1}
+	}
+	return source.Track(ctx, demands)
+}
+
+// Track tracks every demand for each listed instrument.
+func (source InstrumentSource) Track(ctx context.Context, demands []Demand) ([]Subscription, error) {
 	ids, err := source(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := make([]Subscription, 0, len(ids)*len(targets))
+	result := make([]Subscription, 0, len(ids)*len(demands))
 	for _, id := range ids {
-		for _, target := range targets {
-			result = append(result, Subscription{InstrumentID: id, Target: target})
+		for _, demand := range demands {
+			result = append(result, Subscription{InstrumentID: id, Target: demand.Target, Points: demand.Points})
 		}
 	}
 	return result, nil
@@ -145,7 +182,7 @@ func New(store Store, registry *indicator.Registry, targets []Target, logger *sl
 		versions: map[historyKey]uint64{}, dirty: map[historyKey]struct{}{},
 	}
 	for _, target := range targets {
-		if _, err := tracker.depth(target); err != nil {
+		if _, err := tracker.depth(target, 1); err != nil {
 			return nil, err
 		}
 	}
@@ -164,7 +201,7 @@ func (tracker *Tracker) Listen(listener func(Change)) {
 // and reloads the tracked pairs.
 func (tracker *Tracker) SetTargets(targets []Target) error {
 	for _, target := range targets {
-		if _, err := tracker.depth(target); err != nil {
+		if _, err := tracker.depth(target, 1); err != nil {
 			return err
 		}
 	}
@@ -285,34 +322,37 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 	return result
 }
 
-// Snapshot returns the known values of targets for each instrument, in target
-// order, without calculating anything. A pair that is neither tracked nor
-// cached has no outputs, and its target is listed in missing, so results that
-// depend on it are not final yet.
-func (tracker *Tracker) Snapshot(instrumentIDs []int64, targets []Target) (values map[int64][]Value, missing []Target) {
-	keys := make([]string, len(targets))
-	for index, target := range targets {
-		keys[index] = target.id()
+// Snapshot returns the known values of the demanded targets for each
+// instrument, in demand order, without calculating anything. A pair that is
+// neither tracked nor cached has no outputs, and its target is listed in
+// missing, so results that depend on it are not final yet; so is a target
+// whose value was calculated for fewer points than demanded.
+func (tracker *Tracker) Snapshot(instrumentIDs []int64, demands []Demand) (values map[int64][]Value, missing []Target) {
+	keys := make([]string, len(demands))
+	for index, demand := range demands {
+		keys[index] = demand.Target.id()
 	}
 	values = make(map[int64][]Value, len(instrumentIDs))
-	absent := make([]bool, len(targets))
+	absent := make([]bool, len(demands))
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
 	for _, id := range instrumentIDs {
-		row := make([]Value, len(targets))
-		for index, target := range targets {
+		row := make([]Value, len(demands))
+		for index, demand := range demands {
 			value, ok := tracker.values[pairKey{id, keys[index]}]
 			if !ok {
-				value = Value{Target: target}
+				value = Value{Target: demand.Target}
+				absent[index] = true
+			} else if value.points < demand.Points {
 				absent[index] = true
 			}
 			row[index] = value
 		}
 		values[id] = row
 	}
-	for index, target := range targets {
+	for index, demand := range demands {
 		if absent[index] {
-			missing = append(missing, target)
+			missing = append(missing, demand.Target)
 		}
 	}
 	return values, missing
@@ -376,8 +416,14 @@ func (tracker *Tracker) step(ctx context.Context) {
 			next := make(map[pairKey]Subscription, len(subscriptions))
 			for _, subscription := range subscriptions {
 				key := pairKey{subscription.InstrumentID, subscription.Target.id()}
+				if existing, ok := next[key]; ok {
+					subscription.Points = max(subscription.points(), existing.points())
+				}
 				next[key] = subscription
-				if _, tracked := tracker.tracked[key]; !tracked {
+			}
+			// A pair that now keeps more points is recalculated as well.
+			for key, subscription := range next {
+				if existing, tracked := tracker.tracked[key]; !tracked || existing.points() != subscription.points() {
 					pending[key] = subscription
 				}
 			}
@@ -456,7 +502,7 @@ func (tracker *Tracker) collect(ctx context.Context) ([]Subscription, error) {
 			return nil, err
 		}
 		for _, subscription := range subscriptions {
-			if _, err := tracker.depth(subscription.Target); err != nil {
+			if _, err := tracker.depth(subscription.Target, subscription.points()); err != nil {
 				tracker.logger.WarnContext(ctx, "skip invalid closed indicator subscription", "module", "closed_indicator", "instrument_id", subscription.InstrumentID, "error", err)
 				continue
 			}
@@ -482,17 +528,25 @@ func (tracker *Tracker) versionSnapshot(subscriptions []Subscription) map[histor
 	return result
 }
 
-func (tracker *Tracker) depth(target Target) (int, error) {
+func (tracker *Tracker) depth(target Target, points int) (int, error) {
+	return Depth(tracker.registry, Demand{Target: target, Points: points})
+}
+
+// Depth is the number of closed candles loaded to calculate the demanded
+// points. Every point gets the warm-up of the latest one, so unstable
+// indicators agree with charts on all of them. A depth beyond
+// market.HistoryDepth only loads the kept candles, so the values it needs
+// stay missing.
+func Depth(registry *indicator.Registry, demand Demand) (int, error) {
+	target := demand.Target
 	if !target.Interval.Valid() {
 		return 0, fmt.Errorf("closed indicator interval %q is unsupported", target.Interval)
 	}
-	lookback, err := tracker.registry.Lookback(target.Selection.Type, target.Selection.Parameters)
+	lookback, err := registry.Lookback(target.Selection.Type, target.Selection.Parameters)
 	if err != nil {
 		return 0, fmt.Errorf("closed indicator %q: %w", target.Selection.Type, err)
 	}
-	// Two points: the latest closed candle and the previous one, which
-	// strategy crossings compare.
-	return max(minimumHistory, lookback+2), nil
+	return max(minimumHistory, lookback+1) + max(1, demand.Points) - 1, nil
 }
 
 // calculate batch-loads closed history per target and evaluates each pair.
@@ -505,7 +559,11 @@ func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscript
 	result := make(map[pairKey]Value, len(subscriptions))
 	for id, group := range groups {
 		target := group[0].Target
-		depth, err := tracker.depth(target)
+		points := 1
+		for _, subscription := range group {
+			points = max(points, subscription.points())
+		}
+		depth, err := tracker.depth(target, points)
 		if err != nil {
 			return nil, err
 		}
@@ -517,8 +575,8 @@ func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscript
 		if err != nil {
 			return nil, fmt.Errorf("load closed %s history: %w", target.Interval, err)
 		}
-		for _, instrumentID := range ids {
-			value, err := tracker.value(target, candles[instrumentID])
+		for index, instrumentID := range ids {
+			value, err := tracker.value(target, candles[instrumentID], group[index].points())
 			if err != nil {
 				return nil, err
 			}
@@ -528,8 +586,10 @@ func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscript
 	return result, nil
 }
 
-func (tracker *Tracker) value(target Target, candles []market.Candle) (Value, error) {
-	value := Value{Target: target}
+// value reads the outputs at the latest candle and up to points−1 earlier
+// ones.
+func (tracker *Tracker) value(target Target, candles []market.Candle, points int) (Value, error) {
+	value := Value{Target: target, points: points}
 	if len(candles) == 0 {
 		return value, nil
 	}
@@ -539,15 +599,22 @@ func (tracker *Tracker) value(target Target, candles []market.Candle) (Value, er
 	if err != nil {
 		return Value{}, fmt.Errorf("calculate closed %s: %w", target.Selection.Type, err)
 	}
-	previous := target.Interval.PreviousOpenTime(last)
 	for _, series := range results[0].Series {
 		count := len(series.Points)
-		if count > 0 && series.Points[count-1].Time.Equal(last) && numeric.Finite(series.Points[count-1].Value) {
-			value.Outputs = append(value.Outputs, Output{Name: series.Name, Value: series.Points[count-1].Value})
+		if count == 0 || !series.Points[count-1].Time.Equal(last) || !numeric.Finite(series.Points[count-1].Value) {
+			continue
 		}
-		if count > 1 && series.Points[count-2].Time.Equal(previous) && numeric.Finite(series.Points[count-2].Value) {
-			value.Previous = append(value.Previous, Output{Name: series.Name, Value: series.Points[count-2].Value})
+		output := Output{Name: series.Name, Value: series.Points[count-1].Value}
+		expected := last
+		for index := count - 2; index >= 0 && len(output.Earlier) < points-1; index-- {
+			expected = target.Interval.PreviousOpenTime(expected)
+			point := series.Points[index]
+			if !point.Time.Equal(expected) || !numeric.Finite(point.Value) {
+				break
+			}
+			output.Earlier = append(output.Earlier, point.Value)
 		}
+		value.Outputs = append(value.Outputs, output)
 	}
 	return value, nil
 }

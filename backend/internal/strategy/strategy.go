@@ -141,16 +141,45 @@ func (service *Service) compile(source string, variables []Variable) (*Expressio
 		return nil, err
 	}
 	demands, _ := demandsOf([]Entry{{Compiled: compiled}})
+	var problems []string
 	for _, demand := range demands {
 		depth, err := closedindicator.Depth(service.registry, demand)
 		if err != nil {
 			return nil, err
 		}
 		if depth > market.HistoryDepth {
-			return nil, fmt.Errorf("%w: %s %s needs %d closed candles, %d are kept", ErrInvalidArgument, demand.Target.Interval, demand.Target.Selection.Type, depth, market.HistoryDepth)
+			problems = append(problems, fmt.Sprintf("%s %s needs %d closed candles, %d are kept", demand.Target.Interval, demand.Target.Selection.Type, depth, market.HistoryDepth))
 		}
 	}
+	if len(problems) > 0 {
+		return nil, invalidExpression(problems...)
+	}
 	return compiled, nil
+}
+
+// Validate lists every problem that would reject expression in a strategy:
+// the problems of compiling it, and the coins it reads through of that are
+// not the administrator's active favorites. An empty list means it is valid.
+func (service *Service) Validate(ctx context.Context, expression string) ([]string, error) {
+	compiled, err := service.compile(strings.TrimSpace(expression), service.Variables())
+	var invalid *InvalidExpressionError
+	if errors.As(err, &invalid) {
+		return invalid.Problems, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	favorites, err := service.Symbols(ctx)
+	if err != nil {
+		return nil, err
+	}
+	problems := []string{}
+	for _, symbol := range compiled.Symbols() {
+		if !slices.Contains(favorites, symbol) {
+			problems = append(problems, symbol+" is not an active coin in the administrator's favorites")
+		}
+	}
+	return problems, nil
 }
 
 // Load replaces the strategies with the stored ones. A strategy that no

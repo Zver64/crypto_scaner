@@ -117,10 +117,41 @@ const serializers: SQLSerializerRegistry = {
 	...Object.fromEntries(
 		callNames.map((name) => [
 			name,
-			(_options: unknown, ...args: string[]) => `${name}(${args.join(", ")})`,
+			(_options: unknown, ...args: string[]) => callSource(name, args),
 		]),
 	),
 };
+
+// A call of name. Arguments are separated by commas, so the parentheses the
+// serializer puts around arithmetic are left out.
+export function callSource(name: string, args: readonly string[]): string {
+	return `${name}(${args.map(withoutOuterParentheses).join(", ")})`;
+}
+
+// source without the parentheses enclosing all of it, such as (a - b) but
+// not (a - b) / (c - d).
+function withoutOuterParentheses(source: string): string {
+	if (!source.startsWith("(")) return source;
+	let depth = 0;
+	let quote: string | undefined;
+	for (let index = 0; index < source.length; index++) {
+		const character = source[index];
+		if (quote) {
+			if (character === "\\") index++;
+			else if (character === quote) quote = undefined;
+		} else if (character === '"' || character === "'") quote = character;
+		else if (character === "(") depth++;
+		else if (character === ")") {
+			depth--;
+			if (depth === 0) {
+				return index === source.length - 1
+					? withoutOuterParentheses(source.slice(1, -1))
+					: source;
+			}
+		}
+	}
+	return source;
+}
 
 // Exports rules whose sides hold expressions.
 export const expressionRuleProcessor =

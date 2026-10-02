@@ -6,9 +6,13 @@ import {
 	Stack,
 	Text,
 	TextInput,
+	Tooltip,
+	UnstyledButton,
 } from "@mantine/core";
+import { useClipboard } from "@mantine/hooks";
 import { useState } from "react";
 import type { StrategyVariable } from "@/api/generated/models";
+import { StrategyImport } from "@/features/strategy-settings/strategy-import";
 import { StrategyRuleBuilder } from "@/features/strategy-settings/strategy-rule-builder";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
@@ -34,6 +38,8 @@ export function StrategyFormContent({
 }: StrategyFormContentProps) {
 	const [name, setName] = useState(draft.name);
 	const [query, setQuery] = useState(draft.query);
+	const [importing, setImporting] = useState(false);
+	const clipboard = useClipboard({ timeout: 1500 });
 	const expression = strategyExpression(query);
 	const named = name.trim() !== "";
 	const conditionsComplete = strategyQueryComplete(query);
@@ -54,9 +60,19 @@ export function StrategyFormContent({
 				</Alert>
 			) : null}
 			<Stack gap={4}>
-				<Text fw={500} size="sm">
-					Conditions
-				</Text>
+				<Group justify="space-between">
+					<Text fw={500} size="sm">
+						Conditions
+					</Text>
+					<Button
+						disabled={isSaving}
+						onClick={() => setImporting(true)}
+						size="compact-sm"
+						variant="subtle"
+					>
+						Import
+					</Button>
+				</Group>
 				<StrategyRuleBuilder
 					disabled={isSaving}
 					onChange={setQuery}
@@ -65,7 +81,26 @@ export function StrategyFormContent({
 				/>
 			</Stack>
 			{conditionsComplete ? (
-				<Code block>{expression}</Code>
+				<Stack gap={4}>
+					<Tooltip label="Copied" opened={clipboard.copied}>
+						<UnstyledButton
+							aria-label="Copy the expression"
+							onClick={() => clipboard.copy(expression)}
+						>
+							<Code
+								block
+								style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
+							>
+								{expression}
+							</Code>
+						</UnstyledButton>
+					</Tooltip>
+					<Text c={clipboard.error ? "red" : "dimmed"} size="xs">
+						{clipboard.error
+							? "The expression could not be copied."
+							: "Tap the expression to copy it."}
+					</Text>
+				</Stack>
 			) : (
 				<Text c="dimmed" size="xs">
 					Add at least one condition and fill every value.
@@ -76,6 +111,12 @@ export function StrategyFormContent({
 					Enter a name to save the strategy.
 				</Text>
 			)}
+			<StrategyImport
+				onClose={() => setImporting(false)}
+				onImport={setQuery}
+				opened={importing}
+				replaces={query.rules.length > 0}
+			/>
 			<Group justify="flex-end">
 				<Button disabled={isSaving} onClick={onCancel} variant="default">
 					Cancel

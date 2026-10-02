@@ -579,6 +579,28 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/strategy-validations:
+    post:
+      operationId: validateStrategy
+      summary: Check a strategy expression
+      description: |
+        Lists every problem that would reject the expression in a strategy:
+        syntax, unknown indicators, candle fields, and functions, history
+        depth, and coins read through `of` that are not active coins in the
+        administrator's favorites. An empty list means the expression is valid.
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StrategyValidationInput" } } }
+      responses:
+        "200":
+          description: Problems of the expression.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StrategyValidation" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/strategies:
     get:
       operationId: listStrategies
@@ -1653,6 +1675,20 @@ components:
         name: { type: string, minLength: 1, maxLength: 64 }
         expression: { type: string, minLength: 1, maxLength: 2000 }
         enabled: { type: boolean }
+    StrategyValidationInput:
+      type: object
+      additionalProperties: false
+      required: [expression]
+      properties:
+        expression: { type: string }
+    StrategyValidation:
+      type: object
+      additionalProperties: false
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          items: { type: string }
     StrategyEnabled:
       type: object
       additionalProperties: false

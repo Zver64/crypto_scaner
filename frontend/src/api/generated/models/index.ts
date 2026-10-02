@@ -115,6 +115,8 @@ export * from './strategyList.ts';
 export * from './strategyNotFoundResponse.ts';
 export * from './strategySymbolList.ts';
 export * from './strategyUpdate.ts';
+export * from './strategyValidation.ts';
+export * from './strategyValidationInput.ts';
 export * from './strategyVariable.ts';
 export * from './strategyVariableList.ts';
 export * from './symbolNotFoundResponse.ts';

@@ -1,5 +1,12 @@
-import { NumberInput, SegmentedControl, Select, Stack } from "@mantine/core";
+import {
+	Group,
+	NumberInput,
+	SegmentedControl,
+	Select,
+	Stack,
+} from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
+import type { ReactNode } from "react";
 import type { StrategyVariable } from "@/api/generated/models";
 import { CoinSelect } from "@/features/strategy-settings/coin-select";
 import {
@@ -29,6 +36,9 @@ export interface ExpressionEditorProps {
 	// Hides the coin kind inside an operand of another coin, since of
 	// cannot contain of.
 	withoutCoin?: boolean;
+	// A control beside the kind selector, such as a remove button, which
+	// leaves the full width to the operand below.
+	action?: ReactNode;
 }
 
 type OperandKind = "field" | "value" | "func" | "coin";
@@ -50,6 +60,7 @@ export function ExpressionEditor({
 	withoutNumber = false,
 	withoutCoin = false,
 	defaultField,
+	action,
 }: ExpressionEditorProps) {
 	const kind = operandKind(node);
 	// A kind already chosen stays selectable, so the control shows it.
@@ -70,20 +81,23 @@ export function ExpressionEditor({
 	};
 	return (
 		<Stack gap={4}>
-			<SegmentedControl
-				aria-label={`${label} kind`}
-				data={kinds}
-				disabled={disabled}
-				onChange={(next) => {
-					if (next === "func") onChange(functionCall("multiply", node));
-					else if (next === "coin") onChange(coinCall(field));
-					else if (next === "value") onChange({ kind: "value", value: 0 });
-					else onChange(field);
-				}}
-				fullWidth
-				size="xs"
-				value={kind}
-			/>
+			<Group gap="xs" wrap="nowrap">
+				<SegmentedControl
+					aria-label={`${label} kind`}
+					data={kinds}
+					disabled={disabled}
+					flex={1}
+					onChange={(next) => {
+						if (next === "func") onChange(functionCall("multiply", node));
+						else if (next === "coin") onChange(coinCall(field));
+						else if (next === "value") onChange({ kind: "value", value: 0 });
+						else onChange(field);
+					}}
+					size="xs"
+					value={kind}
+				/>
+				{action}
+			</Group>
 			{node.kind === "func" && kind === "coin" ? (
 				<Stack gap={4}>
 					<CoinSelect

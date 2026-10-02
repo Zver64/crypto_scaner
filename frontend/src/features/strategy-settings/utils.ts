@@ -14,6 +14,7 @@ import {
 import type { StrategyVariable } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/components/price-history-chart/config";
 import {
+	callSource,
 	expressionComplete,
 	expressionParser,
 	expressionRuleProcessor,
@@ -100,7 +101,7 @@ function strategyRuleProcessor(
 		rule.valueSource === "expression"
 			? expressionSource(rule.value as ExpressionNode)
 			: String(rule.value);
-	return `${name}(${left}, ${right})`;
+	return callSource(name, [left, right]);
 }
 
 // A range of an expression with its bounds in ascending order.
@@ -133,6 +134,108 @@ export function strategyQuery(expression: string): StrategyQuery {
 		getExpression: expressionParser,
 	});
 	return normalizeGroup(parsed) as StrategyQuery;
+}
+
+// The builder query of an imported expression, or undefined when the
+// builder cannot show all of it, which importing would silently drop.
+export function importedStrategyQuery(
+	expression: string,
+): StrategyQuery | undefined {
+	const query = strategyQuery(parenthesizeOperands(expression));
+	return strategyQueryComplete(query) &&
+		!strategyQueryDropped(expression, query)
+		? query
+		: undefined;
+}
+
+const tokenPattern =
+	/\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\.\d+|[A-Za-z_]\w*|&&|\|\||[<>=!]=|./g;
+const comparisonTokens = [">", ">=", "<", "<=", "==", "!="];
+const arithmeticTokens = ["+", "-", "*", "/", "%"];
+// Tokens that end an operand of a comparison at its own depth.
+const operandBoundaries = ["&&", "||", ",", "?", ":", ...comparisonTokens];
+
+interface Token {
+	text: string;
+	start: number;
+	end: number;
+}
+
+// The parser restores arithmetic operands of comparisons only in
+// parentheses, as the builder writes them, so h_volume >= 1.5 * h_sma becomes
+// h_volume >= (1.5 * h_sma). A negative number stays bare.
+export function parenthesizeOperands(expression: string): string {
+	const tokens: Token[] = [];
+	for (const match of expression.matchAll(tokenPattern)) {
+		if (match[0].trim() === "") continue;
+		tokens.push({
+			text: match[0],
+			start: match.index,
+			end: match.index + match[0].length,
+		});
+	}
+	const wraps: [number, number][] = [];
+	tokens.forEach((token, index) => {
+		if (!comparisonTokens.includes(token.text)) return;
+		for (const [first, last] of [
+			[operandStart(tokens, index), index - 1],
+			[index + 1, operandEnd(tokens, index)],
+		] as const) {
+			const operand = tokens.slice(first, last + 1);
+			if (needsParentheses(operand)) {
+				wraps.push([tokens[first].start, tokens[last].end]);
+			}
+		}
+	});
+	let result = expression;
+	for (const [start, end] of wraps.sort(([a], [b]) => b - a)) {
+		result = `${result.slice(0, start)}(${result.slice(start, end)})${result.slice(end)}`;
+	}
+	return result;
+}
+
+function operandStart(tokens: readonly Token[], comparison: number): number {
+	let depth = 0;
+	for (let index = comparison - 1; index >= 0; index--) {
+		const { text } = tokens[index];
+		if (text === ")") depth++;
+		else if (text === "(") {
+			if (depth === 0) return index + 1;
+			depth--;
+		} else if (
+			depth === 0 &&
+			(operandBoundaries.includes(text) || text === "!")
+		)
+			return index + 1;
+	}
+	return 0;
+}
+
+function operandEnd(tokens: readonly Token[], comparison: number): number {
+	let depth = 0;
+	for (let index = comparison + 1; index < tokens.length; index++) {
+		const { text } = tokens[index];
+		if (text === "(") depth++;
+		else if (text === ")") {
+			if (depth === 0) return index - 1;
+			depth--;
+		} else if (depth === 0 && operandBoundaries.includes(text))
+			return index - 1;
+	}
+	return tokens.length - 1;
+}
+
+// Whether an operand calculates outside parentheses.
+function needsParentheses(operand: readonly Token[]): boolean {
+	const [sign, number] = operand;
+	if (operand.length === 2 && sign?.text === "-" && /^[\d.]/.test(number.text))
+		return false;
+	let depth = 0;
+	return operand.some(({ text }) => {
+		if (text === "(") depth++;
+		else if (text === ")") depth--;
+		return depth === 0 && arithmeticTokens.includes(text);
+	});
 }
 
 const anyField = { fieldExists: () => true };

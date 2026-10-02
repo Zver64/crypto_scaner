@@ -88,6 +88,8 @@ import type {
   StrategyNotFoundResponse,
   StrategySymbolList,
   StrategyUpdate,
+  StrategyValidation,
+  StrategyValidationInput,
   StrategyVariableList,
   SymbolNotFoundResponse,
   UnauthenticatedResponse,
@@ -3747,6 +3749,130 @@ export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStr
 
 
 
+
+export type validateStrategyResponse200 = {
+  data: StrategyValidation
+  status: 200
+}
+
+export type validateStrategyResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type validateStrategyResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type validateStrategyResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type validateStrategyResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type validateStrategyResponseSuccess = (validateStrategyResponse200) & {
+  headers: Headers;
+};
+export type validateStrategyResponseError = (validateStrategyResponse400 | validateStrategyResponse401 | validateStrategyResponse403 | validateStrategyResponse500) & {
+  headers: Headers;
+};
+
+export const getValidateStrategyUrl = () => {
+
+
+
+
+  return `/api/v1/admin/strategy-validations`
+}
+
+/**
+ * Lists every problem that would reject the expression in a strategy:
+ * syntax, unknown indicators, candle fields, and functions, history
+ * depth, and coins read through `of` that are not active coins in the
+ * administrator's favorites. An empty list means the expression is valid.
+ * @summary Check a strategy expression
+ */
+export const validateStrategy = async (strategyValidationInput: StrategyValidationInput, options?: Parameters<typeof apiFetch>[1]): Promise<validateStrategyResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<validateStrategyResponseSuccess>(getValidateStrategyUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(strategyValidationInput)
+  }
+);}
+
+
+
+
+
+export const getValidateStrategyMutationKey = () => ['validateStrategy'] as const;
+
+export const getValidateStrategyMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateStrategy>>, TError,ValidateStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof validateStrategy>>, TError,ValidateStrategyMutationVariables, TContext> => {
+
+const mutationKey = getValidateStrategyMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof validateStrategy>>, ValidateStrategyMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  validateStrategy(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type ValidateStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof validateStrategy>>>
+    export type ValidateStrategyMutationBody = StrategyValidationInput
+    export type ValidateStrategyMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
+    export type ValidateStrategyMutationVariables = {data: StrategyValidationInput}
+
+    /**
+ * @summary Check a strategy expression
+ */
+export const useValidateStrategy = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof validateStrategy>>, TError,ValidateStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof validateStrategy>>,
+        TError,
+        ValidateStrategyMutationVariables,
+        TContext
+      > => {
+      return useMutation(getValidateStrategyMutationOptions(options), queryClient);
+    }
 
 export type listStrategiesResponse200 = {
   data: StrategyList

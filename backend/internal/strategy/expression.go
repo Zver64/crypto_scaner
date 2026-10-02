@@ -214,20 +214,27 @@ func (expression *Expression) Evaluate(value func(Read) (float64, bool)) (result
 // max over variables and numbers, combined with &&, ||, and !; prev,
 // percentile, crosses_above, and crosses_below read earlier closed candles,
 // and of reads another instrument.
+//
+// An invalid source fails with an *InvalidExpressionError listing every
+// problem found.
 func Compile(source string, variables []Variable) (*Expression, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
-		return nil, fmt.Errorf("%w: the expression is empty", ErrInvalidArgument)
+		return nil, invalidExpression("the expression is empty")
 	}
 	if len(source) > maxExpressionLength {
-		return nil, fmt.Errorf("%w: the expression is longer than %d characters", ErrInvalidArgument, maxExpressionLength)
+		return nil, invalidExpression(fmt.Sprintf("the expression is longer than %d characters", maxExpressionLength))
 	}
 	// Earlier values are read only through prev, percentile, and crossings,
 	// and other instruments only through of.
+	var reserved []string
 	for _, marker := range []string{shiftMarker, symbolMarker} {
 		if strings.Contains(source, marker) {
-			return nil, fmt.Errorf("%w: names containing %s are reserved", ErrInvalidArgument, marker)
+			reserved = append(reserved, fmt.Sprintf("names containing %s are reserved", marker))
 		}
+	}
+	if len(reserved) > 0 {
+		return nil, invalidExpression(reserved...)
 	}
 	byName := make(map[string]Variable, len(variables))
 	for _, variable := range variables {
@@ -261,7 +268,7 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 	}
 	parsed, issues := parseEnv.Parse(source)
 	if issues.Err() != nil {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidArgument, issueMessage(issues))
+		return nil, invalidExpression(issueMessages(issues)...)
 	}
 	identifiers := map[string]Read{}
 	rewrite(parsed.NativeRep().Expr(), ast.NewExprFactory(), byName, identifiers)
@@ -275,42 +282,71 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 	}
 	checked, issues := env.Check(parsed)
 	if issues.Err() != nil {
-		return nil, fmt.Errorf("%w: %s", ErrInvalidArgument, issueMessage(issues))
+		return nil, invalidExpression(issueMessages(issues)...)
 	}
 	if !checked.OutputType().IsExactType(cel.BoolType) {
-		return nil, fmt.Errorf("%w: the expression must be a condition", ErrInvalidArgument)
+		return nil, invalidExpression("the expression must be a condition")
 	}
 	walker := expressionWalker{info: checked.NativeRep().SourceInfo(), identifiers: identifiers, reads: map[string]Read{}}
 	if err := walker.condition(checked.NativeRep().Expr(), true); err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+		return nil, invalidExpression(err.Error())
 	}
-	if walker.comparisons == 0 {
-		return nil, fmt.Errorf("%w: the expression has no comparison", ErrInvalidArgument)
-	}
+	problems := walker.problems
 	if walker.comparisons > maxComparisons {
-		return nil, fmt.Errorf("%w: the expression has too many comparisons", ErrInvalidArgument)
+		problems = append(problems, "the expression has too many comparisons")
 	}
-	// An expression that reads only other coins has the same result for
-	// every evaluated coin, so all of them would match and alert at once.
-	evaluated := false
-	for _, read := range walker.reads {
-		evaluated = evaluated || read.Symbol == ""
+	if len(walker.problems) == 0 {
+		if walker.comparisons == 0 {
+			problems = append(problems, "the expression has no comparison")
+		}
+		// An expression that reads only other coins has the same result for
+		// every evaluated coin, so all of them would match and alert at
+		// once.
+		evaluated := false
+		for _, read := range walker.reads {
+			evaluated = evaluated || read.Symbol == ""
+		}
+		if !evaluated {
+			problems = append(problems, "the expression must also read the evaluated coin, not only coins read through of")
+		}
 	}
-	if !evaluated {
-		return nil, fmt.Errorf("%w: the expression must also read the evaluated coin, not only coins read through of", ErrInvalidArgument)
+	if len(problems) > 0 {
+		return nil, invalidExpression(problems...)
 	}
 	program, err := env.Program(checked)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+		return nil, invalidExpression(err.Error())
 	}
 	return &Expression{program: program, reads: walker.reads}, nil
 }
 
-// issueMessage keeps the first line of CEL issues; later lines only draw the
-// source with a caret.
-func issueMessage(issues *cel.Issues) string {
-	message, _, _ := strings.Cut(issues.Err().Error(), "\n")
-	return strings.TrimPrefix(message, "ERROR: <input>:")
+// InvalidExpressionError lists the problems of an expression that does not
+// compile. It matches ErrInvalidArgument.
+type InvalidExpressionError struct {
+	Problems []string
+}
+
+func invalidExpression(problems ...string) *InvalidExpressionError {
+	return &InvalidExpressionError{Problems: problems}
+}
+
+func (err *InvalidExpressionError) Error() string {
+	return ErrInvalidArgument.Error() + ": " + strings.Join(err.Problems, "; ")
+}
+
+func (err *InvalidExpressionError) Is(target error) bool { return target == ErrInvalidArgument }
+
+// issueMessages lists CEL issues by their line and column, without the
+// drawing of the source with a caret.
+func issueMessages(issues *cel.Issues) []string {
+	var messages []string
+	for _, issue := range issues.Errors() {
+		message := fmt.Sprintf("%d:%d: %s", issue.Location.Line(), issue.Location.Column()+1, issue.Message)
+		if !slices.Contains(messages, message) {
+			messages = append(messages, message)
+		}
+	}
+	return messages
 }
 
 // rewrite turns integer literals into doubles, since CEL has no mixed
@@ -603,15 +639,28 @@ var (
 )
 
 // expressionWalker rejects everything but the strategy language and collects
-// the variables it reads.
+// the variables it reads. It reports every problem in problems and keeps
+// walking the other branches; only an expression too large stops it.
 type expressionWalker struct {
 	info        *ast.SourceInfo
 	identifiers map[string]Read
 	reads       map[string]Read
+	problems    []string
 	comparisons int
 	nodes       int
 	// variables counts the variables read by the current comparison.
 	variables int
+	// unknown is set when the current comparison reads an unknown name.
+	unknown bool
+}
+
+// report records a problem once; percentile windows and crossings repeat
+// their operands.
+func (walker *expressionWalker) report(format string, args ...any) {
+	problem := fmt.Sprintf(format, args...)
+	if !slices.Contains(walker.problems, problem) {
+		walker.problems = append(walker.problems, problem)
+	}
 }
 
 func (walker *expressionWalker) visit() error {
@@ -629,7 +678,8 @@ func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
 		return err
 	}
 	if expr.Kind() != ast.CallKind || expr.AsCall().IsMemberFunction() {
-		return errors.New("combine comparisons with &&, || and !")
+		walker.report("combine comparisons with &&, || and !")
+		return nil
 	}
 	call := expr.AsCall()
 	name := call.FunctionName()
@@ -650,19 +700,23 @@ func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
 			walker.comparisons++
 		}
 		walker.variables = 0
+		walker.unknown = false
 		for _, arg := range call.Args() {
 			if err := walker.value(arg, false); err != nil {
 				return err
 			}
 		}
-		if walker.variables == 0 {
-			return errors.New("each comparison reads an indicator or a candle field")
+		// An unknown name reads no variable but is already reported.
+		if walker.variables == 0 && !walker.unknown {
+			walker.report("each comparison reads an indicator or a candle field")
 		}
 		return nil
 	case slices.Contains(arithmeticOperators, name) || name == operators.Negate || name == percentileFunction:
-		return errors.New("compare values with >, >=, < or <=")
+		walker.report("compare values with >, >=, < or <=")
+		return nil
 	default:
-		return fmt.Errorf("%s is not supported", strings.Trim(name, "_"))
+		walker.report("%s is not supported", strings.Trim(name, "_"))
+		return nil
 	}
 }
 
@@ -677,7 +731,9 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 		read := walker.identifiers[expr.AsIdent()]
 		if read.Variable.Name == "" {
 			name, _, _ := splitIdentifier(expr.AsIdent())
-			return fmt.Errorf("%s is not a configured indicator or candle field", name)
+			walker.report("%s is not a configured indicator or candle field", name)
+			walker.unknown = true
+			return nil
 		}
 		walker.reads[expr.AsIdent()] = read
 		walker.variables++
@@ -689,7 +745,8 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 	case ast.CallKind:
 		call := expr.AsCall()
 		if call.IsMemberFunction() {
-			return errors.New("functions are not supported")
+			walker.report("functions are not supported")
+			return nil
 		}
 		name := call.FunctionName()
 		switch {
@@ -702,7 +759,8 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 			return nil
 		case name == percentileFunction:
 			if inWindow {
-				return errors.New("percentile cannot contain percentile")
+				walker.report("percentile cannot contain percentile")
+				return nil
 			}
 			for _, element := range call.Args()[1].AsList().Elements() {
 				if err := walker.value(element, true); err != nil {
@@ -711,10 +769,13 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 			}
 			return nil
 		case slices.Contains(comparisonOperators, name), name == operators.LogicalAnd, name == operators.LogicalOr, name == operators.LogicalNot:
-			return errors.New("comparisons cannot be compared or calculated with")
+			walker.report("comparisons cannot be compared or calculated with")
+			return nil
 		default:
-			return fmt.Errorf("%s is not supported", strings.Trim(name, "_"))
+			walker.report("%s is not supported", strings.Trim(name, "_"))
+			return nil
 		}
 	}
-	return errors.New("calculate with indicators, candle fields, and numbers")
+	walker.report("calculate with indicators, candle fields, and numbers")
+	return nil
 }

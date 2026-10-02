@@ -99,29 +99,27 @@ export function StrategyRule({
 	return (
 		<Paper mt="xs" p="xs" radius="sm" withBorder>
 			<Stack gap="xs">
-				{/* The remove button shares the first row, so the editor below
-				    takes the full width. */}
-				<Group align="flex-start" gap="xs" wrap="nowrap">
-					<Stack flex={1} miw={0}>
-						<ExpressionEditor
-							disabled={disabled === true}
-							label="Compared value"
-							node={lhs}
-							onChange={changeLeft}
-							variables={variables}
-							withoutNumber
-						/>
-					</Stack>
-					<ActionIcon
-						aria-label="Remove condition"
-						color="red"
-						disabled={disabled}
-						onClick={() => actions.onRuleRemove(path)}
-						variant="subtle"
-					>
-						<IconX size={16} />
-					</ActionIcon>
-				</Group>
+				{/* The remove button shares the row of the kind selector, so the
+				    editor below takes the full width. */}
+				<ExpressionEditor
+					action={
+						<ActionIcon
+							aria-label="Remove condition"
+							color="red"
+							disabled={disabled}
+							onClick={() => actions.onRuleRemove(path)}
+							variant="subtle"
+						>
+							<IconX size={16} />
+						</ActionIcon>
+					}
+					disabled={disabled === true}
+					label="Compared value"
+					node={lhs}
+					onChange={changeLeft}
+					variables={variables}
+					withoutNumber
+				/>
 				<Select
 					aria-label="Comparison"
 					allowDeselect={false}

@@ -49,6 +49,13 @@ var skippedFunctions = map[string]bool{
 	"MAVP": true,
 }
 
+// paneFunctions carry the Overlap flag although their values are not price
+// levels, so on the candle scale they would squash the candles.
+var paneFunctions = map[string]bool{
+	// The average deviation is a distance from the mean, close to zero.
+	"AVGDEV": true,
+}
+
 // optionAliases maps metadata option names to wrapper parameter names where
 // they differ, both compared by optionKey. An unknown difference fails
 // generation, because same-typed options (fast and slow periods) cannot be
@@ -267,7 +274,9 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 	for _, flag := range fn.Flags {
 		switch flag {
 		case "Overlap":
-			body.WriteString("\toverlap: true,\n")
+			if !paneFunctions[fn.Abbreviation] {
+				body.WriteString("\toverlap: true,\n")
+			}
 		case "Candlestick":
 			body.WriteString("\tcandlestick: true,\n")
 		case "Unstable Period":

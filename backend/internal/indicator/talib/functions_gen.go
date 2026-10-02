@@ -219,7 +219,6 @@ var functions = []spec{
 		indicatorType: "avgdev",
 		title:         "Average Deviation",
 		group:         "Price Transform",
-		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
 			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},

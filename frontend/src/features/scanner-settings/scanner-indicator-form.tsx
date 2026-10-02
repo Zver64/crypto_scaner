@@ -106,6 +106,7 @@ export function ScannerIndicatorForm({
 				/>
 				<Select
 					aria-label="Indicator"
+					clearable
 					data={indicatorTypeOptions(groupTypes)}
 					nothingFoundMessage="No indicators found"
 					onChange={selectType}

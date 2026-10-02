@@ -155,11 +155,12 @@ export function ExpressionEditor({
 			) : (
 				<Select
 					aria-label={label}
+					clearable
 					data={variableSelectData(variables)}
 					disabled={disabled}
-					onChange={(value) => {
-						if (value) onChange({ kind: "field", field: value });
-					}}
+					// Clearing leaves the indicator to be chosen again.
+					onChange={(value) => onChange({ kind: "field", field: value ?? "" })}
+					placeholder="Indicator"
 					searchable
 					size="sm"
 					value={node.kind === "field" && node.field !== "" ? node.field : null}

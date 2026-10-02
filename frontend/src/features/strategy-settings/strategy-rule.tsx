@@ -50,10 +50,10 @@ export function StrategyRule({
 	};
 	const range = isRangeOperator(rule.operator);
 	// Plain indicators and numbers stay plain rule fields and values; other
-	// operands are expressions.
+	// operands are expressions. A cleared indicator stays empty.
 	const lhs: ExpressionNode = (rule.lhs as ExpressionNode | undefined) ?? {
 		kind: "field",
-		field: rule.field || (variables[0]?.name ?? ""),
+		field: rule.field,
 	};
 	const changeLeft = (node: ExpressionNode) => {
 		if (node.kind === "field") {

@@ -18,15 +18,15 @@ export function CoinSelect({ coin, disabled, onChange }: CoinSelectProps) {
 	return (
 		<Select
 			aria-label="Coin"
+			clearable
 			data={coin === "" || data.includes(coin) ? data : [coin, ...data]}
 			disabled={disabled}
 			error={
 				symbols.isError ? "Favorite coins could not be loaded." : undefined
 			}
 			nothingFoundMessage="No favorite coins"
-			onChange={(symbol) => {
-				if (symbol) onChange(symbol);
-			}}
+			// Clearing leaves the coin to be chosen again.
+			onChange={(symbol) => onChange(symbol ?? "")}
 			placeholder="Favorite coin"
 			searchable
 			size="sm"

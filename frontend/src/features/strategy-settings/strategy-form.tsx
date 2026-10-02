@@ -1,5 +1,5 @@
 import { Modal } from "@mantine/core";
-import type { StrategyVariable } from "@/api/generated/models";
+import type { StrategyUpdate, StrategyVariable } from "@/api/generated/models";
 import { StrategyFormContent } from "@/features/strategy-settings/strategy-form-content";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 
@@ -8,7 +8,7 @@ interface StrategyFormProps {
 	draft: StrategyDraft | undefined;
 	isSaving: boolean;
 	onCancel(): void;
-	onSubmit(name: string, expression: string): void;
+	onSubmit(input: StrategyUpdate): void;
 	variables: readonly StrategyVariable[];
 }
 

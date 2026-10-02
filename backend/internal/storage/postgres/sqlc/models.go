@@ -85,6 +85,7 @@ type AppStrategy struct {
 	Revision        int64
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
+	Message         string
 }
 
 type AppStrategyIndicator struct {

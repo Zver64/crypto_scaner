@@ -112,6 +112,7 @@ export * from './strategyConflictResponse.ts';
 export * from './strategyEnabled.ts';
 export * from './strategyInput.ts';
 export * from './strategyList.ts';
+export * from './strategyMessage.ts';
 export * from './strategyNotFoundResponse.ts';
 export * from './strategySymbolList.ts';
 export * from './strategyUpdate.ts';

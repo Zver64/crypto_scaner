@@ -1,16 +1,16 @@
 -- name: ListStrategies :many
-SELECT id, name, expression, enabled, baseline_pending, revision
+SELECT id, name, expression, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id;
 
 -- name: InsertStrategy :one
-INSERT INTO app.strategies (name, expression, enabled, baseline_pending)
-VALUES ($1, $2, $3, $3)
+INSERT INTO app.strategies (name, expression, message, enabled, baseline_pending)
+VALUES (@name, @expression, @message, @enabled, @enabled)
 RETURNING id;
 
 -- name: UpdateStrategy :one
 UPDATE app.strategies
-SET name = @name, expression = @expression, updated_at = now(),
+SET name = @name, expression = @expression, message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
     revision = revision + (expression IS DISTINCT FROM @expression)::INTEGER
 WHERE id = @id

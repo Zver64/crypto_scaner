@@ -5,13 +5,14 @@ import {
 	Group,
 	Stack,
 	Text,
+	Textarea,
 	TextInput,
 	Tooltip,
 	UnstyledButton,
 } from "@mantine/core";
 import { useClipboard } from "@mantine/hooks";
 import { useState } from "react";
-import type { StrategyVariable } from "@/api/generated/models";
+import type { StrategyUpdate, StrategyVariable } from "@/api/generated/models";
 import { StrategyImport } from "@/features/strategy-settings/strategy-import";
 import { StrategyRuleBuilder } from "@/features/strategy-settings/strategy-rule-builder";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
@@ -25,7 +26,7 @@ interface StrategyFormContentProps {
 	draft: StrategyDraft;
 	isSaving: boolean;
 	onCancel(): void;
-	onSubmit(name: string, expression: string): void;
+	onSubmit(input: StrategyUpdate): void;
 	variables: readonly StrategyVariable[];
 }
 
@@ -38,6 +39,7 @@ export function StrategyFormContent({
 	variables,
 }: StrategyFormContentProps) {
 	const [name, setName] = useState(draft.name);
+	const [message, setMessage] = useState(draft.message);
 	const [query, setQuery] = useState(draft.query);
 	const [importing, setImporting] = useState(false);
 	const clipboard = useClipboard({ timeout: 1500 });
@@ -122,6 +124,16 @@ export function StrategyFormContent({
 					Add at least one condition and fill every value.
 				</Text>
 			)}
+			<Textarea
+				autosize
+				description="Sent in Telegram after the strategy name and coin instead of the expression and its values. Leave empty for the default text."
+				disabled={isSaving}
+				label="Message"
+				maxLength={1000}
+				minRows={2}
+				onChange={(event) => setMessage(event.currentTarget.value)}
+				value={message}
+			/>
 			{named ? null : (
 				<Text c="dimmed" size="xs">
 					Enter a name to save the strategy.
@@ -139,7 +151,9 @@ export function StrategyFormContent({
 				<Button
 					disabled={!named || !conditionsComplete}
 					loading={isSaving}
-					onClick={() => onSubmit(name.trim(), expression)}
+					onClick={() =>
+						onSubmit({ expression, message: message.trim(), name: name.trim() })
+					}
 				>
 					Save
 				</Button>

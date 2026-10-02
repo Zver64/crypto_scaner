@@ -103,6 +103,7 @@ export function StrategySettings() {
 					setDraft({
 						id: undefined,
 						name: "",
+						message: "",
 						query: emptyStrategyQuery(),
 						incomplete: false,
 					})
@@ -122,6 +123,7 @@ export function StrategySettings() {
 								setDraft({
 									id: strategy.id,
 									name: strategy.name,
+									message: strategy.message,
 									query,
 									incomplete: strategyQueryDropped(strategy.expression, query),
 								});
@@ -141,14 +143,12 @@ export function StrategySettings() {
 				draft={draft}
 				isSaving={createMutation.isPending || updateMutation.isPending}
 				onCancel={() => setDraft(undefined)}
-				onSubmit={(name, expression) => {
+				onSubmit={(input) => {
 					if (draft?.id === undefined) {
-						createMutation.mutate({
-							data: { enabled: true, expression, name },
-						});
+						createMutation.mutate({ data: { ...input, enabled: true } });
 					} else {
 						updateMutation.mutate({
-							data: { expression, name },
+							data: input,
 							strategyId: draft.id,
 						});
 					}

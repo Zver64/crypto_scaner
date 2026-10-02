@@ -17,6 +17,7 @@ sql:
       - migrations/000013_strategies.up.sql
       - migrations/000014_sessions.up.sql
       - migrations/000015_strategy_symbols.up.sql
+      - migrations/000016_strategy_messages.up.sql
     queries: internal/storage/postgres/queries
     gen:
       go:

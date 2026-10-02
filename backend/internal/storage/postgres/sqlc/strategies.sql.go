@@ -125,19 +125,25 @@ func (q *Queries) DeleteStrategySymbols(ctx context.Context, strategyID int64) e
 }
 
 const insertStrategy = `-- name: InsertStrategy :one
-INSERT INTO app.strategies (name, expression, enabled, baseline_pending)
-VALUES ($1, $2, $3, $3)
+INSERT INTO app.strategies (name, expression, message, enabled, baseline_pending)
+VALUES ($1, $2, $3, $4, $4)
 RETURNING id
 `
 
 type InsertStrategyParams struct {
 	Name       string
 	Expression string
+	Message    string
 	Enabled    bool
 }
 
 func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) (int64, error) {
-	row := q.db.QueryRow(ctx, insertStrategy, arg.Name, arg.Expression, arg.Enabled)
+	row := q.db.QueryRow(ctx, insertStrategy,
+		arg.Name,
+		arg.Expression,
+		arg.Message,
+		arg.Enabled,
+	)
 	var id int64
 	err := row.Scan(&id)
 	return id, err
@@ -193,7 +199,7 @@ func (q *Queries) InsertStrategySymbols(ctx context.Context, arg InsertStrategyS
 }
 
 const listStrategies = `-- name: ListStrategies :many
-SELECT id, name, expression, enabled, baseline_pending, revision
+SELECT id, name, expression, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id
 `
@@ -202,6 +208,7 @@ type ListStrategiesRow struct {
 	ID              int64
 	Name            string
 	Expression      string
+	Message         string
 	Enabled         bool
 	BaselinePending bool
 	Revision        int64
@@ -220,6 +227,7 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			&i.ID,
 			&i.Name,
 			&i.Expression,
+			&i.Message,
 			&i.Enabled,
 			&i.BaselinePending,
 			&i.Revision,
@@ -488,16 +496,17 @@ func (q *Queries) SetStrategyEnabled(ctx context.Context, arg SetStrategyEnabled
 
 const updateStrategy = `-- name: UpdateStrategy :one
 UPDATE app.strategies
-SET name = $1, expression = $2, updated_at = now(),
-    baseline_pending = baseline_pending OR $3::BOOLEAN,
+SET name = $1, expression = $2, message = $3, updated_at = now(),
+    baseline_pending = baseline_pending OR $4::BOOLEAN,
     revision = revision + (expression IS DISTINCT FROM $2)::INTEGER
-WHERE id = $4
+WHERE id = $5
 RETURNING revision
 `
 
 type UpdateStrategyParams struct {
 	Name       string
 	Expression string
+	Message    string
 	Baseline   bool
 	ID         int64
 }
@@ -506,6 +515,7 @@ func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) 
 	row := q.db.QueryRow(ctx, updateStrategy,
 		arg.Name,
 		arg.Expression,
+		arg.Message,
 		arg.Baseline,
 		arg.ID,
 	)

@@ -21,7 +21,7 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 	}
 	items := make([]strategy.Strategy, len(rows))
 	for i, row := range rows {
-		items[i] = strategy.Strategy{ID: row.ID, Name: row.Name, Expression: row.Expression, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision}
+		items[i] = strategy.Strategy{ID: row.ID, Name: row.Name, Expression: row.Expression, Message: row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision}
 	}
 	return items, nil
 }
@@ -33,7 +33,7 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{Name: item.Name, Expression: item.Expression, Enabled: item.Enabled})
+	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{Name: item.Name, Expression: item.Expression, Message: item.Message, Enabled: item.Enabled})
 	if err != nil {
 		return 0, strategyWriteError(err)
 	}
@@ -46,7 +46,8 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	return id, tx.Commit(ctx)
 }
 
-// UpdateStrategy replaces the name, expression, indicators, and instruments
+// UpdateStrategy replaces the name, expression, message, indicators, and
+// instruments
 // and returns the revision; baseline requests an announcement of the matches
 // of the new expression.
 func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64, baseline bool) (int64, error) {
@@ -56,7 +57,7 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{ID: item.ID, Name: item.Name, Expression: item.Expression, Baseline: baseline})
+	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{ID: item.ID, Name: item.Name, Expression: item.Expression, Message: item.Message, Baseline: baseline})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, strategy.ErrNotFound
 	}

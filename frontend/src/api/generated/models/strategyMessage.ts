@@ -17,19 +17,11 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyMessage } from './strategyMessage.ts';
 
-export interface StrategyInput {
-  /**
-     * @minLength 1
-     * @maxLength 64
-     */
-  name: string;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
-  message: StrategyMessage;
-  enabled: boolean;
-}
+/**
+ * Telegram alert text that follows the strategy name and the coin symbol
+ * in place of the expression and the values it read; empty keeps the
+ * generated text.
+ * @maxLength 1000
+ */
+export type StrategyMessage = string;

@@ -15,7 +15,7 @@ type Strategies interface {
 	Symbols(context.Context) ([]string, error)
 	Validate(ctx context.Context, expression string) ([]string, error)
 	Create(context.Context, strategy.Strategy) (strategy.Entry, error)
-	Update(ctx context.Context, id int64, name, expression string) (strategy.Entry, error)
+	Update(ctx context.Context, id int64, name, expression, message string) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
 	Delete(context.Context, int64) error
 }
@@ -58,7 +58,7 @@ func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (Li
 }
 
 func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyRequestObject) (CreateStrategyResponseObject, error) {
-	entry, err := api.strategies.Create(ctx, strategy.Strategy{Name: request.Body.Name, Expression: request.Body.Expression, Enabled: request.Body.Enabled})
+	entry, err := api.strategies.Create(ctx, strategy.Strategy{Name: request.Body.Name, Expression: request.Body.Expression, Message: request.Body.Message, Enabled: request.Body.Enabled})
 	switch {
 	case err == nil:
 		return CreateStrategy201JSONResponse(strategyDTO(entry)), nil
@@ -72,7 +72,7 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 }
 
 func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyRequestObject) (UpdateStrategyResponseObject, error) {
-	entry, err := api.strategies.Update(ctx, request.StrategyId, request.Body.Name, request.Body.Expression)
+	entry, err := api.strategies.Update(ctx, request.StrategyId, request.Body.Name, request.Body.Expression, request.Body.Message)
 	switch {
 	case err == nil:
 		return UpdateStrategy200JSONResponse(strategyDTO(entry)), nil
@@ -120,5 +120,5 @@ func strategyConflict(ctx context.Context) StrategyConflictJSONResponse {
 }
 
 func strategyDTO(entry strategy.Entry) Strategy {
-	return Strategy{Id: entry.ID, Name: entry.Name, Expression: entry.Expression, Enabled: entry.Enabled, Valid: entry.Compiled != nil}
+	return Strategy{Id: entry.ID, Name: entry.Name, Expression: entry.Expression, Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil}
 }

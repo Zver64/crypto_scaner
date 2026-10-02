@@ -20,6 +20,8 @@ export interface StrategyDraft {
 	// Undefined while creating a strategy.
 	id: number | undefined;
 	name: string;
+	// Telegram alert text; empty keeps the generated one.
+	message: string;
 	query: StrategyQuery;
 	// Whether the builder dropped parts of the stored expression it cannot
 	// show, which saving would remove.

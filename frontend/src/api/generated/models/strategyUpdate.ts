@@ -17,6 +17,7 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { StrategyMessage } from './strategyMessage.ts';
 
 export interface StrategyUpdate {
   /**
@@ -24,6 +25,7 @@ export interface StrategyUpdate {
      * @maxLength 64
      */
   name: string;
+  message: StrategyMessage;
   /**
      * CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
      * arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and

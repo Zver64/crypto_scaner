@@ -48,6 +48,11 @@ export function StrategyRow({
 					/>
 				</Group>
 				<Code block>{strategy.expression}</Code>
+				{strategy.message === "" ? null : (
+					<Text c="dimmed" size="xs" style={{ whiteSpace: "pre-wrap" }}>
+						{strategy.message}
+					</Text>
+				)}
 				<Group gap="xs" justify="flex-end">
 					<Button
 						disabled={disabled}

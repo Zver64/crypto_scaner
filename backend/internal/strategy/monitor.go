@@ -607,9 +607,14 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 }
 
 // alertText names the strategy, the instrument, and the latest values it
-// read, those of other instruments after their symbol.
+// read, those of other instruments after their symbol. A strategy message
+// replaces the expression and the values.
 func alertText(entry Entry, instrument Instrument, current snapshot) string {
-	lines := []string{"🎯 " + entry.Name + ": " + instrument.Symbol, entry.Expression}
+	title := "🎯 " + entry.Name + ": " + instrument.Symbol
+	if entry.Message != "" {
+		return title + "\n" + entry.Message
+	}
+	lines := []string{title, entry.Expression}
 	var readings []string
 	shown := map[string]struct{}{}
 	for _, read := range entry.Compiled.Reads() {

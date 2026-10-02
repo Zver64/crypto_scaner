@@ -17,12 +17,14 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { StrategyMessage } from './strategyMessage.ts';
 
 export interface Strategy {
   id: number;
   name: string;
   /** CEL expression, such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`. */
   expression: string;
+  message: StrategyMessage;
   enabled: boolean;
   /** False when the stored expression no longer compiles; such a strategy is not evaluated. */
   valid: boolean;

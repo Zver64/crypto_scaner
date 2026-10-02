@@ -20,7 +20,12 @@ import (
 	"crypto-scanner/internal/scannerindicator"
 )
 
-const maxNameLength = 64
+const (
+	maxNameLength = 64
+	// maxMessageLength keeps alerts well below Telegram's 4096-character
+	// message limit.
+	maxMessageLength = 1000
+)
 
 var (
 	ErrInvalidArgument = errors.New("invalid strategy")
@@ -60,7 +65,9 @@ type Strategy struct {
 	ID         int64
 	Name       string
 	Expression string
-	Enabled    bool
+	// Message replaces the generated alert text when it is not empty.
+	Message string
+	Enabled bool
 	// BaselinePending reports, as loaded, that the current matches still
 	// have to be announced, such as after a restart right after a change.
 	BaselinePending bool
@@ -297,9 +304,9 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 	return entry, nil
 }
 
-// Update changes the name and expression. A changed expression of an enabled
-// strategy announces its current matches again.
-func (service *Service) Update(ctx context.Context, id int64, name, expression string) (Entry, error) {
+// Update changes the name, expression, and message. A changed expression of
+// an enabled strategy announces its current matches again.
+func (service *Service) Update(ctx context.Context, id int64, name, expression, message string) (Entry, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
@@ -308,7 +315,7 @@ func (service *Service) Update(ctx context.Context, id int64, name, expression s
 		return Entry{}, ErrNotFound
 	}
 	previous := current[index]
-	entry, err := service.entry(Strategy{ID: id, Name: name, Expression: expression, Enabled: previous.Enabled})
+	entry, err := service.entry(Strategy{ID: id, Name: name, Expression: expression, Message: message, Enabled: previous.Enabled})
 	if err != nil {
 		return Entry{}, err
 	}
@@ -381,6 +388,10 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	item.Name = strings.TrimSpace(item.Name)
 	if item.Name == "" || utf8.RuneCountInString(item.Name) > maxNameLength {
 		return Entry{}, fmt.Errorf("%w: the name must have 1 to %d characters", ErrInvalidArgument, maxNameLength)
+	}
+	item.Message = strings.TrimSpace(item.Message)
+	if utf8.RuneCountInString(item.Message) > maxMessageLength {
+		return Entry{}, fmt.Errorf("%w: the message must have at most %d characters", ErrInvalidArgument, maxMessageLength)
 	}
 	item.Expression = strings.TrimSpace(item.Expression)
 	compiled, err := service.compile(item.Expression, service.Variables())

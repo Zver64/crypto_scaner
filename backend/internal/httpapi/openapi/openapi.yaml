@@ -230,15 +230,22 @@ paths:
           $ref: "#/components/responses/SymbolNotFound"
         "500":
           $ref: "#/components/responses/InternalError"
-  /api/v1/instruments/{symbol}/price-limits:
+  /api/v1/instruments/{symbol}/grid-limits:
     get:
-      operationId: getInstrumentPriceLimits
-      summary: Get the Binance price limits of an instrument
+      operationId: getInstrumentGridLimits
+      summary: Get the Binance spot grid price limits of an instrument
       description: |
-        Returns the current Binance reference price and the PRICE_RANGE rule:
-        buy orders may not go below `reference_price × bid_limit_mult_down` and
-        sell orders may not go above `reference_price × ask_limit_mult_up`. The
-        multipliers are absent when Binance defines no price range.
+        Returns what a Binance spot grid bot derives its price range limits
+        from: the current 5-minute average price, the symbol's percent price
+        multipliers (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE),
+        and its PRICE_FILTER bounds and tick size. A value is 0 when the symbol
+        has no such filter. The bot accepts a lower price down to
+        `max(min_price, (1 − (1 − bid_multiplier_down) × 0.85) × average_price)`
+        and an upper price up to
+        `min(max_price, (1 + (ask_multiplier_up − 1) × 0.85) × average_price)`.
+        Without a multiplier, clients allow 50% below or above the average
+        price; a `max_price` of 0 sets no maximum. Grid prices are multiples of
+        `tick_size`.
       tags: [Market Data]
       security:
         - sessionToken: []
@@ -247,14 +254,14 @@ paths:
         - $ref: "#/components/parameters/Symbol"
       responses:
         "200":
-          description: Price limits.
+          description: Grid limits.
           headers:
             X-Request-ID:
               $ref: "#/components/headers/RequestID"
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/PriceLimitsResponse"
+                $ref: "#/components/schemas/GridLimitsResponse"
         "400":
           $ref: "#/components/responses/BadRequest"
         "401":
@@ -1330,26 +1337,37 @@ components:
         next_before:
           type: [string, "null"]
           format: date-time
-    PriceLimitsResponse:
+    GridLimitsResponse:
       type: object
       additionalProperties: false
-      required: [symbol, reference_price]
+      required: [symbol, average_price, bid_multiplier_down, ask_multiplier_up, min_price, max_price, tick_size]
       properties:
         symbol:
           type: string
-        reference_price:
+        average_price:
           type: number
           format: double
           exclusiveMinimum: 0
-        bid_limit_mult_down:
+        bid_multiplier_down:
           type: number
           format: double
-          exclusiveMinimum: 0
-          maximum: 1
-        ask_limit_mult_up:
+          minimum: 0
+        ask_multiplier_up:
           type: number
           format: double
-          minimum: 1
+          minimum: 0
+        min_price:
+          type: number
+          format: double
+          minimum: 0
+        max_price:
+          type: number
+          format: double
+          minimum: 0
+        tick_size:
+          type: number
+          format: double
+          minimum: 0
     IndicatorConfig:
       type: object
       additionalProperties: false

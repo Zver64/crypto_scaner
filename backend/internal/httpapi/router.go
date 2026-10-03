@@ -58,7 +58,7 @@ type Dependencies struct {
 	Analysis     Analysis
 	MarketTables MarketTables
 	History      CandleHistory
-	PriceLimits  PriceLimits
+	GridLimits   GridLimits
 	// Sessions issues session tokens and authenticates HTTP and WebSocket
 	// requests by them.
 	Sessions    Sessions
@@ -80,16 +80,16 @@ type Options struct {
 }
 
 type api struct {
-	logger      *slog.Logger
-	readiness   Readiness
-	analysis    Analysis
-	tables      MarketTables
-	history     CandleHistory
-	priceLimits PriceLimits
-	favorites   Favorites
-	alerts      PriceAlerts
-	chart       ChartService
-	sessions    Sessions
+	logger     *slog.Logger
+	readiness  Readiness
+	analysis   Analysis
+	tables     MarketTables
+	history    CandleHistory
+	gridLimits GridLimits
+	favorites  Favorites
+	alerts     PriceAlerts
+	chart      ChartService
+	sessions   Sessions
 
 	scannerIndicators ScannerIndicators
 	indicatorTypes    IndicatorTypes
@@ -105,7 +105,7 @@ var protectedRoutes = []string{
 	"POST /api/v1/analysis/instruments/{symbol}",
 	"POST /api/v1/analysis/market",
 	"GET /api/v1/instruments/{symbol}/candles",
-	"GET /api/v1/instruments/{symbol}/price-limits",
+	"GET /api/v1/instruments/{symbol}/grid-limits",
 	"GET /api/v1/chart/indicators",
 	"GET /api/v1/favorites",
 	"PUT /api/v1/favorites/{symbol}",
@@ -149,7 +149,7 @@ func New(logger *slog.Logger, dependencies Dependencies, options Options) http.H
 
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
-	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, priceLimits: dependencies.PriceLimits, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart, sessions: dependencies.Sessions,
+	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, gridLimits: dependencies.GridLimits, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart, sessions: dependencies.Sessions,
 		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes, users: dependencies.Users, strategies: dependencies.Strategies}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,

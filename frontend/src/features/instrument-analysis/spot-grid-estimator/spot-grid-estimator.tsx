@@ -17,13 +17,14 @@ import { ValueGroup } from "@/components/value-group";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	calculateSpotGridInput,
+	DEFAULT_MARKUP_PERCENT,
 	formatMaxPrice,
 	formatMinPrice,
 	gridCountForStep,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
 	lowerPriceLimitError,
-	type SpotGridPriceLimits,
+	type SpotGridLimits,
 	type SpotGridType,
 	spotGridBounds,
 	spotGridEstimateValues,
@@ -37,17 +38,14 @@ import type { SpotGridInput } from "@/utils/calculator/spot-grid";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
-// The default upper markup gets its own scale label when the slider reaches it.
-const DEFAULT_MARKUP_LABEL_PERCENT = 5;
-
 interface SpotGridEstimatorProps {
 	candles?: readonly (PriceCandle | null)[];
 	dailyVolatilityPercent?: number;
 	disabled?: boolean;
 	hourlyVolatilityPercent?: number;
 	paperPadding: string;
-	// Binance price limits: undefined while loading, null when unavailable.
-	priceLimits?: SpotGridPriceLimits | null;
+	// Binance grid limits: undefined while loading, null when unavailable.
+	gridLimits?: SpotGridLimits | null;
 }
 
 type SpotGridFormValues = SpotGridInput & {
@@ -85,11 +83,11 @@ export function SpotGridEstimator({
 	disabled = false,
 	hourlyVolatilityPercent,
 	paperPadding,
-	priceLimits,
+	gridLimits,
 }: SpotGridEstimatorProps) {
 	// The parent remounts the calculator once its data is ready, so the price
 	// both markups are measured from stays fixed while it is being edited.
-	const [bounds] = useState(() => spotGridBounds(candles, priceLimits));
+	const [bounds] = useState(() => spotGridBounds(candles, gridLimits));
 	const [recommendation] = useState(() =>
 		spotGridRecommendation(bounds, hourlyVolatilityPercent),
 	);
@@ -317,21 +315,24 @@ export function SpotGridEstimator({
 						max={bounds.upperMarkupMax}
 						min={0}
 						onChange={changeMarkup}
+						precision={2}
 						scaleLabels={[
 							{ label: "0%", position: 0 },
-							...(bounds.upperMarkupMax > DEFAULT_MARKUP_LABEL_PERCENT
+							...(bounds.upperMarkupMax > DEFAULT_MARKUP_PERCENT
 								? [
 										{
-											label: `${DEFAULT_MARKUP_LABEL_PERCENT}%`,
+											label: formatRangePercent(DEFAULT_MARKUP_PERCENT),
 											position:
-												(DEFAULT_MARKUP_LABEL_PERCENT / bounds.upperMarkupMax) *
-												100,
+												(DEFAULT_MARKUP_PERCENT / bounds.upperMarkupMax) * 100,
 										},
 									]
 								: []),
-							{ label: `${bounds.upperMarkupMax}%`, position: 100 },
+							{
+								label: formatRangePercent(bounds.upperMarkupMax),
+								position: 100,
+							},
 						]}
-						step={1}
+						step={0.01}
 						value={form.values.markup}
 					/>
 					<SliderField
@@ -341,11 +342,15 @@ export function SpotGridEstimator({
 						max={bounds.lowerMarkupMax}
 						min={0}
 						onChange={changeLowerMarkup}
+						precision={2}
 						scaleLabels={[
 							{ label: "0%", position: 0 },
-							{ label: `${bounds.lowerMarkupMax}%`, position: 100 },
+							{
+								label: formatRangePercent(bounds.lowerMarkupMax),
+								position: 100,
+							},
 						]}
-						step={1}
+						step={0.01}
 						value={form.values.lowerMarkup}
 					/>
 					<SliderField
@@ -371,14 +376,14 @@ export function SpotGridEstimator({
 					) : null}
 					{hasAnchor && minPrice !== null && maxPrice !== null ? (
 						<Text c="dimmed" size="sm">
-							Binance accepts grid prices from {minPrice} to {maxPrice} USDT
-							(reference price {formatNumber(anchor)} USDT).
+							Binance grid bots accept prices from {minPrice} to {maxPrice} USDT
+							(5-minute average price {formatNumber(anchor)} USDT).
 						</Text>
 					) : null}
-					{priceLimits === null ? (
+					{gridLimits === null ? (
 						<Text c="dimmed" size="sm">
-							Binance price limits are unavailable, so markups start from the
-							latest hourly close and the range is not checked.
+							Binance grid limits are unavailable, so markups start from the
+							latest hourly close and the prices are not checked.
 						</Text>
 					) : null}
 					{hasAnchor && !hasHourlyVolatility ? (

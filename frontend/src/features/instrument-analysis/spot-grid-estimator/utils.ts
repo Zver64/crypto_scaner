@@ -42,35 +42,105 @@ export interface SpotGridProfitSplit {
 export const DEFAULT_MARKUP_PERCENT = 5;
 export const UPPER_MARKUP_MAX_PERCENT = 50;
 export const LOWER_MARKUP_MAX_PERCENT = 50;
+// Slider caps when the Binance limits allow more: the lower price stays above
+// zero, and the upper price goes no further than triple the average price.
+const LOWER_MARKUP_LIMIT_PERCENT = 99;
+const UPPER_MARKUP_LIMIT_PERCENT = 200;
 export const DEFAULT_GRID_COUNT = "40";
 export const DEFAULT_INVESTMENT = "1000";
 
 type PriceRounding = "ceil" | "floor" | undefined;
 
+const tickRounding = {
+	ceil: SpotGridDecimal.ROUND_CEIL,
+	floor: SpotGridDecimal.ROUND_FLOOR,
+	halfExpand: SpotGridDecimal.ROUND_HALF_UP,
+};
+
+// Rounds a grid price to the symbol's Binance tick size, so Binance accepts
+// it, or to the shared number format when the tick size is unknown.
 function formatCalculatorInput(
+	bounds: SpotGridBounds,
 	value: Decimal,
 	rounding?: PriceRounding,
 ): string {
+	if (bounds.tickSize)
+		return value
+			.toNearest(bounds.tickSize, tickRounding[rounding ?? "halfExpand"])
+			.toFixed();
 	return formatNumber(value.toFixed(), undefined, rounding).replaceAll(",", "");
 }
 
-/** Binance price limits of a symbol, from the price-limits endpoint. */
-export interface SpotGridPriceLimits {
-	askLimitMultUp?: number;
-	bidLimitMultDown?: number;
-	referencePrice: number;
+/** Binance spot grid limits of a symbol, from the grid-limits endpoint. */
+export interface SpotGridLimits {
+	askMultiplierUp: number;
+	averagePrice: number;
+	bidMultiplierDown: number;
+	maxPrice: number;
+	minPrice: number;
+	tickSize: number;
+}
+
+// Binance grid bots keep their orders inside this share of the deviation the
+// exchange's percent price filter allows.
+const BINANCE_GRID_FILTER_SHARE = 0.85;
+// How far from the average price the range may go when a symbol has no
+// percent price filter.
+const BINANCE_GRID_FALLBACK_DEVIATION = 0.5;
+
+// Returns the share of the average price the filter's multiplier allows the
+// bot to reach, or the fallback deviation when the symbol has no filter.
+function gridPriceShare(multiplier: number, direction: 1 | -1): Decimal {
+	const deviation =
+		multiplier > 0
+			? new SpotGridDecimal(multiplier)
+					.minus(1)
+					.abs()
+					.times(BINANCE_GRID_FILTER_SHARE)
+			: new SpotGridDecimal(BINANCE_GRID_FALLBACK_DEVIATION);
+	return new SpotGridDecimal(1).plus(deviation.times(direction));
 }
 
 /**
- * The price both markups are measured from and the range Binance accepts
- * grid orders in. Without Binance limits the anchor is the latest hourly
- * close and the markups keep their slider maximums.
+ * Returns the lowest lower price a Binance spot grid bot accepts, as the bot
+ * computes it: max(minPrice, (1 − (1 − bidMultiplierDown) × 0.85) × average),
+ * or 50% below the average without a multiplier.
+ */
+export function binanceGridMinLowerPrice(limits: SpotGridLimits): Decimal {
+	return SpotGridDecimal.max(
+		Math.max(limits.minPrice, 0),
+		new SpotGridDecimal(limits.averagePrice).times(
+			gridPriceShare(limits.bidMultiplierDown, -1),
+		),
+	);
+}
+
+/**
+ * Returns the highest upper price a Binance spot grid bot accepts, as the bot
+ * computes it: min(maxPrice, (1 + (askMultiplierUp − 1) × 0.85) × average),
+ * or 50% above the average without a multiplier; a maxPrice of 0 sets no
+ * maximum.
+ */
+export function binanceGridMaxUpperPrice(limits: SpotGridLimits): Decimal {
+	const upper = new SpotGridDecimal(limits.averagePrice).times(
+		gridPriceShare(limits.askMultiplierUp, 1),
+	);
+	return limits.maxPrice > 0
+		? SpotGridDecimal.min(limits.maxPrice, upper)
+		: upper;
+}
+
+/**
+ * The price both markups are measured from and the price range a Binance grid
+ * bot accepts. Without the Binance limits the anchor is the latest hourly
+ * close and the prices are not limited.
  */
 export interface SpotGridBounds {
 	anchor: number | null;
 	lowerMarkupMax: number;
 	maxPrice: Decimal | null;
 	minPrice: Decimal | null;
+	tickSize: Decimal | null;
 	upperMarkupMax: number;
 }
 
@@ -99,57 +169,68 @@ export function latestAvailableCandle(
 	return null;
 }
 
-// Whole percents keep the slider on its 1% steps inside the Binance range.
-function wholeMarkupMax(fraction: Decimal, cap: number): number {
-	return Math.max(0, Math.min(cap, fraction.times(100).floor().toNumber()));
+// Markups keep two decimals and round toward the anchor, so a slider at its
+// maximum stays inside the Binance range.
+function markupMax(fraction: Decimal, cap: number): number {
+	return Math.max(
+		0,
+		Math.min(
+			cap,
+			fraction
+				.times(100)
+				.toDecimalPlaces(2, SpotGridDecimal.ROUND_DOWN)
+				.toNumber(),
+		),
+	);
 }
 
 export function spotGridBounds(
 	candles: readonly (PriceCandle | null)[] | undefined,
-	limits: SpotGridPriceLimits | null | undefined,
+	limits: SpotGridLimits | null | undefined,
 ): SpotGridBounds {
-	const unlimited = {
-		lowerMarkupMax: LOWER_MARKUP_MAX_PERCENT,
-		maxPrice: null,
-		minPrice: null,
-		upperMarkupMax: UPPER_MARKUP_MAX_PERCENT,
-	};
-	if (!limits || !validPositiveNumber(limits.referencePrice)) {
+	if (!limits || !validPositiveNumber(limits.averagePrice)) {
 		const close = latestAvailableCandle(candles)?.close;
-		return { ...unlimited, anchor: validPositiveNumber(close) ? close : null };
+		return {
+			anchor: validPositiveNumber(close) ? close : null,
+			lowerMarkupMax: LOWER_MARKUP_MAX_PERCENT,
+			maxPrice: null,
+			minPrice: null,
+			tickSize: null,
+			upperMarkupMax: UPPER_MARKUP_MAX_PERCENT,
+		};
 	}
-	const reference = new SpotGridDecimal(limits.referencePrice);
-	const bounds: SpotGridBounds = {
-		...unlimited,
-		anchor: limits.referencePrice,
+	const minPrice = binanceGridMinLowerPrice(limits);
+	const maxPrice = binanceGridMaxUpperPrice(limits);
+	return {
+		anchor: limits.averagePrice,
+		lowerMarkupMax: markupMax(
+			new SpotGridDecimal(1).minus(minPrice.div(limits.averagePrice)),
+			LOWER_MARKUP_LIMIT_PERCENT,
+		),
+		maxPrice,
+		minPrice,
+		tickSize: validPositiveNumber(limits.tickSize)
+			? new SpotGridDecimal(limits.tickSize)
+			: null,
+		upperMarkupMax: markupMax(
+			maxPrice.div(limits.averagePrice).minus(1),
+			UPPER_MARKUP_LIMIT_PERCENT,
+		),
 	};
-	if (validPositiveNumber(limits.bidLimitMultDown)) {
-		const down = new SpotGridDecimal(limits.bidLimitMultDown);
-		bounds.minPrice = reference.times(down);
-		bounds.lowerMarkupMax = wholeMarkupMax(
-			new SpotGridDecimal(1).minus(down),
-			LOWER_MARKUP_MAX_PERCENT,
-		);
-	}
-	if (validPositiveNumber(limits.askLimitMultUp)) {
-		const up = new SpotGridDecimal(limits.askLimitMultUp);
-		bounds.maxPrice = reference.times(up);
-		bounds.upperMarkupMax = wholeMarkupMax(
-			up.minus(1),
-			UPPER_MARKUP_MAX_PERCENT,
-		);
-	}
-	return bounds;
 }
 
-/** Returns the lowest grid price Binance accepts, rounded up for display. */
+/** Returns the lowest lower price Binance accepts, rounded up for display. */
 export function formatMinPrice(bounds: SpotGridBounds): string | null {
-	return bounds.minPrice && formatCalculatorInput(bounds.minPrice, "ceil");
+	return (
+		bounds.minPrice && formatCalculatorInput(bounds, bounds.minPrice, "ceil")
+	);
 }
 
-/** Returns the highest grid price Binance accepts, rounded down for display. */
+/** Returns the highest upper price Binance accepts, rounded down for display. */
 export function formatMaxPrice(bounds: SpotGridBounds): string | null {
-	return bounds.maxPrice && formatCalculatorInput(bounds.maxPrice, "floor");
+	return (
+		bounds.maxPrice && formatCalculatorInput(bounds, bounds.maxPrice, "floor")
+	);
 }
 
 /** Returns the upper price that sits `markupPercent` above the anchor. */
@@ -169,7 +250,8 @@ export function upperPriceFromMarkup(
 			new SpotGridDecimal(1).plus(new SpotGridDecimal(markupPercent).div(100)),
 		);
 		if (!upper.isFinite() || !upper.gt(0)) return null;
-		const formatted = formatCalculatorInput(upper);
+		// Never above the Binance maximum.
+		const formatted = formatCalculatorInput(bounds, upper);
 		return bounds.maxPrice && new SpotGridDecimal(formatted).gt(bounds.maxPrice)
 			? formatMaxPrice(bounds)
 			: formatted;
@@ -198,7 +280,7 @@ export function lowerPriceFromMarkup(
 		if (!lower.gt(0)) return null;
 		// Round down so the range only widens and grid steps never shrink, but
 		// never below the Binance minimum.
-		const formatted = formatCalculatorInput(lower, "floor");
+		const formatted = formatCalculatorInput(bounds, lower, "floor");
 		if (bounds.minPrice && new SpotGridDecimal(formatted).lt(bounds.minPrice))
 			return formatMinPrice(bounds);
 		return parseSpotGridDecimal(formatted, "Lower price").gt(0)

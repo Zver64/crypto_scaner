@@ -18,15 +18,18 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export interface PriceLimitsResponse {
+export interface GridLimitsResponse {
   symbol: string;
   /** @exclusiveMinimum 0 */
-  reference_price: number;
-  /**
-     * @maximum 1
-     * @exclusiveMinimum 0
-     */
-  bid_limit_mult_down?: number;
-  /** @minimum 1 */
-  ask_limit_mult_up?: number;
+  average_price: number;
+  /** @minimum 0 */
+  bid_multiplier_down: number;
+  /** @minimum 0 */
+  ask_multiplier_up: number;
+  /** @minimum 0 */
+  min_price: number;
+  /** @minimum 0 */
+  max_price: number;
+  /** @minimum 0 */
+  tick_size: number;
 }

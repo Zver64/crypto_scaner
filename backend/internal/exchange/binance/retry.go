@@ -108,7 +108,7 @@ func requestWeight(path string) int {
 	switch {
 	case strings.HasSuffix(path, "/exchangeInfo"):
 		return 20
-	case strings.HasSuffix(path, "/klines"):
+	case strings.HasSuffix(path, "/klines"), strings.HasSuffix(path, "/avgPrice"):
 		return 2
 	default:
 		return 1

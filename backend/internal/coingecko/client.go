@@ -23,6 +23,9 @@ const (
 	requestAttempts = 3
 	retryBaseDelay  = 5 * time.Second
 	maxRetryDelay   = 2 * time.Minute
+	// maxIDsQueryLength keeps market requests below the URL length at which
+	// CoinGecko's CDN answers 403 (observed between 2000 and 2300 characters).
+	maxIDsQueryLength = 1500
 )
 
 var _ marketcap.Provider = (*Client)(nil)
@@ -137,18 +140,6 @@ func (c *Client) Markets(ctx context.Context, ids []string) ([]marketcap.Cap, er
 	if len(ids) == 0 || len(ids) > 250 {
 		return nil, fmt.Errorf("CoinGecko market ID batch must contain 1 to 250 IDs")
 	}
-	var body *[]struct {
-		ID          string    `json:"id"`
-		MarketCap   *float64  `json:"market_cap"`
-		LastUpdated time.Time `json:"last_updated"`
-	}
-	err := c.get(ctx, "/api/v3/coins/markets?vs_currency=usd&ids="+url.QueryEscape(strings.Join(ids, ","))+"&per_page="+fmt.Sprint(len(ids))+"&page=1&sparkline=false", &body)
-	if err != nil {
-		return nil, err
-	}
-	if body == nil {
-		return nil, fmt.Errorf("invalid CoinGecko markets response")
-	}
 	requested := map[string]bool{}
 	for _, id := range ids {
 		if id == "" || requested[id] {
@@ -157,16 +148,30 @@ func (c *Client) Markets(ctx context.Context, ids []string) ([]marketcap.Cap, er
 		requested[id] = true
 	}
 	seen := map[string]bool{}
-	result := make([]marketcap.Cap, 0, len(*body))
-	for _, v := range *body {
-		if v.ID == "" || !requested[v.ID] || seen[v.ID] {
-			continue
+	result := make([]marketcap.Cap, 0, len(ids))
+	for _, chunk := range idChunks(ids) {
+		var body *[]struct {
+			ID          string    `json:"id"`
+			MarketCap   *float64  `json:"market_cap"`
+			LastUpdated time.Time `json:"last_updated"`
 		}
-		if v.MarketCap == nil || !numeric.Finite(*v.MarketCap) || *v.MarketCap < 0 || v.LastUpdated.IsZero() {
-			continue
+		err := c.get(ctx, "/api/v3/coins/markets?vs_currency=usd&ids="+chunk.query+"&per_page="+fmt.Sprint(chunk.count)+"&page=1&sparkline=false", &body)
+		if err != nil {
+			return nil, err
 		}
-		seen[v.ID] = true
-		result = append(result, marketcap.Cap{CoinID: v.ID, USD: *v.MarketCap, Available: true, ObservedAt: v.LastUpdated})
+		if body == nil {
+			return nil, fmt.Errorf("invalid CoinGecko markets response")
+		}
+		for _, v := range *body {
+			if v.ID == "" || !requested[v.ID] || seen[v.ID] {
+				continue
+			}
+			if v.MarketCap == nil || !numeric.Finite(*v.MarketCap) || *v.MarketCap < 0 || v.LastUpdated.IsZero() {
+				continue
+			}
+			seen[v.ID] = true
+			result = append(result, marketcap.Cap{CoinID: v.ID, USD: *v.MarketCap, Available: true, ObservedAt: v.LastUpdated})
+		}
 	}
 	for id := range requested {
 		if !seen[id] {
@@ -174,6 +179,36 @@ func (c *Client) Markets(ctx context.Context, ids []string) ([]marketcap.Cap, er
 		}
 	}
 	return result, nil
+}
+
+type idChunk struct {
+	query string
+	count int
+}
+
+// idChunks splits ids into comma-separated query values of at most
+// maxIDsQueryLength characters each; CoinGecko's CDN blocks longer URLs.
+func idChunks(ids []string) []idChunk {
+	var chunks []idChunk
+	var query strings.Builder
+	count := 0
+	for _, id := range ids {
+		escaped := url.QueryEscape(id)
+		if count > 0 && query.Len()+1+len(escaped) > maxIDsQueryLength {
+			chunks = append(chunks, idChunk{query: query.String(), count: count})
+			query.Reset()
+			count = 0
+		}
+		if count > 0 {
+			query.WriteByte(',')
+		}
+		query.WriteString(escaped)
+		count++
+	}
+	if count > 0 {
+		chunks = append(chunks, idChunk{query: query.String(), count: count})
+	}
+	return chunks
 }
 
 // get decodes one rate-limited request, retrying 429 and 5xx responses.

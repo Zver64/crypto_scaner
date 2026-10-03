@@ -133,7 +133,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	}
 	scheduler := marketsync.NewScheduler(synchronizers, logger)
 
-	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(marketcap.New(store, coingecko.NewClient("", cfg.CoinGeckoDemoAPIKey)), store, logger, time.Hour, time.Minute)
+	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(marketcap.New(store, coingecko.NewClient("", cfg.CoinGeckoDemoAPIKey)), store, logger, time.Hour, 15*time.Minute)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize coin metadata synchronizer: %w", err)
 	}

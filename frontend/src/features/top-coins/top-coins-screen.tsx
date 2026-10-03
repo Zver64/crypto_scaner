@@ -52,14 +52,6 @@ export function TopCoinsScreen({
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const permission = useBusinessRequestPermission();
 	const [settings, setSettings] = useState(initialSettings);
-	const settingsForm = useVolatilitySettingsForm({
-		disabled: !permission.allowed,
-		initialSettings,
-		onCommit: (nextSettings) => {
-			setSettings(nextSettings);
-			onSettingsCommit(nextSettings);
-		},
-	});
 	const scanCriteria = buildTopCoinsScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
 	const query = useAnalyzeMarket<MarketAnalysisResponse>(
@@ -79,6 +71,15 @@ export function TopCoinsScreen({
 			},
 		},
 	);
+	const settingsForm = useVolatilitySettingsForm({
+		disabled: !permission.allowed,
+		initialSettings,
+		loading: query.isFetching,
+		onCommit: (nextSettings) => {
+			setSettings(nextSettings);
+			onSettingsCommit(nextSettings);
+		},
+	});
 	const allRows = query.data?.table.rows ?? [];
 	const rows = filterMarketScanRows(allRows, symbolFilter);
 	useEffect(() => {

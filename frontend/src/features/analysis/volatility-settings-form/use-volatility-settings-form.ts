@@ -15,6 +15,7 @@ import {
 export function useVolatilitySettingsForm({
 	disabled,
 	initialSettings,
+	loading,
 	onCommit,
 }: UseVolatilitySettingsFormOptions): SettingsFormProps {
 	const presets = applicationConfig.volatility;
@@ -63,6 +64,7 @@ export function useVolatilitySettingsForm({
 			},
 		],
 		disabled: disabled || !draftSettings,
+		loading,
 		onSubmit: (event) => {
 			event.preventDefault();
 			if (disabled || !draftSettings) return;

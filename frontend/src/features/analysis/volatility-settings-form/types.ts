@@ -8,6 +8,7 @@ export interface VolatilitySettings {
 export interface UseVolatilitySettingsFormOptions {
 	disabled: boolean;
 	initialSettings: VolatilitySettings;
+	loading?: boolean;
 	onCommit(settings: VolatilitySettings): void;
 }
 

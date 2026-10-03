@@ -57,14 +57,6 @@ export function FavoritesScreen({
 	const { favorites, handleAccessError, isError, isLoading } = useFavorites();
 	const hasFavorites = favorites.size > 0;
 	const [settings, setSettings] = useState(initialSettings);
-	const settingsForm = useVolatilitySettingsForm({
-		disabled: !permission.allowed,
-		initialSettings,
-		onCommit: (nextSettings) => {
-			setSettings(nextSettings);
-			onSettingsCommit(nextSettings);
-		},
-	});
 	const scanCriteria = buildTopCoinsScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
 	const request = { criteria, ...topCoinsRequestOptions };
@@ -86,6 +78,16 @@ export function FavoritesScreen({
 				}
 				return response.data;
 			},
+		},
+	});
+	const settingsForm = useVolatilitySettingsForm({
+		disabled: !permission.allowed,
+		initialSettings,
+		// The previous table stays visible while new settings are analyzed.
+		loading: query.isPlaceholderData,
+		onCommit: (nextSettings) => {
+			setSettings(nextSettings);
+			onSettingsCommit(nextSettings);
 		},
 	});
 	useEffect(() => {

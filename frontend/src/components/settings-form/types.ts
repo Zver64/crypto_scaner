@@ -10,6 +10,7 @@ export interface SettingsFormGroup {
 export interface SettingsFormProps {
 	groups: readonly SettingsFormGroup[];
 	disabled?: boolean;
+	loading?: boolean;
 	onSubmit: FormEventHandler<HTMLFormElement>;
 	submitLabel: ReactNode;
 }

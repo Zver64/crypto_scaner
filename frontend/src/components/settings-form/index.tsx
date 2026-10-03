@@ -5,6 +5,7 @@ import type { SettingsFormProps } from "@/components/settings-form/types";
 export function SettingsForm({
 	groups,
 	disabled,
+	loading,
 	onSubmit,
 	submitLabel,
 }: SettingsFormProps) {
@@ -21,7 +22,7 @@ export function SettingsForm({
 						inputs={group.inputs}
 					/>
 				))}
-				<Button disabled={disabled} size="md" type="submit">
+				<Button disabled={disabled} loading={loading} size="md" type="submit">
 					{submitLabel}
 				</Button>
 			</Stack>

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.1](https://github.com/Zver64/crypto_scaner/compare/v0.33.0...v0.33.1) (2026-10-03)
+
+
+### Bug Fixes
+
+* show a loader on the apply settings button while analysis reloads ([777d7e6](https://github.com/Zver64/crypto_scaner/commit/777d7e6dafbc1780917a411d6e67a422d51492b1))
+
 ## [0.33.0](https://github.com/Zver64/crypto_scaner/compare/v0.32.0...v0.33.0) (2026-10-03)
 
 

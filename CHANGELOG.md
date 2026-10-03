@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.33.0](https://github.com/Zver64/crypto_scaner/compare/v0.32.0...v0.33.0) (2026-10-03)
+
+
+### Features
+
+* send backend warnings and errors to the administrator in Telegram ([dadbf89](https://github.com/Zver64/crypto_scaner/commit/dadbf89f58fde4487652066ccd641904f14b38f0))
+
+
+### Bug Fixes
+
+* split CoinGecko market requests to stay under the URL limit ([5127413](https://github.com/Zver64/crypto_scaner/commit/51274138643d40f87a21598bc4d9d86c5b5f6f07))
+
 ## [0.32.0](https://github.com/Zver64/crypto_scaner/compare/v0.31.0...v0.32.0) (2026-10-03)
 
 

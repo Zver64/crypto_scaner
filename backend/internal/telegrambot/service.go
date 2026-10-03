@@ -390,6 +390,16 @@ func (service *Service) SendStrategyMessage(ctx context.Context, telegramID int6
 	return service.deliver(ctx, telegramID, text)
 }
 
+// SendAdministratorMessage sends an operational message to the configured
+// administrator within the bot-wide rate limit.
+func (service *Service) SendAdministratorMessage(ctx context.Context, text string) error {
+	if err := service.sendLimiter.Wait(ctx); err != nil {
+		return err
+	}
+	_, err := service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: service.administratorID, Text: text})
+	return err
+}
+
 // deliver respects the bot-wide and per-user rate limits and rechecks access.
 func (service *Service) deliver(ctx context.Context, telegramID int64, text string) error {
 	service.mu.Lock()

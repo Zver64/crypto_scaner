@@ -4,21 +4,33 @@ import (
 	"context"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 )
 
 const redacted = "[REDACTED]"
 
+// Options are the optional logger settings.
+type Options struct {
+	// Forward receives a copy of every redacted record at warning level or
+	// above, with the attributes added through With. It must not block.
+	Forward func(slog.Record)
+}
+
 // New constructs the process logger. Values supplied as secrets are removed
 // from messages and attributes in addition to key-based redaction.
-func New(output io.Writer, configuredLevel string, secrets ...string) *slog.Logger {
+func New(output io.Writer, configuredLevel string, options Options, secrets ...string) *slog.Logger {
 	jsonHandler := slog.NewJSONHandler(output, &slog.HandlerOptions{Level: parseLevel(configuredLevel)})
-	return slog.New(&safeHandler{next: jsonHandler, secrets: nonEmpty(secrets)})
+	return slog.New(&safeHandler{next: jsonHandler, secrets: nonEmpty(secrets), forward: options.Forward})
 }
 
 type safeHandler struct {
 	next    slog.Handler
 	secrets []string
+	forward func(slog.Record)
+	// attrs are the redacted attributes added through WithAttrs, kept for
+	// forwarded records.
+	attrs []slog.Attr
 }
 
 func (h *safeHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -31,6 +43,11 @@ func (h *safeHandler) Handle(ctx context.Context, record slog.Record) error {
 		safeRecord.AddAttrs(h.cleanAttr(attr))
 		return true
 	})
+	if h.forward != nil && record.Level >= slog.LevelWarn {
+		forwarded := safeRecord.Clone()
+		forwarded.AddAttrs(h.attrs...)
+		h.forward(forwarded)
+	}
 	return h.next.Handle(ctx, safeRecord)
 }
 
@@ -39,11 +56,11 @@ func (h *safeHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	for _, attr := range attrs {
 		safe = append(safe, h.cleanAttr(attr))
 	}
-	return &safeHandler{next: h.next.WithAttrs(safe), secrets: h.secrets}
+	return &safeHandler{next: h.next.WithAttrs(safe), secrets: h.secrets, forward: h.forward, attrs: append(slices.Clip(h.attrs), safe...)}
 }
 
 func (h *safeHandler) WithGroup(name string) slog.Handler {
-	return &safeHandler{next: h.next.WithGroup(name), secrets: h.secrets}
+	return &safeHandler{next: h.next.WithGroup(name), secrets: h.secrets, forward: h.forward, attrs: h.attrs}
 }
 
 func (h *safeHandler) cleanAttr(attr slog.Attr) slog.Attr {
@@ -56,6 +73,10 @@ func (h *safeHandler) cleanAttr(attr slog.Attr) slog.Attr {
 	case slog.KindString:
 		attr.Value = slog.StringValue(h.clean(value.String()))
 	case slog.KindAny:
+		if err, ok := value.Any().(error); ok {
+			attr.Value = slog.StringValue(h.clean(err.Error()))
+			break
+		}
 		// JSON handlers recursively serialize arbitrary values, bypassing the
 		// attribute-level sanitizer. Treat opaque values as sensitive because
 		// their nested shape and String methods are not under logger control.

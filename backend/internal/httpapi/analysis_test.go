@@ -204,7 +204,7 @@ func TestAnalysisSchemaValidationRejectsRequestsBeforeService(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &countingAnalysis{}
-			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
+			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
 			response := analysisRequestTo(t, handler, test.path, test.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -241,7 +241,7 @@ func TestMarketAnalysisPreservesOmittedAndZeroLimitWithOptionalSort(t *testing.T
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := &countingAnalysis{}
-			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
+			handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: service, MarketTables: service}, httpapi.Options{}, passThrough)
 			response := analysisRequestTo(t, handler, "/api/v1/analysis/market", test.body)
 			if response.Code != http.StatusBadRequest {
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
@@ -447,7 +447,7 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	if err != nil {
 		panic(err)
 	}
-	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: markettable.NewService(service, table), Sessions: analysisSessions{}}, httpapi.Options{})
+	return httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: markettable.NewService(service, table), Sessions: analysisSessions{}}, httpapi.Options{})
 }
 
 type httpStore struct {

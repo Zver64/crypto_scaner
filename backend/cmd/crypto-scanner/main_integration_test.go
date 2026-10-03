@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/migrate"
+	"crypto-scanner/internal/opsnotify"
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/storage/postgres"
 )
@@ -160,7 +161,7 @@ func TestNormalServerStartupBootstrapsConfiguredAdministrator(t *testing.T) {
 		defer cancel()
 		cfg.HTTPAddress = availableAddress(t)
 		result := make(chan error, 1)
-		go func() { result <- run(serverCtx, cfg, logger) }()
+		go func() { result <- run(serverCtx, cfg, logger, opsnotify.NewQueue(), logger) }()
 		waitUntilListening(t, cfg.HTTPAddress, result)
 		cancel()
 		select {

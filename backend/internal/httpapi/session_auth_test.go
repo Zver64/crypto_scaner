@@ -31,11 +31,11 @@ var fixtureNow = time.Date(2026, time.August, 5, 4, 10, 0, 0, time.UTC)
 
 func newTestSessions(store *memorySessionStore, maxAge time.Duration) *auth.Sessions {
 	return auth.NewSessions(store, telegram.New(fixtureBotToken, maxAge, telegram.Options{Now: func() time.Time { return fixtureNow }}),
-		0, time.Hour, 24*time.Hour, logging.New(io.Discard, "error"), auth.SessionOptions{Now: func() time.Time { return fixtureNow }})
+		0, time.Hour, 24*time.Hour, logging.New(io.Discard, "error", logging.Options{}), auth.SessionOptions{Now: func() time.Time { return fixtureNow }})
 }
 
 func newSessionHandler(sessions httpapi.Sessions) http.Handler {
-	return httpapi.New(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Sessions: sessions}, httpapi.Options{})
+	return httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Sessions: sessions}, httpapi.Options{})
 }
 
 func exchange(handler http.Handler, authorization string) *httptest.ResponseRecorder {
@@ -74,7 +74,7 @@ func TestExchangedSessionReachesProtectedHandler(t *testing.T) {
 		}
 	}
 
-	handler := httpapi.RequireSession(sessions, logging.New(io.Discard, "error"))(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+	handler := httpapi.RequireSession(sessions, logging.New(io.Discard, "error", logging.Options{}))(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		got, ok := httpapi.UserFromContext(request.Context())
 		if !ok || got != want {
 			t.Fatalf("authenticated user = %#v, %t; want %#v, true", got, ok, want)
@@ -165,7 +165,7 @@ func TestAuthenticationErrorCarriesTheRequestIDWithoutExposingCredentials(t *tes
 		t.Fatal("user store called for an unknown session")
 		return auth.User{}, nil
 	}}
-	middleware := httpapi.RequireSession(newTestSessions(store, 15*time.Minute), logging.New(io.Discard, "error"))
+	middleware := httpapi.RequireSession(newTestSessions(store, 15*time.Minute), logging.New(io.Discard, "error", logging.Options{}))
 	handler := middleware(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
 		t.Fatal("protected handler was reached")
 	}))

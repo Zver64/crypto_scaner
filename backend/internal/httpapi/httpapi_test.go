@@ -18,7 +18,7 @@ import (
 
 func TestReadinessReportsMissingSuccessfulMarketSync(t *testing.T) {
 	handler := newTestHTTPHandler(
-		logging.New(io.Discard, "error"),
+		logging.New(io.Discard, "error", logging.Options{}),
 		readinessStub{database: true, migrations: true},
 	)
 	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
@@ -42,7 +42,7 @@ func TestReadinessReportsMissingSuccessfulMarketSync(t *testing.T) {
 
 func TestReadinessSucceedsWithDatabaseMigrationsAndSuccessfulMarketSync(t *testing.T) {
 	handler := newTestHTTPHandler(
-		logging.New(io.Discard, "error"),
+		logging.New(io.Discard, "error", logging.Options{}),
 		readinessStub{database: true, migrations: true, marketSync: true},
 	)
 	request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
@@ -72,7 +72,7 @@ func TestReadinessRejectsUnavailableDatabaseOrMigrations(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			handler := newTestHTTPHandler(logging.New(io.Discard, "error"), test.readiness)
+			handler := newTestHTTPHandler(logging.New(io.Discard, "error", logging.Options{}), test.readiness)
 			request := httptest.NewRequest(http.MethodGet, "/health/ready", nil)
 			response := httptest.NewRecorder()
 			handler.ServeHTTP(response, request)
@@ -106,7 +106,7 @@ func (stub readinessStub) SuccessfulMarketSyncExists(context.Context) bool { ret
 
 func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing.T) {
 	var logOutput bytes.Buffer
-	server := httptest.NewServer(newTestHTTPHandler(logging.New(&logOutput, "info"), readinessStub{}))
+	server := httptest.NewServer(newTestHTTPHandler(logging.New(&logOutput, "info", logging.Options{}), readinessStub{}))
 	t.Cleanup(server.Close)
 
 	request, err := http.NewRequest(http.MethodGet, server.URL+"/health/live", nil)
@@ -150,7 +150,7 @@ func TestLivenessResponseCarriesARequestIDCorrelatedWithTheRequestLog(t *testing
 }
 
 func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *testing.T) {
-	server := httptest.NewServer(newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{}))
+	server := httptest.NewServer(newTestHTTPHandler(logging.New(io.Discard, "error", logging.Options{}), readinessStub{}))
 	t.Cleanup(server.Close)
 
 	request, err := http.NewRequest(http.MethodGet, server.URL+"/does-not-exist", nil)
@@ -175,7 +175,7 @@ func TestEveryResponseGetsAGeneratedRequestIDWhenTheIncomingValueIsUnsafe(t *tes
 
 func TestBusinessRoutesRejectUnsupportedMethodsBeforeAuthentication(t *testing.T) {
 	authenticator := &countingAuthenticator{}
-	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
+	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
 	for _, test := range []struct {
 		name   string
 		method string
@@ -208,7 +208,7 @@ func TestBusinessRoutesRejectUnsupportedMethodsBeforeAuthentication(t *testing.T
 
 func TestUnknownAPIRouteReturnsNotFoundBeforeAuthentication(t *testing.T) {
 	authenticator := &countingAuthenticator{}
-	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error"), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
+	handler := httpapi.NewWithAuthentication(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{}, Analysis: unavailableAnalysis{}}, httpapi.Options{}, authenticator.Authenticate)
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/unknown", nil))
 	if response.Code != http.StatusNotFound {
@@ -223,7 +223,7 @@ func TestUnknownAPIRouteReturnsNotFoundBeforeAuthentication(t *testing.T) {
 }
 
 func TestRouterDoesNotExposeTelegramBotEndpoints(t *testing.T) {
-	handler := newTestHTTPHandler(logging.New(io.Discard, "error"), readinessStub{})
+	handler := newTestHTTPHandler(logging.New(io.Discard, "error", logging.Options{}), readinessStub{})
 
 	for _, path := range []string{"/telegram/webhook", "/telegram/analysis"} {
 		request := httptest.NewRequest(http.MethodPost, path, strings.NewReader(`{"update_id":1}`))

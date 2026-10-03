@@ -28,6 +28,7 @@ import (
 	"crypto-scanner/internal/market/retention"
 	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/markettable"
+	"crypto-scanner/internal/opsnotify"
 	"crypto-scanner/internal/platform/config"
 	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/storage/postgres"
@@ -40,6 +41,8 @@ import (
 type app struct {
 	handler  http.Handler
 	services []service
+	// notifier is also one of services; run flushes it after they stop.
+	notifier *opsnotify.Notifier
 }
 
 // listeners fans one notification out to listeners registered after the
@@ -52,7 +55,7 @@ func (l *listeners) notify() {
 	}
 }
 
-func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger, store *postgres.Store) (app, error) {
+func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger, store *postgres.Store, queue *opsnotify.Queue, notifierLogger *slog.Logger) (app, error) {
 	indicatorRegistry, err := indicator.NewRegistry(indicatorModules()...)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
@@ -152,6 +155,10 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize Telegram bot: %w", err)
 	}
+	notifier, err := opsnotify.New(queue, botService, notifierLogger)
+	if err != nil {
+		return app{}, err
+	}
 	tradeStream := binance.NewTradeStream(logger, dialLimiter)
 	alertMonitor := alerts.NewMonitor(store, tradeStream, botService, logger)
 	strategyMonitor = strategy.NewMonitor(store, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
@@ -177,7 +184,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		Users:             users.New(store, cfg.AdminTelegramID, monitoredChanged.notify),
 		Strategies:        strategies,
 	}, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled})
-	return app{handler: handler, services: []service{
+	return app{handler: handler, notifier: notifier, services: []service{
 		{"market scheduler", scheduler},
 		{"live kline stream", klineStream},
 		{"live candle service", liveService},
@@ -189,6 +196,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		{"coin metadata synchronizer", coinMetadataSynchronizer},
 		{"market retention", retention.New(store, logger, market.HistoryDepth)},
 		{"session pruner", sessions},
+		{"operations notifier", notifier},
 	}}, nil
 }
 

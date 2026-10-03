@@ -10,6 +10,7 @@ Packages and dependency direction (domain never imports adapters):
 - Adapters: `indicator/talib` (every TA-Lib function through one generic adapter), `exchange/binance` (REST client and one generic WebSocket `streamPool` for kline and trade streams), `coingecko`, `storage/postgres` (one `Store`, split into `store_*.go` by aggregate), `httpapi` (transport only), `telegrambot`, `auth/telegram` (init-data verification, no `net/http`).
 - Authentication: `auth.Sessions` exchanges Telegram init data (at most `TELEGRAM_INIT_DATA_MAX_AGE` old, checked by `auth/telegram`) for an opaque random token through `POST /api/v1/auth/session`. Only the token's SHA-256 is stored in `app.sessions`, which cascades from `app.users`, so deleting a user revokes their sessions. Every other operation and the live candle WebSocket's `authenticate` message use the token (`Authorization: Bearer`); it expires after `SESSION_IDLE_TTL` without use and after `SESSION_ABSOLUTE_TTL`, and the WebSocket rechecks it every minute. Never accept init data elsewhere.
 - Shared helpers: `platform/backoff` (retry delays, `Sleep`), `platform/numeric` (`Finite`, `ParseFinite`), `platform/logging`, `platform/config`.
+- Every WARN and ERROR record of the process logger is forwarded to `opsnotify`, which sends it to the administrator through the Telegram bot (repeats of the same level, module, and message become one summary per hour). Log at WARN or above only what the administrator should read.
 
 Product constraints:
 

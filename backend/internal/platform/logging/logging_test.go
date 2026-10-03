@@ -13,7 +13,7 @@ import (
 
 func TestNewEmitsJSONAtTheConfiguredLevel(t *testing.T) {
 	var output bytes.Buffer
-	logger := logging.New(&output, "warn")
+	logger := logging.New(&output, "warn", logging.Options{})
 
 	logger.Info("not emitted")
 	logger.Warn("sync delayed", "module", "market", "retry_count", 2)
@@ -34,7 +34,7 @@ func TestNewEmitsJSONAtTheConfiguredLevel(t *testing.T) {
 func TestNewRedactsSensitiveKeysAndConfiguredSecrets(t *testing.T) {
 	var output bytes.Buffer
 	const secret = "postgres://scanner:password@localhost/scanner"
-	logger := logging.New(&output, "info", secret, "bot-token")
+	logger := logging.New(&output, "info", logging.Options{}, secret, "bot-token")
 
 	logger.Error(
 		"connection failed: "+secret,
@@ -62,7 +62,7 @@ func TestNewRedactsOpaqueValuesAndSensitiveKeyVariants(t *testing.T) {
 	}
 
 	var output bytes.Buffer
-	logger := logging.New(&output, "info", "configured-bot-token")
+	logger := logging.New(&output, "info", logging.Options{}, "configured-bot-token")
 	logger.Info("received request",
 		"payload", requestPayload{BotToken: "configured-bot-token", InitData: "raw-telegram-init-data"},
 		"authorization_header", "tma authorization-value",

@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.32.0](https://github.com/Zver64/crypto_scaner/compare/v0.31.0...v0.32.0) (2026-10-03)
+
+
+### Features
+
+* show four significant digits in numbers ([8e12f2a](https://github.com/Zver64/crypto_scaner/commit/8e12f2ab1522611538570c2f40e34285146b054b))
+
+
+### Bug Fixes
+
+* match the Binance spot grid bot price limits ([d4bc844](https://github.com/Zver64/crypto_scaner/commit/d4bc844d80518c7892f61f0685cdab3272f4e330))
+
 ## [0.31.0](https://github.com/Zver64/crypto_scaner/compare/v0.30.0...v0.31.0) (2026-10-03)
 
 

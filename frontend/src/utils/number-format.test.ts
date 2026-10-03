@@ -4,14 +4,14 @@ import { formatCompactNumber, formatNumber } from "@/utils/number-format";
 describe("formatNumber", () => {
 	it.each([
 		["zero", "0", "0"],
-		["small values", "0.0000000123456789", "0.0000000123"],
-		["ordinary values", "0.2658481", "0.266"],
+		["small values", "0.0000000123456789", "0.00000001235"],
+		["ordinary values", "0.2658481", "0.2658"],
 		["large values", "12345678.9", "12,345,679"],
 		["whole numbers", "5785", "5,785"],
 		["large fractional values", "5785.4", "5,785"],
-		["mid-sized values", "158.73", "159"],
-		["values above one", "1.23456", "1.23"],
-		["negative nonzero values", "-0.0000000123456789", "-0.0000000123"],
+		["mid-sized values", "158.73", "158.7"],
+		["values above one", "1.23456", "1.235"],
+		["negative nonzero values", "-0.0000000123456789", "-0.00000001235"],
 	])("formats %s keeping the integer part and adapting the fraction", (_, input, expected) => {
 		expect(formatNumber(input)).toBe(expected);
 	});
@@ -32,7 +32,7 @@ describe("formatNumber", () => {
 
 	it("rounds in the requested direction", () => {
 		expect(formatNumber("1597.9", undefined, "floor")).toBe("1,597");
-		expect(formatNumber("1.0999", undefined, "floor")).toBe("1.09");
+		expect(formatNumber("1.09999", undefined, "floor")).toBe("1.099");
 	});
 });
 

@@ -96,7 +96,7 @@ describe("spot grid recommendations", () => {
 
 	it("uses the shared number formatter for calculator-safe rounded prices", () => {
 		expect(upperPriceFromMarkup(at(12_345_678.9), 0)).toBe("12345679");
-		expect(lowerPriceFromMarkup(at(105), 33)).toBe("70.3");
+		expect(lowerPriceFromMarkup(at(105), 33)).toBe("70.35");
 	});
 
 	it("converts between prices and markups", () => {
@@ -132,22 +132,19 @@ describe("spot grid recommendations", () => {
 	});
 
 	it("does not add a grid when rounding a markup-derived lower price down", () => {
+		expect(lowerPriceFromMarkup(at(2.13), 25)).toBe("1.597");
 		expect(lowerPriceFromMarkup(at(2130), 25)).toBe("1597");
-		expect(lowerPriceFromMarkup(at(2.13), 25)).toBe("1.59");
-		expect(gridCountForStep("2.13", "1.59", 0.712, "geometric")).toBe("41");
-		expect(gridCountForStep("2.13", "1.59", 0.712, "geometric", 2.13, 25)).toBe(
-			"40",
-		);
-		expect(gridCountForStep("1640", "1230", 0.712, "geometric", 1640, 25)).toBe(
-			"40",
+		expect(gridCountForStep("2130", "1597", 0.722, "geometric")).toBe("40");
+		expect(gridCountForStep("2130", "1597", 0.722, "geometric", 2130, 25)).toBe(
+			"39",
 		);
 		const input = {
-			lowerPrice: "1.59",
-			upperPrice: "2.13",
-			gridCount: "40",
+			lowerPrice: "1597",
+			upperPrice: "2130",
+			gridCount: "39",
 			investment: "1000",
 		};
-		expect(minimumStep(input, "geometric")).toBeGreaterThanOrEqual(0.712);
+		expect(minimumStep(input, "geometric")).toBeGreaterThanOrEqual(0.722);
 	});
 
 	it("returns partial fallbacks for missing market data and unsupported values", () => {
@@ -198,16 +195,16 @@ describe("calculateSpotGridInput", () => {
 
 		expect(calculation?.error).toBeNull();
 		expect(spotGridEstimateValues(calculation?.estimate ?? null)).toEqual({
-			averageEntryPrice: "105 USDT",
+			averageEntryPrice: "104.9 USDT",
 			gridStepPercent: "10%",
 			profitSplits: [
 				{
-					cleanProfit: "10.8 USDT",
+					cleanProfit: "10.76 USDT",
 					cleanSegmentPercent: 97.8011,
 					cleanReturnPercent: "9.78% per trade",
-					feeCost: "0.242 USDT",
+					feeCost: "0.2419 USDT",
 					feeSegmentPercent: 2.1989,
-					feeShareOfGross: "2.2% of gross",
+					feeShareOfGross: "2.199% of gross",
 					grossProfit: "11 USDT",
 					isLoss: false,
 					label: "Every trade",
@@ -222,7 +219,7 @@ describe("calculateSpotGridInput", () => {
 		expect(calculation?.error).toBeNull();
 		expect(
 			spotGridEstimateValues(calculation?.estimate ?? null).gridStepPercent,
-		).toBe("9.09%–10%");
+		).toBe("9.091%–10%");
 	});
 
 	it("pairs arithmetic lowest- and highest-profit trade splits", () => {
@@ -234,21 +231,21 @@ describe("calculateSpotGridInput", () => {
 			{
 				cleanProfit: "9.76 USDT",
 				cleanSegmentPercent: 97.6012,
-				cleanReturnPercent: "8.87% per trade",
-				feeCost: "0.24 USDT",
+				cleanReturnPercent: "8.873% per trade",
+				feeCost: "0.2399 USDT",
 				feeSegmentPercent: 2.3988,
-				feeShareOfGross: "2.4% of gross",
+				feeShareOfGross: "2.399% of gross",
 				grossProfit: "10 USDT",
 				isLoss: false,
 				label: "Lowest-profit trade",
 			},
 			{
-				cleanProfit: "10.8 USDT",
+				cleanProfit: "10.76 USDT",
 				cleanSegmentPercent: 97.8011,
 				cleanReturnPercent: "9.78% per trade",
-				feeCost: "0.242 USDT",
+				feeCost: "0.2419 USDT",
 				feeSegmentPercent: 2.1989,
-				feeShareOfGross: "2.2% of gross",
+				feeShareOfGross: "2.199% of gross",
 				grossProfit: "11 USDT",
 				isLoss: false,
 				label: "Highest-profit trade",
@@ -292,12 +289,12 @@ describe("calculateSpotGridInput", () => {
 
 		expect(spotGridProfitSplits(calculation.estimate)).toEqual([
 			{
-				cleanProfit: "-0.1 USDT",
+				cleanProfit: "-0.1001 USDT",
 				cleanSegmentPercent: 0,
-				cleanReturnPercent: "-0.1% per trade",
-				feeCost: "0.2 USDT",
+				cleanReturnPercent: "-0.1001% per trade",
+				feeCost: "0.2001 USDT",
 				feeSegmentPercent: 100,
-				feeShareOfGross: "200% of gross",
+				feeShareOfGross: "200.1% of gross",
 				grossProfit: "0.1 USDT",
 				isLoss: true,
 				label: "Every trade",

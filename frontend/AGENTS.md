@@ -111,7 +111,7 @@ tanstackIntent:
 ## Number formatting
 
 - Format displayed numbers with `formatNumber` or `formatCompactNumber` from `src/utils/number-format.ts`; do not create ad-hoc `Intl.NumberFormat` instances or custom rounding helpers.
-- `formatNumber` shows three significant digits and accepts numbers or numeric strings. Pass `Decimal.toFixed()` output as a string to keep precision beyond JavaScript numbers.
+- `formatNumber` shows whichever of the whole integer or four significant digits is more precise (158.73 → 158.7, 5785.4 → 5,785) and accepts numbers or numeric strings. Pass `Decimal.toFixed()` output as a string to keep precision beyond JavaScript numbers.
 - Its optional `maximumFractionDigits` defaults to 18, the backend `NUMERIC(38,18)` scale. Pass a lower limit only when values below a known resolution are noise, such as chart axis ticks rounded at the chart price resolution.
 - Formatters are cached per fraction digit limit because chart axes format every label on each redraw.
 

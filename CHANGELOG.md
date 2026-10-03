@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/Zver64/crypto_scaner/compare/v0.30.0...v0.31.0) (2026-10-03)
+
+
+### Features
+
+* respect Binance price limits in the spot grid calculator ([0ee0737](https://github.com/Zver64/crypto_scaner/commit/0ee07374f4cde8a05c6fd85d9a5a55311ecb4c6c))
+
 ## [0.30.0](https://github.com/Zver64/crypto_scaner/compare/v0.29.0...v0.30.0) (2026-10-02)
 
 

@@ -60,8 +60,9 @@ Frontend-only verification:
 ```sh
 npm -C frontend run quality
 npm -C frontend run test
-npm -C frontend run build
 ```
+
+Verify only with tests and static analysis: `make check`, the Makefile targets, and the scripts in `frontend/package.json`. Never invoke tools directly (`npx tsc`, `npx biome`, `npx vitest`, and so on); use the matching script. Never build anything (`npm run build`, `vite build`, `tsc -b`, `go build`, Docker image builds) unless the user explicitly asks for a build.
 
 Pre-commit hooks run the checks relevant to staged changes, so do not routinely run those checks separately before committing. Run checks manually only when diagnosing a failure, when no commit will be created, or when explicitly requested. Use `make check` for manual verification of cross-cutting changes.
 

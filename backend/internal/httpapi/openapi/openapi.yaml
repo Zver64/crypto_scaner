@@ -230,6 +230,43 @@ paths:
           $ref: "#/components/responses/SymbolNotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /api/v1/instruments/{symbol}/price-limits:
+    get:
+      operationId: getInstrumentPriceLimits
+      summary: Get the Binance price limits of an instrument
+      description: |
+        Returns the current Binance reference price and the PRICE_RANGE rule:
+        buy orders may not go below `reference_price × bid_limit_mult_down` and
+        sell orders may not go above `reference_price × ask_limit_mult_up`. The
+        multipliers are absent when Binance defines no price range.
+      tags: [Market Data]
+      security:
+        - sessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/RequestID"
+        - $ref: "#/components/parameters/Symbol"
+      responses:
+        "200":
+          description: Price limits.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PriceLimitsResponse"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/AccessDenied"
+        "404":
+          $ref: "#/components/responses/SymbolNotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/AnalysisUnavailable"
   /api/v1/chart/indicators:
     get:
       operationId: listChartIndicators
@@ -1293,6 +1330,26 @@ components:
         next_before:
           type: [string, "null"]
           format: date-time
+    PriceLimitsResponse:
+      type: object
+      additionalProperties: false
+      required: [symbol, reference_price]
+      properties:
+        symbol:
+          type: string
+        reference_price:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+        bid_limit_mult_down:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          maximum: 1
+        ask_limit_mult_up:
+          type: number
+          format: double
+          minimum: 1
     IndicatorConfig:
       type: object
       additionalProperties: false

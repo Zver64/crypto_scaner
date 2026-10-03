@@ -9,7 +9,6 @@ import {
 	type GeometricSpotGridEstimate,
 } from "@/utils/calculator/geometric-spot-grid";
 import {
-	parseSpotGridCount,
 	parseSpotGridDecimal,
 	SPOT_GRID_MAX_COUNT,
 	SpotGridDecimal,
@@ -41,22 +40,51 @@ export interface SpotGridProfitSplit {
 }
 
 export const DEFAULT_MARKUP_PERCENT = 5;
+export const UPPER_MARKUP_MAX_PERCENT = 50;
 export const LOWER_MARKUP_MAX_PERCENT = 50;
 export const DEFAULT_GRID_COUNT = "40";
 export const DEFAULT_INVESTMENT = "1000";
 
-function formatCalculatorInput(value: string): string {
-	return formatNumber(value).replaceAll(",", "");
+type PriceRounding = "ceil" | "floor" | undefined;
+
+function formatCalculatorInput(
+	value: Decimal,
+	rounding?: PriceRounding,
+): string {
+	return formatNumber(value.toFixed(), undefined, rounding).replaceAll(",", "");
+}
+
+/** Binance price limits of a symbol, from the price-limits endpoint. */
+export interface SpotGridPriceLimits {
+	askLimitMultUp?: number;
+	bidLimitMultDown?: number;
+	referencePrice: number;
+}
+
+/**
+ * The price both markups are measured from and the range Binance accepts
+ * grid orders in. Without Binance limits the anchor is the latest hourly
+ * close and the markups keep their slider maximums.
+ */
+export interface SpotGridBounds {
+	anchor: number | null;
+	lowerMarkupMax: number;
+	maxPrice: Decimal | null;
+	minPrice: Decimal | null;
+	upperMarkupMax: number;
 }
 
 export interface SpotGridRecommendation {
 	input: SpotGridInput;
+	hasAnchor: boolean;
 	hasHourlyVolatility: boolean;
-	hasLatestHigh: boolean;
-	lowerMarkup: number | null;
+	lowerMarkup: number;
+	upperMarkup: number;
 }
 
-function validPositiveNumber(value: number | undefined): value is number {
+function validPositiveNumber(
+	value: number | null | undefined,
+): value is number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
 
@@ -71,57 +99,111 @@ export function latestAvailableCandle(
 	return null;
 }
 
-export function recommendedUpperPrice(
-	high: number | undefined,
+// Whole percents keep the slider on its 1% steps inside the Binance range.
+function wholeMarkupMax(fraction: Decimal, cap: number): number {
+	return Math.max(0, Math.min(cap, fraction.times(100).floor().toNumber()));
+}
+
+export function spotGridBounds(
+	candles: readonly (PriceCandle | null)[] | undefined,
+	limits: SpotGridPriceLimits | null | undefined,
+): SpotGridBounds {
+	const unlimited = {
+		lowerMarkupMax: LOWER_MARKUP_MAX_PERCENT,
+		maxPrice: null,
+		minPrice: null,
+		upperMarkupMax: UPPER_MARKUP_MAX_PERCENT,
+	};
+	if (!limits || !validPositiveNumber(limits.referencePrice)) {
+		const close = latestAvailableCandle(candles)?.close;
+		return { ...unlimited, anchor: validPositiveNumber(close) ? close : null };
+	}
+	const reference = new SpotGridDecimal(limits.referencePrice);
+	const bounds: SpotGridBounds = {
+		...unlimited,
+		anchor: limits.referencePrice,
+	};
+	if (validPositiveNumber(limits.bidLimitMultDown)) {
+		const down = new SpotGridDecimal(limits.bidLimitMultDown);
+		bounds.minPrice = reference.times(down);
+		bounds.lowerMarkupMax = wholeMarkupMax(
+			new SpotGridDecimal(1).minus(down),
+			LOWER_MARKUP_MAX_PERCENT,
+		);
+	}
+	if (validPositiveNumber(limits.askLimitMultUp)) {
+		const up = new SpotGridDecimal(limits.askLimitMultUp);
+		bounds.maxPrice = reference.times(up);
+		bounds.upperMarkupMax = wholeMarkupMax(
+			up.minus(1),
+			UPPER_MARKUP_MAX_PERCENT,
+		);
+	}
+	return bounds;
+}
+
+/** Returns the lowest grid price Binance accepts, rounded up for display. */
+export function formatMinPrice(bounds: SpotGridBounds): string | null {
+	return bounds.minPrice && formatCalculatorInput(bounds.minPrice, "ceil");
+}
+
+/** Returns the highest grid price Binance accepts, rounded down for display. */
+export function formatMaxPrice(bounds: SpotGridBounds): string | null {
+	return bounds.maxPrice && formatCalculatorInput(bounds.maxPrice, "floor");
+}
+
+/** Returns the upper price that sits `markupPercent` above the anchor. */
+export function upperPriceFromMarkup(
+	bounds: SpotGridBounds,
 	markupPercent: number,
 ): string | null {
+	const { anchor } = bounds;
 	if (
-		!validPositiveNumber(high) ||
+		!validPositiveNumber(anchor) ||
 		!Number.isFinite(markupPercent) ||
 		markupPercent < 0
 	)
 		return null;
 	try {
-		const upper = new SpotGridDecimal(high).times(
+		const upper = new SpotGridDecimal(anchor).times(
 			new SpotGridDecimal(1).plus(new SpotGridDecimal(markupPercent).div(100)),
 		);
-		return upper.isFinite() && upper.gt(0)
-			? formatCalculatorInput(upper.toString())
-			: null;
+		if (!upper.isFinite() || !upper.gt(0)) return null;
+		const formatted = formatCalculatorInput(upper);
+		return bounds.maxPrice && new SpotGridDecimal(formatted).gt(bounds.maxPrice)
+			? formatMaxPrice(bounds)
+			: formatted;
 	} catch {
 		return null;
 	}
 }
 
-function roundedLowerPrice(lower: Decimal, upper: Decimal): string | null {
-	if (!lower.gt(0)) return null;
-	// Round down so the range only widens and grid steps never shrink.
-	const formatted = formatNumber(
-		lower.toFixed(),
-		undefined,
-		"floor",
-	).replaceAll(",", "");
-	const parsed = parseSpotGridDecimal(formatted, "Lower price");
-	return parsed.lte(upper) ? formatted : null;
-}
-
-/** Returns the lower price that sits `markupPercent` below the upper price. */
+/** Returns the lower price that sits `markupPercent` below the anchor. */
 export function lowerPriceFromMarkup(
-	upperPrice: string,
+	bounds: SpotGridBounds,
 	markupPercent: number,
 ): string | null {
+	const { anchor } = bounds;
 	if (
+		!validPositiveNumber(anchor) ||
 		!Number.isFinite(markupPercent) ||
 		markupPercent < 0 ||
 		markupPercent >= 100
 	)
 		return null;
 	try {
-		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
-		const lower = upper.times(
+		const lower = new SpotGridDecimal(anchor).times(
 			new SpotGridDecimal(1).minus(new SpotGridDecimal(markupPercent).div(100)),
 		);
-		return roundedLowerPrice(lower, upper);
+		if (!lower.gt(0)) return null;
+		// Round down so the range only widens and grid steps never shrink, but
+		// never below the Binance minimum.
+		const formatted = formatCalculatorInput(lower, "floor");
+		if (bounds.minPrice && new SpotGridDecimal(formatted).lt(bounds.minPrice))
+			return formatMinPrice(bounds);
+		return parseSpotGridDecimal(formatted, "Lower price").gt(0)
+			? formatted
+			: null;
 	} catch {
 		return null;
 	}
@@ -132,29 +214,59 @@ function percentNumber(value: Decimal): number | null {
 	return Number.isFinite(percent) ? percent : null;
 }
 
-/** Returns how far the lower price sits below the upper price, in percent. */
+/** Returns how far the lower price sits below the anchor, in percent. */
 export function lowerMarkupPercent(
-	upperPrice: string,
+	anchor: number | null,
 	lowerPrice: string,
 ): number | null {
+	if (!validPositiveNumber(anchor)) return null;
 	try {
-		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
 		const lower = parseSpotGridDecimal(lowerPrice, "Lower price");
-		return percentNumber(new SpotGridDecimal(1).minus(lower.div(upper)));
+		return percentNumber(new SpotGridDecimal(1).minus(lower.div(anchor)));
 	} catch {
 		return null;
 	}
 }
 
-/** Returns how far the upper price sits above the candle high, in percent. */
+/** Returns how far the upper price sits above the anchor, in percent. */
 export function upperMarkupPercent(
-	high: number | undefined,
+	anchor: number | null,
 	upperPrice: string,
 ): number | null {
-	if (!validPositiveNumber(high)) return null;
+	if (!validPositiveNumber(anchor)) return null;
 	try {
 		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
-		return percentNumber(upper.div(high).minus(1));
+		return percentNumber(upper.div(anchor).minus(1));
+	} catch {
+		return null;
+	}
+}
+
+/** Returns why a lower price is below the Binance minimum, or null. */
+export function lowerPriceLimitError(
+	bounds: SpotGridBounds,
+	lowerPrice: string,
+): string | null {
+	if (!bounds.minPrice) return null;
+	try {
+		return parseSpotGridDecimal(lowerPrice, "Lower price").lt(bounds.minPrice)
+			? `Binance minimum is ${formatMinPrice(bounds)} USDT`
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+/** Returns why an upper price is above the Binance maximum, or null. */
+export function upperPriceLimitError(
+	bounds: SpotGridBounds,
+	upperPrice: string,
+): string | null {
+	if (!bounds.maxPrice) return null;
+	try {
+		return parseSpotGridDecimal(upperPrice, "Upper price").gt(bounds.maxPrice)
+			? `Binance maximum is ${formatMaxPrice(bounds)} USDT`
+			: null;
 	} catch {
 		return null;
 	}
@@ -179,14 +291,15 @@ function floorGridCount(
 /**
  * Returns the largest grid count whose minimum step stays at or above
  * `stepPercent` for the given price range. When the lower price was derived
- * from `lowerMarkupPercent`, the count is also capped by the exact markup so
- * rounding the lower price down never adds a grid.
+ * from `lowerMarkupPercent` below `anchor`, the count is also capped by the
+ * exact markup so rounding the lower price down never adds a grid.
  */
 export function gridCountForStep(
 	upperPrice: string,
 	lowerPrice: string,
 	stepPercent: number | undefined,
 	gridType: SpotGridType,
+	anchor?: number | null,
 	lowerMarkupPercent?: number,
 ): string | null {
 	if (!validPositiveNumber(stepPercent)) return null;
@@ -196,16 +309,21 @@ export function gridCountForStep(
 		if (!upper.gt(lower)) return null;
 		const target = new SpotGridDecimal(stepPercent).div(100);
 		let count = floorGridCount(upper, lower, target, gridType);
-		if (validPositiveNumber(lowerMarkupPercent) && lowerMarkupPercent < 100) {
-			const markupLower = upper.times(
+		if (
+			validPositiveNumber(anchor) &&
+			validPositiveNumber(lowerMarkupPercent) &&
+			lowerMarkupPercent < 100
+		) {
+			const markupLower = new SpotGridDecimal(anchor).times(
 				new SpotGridDecimal(1).minus(
 					new SpotGridDecimal(lowerMarkupPercent).div(100),
 				),
 			);
-			count = SpotGridDecimal.min(
-				count,
-				floorGridCount(upper, markupLower, target, gridType),
-			);
+			if (upper.gt(markupLower))
+				count = SpotGridDecimal.min(
+					count,
+					floorGridCount(upper, markupLower, target, gridType),
+				);
 		}
 		if (!count.isFinite() || count.lt(1)) return null;
 		return SpotGridDecimal.min(count, SPOT_GRID_MAX_COUNT).toString();
@@ -215,59 +333,28 @@ export function gridCountForStep(
 }
 
 /**
- * Returns the smallest whole lower markup percent that fits `gridCount` grids
- * with a minimum step of `stepPercent`, capped at the slider maximum.
+ * Starts the upper price at the default markup and the lower price as low as
+ * the range allows; the grid count is the largest that keeps the hourly step.
  */
-export function initialLowerMarkup(
-	stepPercent: number | undefined,
-	gridCount: string,
-	gridType: SpotGridType,
-): number | null {
-	if (!validPositiveNumber(stepPercent)) return null;
-	try {
-		const count = parseSpotGridCount(gridCount);
-		const target = new SpotGridDecimal(stepPercent).div(100);
-		const markup =
-			gridType === "arithmetic"
-				? target.times(count).div(new SpotGridDecimal(1).plus(target))
-				: new SpotGridDecimal(1).minus(
-						new SpotGridDecimal(1).plus(target).pow(-count),
-					);
-		return Math.min(
-			LOWER_MARKUP_MAX_PERCENT,
-			markup.times(100).ceil().toNumber(),
-		);
-	} catch {
-		return null;
-	}
-}
-
 export function spotGridRecommendation(
-	candles: readonly (PriceCandle | null)[] | undefined,
+	bounds: SpotGridBounds,
 	hourlyVolatilityPercent: number | undefined,
 	gridType: SpotGridType = "geometric",
 	markupPercent = DEFAULT_MARKUP_PERCENT,
-	targetGridCount = DEFAULT_GRID_COUNT,
 ): SpotGridRecommendation {
-	const high = latestAvailableCandle(candles)?.high;
-	const upperPrice = recommendedUpperPrice(high, markupPercent) ?? "";
-	const lowerMarkup = initialLowerMarkup(
-		hourlyVolatilityPercent,
-		targetGridCount,
-		gridType,
-	);
-	const lowerPrice =
-		lowerMarkup === null
-			? ""
-			: (lowerPriceFromMarkup(upperPrice, lowerMarkup) ?? "");
+	const upperMarkup = Math.min(markupPercent, bounds.upperMarkupMax);
+	const upperPrice = upperPriceFromMarkup(bounds, upperMarkup) ?? "";
+	const lowerMarkup = bounds.lowerMarkupMax;
+	const lowerPrice = lowerPriceFromMarkup(bounds, lowerMarkup) ?? "";
 	const gridCount =
 		gridCountForStep(
 			upperPrice,
 			lowerPrice,
 			hourlyVolatilityPercent,
 			gridType,
-			lowerMarkup ?? undefined,
-		) ?? targetGridCount;
+			bounds.anchor,
+			lowerMarkup,
+		) ?? DEFAULT_GRID_COUNT;
 	return {
 		input: {
 			lowerPrice,
@@ -275,9 +362,10 @@ export function spotGridRecommendation(
 			gridCount,
 			investment: DEFAULT_INVESTMENT,
 		},
+		hasAnchor: bounds.anchor !== null,
 		hasHourlyVolatility: validPositiveNumber(hourlyVolatilityPercent),
-		hasLatestHigh: validPositiveNumber(high),
 		lowerMarkup,
+		upperMarkup,
 	};
 }
 

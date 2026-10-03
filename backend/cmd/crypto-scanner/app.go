@@ -24,6 +24,7 @@ import (
 	"crypto-scanner/internal/market"
 	marketlive "crypto-scanner/internal/market/live"
 	"crypto-scanner/internal/market/marketsync"
+	"crypto-scanner/internal/market/pricelimits"
 	"crypto-scanner/internal/market/retention"
 	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/markettable"
@@ -164,6 +165,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		Analysis:     analysisService,
 		MarketTables: markettable.NewService(analysisService, marketTable),
 		History:      store,
+		PriceLimits:  pricelimits.New(exchange, logger, pricelimits.Options{}),
 		Sessions:     sessions,
 		Chart:        chartService,
 		LiveCandles:  liveService,

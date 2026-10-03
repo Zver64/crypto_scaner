@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
 	calculateSpotGridInput,
 	gridCountForStep,
-	initialLowerMarkup,
 	LOWER_MARKUP_MAX_PERCENT,
 	latestAvailableCandle,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
-	recommendedUpperPrice,
 	type SpotGridType,
+	spotGridBounds,
 	spotGridEstimateValues,
 	spotGridMinimumStepPercent,
 	spotGridProfitSplits,
 	spotGridRecommendation,
 	upperMarkupPercent,
+	upperPriceFromMarkup,
 } from "@/features/instrument-analysis/spot-grid-estimator/utils";
 
 const validInput = {
@@ -43,17 +43,19 @@ const zeroValues = {
 
 describe("spot grid recommendations", () => {
 	const candle = {
-		close: 99,
-		high: 100,
+		close: 100,
+		high: 101,
 		low: 98,
 		open: 99,
 		open_time: "2026-09-01T00:00:00Z",
 	};
+	const bounds = spotGridBounds([candle, null], null);
+	const at = (anchor: number) => ({ ...bounds, anchor });
 
 	it("uses Decimal arithmetic for 0%, 5%, and 50% markup", () => {
-		expect(recommendedUpperPrice(100, 0)).toBe("100");
-		expect(recommendedUpperPrice(100, 5)).toBe("105");
-		expect(recommendedUpperPrice(100, 50)).toBe("150");
+		expect(upperPriceFromMarkup(bounds, 0)).toBe("100");
+		expect(upperPriceFromMarkup(bounds, 5)).toBe("105");
+		expect(upperPriceFromMarkup(bounds, 50)).toBe("150");
 	});
 
 	function minimumStep(
@@ -66,14 +68,14 @@ describe("spot grid recommendations", () => {
 		return spotGridMinimumStepPercent(calculation.estimate);
 	}
 
-	it("starts from the lower markup that fits at least 40 hourly steps", () => {
-		const recommendation = spotGridRecommendation([candle, null], 1);
+	it("starts the lower price as low as the range allows", () => {
+		const recommendation = spotGridRecommendation(bounds, 1);
 		expect(latestAvailableCandle([candle, null])).toEqual(candle);
-		expect(recommendation.lowerMarkup).toBe(33);
+		expect(recommendation.lowerMarkup).toBe(LOWER_MARKUP_MAX_PERCENT);
 		expect(recommendation.input).toEqual({
-			lowerPrice: "70.3",
+			lowerPrice: "50",
 			upperPrice: "105",
-			gridCount: "40",
+			gridCount: "74",
 			investment: "1000",
 		});
 		expect(
@@ -81,39 +83,27 @@ describe("spot grid recommendations", () => {
 		).toBeGreaterThanOrEqual(1);
 	});
 
-	it("starts arithmetic grids from their own lower markup", () => {
-		const recommendation = spotGridRecommendation([candle], 1, "arithmetic");
-		expect(recommendation.lowerMarkup).toBe(40);
+	it("derives the arithmetic grid count from the same range", () => {
+		const recommendation = spotGridRecommendation(bounds, 1, "arithmetic");
 		expect(recommendation.input).toMatchObject({
-			lowerPrice: "63",
-			gridCount: "40",
+			lowerPrice: "50",
+			gridCount: "52",
 		});
 		expect(
 			minimumStep(recommendation.input, "arithmetic"),
 		).toBeGreaterThanOrEqual(1);
 	});
 
-	it("caps the initial lower markup at the slider maximum", () => {
-		expect(initialLowerMarkup(3, "40", "geometric")).toBe(
-			LOWER_MARKUP_MAX_PERCENT,
-		);
-		expect(initialLowerMarkup(3, "40", "arithmetic")).toBe(
-			LOWER_MARKUP_MAX_PERCENT,
-		);
-		expect(initialLowerMarkup(0, "40", "geometric")).toBeNull();
-		expect(initialLowerMarkup(1, "0", "geometric")).toBeNull();
-	});
-
 	it("uses the shared number formatter for calculator-safe rounded prices", () => {
-		expect(recommendedUpperPrice(12_345_678.9, 0)).toBe("12345679");
-		expect(lowerPriceFromMarkup("105", 33)).toBe("70.3");
+		expect(upperPriceFromMarkup(at(12_345_678.9), 0)).toBe("12345679");
+		expect(lowerPriceFromMarkup(at(105), 33)).toBe("70.3");
 	});
 
 	it("converts between prices and markups", () => {
-		expect(lowerPriceFromMarkup("1640", 25)).toBe("1230");
-		expect(lowerPriceFromMarkup("105", 0)).toBe("105");
-		expect(lowerMarkupPercent("1640", "1230")).toBe(25);
-		expect(lowerMarkupPercent("105", "70.3")).toBe(33.05);
+		expect(lowerPriceFromMarkup(at(1640), 25)).toBe("1230");
+		expect(lowerPriceFromMarkup(at(105), 0)).toBe("105");
+		expect(lowerMarkupPercent(1640, "1230")).toBe(25);
+		expect(lowerMarkupPercent(105, "70.3")).toBe(33.05);
 		expect(upperMarkupPercent(100, "105")).toBe(5);
 		expect(upperMarkupPercent(100, "95")).toBe(-5);
 	});
@@ -142,11 +132,15 @@ describe("spot grid recommendations", () => {
 	});
 
 	it("does not add a grid when rounding a markup-derived lower price down", () => {
-		expect(lowerPriceFromMarkup("2130", 25)).toBe("1597");
-		expect(lowerPriceFromMarkup("2.13", 25)).toBe("1.59");
+		expect(lowerPriceFromMarkup(at(2130), 25)).toBe("1597");
+		expect(lowerPriceFromMarkup(at(2.13), 25)).toBe("1.59");
 		expect(gridCountForStep("2.13", "1.59", 0.712, "geometric")).toBe("41");
-		expect(gridCountForStep("2.13", "1.59", 0.712, "geometric", 25)).toBe("40");
-		expect(gridCountForStep("1640", "1230", 0.712, "geometric", 25)).toBe("40");
+		expect(gridCountForStep("2.13", "1.59", 0.712, "geometric", 2.13, 25)).toBe(
+			"40",
+		);
+		expect(gridCountForStep("1640", "1230", 0.712, "geometric", 1640, 25)).toBe(
+			"40",
+		);
 		const input = {
 			lowerPrice: "1.59",
 			upperPrice: "2.13",
@@ -158,23 +152,25 @@ describe("spot grid recommendations", () => {
 
 	it("returns partial fallbacks for missing market data and unsupported values", () => {
 		expect(latestAvailableCandle([null, null])).toBeNull();
-		expect(spotGridRecommendation([candle], 0)).toMatchObject({
-			input: { lowerPrice: "", upperPrice: "105", gridCount: "40" },
-			lowerMarkup: null,
+		expect(spotGridRecommendation(bounds, 0)).toMatchObject({
+			input: { lowerPrice: "50", upperPrice: "105", gridCount: "40" },
 		});
 		expect(
-			spotGridRecommendation([{ ...candle, high: Number.NaN }], 1).input,
+			spotGridRecommendation(
+				spotGridBounds([{ ...candle, close: Number.NaN }], null),
+				1,
+			).input,
 		).toEqual({
 			lowerPrice: "",
 			upperPrice: "",
 			gridCount: "40",
 			investment: "1000",
 		});
-		expect(lowerPriceFromMarkup("1e1001", 10)).toBeNull();
-		expect(lowerPriceFromMarkup("105", -1)).toBeNull();
-		expect(lowerPriceFromMarkup("105", 100)).toBeNull();
-		expect(lowerMarkupPercent("105", "")).toBeNull();
-		expect(upperMarkupPercent(undefined, "105")).toBeNull();
+		expect(lowerPriceFromMarkup(at(Number.POSITIVE_INFINITY), 10)).toBeNull();
+		expect(lowerPriceFromMarkup(at(105), -1)).toBeNull();
+		expect(lowerPriceFromMarkup(at(105), 100)).toBeNull();
+		expect(lowerMarkupPercent(105, "")).toBeNull();
+		expect(upperMarkupPercent(null, "105")).toBeNull();
 		expect(gridCountForStep("105", "105", 1, "geometric")).toBeNull();
 		expect(gridCountForStep("105", "104.9", 1, "geometric")).toBeNull();
 		expect(gridCountForStep("105", "70", 0, "geometric")).toBeNull();

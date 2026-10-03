@@ -15,6 +15,7 @@ import { useChartIndicators } from "@/features/instrument-analysis/use-chart-ind
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 import { useHourlyHistory } from "@/features/instrument-analysis/use-hourly-history";
 import { useInstrumentAnalysis } from "@/features/instrument-analysis/use-instrument-analysis";
+import { usePriceLimits } from "@/features/instrument-analysis/use-price-limits";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { PriceAlertsPanel } from "@/features/price-alerts/price-alerts-panel";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
@@ -38,6 +39,7 @@ export function InstrumentAnalysisScreen({
 		permission.allowed,
 	);
 	const hourlyHistory = useHourlyHistory(symbol, permission.allowed);
+	const priceLimits = usePriceLimits(symbol, permission.allowed);
 	const chart = useChartIndicators(permission.allowed);
 	// Shared by the chart and the price alerts, which show its current price.
 	const chartSource = useMemo(
@@ -51,7 +53,8 @@ export function InstrumentAnalysisScreen({
 	// The previous symbol's result stays visible while refetching; the spot grid
 	// only uses a result for this symbol.
 	const current = result?.symbol === symbol ? result : undefined;
-	const recommendationReady = current !== undefined && !hourlyHistory.pending;
+	const recommendationReady =
+		current !== undefined && !hourlyHistory.pending && !priceLimits.pending;
 	const rangePercent = (key: string) => {
 		const range = current && volatilityEvaluation(current.evaluations, key);
 		return range && Number.isFinite(range.rangePercent)
@@ -95,6 +98,9 @@ export function InstrumentAnalysisScreen({
 								hourlyVolatilityPercent={rangePercent(
 									criterionKeys.hourlyVolatility,
 								)}
+								priceLimits={
+									recommendationReady ? priceLimits.limits : undefined
+								}
 								key={`binance:spot:USDT:${symbol}:${recommendationReady ? "ready" : "pending"}`}
 								paperPadding={paperPadding}
 							/>

@@ -17,21 +17,28 @@ import { ValueGroup } from "@/components/value-group";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	calculateSpotGridInput,
-	DEFAULT_MARKUP_PERCENT,
+	formatMaxPrice,
+	formatMinPrice,
 	gridCountForStep,
-	LOWER_MARKUP_MAX_PERCENT,
-	latestAvailableCandle,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
-	recommendedUpperPrice,
+	lowerPriceLimitError,
+	type SpotGridPriceLimits,
 	type SpotGridType,
+	spotGridBounds,
 	spotGridEstimateValues,
 	spotGridMinimumStepPercent,
 	spotGridRecommendation,
 	upperMarkupPercent,
+	upperPriceFromMarkup,
+	upperPriceLimitError,
 } from "@/features/instrument-analysis/spot-grid-estimator/utils";
 import type { SpotGridInput } from "@/utils/calculator/spot-grid";
+import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
+
+// The default upper markup gets its own scale label when the slider reaches it.
+const DEFAULT_MARKUP_LABEL_PERCENT = 5;
 
 interface SpotGridEstimatorProps {
 	candles?: readonly (PriceCandle | null)[];
@@ -39,6 +46,8 @@ interface SpotGridEstimatorProps {
 	disabled?: boolean;
 	hourlyVolatilityPercent?: number;
 	paperPadding: string;
+	// Binance price limits: undefined while loading, null when unavailable.
+	priceLimits?: SpotGridPriceLimits | null;
 }
 
 type SpotGridFormValues = SpotGridInput & {
@@ -57,14 +66,15 @@ type RangeValues = Pick<
 
 function formValues(
 	input: SpotGridInput,
-	lowerMarkup: number | null,
+	upperMarkup: number,
+	lowerMarkup: number,
 	hourlyRangePercent: number | undefined,
 ): SpotGridFormValues {
 	return {
 		...input,
 		gridType: "geometric",
-		lowerMarkup: lowerMarkup ?? 0,
-		markup: DEFAULT_MARKUP_PERCENT,
+		lowerMarkup,
+		markup: upperMarkup,
 		rangePercent: hourlyRangePercent ?? 0,
 	};
 }
@@ -75,13 +85,18 @@ export function SpotGridEstimator({
 	disabled = false,
 	hourlyVolatilityPercent,
 	paperPadding,
+	priceLimits,
 }: SpotGridEstimatorProps) {
+	// The parent remounts the calculator once its data is ready, so the price
+	// both markups are measured from stays fixed while it is being edited.
+	const [bounds] = useState(() => spotGridBounds(candles, priceLimits));
 	const [recommendation] = useState(() =>
-		spotGridRecommendation(candles, hourlyVolatilityPercent),
+		spotGridRecommendation(bounds, hourlyVolatilityPercent),
 	);
 	const form = useForm<SpotGridFormValues>({
 		initialValues: formValues(
 			recommendation.input,
+			recommendation.upperMarkup,
 			recommendation.lowerMarkup,
 			hourlyVolatilityPercent,
 		),
@@ -91,11 +106,10 @@ export function SpotGridEstimator({
 		recommendation.input,
 	);
 
-	const latestHigh = latestAvailableCandle(candles)?.high;
-	const hasLatestHigh =
-		typeof latestHigh === "number" &&
-		Number.isFinite(latestHigh) &&
-		latestHigh > 0;
+	const { anchor } = bounds;
+	const hasAnchor = anchor !== null;
+	const minPrice = formatMinPrice(bounds);
+	const maxPrice = formatMaxPrice(bounds);
 	const hasHourlyVolatility =
 		typeof hourlyVolatilityPercent === "number" &&
 		Number.isFinite(hourlyVolatilityPercent) &&
@@ -130,11 +144,14 @@ export function SpotGridEstimator({
 						range.lowerPrice,
 						range.rangePercent,
 						range.gridType,
+						anchor,
 						extraValues.lowerMarkup ?? form.values.lowerMarkup,
 					) ?? "")
 				: committedInput.gridCount;
 		form.setValues({ ...range, ...extraValues, gridCount });
 		form.clearFieldError("gridCount");
+		form.clearFieldError("lowerPrice");
+		form.clearFieldError("upperPrice");
 		setCommittedInput({
 			...committedInput,
 			gridCount,
@@ -153,19 +170,13 @@ export function SpotGridEstimator({
 	}
 
 	function changeMarkup(markup: number) {
-		const upperPrice = recommendedUpperPrice(latestHigh, markup);
+		const upperPrice = upperPriceFromMarkup(bounds, markup);
 		if (!upperPrice) return;
-
-		const lowerPrice =
-			lowerPriceFromMarkup(upperPrice, form.values.lowerMarkup) ?? "";
-		applyRange({ ...currentRange(), lowerPrice, upperPrice }, { markup });
+		applyRange({ ...currentRange(), upperPrice }, { markup });
 	}
 
 	function changeLowerMarkup(lowerMarkup: number) {
-		const lowerPrice = lowerPriceFromMarkup(
-			committedInput.upperPrice,
-			lowerMarkup,
-		);
+		const lowerPrice = lowerPriceFromMarkup(bounds, lowerMarkup);
 		if (!lowerPrice) {
 			form.setFieldValue("lowerMarkup", lowerMarkup);
 			return;
@@ -182,26 +193,26 @@ export function SpotGridEstimator({
 	}
 
 	function commitUpperPrice(upperPrice: string) {
-		const lowerPrice = lowerPriceFromMarkup(
-			upperPrice,
-			form.values.lowerMarkup,
-		);
-		if (!lowerPrice) {
+		const limitError = upperPriceLimitError(bounds, upperPrice);
+		if (limitError) {
+			form.setFieldError("upperPrice", limitError);
+			return;
+		}
+		const markup = upperMarkupPercent(anchor, upperPrice);
+		if (markup === null) {
 			setCommittedInput({ ...committedInput, upperPrice });
 			return;
 		}
-		const markup = upperMarkupPercent(latestHigh, upperPrice);
-		applyRange(
-			{ ...currentRange(), lowerPrice, upperPrice },
-			markup === null ? {} : { markup },
-		);
+		applyRange({ ...currentRange(), upperPrice }, { markup });
 	}
 
 	function commitLowerPrice(lowerPrice: string) {
-		const lowerMarkup = lowerMarkupPercent(
-			committedInput.upperPrice,
-			lowerPrice,
-		);
+		const limitError = lowerPriceLimitError(bounds, lowerPrice);
+		if (limitError) {
+			form.setFieldError("lowerPrice", limitError);
+			return;
+		}
+		const lowerMarkup = lowerMarkupPercent(anchor, lowerPrice);
 		if (lowerMarkup === null) {
 			setCommittedInput({ ...committedInput, lowerPrice });
 			return;
@@ -300,30 +311,39 @@ export function SpotGridEstimator({
 				/>
 				<Stack gap="sm">
 					<SliderField
-						disabled={disabled || !hasLatestHigh}
+						disabled={disabled || !hasAnchor}
 						formatValue={formatRangePercent}
 						label="Upper price markup"
-						max={50}
+						max={bounds.upperMarkupMax}
 						min={0}
 						onChange={changeMarkup}
 						scaleLabels={[
 							{ label: "0%", position: 0 },
-							{ label: "5%", position: 10 },
-							{ label: "50%", position: 100 },
+							...(bounds.upperMarkupMax > DEFAULT_MARKUP_LABEL_PERCENT
+								? [
+										{
+											label: `${DEFAULT_MARKUP_LABEL_PERCENT}%`,
+											position:
+												(DEFAULT_MARKUP_LABEL_PERCENT / bounds.upperMarkupMax) *
+												100,
+										},
+									]
+								: []),
+							{ label: `${bounds.upperMarkupMax}%`, position: 100 },
 						]}
 						step={1}
 						value={form.values.markup}
 					/>
 					<SliderField
-						disabled={disabled}
+						disabled={disabled || !hasAnchor}
 						formatValue={formatRangePercent}
 						label="Lower price markup"
-						max={LOWER_MARKUP_MAX_PERCENT}
+						max={bounds.lowerMarkupMax}
 						min={0}
 						onChange={changeLowerMarkup}
 						scaleLabels={[
 							{ label: "0%", position: 0 },
-							{ label: `${LOWER_MARKUP_MAX_PERCENT}%`, position: 100 },
+							{ label: `${bounds.lowerMarkupMax}%`, position: 100 },
 						]}
 						step={1}
 						value={form.values.lowerMarkup}
@@ -344,15 +364,27 @@ export function SpotGridEstimator({
 						}
 						value={form.values.rangePercent}
 					/>
-					{!hasLatestHigh ? (
+					{!hasAnchor ? (
 						<Text c="dimmed" size="sm">
-							Upper price markup needs a valid hourly candle high.
+							Price markups need the current price.
 						</Text>
 					) : null}
-					{hasLatestHigh && !hasHourlyVolatility ? (
+					{hasAnchor && minPrice !== null && maxPrice !== null ? (
 						<Text c="dimmed" size="sm">
-							Hourly range is unavailable, so no lower price recommendation can
-							be made.
+							Binance accepts grid prices from {minPrice} to {maxPrice} USDT
+							(reference price {formatNumber(anchor)} USDT).
+						</Text>
+					) : null}
+					{priceLimits === null ? (
+						<Text c="dimmed" size="sm">
+							Binance price limits are unavailable, so markups start from the
+							latest hourly close and the range is not checked.
+						</Text>
+					) : null}
+					{hasAnchor && !hasHourlyVolatility ? (
+						<Text c="dimmed" size="sm">
+							Hourly range is unavailable, so the grid count is not derived from
+							it.
 						</Text>
 					) : null}
 					{hasHourlyVolatility && !hasDailyVolatility ? (

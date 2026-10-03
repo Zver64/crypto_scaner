@@ -69,6 +69,7 @@ import type {
   PriceAlert,
   PriceAlertInput,
   PriceAlertsResponse,
+  PriceLimitsResponse,
   ReadinessResponse,
   RemoveFavoriteParams,
   ScannerIndicator,
@@ -1025,6 +1026,153 @@ export function useListInstrumentCandlesInfinite<TData = InfiniteData<Awaited<Re
   const queryOptions = getListInstrumentCandlesInfiniteQueryOptions(symbol,params,options)
 
   const query = useInfiniteQuery(queryOptions, queryClient) as  UseInfiniteQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type getInstrumentPriceLimitsResponse200 = {
+  data: PriceLimitsResponse
+  status: 200
+}
+
+export type getInstrumentPriceLimitsResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type getInstrumentPriceLimitsResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type getInstrumentPriceLimitsResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type getInstrumentPriceLimitsResponse404 = {
+  data: SymbolNotFoundResponse
+  status: 404
+}
+
+export type getInstrumentPriceLimitsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type getInstrumentPriceLimitsResponse503 = {
+  data: AnalysisUnavailableResponse
+  status: 503
+}
+
+export type getInstrumentPriceLimitsResponseSuccess = (getInstrumentPriceLimitsResponse200) & {
+  headers: Headers;
+};
+export type getInstrumentPriceLimitsResponseError = (getInstrumentPriceLimitsResponse400 | getInstrumentPriceLimitsResponse401 | getInstrumentPriceLimitsResponse403 | getInstrumentPriceLimitsResponse404 | getInstrumentPriceLimitsResponse500 | getInstrumentPriceLimitsResponse503) & {
+  headers: Headers;
+};
+
+export const getGetInstrumentPriceLimitsUrl = (symbol: string,) => {
+
+
+
+
+  return `/api/v1/instruments/${encodeURIComponent(String(symbol))}/price-limits`
+}
+
+/**
+ * Returns the current Binance reference price and the PRICE_RANGE rule:
+ * buy orders may not go below `reference_price × bid_limit_mult_down` and
+ * sell orders may not go above `reference_price × ask_limit_mult_up`. The
+ * multipliers are absent when Binance defines no price range.
+ * @summary Get the Binance price limits of an instrument
+ */
+export const getInstrumentPriceLimits = async (symbol: string, options?: Parameters<typeof apiFetch>[1]): Promise<getInstrumentPriceLimitsResponseSuccess> => {
+
+  return apiFetch<getInstrumentPriceLimitsResponseSuccess>(getGetInstrumentPriceLimitsUrl(symbol),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetInstrumentPriceLimitsQueryKey = (symbol: string,) => {
+    return [
+    `/api/v1/instruments/${symbol}/price-limits`
+    ] as const;
+    }
+
+
+export const getGetInstrumentPriceLimitsQueryOptions = <TData = Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetInstrumentPriceLimitsQueryKey(symbol);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getInstrumentPriceLimits>>> = ({ signal }) => getInstrumentPriceLimits(symbol, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: symbol !== null && symbol !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetInstrumentPriceLimitsQueryResult = NonNullable<Awaited<ReturnType<typeof getInstrumentPriceLimits>>>
+export type GetInstrumentPriceLimitsQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse | AnalysisUnavailableResponse>
+
+
+export function useGetInstrumentPriceLimits<TData = Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ symbol: string, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstrumentPriceLimits>>,
+          TError,
+          Awaited<ReturnType<typeof getInstrumentPriceLimits>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstrumentPriceLimits<TData = Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getInstrumentPriceLimits>>,
+          TError,
+          Awaited<ReturnType<typeof getInstrumentPriceLimits>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetInstrumentPriceLimits<TData = Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Get the Binance price limits of an instrument
+ */
+
+export function useGetInstrumentPriceLimits<TData = Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ symbol: string, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getInstrumentPriceLimits>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetInstrumentPriceLimitsQueryOptions(symbol,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
   return withQueryKey(query, queryOptions.queryKey);
 }

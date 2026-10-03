@@ -87,6 +87,7 @@ export * from './priceAlert.ts';
 export * from './priceAlertInput.ts';
 export * from './priceAlertsResponse.ts';
 export * from './priceHistoryWindow.ts';
+export * from './priceLimitsResponse.ts';
 export * from './readinessCheck.ts';
 export * from './readinessResponse.ts';
 export * from './readinessResponseChecks.ts';

@@ -1,55 +1,62 @@
 import {
 	Alert,
-	Center,
-	Paper,
 	SegmentedControl,
 	SimpleGrid,
 	Stack,
 	Text,
 	TextInput,
-	Title,
+	useMantineTheme,
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
+import { themeToVars } from "@mantine/vanilla-extract";
 import { type FocusEvent, type KeyboardEvent, useMemo, useState } from "react";
 import { SegmentedValueGroup } from "@/components/segmented-value-group";
 import { SliderField } from "@/components/slider-field";
-import { ValueGroup } from "@/components/value-group";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
+import { DEFAULT_MARKUPS } from "@/features/instrument-analysis/grid-estimator/config";
+import { LiquidationRangeBar } from "@/features/instrument-analysis/grid-estimator/liquidation-range-bar";
+import type {
+	GridMarket,
+	SpotGridLimits,
+} from "@/features/instrument-analysis/grid-estimator/types";
 import {
 	calculateSpotGridInput,
-	DEFAULT_MARKUP_PERCENT,
-	formatMaxPrice,
-	formatMinPrice,
 	gridCountForStep,
+	gridMarketEstimate,
+	gridRecommendation,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
 	lowerPriceLimitError,
-	type SpotGridLimits,
-	type SpotGridType,
+	markupScaleLabels,
 	spotGridBounds,
-	spotGridEstimateValues,
 	spotGridMinimumStepPercent,
-	spotGridRecommendation,
 	upperMarkupPercent,
 	upperPriceFromMarkup,
 	upperPriceLimitError,
-} from "@/features/instrument-analysis/spot-grid-estimator/utils";
-import type { SpotGridInput } from "@/utils/calculator/spot-grid";
-import { formatNumber } from "@/utils/number-format";
+} from "@/features/instrument-analysis/grid-estimator/utils";
+import {
+	FUTURES_GRID_MAINTENANCE_MARGIN_RATE,
+	FUTURES_GRID_MAX_LEVERAGE,
+} from "@/utils/calculator/futures-grid";
+import type { GridType, SpotGridInput } from "@/utils/calculator/spot-grid";
+import type { PositionDirection } from "@/utils/calculator/types";
 import { formatRangePercent } from "@/utils/range-percent";
 
-interface SpotGridEstimatorProps {
+export interface GridEstimatorProps {
 	candles?: readonly (PriceCandle | null)[];
 	dailyVolatilityPercent?: number;
 	disabled?: boolean;
 	hourlyVolatilityPercent?: number;
-	paperPadding: string;
 	// Binance grid limits: undefined while loading, null when unavailable.
 	gridLimits?: SpotGridLimits | null;
 }
 
 type SpotGridFormValues = SpotGridInput & {
-	gridType: SpotGridType;
+	// USDT-M only.
+	direction: PositionDirection;
+	gridType: GridType;
+	// USDT-M only.
+	leverage: number;
 	lowerMarkup: number;
 	markup: number;
 	rangePercent: number;
@@ -70,26 +77,34 @@ function formValues(
 ): SpotGridFormValues {
 	return {
 		...input,
+		direction: "short",
 		gridType: "geometric",
+		leverage: 1,
 		lowerMarkup,
 		markup: upperMarkup,
 		rangePercent: hourlyRangePercent ?? 0,
 	};
 }
 
-export function SpotGridEstimator({
+export function GridEstimator({
 	candles,
 	dailyVolatilityPercent,
 	disabled = false,
 	hourlyVolatilityPercent,
-	paperPadding,
 	gridLimits,
-}: SpotGridEstimatorProps) {
+	market,
+}: GridEstimatorProps & { market: GridMarket }) {
 	// The parent remounts the calculator once its data is ready, so the price
 	// both markups are measured from stays fixed while it is being edited.
 	const [bounds] = useState(() => spotGridBounds(candles, gridLimits));
+	const defaultMarkups = DEFAULT_MARKUPS[market];
 	const [recommendation] = useState(() =>
-		spotGridRecommendation(bounds, hourlyVolatilityPercent),
+		gridRecommendation(
+			bounds,
+			hourlyVolatilityPercent,
+			"geometric",
+			defaultMarkups,
+		),
 	);
 	const form = useForm<SpotGridFormValues>({
 		initialValues: formValues(
@@ -106,8 +121,6 @@ export function SpotGridEstimator({
 
 	const { anchor } = bounds;
 	const hasAnchor = anchor !== null;
-	const minPrice = formatMinPrice(bounds);
-	const maxPrice = formatMaxPrice(bounds);
 	const hasHourlyVolatility =
 		typeof hourlyVolatilityPercent === "number" &&
 		Number.isFinite(hourlyVolatilityPercent) &&
@@ -123,11 +136,20 @@ export function SpotGridEstimator({
 		hasHourlyVolatility &&
 		hasDailyVolatility &&
 		dailyRangeValue > hourlyRangeValue;
-	const calculation = useMemo(
-		() => calculateSpotGridInput(committedInput, form.values.gridType),
-		[committedInput, form.values.gridType],
+	const { colors } = themeToVars(useMantineTheme());
+	const isFutures = market === "usdm";
+	const { direction, gridType, leverage } = form.values;
+	const estimate = useMemo(
+		() =>
+			gridMarketEstimate(market, committedInput, {
+				currentPrice: anchor,
+				direction,
+				gridType,
+				leverage,
+			}),
+		[anchor, committedInput, direction, gridType, leverage, market],
 	);
-	const values = spotGridEstimateValues(calculation?.estimate ?? null);
+	const { futuresEstimate, values } = estimate;
 
 	// Applies a new price range, step, or grid type and derives the largest grid
 	// count whose minimum step stays at or above the selected step.
@@ -186,7 +208,7 @@ export function SpotGridEstimator({
 		applyRange({ ...currentRange(), rangePercent });
 	}
 
-	function changeGridType(gridType: SpotGridType) {
+	function changeGridType(gridType: GridType) {
 		applyRange({ ...currentRange(), gridType });
 	}
 
@@ -219,7 +241,8 @@ export function SpotGridEstimator({
 	}
 
 	// Accepts a typed grid count only when its minimum step stays within the
-	// hourly-to-daily range, then moves the step slider to that step.
+	// hourly-to-daily range, then moves the step slider to that step. Spot and
+	// USDT-M grids share their levels, so the spot estimate gives the step.
 	function commitGridCount(gridCount: string) {
 		const nextInput = { ...committedInput, gridCount };
 		const estimate = calculateSpotGridInput(
@@ -284,199 +307,207 @@ export function SpotGridEstimator({
 	}
 
 	return (
-		<Paper
-			component="section"
-			aria-busy={disabled || undefined}
-			aria-labelledby="spot-grid-estimator-heading"
-			p={paperPadding}
-		>
-			<Stack gap="md">
-				<Center>
-					<Title id="spot-grid-estimator-heading" order={2} size="h3">
-						Spot Grid Calculator
-					</Title>
-				</Center>
+		<Stack gap="md">
+			{isFutures ? (
 				<SegmentedControl
-					aria-label="Grid type"
+					aria-label="Position direction"
 					data={[
-						{ label: "Arithmetic", value: "arithmetic" },
-						{ label: "Geometric", value: "geometric" },
+						{ label: "Short", value: "short" },
+						{ label: "Long", value: "long" },
 					]}
 					disabled={disabled}
 					fullWidth
-					onChange={(value) => changeGridType(value as SpotGridType)}
-					value={form.values.gridType}
+					onChange={(value) =>
+						form.setFieldValue("direction", value as PositionDirection)
+					}
+					value={direction}
 				/>
-				<Stack gap="sm">
+			) : null}
+			<SegmentedControl
+				aria-label="Grid type"
+				data={[
+					{ label: "Arithmetic", value: "arithmetic" },
+					{ label: "Geometric", value: "geometric" },
+				]}
+				disabled={disabled}
+				fullWidth
+				onChange={(value) => changeGridType(value as GridType)}
+				value={form.values.gridType}
+			/>
+			<Stack gap="sm">
+				{isFutures ? (
 					<SliderField
-						disabled={disabled || !hasAnchor}
-						formatValue={formatRangePercent}
-						label="Upper price markup"
-						max={bounds.upperMarkupMax}
-						min={0}
-						onChange={changeMarkup}
-						precision={2}
-						scaleLabels={[
-							{ label: "0%", position: 0 },
-							...(bounds.upperMarkupMax > DEFAULT_MARKUP_PERCENT
-								? [
-										{
-											label: formatRangePercent(DEFAULT_MARKUP_PERCENT),
-											position:
-												(DEFAULT_MARKUP_PERCENT / bounds.upperMarkupMax) * 100,
-										},
-									]
-								: []),
-							{
-								label: formatRangePercent(bounds.upperMarkupMax),
-								position: 100,
-							},
-						]}
-						step={0.01}
-						value={form.values.markup}
-					/>
-					<SliderField
-						disabled={disabled || !hasAnchor}
-						formatValue={formatRangePercent}
-						label="Lower price markup"
-						max={bounds.lowerMarkupMax}
-						min={0}
-						onChange={changeLowerMarkup}
-						precision={2}
-						scaleLabels={[
-							{ label: "0%", position: 0 },
-							{
-								label: formatRangePercent(bounds.lowerMarkupMax),
-								position: 100,
-							},
-						]}
-						step={0.01}
-						value={form.values.lowerMarkup}
-					/>
-					<SliderField
-						disabled={disabled || !canSelectRange}
-						formatValue={formatRangePercent}
-						label="Minimum grid step"
-						max={canSelectRange ? dailyRangeValue : selectedRangePercent + 1}
-						min={selectedRangePercent > 0 ? hourlyRangeValue : 0}
-						onChange={changeRange}
-						scaleLabels={[
-							{ label: "Hourly range", position: 0 },
-							{ label: "Daily range", position: 100 },
-						]}
-						step={
-							canSelectRange ? (dailyRangeValue - hourlyRangeValue) / 100 : 1
-						}
-						value={form.values.rangePercent}
-					/>
-					{!hasAnchor ? (
-						<Text c="dimmed" size="sm">
-							Price markups need the current price.
-						</Text>
-					) : null}
-					{hasAnchor && minPrice !== null && maxPrice !== null ? (
-						<Text c="dimmed" size="sm">
-							Binance grid bots accept prices from {minPrice} to {maxPrice} USDT
-							(5-minute average price {formatNumber(anchor)} USDT).
-						</Text>
-					) : null}
-					{gridLimits === null ? (
-						<Text c="dimmed" size="sm">
-							Binance grid limits are unavailable, so markups start from the
-							latest hourly close and the prices are not checked.
-						</Text>
-					) : null}
-					{hasAnchor && !hasHourlyVolatility ? (
-						<Text c="dimmed" size="sm">
-							Hourly range is unavailable, so the grid count is not derived from
-							it.
-						</Text>
-					) : null}
-					{hasHourlyVolatility && !hasDailyVolatility ? (
-						<Text c="dimmed" size="sm">
-							Daily range is unavailable, so the grid range stays hourly.
-						</Text>
-					) : null}
-				</Stack>
-				<SimpleGrid cols={2} spacing="md">
-					<TextInput
 						disabled={disabled}
-						inputMode="decimal"
-						label="Lower price (USDT)"
-						required
-						{...inputProps("lowerPrice")}
+						formatValue={(value) => `${value}×`}
+						label="Leverage"
+						max={FUTURES_GRID_MAX_LEVERAGE}
+						min={1}
+						onChange={(value) => form.setFieldValue("leverage", value)}
+						scaleLabels={Array.from(
+							{ length: FUTURES_GRID_MAX_LEVERAGE },
+							(_, index) => ({
+								label: `${index + 1}×`,
+								position: (index / (FUTURES_GRID_MAX_LEVERAGE - 1)) * 100,
+							}),
+						)}
+						step={1}
+						value={leverage}
 					/>
-					<TextInput
-						disabled={disabled}
-						inputMode="decimal"
-						label="Upper price (USDT)"
-						required
-						{...inputProps("upperPrice")}
-					/>
-					<TextInput
-						disabled={disabled}
-						inputMode="numeric"
-						label="Grid count"
-						required
-						{...inputProps("gridCount")}
-					/>
-					<TextInput
-						disabled={disabled}
-						inputMode="decimal"
-						label="USDT investment"
-						required
-						{...inputProps("investment")}
-					/>
-				</SimpleGrid>
-				{calculation?.error ? (
-					<Alert color="red" title="Check calculator inputs">
-						{calculation.error}
-					</Alert>
 				) : null}
-				<Stack aria-live="polite" gap="md">
-					<ValueGroup
-						title="Grid"
-						items={[
-							{ label: "Average price", value: values.averageEntryPrice },
-							{ label: "Grid step", value: values.gridStepPercent },
-						]}
-					/>
-					<SegmentedValueGroup
-						title="Profit per trade"
-						rows={values.profitSplits.map((split) => ({
-							ariaLabel: `${split.label}: fees ${split.feeCost}, ${split.feeShareOfGross} profit; ${split.isLoss ? "net loss" : "clean profit"} ${split.cleanProfit}, ${split.cleanReturnPercent}`,
-							items: [
-								{
-									color: "orange",
-									label: "Fees",
-									secondaryValue: split.feeShareOfGross,
-									value: split.feeCost,
-								},
-								{
-									color: split.isLoss ? "red" : "green",
-									label: split.isLoss ? "Net loss" : "Profit",
-									secondaryValue: split.cleanReturnPercent,
-									value: split.cleanProfit,
-								},
-							],
-							key: split.label,
-							label: split.label === "Every trade" ? undefined : split.label,
-							segments: [
-								{
-									color: "var(--mantine-color-orange-6)",
-									key: "fees",
-									percentage: split.feeSegmentPercent,
-								},
-								{
-									color: "var(--mantine-color-green-6)",
-									key: "clean-profit",
-									percentage: split.cleanSegmentPercent,
-								},
-							],
-						}))}
-					/>
-				</Stack>
+				<SliderField
+					disabled={disabled || !hasAnchor}
+					formatValue={formatRangePercent}
+					label="Upper price markup"
+					max={bounds.upperMarkupMax}
+					min={0}
+					onChange={changeMarkup}
+					precision={2}
+					scaleLabels={markupScaleLabels(
+						bounds.upperMarkupMax,
+						defaultMarkups.upper,
+					)}
+					step={0.01}
+					value={form.values.markup}
+				/>
+				<SliderField
+					disabled={disabled || !hasAnchor}
+					formatValue={formatRangePercent}
+					label="Lower price markup"
+					max={bounds.lowerMarkupMax}
+					min={0}
+					onChange={changeLowerMarkup}
+					precision={2}
+					scaleLabels={markupScaleLabels(
+						bounds.lowerMarkupMax,
+						defaultMarkups.lower,
+					)}
+					step={0.01}
+					value={form.values.lowerMarkup}
+				/>
+				<SliderField
+					disabled={disabled || !canSelectRange}
+					formatValue={formatRangePercent}
+					label="Minimum grid step"
+					max={canSelectRange ? dailyRangeValue : selectedRangePercent + 1}
+					min={selectedRangePercent > 0 ? hourlyRangeValue : 0}
+					onChange={changeRange}
+					scaleLabels={[
+						{ label: "Hourly range", position: 0 },
+						{ label: "Daily range", position: 100 },
+					]}
+					step={canSelectRange ? (dailyRangeValue - hourlyRangeValue) / 100 : 1}
+					value={form.values.rangePercent}
+				/>
+				{!hasAnchor ? (
+					<Text c="dimmed" size="sm">
+						Price markups need the current price.
+					</Text>
+				) : null}
+				{gridLimits === null ? (
+					<Text c="dimmed" size="sm">
+						Binance grid limits are unavailable, so markups start from the
+						latest hourly close and the prices are not checked.
+					</Text>
+				) : null}
+				{hasAnchor && !hasHourlyVolatility ? (
+					<Text c="dimmed" size="sm">
+						Hourly range is unavailable, so the grid count is not derived from
+						it.
+					</Text>
+				) : null}
+				{hasHourlyVolatility && !hasDailyVolatility ? (
+					<Text c="dimmed" size="sm">
+						Daily range is unavailable, so the grid range stays hourly.
+					</Text>
+				) : null}
 			</Stack>
-		</Paper>
+			<SimpleGrid cols={2} spacing="md">
+				<TextInput
+					disabled={disabled}
+					inputMode="decimal"
+					label="Lower price (USDT)"
+					required
+					{...inputProps("lowerPrice")}
+				/>
+				<TextInput
+					disabled={disabled}
+					inputMode="decimal"
+					label="Upper price (USDT)"
+					required
+					{...inputProps("upperPrice")}
+				/>
+				<TextInput
+					disabled={disabled}
+					inputMode="numeric"
+					label="Grid count"
+					required
+					{...inputProps("gridCount")}
+				/>
+				<TextInput
+					disabled={disabled}
+					inputMode="decimal"
+					label="USDT investment"
+					required
+					{...inputProps("investment")}
+				/>
+			</SimpleGrid>
+			{estimate.error ? (
+				<Alert color="red" title="Check calculator inputs">
+					{estimate.error}
+				</Alert>
+			) : null}
+			<Stack aria-live="polite" gap="md">
+				{futuresEstimate ? (
+					<LiquidationRangeBar
+						currentPrice={anchor}
+						estimate={futuresEstimate}
+					/>
+				) : null}
+				<SegmentedValueGroup
+					title="Profit per trade"
+					rows={values.profitSplits.map((split) => ({
+						ariaLabel: `${split.label}: fees ${split.feeCost}, ${split.feeShareOfGross} profit; ${split.isLoss ? "net loss" : "clean profit"} ${split.cleanProfit}, ${split.cleanReturnPercent}`,
+						items: [
+							{
+								color: "orange",
+								label: "Fees",
+								secondaryValue: split.feeShareOfGross,
+								value: split.feeCost,
+							},
+							{
+								color: split.isLoss ? "red" : "green",
+								label: split.isLoss ? "Net loss" : "Profit",
+								secondaryValue: split.cleanReturnPercent,
+								value: split.cleanProfit,
+							},
+						],
+						key: split.label,
+						label: split.label === "Every trade" ? undefined : split.label,
+						segments: [
+							{
+								color: colors.orange[6],
+								key: "fees",
+								percentage: split.feeSegmentPercent,
+							},
+							{
+								color: colors.green[6],
+								key: "clean-profit",
+								percentage: split.cleanSegmentPercent,
+							},
+						],
+					}))}
+				/>
+			</Stack>
+			{isFutures ? (
+				<Text c="dimmed" size="sm">
+					Liquidation assumes the price moves straight to it without a completed
+					trade, with a{" "}
+					{formatRangePercent(
+						FUTURES_GRID_MAINTENANCE_MARGIN_RATE.times(100).toNumber(),
+					)}{" "}
+					maintenance margin and no fees.
+				</Text>
+			) : null}
+		</Stack>
 	);
 }

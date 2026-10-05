@@ -9,8 +9,8 @@ import { CoinChart } from "@/features/instrument-analysis/coin-chart";
 import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { CoinOverview } from "@/features/instrument-analysis/coin-overview";
 import { CurrentPrice } from "@/features/instrument-analysis/current-price";
+import { GridCalculator } from "@/features/instrument-analysis/grid-estimator/grid-calculator";
 import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
-import { SpotGridEstimator } from "@/features/instrument-analysis/spot-grid-estimator/spot-grid-estimator";
 import { useChartIndicators } from "@/features/instrument-analysis/use-chart-indicators";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 import { useGridLimits } from "@/features/instrument-analysis/use-grid-limits";
@@ -87,7 +87,7 @@ export function InstrumentAnalysisScreen({
 									symbol={symbol}
 								/>
 							) : null}
-							<SpotGridEstimator
+							<GridCalculator
 								candles={
 									recommendationReady ? hourlyHistory.candles : undefined
 								}

@@ -1,5 +1,5 @@
 import { useGetInstrumentGridLimits } from "@/api/generated/api";
-import type { SpotGridLimits } from "@/features/instrument-analysis/spot-grid-estimator/utils";
+import type { SpotGridLimits } from "@/features/instrument-analysis/grid-estimator/types";
 
 // Binance spot grid limits, fetched once per coin page so the calculator's
 // range does not move while it is being edited. A failure leaves the

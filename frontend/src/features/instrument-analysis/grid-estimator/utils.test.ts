@@ -1,20 +1,27 @@
+import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 import {
-	calculateSpotGridInput,
-	gridCountForStep,
+	DEFAULT_MARKUPS,
 	LOWER_MARKUP_MAX_PERCENT,
+} from "@/features/instrument-analysis/grid-estimator/config";
+import {
+	calculateFuturesGridInput,
+	calculateSpotGridInput,
+	futuresGridEstimateValues,
+	gridCountForStep,
+	gridRecommendation,
 	latestAvailableCandle,
+	liquidationRangeBar,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
-	type SpotGridType,
 	spotGridBounds,
 	spotGridEstimateValues,
 	spotGridMinimumStepPercent,
 	spotGridProfitSplits,
-	spotGridRecommendation,
 	upperMarkupPercent,
 	upperPriceFromMarkup,
-} from "@/features/instrument-analysis/spot-grid-estimator/utils";
+} from "@/features/instrument-analysis/grid-estimator/utils";
+import type { GridType } from "@/utils/calculator/spot-grid";
 
 const validInput = {
 	lowerPrice: "100",
@@ -24,8 +31,6 @@ const validInput = {
 };
 
 const zeroValues = {
-	averageEntryPrice: "0 USDT",
-	gridStepPercent: "0%",
 	profitSplits: [
 		{
 			cleanProfit: "0 USDT",
@@ -60,7 +65,7 @@ describe("spot grid recommendations", () => {
 
 	function minimumStep(
 		input: Parameters<typeof calculateSpotGridInput>[0],
-		gridType: SpotGridType,
+		gridType: GridType,
 	): number {
 		const calculation = calculateSpotGridInput(input, gridType);
 		expect(calculation?.error).toBeNull();
@@ -69,7 +74,7 @@ describe("spot grid recommendations", () => {
 	}
 
 	it("starts the lower price as low as the range allows", () => {
-		const recommendation = spotGridRecommendation(bounds, 1);
+		const recommendation = gridRecommendation(bounds, 1);
 		expect(latestAvailableCandle([candle, null])).toEqual(candle);
 		expect(recommendation.lowerMarkup).toBe(LOWER_MARKUP_MAX_PERCENT);
 		expect(recommendation.input).toEqual({
@@ -83,8 +88,30 @@ describe("spot grid recommendations", () => {
 		).toBeGreaterThanOrEqual(1);
 	});
 
+	it("starts both USDT-M prices at the default markups within the range", () => {
+		const recommendation = gridRecommendation(
+			bounds,
+			1,
+			"geometric",
+			DEFAULT_MARKUPS.usdm,
+		);
+		expect(recommendation.input).toMatchObject({
+			lowerPrice: "90",
+			upperPrice: "110",
+			gridCount: "20",
+		});
+		expect(
+			gridRecommendation(
+				{ ...bounds, lowerMarkupMax: 4, upperMarkupMax: 6 },
+				1,
+				"geometric",
+				DEFAULT_MARKUPS.usdm,
+			),
+		).toMatchObject({ lowerMarkup: 4, upperMarkup: 6 });
+	});
+
 	it("derives the arithmetic grid count from the same range", () => {
-		const recommendation = spotGridRecommendation(bounds, 1, "arithmetic");
+		const recommendation = gridRecommendation(bounds, 1, "arithmetic");
 		expect(recommendation.input).toMatchObject({
 			lowerPrice: "50",
 			gridCount: "52",
@@ -149,11 +176,11 @@ describe("spot grid recommendations", () => {
 
 	it("returns partial fallbacks for missing market data and unsupported values", () => {
 		expect(latestAvailableCandle([null, null])).toBeNull();
-		expect(spotGridRecommendation(bounds, 0)).toMatchObject({
+		expect(gridRecommendation(bounds, 0)).toMatchObject({
 			input: { lowerPrice: "50", upperPrice: "105", gridCount: "40" },
 		});
 		expect(
-			spotGridRecommendation(
+			gridRecommendation(
 				spotGridBounds([{ ...candle, close: Number.NaN }], null),
 				1,
 			).input,
@@ -195,8 +222,6 @@ describe("calculateSpotGridInput", () => {
 
 		expect(calculation?.error).toBeNull();
 		expect(spotGridEstimateValues(calculation?.estimate ?? null)).toEqual({
-			averageEntryPrice: "104.9 USDT",
-			gridStepPercent: "10%",
 			profitSplits: [
 				{
 					cleanProfit: "10.76 USDT",
@@ -211,15 +236,6 @@ describe("calculateSpotGridInput", () => {
 				},
 			],
 		});
-	});
-
-	it("shows the arithmetic grid step percent range", () => {
-		const calculation = calculateSpotGridInput(validInput, "arithmetic");
-
-		expect(calculation?.error).toBeNull();
-		expect(
-			spotGridEstimateValues(calculation?.estimate ?? null).gridStepPercent,
-		).toBe("9.091%–10%");
 	});
 
 	it("pairs arithmetic lowest- and highest-profit trade splits", () => {
@@ -325,5 +341,92 @@ describe("calculateSpotGridInput", () => {
 		expect(
 			spotGridEstimateValues(invalidCalculation?.estimate ?? null),
 		).toEqual(zeroValues);
+	});
+});
+
+describe("calculateFuturesGridInput", () => {
+	const options = {
+		currentPrice: 105,
+		direction: "short",
+		gridType: "geometric",
+		leverage: 3,
+	} as const;
+	const futuresInput = { ...validInput, upperPrice: "121", gridCount: "2" };
+
+	it("shows one geometric trade", () => {
+		const calculation = calculateFuturesGridInput(futuresInput, options);
+		const values = futuresGridEstimateValues(
+			calculation?.estimate ?? null,
+			"geometric",
+		);
+
+		expect(calculation?.error).toBeNull();
+		expect(values.profitSplits.map((split) => split.label)).toEqual([
+			"Every trade",
+		]);
+	});
+
+	it("pairs the lowest- and highest-profit arithmetic trades", () => {
+		const calculation = calculateFuturesGridInput(futuresInput, {
+			...options,
+			gridType: "arithmetic",
+		});
+
+		expect(
+			futuresGridEstimateValues(
+				calculation?.estimate ?? null,
+				"arithmetic",
+			).profitSplits.map((split) => split.label),
+		).toEqual(["Lowest-profit trade", "Highest-profit trade"]);
+	});
+
+	it("reports a missing current price as an input error", () => {
+		const calculation = calculateFuturesGridInput(futuresInput, {
+			...options,
+			currentPrice: null,
+		});
+
+		expect(calculation?.estimate).toBeNull();
+		expect(calculation?.error).toBe("The current price is unavailable");
+	});
+});
+
+describe("liquidationRangeBar", () => {
+	const lower = new Decimal(100);
+	const upper = new Decimal(200);
+
+	it("places a liquidation below the grid on a padded common scale", () => {
+		const bar = liquidationRangeBar(lower, upper, 150, new Decimal(80));
+
+		// The scale spans 80–200 with 6 on each side.
+		expect(bar.liquidationPosition).toBeCloseTo((6 / 132) * 100);
+		expect(bar.gridStartPosition).toBeCloseTo((26 / 132) * 100);
+		expect(bar.gridEndPosition).toBeCloseTo((126 / 132) * 100);
+		expect(bar.currentPosition).toBeCloseTo((76 / 132) * 100);
+		expect(bar.isInsideGrid).toBe(false);
+		expect(bar.summary).toBe("Liquidation 20% below the lower price");
+	});
+
+	it("measures a short liquidation above the upper price", () => {
+		const bar = liquidationRangeBar(lower, upper, 150, new Decimal(250));
+
+		expect(bar.summary).toBe("Liquidation 25% above the upper price");
+		expect(bar.liquidationPosition).toBeGreaterThan(bar.gridEndPosition);
+	});
+
+	it("flags a liquidation inside the grid range", () => {
+		const bar = liquidationRangeBar(lower, upper, 190, new Decimal(120));
+
+		expect(bar.isInsideGrid).toBe(true);
+		expect(bar.summary).toBe("Liquidation inside the grid range");
+	});
+
+	it("shows only the grid without a liquidation price", () => {
+		const bar = liquidationRangeBar(lower, upper, null, null);
+
+		expect(bar.liquidationPosition).toBeNull();
+		expect(bar.currentPosition).toBeNull();
+		expect(bar.gridStartPosition).toBeCloseTo((5 / 110) * 100);
+		expect(bar.summary).toBe("No liquidation");
 	});
 });

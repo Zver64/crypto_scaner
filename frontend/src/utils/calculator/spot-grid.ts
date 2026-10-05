@@ -14,6 +14,8 @@ export const SPOT_GRID_ONE_MINUS_FEE = new SpotGridDecimal(1).minus(
 );
 export const SPOT_GRID_MAX_COUNT = 1000;
 
+export type GridType = "arithmetic" | "geometric";
+
 const MAX_INPUT_LENGTH = 80;
 const MAX_SIGNIFICANT_DIGITS = 50;
 const DECIMAL_INPUT = /^\+?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;

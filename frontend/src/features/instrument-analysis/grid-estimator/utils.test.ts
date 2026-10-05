@@ -9,6 +9,7 @@ import {
 	calculateSpotGridInput,
 	futuresGridEstimateValues,
 	gridCountForStep,
+	gridMarketEstimate,
 	gridRecommendation,
 	latestAvailableCandle,
 	liquidationRangeBar,
@@ -357,7 +358,7 @@ describe("calculateFuturesGridInput", () => {
 		const calculation = calculateFuturesGridInput(futuresInput, options);
 		const values = futuresGridEstimateValues(
 			calculation?.estimate ?? null,
-			"geometric",
+			"USDT",
 		);
 
 		expect(calculation?.error).toBeNull();
@@ -375,9 +376,29 @@ describe("calculateFuturesGridInput", () => {
 		expect(
 			futuresGridEstimateValues(
 				calculation?.estimate ?? null,
-				"arithmetic",
+				"USDT",
 			).profitSplits.map((split) => split.label),
 		).toEqual(["Lowest-profit trade", "Highest-profit trade"]);
+	});
+
+	it("shows COIN-M geometric trades in the coin, which differ by level", () => {
+		const estimate = gridMarketEstimate(
+			"coinm",
+			{ ...futuresInput, investment: "2" },
+			options,
+			"BTC",
+		);
+
+		expect(estimate.error).toBeNull();
+		expect(
+			estimate.values.profitSplits.map(({ cleanProfit, label }) => [
+				label,
+				cleanProfit,
+			]),
+		).toEqual([
+			["Lowest-profit trade", "0.2592 BTC"],
+			["Highest-profit trade", "0.2852 BTC"],
+		]);
 	});
 
 	it("reports a missing current price as an input error", () => {

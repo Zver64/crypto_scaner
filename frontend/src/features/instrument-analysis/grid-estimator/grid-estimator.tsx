@@ -21,13 +21,16 @@ import type {
 } from "@/features/instrument-analysis/grid-estimator/types";
 import {
 	calculateSpotGridInput,
+	defaultInvestment,
 	gridCountForStep,
 	gridMarketEstimate,
 	gridRecommendation,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
 	lowerPriceLimitError,
+	marginAsset,
 	markupScaleLabels,
+	priceAsset,
 	spotGridBounds,
 	spotGridMinimumStepPercent,
 	upperMarkupPercent,
@@ -43,6 +46,8 @@ import type { PositionDirection } from "@/utils/calculator/types";
 import { formatRangePercent } from "@/utils/range-percent";
 
 export interface GridEstimatorProps {
+	// The coin COIN-M grids are margined and settled in.
+	baseAsset: string;
 	candles?: readonly (PriceCandle | null)[];
 	dailyVolatilityPercent?: number;
 	disabled?: boolean;
@@ -52,10 +57,10 @@ export interface GridEstimatorProps {
 }
 
 type SpotGridFormValues = SpotGridInput & {
-	// USDT-M only.
+	// Futures only.
 	direction: PositionDirection;
 	gridType: GridType;
-	// USDT-M only.
+	// Futures only.
 	leverage: number;
 	lowerMarkup: number;
 	markup: number;
@@ -87,6 +92,7 @@ function formValues(
 }
 
 export function GridEstimator({
+	baseAsset,
 	candles,
 	dailyVolatilityPercent,
 	disabled = false,
@@ -104,6 +110,7 @@ export function GridEstimator({
 			hourlyVolatilityPercent,
 			"geometric",
 			defaultMarkups,
+			defaultInvestment(market, bounds.anchor),
 		),
 	);
 	const form = useForm<SpotGridFormValues>({
@@ -137,17 +144,24 @@ export function GridEstimator({
 		hasDailyVolatility &&
 		dailyRangeValue > hourlyRangeValue;
 	const { colors } = themeToVars(useMantineTheme());
-	const isFutures = market === "usdm";
+	const isFutures = market !== "spot";
+	const investmentAsset = marginAsset(market, baseAsset);
+	const priceUnit = priceAsset(market);
 	const { direction, gridType, leverage } = form.values;
 	const estimate = useMemo(
 		() =>
-			gridMarketEstimate(market, committedInput, {
-				currentPrice: anchor,
-				direction,
-				gridType,
-				leverage,
-			}),
-		[anchor, committedInput, direction, gridType, leverage, market],
+			gridMarketEstimate(
+				market,
+				committedInput,
+				{
+					currentPrice: anchor,
+					direction,
+					gridType,
+					leverage,
+				},
+				baseAsset,
+			),
+		[anchor, baseAsset, committedInput, direction, gridType, leverage, market],
 	);
 	const { futuresEstimate, values } = estimate;
 
@@ -213,7 +227,7 @@ export function GridEstimator({
 	}
 
 	function commitUpperPrice(upperPrice: string) {
-		const limitError = upperPriceLimitError(bounds, upperPrice);
+		const limitError = upperPriceLimitError(bounds, upperPrice, priceUnit);
 		if (limitError) {
 			form.setFieldError("upperPrice", limitError);
 			return;
@@ -227,7 +241,7 @@ export function GridEstimator({
 	}
 
 	function commitLowerPrice(lowerPrice: string) {
-		const limitError = lowerPriceLimitError(bounds, lowerPrice);
+		const limitError = lowerPriceLimitError(bounds, lowerPrice, priceUnit);
 		if (limitError) {
 			form.setFieldError("lowerPrice", limitError);
 			return;
@@ -242,7 +256,7 @@ export function GridEstimator({
 
 	// Accepts a typed grid count only when its minimum step stays within the
 	// hourly-to-daily range, then moves the step slider to that step. Spot and
-	// USDT-M grids share their levels, so the spot estimate gives the step.
+	// futures grids share their levels, so the spot estimate gives the step.
 	function commitGridCount(gridCount: string) {
 		const nextInput = { ...committedInput, gridCount };
 		const estimate = calculateSpotGridInput(
@@ -425,14 +439,14 @@ export function GridEstimator({
 				<TextInput
 					disabled={disabled}
 					inputMode="decimal"
-					label="Lower price (USDT)"
+					label={`Lower price (${priceUnit})`}
 					required
 					{...inputProps("lowerPrice")}
 				/>
 				<TextInput
 					disabled={disabled}
 					inputMode="decimal"
-					label="Upper price (USDT)"
+					label={`Upper price (${priceUnit})`}
 					required
 					{...inputProps("upperPrice")}
 				/>
@@ -446,7 +460,7 @@ export function GridEstimator({
 				<TextInput
 					disabled={disabled}
 					inputMode="decimal"
-					label="USDT investment"
+					label={`${investmentAsset} investment`}
 					required
 					{...inputProps("investment")}
 				/>
@@ -461,6 +475,7 @@ export function GridEstimator({
 					<LiquidationRangeBar
 						currentPrice={anchor}
 						estimate={futuresEstimate}
+						priceUnit={priceUnit}
 					/>
 				) : null}
 				<SegmentedValueGroup

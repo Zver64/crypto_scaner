@@ -6,7 +6,7 @@ import {
 	DEFAULT_GRID_COUNT,
 	DEFAULT_INVESTMENT,
 	DEFAULT_MARKUPS,
-	EMPTY_ESTIMATE_VALUES,
+	FUTURES_CONTRACTS,
 	LOWER_MARKUP_LIMIT_PERCENT,
 	LOWER_MARKUP_MAX_PERCENT,
 	RANGE_BAR_PADDING,
@@ -33,6 +33,7 @@ import type {
 import { calculateArithmeticSpotGrid } from "@/utils/calculator/arithmetic-spot-grid";
 import {
 	calculateFuturesGrid,
+	type FuturesContract,
 	type FuturesGridEstimate,
 } from "@/utils/calculator/futures-grid";
 import { calculateGeometricSpotGrid } from "@/utils/calculator/geometric-spot-grid";
@@ -57,6 +58,12 @@ function formatCalculatorInput(
 		return value
 			.toNearest(bounds.tickSize, tickRounding[rounding ?? "halfExpand"])
 			.toFixed();
+	return formatInputNumber(value, rounding);
+}
+
+// Formats a number as calculator input: the shared number format without
+// group separators.
+function formatInputNumber(value: Decimal, rounding?: PriceRounding): string {
 	return formatNumber(value.toFixed(), undefined, rounding).replaceAll(",", "");
 }
 
@@ -278,11 +285,12 @@ export function upperMarkupPercent(
 export function lowerPriceLimitError(
 	bounds: SpotGridBounds,
 	lowerPrice: string,
+	priceUnit: string,
 ): string | null {
 	if (!bounds.minPrice) return null;
 	try {
 		return parseSpotGridDecimal(lowerPrice, "Lower price").lt(bounds.minPrice)
-			? `Binance minimum is ${formatMinPrice(bounds)} USDT`
+			? `Binance minimum is ${formatMinPrice(bounds)} ${priceUnit}`
 			: null;
 	} catch {
 		return null;
@@ -293,11 +301,12 @@ export function lowerPriceLimitError(
 export function upperPriceLimitError(
 	bounds: SpotGridBounds,
 	upperPrice: string,
+	priceUnit: string,
 ): string | null {
 	if (!bounds.maxPrice) return null;
 	try {
 		return parseSpotGridDecimal(upperPrice, "Upper price").gt(bounds.maxPrice)
-			? `Binance maximum is ${formatMaxPrice(bounds)} USDT`
+			? `Binance maximum is ${formatMaxPrice(bounds)} ${priceUnit}`
 			: null;
 	} catch {
 		return null;
@@ -374,6 +383,7 @@ export function gridRecommendation(
 	hourlyVolatilityPercent: number | undefined,
 	gridType: GridType = "geometric",
 	markups: GridMarkups = DEFAULT_MARKUPS.spot,
+	investment = DEFAULT_INVESTMENT,
 ): SpotGridRecommendation {
 	const upperMarkup = Math.min(markups.upper, bounds.upperMarkupMax);
 	const upperPrice = upperPriceFromMarkup(bounds, upperMarkup) ?? "";
@@ -396,13 +406,40 @@ export function gridRecommendation(
 			lowerPrice,
 			upperPrice,
 			gridCount,
-			investment: DEFAULT_INVESTMENT,
+			investment,
 		},
 		hasAnchor: bounds.anchor !== null,
 		hasHourlyVolatility: validPositiveNumber(hourlyVolatilityPercent),
 		lowerMarkup,
 		upperMarkup,
 	};
+}
+
+/**
+ * Returns the starting investment of a market: the default USDT amount, or for
+ * COIN-M its value in the coin at the anchor price, or one coin without it.
+ */
+export function defaultInvestment(
+	market: GridMarket,
+	anchor: number | null,
+): string {
+	if (!isInverseMarket(market)) return DEFAULT_INVESTMENT;
+	if (!validPositiveNumber(anchor)) return "1";
+	return formatInputNumber(new SpotGridDecimal(DEFAULT_INVESTMENT).div(anchor));
+}
+
+function isInverseMarket(market: GridMarket): boolean {
+	return market !== "spot" && FUTURES_CONTRACTS[market] === "inverse";
+}
+
+/** Returns the currency a market's grid is margined in. */
+export function marginAsset(market: GridMarket, baseAsset: string): string {
+	return isInverseMarket(market) ? baseAsset : "USDT";
+}
+
+/** Returns the currency a market's prices are quoted in. */
+export function priceAsset(market: GridMarket): string {
+	return isInverseMarket(market) ? "USD" : "USDT";
 }
 
 /** Returns the smallest per-trade step of an estimate, in percent. */
@@ -446,22 +483,27 @@ export function calculateSpotGridInput(
 export function calculateFuturesGridInput(
 	input: SpotGridInput,
 	{ currentPrice, ...options }: FuturesGridOptions,
+	contract: FuturesContract = "linear",
 ): GridCalculation<FuturesGridEstimate> | null {
 	return calculateGrid(input, () => {
 		if (currentPrice === null)
 			throw new RangeError("The current price is unavailable");
-		return calculateFuturesGrid({ ...input, ...options, currentPrice });
+		return calculateFuturesGrid({
+			...input,
+			...options,
+			contract,
+			currentPrice,
+		});
 	});
 }
 
 function profitSplit(
 	label: string,
-	allocationPerBuy: Decimal,
-	grossProfitPercent: Decimal,
+	unit: string,
+	grossProfit: Decimal,
 	netProfit: Decimal,
 	netProfitPercent: Decimal,
 ): SpotGridProfitSplit {
-	const grossProfit = allocationPerBuy.times(grossProfitPercent).div(100);
 	const feeCost = grossProfit.minus(netProfit);
 	const feeShareOfGross = feeCost.div(grossProfit).times(100);
 	const feeSegmentPercent = feeShareOfGross.gte(100)
@@ -471,13 +513,13 @@ function profitSplit(
 			: feeShareOfGross.toNumber();
 
 	return {
-		cleanProfit: formatUsdt(netProfit),
+		cleanProfit: formatAmount(netProfit, unit),
 		cleanReturnPercent: `${formatNumber(netProfitPercent.toFixed())}% per trade`,
 		cleanSegmentPercent: 100 - feeSegmentPercent,
-		feeCost: formatUsdt(feeCost),
+		feeCost: formatAmount(feeCost, unit),
 		feeSegmentPercent,
 		feeShareOfGross: `${formatNumber(feeShareOfGross.toFixed())}% of gross`,
-		grossProfit: formatUsdt(grossProfit),
+		grossProfit: formatAmount(grossProfit, unit),
 		isLoss: netProfit.lt(0),
 		label,
 	};
@@ -486,11 +528,23 @@ function profitSplit(
 export function spotGridProfitSplits(
 	estimate: SpotGridEstimate,
 ): SpotGridProfitSplit[] {
+	const split = (
+		label: string,
+		stepPercent: Decimal,
+		netProfit: Decimal,
+		netProfitPercent: Decimal,
+	) =>
+		profitSplit(
+			label,
+			"USDT",
+			estimate.allocationPerBuy.times(stepPercent).div(100),
+			netProfit,
+			netProfitPercent,
+		);
 	if ("cycleProfit" in estimate) {
 		return [
-			profitSplit(
+			split(
 				"Every trade",
-				estimate.allocationPerBuy,
 				estimate.stepPercent,
 				estimate.cycleProfit,
 				estimate.cycleProfitPercent,
@@ -499,16 +553,14 @@ export function spotGridProfitSplits(
 	}
 
 	return [
-		profitSplit(
+		split(
 			"Lowest-profit trade",
-			estimate.allocationPerBuy,
 			estimate.stepPercentMinimum,
 			estimate.cycleProfitMinimum,
 			estimate.cycleProfitMinimumPercent,
 		),
-		profitSplit(
+		split(
 			"Highest-profit trade",
-			estimate.allocationPerBuy,
 			estimate.stepPercentMaximum,
 			estimate.cycleProfitMaximum,
 			estimate.cycleProfitMaximumPercent,
@@ -516,38 +568,69 @@ export function spotGridProfitSplits(
 	];
 }
 
-export function formatUsdt(value: Decimal | number): string {
-	return `${formatNumber(typeof value === "number" ? value : value.toFixed())} USDT`;
+export function formatAmount(value: Decimal | number, unit: string): string {
+	return `${formatNumber(typeof value === "number" ? value : value.toFixed())} ${unit}`;
 }
 
 export function spotGridEstimateValues(
 	estimate: SpotGridEstimate | null,
 ): GridEstimateValues {
-	if (!estimate) return EMPTY_ESTIMATE_VALUES;
+	if (!estimate) return emptyEstimateValues("USDT");
 	return { profitSplits: spotGridProfitSplits(estimate) };
 }
 
+function emptyEstimateValues(unit: string): GridEstimateValues {
+	const zero = formatAmount(0, unit);
+	return {
+		profitSplits: [
+			{
+				cleanProfit: zero,
+				cleanReturnPercent: "0% per trade",
+				cleanSegmentPercent: 0,
+				feeCost: zero,
+				feeSegmentPercent: 0,
+				feeShareOfGross: "0% of gross",
+				grossProfit: zero,
+				isLoss: false,
+				label: "Every trade",
+			},
+		],
+	};
+}
+
+/**
+ * Formats the lowest- and highest-profit trades in `unit`, the margin
+ * currency, or one trade when both show the same amounts.
+ */
 export function futuresGridEstimateValues(
 	estimate: FuturesGridEstimate | null,
-	gridType: GridType,
+	unit: string,
 ): GridEstimateValues {
-	if (!estimate) return EMPTY_ESTIMATE_VALUES;
-	const { allocationPerOrder, tradeMaximum, tradeMinimum } = estimate;
+	if (!estimate) return emptyEstimateValues(unit);
 	const split = (label: string, trade: FuturesGridEstimate["tradeMinimum"]) =>
 		profitSplit(
 			label,
-			allocationPerOrder,
-			trade.grossProfitPercent,
+			unit,
+			trade.grossProfit,
 			trade.profit,
 			trade.profitPercent,
 		);
+	const lowest = split("Every trade", estimate.tradeMinimum);
+	const highest = split("Every trade", estimate.tradeMaximum);
+	const shown = ({
+		cleanProfit,
+		cleanReturnPercent,
+		feeCost,
+		feeShareOfGross,
+	}: SpotGridProfitSplit) =>
+		[cleanProfit, cleanReturnPercent, feeCost, feeShareOfGross].join();
 	return {
 		profitSplits:
-			gridType === "geometric"
-				? [split("Every trade", tradeMinimum)]
+			shown(lowest) === shown(highest)
+				? [lowest]
 				: [
-						split("Lowest-profit trade", tradeMinimum),
-						split("Highest-profit trade", tradeMaximum),
+						{ ...lowest, label: "Lowest-profit trade" },
+						{ ...highest, label: "Highest-profit trade" },
 					],
 	};
 }
@@ -602,11 +685,15 @@ export function liquidationRangeBar(
 	};
 }
 
-/** Calculates the estimate of the selected market's grid. */
+/**
+ * Calculates the estimate of the selected market's grid; COIN-M amounts are in
+ * `baseAsset`.
+ */
 export function gridMarketEstimate(
 	market: GridMarket,
 	input: SpotGridInput,
 	options: FuturesGridOptions,
+	baseAsset: string,
 ): GridMarketEstimate {
 	if (market === "spot") {
 		const calculation = calculateSpotGridInput(input, options.gridType);
@@ -616,12 +703,19 @@ export function gridMarketEstimate(
 			values: spotGridEstimateValues(calculation?.estimate ?? null),
 		};
 	}
-	const calculation = calculateFuturesGridInput(input, options);
+	const calculation = calculateFuturesGridInput(
+		input,
+		options,
+		FUTURES_CONTRACTS[market],
+	);
 	const futuresEstimate = calculation?.estimate ?? null;
 	return {
 		error: calculation?.error ?? null,
 		futuresEstimate,
-		values: futuresGridEstimateValues(futuresEstimate, options.gridType),
+		values: futuresGridEstimateValues(
+			futuresEstimate,
+			marginAsset(market, baseAsset),
+		),
 	};
 }
 

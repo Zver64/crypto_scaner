@@ -84,9 +84,11 @@ export interface GridEstimateValues {
 	profitSplits: SpotGridProfitSplit[];
 }
 
-export type GridMarket = "spot" | "usdm";
+export type FuturesMarket = "usdm" | "coinm";
 
-/** A spot or USDT-M estimate, formatted for display. */
+export type GridMarket = "spot" | FuturesMarket;
+
+/** A spot, USDT-M, or COIN-M estimate, formatted for display. */
 export interface GridMarketEstimate {
 	error: string | null;
 	futuresEstimate: FuturesGridEstimate | null;

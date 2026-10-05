@@ -8,9 +8,10 @@ import {
 	useMantineTheme,
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
+import type Decimal from "decimal.js";
 import { LegendItem } from "@/features/instrument-analysis/grid-estimator/legend-item";
 import {
-	formatUsdt,
+	formatAmount,
 	liquidationRangeBar,
 } from "@/features/instrument-analysis/grid-estimator/utils";
 import type { FuturesGridEstimate } from "@/utils/calculator/futures-grid";
@@ -18,6 +19,7 @@ import type { FuturesGridEstimate } from "@/utils/calculator/futures-grid";
 interface LiquidationRangeBarProps {
 	currentPrice: number | null;
 	estimate: FuturesGridEstimate;
+	priceUnit: string;
 }
 
 const MARKER_WIDTH = 3;
@@ -27,7 +29,10 @@ const MARKER_WIDTH = 3;
 export function LiquidationRangeBar({
 	currentPrice,
 	estimate,
+	priceUnit,
 }: LiquidationRangeBarProps) {
+	const formatPrice = (price: Decimal | number) =>
+		formatAmount(price, priceUnit);
 	const { colors } = themeToVars(useMantineTheme());
 	const { liquidationPrice, lowerPrice, upperPrice } = estimate;
 	const bar = liquidationRangeBar(
@@ -36,9 +41,9 @@ export function LiquidationRangeBar({
 		currentPrice,
 		liquidationPrice,
 	);
-	const grid = `${formatUsdt(lowerPrice)} – ${formatUsdt(upperPrice)}`;
-	const liquidation = liquidationPrice ? formatUsdt(liquidationPrice) : null;
-	const current = currentPrice === null ? null : formatUsdt(currentPrice);
+	const grid = `${formatPrice(lowerPrice)} – ${formatPrice(upperPrice)}`;
+	const liquidation = liquidationPrice ? formatPrice(liquidationPrice) : null;
+	const current = currentPrice === null ? null : formatPrice(currentPrice);
 	const markers = [
 		{ color: colors.text, key: "current", position: bar.currentPosition },
 		{

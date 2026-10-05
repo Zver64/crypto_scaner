@@ -8,7 +8,7 @@ interface GridCalculatorProps extends GridEstimatorProps {
 	paperPadding: string;
 }
 
-// Spot and USDT-M grid calculators in tabs. Inactive panels stay mounted, so
+// Spot, USDT-M, and COIN-M grid calculators in tabs. Inactive panels stay mounted, so
 // each calculator keeps its inputs across tab switches.
 export function GridCalculator({
 	paperPadding,
@@ -31,12 +31,16 @@ export function GridCalculator({
 					<Tabs.List grow>
 						<Tabs.Tab value="spot">Spot</Tabs.Tab>
 						<Tabs.Tab value="usdm">USDT-M</Tabs.Tab>
+						<Tabs.Tab value="coinm">COIN-M</Tabs.Tab>
 					</Tabs.List>
 					<Tabs.Panel pt="md" value="spot">
 						<GridEstimator {...estimatorProps} market="spot" />
 					</Tabs.Panel>
 					<Tabs.Panel pt="md" value="usdm">
 						<GridEstimator {...estimatorProps} market="usdm" />
+					</Tabs.Panel>
+					<Tabs.Panel pt="md" value="coinm">
+						<GridEstimator {...estimatorProps} market="coinm" />
 					</Tabs.Panel>
 				</Tabs>
 			</Stack>

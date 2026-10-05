@@ -18,6 +18,7 @@ import { useHourlyHistory } from "@/features/instrument-analysis/use-hourly-hist
 import { useInstrumentAnalysis } from "@/features/instrument-analysis/use-instrument-analysis";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { PriceAlertsPanel } from "@/features/price-alerts/price-alerts-panel";
+import { baseAssetOfUsdtSymbol } from "@/utils/base-asset";
 import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
 
 interface InstrumentAnalysisScreenProps {
@@ -88,6 +89,7 @@ export function InstrumentAnalysisScreen({
 								/>
 							) : null}
 							<GridCalculator
+								baseAsset={baseAssetOfUsdtSymbol(symbol)}
 								candles={
 									recommendationReady ? hourlyHistory.candles : undefined
 								}

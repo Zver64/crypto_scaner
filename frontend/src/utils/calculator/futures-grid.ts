@@ -9,14 +9,19 @@ import {
 } from "@/utils/calculator/spot-grid";
 import type { PositionDirection } from "@/utils/calculator/types";
 
-// Binance USDⓈ-M regular-user maker fee; grid orders are limit orders.
+// A common futures maker fee; grid orders are limit orders.
 export const FUTURES_GRID_FEE_RATE = new SpotGridDecimal("0.0002");
-// A general maintenance margin rate rather than a per-symbol Binance bracket,
+// A general maintenance margin rate rather than a per-symbol exchange bracket,
 // conservative for most symbols' first bracket.
 export const FUTURES_GRID_MAINTENANCE_MARGIN_RATE = new SpotGridDecimal("0.01");
 export const FUTURES_GRID_MAX_LEVERAGE = 3;
 
+// Linear contracts are margined and settled in the quote currency; inverse
+// contracts have a fixed USD notional and are margined and settled in the coin.
+export type FuturesContract = "linear" | "inverse";
+
 export interface FuturesGridInput extends SpotGridInput {
+	contract: FuturesContract;
 	// The price the bot starts at; orders on its far side fill at market.
 	currentPrice: number;
 	direction: PositionDirection;
@@ -24,14 +29,16 @@ export interface FuturesGridInput extends SpotGridInput {
 	leverage: number;
 }
 
+// Amounts are in the margin currency: the quote for linear contracts, the
+// coin for inverse ones.
 export interface FuturesGridTrade {
-	grossProfitPercent: Decimal;
+	grossProfit: Decimal;
 	profit: Decimal;
 	profitPercent: Decimal;
 }
 
 export interface FuturesGridEstimate {
-	// Quote notional of each grid order.
+	// Quote (USD) notional of each grid order.
 	allocationPerOrder: Decimal;
 	// Average entry price of the position at liquidation, or once every order
 	// has filled when the position is never liquidated.
@@ -76,35 +83,76 @@ function gridLevels(
 	return levels;
 }
 
-// Net result of one grid trade per quote unit of its opening order: a long
-// buys at `lower` and sells at `upper`, a short sells at `upper` and buys back
-// at `lower`. Fees are charged on the notional of both legs.
+// Net result of one grid trade relative to its opening order in the margin
+// currency: a long buys at `lower` and sells at `upper`, a short sells at
+// `upper` and buys back at `lower`. Fees are charged on the notional of both
+// legs. A linear order opens `allocation` quote; an inverse order opens
+// `allocation / openPrice` coin and gains `allocation × (1/lower − 1/upper)`.
 function gridTrade(
 	lower: Decimal,
 	upper: Decimal,
 	direction: PositionDirection,
+	contract: FuturesContract,
 	allocation: Decimal,
 ): FuturesGridTrade {
 	const openPrice = direction === "long" ? lower : upper;
 	const closePrice = direction === "long" ? upper : lower;
-	const grossReturn = upper.minus(lower).div(openPrice);
+	const isLinear = contract === "linear";
+	const grossReturn = upper.minus(lower).div(isLinear ? openPrice : closePrice);
+	// Fees per margin unit of the opening order: the closing leg's notional in
+	// the margin currency, relative to the opening leg's.
+	const closeLegShare = isLinear
+		? closePrice.div(openPrice)
+		: openPrice.div(closePrice);
 	const netReturn = grossReturn.minus(
-		FUTURES_GRID_FEE_RATE.times(
-			new SpotGridDecimal(1).plus(closePrice.div(openPrice)),
-		),
+		FUTURES_GRID_FEE_RATE.times(new SpotGridDecimal(1).plus(closeLegShare)),
 	);
-	const profit = allocation.times(netReturn);
+	const openAmount = isLinear ? allocation : allocation.div(openPrice);
+	const profit = openAmount.times(netReturn);
 	assertSupportedSpotGridValue(profit, "Trade profit");
 	return {
-		grossProfitPercent: grossReturn.times(100),
+		grossProfit: openAmount.times(grossReturn),
 		profit,
 		profitPercent: netReturn.times(100),
 	};
 }
 
+// Returns the price at which the isolated margin balance equals the
+// maintenance margin, or null when the position can never be liquidated.
+// `quantity` is the position size in coins, `notional` its entry value in the
+// quote, and `margin` is in the quote for linear and in the coin for inverse
+// contracts.
+function liquidationPriceOf(
+	contract: FuturesContract,
+	isLong: boolean,
+	quantity: Decimal,
+	notional: Decimal,
+	margin: Decimal,
+): Decimal | null {
+	const one = new SpotGridDecimal(1);
+	const mmr = FUTURES_GRID_MAINTENANCE_MARGIN_RATE;
+	let price: Decimal;
+	if (contract === "linear") {
+		// WB ± Q·(LP − EP) = MMR·Q·LP.
+		price = isLong
+			? notional.minus(margin).div(quantity.times(one.minus(mmr)))
+			: notional.plus(margin).div(quantity.times(one.plus(mmr)));
+	} else {
+		// In coins, with N the notional: WB ± (Q − N/LP) = MMR·N/LP.
+		const denominator = isLong ? margin.plus(quantity) : quantity.minus(margin);
+		if (!denominator.gt(0)) return null;
+		price = notional
+			.times(isLong ? one.plus(mmr) : one.minus(mmr))
+			.div(denominator);
+	}
+	assertSupportedSpotGridValue(price, "Liquidation price");
+	return price.gt(0) ? price : null;
+}
+
 /**
- * Estimates a Binance USDⓈ-M futures grid with equal quote notional per order
- * and the whole investment as isolated margin. The liquidation price assumes
+ * Estimates a futures grid with equal quote (USD) notional per order and the
+ * whole investment as isolated margin: in the quote for linear contracts, in
+ * the coin for inverse ones, converted at the current price. The liquidation price assumes
  * the price moves straight against the grid without a completed trade: orders
  * on the far side of the current price fill at market when the bot starts,
  * the rest fill one by one as their level is reached, and the position is
@@ -137,7 +185,11 @@ export function calculateFuturesGrid(
 	const isLong = input.direction === "long";
 
 	const levels = gridLevels(lowerPrice, upperPrice, gridCount, input.gridType);
-	const allocationPerOrder = investment.times(input.leverage).div(gridCount);
+	const isLinear = input.contract === "linear";
+	const allocationPerOrder = investment
+		.times(input.leverage)
+		.times(isLinear ? 1 : currentPrice)
+		.div(gridCount);
 	assertSupportedSpotGridValue(
 		allocationPerOrder,
 		"Allocation per order",
@@ -162,33 +214,17 @@ export function calculateFuturesGrid(
 		quantity = quantity.plus(allocationPerOrder.div(fillPrice));
 		notional = notional.plus(allocationPerOrder);
 		filledOrderCount += 1;
-		// Isolated margin balance at the liquidation price equals the
-		// maintenance margin: WB ± Q·(LP − EP) = MMR·Q·LP.
-		liquidationPrice = isLong
-			? notional
-					.minus(investment)
-					.div(
-						quantity.times(
-							new SpotGridDecimal(1).minus(
-								FUTURES_GRID_MAINTENANCE_MARGIN_RATE,
-							),
-						),
-					)
-			: notional
-					.plus(investment)
-					.div(
-						quantity.times(
-							new SpotGridDecimal(1).plus(FUTURES_GRID_MAINTENANCE_MARGIN_RATE),
-						),
-					);
+		liquidationPrice = liquidationPriceOf(
+			input.contract,
+			isLong,
+			quantity,
+			notional,
+			investment,
+		);
 	}
 	assertSupportedSpotGridValue(quantity, "Position quantity", true);
 	const averageEntryPrice = notional.div(quantity);
 	assertSupportedSpotGridValue(averageEntryPrice, "Average entry price", true);
-	if (liquidationPrice) {
-		assertSupportedSpotGridValue(liquidationPrice, "Liquidation price");
-		if (!liquidationPrice.gt(0)) liquidationPrice = null;
-	}
 
 	let tradeMinimum: FuturesGridTrade | undefined;
 	let tradeMaximum: FuturesGridTrade | undefined;
@@ -197,7 +233,13 @@ export function calculateFuturesGrid(
 	for (let index = 0; index < gridCount; index += 1) {
 		const lower = levels[index];
 		const upper = levels[index + 1];
-		const trade = gridTrade(lower, upper, input.direction, allocationPerOrder);
+		const trade = gridTrade(
+			lower,
+			upper,
+			input.direction,
+			input.contract,
+			allocationPerOrder,
+		);
 		if (!tradeMinimum || trade.profit.lt(tradeMinimum.profit))
 			tradeMinimum = trade;
 		if (!tradeMaximum || trade.profit.gt(tradeMaximum.profit))

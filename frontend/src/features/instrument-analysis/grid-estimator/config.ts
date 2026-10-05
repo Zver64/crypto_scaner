@@ -1,8 +1,9 @@
 import type {
-	GridEstimateValues,
+	FuturesMarket,
 	GridMarket,
 	GridMarkups,
 } from "@/features/instrument-analysis/grid-estimator/types";
+import type { FuturesContract } from "@/utils/calculator/futures-grid";
 import { SpotGridDecimal } from "@/utils/calculator/spot-grid";
 
 // Starting markups of each market. Without a lower markup, the lower price
@@ -10,6 +11,7 @@ import { SpotGridDecimal } from "@/utils/calculator/spot-grid";
 export const DEFAULT_MARKUPS: Record<GridMarket, GridMarkups> = {
 	spot: { upper: 5 },
 	usdm: { lower: 10, upper: 10 },
+	coinm: { lower: 10, upper: 10 },
 };
 export const UPPER_MARKUP_MAX_PERCENT = 50;
 export const LOWER_MARKUP_MAX_PERCENT = 50;
@@ -33,20 +35,11 @@ export const BINANCE_GRID_FILTER_SHARE = 0.85;
 // percent price filter.
 export const BINANCE_GRID_FALLBACK_DEVIATION = 0.5;
 
-export const EMPTY_ESTIMATE_VALUES: GridEstimateValues = {
-	profitSplits: [
-		{
-			cleanProfit: "0 USDT",
-			cleanReturnPercent: "0% per trade",
-			cleanSegmentPercent: 0,
-			feeCost: "0 USDT",
-			feeSegmentPercent: 0,
-			feeShareOfGross: "0% of gross",
-			grossProfit: "0 USDT",
-			isLoss: false,
-			label: "Every trade",
-		},
-	],
+// The contract each futures market trades; inverse contracts are margined in
+// the coin.
+export const FUTURES_CONTRACTS: Record<FuturesMarket, FuturesContract> = {
+	usdm: "linear",
+	coinm: "inverse",
 };
 
 // Share of the shown span added on each side, so markers at the ends stay

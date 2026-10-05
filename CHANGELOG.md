@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.34.0](https://github.com/Zver64/crypto_scaner/compare/v0.33.1...v0.34.0) (2026-10-05)
+
+
+### Features
+
+* choose whether each scanner indicator is drawn on charts ([71109a7](https://github.com/Zver64/crypto_scaner/commit/71109a7d0fbb3d0972b30a40ac2a823d9c090069))
+* offer to add the missing indicators when importing a strategy ([a657dc8](https://github.com/Zver64/crypto_scaner/commit/a657dc8ce12880611a5bff4864aa9621dd52b802))
+* remove only unused scanner indicators instead of all of them ([c2fab25](https://github.com/Zver64/crypto_scaner/commit/c2fab257fa6a98de890a99b621a3816938663a90))
+* show why an invalid strategy no longer compiles ([ad95140](https://github.com/Zver64/crypto_scaner/commit/ad95140aa8fd3b1406349d915b881b6877bdaa85))
+
+
+### Bug Fixes
+
+* give scanner indicators with different parameters distinct titles ([e9c3840](https://github.com/Zver64/crypto_scaner/commit/e9c3840b4b09e771192f0e573d1c6455d2ffd5b6))
+* keep the candle pane height fixed when indicator panes are added ([c34b96e](https://github.com/Zver64/crypto_scaner/commit/c34b96e52ccd816d6358f506fc1bc5a1b8ac1894))
+* log scheduled Binance stream rotations as info instead of warnings ([bfa2b47](https://github.com/Zver64/crypto_scaner/commit/bfa2b47ff29704fe500bd156758fac12e1d70959))
+* stop reporting client-canceled requests as errors and describe failed requests ([f62f67e](https://github.com/Zver64/crypto_scaner/commit/f62f67e2627135a5cefd4ca67cb182ba870266d0))
+
 ## [0.33.1](https://github.com/Zver64/crypto_scaner/compare/v0.33.0...v0.33.1) (2026-10-03)
 
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -12,11 +13,39 @@ import (
 
 type requestIDContextKey struct{}
 
+// requestInfoContextKey holds the requestInfo of the current HTTP request.
+type requestInfoContextKey struct{}
+
+type requestInfo struct {
+	method  string
+	path    string
+	started time.Time
+}
+
 // RequestIdentifier returns the correlation identifier installed by the HTTP
 // middleware, or an empty string outside an HTTP request.
 func RequestIdentifier(ctx context.Context) string {
 	requestID, _ := ctx.Value(requestIDContextKey{}).(string)
 	return requestID
+}
+
+// requestAttributes describe the current request in failure logs: its
+// identifier, method, path, elapsed time, and user once authenticated.
+func requestAttributes(ctx context.Context) []any {
+	attributes := []any{"request_id", RequestIdentifier(ctx)}
+	if info, ok := ctx.Value(requestInfoContextKey{}).(requestInfo); ok {
+		attributes = append(attributes, "method", info.method, "path", info.path, "duration", time.Since(info.started).Round(time.Millisecond))
+	}
+	if user, ok := UserFromContext(ctx); ok {
+		attributes = append(attributes, "telegram_id", user.TelegramID)
+	}
+	return attributes
+}
+
+// clientGone reports that err only reflects the client abandoning the
+// request, such as a closed Mini App, rather than a server failure.
+func clientGone(ctx context.Context, err error) bool {
+	return errors.Is(err, context.Canceled) && errors.Is(ctx.Err(), context.Canceled)
 }
 
 func requestMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
@@ -29,7 +58,9 @@ func requestMiddleware(logger *slog.Logger, next http.Handler) http.Handler {
 
 		response.Header().Set("X-Request-ID", requestID)
 		recorder := &statusRecorder{ResponseWriter: response, status: http.StatusOK}
-		request = request.WithContext(context.WithValue(request.Context(), requestIDContextKey{}, requestID))
+		ctx := context.WithValue(request.Context(), requestIDContextKey{}, requestID)
+		ctx = context.WithValue(ctx, requestInfoContextKey{}, requestInfo{method: request.Method, path: request.URL.Path, started: started})
+		request = request.WithContext(ctx)
 		next.ServeHTTP(recorder, request)
 
 		logger.InfoContext(request.Context(), "HTTP request completed",

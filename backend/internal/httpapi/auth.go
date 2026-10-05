@@ -58,8 +58,13 @@ func requireSession(sessions Sessions, logger *slog.Logger) func(http.Handler) h
 				writeAPIError(response, http.StatusUnauthorized, "unauthenticated", sessionInvalidMessage, nil)
 				return
 			case err != nil:
-				logger.ErrorContext(request.Context(), "session authentication failed", "module", "httpapi", "operation", "authenticate",
-					"request_id", RequestIdentifier(request.Context()), "error", err)
+				attributes := append([]any{"module", "httpapi", "operation", "authenticate"}, requestAttributes(request.Context())...)
+				attributes = append(attributes, "error", err)
+				if clientGone(request.Context(), err) {
+					logger.InfoContext(request.Context(), "session authentication canceled by the client", attributes...)
+				} else {
+					logger.ErrorContext(request.Context(), "session authentication failed", attributes...)
+				}
 				writeAPIError(response, http.StatusInternalServerError, "internal_error", "Internal server error", nil)
 				return
 			}

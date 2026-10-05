@@ -71,8 +71,13 @@ func symbolNotFound(ctx context.Context) apiError {
 // internalError logs the cause, which never reaches the client, and returns
 // the generic 500 body.
 func (api *api) internalError(ctx context.Context, operation string, err error) InternalErrorJSONResponse {
-	api.logger.ErrorContext(ctx, "HTTP operation failed",
-		"module", "httpapi", "operation", operation, "request_id", RequestIdentifier(ctx), "error", err)
+	attributes := append([]any{"module", "httpapi", "operation", operation}, requestAttributes(ctx)...)
+	attributes = append(attributes, "error", err)
+	if clientGone(ctx, err) {
+		api.logger.InfoContext(ctx, "HTTP operation canceled by the client", attributes...)
+	} else {
+		api.logger.ErrorContext(ctx, "HTTP operation failed", attributes...)
+	}
 	return newAPIError(ctx, http.StatusInternalServerError, "internal_error", "Internal server error", nil).internal()
 }
 

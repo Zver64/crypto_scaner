@@ -245,18 +245,13 @@ export function createIndicatorPanes(
 }
 
 // The scale of a shared pane spans the bounds of all its indicators, an
-// unbounded side staying unbounded, and keeps each distinct level once.
+// unbounded side staying unbounded. A shared pane draws no levels.
 function mergeScales(
 	first: ChartIndicatorScale,
 	second: ChartIndicatorScale,
 ): ChartIndicatorScale {
 	return {
-		levels: [
-			...first.levels,
-			...second.levels.filter(
-				({ value }) => !first.levels.some((level) => level.value === value),
-			),
-		],
+		levels: [],
 		max:
 			first.max === undefined || second.max === undefined
 				? undefined

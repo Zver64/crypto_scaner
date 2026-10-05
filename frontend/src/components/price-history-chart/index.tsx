@@ -217,31 +217,19 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 								/>
 							)),
 						)}
-						{panes.flatMap(
-							({ indicators: paneIndicators, scale }, paneIndex) => {
-								const paneLines = paneIndicators.flatMap(({ id, lines }) =>
-									lines.map((line) => {
-										const key = `${id}:${line.output}`;
-										return { data: indicatorData.get(key) ?? [], key, line };
-									}),
-								);
-								// The chart skips price lines of a series without values, so the
-								// levels go on the first line that has some.
-								const levelsLine =
-									paneLines.find(({ data }) =>
-										data.some((slot) => "value" in slot),
-									) ?? paneLines[0];
-								return paneLines.map(({ data, key, line }) => (
+						{panes.flatMap(({ indicators: paneIndicators, scale }, paneIndex) =>
+							paneIndicators.flatMap(({ id, lines }, indicatorIndex) =>
+								lines.map((line, lineIndex) => (
 									<PaneIndicatorSeries
-										data={data}
-										drawsLevels={key === levelsLine?.key}
-										key={key}
+										data={indicatorData.get(`${id}:${line.output}`) ?? []}
+										drawsLevels={indicatorIndex === 0 && lineIndex === 0}
+										key={`${id}:${line.output}`}
 										line={line}
 										pane={paneIndex + 1}
 										scale={scale}
 									/>
-								));
-							},
+								)),
+							),
 						)}
 					</ChartCanvas>
 					{isLoading && !hasCandles ? (

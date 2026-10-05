@@ -5,7 +5,7 @@ interface ScannerIndicatorRemovalConfirmationProps {
 	isPending: boolean;
 	onCancel(): void;
 	onConfirm(): void;
-	// What is removed, such as "d-rsi" or "all indicators"; the dialog is open
+	// What is removed, such as "d-rsi" or "unused indicators"; the dialog is open
 	// while it is set.
 	subject: string | undefined;
 }

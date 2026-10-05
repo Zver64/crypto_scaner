@@ -16,7 +16,7 @@ type ScannerIndicators interface {
 	Create(context.Context, []scannerindicator.Indicator) ([]scannerindicator.Entry, error)
 	Update(context.Context, int64, bool, scannerindicator.Scale) (scannerindicator.Entry, error)
 	Delete(context.Context, int64) error
-	Clear(context.Context) error
+	DeleteUnused(context.Context) error
 	Reorder(context.Context, []int64) ([]scannerindicator.Entry, error)
 	// Usage maps indicator ids to the names of the strategies that read them.
 	Usage() map[int64][]string
@@ -104,15 +104,15 @@ func (api *api) ReorderScannerIndicators(ctx context.Context, request ReorderSca
 	}
 }
 
-func (api *api) ClearScannerIndicators(ctx context.Context, _ ClearScannerIndicatorsRequestObject) (ClearScannerIndicatorsResponseObject, error) {
-	err := api.scannerIndicators.Clear(ctx)
+func (api *api) DeleteUnusedScannerIndicators(ctx context.Context, _ DeleteUnusedScannerIndicatorsRequestObject) (DeleteUnusedScannerIndicatorsResponseObject, error) {
+	err := api.scannerIndicators.DeleteUnused(ctx)
 	switch {
 	case err == nil:
-		return ClearScannerIndicators204Response{}, nil
+		return DeleteUnusedScannerIndicators204Response{}, nil
 	case errors.Is(err, scannerindicator.ErrInUse):
-		return ClearScannerIndicators409JSONResponse{scannerIndicatorInUse(ctx)}, nil
+		return DeleteUnusedScannerIndicators409JSONResponse{scannerIndicatorInUse(ctx)}, nil
 	default:
-		return ClearScannerIndicators500JSONResponse{api.internalError(ctx, "clear_scanner_indicators", err)}, nil
+		return DeleteUnusedScannerIndicators500JSONResponse{api.internalError(ctx, "delete_unused_scanner_indicators", err)}, nil
 	}
 }
 

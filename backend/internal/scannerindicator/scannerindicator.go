@@ -76,7 +76,9 @@ type Store interface {
 	// strategy reads an indicator.
 	UpdateScannerIndicator(context.Context, Indicator) error
 	DeleteScannerIndicator(context.Context, int64) error
-	DeleteAllScannerIndicators(context.Context) error
+	// DeleteUnusedScannerIndicators removes every indicator no strategy
+	// references and returns the removed ids.
+	DeleteUnusedScannerIndicators(context.Context) ([]int64, error)
 	// ReorderScannerIndicators stores ids as the display order.
 	ReorderScannerIndicators(context.Context, []int64) error
 }
@@ -237,18 +239,15 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 	return nil
 }
 
-// Clear removes every indicator. It fails with ErrInUse while a strategy
-// reads any of them.
-func (service *Service) Clear(ctx context.Context) error {
+// DeleteUnused removes every indicator no strategy references.
+func (service *Service) DeleteUnused(ctx context.Context) error {
 	service.writes.Lock()
 	defer service.writes.Unlock()
-	if len(service.usage()) > 0 {
-		return ErrInUse
-	}
-	if err := service.store.DeleteAllScannerIndicators(ctx); err != nil {
+	deleted, err := service.store.DeleteUnusedScannerIndicators(ctx)
+	if err != nil {
 		return err
 	}
-	service.replace(nil)
+	service.replace(slices.DeleteFunc(service.List(), func(entry Entry) bool { return slices.Contains(deleted, entry.ID) }))
 	return nil
 }
 

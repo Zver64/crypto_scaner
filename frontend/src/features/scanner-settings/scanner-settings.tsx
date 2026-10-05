@@ -8,9 +8,9 @@ import {
 	getListScannerIndicatorsQueryKey,
 	getListStrategiesQueryKey,
 	getListStrategyVariablesQueryKey,
-	useClearScannerIndicators,
 	useCreateScannerIndicator,
 	useDeleteScannerIndicator,
+	useDeleteUnusedScannerIndicators,
 	useListIndicatorTypes,
 	useListScannerIndicators,
 	useReorderScannerIndicators,
@@ -87,7 +87,7 @@ export function ScannerSettings() {
 		},
 	});
 
-	const clearMutation = useClearScannerIndicators({
+	const clearMutation = useDeleteUnusedScannerIndicators({
 		mutation: {
 			onError: failed,
 			onSettled: () => setClearing(false),
@@ -116,18 +116,15 @@ export function ScannerSettings() {
 				<Title order={2} size="h4">
 					Indicators
 				</Title>
-				{indicators.data.length > 0 ? (
+				{indicators.data.some(({ strategies }) => strategies.length === 0) ? (
 					<Button
 						color="red"
-						disabled={
-							clearMutation.isPending ||
-							indicators.data.some(({ strategies }) => strategies.length > 0)
-						}
+						disabled={clearMutation.isPending}
 						onClick={() => setClearing(true)}
 						size="compact-sm"
 						variant="subtle"
 					>
-						Remove all
+						Remove unused
 					</Button>
 				) : null}
 			</Group>
@@ -165,7 +162,7 @@ export function ScannerSettings() {
 				isPending={clearMutation.isPending}
 				onCancel={() => setClearing(false)}
 				onConfirm={() => clearMutation.mutate()}
-				subject={clearing ? "all indicators" : undefined}
+				subject={clearing ? "unused indicators" : undefined}
 			/>
 		</Stack>
 	);

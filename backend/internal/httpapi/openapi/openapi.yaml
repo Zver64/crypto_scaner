@@ -485,15 +485,15 @@ paths:
         "409": { $ref: "#/components/responses/ScannerIndicatorConflict" }
         "500": { $ref: "#/components/responses/InternalError" }
     delete:
-      operationId: clearScannerIndicators
-      summary: Remove every scanner indicator
+      operationId: deleteUnusedScannerIndicators
+      summary: Remove every scanner indicator no strategy reads
       description: |
-        Charts and tables then show no configured indicators, and their values
-        are no longer tracked. Rejected while a strategy reads any indicator.
+        Indicators read by a strategy stay. Charts and tables no longer show the
+        removed indicators, and their values are no longer tracked.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       responses:
-        "204": { description: All indicators removed. }
+        "204": { description: Unused indicators removed. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "409": { $ref: "#/components/responses/ScannerIndicatorInUse" }

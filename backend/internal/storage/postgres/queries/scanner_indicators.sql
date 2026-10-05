@@ -23,5 +23,10 @@ SET position = (ordered.position - 1)::INTEGER
 FROM unnest(@ids::BIGINT[]) WITH ORDINALITY AS ordered(id, position)
 WHERE indicators.id = ordered.id;
 
--- name: DeleteAllScannerIndicators :exec
-DELETE FROM app.scanner_indicators;
+-- name: DeleteUnusedScannerIndicators :many
+DELETE FROM app.scanner_indicators AS indicators
+WHERE NOT EXISTS (
+        SELECT 1 FROM app.strategy_indicators AS used
+        WHERE used.indicator_id = indicators.id
+    )
+RETURNING indicators.id;

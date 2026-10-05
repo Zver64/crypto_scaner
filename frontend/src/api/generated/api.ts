@@ -2808,39 +2808,39 @@ export const useCreateScannerIndicator = <TError = ErrorType<BadRequestResponse 
       return useMutation(getCreateScannerIndicatorMutationOptions(options), queryClient);
     }
 
-export type clearScannerIndicatorsResponse204 = {
+export type deleteUnusedScannerIndicatorsResponse204 = {
   data: void
   status: 204
 }
 
-export type clearScannerIndicatorsResponse401 = {
+export type deleteUnusedScannerIndicatorsResponse401 = {
   data: UnauthenticatedResponse
   status: 401
 }
 
-export type clearScannerIndicatorsResponse403 = {
+export type deleteUnusedScannerIndicatorsResponse403 = {
   data: AdministratorRequiredResponse
   status: 403
 }
 
-export type clearScannerIndicatorsResponse409 = {
+export type deleteUnusedScannerIndicatorsResponse409 = {
   data: ScannerIndicatorInUseResponse
   status: 409
 }
 
-export type clearScannerIndicatorsResponse500 = {
+export type deleteUnusedScannerIndicatorsResponse500 = {
   data: InternalErrorResponse
   status: 500
 }
 
-export type clearScannerIndicatorsResponseSuccess = (clearScannerIndicatorsResponse204) & {
+export type deleteUnusedScannerIndicatorsResponseSuccess = (deleteUnusedScannerIndicatorsResponse204) & {
   headers: Headers;
 };
-export type clearScannerIndicatorsResponseError = (clearScannerIndicatorsResponse401 | clearScannerIndicatorsResponse403 | clearScannerIndicatorsResponse409 | clearScannerIndicatorsResponse500) & {
+export type deleteUnusedScannerIndicatorsResponseError = (deleteUnusedScannerIndicatorsResponse401 | deleteUnusedScannerIndicatorsResponse403 | deleteUnusedScannerIndicatorsResponse409 | deleteUnusedScannerIndicatorsResponse500) & {
   headers: Headers;
 };
 
-export const getClearScannerIndicatorsUrl = () => {
+export const getDeleteUnusedScannerIndicatorsUrl = () => {
 
 
 
@@ -2849,13 +2849,13 @@ export const getClearScannerIndicatorsUrl = () => {
 }
 
 /**
- * Charts and tables then show no configured indicators, and their values
- * are no longer tracked. Rejected while a strategy reads any indicator.
- * @summary Remove every scanner indicator
+ * Indicators read by a strategy stay. Charts and tables no longer show the
+ * removed indicators, and their values are no longer tracked.
+ * @summary Remove every scanner indicator no strategy reads
  */
-export const clearScannerIndicators = async ( options?: Parameters<typeof apiFetch>[1]): Promise<clearScannerIndicatorsResponseSuccess> => {
+export const deleteUnusedScannerIndicators = async ( options?: Parameters<typeof apiFetch>[1]): Promise<deleteUnusedScannerIndicatorsResponseSuccess> => {
 
-  return apiFetch<clearScannerIndicatorsResponseSuccess>(getClearScannerIndicatorsUrl(),
+  return apiFetch<deleteUnusedScannerIndicatorsResponseSuccess>(getDeleteUnusedScannerIndicatorsUrl(),
   {
     ...options,
     method: 'DELETE'
@@ -2868,13 +2868,13 @@ export const clearScannerIndicators = async ( options?: Parameters<typeof apiFet
 
 
 
-export const getClearScannerIndicatorsMutationKey = () => ['clearScannerIndicators'] as const;
+export const getDeleteUnusedScannerIndicatorsMutationKey = () => ['deleteUnusedScannerIndicators'] as const;
 
-export const getClearScannerIndicatorsMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext> => {
+export const getDeleteUnusedScannerIndicatorsMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, TError,void, TContext> => {
 
-const mutationKey = getClearScannerIndicatorsMutationKey();
+const mutationKey = getDeleteUnusedScannerIndicatorsMutationKey();
 const {mutation: mutationOptions, request: requestOptions} = options ?
       options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
       options
@@ -2884,10 +2884,10 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
 
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof clearScannerIndicators>>, void> = () => {
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, void> = () => {
 
 
-          return  clearScannerIndicators(requestOptions)
+          return  deleteUnusedScannerIndicators(requestOptions)
         }
 
 
@@ -2897,23 +2897,23 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
   return  { mutationFn, ...mutationOptions }}
 
-    export type ClearScannerIndicatorsMutationResult = NonNullable<Awaited<ReturnType<typeof clearScannerIndicators>>>
+    export type DeleteUnusedScannerIndicatorsMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>>
 
-    export type ClearScannerIndicatorsMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>
+    export type DeleteUnusedScannerIndicatorsMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>
 
 
     /**
- * @summary Remove every scanner indicator
+ * @summary Remove every scanner indicator no strategy reads
  */
-export const useClearScannerIndicators = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof clearScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
+export const useDeleteUnusedScannerIndicators = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof clearScannerIndicators>>,
+        Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>,
         TError,
         void,
         TContext
       > => {
-      return useMutation(getClearScannerIndicatorsMutationOptions(options), queryClient);
+      return useMutation(getDeleteUnusedScannerIndicatorsMutationOptions(options), queryClient);
     }
 
 export type reorderScannerIndicatorsResponse200 = {

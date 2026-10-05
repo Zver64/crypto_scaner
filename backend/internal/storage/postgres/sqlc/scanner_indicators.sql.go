@@ -11,15 +11,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const deleteAllScannerIndicators = `-- name: DeleteAllScannerIndicators :exec
-DELETE FROM app.scanner_indicators
-`
-
-func (q *Queries) DeleteAllScannerIndicators(ctx context.Context) error {
-	_, err := q.db.Exec(ctx, deleteAllScannerIndicators)
-	return err
-}
-
 const deleteScannerIndicator = `-- name: DeleteScannerIndicator :execrows
 DELETE FROM app.scanner_indicators WHERE id = $1
 `
@@ -30,6 +21,35 @@ func (q *Queries) DeleteScannerIndicator(ctx context.Context, id int64) (int64, 
 		return 0, err
 	}
 	return result.RowsAffected(), nil
+}
+
+const deleteUnusedScannerIndicators = `-- name: DeleteUnusedScannerIndicators :many
+DELETE FROM app.scanner_indicators AS indicators
+WHERE NOT EXISTS (
+        SELECT 1 FROM app.strategy_indicators AS used
+        WHERE used.indicator_id = indicators.id
+    )
+RETURNING indicators.id
+`
+
+func (q *Queries) DeleteUnusedScannerIndicators(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.Query(ctx, deleteUnusedScannerIndicators)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const insertScannerIndicator = `-- name: InsertScannerIndicator :one

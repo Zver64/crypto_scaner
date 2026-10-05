@@ -423,9 +423,21 @@ export function defaultInvestment(
 	market: GridMarket,
 	anchor: number | null,
 ): string {
-	if (!isInverseMarket(market)) return DEFAULT_INVESTMENT;
-	if (!validPositiveNumber(anchor)) return "1";
-	return formatInputNumber(new SpotGridDecimal(DEFAULT_INVESTMENT).div(anchor));
+	return investmentFromUsdt(market, anchor, DEFAULT_INVESTMENT) ?? "1";
+}
+
+/**
+ * Converts a USDT amount into the market's margin asset at the anchor price,
+ * or returns null when an inverse market has no price to convert at.
+ */
+export function investmentFromUsdt(
+	market: GridMarket,
+	anchor: number | null,
+	usdt: string,
+): string | null {
+	if (!isInverseMarket(market)) return usdt;
+	if (!validPositiveNumber(anchor)) return null;
+	return formatInputNumber(new SpotGridDecimal(usdt).div(anchor));
 }
 
 function isInverseMarket(market: GridMarket): boolean {

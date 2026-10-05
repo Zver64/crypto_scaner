@@ -1,5 +1,7 @@
 import {
 	Alert,
+	Button,
+	Group,
 	SegmentedControl,
 	SimpleGrid,
 	Stack,
@@ -13,7 +15,10 @@ import { type FocusEvent, type KeyboardEvent, useMemo, useState } from "react";
 import { SegmentedValueGroup } from "@/components/segmented-value-group";
 import { SliderField } from "@/components/slider-field";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
-import { DEFAULT_MARKUPS } from "@/features/instrument-analysis/grid-estimator/config";
+import {
+	DEFAULT_MARKUPS,
+	INVESTMENT_PRESETS,
+} from "@/features/instrument-analysis/grid-estimator/config";
 import { LiquidationRangeBar } from "@/features/instrument-analysis/grid-estimator/liquidation-range-bar";
 import type {
 	GridMarket,
@@ -25,6 +30,7 @@ import {
 	gridCountForStep,
 	gridMarketEstimate,
 	gridRecommendation,
+	investmentFromUsdt,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
 	lowerPriceLimitError,
@@ -43,6 +49,7 @@ import {
 } from "@/utils/calculator/futures-grid";
 import type { GridType, SpotGridInput } from "@/utils/calculator/spot-grid";
 import type { PositionDirection } from "@/utils/calculator/types";
+import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
 export interface GridEstimatorProps {
@@ -298,6 +305,12 @@ export function GridEstimator({
 		else setCommittedInput({ ...committedInput, [field]: value });
 	}
 
+	function applyInvestment(investment: string) {
+		form.setFieldValue("investment", investment);
+		form.clearFieldError("investment");
+		setCommittedInput({ ...committedInput, investment });
+	}
+
 	function inputProps(field: InputField) {
 		const props = form.getInputProps(field);
 		return {
@@ -435,6 +448,26 @@ export function GridEstimator({
 					</Text>
 				) : null}
 			</Stack>
+			<Group gap="xs" justify="center">
+				{INVESTMENT_PRESETS.map((usdt) => {
+					const investment = investmentFromUsdt(market, anchor, usdt);
+					return (
+						<Button
+							disabled={disabled || investment === null}
+							key={usdt}
+							onClick={(event) => {
+								if (investment !== null) applyInvestment(investment);
+								event.currentTarget.blur();
+							}}
+							size="xs"
+							type="button"
+							variant="default"
+						>
+							{formatNumber(usdt)}
+						</Button>
+					);
+				})}
+			</Group>
 			<SimpleGrid cols={2} spacing="md">
 				<TextInput
 					disabled={disabled}

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.36.0](https://github.com/Zver64/crypto_scaner/compare/v0.35.0...v0.36.0) (2026-10-05)
+
+
+### Features
+
+* backtest strategy alerts on stored history in the admin settings ([34854c3](https://github.com/Zver64/crypto_scaner/commit/34854c3cd687a849a0187f25b1b1bdcff5784e28))
+
+
+### Bug Fixes
+
+* keep the HTTP status of error responses without a JSON body ([cf33bd4](https://github.com/Zver64/crypto_scaner/commit/cf33bd42a157d1f6090500010ee562a3be075e1c))
+* show the favorite spinner only on symbols being updated ([f037b74](https://github.com/Zver64/crypto_scaner/commit/f037b74c59b6fe52b8dc2afb96f01cd844dcf7cf))
+
 ## [0.35.0](https://github.com/Zver64/crypto_scaner/compare/v0.34.0...v0.35.0) (2026-10-05)
 
 

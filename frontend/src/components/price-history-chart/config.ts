@@ -27,10 +27,11 @@ export const chartIntervalOptions: readonly [
 
 export const defaultChartInterval: ChartInterval = "1d";
 
-export const chartHeight = 300;
-// Relative pane heights: the candle pane, then each indicator pane.
-export const candlePaneStretchFactor = 3;
-export const indicatorPaneStretchFactor = 1;
+// Pane heights in pixels. The chart grows by one indicator pane height for
+// every indicator pane, so the candle pane keeps its height. The heights also
+// serve as the pane stretch factors.
+export const candlePaneHeight = 200;
+export const indicatorPaneHeight = 50;
 // Request older candles when fewer than this many bars remain on the left.
 export const loadOlderThreshold = 10;
 export const minVisibleBars = 24;

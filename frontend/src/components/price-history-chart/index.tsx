@@ -16,11 +16,10 @@ import { ChartReadout } from "@/components/price-history-chart/chart-readout";
 import {
 	barSpacing,
 	chartOptions as baseChartOptions,
-	candlePaneStretchFactor,
-	chartHeight,
+	candlePaneHeight,
 	chartIntervalOptions,
 	defaultChartInterval,
-	indicatorPaneStretchFactor,
+	indicatorPaneHeight,
 	loadOlderThreshold,
 	minVisibleBars,
 } from "@/components/price-history-chart/config";
@@ -186,12 +185,15 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 						onVisibleLogicalRangeChange={onVisibleLogicalRangeChange}
 						options={chartOptions}
 						paneStretchFactors={[
-							candlePaneStretchFactor,
-							...panes.map(() => indicatorPaneStretchFactor),
+							candlePaneHeight,
+							...panes.map(() => indicatorPaneHeight),
 						]}
 						ref={chartRef}
 						role="img"
-						style={{ height: chartHeight, width: "100%" }}
+						style={{
+							height: candlePaneHeight + panes.length * indicatorPaneHeight,
+							width: "100%",
+						}}
 					>
 						{/* Added first so the volume bars are drawn behind the candles. As the
 						first series to receive data, it also records the viewport first. */}

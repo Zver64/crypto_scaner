@@ -1466,13 +1466,17 @@ components:
         placement:
           type: string
           enum: [overlay, pane]
-          description: "`overlay` draws over the candles on their price scale; `pane` draws in its own pane below."
+          description: "`overlay` draws over the candles on their price scale; `pane` draws in a pane below."
         lines:
           type: array
           minItems: 1
           items: { $ref: "#/components/schemas/ChartIndicatorLine" }
         scale:
           $ref: "#/components/schemas/ChartIndicatorScale"
+        pane:
+          type: string
+          minLength: 1
+          description: Key of the pane a `pane` indicator is drawn in; indicators with the same key share one pane. Absent for overlays.
     ChartIndicatorLine:
       type: object
       additionalProperties: false

@@ -39,6 +39,7 @@ import {
 	createCandlestickData,
 	createIndicatorData,
 	createIndicatorLegend,
+	createIndicatorPanes,
 	formatChartTime,
 } from "@/components/price-history-chart/utils";
 import { VolumeSeries } from "@/components/price-history-chart/volume-series";
@@ -101,9 +102,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	const overlays = indicators.filter(
 		(indicator) => indicator.placement === "overlay",
 	);
-	const panes = indicators.flatMap((indicator) =>
-		indicator.placement === "pane" ? [indicator] : [],
-	);
+	const panes = useMemo(() => createIndicatorPanes(indicators), [indicators]);
 	const chartOptions = useMemo<DeepPartial<TimeChartOptions>>(
 		() => ({
 			...baseChartOptions[colorScheme],
@@ -218,17 +217,31 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 								/>
 							)),
 						)}
-						{panes.flatMap(({ id, lines, scale }, paneIndex) =>
-							lines.map((line, lineIndex) => (
-								<PaneIndicatorSeries
-									data={indicatorData.get(`${id}:${line.output}`) ?? []}
-									isFirstLine={lineIndex === 0}
-									key={`${id}:${line.output}`}
-									line={line}
-									pane={paneIndex + 1}
-									scale={scale}
-								/>
-							)),
+						{panes.flatMap(
+							({ indicators: paneIndicators, scale }, paneIndex) => {
+								const paneLines = paneIndicators.flatMap(({ id, lines }) =>
+									lines.map((line) => {
+										const key = `${id}:${line.output}`;
+										return { data: indicatorData.get(key) ?? [], key, line };
+									}),
+								);
+								// The chart skips price lines of a series without values, so the
+								// levels go on the first line that has some.
+								const levelsLine =
+									paneLines.find(({ data }) =>
+										data.some((slot) => "value" in slot),
+									) ?? paneLines[0];
+								return paneLines.map(({ data, key, line }) => (
+									<PaneIndicatorSeries
+										data={data}
+										drawsLevels={key === levelsLine?.key}
+										key={key}
+										line={line}
+										pane={paneIndex + 1}
+										scale={scale}
+									/>
+								));
+							},
 						)}
 					</ChartCanvas>
 					{isLoading && !hasCandles ? (

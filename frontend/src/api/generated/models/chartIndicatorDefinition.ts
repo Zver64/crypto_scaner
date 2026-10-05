@@ -28,9 +28,14 @@ export interface ChartIndicatorDefinition {
   /** @minLength 1 */
   type: string;
   parameters: ChartIndicatorDefinitionParameters;
-  /** `overlay` draws over the candles on their price scale; `pane` draws in its own pane below. */
+  /** `overlay` draws over the candles on their price scale; `pane` draws in a pane below. */
   placement: ChartIndicatorDefinitionPlacement;
   /** @minItems 1 */
   lines: ChartIndicatorLine[];
   scale?: ChartIndicatorScale;
+  /**
+     * Key of the pane a `pane` indicator is drawn in; indicators with the same key share one pane. Absent for overlays.
+     * @minLength 1
+     */
+  pane?: string;
 }

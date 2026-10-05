@@ -64,6 +64,9 @@ type Entry struct {
 	Outputs   []string
 	// lineTitle names the chart lines, such as "RSI 14".
 	lineTitle string
+	// pane is the key of the chart pane shared with other indicators, empty
+	// for an indicator drawn in a pane of its own.
+	pane string
 }
 
 type Store interface {
@@ -370,6 +373,9 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 	if descriptor.Overlay && !slices.ContainsFunc(fields, func(field string) bool { return !indicator.PriceField(field) }) {
 		entry.Placement = chart.PlacementOverlay
 	}
+	if entry.Placement == chart.PlacementPane && !slices.ContainsFunc(descriptor.Outputs, histogram) {
+		entry.pane = sharedPane(selection.Type, fields)
+	}
 	if item.ShowInTable && len(entry.Outputs) != 1 {
 		return Entry{}, fmt.Errorf("%w: only indicators with one output can be table columns", ErrInvalidArgument)
 	}
@@ -382,6 +388,26 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
 	}
 	return entry, nil
+}
+
+func histogram(output indicator.OutputDescriptor) bool {
+	return output.Style == indicator.OutputHistogram
+}
+
+// sharedPane keys the pane that indicators of one type share when they read
+// fields of the same units, such as every RSI or every ATR, whatever their
+// parameters. Indicators with a histogram, such as MACD, do not read well next
+// to each other and get panes of their own.
+func sharedPane(indicatorType indicator.Type, fields []string) string {
+	units := make([]string, len(fields))
+	for i, field := range fields {
+		units[i] = field
+		if indicator.PriceField(field) {
+			units[i] = "price"
+		}
+	}
+	slices.Sort(units)
+	return string(indicatorType) + ":" + strings.Join(slices.Compact(units), ",")
 }
 
 func validateScale(placement chart.Placement, scale Scale) error {
@@ -426,6 +452,10 @@ func (service *Service) catalogIndicator(entry Entry, firstLine int) chart.Catal
 			scale.Levels = append(scale.Levels, chart.IndicatorLevel{Value: level, Title: formatValue(level)})
 		}
 		item.Scale = scale
+		item.Pane = entry.pane
+		if item.Pane == "" {
+			item.Pane = item.ID
+		}
 	}
 	return item
 }

@@ -3,10 +3,12 @@ import type {
 	ChartCandle,
 	ChartCandleSlot,
 	ChartIndicatorOptions,
+	ChartIndicatorPane,
 	ChartIndicatorScale,
 	ChartIndicatorSlot,
 	ChartInterval,
 	ChartLegendItem,
+	ChartPaneIndicatorOptions,
 	ChartVolumeSlot,
 	IndicatorPoint,
 	PriceCandle,
@@ -222,6 +224,48 @@ export function createIndicatorLegend(
 			return { color, key, placement: indicator.placement, title, value };
 		}),
 	);
+}
+
+// Groups the pane indicators by pane key, ordering the panes by their first
+// indicator.
+export function createIndicatorPanes(
+	indicators: readonly ChartIndicatorOptions[],
+): ChartIndicatorPane[] {
+	const groups = new Map<string, ChartPaneIndicatorOptions[]>();
+	for (const indicator of indicators) {
+		if (indicator.placement !== "pane") continue;
+		const group = groups.get(indicator.pane);
+		if (group) group.push(indicator);
+		else groups.set(indicator.pane, [indicator]);
+	}
+	return [...groups.values()].map((group) => ({
+		indicators: group,
+		scale: group.map(({ scale }) => scale).reduce(mergeScales),
+	}));
+}
+
+// The scale of a shared pane spans the bounds of all its indicators, an
+// unbounded side staying unbounded, and keeps each distinct level once.
+function mergeScales(
+	first: ChartIndicatorScale,
+	second: ChartIndicatorScale,
+): ChartIndicatorScale {
+	return {
+		levels: [
+			...first.levels,
+			...second.levels.filter(
+				({ value }) => !first.levels.some((level) => level.value === value),
+			),
+		],
+		max:
+			first.max === undefined || second.max === undefined
+				? undefined
+				: Math.max(first.max, second.max),
+		min:
+			first.min === undefined || second.min === undefined
+				? undefined
+				: Math.min(first.min, second.min),
+	};
 }
 
 // Fits a pane scale to the visible values while keeping its reference levels,

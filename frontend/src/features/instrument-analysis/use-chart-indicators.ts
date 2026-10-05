@@ -77,19 +77,23 @@ function byInterval<T>(
 	};
 }
 
-// A pane needs its own scale; the backend guarantees it, so a missing one is a
-// contract violation rather than something to default.
+// A pane needs a pane key and a scale; the backend guarantees them, so a
+// missing one is a contract violation rather than something to default.
 function validateCatalog(
 	catalog: ChartIndicatorDefinition[],
 ): ChartIndicatorDefinition[] {
-	if (catalog.some(({ placement, scale }) => placement === "pane" && !scale)) {
+	if (
+		catalog.some(
+			({ pane, placement, scale }) => placement === "pane" && (!pane || !scale),
+		)
+	) {
 		throw unexpectedApiError();
 	}
 	return catalog;
 }
 
 function toChartIndicatorOptions(
-	{ id, lines, placement, scale }: ChartIndicatorDefinition,
+	{ id, lines, pane, placement, scale }: ChartIndicatorDefinition,
 	theme: MantineTheme,
 	colorScheme: "light" | "dark",
 ): ChartIndicatorOptions {
@@ -104,7 +108,8 @@ function toChartIndicatorOptions(
 				id,
 				lines: resolvedLines,
 				placement,
-				// validateCatalog guarantees a scale for every pane.
+				// validateCatalog guarantees a pane key and scale for every pane.
+				pane: pane ?? id,
 				scale: scale ?? { levels: [] },
 			};
 }

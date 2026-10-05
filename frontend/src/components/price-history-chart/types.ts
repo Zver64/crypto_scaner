@@ -60,16 +60,23 @@ export interface ChartIndicatorScale {
 	max?: number;
 	levels: readonly { value: number; title: string }[];
 }
-// Overlays share the candle pane and price scale; panes get their own pane
-// and value scale below the candles.
+// Overlays share the candle pane and price scale; panes are drawn below the
+// candles, and indicators with the same pane key share a pane and value scale.
 export type ChartIndicatorOptions =
 	| { id: string; placement: "overlay"; lines: readonly ChartIndicatorLine[] }
-	| {
-			id: string;
-			placement: "pane";
-			lines: readonly ChartIndicatorLine[];
-			scale: ChartIndicatorScale;
-	  };
+	| ChartPaneIndicatorOptions;
+export interface ChartPaneIndicatorOptions {
+	id: string;
+	placement: "pane";
+	pane: string;
+	lines: readonly ChartIndicatorLine[];
+	scale: ChartIndicatorScale;
+}
+// One pane below the candles with the indicators drawn in it.
+export interface ChartIndicatorPane {
+	indicators: readonly ChartPaneIndicatorOptions[];
+	scale: ChartIndicatorScale;
+}
 export interface ChartReadoutOptions {
 	label: string;
 	format(candle: Pick<PriceCandle, "open" | "high" | "low" | "close">): string;

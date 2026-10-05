@@ -35,5 +35,8 @@ func chartIndicatorDTO(item chart.CatalogIndicator) ChartIndicatorDefinition {
 		}
 		definition.Scale = &ChartIndicatorScale{Min: item.Scale.Min, Max: item.Scale.Max, Levels: levels}
 	}
+	if item.Pane != "" {
+		definition.Pane = &item.Pane
+	}
 	return definition
 }

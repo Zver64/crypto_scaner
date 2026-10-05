@@ -23,17 +23,17 @@ import {
 import { formatNumber } from "@/utils/number-format";
 
 interface PaneIndicatorSeriesProps {
-	// The first line also draws the scale levels, which belong to the pane.
-	isFirstLine: boolean;
+	// One line of each pane also draws the scale levels, which belong to the pane.
+	drawsLevels: boolean;
 	data: readonly ChartIndicatorSlot[];
 	line: ChartIndicatorLine;
 	pane: number;
 	scale: ChartIndicatorScale;
 }
 
-// One indicator line in its own pane below the candles.
+// One indicator line in a pane below the candles, on the scale of the pane.
 export function PaneIndicatorSeries({
-	isFirstLine,
+	drawsLevels,
 	data,
 	line,
 	pane,
@@ -72,7 +72,7 @@ export function PaneIndicatorSeries({
 			pane={pane}
 			priceScale={paneIndicatorPriceScaleOptions}
 		>
-			{isFirstLine
+			{drawsLevels
 				? scale.levels.map(({ value }) => (
 						<PriceLine
 							key={value}

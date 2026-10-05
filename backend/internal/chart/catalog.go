@@ -16,7 +16,7 @@ type Placement string
 const (
 	// PlacementOverlay draws the indicator over the candles, on their price scale.
 	PlacementOverlay Placement = "overlay"
-	// PlacementPane draws the indicator in its own pane below the candles.
+	// PlacementPane draws the indicator in a pane below the candles.
 	PlacementPane Placement = "pane"
 )
 
@@ -51,6 +51,9 @@ type CatalogIndicator struct {
 	// Scale is required for panes and must be nil for overlays, which share the
 	// candle price scale.
 	Scale *IndicatorScale
+	// Pane is required for panes and must be empty for overlays: pane
+	// indicators with the same key share one pane.
+	Pane string
 }
 
 // CatalogSource supplies the indicators every chart of an interval shows.
@@ -96,12 +99,12 @@ func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicato
 	}
 	switch item.Placement {
 	case PlacementOverlay:
-		if item.Scale != nil {
-			return errors.New("overlays share the candle scale and must not define one")
+		if item.Scale != nil || item.Pane != "" {
+			return errors.New("overlays share the candle pane and scale and must not define them")
 		}
 	case PlacementPane:
-		if item.Scale == nil {
-			return errors.New("panes require a scale")
+		if item.Scale == nil || strings.TrimSpace(item.Pane) == "" {
+			return errors.New("panes require a scale and a pane key")
 		}
 		if item.Scale.Min != nil && item.Scale.Max != nil && *item.Scale.Min >= *item.Scale.Max {
 			return errors.New("scale min must be below max")

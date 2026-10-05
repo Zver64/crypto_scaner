@@ -19,7 +19,7 @@
  */
 
 /**
- * `overlay` draws over the candles on their price scale; `pane` draws in its own pane below.
+ * `overlay` draws over the candles on their price scale; `pane` draws in a pane below.
  */
 export type ChartIndicatorDefinitionPlacement = typeof ChartIndicatorDefinitionPlacement[keyof typeof ChartIndicatorDefinitionPlacement];
 

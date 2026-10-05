@@ -1,5 +1,5 @@
 import { notifications } from "@mantine/notifications";
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutationState, useQueryClient } from "@tanstack/react-query";
 import {
 	createContext,
 	type ReactNode,
@@ -11,7 +11,11 @@ import {
 	useState,
 } from "react";
 import {
+	type AddFavoriteMutationVariables,
+	getAddFavoriteMutationKey,
 	getListFavoritesQueryKey,
+	getRemoveFavoriteMutationKey,
+	type RemoveFavoriteMutationVariables,
 	useAddFavorite,
 	useListFavorites,
 	useRemoveFavorite,
@@ -62,6 +66,22 @@ export function FavoritesProvider({
 }) {
 	const queryClient = useQueryClient();
 	const scope = telegramUserScope();
+	const pendingSymbols = new Set(
+		useMutationState({
+			filters: {
+				status: "pending",
+				predicate: ({ options }) =>
+					options.mutationKey?.[0] === getAddFavoriteMutationKey()[0] ||
+					options.mutationKey?.[0] === getRemoveFavoriteMutationKey()[0],
+			},
+			select: ({ state }) =>
+				(
+					state.variables as
+						| AddFavoriteMutationVariables
+						| RemoveFavoriteMutationVariables
+				).symbol,
+		}),
+	);
 	const previousScope = useRef(scope);
 	const [accessBlocked, setAccessBlocked] = useState(false);
 	const [confirmation, setConfirmation] = useState<{
@@ -138,9 +158,6 @@ export function FavoritesProvider({
 			onSuccess: refreshFavorites,
 		},
 	});
-	const removeMutation = useRemoveFavorite({
-		mutation: { onSuccess: refreshFavorites },
-	});
 	const favorites = useMemo(
 		() => new Map((query.data?.items ?? []).map((item) => [item.symbol, item])),
 		[query.data],
@@ -153,23 +170,41 @@ export function FavoritesProvider({
 			title: "Favorite update failed",
 		});
 	};
-	const remove = (symbol: string, confirmAlerts: boolean) => {
-		removeMutation.mutate(
-			{ symbol, params: { confirm_alerts: confirmAlerts } },
-			{
-				onError: (error) => {
-					handleAccessError(error);
-					const alertCount = conflictAlertCount(error);
-					if (!confirmAlerts && error.status === 409 && alertCount) {
-						setConfirmation({ symbol, alertCount });
-						return;
-					}
-					removalFailed(error);
-				},
-			},
+	const closeConfirmation = (symbol: string) => {
+		setConfirmation((current) =>
+			current?.symbol === symbol ? undefined : current,
 		);
 	};
+	const removeMutation = useRemoveFavorite({
+		mutation: {
+			onError: (error, { symbol, params }) => {
+				handleAccessError(error);
+				const alertCount = conflictAlertCount(error);
+				if (!params?.confirm_alerts && error.status === 409 && alertCount) {
+					setConfirmation({ symbol, alertCount });
+					return;
+				}
+				// Confirming again cannot help while strategies read the coin.
+				if (params?.confirm_alerts && instrumentUsesMessage(error)) {
+					closeConfirmation(symbol);
+				}
+				removalFailed(error);
+			},
+			onSuccess: (_response, { symbol }) => {
+				closeConfirmation(symbol);
+				refreshFavorites();
+			},
+		},
+	});
+	const remove = (symbol: string, confirmAlerts: boolean) => {
+		if (pendingSymbols.has(symbol)) return;
+		removeMutation.mutate({
+			symbol,
+			params: { confirm_alerts: confirmAlerts },
+		});
+	};
 	const toggle = (symbol: string) => {
+		if (pendingSymbols.has(symbol)) return;
 		const favorite = favorites.get(symbol);
 		if (!favorite) {
 			addMutation.mutate({ symbol });
@@ -183,23 +218,8 @@ export function FavoritesProvider({
 	};
 	const confirmRemoval = () => {
 		if (!confirmation) return;
-		const symbol = confirmation.symbol;
-		removeMutation.mutate(
-			{ symbol, params: { confirm_alerts: true } },
-			{
-				onError: (error) => {
-					handleAccessError(error);
-					// Confirming again cannot help while strategies read the coin.
-					if (instrumentUsesMessage(error)) setConfirmation(undefined);
-					removalFailed(error);
-				},
-				onSuccess: () => setConfirmation(undefined),
-			},
-		);
+		remove(confirmation.symbol, true);
 	};
-	const pendingSymbol =
-		(addMutation.variables?.symbol ?? removeMutation.variables?.symbol) ||
-		undefined;
 
 	return (
 		<FavoritesContext
@@ -208,16 +228,16 @@ export function FavoritesProvider({
 				handleAccessError,
 				isError: query.isError,
 				isLoading: query.isPending,
-				isMutating: (symbol) =>
-					(addMutation.isPending || removeMutation.isPending) &&
-					pendingSymbol === symbol,
+				isMutating: (symbol) => pendingSymbols.has(symbol),
 				toggle,
 			}}
 		>
 			{children}
 			<FavoriteRemovalConfirmation
 				alertCount={confirmation?.alertCount ?? 0}
-				isPending={removeMutation.isPending}
+				isPending={
+					confirmation !== undefined && pendingSymbols.has(confirmation.symbol)
+				}
 				onCancel={() => setConfirmation(undefined)}
 				onConfirm={confirmRemoval}
 				opened={confirmation !== undefined}

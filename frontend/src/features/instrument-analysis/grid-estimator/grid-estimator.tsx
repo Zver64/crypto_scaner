@@ -449,7 +449,7 @@ export function GridEstimator({
 				) : null}
 			</Stack>
 			<Group gap="xs" justify="flex-end">
-				<Text c="dimmed" mr="auto" size="sm">
+				<Text fw={500} mr="auto" size="sm">
 					Investment
 				</Text>
 				{INVESTMENT_PRESETS.map((usdt) => {

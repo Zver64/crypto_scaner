@@ -73,6 +73,7 @@ import type {
   ReadinessResponse,
   RemoveFavoriteParams,
   ScannerIndicator,
+  ScannerIndicatorBatch,
   ScannerIndicatorConflictResponse,
   ScannerIndicatorInUseResponse,
   ScannerIndicatorInput,
@@ -2916,6 +2917,134 @@ export const useDeleteUnusedScannerIndicators = <TError = ErrorType<Unauthentica
       return useMutation(getDeleteUnusedScannerIndicatorsMutationOptions(options), queryClient);
     }
 
+export type createScannerIndicatorBatchResponse201 = {
+  data: ScannerIndicatorList
+  status: 201
+}
+
+export type createScannerIndicatorBatchResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createScannerIndicatorBatchResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type createScannerIndicatorBatchResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type createScannerIndicatorBatchResponse409 = {
+  data: ScannerIndicatorConflictResponse
+  status: 409
+}
+
+export type createScannerIndicatorBatchResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createScannerIndicatorBatchResponseSuccess = (createScannerIndicatorBatchResponse201) & {
+  headers: Headers;
+};
+export type createScannerIndicatorBatchResponseError = (createScannerIndicatorBatchResponse400 | createScannerIndicatorBatchResponse401 | createScannerIndicatorBatchResponse403 | createScannerIndicatorBatchResponse409 | createScannerIndicatorBatchResponse500) & {
+  headers: Headers;
+};
+
+export const getCreateScannerIndicatorBatchUrl = () => {
+
+
+
+
+  return `/api/v1/admin/scanner-indicator-batches`
+}
+
+/**
+ * Adds the indicators, all or none, at the end of the display order,
+ * neither shown in tables nor drawn on charts. Used to add the missing
+ * indicators a strategy expression reads.
+ * @summary Add several different scanner indicators
+ */
+export const createScannerIndicatorBatch = async (scannerIndicatorBatch: ScannerIndicatorBatch, options?: Parameters<typeof apiFetch>[1]): Promise<createScannerIndicatorBatchResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<createScannerIndicatorBatchResponseSuccess>(getCreateScannerIndicatorBatchUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(scannerIndicatorBatch)
+  }
+);}
+
+
+
+
+
+export const getCreateScannerIndicatorBatchMutationKey = () => ['createScannerIndicatorBatch'] as const;
+
+export const getCreateScannerIndicatorBatchMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicatorBatch>>, TError,CreateScannerIndicatorBatchMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicatorBatch>>, TError,CreateScannerIndicatorBatchMutationVariables, TContext> => {
+
+const mutationKey = getCreateScannerIndicatorBatchMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createScannerIndicatorBatch>>, CreateScannerIndicatorBatchMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createScannerIndicatorBatch(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateScannerIndicatorBatchMutationResult = NonNullable<Awaited<ReturnType<typeof createScannerIndicatorBatch>>>
+    export type CreateScannerIndicatorBatchMutationBody = ScannerIndicatorBatch
+    export type CreateScannerIndicatorBatchMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>
+    export type CreateScannerIndicatorBatchMutationVariables = {data: ScannerIndicatorBatch}
+
+    /**
+ * @summary Add several different scanner indicators
+ */
+export const useCreateScannerIndicatorBatch = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicatorBatch>>, TError,CreateScannerIndicatorBatchMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createScannerIndicatorBatch>>,
+        TError,
+        CreateScannerIndicatorBatchMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateScannerIndicatorBatchMutationOptions(options), queryClient);
+    }
+
 export type reorderScannerIndicatorsResponse200 = {
   data: ScannerIndicatorList
   status: 200
@@ -3949,7 +4078,11 @@ export const getValidateStrategyUrl = () => {
  * Lists every problem that would reject the expression in a strategy:
  * syntax, unknown indicators, candle fields, and functions, history
  * depth, and coins read through `of` that are not active coins in the
- * administrator's favorites. An empty list means the expression is valid.
+ * administrator's favorites. Variables of indicators that are not
+ * configured are resolved from their names into `missing_indicators`
+ * when exactly one indicator has the name; the problems assume they
+ * were added and include intervals without room for them. No problems and no missing indicators mean the expression
+ * is valid.
  * @summary Check a strategy expression
  */
 export const validateStrategy = async (strategyValidationInput: StrategyValidationInput, options?: Parameters<typeof apiFetch>[1]): Promise<validateStrategyResponseSuccess> => {

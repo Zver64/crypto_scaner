@@ -76,6 +76,26 @@ func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScanne
 	}
 }
 
+func (api *api) CreateScannerIndicatorBatch(ctx context.Context, request CreateScannerIndicatorBatchRequestObject) (CreateScannerIndicatorBatchResponseObject, error) {
+	items := make([]scannerindicator.Indicator, len(request.Body.Items))
+	for i, item := range request.Body.Items {
+		items[i] = scannerindicator.Indicator{Interval: market.CandleInterval(item.Interval), Selection: indicator.Selection{Type: indicator.Type(item.Type), Parameters: indicator.Parameters(item.Parameters)}}
+	}
+	entries, err := api.scannerIndicators.Create(ctx, items)
+	switch {
+	case err == nil:
+		return CreateScannerIndicatorBatch201JSONResponse(api.scannerIndicatorListDTO(entries)), nil
+	case errors.Is(err, scannerindicator.ErrInvalidArgument):
+		return CreateScannerIndicatorBatch400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
+	case errors.Is(err, scannerindicator.ErrConflict):
+		return CreateScannerIndicatorBatch409JSONResponse{ScannerIndicatorConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_exists", err.Error(), nil).body)}, nil
+	case errors.Is(err, scannerindicator.ErrLimit):
+		return CreateScannerIndicatorBatch409JSONResponse{ScannerIndicatorConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_limit", err.Error(), nil).body)}, nil
+	default:
+		return CreateScannerIndicatorBatch500JSONResponse{api.internalError(ctx, "create_scanner_indicator_batch", err)}, nil
+	}
+}
+
 func (api *api) UpdateScannerIndicator(ctx context.Context, request UpdateScannerIndicatorRequestObject) (UpdateScannerIndicatorResponseObject, error) {
 	entry, err := api.scannerIndicators.Update(ctx, request.IndicatorId, flag(request.Body.ShowInTable), flag(request.Body.ShowInChart), scaleFromDTO(request.Body.Scale))
 	switch {

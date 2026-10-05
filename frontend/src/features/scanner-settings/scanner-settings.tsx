@@ -3,11 +3,6 @@ import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
-	getAnalyzeMarketQueryKey,
-	getListChartIndicatorsQueryKey,
-	getListScannerIndicatorsQueryKey,
-	getListStrategiesQueryKey,
-	getListStrategyVariablesQueryKey,
 	useCreateScannerIndicator,
 	useDeleteScannerIndicator,
 	useDeleteUnusedScannerIndicators,
@@ -17,7 +12,7 @@ import {
 	useUpdateScannerIndicator,
 } from "@/api/generated/api";
 import type { ScannerIndicator } from "@/api/generated/models";
-import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
+import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
 import { ScannerIndicatorForm } from "@/features/scanner-settings/scanner-indicator-form";
 import { ScannerIndicatorList } from "@/features/scanner-settings/scanner-indicator-list";
 import { ScannerIndicatorRemovalConfirmation } from "@/features/scanner-settings/scanner-indicator-removal-confirmation";
@@ -40,28 +35,7 @@ export function ScannerSettings() {
 	const indicators = useListScannerIndicators({
 		query: { retry: false, select: (response) => response.data.items },
 	});
-	// Indicators change charts and table columns everywhere. The returned
-	// promise settles once the list is current again.
-	const refresh = () => {
-		const list = queryClient.invalidateQueries({
-			queryKey: getListScannerIndicatorsQueryKey(),
-		});
-		void queryClient.invalidateQueries({
-			queryKey: getListChartIndicatorsQueryKey(),
-		});
-		// Strategies read indicators as variables.
-		void queryClient.invalidateQueries({
-			queryKey: getListStrategyVariablesQueryKey(),
-		});
-		void queryClient.invalidateQueries({
-			queryKey: getListStrategiesQueryKey(),
-		});
-		void queryClient.invalidateQueries({
-			queryKey: getAnalyzeMarketQueryKey().slice(0, 2),
-		});
-		invalidateFavoriteQueries(queryClient);
-		return list;
-	};
+	const refresh = () => invalidateScannerIndicatorQueries(queryClient);
 	const failed = (error: unknown) => {
 		notifications.show({
 			color: "red",

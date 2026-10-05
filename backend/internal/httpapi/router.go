@@ -128,6 +128,7 @@ var administratorRoutes = []string{
 	"DELETE /api/v1/admin/scanner-indicators",
 	"PATCH /api/v1/admin/scanner-indicators/{indicator_id}",
 	"DELETE /api/v1/admin/scanner-indicators/{indicator_id}",
+	"POST /api/v1/admin/scanner-indicator-batches",
 	"PUT /api/v1/admin/scanner-indicator-order",
 	"GET /api/v1/admin/users",
 	"PATCH /api/v1/admin/users/{telegram_id}",

@@ -1,6 +1,21 @@
-import { Alert, Button, Group, List, Modal, Textarea } from "@mantine/core";
+import {
+	Alert,
+	Button,
+	Group,
+	List,
+	Modal,
+	Text,
+	Textarea,
+} from "@mantine/core";
+import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { useValidateStrategy } from "@/api/generated/api";
+import {
+	useCreateScannerIndicatorBatch,
+	useValidateStrategy,
+} from "@/api/generated/api";
+import type { StrategyMissingIndicator } from "@/api/generated/models";
+import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
+import { mutationErrorMessage } from "@/features/scanner-settings/utils";
 import type { StrategyQuery } from "@/features/strategy-settings/types";
 import { importedStrategyQuery } from "@/features/strategy-settings/utils";
 
@@ -10,24 +25,42 @@ interface StrategyImportProps {
 	opened: boolean;
 }
 
+// An expression whose only problem is indicators that are not configured yet,
+// waiting for the administrator to add them.
+interface PendingImport {
+	missing: StrategyMissingIndicator[];
+	query: StrategyQuery;
+}
+
 // Imports a whole expression into the builder once the backend finds no
-// problem in it and the builder can show all of it.
+// problem in it and the builder can show all of it. Indicators the expression
+// reads but nobody configured are added first, once the administrator agrees.
 export function StrategyImport({
 	onClose,
 	onImport,
 	opened,
 }: StrategyImportProps) {
+	const queryClient = useQueryClient();
 	const [expression, setExpression] = useState("");
 	const [problems, setProblems] = useState<string[]>([]);
+	const [pending, setPending] = useState<PendingImport>();
 	const validation = useValidateStrategy();
+	// The builder shows the new indicators once the variables are current.
+	const addition = useCreateScannerIndicatorBatch({
+		mutation: {
+			onSuccess: () => invalidateScannerIndicatorQueries(queryClient),
+		},
+	});
+	const busy = validation.isPending || addition.isPending;
 	const finish = () => {
 		setExpression("");
 		setProblems([]);
+		setPending(undefined);
 		onClose();
 	};
-	// A running check would import after the dialog closed.
+	// A running check or addition would import after the dialog closed.
 	const close = () => {
-		if (!validation.isPending) finish();
+		if (!busy) finish();
 	};
 	const check = () =>
 		validation.mutate(
@@ -46,7 +79,33 @@ export function StrategyImport({
 						]);
 						return;
 					}
+					if (response.data.missing_indicators.length > 0) {
+						setPending({ missing: response.data.missing_indicators, query });
+						return;
+					}
 					onImport(query);
+					finish();
+				},
+			},
+		);
+	const add = (current: PendingImport) =>
+		addition.mutate(
+			{
+				data: {
+					items: current.missing.map(({ interval, parameters, type }) => ({
+						interval,
+						parameters,
+						type,
+					})),
+				},
+			},
+			{
+				onError: (error) => {
+					setPending(undefined);
+					setProblems([mutationErrorMessage(error)]);
+				},
+				onSuccess: () => {
+					onImport(current.query);
 					finish();
 				},
 			},
@@ -56,7 +115,7 @@ export function StrategyImport({
 			<Textarea
 				autosize
 				data-autofocus
-				disabled={validation.isPending}
+				disabled={busy || pending !== undefined}
 				label="Expression"
 				minRows={4}
 				onChange={(event) => {
@@ -83,21 +142,45 @@ export function StrategyImport({
 					</List>
 				</Alert>
 			) : null}
+			{pending ? (
+				<Alert
+					color="yellow"
+					mt="md"
+					title={`Add ${pending.missing.length} missing ${pending.missing.length === 1 ? "indicator" : "indicators"}?`}
+					variant="light"
+				>
+					<Text size="sm">
+						The expression reads indicators that are not configured. They are
+						added without table columns or chart lines.
+					</Text>
+					<List mt="xs" size="sm" spacing={4}>
+						{pending.missing.map((indicator) => (
+							<List.Item key={indicator.title}>{indicator.title}</List.Item>
+						))}
+					</List>
+				</Alert>
+			) : null}
 			<Group justify="flex-end" mt="md">
 				<Button
-					disabled={validation.isPending}
-					onClick={close}
+					disabled={busy}
+					onClick={pending ? () => setPending(undefined) : close}
 					variant="default"
 				>
-					Cancel
+					{pending ? "No" : "Cancel"}
 				</Button>
-				<Button
-					disabled={expression.trim() === ""}
-					loading={validation.isPending}
-					onClick={check}
-				>
-					Check and import
-				</Button>
+				{pending ? (
+					<Button loading={addition.isPending} onClick={() => add(pending)}>
+						Add and import
+					</Button>
+				) : (
+					<Button
+						disabled={expression.trim() === ""}
+						loading={validation.isPending}
+						onClick={check}
+					>
+						Check and import
+					</Button>
+				)}
 			</Group>
 		</Modal>
 	);

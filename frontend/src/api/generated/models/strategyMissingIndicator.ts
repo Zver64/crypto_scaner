@@ -17,10 +17,14 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
+import type { CandleInterval } from './candleInterval.ts';
+import type { StrategyMissingIndicatorParameters } from './strategyMissingIndicatorParameters.ts';
 
-export interface StrategyValidation {
-  errors: string[];
-  /** Indicators to add before the expression can be saved, in reading order. */
-  missing_indicators: StrategyMissingIndicator[];
+export interface StrategyMissingIndicator {
+  interval: CandleInterval;
+  type: string;
+  /** Canonical parameters with defaults filled in. */
+  parameters: StrategyMissingIndicatorParameters;
+  /** Table column title, such as `h-atr-100`. */
+  title: string;
 }

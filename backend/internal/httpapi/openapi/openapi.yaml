@@ -498,6 +498,28 @@ paths:
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "409": { $ref: "#/components/responses/ScannerIndicatorInUse" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/scanner-indicator-batches:
+    post:
+      operationId: createScannerIndicatorBatch
+      summary: Add several different scanner indicators
+      description: |
+        Adds the indicators, all or none, at the end of the display order,
+        neither shown in tables nor drawn on charts. Used to add the missing
+        indicators a strategy expression reads.
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorBatch" } } }
+      responses:
+        "201":
+          description: Added indicators, in request order.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorList" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "409": { $ref: "#/components/responses/ScannerIndicatorConflict" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/scanner-indicator-order:
     put:
       operationId: reorderScannerIndicators
@@ -631,7 +653,11 @@ paths:
         Lists every problem that would reject the expression in a strategy:
         syntax, unknown indicators, candle fields, and functions, history
         depth, and coins read through `of` that are not active coins in the
-        administrator's favorites. An empty list means the expression is valid.
+        administrator's favorites. Variables of indicators that are not
+        configured are resolved from their names into `missing_indicators`
+        when exactly one indicator has the name; the problems assume they
+        were added and include intervals without room for them. No problems and no missing indicators mean the expression
+        is valid.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       requestBody:
@@ -1772,11 +1798,29 @@ components:
     StrategyValidation:
       type: object
       additionalProperties: false
-      required: [errors]
+      required: [errors, missing_indicators]
       properties:
         errors:
           type: array
           items: { type: string }
+        missing_indicators:
+          type: array
+          description: Indicators to add before the expression can be saved, in reading order.
+          items: { $ref: "#/components/schemas/StrategyMissingIndicator" }
+    StrategyMissingIndicator:
+      type: object
+      additionalProperties: false
+      required: [interval, type, parameters, title]
+      properties:
+        interval: { $ref: "#/components/schemas/CandleInterval" }
+        type: { type: string }
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Canonical parameters with defaults filled in.
+        title:
+          type: string
+          description: Table column title, such as `h-atr-100`.
     StrategyEnabled:
       type: object
       additionalProperties: false
@@ -1862,6 +1906,27 @@ components:
           description: Intervals to add the indicator on, each once.
           items: { $ref: "#/components/schemas/ScannerIndicatorIntervalInput" }
         scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
+    ScannerIndicatorBatch:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items: { $ref: "#/components/schemas/ScannerIndicatorBatchItem" }
+    ScannerIndicatorBatchItem:
+      type: object
+      additionalProperties: false
+      required: [interval, type, parameters]
+      properties:
+        interval: { $ref: "#/components/schemas/CandleInterval" }
+        type: { type: string, minLength: 1 }
+        parameters:
+          type: object
+          additionalProperties: true
+          description: Parameter values by key; omitted keys take their defaults.
     ScannerIndicatorIntervalInput:
       type: object
       additionalProperties: false

@@ -17,10 +17,13 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
+import type { CandleInterval } from './candleInterval.ts';
+import type { ScannerIndicatorBatchItemParameters } from './scannerIndicatorBatchItemParameters.ts';
 
-export interface StrategyValidation {
-  errors: string[];
-  /** Indicators to add before the expression can be saved, in reading order. */
-  missing_indicators: StrategyMissingIndicator[];
+export interface ScannerIndicatorBatchItem {
+  interval: CandleInterval;
+  /** @minLength 1 */
+  type: string;
+  /** Parameter values by key; omitted keys take their defaults. */
+  parameters: ScannerIndicatorBatchItemParameters;
 }

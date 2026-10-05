@@ -17,10 +17,12 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
+import type { ScannerIndicatorBatchItem } from './scannerIndicatorBatchItem.ts';
 
-export interface StrategyValidation {
-  errors: string[];
-  /** Indicators to add before the expression can be saved, in reading order. */
-  missing_indicators: StrategyMissingIndicator[];
+export interface ScannerIndicatorBatch {
+  /**
+     * @minItems 1
+     * @maxItems 32
+     */
+  items: ScannerIndicatorBatchItem[];
 }

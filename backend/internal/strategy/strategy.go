@@ -14,6 +14,7 @@ import (
 	"sync"
 	"unicode/utf8"
 
+	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
@@ -112,6 +113,8 @@ type Store interface {
 // Indicators supplies the configured indicators expressions may read.
 type Indicators interface {
 	List() []scannerindicator.Entry
+	// Preview derives the entry of an indicator that is not configured.
+	Preview(scannerindicator.Indicator) (scannerindicator.Entry, error)
 }
 
 // Service keeps the strategies in memory and persists every change.
@@ -174,29 +177,73 @@ func (service *Service) compile(source string, variables []Variable) (*Expressio
 	return compiled, nil
 }
 
+// Validation is the result of checking an expression.
+type Validation struct {
+	// Problems would reject the expression; none means it is valid once
+	// the missing indicators are added.
+	Problems []string
+	// Missing are the indicators the expression reads by names no
+	// configured indicator has but exactly one new indicator would, in
+	// reading order.
+	Missing []scannerindicator.Entry
+}
+
 // Validate lists every problem that would reject expression in a strategy:
 // the problems of compiling it, and the coins it reads through of that are
-// not the administrator's active favorites. An empty list means it is valid.
-func (service *Service) Validate(ctx context.Context, expression string) ([]string, error) {
-	compiled, err := service.compile(strings.TrimSpace(expression), service.Variables())
+// not the administrator's active favorites. Names of indicators that are not
+// configured yet are resolved into Missing, and the problems assume they
+// were added.
+func (service *Service) Validate(ctx context.Context, expression string) (Validation, error) {
+	expression = strings.TrimSpace(expression)
+	configured := service.indicators.List()
+	compiled, err := service.compile(expression, Variables(configured))
 	var invalid *InvalidExpressionError
+	var missing []scannerindicator.Entry
+	if errors.As(err, &invalid) && len(invalid.Unknown) > 0 {
+		missing = service.missingIndicators(configured, invalid.Unknown)
+		if len(missing) > 0 {
+			compiled, err = service.compile(expression, Variables(append(slices.Clone(configured), missing...)))
+		}
+	}
 	if errors.As(err, &invalid) {
-		return invalid.Problems, nil
+		return Validation{Problems: append(invalid.Problems, capacityProblems(configured, missing)...), Missing: missing}, nil
 	}
 	if err != nil {
-		return nil, err
+		return Validation{}, err
 	}
 	favorites, err := service.Symbols(ctx)
 	if err != nil {
-		return nil, err
+		return Validation{}, err
 	}
-	problems := []string{}
+	problems := capacityProblems(configured, missing)
 	for _, symbol := range compiled.Symbols() {
 		if !slices.Contains(favorites, symbol) {
 			problems = append(problems, symbol+" is not an active coin in the administrator's favorites")
 		}
 	}
-	return problems, nil
+	return Validation{Problems: problems, Missing: missing}, nil
+}
+
+// capacityProblems names the intervals whose charts cannot take the missing
+// indicators, which are added only all together.
+func capacityProblems(configured, missing []scannerindicator.Entry) []string {
+	count := func(entries []scannerindicator.Entry, interval market.CandleInterval) int {
+		total := 0
+		for _, entry := range entries {
+			if entry.Interval == interval {
+				total++
+			}
+		}
+		return total
+	}
+	problems := []string{}
+	for _, interval := range market.CandleIntervals() {
+		existing, needed := count(configured, interval), count(missing, interval)
+		if needed > 0 && existing+needed > chart.MaxIndicators {
+			problems = append(problems, fmt.Sprintf("%s has %d of at most %d indicators, the expression needs %d more", interval, existing, chart.MaxIndicators, needed))
+		}
+	}
+	return problems
 }
 
 // Load replaces the strategies with the stored ones. A strategy that no

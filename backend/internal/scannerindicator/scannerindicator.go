@@ -144,6 +144,12 @@ func (service *Service) List() []Entry {
 // Usage maps indicator ids to the names of the strategies that read them.
 func (service *Service) Usage() map[int64][]string { return service.usage() }
 
+// Preview validates an indicator that is not configured and derives its
+// presentation, such as its title.
+func (service *Service) Preview(item Indicator) (Entry, error) {
+	return service.entry(item)
+}
+
 // Create validates, stores, and applies new indicators, such as one
 // selection on several intervals. Either all of them are added or none.
 func (service *Service) Create(ctx context.Context, items []Indicator) ([]Entry, error) {
@@ -164,9 +170,11 @@ func (service *Service) Create(ctx context.Context, items []Indicator) ([]Entry,
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
-	for _, entry := range entries {
+	// Each new indicator is checked against the stored ones and the new
+	// ones before it, since a batch may add several on one interval.
+	for i, entry := range entries {
 		count := 0
-		for _, existing := range current {
+		for _, existing := range append(slices.Clone(current), entries[:i]...) {
 			if existing.Interval != entry.Interval {
 				continue
 			}

@@ -90,6 +90,16 @@ func CandleTarget(interval market.CandleInterval) closedindicator.Target {
 
 var invalidNameCharacters = regexp.MustCompile(`[^A-Za-z0-9_]`)
 
+// outputName is the variable name of one output of entry: the title, followed
+// by the output name when the indicator has several.
+func outputName(entry scannerindicator.Entry, output string) string {
+	name := variableName(entry.Title)
+	if len(entry.Outputs) > 1 {
+		name += "_" + variableName(output)
+	}
+	return name
+}
+
 // variableName turns a title into an identifier: decimal points become "p"
 // and other characters identifiers cannot hold become "_", so "h-bbands-20-2.5"
 // is h_bbands_20_2p5.
@@ -122,12 +132,8 @@ func Variables(entries []scannerindicator.Entry) []Variable {
 	}
 	names := map[key]string{}
 	for _, entry := range byAge {
-		base := variableName(entry.Title)
 		for _, output := range entry.Outputs {
-			name := base
-			if len(entry.Outputs) > 1 {
-				name += "_" + variableName(output)
-			}
+			name := outputName(entry, output)
 			if _, duplicate := taken[name]; duplicate || strings.Contains(name, shiftMarker) || strings.Contains(name, symbolMarker) {
 				continue
 			}
@@ -318,7 +324,9 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 		}
 	}
 	if len(problems) > 0 {
-		return nil, invalidExpression(problems...)
+		invalid := invalidExpression(problems...)
+		invalid.Unknown = walker.unknownNames
+		return nil, invalid
 	}
 	program, err := env.Program(checked)
 	if err != nil {
@@ -331,6 +339,8 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 // compile. It matches ErrInvalidArgument.
 type InvalidExpressionError struct {
 	Problems []string
+	// Unknown lists the names that are no variable, in reading order.
+	Unknown []string
 }
 
 func invalidExpression(problems ...string) *InvalidExpressionError {
@@ -659,6 +669,8 @@ type expressionWalker struct {
 	variables int
 	// unknown is set when the current comparison reads an unknown name.
 	unknown bool
+	// unknownNames lists every unknown name once.
+	unknownNames []string
 }
 
 // report records a problem once; percentile windows and crossings repeat
@@ -740,6 +752,9 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 			name, _, _ := splitIdentifier(expr.AsIdent())
 			walker.report("%s is not a configured indicator or candle field", name)
 			walker.unknown = true
+			if !slices.Contains(walker.unknownNames, name) {
+				walker.unknownNames = append(walker.unknownNames, name)
+			}
 			return nil
 		}
 		walker.reads[expr.AsIdent()] = read

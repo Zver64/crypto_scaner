@@ -13,7 +13,7 @@ type Strategies interface {
 	List() []strategy.Entry
 	Variables() []strategy.Variable
 	Symbols(context.Context) ([]string, error)
-	Validate(ctx context.Context, expression string) ([]string, error)
+	Validate(ctx context.Context, expression string) (strategy.Validation, error)
 	Create(context.Context, strategy.Strategy) (strategy.Entry, error)
 	Update(ctx context.Context, id int64, name, expression, message string) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
@@ -41,11 +41,15 @@ func (api *api) ListStrategySymbols(ctx context.Context, _ ListStrategySymbolsRe
 }
 
 func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRequestObject) (ValidateStrategyResponseObject, error) {
-	problems, err := api.strategies.Validate(ctx, request.Body.Expression)
+	validation, err := api.strategies.Validate(ctx, request.Body.Expression)
 	if err != nil {
 		return ValidateStrategy500JSONResponse{api.internalError(ctx, "validate_strategy", err)}, nil
 	}
-	return ValidateStrategy200JSONResponse{Errors: problems}, nil
+	missing := make([]StrategyMissingIndicator, len(validation.Missing))
+	for i, entry := range validation.Missing {
+		missing[i] = StrategyMissingIndicator{Interval: CandleInterval(entry.Interval), Type: string(entry.Selection.Type), Parameters: entry.Selection.Parameters, Title: entry.Title}
+	}
+	return ValidateStrategy200JSONResponse{Errors: validation.Problems, MissingIndicators: missing}, nil
 }
 
 func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (ListStrategiesResponseObject, error) {

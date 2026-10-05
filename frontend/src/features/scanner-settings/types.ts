@@ -12,11 +12,15 @@ export interface PeriodChoice {
 // Chosen periods; a period is chosen when it has an entry.
 export type PeriodChoices = Partial<Record<CandleInterval, PeriodChoice>>;
 
-export interface ScannerIndicatorDraft {
-	periods: PeriodChoices;
-	type: string | null;
-	parameters: ParameterValues;
+// Pane scale inputs; an empty bound is automatic.
+export interface ScaleDraft {
 	scaleMin: number | string;
 	scaleMax: number | string;
 	levels: string[];
+}
+
+export interface ScannerIndicatorDraft extends ScaleDraft {
+	periods: PeriodChoices;
+	type: string | null;
+	parameters: ParameterValues;
 }

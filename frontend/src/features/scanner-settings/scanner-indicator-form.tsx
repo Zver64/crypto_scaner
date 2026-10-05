@@ -1,13 +1,4 @@
-import {
-	Button,
-	Group,
-	NumberInput,
-	Paper,
-	Select,
-	Stack,
-	TagsInput,
-	Text,
-} from "@mantine/core";
+import { Button, Group, Paper, Select, Stack, Text } from "@mantine/core";
 import { type FormEvent, useState } from "react";
 import type {
 	IndicatorType,
@@ -16,6 +7,7 @@ import type {
 import { chartIntervalOptions } from "@/components/price-history-chart/config";
 import { ScannerIndicatorParameterField } from "@/features/scanner-settings/scanner-indicator-parameter-field";
 import { ScannerIndicatorPeriodsField } from "@/features/scanner-settings/scanner-indicator-periods-field";
+import { ScannerIndicatorScaleFields } from "@/features/scanner-settings/scanner-indicator-scale-fields";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 import {
 	defaultParameterValues,
@@ -144,35 +136,16 @@ export function ScannerIndicatorForm({
 					value={draft.periods}
 				/>
 				{type && !type.overlay ? (
-					<>
-						<Group grow>
-							<NumberInput
-								label="Scale min"
-								onChange={(value) =>
-									setDraft((current) => ({ ...current, scaleMin: value }))
-								}
-								placeholder="auto"
-								value={draft.scaleMin}
-							/>
-							<NumberInput
-								label="Scale max"
-								onChange={(value) =>
-									setDraft((current) => ({ ...current, scaleMax: value }))
-								}
-								placeholder="auto"
-								value={draft.scaleMax}
-							/>
-						</Group>
-						<TagsInput
-							error={levelsValid ? undefined : "Levels must be numbers"}
-							label="Levels"
-							onChange={(levels) =>
-								setDraft((current) => ({ ...current, levels }))
-							}
-							placeholder="For example 30, 70"
-							value={draft.levels}
-						/>
-					</>
+					<ScannerIndicatorScaleFields
+						onChange={(scale) =>
+							setDraft((current) => ({ ...current, ...scale }))
+						}
+						value={{
+							levels: draft.levels,
+							scaleMax: draft.scaleMax,
+							scaleMin: draft.scaleMin,
+						}}
+					/>
 				) : null}
 				<Group justify="flex-end">
 					<Button

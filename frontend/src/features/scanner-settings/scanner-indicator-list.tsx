@@ -2,6 +2,7 @@ import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
 import { Box, Text } from "@mantine/core";
 import type {
 	ScannerIndicator,
+	ScannerIndicatorScale,
 	ScannerIndicatorUpdate,
 } from "@/api/generated/models";
 import { ScannerIndicatorRow } from "@/features/scanner-settings/scanner-indicator-row";
@@ -16,6 +17,10 @@ interface ScannerIndicatorListProps {
 		indicator: ScannerIndicator,
 		display: Pick<ScannerIndicatorUpdate, "show_in_table" | "show_in_chart">,
 	): void;
+	onScaleChange(
+		indicator: ScannerIndicator,
+		scale: ScannerIndicatorScale,
+	): void;
 }
 
 // The configured indicators in display order, which orders the table columns
@@ -26,6 +31,7 @@ export function ScannerIndicatorList({
 	onDelete,
 	onReorder,
 	onDisplayChange,
+	onScaleChange,
 }: ScannerIndicatorListProps) {
 	if (indicators.length === 0) {
 		return (
@@ -71,6 +77,7 @@ export function ScannerIndicatorList({
 											onDisplayChange={(display) =>
 												onDisplayChange(indicator, display)
 											}
+											onScaleChange={(scale) => onScaleChange(indicator, scale)}
 										/>
 									</Box>
 								)}

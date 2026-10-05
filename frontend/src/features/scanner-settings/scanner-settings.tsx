@@ -123,6 +123,16 @@ export function ScannerSettings() {
 						indicatorId: indicator.id,
 					})
 				}
+				onScaleChange={(indicator, scale) =>
+					updateMutation.mutate({
+						data: {
+							scale,
+							show_in_chart: indicator.show_in_chart,
+							show_in_table: indicator.show_in_table,
+						},
+						indicatorId: indicator.id,
+					})
+				}
 			/>
 			<ScannerIndicatorRemovalConfirmation
 				isPending={deleteMutation.isPending}

@@ -8,6 +8,7 @@ import type {
 import type {
 	ParameterValues,
 	PeriodChoices,
+	ScaleDraft,
 	ScannerIndicatorDraft,
 } from "@/features/scanner-settings/types";
 
@@ -56,6 +57,26 @@ export function parseLevels(levels: readonly string[]): number[] | undefined {
 	return values.every(Number.isFinite) ? values : undefined;
 }
 
+// Builds a pane scale; returns undefined while a level is not a number.
+export function indicatorScale(
+	draft: ScaleDraft,
+): ScannerIndicatorScale | undefined {
+	const levels = parseLevels(draft.levels);
+	if (!levels) return undefined;
+	const scale: ScannerIndicatorScale = { levels };
+	if (draft.scaleMin !== "") scale.min = Number(draft.scaleMin);
+	if (draft.scaleMax !== "") scale.max = Number(draft.scaleMax);
+	return scale;
+}
+
+export function scaleDraft(scale: ScannerIndicatorScale): ScaleDraft {
+	return {
+		levels: scale.levels.map(String),
+		scaleMax: scale.max ?? "",
+		scaleMin: scale.min ?? "",
+	};
+}
+
 // Builds the create request, one entry per chosen period in the given order;
 // returns undefined while no period is chosen or a level is not a number.
 export function scannerIndicatorInput(
@@ -87,12 +108,8 @@ export function scannerIndicatorInput(
 		type: type.type,
 	};
 	if (type.overlay) return input;
-	const levels = parseLevels(draft.levels);
-	if (!levels) return undefined;
-	const scale: ScannerIndicatorScale = { levels };
-	if (draft.scaleMin !== "") scale.min = Number(draft.scaleMin);
-	if (draft.scaleMax !== "") scale.max = Number(draft.scaleMax);
-	return { ...input, scale };
+	const scale = indicatorScale(draft);
+	return scale ? { ...input, scale } : undefined;
 }
 
 // Moves one indicator id, as a drag and drop does, and returns the new order.

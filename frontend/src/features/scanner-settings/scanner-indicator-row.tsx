@@ -11,11 +11,14 @@ import {
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 import { IconGripVertical } from "@tabler/icons-react";
+import { useState } from "react";
 import type {
 	ScannerIndicator,
+	ScannerIndicatorScale,
 	ScannerIndicatorUpdate,
 } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/components/price-history-chart/config";
+import { ScannerIndicatorScaleEditor } from "@/features/scanner-settings/scanner-indicator-scale-editor";
 import {
 	formatParameters,
 	formatScale,
@@ -29,6 +32,7 @@ interface ScannerIndicatorRowProps {
 	onDisplayChange(
 		display: Pick<ScannerIndicatorUpdate, "show_in_table" | "show_in_chart">,
 	): void;
+	onScaleChange(scale: ScannerIndicatorScale): void;
 }
 
 export function ScannerIndicatorRow({
@@ -37,7 +41,9 @@ export function ScannerIndicatorRow({
 	indicator,
 	onDelete,
 	onDisplayChange,
+	onScaleChange,
 }: ScannerIndicatorRowProps) {
+	const [editingScale, setEditingScale] = useState(false);
 	const used = indicator.strategies.length > 0;
 	const display = {
 		show_in_chart: indicator.show_in_chart,
@@ -94,11 +100,38 @@ export function ScannerIndicatorRow({
 						{indicator.type.toUpperCase()} ·{" "}
 						{formatParameters(indicator.parameters)}
 					</Text>
-					<Text c="dimmed" size="xs">
-						{indicator.placement === "overlay"
-							? "Over the candles"
-							: `Pane, scale ${formatScale(indicator.scale)}`}
-					</Text>
+					{indicator.placement === "overlay" ? (
+						<Text c="dimmed" size="xs">
+							Over the candles
+						</Text>
+					) : (
+						<Group gap="xs" justify="space-between" wrap="nowrap">
+							<Text c="dimmed" size="xs">
+								Pane, scale {formatScale(indicator.scale)}
+							</Text>
+							{editingScale ? null : (
+								<Button
+									disabled={disabled}
+									onClick={() => setEditingScale(true)}
+									size="compact-xs"
+									variant="subtle"
+								>
+									Edit scale
+								</Button>
+							)}
+						</Group>
+					)}
+					{editingScale ? (
+						<ScannerIndicatorScaleEditor
+							disabled={disabled}
+							onCancel={() => setEditingScale(false)}
+							onSave={(scale) => {
+								onScaleChange(scale);
+								setEditingScale(false);
+							}}
+							scale={indicator.scale}
+						/>
+					) : null}
 					{indicator.outputs.length === 1 ? null : (
 						<Text c="dimmed" size="xs">
 							Outputs: {indicator.outputs.join(", ")} (not a table column)

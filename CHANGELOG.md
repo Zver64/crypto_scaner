@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.35.0](https://github.com/Zver64/crypto_scaner/compare/v0.34.0...v0.35.0) (2026-10-05)
+
+
+### Features
+
+* edit the scale and levels of an existing pane indicator ([0cd131b](https://github.com/Zver64/crypto_scaner/commit/0cd131b18bcd7df52b33d4c89ab5414a626f1ecc))
+* share a chart pane between indicators of one type ([022dc0e](https://github.com/Zver64/crypto_scaner/commit/022dc0ee3315f51abc5b3c3c77fbdb12aae9683b))
+
+
+### Bug Fixes
+
+* draw no scale levels in a pane shared by several indicators ([3610a63](https://github.com/Zver64/crypto_scaner/commit/3610a6367ea156ff0cfc5368aafc6f56fb44ca1f))
+
 ## [0.34.0](https://github.com/Zver64/crypto_scaner/compare/v0.33.1...v0.34.0) (2026-10-05)
 
 

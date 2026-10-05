@@ -15,7 +15,7 @@ Backend architecture, package boundaries, and Go conventions are described in `b
 - `compose.yaml`: local PostgreSQL, migrations, and backend development stack (frontend runs on the host).
 - `compose.production.yaml`: production deployment stack.
 
-Instructions in `frontend/AGENTS.md` also apply when working under `frontend/`.
+Instructions in `frontend/AGENTS.md` also apply when working under `frontend/`, and those in `docs/AGENTS.md` under `docs/` (buy strategy rules).
 
 ## Technology
 

@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.37.0](https://github.com/Zver64/crypto_scaner/compare/v0.36.0...v0.37.0) (2026-10-05)
+
+
+### Features
+
+* add a COIN-M futures grid calculator next to the spot and USDT-M calculators ([86eb6a0](https://github.com/Zver64/crypto_scaner/commit/86eb6a0ed191777efb1d345aa2fef7ac0b00f4f0))
+* add a USDT-M futures grid calculator next to the spot grid calculator ([ae6dd5d](https://github.com/Zver64/crypto_scaner/commit/ae6dd5d7b349f8aba896a206cc152401e3aed6aa))
+* add investment preset buttons to the grid calculators ([d09fdab](https://github.com/Zver64/crypto_scaner/commit/d09fdab6efdcba48055796e4de2ffb513a1f2c4a))
+
 ## [0.36.0](https://github.com/Zver64/crypto_scaner/compare/v0.35.0...v0.36.0) (2026-10-05)
 
 

@@ -36,7 +36,9 @@ export function useChartLifecycle(): ChartLifecycle {
 export function useSeriesLifecycle(): SeriesLifecycle {
 	const lifecycle = useContext(SeriesContext);
 	if (lifecycle === null) {
-		throw new Error("PriceLine must be inside a Lightweight Charts series");
+		throw new Error(
+			"A series child must be inside a Lightweight Charts series",
+		);
 	}
 	return lifecycle;
 }

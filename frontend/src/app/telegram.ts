@@ -137,12 +137,21 @@ export function openTelegramExternalLink(url: string): boolean {
 	return true;
 }
 
-export function useTelegramBackButton(onBack: () => void) {
+function telegramBackButton() {
 	const webApp = window.Telegram?.WebApp;
-	const backButton =
-		webApp?.BackButton && (webApp.isVersionAtLeast?.("6.1") ?? true)
-			? webApp.BackButton
-			: undefined;
+	return webApp?.BackButton && (webApp.isVersionAtLeast?.("6.1") ?? true)
+		? webApp.BackButton
+		: undefined;
+}
+
+// Whether Telegram shows its native back button, for pages whose back action
+// is registered by a parent.
+export function hasTelegramBackButton(): boolean {
+	return telegramBackButton() !== undefined;
+}
+
+export function useTelegramBackButton(onBack: () => void) {
+	const backButton = telegramBackButton();
 	const onBackRef = useRef(onBack);
 	onBackRef.current = onBack;
 

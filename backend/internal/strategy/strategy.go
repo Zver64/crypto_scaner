@@ -108,6 +108,11 @@ type Store interface {
 	// ListStrategyInstruments returns the active favorites of the
 	// administrator.
 	ListStrategyInstruments(ctx context.Context, administratorTelegramID int64) ([]Instrument, error)
+	// GetActiveInstrumentBySymbol fails with market.ErrInstrumentNotFound.
+	GetActiveInstrumentBySymbol(context.Context, string) (market.Instrument, error)
+	// ListLatestCandles returns up to limit latest closed candles per
+	// instrument in chronological order.
+	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
 }
 
 // Indicators supplies the configured indicators expressions may read.
@@ -330,7 +335,7 @@ func (service *Service) Subscriptions(ctx context.Context) ([]closedindicator.Su
 			evaluated = append(evaluated, entry)
 		}
 	}
-	return readsOf(evaluated, instruments).subscriptions, nil
+	return readsOf(evaluated, instruments, instruments).subscriptions, nil
 }
 
 // Create validates and stores a strategy.

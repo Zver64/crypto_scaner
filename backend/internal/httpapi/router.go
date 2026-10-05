@@ -141,6 +141,7 @@ var administratorRoutes = []string{
 	"PUT /api/v1/admin/strategies/{strategy_id}",
 	"PATCH /api/v1/admin/strategies/{strategy_id}",
 	"DELETE /api/v1/admin/strategies/{strategy_id}",
+	"GET /api/v1/admin/strategies/{strategy_id}/backtest",
 }
 
 // New returns the service HTTP handler with process-wide middleware applied.

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
 	createCandlestickData,
 	createIndicatorData,
+	createMarkerData,
 	fitPaneIndicatorScale,
 	formatChartTime,
 	formatOhlc,
@@ -46,6 +47,45 @@ describe("price history chart data", () => {
 			{ time: 1_787_788_800 },
 			{ time: 1_787_792_400, value: 45 },
 			{ time: 1_787_796_000, value: 55 },
+		]);
+	});
+
+	it("marks the loaded candles containing the times and counts several", () => {
+		const weeks = createCandlestickData(
+			[
+				{ ...candle(0, 10), open_time: "2026-08-24T00:00:00Z" },
+				{ ...candle(0, 10), open_time: "2026-08-31T00:00:00Z" },
+			],
+			"1w",
+		);
+		// Sunday 23:00 closes the first week; Monday 00:00 opens the second.
+		expect(
+			createMarkerData(
+				weeks,
+				[
+					"2026-08-17T05:00:00Z",
+					"2026-08-24T00:00:00Z",
+					"2026-08-30T23:00:00Z",
+					"2026-08-31T00:00:00Z",
+				],
+				"1w",
+			).map(({ text, time }) => ({ text, time })),
+		).toEqual([
+			{ text: "2", time: Date.parse("2026-08-24T00:00:00Z") / 1_000 },
+			{ text: undefined, time: Date.parse("2026-08-31T00:00:00Z") / 1_000 },
+		]);
+		const months = createCandlestickData(
+			[{ ...candle(0, 10), open_time: "2026-08-01T00:00:00Z" }],
+			"1M",
+		);
+		expect(
+			createMarkerData(
+				months,
+				["2026-07-31T23:00:00Z", "2026-08-31T23:00:00Z"],
+				"1M",
+			).map(({ text, time }) => ({ text, time })),
+		).toEqual([
+			{ text: undefined, time: Date.parse("2026-08-01T00:00:00Z") / 1_000 },
 		]);
 	});
 

@@ -2,6 +2,7 @@ import type {
 	CandlestickData,
 	HistogramData,
 	LineData,
+	SeriesMarkerBar,
 	UTCTimestamp,
 	WhitespaceData,
 } from "lightweight-charts";
@@ -86,6 +87,12 @@ export interface PriceHistoryChartProps {
 	// Indicators drawn on the chart of each interval.
 	indicators: Readonly<Record<ChartInterval, readonly ChartIndicatorOptions[]>>;
 	extraReadout?: ChartReadoutOptions;
+	// Restricts the interval switch to these intervals; the first is shown
+	// first.
+	intervals?: readonly ChartInterval[];
+	// Times marked with an arrow on the candle containing them; several in one
+	// candle are counted on its arrow.
+	markers?: readonly string[];
 	paperPadding: string;
 	source: PriceHistorySource;
 	symbol: string;
@@ -93,6 +100,7 @@ export interface PriceHistoryChartProps {
 
 export type ChartCandle = CandlestickData<UTCTimestamp>;
 export type ChartCandleSlot = ChartCandle | WhitespaceData<UTCTimestamp>;
+export type ChartMarker = SeriesMarkerBar<UTCTimestamp>;
 export type ChartVolumeSlot =
 	| HistogramData<UTCTimestamp>
 	| WhitespaceData<UTCTimestamp>;

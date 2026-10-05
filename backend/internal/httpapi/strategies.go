@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/strategy"
 )
 
@@ -18,6 +19,7 @@ type Strategies interface {
 	Update(ctx context.Context, id int64, name, expression, message string) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
 	Delete(context.Context, int64) error
+	Backtest(ctx context.Context, id int64, symbol string) (strategy.Backtest, error)
 }
 
 func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequestObject) (ListStrategyVariablesResponseObject, error) {
@@ -113,6 +115,38 @@ func (api *api) DeleteStrategy(ctx context.Context, request DeleteStrategyReques
 	default:
 		return DeleteStrategy500JSONResponse{api.internalError(ctx, "delete_strategy", err)}, nil
 	}
+}
+
+func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRequestObject) (BacktestStrategyResponseObject, error) {
+	symbol := market.NormalizeSymbol(request.Params.Symbol)
+	if symbol == "" {
+		return BacktestStrategy400JSONResponse{invalidArgument(ctx, "Symbol is required").badRequest()}, nil
+	}
+	backtest, err := api.strategies.Backtest(ctx, request.StrategyId, symbol)
+	switch {
+	case err == nil:
+	case errors.Is(err, strategy.ErrInvalidArgument):
+		return BacktestStrategy400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
+	case errors.Is(err, strategy.ErrNotFound):
+		return backtestNotFound(ErrorResponse(strategyNotFound(ctx))), nil
+	case errors.Is(err, market.ErrInstrumentNotFound):
+		return backtestNotFound(symbolNotFound(ctx).body), nil
+	default:
+		return BacktestStrategy500JSONResponse{api.internalError(ctx, "backtest_strategy", err)}, nil
+	}
+	alerts := make([]StrategyBacktestAlert, len(backtest.Alerts))
+	for i, openTime := range backtest.Alerts {
+		alerts[i] = StrategyBacktestAlert{OpenTime: openTime}
+	}
+	dto := StrategyBacktest{Interval: CandleInterval(backtest.Interval), Alerts: alerts}
+	if !backtest.From.IsZero() {
+		dto.From, dto.To = &backtest.From, &backtest.To
+	}
+	return BacktestStrategy200JSONResponse(dto), nil
+}
+
+func backtestNotFound(body ErrorResponse) BacktestStrategy404JSONResponse {
+	return BacktestStrategy404JSONResponse{Body: body, Headers: BacktestStrategy404ResponseHeaders{XRequestID: body.RequestId}}
 }
 
 func strategyNotFound(ctx context.Context) StrategyNotFoundJSONResponse {

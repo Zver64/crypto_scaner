@@ -289,7 +289,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		}
 		return changed
 	}
-	current := snapshot{reads: readsOf(strategies, instruments), now: monitor.now(), bySymbol: bySymbol(instruments)}
+	current := snapshot{reads: readsOf(strategies, instruments, instruments), now: monitor.now(), bySymbol: bySymbol(instruments)}
 	var missing []closedindicator.Target
 	current.values, missing = monitor.values.Snapshot(current.reads.subscriptions)
 
@@ -501,10 +501,11 @@ type reads struct {
 }
 
 // readsOf subscribes every read of the evaluated instrument on each of
-// instruments and every read through of only on the instrument it names.
-func readsOf(strategies []Entry, instruments []Instrument) reads {
+// evaluated and every read through of only on the instrument it names among
+// named.
+func readsOf(strategies []Entry, evaluated, named []Instrument) reads {
 	result := reads{positions: map[pair]int{}, keys: make(map[int64]map[string]string, len(strategies))}
-	symbols := bySymbol(instruments)
+	symbols := bySymbol(named)
 	subscribe := func(instrumentID int64, read Read, key string) {
 		at := pair{instrumentID, key}
 		position, ok := result.positions[at]
@@ -530,7 +531,7 @@ func readsOf(strategies []Entry, instruments []Instrument) reads {
 				}
 				continue
 			}
-			for _, instrument := range instruments {
+			for _, instrument := range evaluated {
 				subscribe(instrument.ID, read, key)
 			}
 		}

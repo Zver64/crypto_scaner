@@ -587,7 +587,7 @@ func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscript
 	for index, subscription := range subscriptions {
 		candles := histories[subscription.Target.Interval][subscription.InstrumentID]
 		candles = candles[max(0, len(candles)-depths[index]):]
-		value, err := tracker.value(subscription.Target, candles, subscription.points())
+		value, err := Calculate(tracker.registry, subscription.Target, candles, subscription.points())
 		if err != nil {
 			return nil, err
 		}
@@ -596,16 +596,18 @@ func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscript
 	return result, nil
 }
 
-// value reads the outputs at the latest candle and up to points−1 earlier
-// ones.
-func (tracker *Tracker) value(target Target, candles []market.Candle, points int) (Value, error) {
+// Calculate reads the outputs of target at the latest of candles and up to
+// points−1 earlier ones. The tracker passes the latest Depth closed candles;
+// passing the same window ending at an earlier candle reproduces the value
+// the tracker had then.
+func Calculate(registry *indicator.Registry, target Target, candles []market.Candle, points int) (Value, error) {
 	value := Value{Target: target, points: points}
 	if len(candles) == 0 {
 		return value, nil
 	}
 	last := candles[len(candles)-1].OpenTime.UTC()
 	value.OpenTime = last
-	results, err := tracker.registry.CalculateCandles(target.Interval, candles, []indicator.Selection{target.Selection})
+	results, err := registry.CalculateCandles(target.Interval, candles, []indicator.Selection{target.Selection})
 	if err != nil {
 		return Value{}, fmt.Errorf("calculate closed %s: %w", target.Selection.Type, err)
 	}

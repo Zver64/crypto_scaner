@@ -7,7 +7,9 @@ import {
 	LineStyle,
 	type PriceLineOptions,
 	type PriceScaleOptions,
+	type SeriesMarkerBar,
 	type TimeChartOptions,
+	type UTCTimestamp,
 } from "lightweight-charts";
 import { resolvedTheme } from "@/app/theme";
 import type {
@@ -93,6 +95,13 @@ export const candlePriceScaleOptions = {
 	// Library defaults leave 20% empty above and 10% below the candles.
 	scaleMargins: { bottom: 0.05, top: 0.05 },
 } satisfies DeepPartial<PriceScaleOptions>;
+
+// Arrows under the candles chosen by the markers prop.
+export const markerOptions = {
+	color: colors.yellow[5],
+	position: "belowBar",
+	shape: "arrowUp",
+} satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
 export const volumeSeriesOptions = {
 	lastValueVisible: false,

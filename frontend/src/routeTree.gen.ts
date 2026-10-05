@@ -17,6 +17,8 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminStrategiesRouteImport } from './routes/admin.strategies'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as InstrumentsSymbolRouteImport } from './routes/instruments.$symbol'
+import { Route as AdminBacktestIndexRouteImport } from './routes/admin.backtest.index'
+import { Route as AdminBacktestSymbolRouteImport } from './routes/admin.backtest.$symbol'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -58,6 +60,16 @@ const InstrumentsSymbolRoute = InstrumentsSymbolRouteImport.update({
   path: '/instruments/$symbol',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AdminBacktestIndexRoute = AdminBacktestIndexRouteImport.update({
+  id: '/backtest/',
+  path: '/backtest/',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminBacktestSymbolRoute = AdminBacktestSymbolRouteImport.update({
+  id: '/backtest/$symbol',
+  path: '/backtest/$symbol',
+  getParentRoute: () => AdminRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -68,6 +80,8 @@ export interface FileRoutesByFullPath {
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/backtest/$symbol': typeof AdminBacktestSymbolRoute
+  '/admin/backtest/': typeof AdminBacktestIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -77,6 +91,8 @@ export interface FileRoutesByTo {
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin': typeof AdminIndexRoute
+  '/admin/backtest/$symbol': typeof AdminBacktestSymbolRoute
+  '/admin/backtest': typeof AdminBacktestIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -88,6 +104,8 @@ export interface FileRoutesById {
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin/': typeof AdminIndexRoute
+  '/admin/backtest/$symbol': typeof AdminBacktestSymbolRoute
+  '/admin/backtest/': typeof AdminBacktestIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -100,6 +118,8 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin/'
+    | '/admin/backtest/$symbol'
+    | '/admin/backtest/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -109,6 +129,8 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin'
+    | '/admin/backtest/$symbol'
+    | '/admin/backtest'
   id:
     | '__root__'
     | '/'
@@ -119,6 +141,8 @@ export interface FileRouteTypes {
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin/'
+    | '/admin/backtest/$symbol'
+    | '/admin/backtest/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -187,6 +211,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof InstrumentsSymbolRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/admin/backtest/': {
+      id: '/admin/backtest/'
+      path: '/backtest'
+      fullPath: '/admin/backtest/'
+      preLoaderRoute: typeof AdminBacktestIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/backtest/$symbol': {
+      id: '/admin/backtest/$symbol'
+      path: '/backtest/$symbol'
+      fullPath: '/admin/backtest/$symbol'
+      preLoaderRoute: typeof AdminBacktestSymbolRouteImport
+      parentRoute: typeof AdminRoute
+    }
   }
 }
 
@@ -194,12 +232,16 @@ interface AdminRouteChildren {
   AdminStrategiesRoute: typeof AdminStrategiesRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminBacktestSymbolRoute: typeof AdminBacktestSymbolRoute
+  AdminBacktestIndexRoute: typeof AdminBacktestIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminStrategiesRoute: AdminStrategiesRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
+  AdminBacktestSymbolRoute: AdminBacktestSymbolRoute,
+  AdminBacktestIndexRoute: AdminBacktestIndexRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)

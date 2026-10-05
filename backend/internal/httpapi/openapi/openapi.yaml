@@ -757,6 +757,41 @@ paths:
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/StrategyNotFound" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/strategies/{strategy_id}/backtest:
+    get:
+      operationId: backtestStrategy
+      summary: Replay the alerts of a strategy on one coin
+      description: |
+        Evaluates the strategy, enabled or not, at the close of every kept
+        candle of the finest interval its expression reads, exactly as live
+        alerts are evaluated, and lists the candles where it starts matching,
+        starting from not matching. Coins read through `of` must be in the
+        administrator's favorites, otherwise their values are unknown. Only
+        the kept closed history is replayed; when older candles were pruned,
+        candles before the full indicator warm-up are not evaluated.
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      parameters:
+        - $ref: "#/components/parameters/StrategyID"
+        - name: symbol
+          in: query
+          required: true
+          description: Market symbol of the replayed coin.
+          schema: { type: string, minLength: 1, maxLength: 32 }
+      responses:
+        "200":
+          description: Replayed alerts.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StrategyBacktest" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404":
+          description: The strategy does not exist, or the symbol is unknown or inactive.
+          headers:
+            X-Request-ID:
+              $ref: "#/components/headers/RequestID"
+          content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "500": { $ref: "#/components/responses/InternalError" }
 components:
   securitySchemes:
     telegramInitData:
@@ -1756,6 +1791,31 @@ components:
         problem:
           type: string
           description: Why the stored expression no longer compiles; present only when valid is false.
+    StrategyBacktest:
+      type: object
+      additionalProperties: false
+      required: [interval, from, to, alerts]
+      properties:
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+        from:
+          type: [string, "null"]
+          format: date-time
+          description: Open time of the first evaluated candle of the interval; null when none is evaluated.
+        to:
+          type: [string, "null"]
+          format: date-time
+          description: Open time of the last evaluated candle of the interval; null when none is evaluated.
+        alerts:
+          type: array
+          description: Candles of the interval whose close would have alerted, oldest first.
+          items: { $ref: "#/components/schemas/StrategyBacktestAlert" }
+    StrategyBacktestAlert:
+      type: object
+      additionalProperties: false
+      required: [open_time]
+      properties:
+        open_time: { type: string, format: date-time }
     StrategyUpdate:
       type: object
       additionalProperties: false

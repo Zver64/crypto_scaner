@@ -26,6 +26,8 @@ interface MarketScanResultsTableProps {
 	window?: PriceHistoryWindow;
 	sort: MarketScanSort | undefined;
 	onSortChange(sort: MarketScanSort): void;
+	// Opens a row; the coin page by default.
+	onRowClick?(symbol: string): void;
 }
 
 // Columns, their order, rendering kinds, and sortability come from the backend
@@ -38,6 +40,7 @@ export function MarketScanResultsTable({
 	window,
 	sort: requestedSort,
 	onSortChange,
+	onRowClick,
 }: MarketScanResultsTableProps) {
 	const navigate = useNavigate();
 	const sort = resolveTableSort(table, requestedSort);
@@ -77,6 +80,10 @@ export function MarketScanResultsTable({
 			rows={sortTableRows(rows, sort)}
 			getRowKey={(row) => row.symbol}
 			onRowClick={(row) => {
+				if (onRowClick) {
+					onRowClick(row.symbol);
+					return;
+				}
 				void navigate({
 					params: { symbol: row.symbol },
 					search: scanCriteriaToSearch(criteria),

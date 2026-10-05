@@ -48,10 +48,12 @@ import type {
   AlertConflictResponse,
   AlertNotFoundResponse,
   AnalysisUnavailableResponse,
+  BacktestStrategyParams,
   BadRequestResponse,
   CandlePageResponse,
   ChartIndicatorCatalog,
   CurrentUser,
+  ErrorResponse,
   Favorite,
   FavoriteConflictResponse,
   FavoriteNotFoundResponse,
@@ -83,6 +85,7 @@ import type {
   ScannerIndicatorUpdate,
   Session,
   Strategy,
+  StrategyBacktest,
   StrategyConflictResponse,
   StrategyEnabled,
   StrategyInput,
@@ -4778,3 +4781,157 @@ export const useDeleteStrategy = <TError = ErrorType<UnauthenticatedResponse | A
       > => {
       return useMutation(getDeleteStrategyMutationOptions(options), queryClient);
     }
+
+export type backtestStrategyResponse200 = {
+  data: StrategyBacktest
+  status: 200
+}
+
+export type backtestStrategyResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type backtestStrategyResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type backtestStrategyResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type backtestStrategyResponse404 = {
+  data: ErrorResponse
+  status: 404
+}
+
+export type backtestStrategyResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type backtestStrategyResponseSuccess = (backtestStrategyResponse200) & {
+  headers: Headers;
+};
+export type backtestStrategyResponseError = (backtestStrategyResponse400 | backtestStrategyResponse401 | backtestStrategyResponse403 | backtestStrategyResponse404 | backtestStrategyResponse500) & {
+  headers: Headers;
+};
+
+export const getBacktestStrategyUrl = (strategyId: number,
+    params: BacktestStrategyParams,) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0 ? `/api/v1/admin/strategies/${encodeURIComponent(String(strategyId))}/backtest?${stringifiedParams}` : `/api/v1/admin/strategies/${encodeURIComponent(String(strategyId))}/backtest`
+}
+
+/**
+ * Evaluates the strategy, enabled or not, at the close of every kept
+ * candle of the finest interval its expression reads, exactly as live
+ * alerts are evaluated, and lists the candles where it starts matching,
+ * starting from not matching. Coins read through `of` must be in the
+ * administrator's favorites, otherwise their values are unknown. Only
+ * the kept closed history is replayed; when older candles were pruned,
+ * candles before the full indicator warm-up are not evaluated.
+ * @summary Replay the alerts of a strategy on one coin
+ */
+export const backtestStrategy = async (strategyId: number,
+    params: BacktestStrategyParams, options?: Parameters<typeof apiFetch>[1]): Promise<backtestStrategyResponseSuccess> => {
+
+  return apiFetch<backtestStrategyResponseSuccess>(getBacktestStrategyUrl(strategyId,params),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getBacktestStrategyQueryKey = (strategyId: number,
+    params?: BacktestStrategyParams,) => {
+    return [
+    `/api/v1/admin/strategies/${strategyId}/backtest`, ...(params ? [params] : [])
+    ] as const;
+    }
+
+
+export const getBacktestStrategyQueryOptions = <TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(strategyId: number,
+    params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getBacktestStrategyQueryKey(strategyId,params);
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof backtestStrategy>>> = ({ signal }) => backtestStrategy(strategyId,params, { signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, enabled: strategyId !== null && strategyId !== undefined, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type BacktestStrategyQueryResult = NonNullable<Awaited<ReturnType<typeof backtestStrategy>>>
+export type BacktestStrategyQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>
+
+
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(
+ strategyId: number,
+    params: BacktestStrategyParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof backtestStrategy>>,
+          TError,
+          Awaited<ReturnType<typeof backtestStrategy>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(
+ strategyId: number,
+    params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof backtestStrategy>>,
+          TError,
+          Awaited<ReturnType<typeof backtestStrategy>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(
+ strategyId: number,
+    params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Replay the alerts of a strategy on one coin
+ */
+
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(
+ strategyId: number,
+    params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getBacktestStrategyQueryOptions(strategyId,params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}

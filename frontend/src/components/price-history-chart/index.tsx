@@ -40,6 +40,7 @@ import {
 	createIndicatorData,
 	createIndicatorLegend,
 	createIndicatorPanes,
+	createMarkerData,
 	formatChartTime,
 } from "@/components/price-history-chart/utils";
 import { VolumeSeries } from "@/components/price-history-chart/volume-series";
@@ -62,11 +63,18 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	enabled,
 	indicators: intervalIndicators,
 	extraReadout,
+	intervals,
+	markers,
 	paperPadding,
 	source,
 	symbol,
 }: PriceHistoryChartProps) {
-	const [interval, setInterval] = useState<ChartInterval>(defaultChartInterval);
+	const [interval, setInterval] = useState<ChartInterval>(
+		intervals?.[0] ?? defaultChartInterval,
+	);
+	const intervalOptions = intervals
+		? intervalControlData.filter(({ value }) => intervals.includes(value))
+		: intervalControlData;
 	const [activeCandle, setActiveCandle] = useState<ChartCandle | null>(null);
 	const indicators = intervalIndicators[interval];
 	const colorScheme = useComputedColorScheme("dark");
@@ -86,6 +94,10 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		[candles, interval],
 	);
 	const priceFormat = usePriceFormat(data);
+	const markerData = useMemo(
+		() => markers && createMarkerData(data, markers, interval),
+		[data, markers, interval],
+	);
 	// Aligns every indicator line with the candle slots, keyed by "id:output".
 	const indicatorData = useMemo(
 		() =>
@@ -160,7 +172,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		<Paper component="section" p={paperPadding}>
 			<Stack gap="md">
 				<SegmentedControl
-					data={intervalControlData}
+					data={intervalOptions}
 					fullWidth
 					onChange={selectInterval}
 					value={interval}
@@ -203,6 +215,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 						/>
 						<CandleSeries
 							data={data}
+							markers={markerData}
 							onActiveCandleChange={setActiveCandle}
 							priceFormat={priceFormat}
 							visibleRange={visibleRange}

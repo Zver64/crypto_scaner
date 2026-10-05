@@ -5,7 +5,7 @@ import {
 	type PriceFormatCustom,
 } from "lightweight-charts";
 import { useMemo } from "react";
-import { Series } from "@/components/lightweight-chart";
+import { Series, SeriesMarkers } from "@/components/lightweight-chart";
 import {
 	candlePriceScaleOptions,
 	candleSeriesOptions,
@@ -14,6 +14,7 @@ import { MinMaxPriceLines } from "@/components/price-history-chart/min-max-price
 import type {
 	ChartCandle,
 	ChartCandleSlot,
+	ChartMarker,
 } from "@/components/price-history-chart/types";
 import {
 	getVisibleMinMax,
@@ -22,6 +23,7 @@ import {
 
 interface CandleSeriesProps {
 	data: readonly ChartCandleSlot[];
+	markers?: readonly ChartMarker[];
 	priceFormat: PriceFormatCustom;
 	onActiveCandleChange(candle: ChartCandle | null): void;
 	visibleRange: IRange<number> | null;
@@ -29,6 +31,7 @@ interface CandleSeriesProps {
 
 export function CandleSeries({
 	data,
+	markers,
 	onActiveCandleChange,
 	priceFormat,
 	visibleRange,
@@ -52,6 +55,7 @@ export function CandleSeries({
 			priceScale={candlePriceScaleOptions}
 		>
 			{minMax ? <MinMaxPriceLines max={minMax.max} min={minMax.min} /> : null}
+			{markers ? <SeriesMarkers markers={markers} /> : null}
 		</Series>
 	);
 }

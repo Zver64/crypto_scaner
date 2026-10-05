@@ -53,8 +53,8 @@ Product constraints:
 
 ## Testing
 
-- Write new tests only when the user explicitly requests them. Do not add new tests proactively for features, fixes, refactors, or code review findings. Update existing tests as needed to reflect functionality changes; no separate user request is required. Running existing tests is allowed.
-- When explicitly requested, add tests only when they verify meaningful behavior, transformations, validation, branching, edge cases, or regression-prone contracts. Do not add a test merely because a source file was added or changed.
+- Write tests only where they are really needed: important logic whose breakage would be costly, such as calculations, transformations, validation, branching, edge cases, or regression-prone contracts. Keep them to a minimum. Never write tests for their own sake, to reach a count, or merely because a source file was added or changed, and never write tests that restate configuration, constants, or declarations: a test that repeats what the config says is an anti-pattern.
+- Update existing tests as needed to reflect functionality changes. Running existing tests is allowed.
 - Do not test static configuration or constants by duplicating their values in assertions. Exercise configuration indirectly through behavioral tests when doing so protects real behavior.
 
 ## OpenAPI generation

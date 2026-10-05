@@ -1,4 +1,5 @@
 import type { AutoscaleInfo, IRange, UTCTimestamp } from "lightweight-charts";
+import { markerOptions } from "@/components/price-history-chart/config";
 import type {
 	ChartCandle,
 	ChartCandleSlot,
@@ -8,6 +9,7 @@ import type {
 	ChartIndicatorSlot,
 	ChartInterval,
 	ChartLegendItem,
+	ChartMarker,
 	ChartPaneIndicatorOptions,
 	ChartVolumeSlot,
 	IndicatorPoint,
@@ -63,6 +65,47 @@ export function createIndicatorData(
 		const value = values.get(time);
 		return value === undefined ? { time } : { time, value };
 	});
+}
+
+// Marks the loaded candles containing the given times, counting several times
+// in one candle on its marker; a time outside the loaded candles gets its
+// marker once its page loads.
+export function createMarkerData(
+	data: readonly ChartCandleSlot[],
+	times: readonly string[],
+	interval: ChartInterval,
+): ChartMarker[] {
+	const counts = new Map<number, number>();
+	for (const time of times) {
+		const open = candleOpenTime(time, interval);
+		counts.set(open, (counts.get(open) ?? 0) + 1);
+	}
+	return data.flatMap((slot) => {
+		const count = "open" in slot ? counts.get(slot.time) : undefined;
+		if (count === undefined) return [];
+		return [
+			count > 1
+				? { ...markerOptions, text: String(count), time: slot.time }
+				: { ...markerOptions, time: slot.time },
+		];
+	});
+}
+
+// Open time of the candle containing the given time, on the exchange's UTC
+// boundaries: weeks start on Monday, months on the first day.
+function candleOpenTime(value: string, interval: ChartInterval): UTCTimestamp {
+	const date = new Date(value);
+	if (interval === "1h") {
+		date.setUTCMinutes(0, 0, 0);
+		return (date.getTime() / 1_000) as UTCTimestamp;
+	}
+	date.setUTCHours(0, 0, 0, 0);
+	if (interval === "1w") {
+		date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+	} else if (interval === "1M") {
+		date.setUTCDate(1);
+	}
+	return (date.getTime() / 1_000) as UTCTimestamp;
 }
 
 export function createVolumeData(

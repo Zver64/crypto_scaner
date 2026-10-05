@@ -53,8 +53,8 @@ func (q *Queries) DeleteUnusedScannerIndicators(ctx context.Context) ([]int64, e
 }
 
 const insertScannerIndicator = `-- name: InsertScannerIndicator :one
-INSERT INTO app.scanner_indicators (interval, indicator_type, parameters, show_in_table, scale_min, scale_max, scale_levels, position)
-SELECT $1, $2, $3, $4, $5, $6, $7, COALESCE(MAX(position) + 1, 0)::INTEGER
+INSERT INTO app.scanner_indicators (interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels, position)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, COALESCE(MAX(position) + 1, 0)::INTEGER
 FROM app.scanner_indicators
 RETURNING id
 `
@@ -64,6 +64,7 @@ type InsertScannerIndicatorParams struct {
 	IndicatorType string
 	Parameters    []byte
 	ShowInTable   bool
+	ShowInChart   bool
 	ScaleMin      pgtype.Float8
 	ScaleMax      pgtype.Float8
 	ScaleLevels   []float64
@@ -75,6 +76,7 @@ func (q *Queries) InsertScannerIndicator(ctx context.Context, arg InsertScannerI
 		arg.IndicatorType,
 		arg.Parameters,
 		arg.ShowInTable,
+		arg.ShowInChart,
 		arg.ScaleMin,
 		arg.ScaleMax,
 		arg.ScaleLevels,
@@ -85,7 +87,7 @@ func (q *Queries) InsertScannerIndicator(ctx context.Context, arg InsertScannerI
 }
 
 const listScannerIndicators = `-- name: ListScannerIndicators :many
-SELECT id, interval, indicator_type, parameters, show_in_table, scale_min, scale_max, scale_levels
+SELECT id, interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels
 FROM app.scanner_indicators
 ORDER BY position, id
 `
@@ -96,6 +98,7 @@ type ListScannerIndicatorsRow struct {
 	IndicatorType string
 	Parameters    []byte
 	ShowInTable   bool
+	ShowInChart   bool
 	ScaleMin      pgtype.Float8
 	ScaleMax      pgtype.Float8
 	ScaleLevels   []float64
@@ -116,6 +119,7 @@ func (q *Queries) ListScannerIndicators(ctx context.Context) ([]ListScannerIndic
 			&i.IndicatorType,
 			&i.Parameters,
 			&i.ShowInTable,
+			&i.ShowInChart,
 			&i.ScaleMin,
 			&i.ScaleMax,
 			&i.ScaleLevels,
@@ -147,13 +151,14 @@ func (q *Queries) ReorderScannerIndicators(ctx context.Context, ids []int64) (in
 
 const updateScannerIndicator = `-- name: UpdateScannerIndicator :execrows
 UPDATE app.scanner_indicators
-SET show_in_table = $2, scale_min = $3, scale_max = $4, scale_levels = $5
+SET show_in_table = $2, show_in_chart = $3, scale_min = $4, scale_max = $5, scale_levels = $6
 WHERE id = $1
 `
 
 type UpdateScannerIndicatorParams struct {
 	ID          int64
 	ShowInTable bool
+	ShowInChart bool
 	ScaleMin    pgtype.Float8
 	ScaleMax    pgtype.Float8
 	ScaleLevels []float64
@@ -163,6 +168,7 @@ func (q *Queries) UpdateScannerIndicator(ctx context.Context, arg UpdateScannerI
 	result, err := q.db.Exec(ctx, updateScannerIndicator,
 		arg.ID,
 		arg.ShowInTable,
+		arg.ShowInChart,
 		arg.ScaleMin,
 		arg.ScaleMax,
 		arg.ScaleLevels,

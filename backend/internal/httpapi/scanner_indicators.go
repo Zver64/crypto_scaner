@@ -14,7 +14,7 @@ import (
 type ScannerIndicators interface {
 	List() []scannerindicator.Entry
 	Create(context.Context, []scannerindicator.Indicator) ([]scannerindicator.Entry, error)
-	Update(context.Context, int64, bool, scannerindicator.Scale) (scannerindicator.Entry, error)
+	Update(context.Context, int64, bool, bool, scannerindicator.Scale) (scannerindicator.Entry, error)
 	Delete(context.Context, int64) error
 	DeleteUnused(context.Context) error
 	Reorder(context.Context, []int64) ([]scannerindicator.Entry, error)
@@ -59,7 +59,7 @@ func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScanne
 	scale := scaleFromDTO(request.Body.Scale)
 	items := make([]scannerindicator.Indicator, len(request.Body.Intervals))
 	for i, interval := range request.Body.Intervals {
-		items[i] = scannerindicator.Indicator{Interval: market.CandleInterval(interval.Interval), Selection: selection, ShowInTable: interval.ShowInTable, Scale: scale}
+		items[i] = scannerindicator.Indicator{Interval: market.CandleInterval(interval.Interval), Selection: selection, ShowInTable: flag(interval.ShowInTable), ShowInChart: flag(interval.ShowInChart), Scale: scale}
 	}
 	entries, err := api.scannerIndicators.Create(ctx, items)
 	switch {
@@ -77,7 +77,7 @@ func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScanne
 }
 
 func (api *api) UpdateScannerIndicator(ctx context.Context, request UpdateScannerIndicatorRequestObject) (UpdateScannerIndicatorResponseObject, error) {
-	entry, err := api.scannerIndicators.Update(ctx, request.IndicatorId, request.Body.ShowInTable, scaleFromDTO(request.Body.Scale))
+	entry, err := api.scannerIndicators.Update(ctx, request.IndicatorId, flag(request.Body.ShowInTable), flag(request.Body.ShowInChart), scaleFromDTO(request.Body.Scale))
 	switch {
 	case err == nil:
 		return UpdateScannerIndicator200JSONResponse(scannerIndicatorDTO(entry, api.scannerIndicators.Usage())), nil
@@ -138,6 +138,11 @@ func scannerIndicatorInUse(ctx context.Context) ScannerIndicatorInUseJSONRespons
 	return ScannerIndicatorInUseJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_in_use", "A strategy reads the indicator", nil).body)
 }
 
+// flag reads an optional boolean, which defaults to false.
+func flag(value *bool) bool {
+	return value != nil && *value
+}
+
 func scaleFromDTO(scale *ScannerIndicatorScale) scannerindicator.Scale {
 	if scale == nil {
 		return scannerindicator.Scale{}
@@ -152,6 +157,7 @@ func scannerIndicatorDTO(entry scannerindicator.Entry, usage map[int64][]string)
 		Type:        string(entry.Selection.Type),
 		Parameters:  entry.Selection.Parameters,
 		ShowInTable: entry.ShowInTable,
+		ShowInChart: entry.ShowInChart,
 		Scale:       ScannerIndicatorScale{Min: entry.Scale.Min, Max: entry.Scale.Max, Levels: append([]float64{}, entry.Scale.Levels...)},
 		Title:       entry.Title,
 		Placement:   ScannerIndicatorPlacement(entry.Placement),

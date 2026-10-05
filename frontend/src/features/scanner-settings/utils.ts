@@ -40,10 +40,14 @@ export function tableColumnAllowed(type: IndicatorType | undefined): boolean {
 	return type?.outputs.length === 1;
 }
 
-// Keeps the chosen periods and clears their table column choices.
+// Keeps the chosen periods and their chart choices and clears their table
+// column choices.
 export function withoutTableColumns(periods: PeriodChoices): PeriodChoices {
 	return Object.fromEntries(
-		Object.keys(periods).map((interval) => [interval, { showInTable: false }]),
+		Object.entries(periods).map(([interval, choice]) => [
+			interval,
+			{ ...choice, showInTable: false },
+		]),
 	);
 }
 
@@ -66,6 +70,7 @@ export function scannerIndicatorInput(
 					{
 						interval,
 						show_in_table: choice.showInTable && tableColumnAllowed(type),
+						show_in_chart: choice.showInChart,
 					},
 				]
 			: [];

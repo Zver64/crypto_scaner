@@ -11,7 +11,10 @@ import {
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 import { IconGripVertical } from "@tabler/icons-react";
-import type { ScannerIndicator } from "@/api/generated/models";
+import type {
+	ScannerIndicator,
+	ScannerIndicatorUpdate,
+} from "@/api/generated/models";
 import { chartIntervalOptions } from "@/components/price-history-chart/config";
 import {
 	formatParameters,
@@ -23,7 +26,9 @@ interface ScannerIndicatorRowProps {
 	dragHandleProps: DraggableProvidedDragHandleProps | null;
 	indicator: ScannerIndicator;
 	onDelete(): void;
-	onShowInTableChange(showInTable: boolean): void;
+	onDisplayChange(
+		display: Pick<ScannerIndicatorUpdate, "show_in_table" | "show_in_chart">,
+	): void;
 }
 
 export function ScannerIndicatorRow({
@@ -31,9 +36,13 @@ export function ScannerIndicatorRow({
 	dragHandleProps,
 	indicator,
 	onDelete,
-	onShowInTableChange,
+	onDisplayChange,
 }: ScannerIndicatorRowProps) {
 	const used = indicator.strategies.length > 0;
+	const display = {
+		show_in_chart: indicator.show_in_chart,
+		show_in_table: indicator.show_in_table,
+	};
 	return (
 		<Paper
 			p="xs"
@@ -90,21 +99,39 @@ export function ScannerIndicatorRow({
 							? "Over the candles"
 							: `Pane, scale ${formatScale(indicator.scale)}`}
 					</Text>
-					{indicator.outputs.length === 1 ? (
+					{indicator.outputs.length === 1 ? null : (
+						<Text c="dimmed" size="xs">
+							Outputs: {indicator.outputs.join(", ")} (not a table column)
+						</Text>
+					)}
+					<Group gap="md">
+						{indicator.outputs.length === 1 ? (
+							<Switch
+								checked={indicator.show_in_table}
+								disabled={disabled}
+								label="Table"
+								onChange={(event) =>
+									onDisplayChange({
+										...display,
+										show_in_table: event.currentTarget.checked,
+									})
+								}
+								size="xs"
+							/>
+						) : null}
 						<Switch
-							checked={indicator.show_in_table}
+							checked={indicator.show_in_chart}
 							disabled={disabled}
-							label="Show in tables"
+							label="Chart"
 							onChange={(event) =>
-								onShowInTableChange(event.currentTarget.checked)
+								onDisplayChange({
+									...display,
+									show_in_chart: event.currentTarget.checked,
+								})
 							}
 							size="xs"
 						/>
-					) : (
-						<Text c="dimmed" size="xs">
-							Outputs: {indicator.outputs.join(", ")} (chart only)
-						</Text>
-					)}
+					</Group>
 				</Stack>
 			</Group>
 		</Paper>

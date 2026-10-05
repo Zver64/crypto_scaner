@@ -143,9 +143,9 @@ export function ScannerSettings() {
 				)}
 				onDelete={setRemoving}
 				onReorder={(ids) => reorderMutation.mutate({ data: { ids } })}
-				onShowInTableChange={(indicator, showInTable) =>
+				onDisplayChange={(indicator, display) =>
 					updateMutation.mutate({
-						data: { scale: indicator.scale, show_in_table: showInTable },
+						data: { ...display, scale: indicator.scale },
 						indicatorId: indicator.id,
 					})
 				}

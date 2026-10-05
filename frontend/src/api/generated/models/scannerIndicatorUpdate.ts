@@ -20,6 +20,7 @@
 import type { ScannerIndicatorScale } from './scannerIndicatorScale.ts';
 
 export interface ScannerIndicatorUpdate {
-  show_in_table: boolean;
+  show_in_table?: boolean;
+  show_in_chart?: boolean;
   scale?: ScannerIndicatorScale;
 }

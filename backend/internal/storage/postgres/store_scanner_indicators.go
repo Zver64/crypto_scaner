@@ -29,6 +29,7 @@ func (store *Store) ListScannerIndicators(ctx context.Context) ([]scannerindicat
 			Interval:    market.CandleInterval(row.Interval),
 			Selection:   indicator.Selection{Type: indicator.Type(row.IndicatorType), Parameters: parameters},
 			ShowInTable: row.ShowInTable,
+			ShowInChart: row.ShowInChart,
 			Scale:       scannerindicator.Scale{Min: float8Pointer(row.ScaleMin), Max: float8Pointer(row.ScaleMax), Levels: row.ScaleLevels},
 		})
 	}
@@ -53,6 +54,7 @@ func (store *Store) CreateScannerIndicators(ctx context.Context, items []scanner
 			IndicatorType: string(item.Selection.Type),
 			Parameters:    parameters,
 			ShowInTable:   item.ShowInTable,
+			ShowInChart:   item.ShowInChart,
 			ScaleMin:      float8(item.Scale.Min),
 			ScaleMax:      float8(item.Scale.Max),
 			ScaleLevels:   append([]float64{}, item.Scale.Levels...),
@@ -74,6 +76,7 @@ func (store *Store) UpdateScannerIndicator(ctx context.Context, item scannerindi
 	updated, err := store.queries.UpdateScannerIndicator(ctx, generated.UpdateScannerIndicatorParams{
 		ID:          item.ID,
 		ShowInTable: item.ShowInTable,
+		ShowInChart: item.ShowInChart,
 		ScaleMin:    float8(item.Scale.Min),
 		ScaleMax:    float8(item.Scale.Max),
 		ScaleLevels: append([]float64{}, item.Scale.Levels...),

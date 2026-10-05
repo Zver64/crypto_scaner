@@ -453,9 +453,9 @@ paths:
       operationId: listScannerIndicators
       summary: List the configured scanner indicators
       description: |
-        Every configured indicator is calculated in the background, drawn on the
-        charts of its interval, and shown as a market table column when
-        `show_in_table` is set. Items are in display order, which orders the
+        Strategies can read every configured indicator. It is drawn on the
+        charts of its interval when `show_in_chart` is set and shown as a market
+        table column when `show_in_table` is set. Items are in display order, which orders the
         table columns and the chart indicators.
       tags: [Administration]
       security: [{ sessionToken: [] }]
@@ -1865,18 +1865,23 @@ components:
     ScannerIndicatorIntervalInput:
       type: object
       additionalProperties: false
-      required: [interval, show_in_table]
+      required: [interval]
       properties:
         interval: { $ref: "#/components/schemas/CandleInterval" }
         show_in_table:
           type: boolean
+          default: false
           description: Only indicators with one output can be table columns.
+        show_in_chart:
+          type: boolean
+          default: false
+          description: Whether the charts of the interval draw the indicator.
     ScannerIndicatorUpdate:
       type: object
       additionalProperties: false
-      required: [show_in_table]
       properties:
-        show_in_table: { type: boolean }
+        show_in_table: { type: boolean, default: false }
+        show_in_chart: { type: boolean, default: false }
         scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
     ScannerIndicatorOrder:
       type: object
@@ -1898,7 +1903,7 @@ components:
     ScannerIndicator:
       type: object
       additionalProperties: false
-      required: [id, interval, type, parameters, show_in_table, scale, title, placement, outputs, strategies]
+      required: [id, interval, type, parameters, show_in_table, show_in_chart, scale, title, placement, outputs, strategies]
       properties:
         id: { type: integer, format: int64 }
         interval: { $ref: "#/components/schemas/CandleInterval" }
@@ -1908,6 +1913,7 @@ components:
           additionalProperties: true
           description: Canonical parameters with defaults filled in.
         show_in_table: { type: boolean }
+        show_in_chart: { type: boolean }
         scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
         title:
           type: string

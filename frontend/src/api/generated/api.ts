@@ -2586,9 +2586,9 @@ export const getListScannerIndicatorsUrl = () => {
 }
 
 /**
- * Every configured indicator is calculated in the background, drawn on the
- * charts of its interval, and shown as a market table column when
- * `show_in_table` is set. Items are in display order, which orders the
+ * Strategies can read every configured indicator. It is drawn on the
+ * charts of its interval when `show_in_chart` is set and shown as a market
+ * table column when `show_in_table` is set. Items are in display order, which orders the
  * table columns and the chart indicators.
  * @summary List the configured scanner indicators
  */

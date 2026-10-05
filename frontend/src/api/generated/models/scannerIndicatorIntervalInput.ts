@@ -22,5 +22,7 @@ import type { CandleInterval } from './candleInterval.ts';
 export interface ScannerIndicatorIntervalInput {
   interval: CandleInterval;
   /** Only indicators with one output can be table columns. */
-  show_in_table: boolean;
+  show_in_table?: boolean;
+  /** Whether the charts of the interval draw the indicator. */
+  show_in_chart?: boolean;
 }

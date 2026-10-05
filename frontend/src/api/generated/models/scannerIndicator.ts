@@ -29,6 +29,7 @@ export interface ScannerIndicator {
   /** Canonical parameters with defaults filled in. */
   parameters: ScannerIndicatorParameters;
   show_in_table: boolean;
+  show_in_chart: boolean;
   scale: ScannerIndicatorScale;
   /** Table column title, such as `d-rsi`. */
   title: string;

@@ -59,6 +59,7 @@ type AppScannerIndicator struct {
 	ScaleLevels   []float64
 	CreatedAt     pgtype.Timestamptz
 	Position      int32
+	ShowInChart   bool
 }
 
 type AppSchemaMigration struct {

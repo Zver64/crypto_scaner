@@ -1,7 +1,7 @@
 // Package scannerindicator holds the global indicator configuration the
-// administrator manages: every configured indicator is drawn on the charts of
-// its interval, can be read by strategies, and is optionally shown as a
-// market table column.
+// administrator manages: every configured indicator can be read by strategies
+// and is optionally drawn on the charts of its interval and shown as a market
+// table column.
 package scannerindicator
 
 import (
@@ -47,6 +47,7 @@ type Indicator struct {
 	Interval    market.CandleInterval
 	Selection   indicator.Selection
 	ShowInTable bool
+	ShowInChart bool
 	Scale       Scale
 }
 
@@ -197,8 +198,9 @@ func (service *Service) Create(ctx context.Context, items []Indicator) ([]Entry,
 	return entries, nil
 }
 
-// Update changes whether the indicator is a table column and its pane scale.
-func (service *Service) Update(ctx context.Context, id int64, showInTable bool, scale Scale) (Entry, error) {
+// Update changes whether the indicator is a table column, whether charts draw
+// it, and its pane scale.
+func (service *Service) Update(ctx context.Context, id int64, showInTable, showInChart bool, scale Scale) (Entry, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
@@ -207,7 +209,7 @@ func (service *Service) Update(ctx context.Context, id int64, showInTable bool, 
 		return Entry{}, ErrNotFound
 	}
 	item := current[index].Indicator
-	item.ShowInTable, item.Scale = showInTable, scale
+	item.ShowInTable, item.ShowInChart, item.Scale = showInTable, showInChart, scale
 	entry, err := service.entry(item)
 	if err != nil {
 		return Entry{}, err
@@ -300,15 +302,16 @@ func (service *Service) TableColumns() []markettable.Column {
 	return columns
 }
 
-// ChartCatalog lists the indicators charts of interval draw, in display
-// order. Line colors follow the palette across the whole chart.
+// ChartCatalog lists the indicators charts of interval draw, those shown in
+// charts, in display order. Line colors follow the palette across the whole
+// chart.
 func (service *Service) ChartCatalog(interval market.CandleInterval) []chart.CatalogIndicator {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
 	var catalog []chart.CatalogIndicator
 	line := 0
 	for _, entry := range service.entries {
-		if entry.Interval != interval {
+		if entry.Interval != interval || !entry.ShowInChart {
 			continue
 		}
 		item := service.catalogIndicator(entry, line)

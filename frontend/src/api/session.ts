@@ -1,4 +1,5 @@
 import type { Session } from "@/api/generated/models";
+import { readResponseData } from "@/api/response";
 import { getTelegramInitData, telegramUserID } from "@/app/telegram";
 
 // The token survives WebView reloads but not the end of the Mini App session.
@@ -12,12 +13,6 @@ interface StoredSession {
 
 let session: StoredSession | undefined = readStoredSession();
 let pending: Promise<string | undefined> | undefined;
-
-/** Error of a rejected session exchange, shaped like generated API errors. */
-export type SessionError = globalThis.Error & {
-	info?: unknown;
-	status?: number;
-};
 
 /**
  * Returns the session token, exchanging Telegram init data for one when none
@@ -77,14 +72,7 @@ async function exchangeInitData(): Promise<string | undefined> {
 		headers: { Authorization: `tma ${initData}` },
 		method: "POST",
 	});
-	const body = await response.text();
-	const data: unknown = body ? JSON.parse(body) : {};
-	if (!response.ok) {
-		const error: SessionError = new globalThis.Error("Session exchange failed");
-		error.info = data;
-		error.status = response.status;
-		throw error;
-	}
+	const data = await readResponseData(response);
 	session = { telegramID, token: (data as Session).token };
 	writeStoredSession(session);
 	return session.token;

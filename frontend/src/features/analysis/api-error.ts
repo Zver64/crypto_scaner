@@ -39,7 +39,7 @@ export function apiErrorCode(error: ApiError): ApiErrorCode {
 	if (error.status === 422) {
 		return "market_cap_unavailable";
 	}
-	return canonicalCode(error.info?.error.code);
+	return canonicalCode(error.info?.error?.code);
 }
 
 export function apiErrorMessage(error: ApiError): string {

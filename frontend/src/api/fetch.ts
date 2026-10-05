@@ -1,3 +1,4 @@
+import { readResponseData } from "@/api/response";
 import { fetchWithSession } from "@/api/session";
 
 /**
@@ -9,16 +10,7 @@ export async function apiFetch<T>(
 	options: RequestInit,
 ): Promise<T> {
 	const response = await fetchWithSession(url, options);
-	const body = [204, 205, 304].includes(response.status)
-		? null
-		: await response.text();
-	const data: unknown = body ? JSON.parse(body) : {};
-	if (!response.ok) {
-		const error: ErrorType<unknown> = new globalThis.Error();
-		error.info = data;
-		error.status = response.status;
-		throw error;
-	}
+	const data = await readResponseData(response);
 	return { data, headers: response.headers, status: response.status } as T;
 }
 

@@ -81,23 +81,28 @@ export function SegmentedValueGroup({ rows, title }: SegmentedValueGroupProps) {
 									<Text
 										c={item.color ?? "dimmed"}
 										fw={500}
-										size="sm"
+										size="xs"
 										style={{ whiteSpace: "nowrap" }}
 									>
 										{item.label}
 									</Text>
-									<Group gap="xs" style={{ rowGap: 0 }} wrap="wrap">
-										<Text c={item.color} fw={700}>
+									<Group
+										align="baseline"
+										gap="xs"
+										style={{ rowGap: 0 }}
+										wrap="wrap"
+									>
+										<Text c={item.color} fw={700} size="sm">
 											{item.value}
 										</Text>
 										{item.secondaryValue ? (
 											<>
-												<Text c={item.color} fw={700} visibleFrom="xs">
+												<Text c={item.color} size="xs" visibleFrom="xs">
 													·
 												</Text>
 												<Text
 													c={item.color}
-													fw={700}
+													size="xs"
 													w={{ base: "100%", xs: "auto" }}
 												>
 													{item.secondaryValue}

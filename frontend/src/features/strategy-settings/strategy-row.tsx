@@ -47,6 +47,11 @@ export function StrategyRow({
 						size="sm"
 					/>
 				</Group>
+				{strategy.problem === undefined ? null : (
+					<Text c="red" size="xs" style={{ whiteSpace: "pre-wrap" }}>
+						{strategy.problem}
+					</Text>
+				)}
 				<Code block>{strategy.expression}</Code>
 				{strategy.message === "" ? null : (
 					<Text c="dimmed" size="xs" style={{ whiteSpace: "pre-wrap" }}>

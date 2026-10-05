@@ -28,4 +28,6 @@ export interface Strategy {
   enabled: boolean;
   /** False when the stored expression no longer compiles; such a strategy is not evaluated. */
   valid: boolean;
+  /** Why the stored expression no longer compiles; present only when valid is false. */
+  problem?: string;
 }

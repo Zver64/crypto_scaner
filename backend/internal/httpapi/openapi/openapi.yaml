@@ -1723,6 +1723,9 @@ components:
         valid:
           type: boolean
           description: False when the stored expression no longer compiles; such a strategy is not evaluated.
+        problem:
+          type: string
+          description: Why the stored expression no longer compiles; present only when valid is false.
     StrategyUpdate:
       type: object
       additionalProperties: false

@@ -120,5 +120,9 @@ func strategyConflict(ctx context.Context) StrategyConflictJSONResponse {
 }
 
 func strategyDTO(entry strategy.Entry) Strategy {
-	return Strategy{Id: entry.ID, Name: entry.Name, Expression: entry.Expression, Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil}
+	dto := Strategy{Id: entry.ID, Name: entry.Name, Expression: entry.Expression, Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil}
+	if entry.Problem != "" {
+		dto.Problem = &entry.Problem
+	}
+	return dto
 }

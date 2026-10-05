@@ -81,6 +81,8 @@ type Strategy struct {
 type Entry struct {
 	Strategy
 	Compiled *Expression
+	// Problem explains why the stored source no longer compiles.
+	Problem string
 }
 
 // evaluated reports whether the monitor evaluates the strategy.
@@ -211,6 +213,7 @@ func (service *Service) Load(ctx context.Context) error {
 		compiled, err := service.compile(item.Expression, variables)
 		if err != nil {
 			service.logger.WarnContext(ctx, "skip invalid strategy", "strategy_id", item.ID, "error", err)
+			entries[i].Problem = err.Error()
 			continue
 		}
 		entries[i].Compiled = compiled

@@ -422,17 +422,25 @@ func (service *Service) catalogIndicator(entry Entry, firstLine int) chart.Catal
 	return item
 }
 
-// tableTitle is "<interval>-<type>", followed by the parameter values that
-// differ from the defaults, such as "d-rsi", "d-rsi-21", or
-// "h-sma-20-volume". Once one of several named choices differs, all of them
-// appear in order, so "h-beta-high-close" and "h-beta-close-high" differ.
+// tableTitle is "<interval>-<type>", followed by the parameter values, such
+// as "d-rsi", "d-rsi-21", or "h-sma-20-volume". Values that are not named
+// choices appear in order up to the last one that differs from its default,
+// so each keeps its position and distinct selections get distinct titles:
+// "h-bbands-20-2.5" raises the upper band, "h-bbands-20-2-2.5" the lower one.
+// Once one of several named choices differs, all of them appear in order, so
+// "h-beta-high-close" and "h-beta-close-high" differ.
 func tableTitle(interval market.CandleInterval, descriptor indicator.Descriptor, parameters, defaults indicator.Parameters) string {
 	parts := []string{IntervalPrefix(interval), string(descriptor.Type)}
 	named := namedChoicesChanged(descriptor, parameters, defaults)
-	for _, parameter := range descriptor.Parameters {
-		value := parameterValue(parameter, parameters[parameter.Key])
-		if (namedChoice(parameter) && named) || value != parameterValue(parameter, defaults[parameter.Key]) {
-			parts = append(parts, value)
+	last := -1
+	for i, parameter := range descriptor.Parameters {
+		if !namedChoice(parameter) && parameterValue(parameter, parameters[parameter.Key]) != parameterValue(parameter, defaults[parameter.Key]) {
+			last = i
+		}
+	}
+	for i, parameter := range descriptor.Parameters {
+		if namedChoice(parameter) && named || !namedChoice(parameter) && i <= last {
+			parts = append(parts, parameterValue(parameter, parameters[parameter.Key]))
 		}
 	}
 	return strings.Join(parts, "-")

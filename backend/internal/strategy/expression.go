@@ -90,6 +90,13 @@ func CandleTarget(interval market.CandleInterval) closedindicator.Target {
 
 var invalidNameCharacters = regexp.MustCompile(`[^A-Za-z0-9_]`)
 
+// variableName turns a title into an identifier: decimal points become "p"
+// and other characters identifiers cannot hold become "_", so "h-bbands-20-2.5"
+// is h_bbands_20_2p5.
+func variableName(title string) string {
+	return invalidNameCharacters.ReplaceAllString(strings.ReplaceAll(title, ".", "p"), "_")
+}
+
 // Variables lists the built-in candle fields of every interval, then every
 // output of the configured indicators in display order. Candle field names
 // are reserved, and indicator creation rejects duplicate titles; should two
@@ -115,11 +122,11 @@ func Variables(entries []scannerindicator.Entry) []Variable {
 	}
 	names := map[key]string{}
 	for _, entry := range byAge {
-		base := invalidNameCharacters.ReplaceAllString(entry.Title, "_")
+		base := variableName(entry.Title)
 		for _, output := range entry.Outputs {
 			name := base
 			if len(entry.Outputs) > 1 {
-				name += "_" + invalidNameCharacters.ReplaceAllString(output, "_")
+				name += "_" + variableName(output)
 			}
 			if _, duplicate := taken[name]; duplicate || strings.Contains(name, shiftMarker) || strings.Contains(name, symbolMarker) {
 				continue

@@ -448,7 +448,10 @@ export function GridEstimator({
 					</Text>
 				) : null}
 			</Stack>
-			<Group gap="xs" justify="center">
+			<Group gap="xs" justify="flex-end">
+				<Text c="dimmed" mr="auto" size="sm">
+					Investment
+				</Text>
 				{INVESTMENT_PRESETS.map((usdt) => {
 					const investment = investmentFromUsdt(market, anchor, usdt);
 					return (

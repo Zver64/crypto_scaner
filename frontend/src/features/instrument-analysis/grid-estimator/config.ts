@@ -22,7 +22,7 @@ export const UPPER_MARKUP_LIMIT_PERCENT = 200;
 export const DEFAULT_GRID_COUNT = "40";
 export const DEFAULT_INVESTMENT = "1000";
 // Investment buttons, in USDT; COIN-M grids invest their worth in the coin.
-export const INVESTMENT_PRESETS = ["100", "500", "1000", "2000"] as const;
+export const INVESTMENT_PRESETS = ["500", "1000", "2000"] as const;
 
 export const tickRounding = {
 	ceil: SpotGridDecimal.ROUND_CEIL,

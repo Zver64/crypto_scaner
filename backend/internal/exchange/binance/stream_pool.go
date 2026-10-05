@@ -26,6 +26,10 @@ const (
 
 var errStreamWorkerIdle = errors.New("stream worker has no subscriptions")
 
+// errStreamRotation ends a connection before Binance's 24-hour limit; the
+// reconnect that follows is routine.
+var errStreamRotation = errors.New("scheduled Binance connection rotation")
+
 // NewDialLimiter returns the process-wide Binance WebSocket connection budget.
 // Every stream of one process must share it.
 func NewDialLimiter() *rate.Limiter {
@@ -191,7 +195,11 @@ func (worker *streamWorker[K]) run(ctx context.Context) {
 			continue
 		}
 		worker.publishStatus(false, err)
-		worker.pool.logger.Warn("Binance WebSocket reconnecting", "module", worker.pool.kind.module, "operation", "reconnect", "stream", worker.pool.kind.label, "error", err)
+		level := slog.LevelWarn
+		if errors.Is(err, errStreamRotation) {
+			level = slog.LevelInfo
+		}
+		worker.pool.logger.Log(ctx, level, "Binance WebSocket reconnecting", "module", worker.pool.kind.module, "operation", "reconnect", "stream", worker.pool.kind.label, "error", err)
 		if backoff.Sleep(ctx, backoff.Jitter(backoff.Exponential(time.Second, 30*time.Second, failures), 0.5)) != nil {
 			return
 		}
@@ -229,7 +237,7 @@ func (worker *streamWorker[K]) connect(ctx context.Context) error {
 		case err := <-readResult:
 			return err
 		case <-rotation.C:
-			return fmt.Errorf("scheduled Binance %s connection rotation", pool.kind.label)
+			return errStreamRotation
 		case <-worker.changes:
 			if err := worker.reconcile(ctx, conn, limiter, active, acks); err != nil {
 				return err

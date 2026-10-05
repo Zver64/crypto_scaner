@@ -7,15 +7,21 @@ Agent and subagent orchestration is done via herdr.
 
 ## Project structure
 
-Backend architecture, package boundaries, and Go conventions are described in `backend/AGENTS.md`.
-
 - `backend/`: Go HTTP API, Telegram authentication, market synchronization, analysis criteria, PostgreSQL storage, migrations, and service commands.
 - `frontend/`: React Telegram Mini App built with Vite and TanStack Router.
 - `docs/agents/`: repository-specific configuration consumed by engineering skills.
 - `compose.yaml`: local PostgreSQL, migrations, and backend development stack (frontend runs on the host).
 - `compose.production.yaml`: production deployment stack.
 
-Instructions in `frontend/AGENTS.md` also apply when working under `frontend/`, and those in `docs/AGENTS.md` under `docs/` (buy strategy rules).
+## Nested instructions
+
+Agents do not load nested `AGENTS.md` files automatically. Before planning, editing, or reviewing anything under one of these directories, read its `AGENTS.md` in full; its rules apply on top of this file:
+
+- `backend/`: `backend/AGENTS.md` (architecture, package boundaries, Go conventions).
+- `frontend/`: `frontend/AGENTS.md` (component decomposition, testing, utilities, styling, number formatting).
+- `docs/`: `docs/AGENTS.md` (buy strategy rules).
+
+Pass these references on to subagents that work in those directories.
 
 ## Technology
 

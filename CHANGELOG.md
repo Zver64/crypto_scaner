@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.38.0](https://github.com/Zver64/crypto_scaner/compare/v0.37.0...v0.38.0) (2026-10-06)
+
+
+### Features
+
+* fit desktop screens to the viewport and adapt the settings ([e71fcb9](https://github.com/Zver64/crypto_scaner/commit/e71fcb9e03fa761f13e90e9009ba7c5c6994ef89))
+* recompose screens for tablet and desktop ([749c451](https://github.com/Zver64/crypto_scaner/commit/749c451dee702d5065a8f5ef8d182573fac0eca7))
+
+
+### Bug Fixes
+
+* harden backend storage, market sync, and live chart streaming ([522dd54](https://github.com/Zver64/crypto_scaner/commit/522dd54e81c4f5ec5f1b77502a09d7b9c5cf9229))
+* resync stalled live charts and tidy frontend structure ([d93edf4](https://github.com/Zver64/crypto_scaner/commit/d93edf43dff6a3924d4881776764ba322759a997))
+
 ## [0.37.0](https://github.com/Zver64/crypto_scaner/compare/v0.36.0...v0.37.0) (2026-10-05)
 
 

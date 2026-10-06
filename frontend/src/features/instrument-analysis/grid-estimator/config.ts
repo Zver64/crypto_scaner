@@ -4,7 +4,8 @@ import type {
 	GridMarkups,
 } from "@/features/instrument-analysis/grid-estimator/types";
 import type { FuturesContract } from "@/utils/calculator/futures-grid";
-import { SpotGridDecimal } from "@/utils/calculator/spot-grid";
+import { GridDecimal } from "@/utils/calculator/grid";
+import type { GridType, PositionDirection } from "@/utils/calculator/types";
 
 // Starting markups of each market. Without a lower markup, the lower price
 // starts as low as the range allows.
@@ -25,9 +26,9 @@ export const DEFAULT_INVESTMENT = "1000";
 export const INVESTMENT_PRESETS = ["500", "1000", "2000"] as const;
 
 export const tickRounding = {
-	ceil: SpotGridDecimal.ROUND_CEIL,
-	floor: SpotGridDecimal.ROUND_FLOOR,
-	halfExpand: SpotGridDecimal.ROUND_HALF_UP,
+	ceil: GridDecimal.ROUND_CEIL,
+	floor: GridDecimal.ROUND_FLOOR,
+	halfExpand: GridDecimal.ROUND_HALF_UP,
 };
 
 // Binance grid bots keep their orders inside this share of the deviation the
@@ -47,3 +48,18 @@ export const FUTURES_CONTRACTS: Record<FuturesMarket, FuturesContract> = {
 // Share of the shown span added on each side, so markers at the ends stay
 // visible.
 export const RANGE_BAR_PADDING = 0.05;
+
+// Significant digits two trades are compared at: geometric grid levels differ
+// from equal ratios only far below them.
+export const TRADE_COMPARISON_DIGITS = 20;
+
+export const GRID_TYPE_OPTIONS: { label: string; value: GridType }[] = [
+	{ label: "Arithmetic", value: "arithmetic" },
+	{ label: "Geometric", value: "geometric" },
+];
+
+export const DIRECTION_OPTIONS: { label: string; value: PositionDirection }[] =
+	[
+		{ label: "Short", value: "short" },
+		{ label: "Long", value: "long" },
+	];

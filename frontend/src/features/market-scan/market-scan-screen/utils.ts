@@ -31,11 +31,12 @@ function validatedMarketScanQueryOptions(criteria: MarketScanCriteria) {
 	};
 }
 
+// Results stay cached until invalidated (for example after the administrator
+// changes indicators); an invalidated scan refetches when a screen mounts it.
 export function marketScanObserverOptions(criteria: MarketScanCriteria) {
 	return {
 		...validatedMarketScanQueryOptions(criteria),
 		gcTime: Number.POSITIVE_INFINITY,
-		refetchOnMount: false as const,
 		refetchOnReconnect: false as const,
 		refetchOnWindowFocus: false as const,
 		retry: false as const,

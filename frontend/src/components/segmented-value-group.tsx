@@ -6,7 +6,9 @@ import {
 	Stack,
 	Text,
 	Title,
+	useMantineTheme,
 } from "@mantine/core";
+import { themeToVars } from "@mantine/vanilla-extract";
 
 interface SegmentedValueGroupItem {
 	color?: string;
@@ -34,6 +36,7 @@ interface SegmentedValueGroupProps {
 }
 
 export function SegmentedValueGroup({ rows, title }: SegmentedValueGroupProps) {
+	const { colors } = themeToVars(useMantineTheme());
 	return (
 		<Paper withBorder radius="md" p="md" role="group" aria-label={title}>
 			<Stack gap="md">
@@ -61,7 +64,7 @@ export function SegmentedValueGroup({ rows, title }: SegmentedValueGroupProps) {
 						) : null}
 						<Box
 							aria-label={row.ariaLabel}
-							bg="var(--mantine-color-default-hover)"
+							bg={colors.defaultHover}
 							h={14}
 							role="img"
 							style={{ display: "flex", overflow: "hidden" }}

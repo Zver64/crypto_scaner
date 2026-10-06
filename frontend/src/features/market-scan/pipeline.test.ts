@@ -3,7 +3,7 @@ import {
 	criterionSelections,
 	defaultMarketScanCriteria,
 	validateMarketScanCriteria,
-} from "./pipeline";
+} from "@/features/market-scan/pipeline";
 
 it("keeps independent settings and includes Market Cap at zero", () => {
 	expect(

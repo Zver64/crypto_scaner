@@ -1,5 +1,10 @@
 import type { AutoscaleInfo, IRange, UTCTimestamp } from "lightweight-charts";
-import { markerOptions } from "@/components/price-history-chart/config";
+import { markerOptions } from "@/features/candle-chart/config";
+import {
+	dayTimeFormat,
+	hourTimeFormat,
+	monthTimeFormat,
+} from "@/features/candle-chart/constants";
 import type {
 	ChartCandle,
 	ChartCandleSlot,
@@ -14,7 +19,7 @@ import type {
 	ChartVolumeSlot,
 	IndicatorPoint,
 	PriceCandle,
-} from "@/components/price-history-chart/types";
+} from "@/features/candle-chart/types";
 import { formatNumber } from "@/utils/number-format";
 
 export function toUtcTimestamp(value: string): UTCTimestamp {
@@ -214,17 +219,12 @@ export function formatChartTime(
 		typeof value === "number" ? value * 1_000 : Date.parse(value);
 	const date = new Date(timestamp);
 	if (interval === "1h") {
-		return `${new Intl.DateTimeFormat("en", { day: "numeric", hour: "2-digit", hourCycle: "h23", minute: "2-digit", month: "short", timeZone: "UTC" }).format(date)} UTC`;
+		return `${hourTimeFormat.format(date)} UTC`;
 	}
 	if (interval === "1M") {
-		return `${new Intl.DateTimeFormat("en", { month: "short", year: "numeric", timeZone: "UTC" }).format(date)} UTC`;
+		return `${monthTimeFormat.format(date)} UTC`;
 	}
-	const day = new Intl.DateTimeFormat("en", {
-		day: "numeric",
-		month: "short",
-		year: "numeric",
-		timeZone: "UTC",
-	}).format(date);
+	const day = dayTimeFormat.format(date);
 	return interval === "1w" ? `Week of ${day} UTC` : `${day} UTC`;
 }
 

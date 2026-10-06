@@ -4,11 +4,11 @@ import type {
 	ChartPageResponse,
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
-import { chartIntervalOptions } from "@/components/price-history-chart/config";
+import { chartIntervalOptions } from "@/features/candle-chart/config";
 import type {
 	ChartConnection,
 	ChartFreshness,
-} from "@/components/price-history-chart/types";
+} from "@/features/candle-chart/types";
 import {
 	mergeChartTail,
 	validateChartPage,
@@ -20,6 +20,8 @@ export interface LiveCandlesState {
 	connection: ChartConnection;
 	freshness: ChartFreshness;
 	error?: string;
+	// An update could not be applied, so the chart waits for a new snapshot.
+	resyncing?: boolean;
 }
 
 export const chartIntervals: readonly CandleInterval[] =
@@ -35,7 +37,13 @@ export type ChartCatalogs = Readonly<
 	Record<CandleInterval, readonly ChartIndicatorDefinition[]>
 >;
 
-export function createLiveStore(symbol: string, catalogs: ChartCatalogs) {
+// onResync asks the backend for a new snapshot of an interval whose update
+// could not be applied; it is called once until a snapshot is accepted.
+export function createLiveStore(
+	symbol: string,
+	catalogs: ChartCatalogs,
+	onResync: (interval: CandleInterval) => void = () => {},
+) {
 	let states: Record<string, LiveCandlesState> = {};
 	let fallback = initialState;
 	const listeners = new Set<() => void>();
@@ -61,6 +69,7 @@ export function createLiveStore(symbol: string, catalogs: ChartCatalogs) {
 						...state,
 						connection: next,
 						version: next === "connected" ? undefined : state.version,
+						resyncing: next === "connected" ? false : state.resyncing,
 						error: next === "disconnected" ? state.error : undefined,
 						freshness:
 							next === "connected"
@@ -83,8 +92,11 @@ export function createLiveStore(symbol: string, catalogs: ChartCatalogs) {
 				message.interval ? catalogs[message.interval] : [],
 			);
 			if (next === states) return;
+			const key = `${symbol}:${message.interval}`;
+			const resync = next[key]?.resyncing && !states[key]?.resyncing;
 			states = next;
 			notify();
+			if (resync && message.interval) onResync(message.interval);
 		},
 	};
 }
@@ -119,13 +131,30 @@ export function applyServerMessage(
 	if (message.type === "snapshot" || message.type === "update") {
 		const { chart: received, version } = message;
 		if (!received || version === undefined) return states;
-		const accepted =
-			message.type === "snapshot"
-				? previous.version === undefined || version > previous.version
-				: previous.chart !== undefined &&
-					previous.version !== undefined &&
-					version === previous.version + 1;
-		if (!accepted) return states;
+		// A late or repeated version is ignored.
+		if (previous.version !== undefined && version <= previous.version) {
+			return states;
+		}
+		// An update that cannot be applied (a version gap or an invalid result)
+		// would freeze the chart: later updates build on it. Mark the chart stale
+		// and wait for a snapshot instead. A rejected snapshot does not resync,
+		// so an invalid chart does not loop.
+		const stale: Record<string, LiveCandlesState> = {
+			...states,
+			[key]: {
+				...previous,
+				freshness: "stale",
+				resyncing: message.type === "update" || previous.resyncing,
+			},
+		};
+		if (
+			message.type === "update" &&
+			(previous.chart === undefined ||
+				previous.version === undefined ||
+				version !== previous.version + 1)
+		) {
+			return previous.resyncing ? states : stale;
+		}
 		let chart: ChartPageResponse;
 		try {
 			chart = validateChartPage(
@@ -137,7 +166,7 @@ export function applyServerMessage(
 				catalog,
 			);
 		} catch {
-			return states;
+			return previous.resyncing ? states : stale;
 		}
 		return {
 			...states,
@@ -147,6 +176,7 @@ export function applyServerMessage(
 				version,
 				freshness: message.freshness ?? "fresh",
 				error: undefined,
+				resyncing: false,
 			},
 		};
 	}

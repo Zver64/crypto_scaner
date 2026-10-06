@@ -1,44 +1,29 @@
-import {
-	AppShell,
-	Badge,
-	Group,
-	Paper,
-	Stack,
-	Text,
-	Title,
-} from "@mantine/core";
+import { AppShell, Group, Text } from "@mantine/core";
 import { Outlet, useMatches } from "@tanstack/react-router";
 import { useGetReadiness } from "@/api/generated/api";
-import { ShellContentCenter } from "@/components/shell-content-center";
+import { AppName } from "@/app/app-name";
+import { BusinessRequestContext } from "@/app/business-request-context";
+import { OpenInTelegram } from "@/app/open-in-telegram";
+import { ReadinessBadge } from "@/app/readiness-badge";
+import { useTelegramMiniApp } from "@/app/telegram";
+import type { ReadinessStatus } from "@/app/types";
+import { useAdministrator } from "@/app/use-administrator";
 import { FavoritesProvider } from "@/features/favorites/favorites-provider";
 import { getAppVersion } from "@/utils/app-version";
 import { getBusinessRequestPermission } from "@/utils/business-request-permission";
-import { AppName } from "./app-name";
-import { BusinessRequestContext } from "./business-request-context";
-import { useTelegramMiniApp } from "./telegram";
-import { useAdministrator } from "./use-administrator";
 
 const headerContentHeight = "3.25rem";
-
-type ReadinessStatus = "checking" | "ready" | "unavailable";
-
-const readinessPresentation = {
-	checking: { color: "yellow", label: "Checking" },
-	ready: { color: "teal", label: "Ready" },
-	unavailable: { color: "red", label: "Unavailable" },
-} as const;
 
 export function MiniAppShell() {
 	const { webApp } = useTelegramMiniApp();
 	const appVersion = getAppVersion(import.meta.env.VITE_APP_VERSION);
+	// Retries ride out a slow first check. A later failed check only changes the
+	// badge: the backend has been ready once (data is kept on refetch errors),
+	// so business requests stay allowed and screens stay mounted.
 	const readiness = useGetReadiness({
-		query: {
-			refetchInterval: 30_000,
-			retry: false,
-			select: (response) => response.status === 200,
-		},
+		query: { refetchInterval: 30_000, retry: 3 },
 	});
-	const backendReady = readiness.data === true;
+	const backendReady = readiness.data !== undefined;
 	const pageTitle = useMatches({
 		select: (matches) => matches.at(-1)?.context.pageTitle,
 	});
@@ -50,9 +35,9 @@ export function MiniAppShell() {
 	const administrator = useAdministrator(permission.allowed);
 	const readinessStatus: ReadinessStatus = readiness.isPending
 		? "checking"
-		: backendReady
-			? "ready"
-			: "unavailable";
+		: readiness.isError
+			? "unavailable"
+			: "ready";
 
 	return (
 		<BusinessRequestContext value={permission}>
@@ -92,32 +77,5 @@ export function MiniAppShell() {
 				</AppShell.Main>
 			</AppShell>
 		</BusinessRequestContext>
-	);
-}
-
-function ReadinessBadge({ status }: { status: ReadinessStatus }) {
-	const presentation = readinessPresentation[status];
-
-	return (
-		<Badge color={presentation.color} size="sm" variant="light">
-			{presentation.label}
-		</Badge>
-	);
-}
-
-function OpenInTelegram() {
-	return (
-		<ShellContentCenter>
-			<Paper maw={420} p={{ base: "xs", sm: "xl" }} radius="lg" shadow="sm">
-				<Stack align="center" gap="sm" ta="center">
-					<Title order={1} size="h2">
-						Open in Telegram
-					</Title>
-					<Text c="dimmed">
-						Launch this Mini App from Telegram to continue securely.
-					</Text>
-				</Stack>
-			</Paper>
-		</ShellContentCenter>
 	);
 }

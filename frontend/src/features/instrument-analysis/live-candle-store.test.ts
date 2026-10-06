@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import type {
 	Candle,
 	ChartIndicatorDefinition,
@@ -116,4 +116,29 @@ it("retains isolated calculated snapshots and rejects late versions", () => {
 	expect(
 		states["BTC:1d"]?.chart?.indicators[0]?.series[0]?.points[0]?.value,
 	).toBe(60);
+});
+
+it("asks once for a new snapshot when an update cannot be applied", () => {
+	const onResync = vi.fn();
+	const store = createLiveStore("BTC", rsiCatalogs, onResync);
+	const time = "2026-01-01T23:00:00Z";
+	const update = (version: number): LiveCandleServerMessage => ({
+		...snapshot("1h", time, version, 50),
+		type: "update",
+	});
+	store.message(snapshot("1h", time, 1, 45));
+	store.message(update(3));
+	store.message(update(4));
+	expect(onResync).toHaveBeenCalledOnce();
+	expect(onResync).toHaveBeenCalledWith("1h");
+	expect(store.getSnapshot("1h").freshness).toBe("stale");
+
+	store.message(snapshot("1h", time, 5, 55));
+	store.message(update(6));
+	expect(store.getSnapshot("1h")).toMatchObject({
+		freshness: "fresh",
+		resyncing: false,
+		version: 6,
+	});
+	expect(onResync).toHaveBeenCalledOnce();
 });

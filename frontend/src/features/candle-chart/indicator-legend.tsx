@@ -1,5 +1,6 @@
-import { Group, Stack, Text } from "@mantine/core";
-import type { ChartLegendItem } from "@/components/price-history-chart/types";
+import { Stack } from "@mantine/core";
+import { IndicatorLegendRow } from "@/features/candle-chart/indicator-legend-row";
+import type { ChartLegendItem } from "@/features/candle-chart/types";
 
 interface IndicatorLegendProps {
 	items: readonly ChartLegendItem[];
@@ -16,24 +17,5 @@ export function IndicatorLegend({ items }: IndicatorLegendProps) {
 			<IndicatorLegendRow items={overlays} />
 			<IndicatorLegendRow items={panes} />
 		</Stack>
-	);
-}
-
-function IndicatorLegendRow({ items }: IndicatorLegendProps) {
-	if (items.length === 0) return null;
-	return (
-		<Group gap="xs" wrap="wrap">
-			{items.map(({ color, key, title, value }) => (
-				<Text
-					c={color}
-					ff="monospace"
-					key={key}
-					size="xs"
-					style={{ whiteSpace: "nowrap" }}
-				>
-					{title} {value ?? "—"}
-				</Text>
-			))}
-		</Group>
 	);
 }

@@ -2,7 +2,7 @@ import type { CandleInterval } from "@/api/generated/models";
 import {
 	type ChartIndicatorOptions,
 	PriceHistoryChart,
-} from "@/components/price-history-chart";
+} from "@/features/candle-chart";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { CoinChartPlaceholder } from "@/features/instrument-analysis/coin-chart-placeholder";
 import { rangeReadout } from "@/features/instrument-analysis/coin-chart-presentation";

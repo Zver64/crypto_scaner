@@ -8,7 +8,7 @@ import {
 	formatOhlc,
 	formatPrice,
 	nextCandleOpen,
-} from "@/components/price-history-chart/utils";
+} from "@/features/candle-chart/utils";
 
 const from = "2026-08-26T23:00:00Z";
 

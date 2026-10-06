@@ -12,13 +12,8 @@ describe("calculateGeometricSpotGrid", () => {
 	it("uses equal percentage intervals, excludes the upper level, and applies both fees", () => {
 		const result = calculateGeometricSpotGrid(positiveFixture);
 
-		expect(result.gridCount).toBe(2);
-		expect(result.levelCount).toBe(3);
-		expect(result.stepRatio.toString()).toBe("1.1");
 		expect(result.stepPercent.toString()).toBe("10");
 		expect(result.allocationPerBuy.toString()).toBe("110");
-		expect(result.totalNetQuantity.toString()).toBe("2.0979");
-		expect(result.averageEntryPrice.toFixed(8)).toBe("104.86677153");
 		expect(result.cycleProfit.toFixed(6)).toBe("10.758121");
 		expect(result.cycleProfitPercent.toFixed(5)).toBe("9.78011");
 	});
@@ -31,7 +26,6 @@ describe("calculateGeometricSpotGrid", () => {
 			investment: "1000",
 		});
 
-		expect(result.stepRatio.toString()).toBe("2");
 		expect(result.stepPercent.toString()).toBe("100");
 		expect(result.cycleProfitPercent.toFixed(4)).toBe("99.6002");
 	});
@@ -56,9 +50,8 @@ describe("calculateGeometricSpotGrid", () => {
 			investment: "1e-20",
 		});
 
-		expect(result.stepRatio.gt(1)).toBe(true);
+		expect(result.cycleProfit.isFinite()).toBe(true);
 		expect(result.stepPercent.gt(0)).toBe(true);
-		expect(result.averageEntryPrice.isFinite()).toBe(true);
 	});
 
 	it.each([

@@ -3,7 +3,7 @@ import type {
 	ChartInterval,
 	PriceHistorySnapshot,
 	PriceHistorySource,
-} from "@/components/price-history-chart/types";
+} from "@/features/candle-chart/types";
 
 // Streams the interval on screen from the source while the chart is enabled.
 export function usePriceHistory(

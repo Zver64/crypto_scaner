@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 
 interface TelegramBackButton {
 	hide(): void;
@@ -7,31 +7,14 @@ interface TelegramBackButton {
 	show(): void;
 }
 
-interface TelegramSafeAreaInsets {
-	bottom: number;
-	left: number;
-	right: number;
-	top: number;
-}
-
 interface TelegramWebApp {
 	BackButton?: TelegramBackButton;
-	contentSafeAreaInset?: TelegramSafeAreaInsets;
 	disableVerticalSwipes?(): void;
 	expand(): void;
 	initData: string;
 	isVersionAtLeast?(version: string): boolean;
 	openLink?(url: string): void;
-	offEvent?(
-		event: "contentSafeAreaChanged" | "safeAreaChanged",
-		listener: () => void,
-	): void;
-	onEvent?(
-		event: "contentSafeAreaChanged" | "safeAreaChanged",
-		listener: () => void,
-	): void;
 	ready(): void;
-	safeAreaInset?: TelegramSafeAreaInsets;
 }
 
 declare global {
@@ -39,13 +22,6 @@ declare global {
 		Telegram?: { WebApp?: TelegramWebApp };
 	}
 }
-
-const emptyInsets: TelegramSafeAreaInsets = {
-	bottom: 0,
-	left: 0,
-	right: 0,
-	top: 0,
-};
 
 const initializedWebApps = new WeakSet<TelegramWebApp>();
 
@@ -62,43 +38,16 @@ export function initializeTelegramMiniApp(webApp: TelegramWebApp) {
 	initializedWebApps.add(webApp);
 }
 
-function getSafeAreaInsets(webApp: TelegramWebApp | undefined) {
-	const safeArea = webApp?.safeAreaInset ?? emptyInsets;
-	const contentSafeArea = webApp?.contentSafeAreaInset ?? emptyInsets;
-
-	return {
-		bottom: Math.max(safeArea.bottom, contentSafeArea.bottom),
-		left: Math.max(safeArea.left, contentSafeArea.left),
-		right: Math.max(safeArea.right, contentSafeArea.right),
-		top: Math.max(safeArea.top, contentSafeArea.top),
-	};
-}
-
 export function useTelegramMiniApp() {
 	const webApp = window.Telegram?.WebApp;
-	const [safeAreaInsets, setSafeAreaInsets] = useState(() =>
-		getSafeAreaInsets(webApp),
-	);
 
 	useEffect(() => {
-		if (!webApp) {
-			return;
+		if (webApp) {
+			initializeTelegramMiniApp(webApp);
 		}
-
-		initializeTelegramMiniApp(webApp);
-
-		const updateSafeArea = () => setSafeAreaInsets(getSafeAreaInsets(webApp));
-		updateSafeArea();
-		webApp.onEvent?.("safeAreaChanged", updateSafeArea);
-		webApp.onEvent?.("contentSafeAreaChanged", updateSafeArea);
-
-		return () => {
-			webApp.offEvent?.("safeAreaChanged", updateSafeArea);
-			webApp.offEvent?.("contentSafeAreaChanged", updateSafeArea);
-		};
 	}, [webApp]);
 
-	return { safeAreaInsets, webApp };
+	return { webApp };
 }
 
 export function getTelegramInitData() {

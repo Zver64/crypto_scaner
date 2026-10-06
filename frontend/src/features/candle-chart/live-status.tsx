@@ -1,5 +1,5 @@
 import { Group, Loader, Text } from "@mantine/core";
-import type { PriceHistorySnapshot } from "@/components/price-history-chart/types";
+import type { PriceHistorySnapshot } from "@/features/candle-chart/types";
 
 type LiveStatusProps = Pick<
 	PriceHistorySnapshot,

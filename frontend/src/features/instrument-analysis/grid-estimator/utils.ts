@@ -10,25 +10,31 @@ import {
 	LOWER_MARKUP_LIMIT_PERCENT,
 	LOWER_MARKUP_MAX_PERCENT,
 	RANGE_BAR_PADDING,
+	TRADE_COMPARISON_DIGITS,
 	tickRounding,
 	UPPER_MARKUP_LIMIT_PERCENT,
 	UPPER_MARKUP_MAX_PERCENT,
 } from "@/features/instrument-analysis/grid-estimator/config";
 import type {
 	FuturesGridOptions,
+	GridBounds,
 	GridCalculation,
 	GridEstimateValues,
 	GridMarket,
 	GridMarketEstimate,
 	GridMarkups,
+	GridProfitSplit,
+	GridRangeCount,
+	GridRangeValues,
+	GridRecommendation,
+	GridTradeAmounts,
 	LiquidationRangeBarLayout,
 	PriceRounding,
-	SpotGridBounds,
+	ProfitSplitColors,
+	ProfitSplitRow,
 	SpotGridCalculation,
 	SpotGridEstimate,
 	SpotGridLimits,
-	SpotGridProfitSplit,
-	SpotGridRecommendation,
 } from "@/features/instrument-analysis/grid-estimator/types";
 import { calculateArithmeticSpotGrid } from "@/utils/calculator/arithmetic-spot-grid";
 import {
@@ -38,19 +44,19 @@ import {
 } from "@/utils/calculator/futures-grid";
 import { calculateGeometricSpotGrid } from "@/utils/calculator/geometric-spot-grid";
 import {
-	type GridType,
-	parseSpotGridDecimal,
-	SPOT_GRID_MAX_COUNT,
-	SpotGridDecimal,
-	type SpotGridInput,
-} from "@/utils/calculator/spot-grid";
+	GRID_MAX_COUNT,
+	GridDecimal,
+	gridCountForMinimumStep,
+	parseGridDecimal,
+} from "@/utils/calculator/grid";
+import type { GridInput, GridType } from "@/utils/calculator/types";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
 // Rounds a grid price to the symbol's Binance tick size, so Binance accepts
 // it, or to the shared number format when the tick size is unknown.
 function formatCalculatorInput(
-	bounds: SpotGridBounds,
+	bounds: GridBounds,
 	value: Decimal,
 	rounding?: PriceRounding,
 ): string {
@@ -64,7 +70,7 @@ function formatCalculatorInput(
 // Formats a number as calculator input: the shared number format without
 // group separators.
 function formatInputNumber(value: Decimal, rounding?: PriceRounding): string {
-	return formatNumber(value.toFixed(), undefined, rounding).replaceAll(",", "");
+	return formatNumber(value.toFixed(), undefined, rounding, false);
 }
 
 // Returns the share of the average price the filter's multiplier allows the
@@ -72,12 +78,12 @@ function formatInputNumber(value: Decimal, rounding?: PriceRounding): string {
 function gridPriceShare(multiplier: number, direction: 1 | -1): Decimal {
 	const deviation =
 		multiplier > 0
-			? new SpotGridDecimal(multiplier)
+			? new GridDecimal(multiplier)
 					.minus(1)
 					.abs()
 					.times(BINANCE_GRID_FILTER_SHARE)
-			: new SpotGridDecimal(BINANCE_GRID_FALLBACK_DEVIATION);
-	return new SpotGridDecimal(1).plus(deviation.times(direction));
+			: new GridDecimal(BINANCE_GRID_FALLBACK_DEVIATION);
+	return new GridDecimal(1).plus(deviation.times(direction));
 }
 
 /**
@@ -85,10 +91,10 @@ function gridPriceShare(multiplier: number, direction: 1 | -1): Decimal {
  * computes it: max(minPrice, (1 − (1 − bidMultiplierDown) × 0.85) × average),
  * or 50% below the average without a multiplier.
  */
-export function binanceGridMinLowerPrice(limits: SpotGridLimits): Decimal {
-	return SpotGridDecimal.max(
+function binanceGridMinLowerPrice(limits: SpotGridLimits): Decimal {
+	return GridDecimal.max(
 		Math.max(limits.minPrice, 0),
-		new SpotGridDecimal(limits.averagePrice).times(
+		new GridDecimal(limits.averagePrice).times(
 			gridPriceShare(limits.bidMultiplierDown, -1),
 		),
 	);
@@ -100,16 +106,14 @@ export function binanceGridMinLowerPrice(limits: SpotGridLimits): Decimal {
  * or 50% above the average without a multiplier; a maxPrice of 0 sets no
  * maximum.
  */
-export function binanceGridMaxUpperPrice(limits: SpotGridLimits): Decimal {
-	const upper = new SpotGridDecimal(limits.averagePrice).times(
+function binanceGridMaxUpperPrice(limits: SpotGridLimits): Decimal {
+	const upper = new GridDecimal(limits.averagePrice).times(
 		gridPriceShare(limits.askMultiplierUp, 1),
 	);
-	return limits.maxPrice > 0
-		? SpotGridDecimal.min(limits.maxPrice, upper)
-		: upper;
+	return limits.maxPrice > 0 ? GridDecimal.min(limits.maxPrice, upper) : upper;
 }
 
-function validPositiveNumber(
+export function validPositiveNumber(
 	value: number | null | undefined,
 ): value is number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0;
@@ -133,58 +137,72 @@ function markupMax(fraction: Decimal, cap: number): number {
 		0,
 		Math.min(
 			cap,
-			fraction
-				.times(100)
-				.toDecimalPlaces(2, SpotGridDecimal.ROUND_DOWN)
-				.toNumber(),
+			fraction.times(100).toDecimalPlaces(2, GridDecimal.ROUND_DOWN).toNumber(),
 		),
 	);
 }
 
-export function spotGridBounds(
+/**
+ * Returns the anchor and the price range of a market's grid. Only spot grids
+ * follow the Binance spot grid limits; futures grids anchor at the same price
+ * without them.
+ */
+export function gridBounds(
+	market: GridMarket,
 	candles: readonly (PriceCandle | null)[] | undefined,
 	limits: SpotGridLimits | null | undefined,
-): SpotGridBounds {
-	if (!limits || !validPositiveNumber(limits.averagePrice)) {
-		const close = latestAvailableCandle(candles)?.close;
-		return {
-			anchor: validPositiveNumber(close) ? close : null,
-			lowerMarkupMax: LOWER_MARKUP_MAX_PERCENT,
-			maxPrice: null,
-			minPrice: null,
-			tickSize: null,
-			upperMarkupMax: UPPER_MARKUP_MAX_PERCENT,
-		};
-	}
+): GridBounds {
+	const averagePrice = limits?.averagePrice;
+	if (market === "spot" && limits && validPositiveNumber(averagePrice))
+		return binanceGridBounds(limits, averagePrice);
+	const close = latestAvailableCandle(candles)?.close;
+	return {
+		anchor: validPositiveNumber(averagePrice)
+			? averagePrice
+			: validPositiveNumber(close)
+				? close
+				: null,
+		lowerMarkupMax: LOWER_MARKUP_MAX_PERCENT,
+		maxPrice: null,
+		minPrice: null,
+		tickSize: null,
+		upperMarkupMax: UPPER_MARKUP_MAX_PERCENT,
+	};
+}
+
+function binanceGridBounds(
+	limits: SpotGridLimits,
+	averagePrice: number,
+): GridBounds {
 	const minPrice = binanceGridMinLowerPrice(limits);
 	const maxPrice = binanceGridMaxUpperPrice(limits);
 	return {
-		anchor: limits.averagePrice,
+		anchor: averagePrice,
 		lowerMarkupMax: markupMax(
-			new SpotGridDecimal(1).minus(minPrice.div(limits.averagePrice)),
+			new GridDecimal(1).minus(minPrice.div(averagePrice)),
 			LOWER_MARKUP_LIMIT_PERCENT,
 		),
 		maxPrice,
 		minPrice,
 		tickSize: validPositiveNumber(limits.tickSize)
-			? new SpotGridDecimal(limits.tickSize)
+			? new GridDecimal(limits.tickSize)
 			: null,
 		upperMarkupMax: markupMax(
-			maxPrice.div(limits.averagePrice).minus(1),
+			maxPrice.div(averagePrice).minus(1),
 			UPPER_MARKUP_LIMIT_PERCENT,
 		),
 	};
 }
 
 /** Returns the lowest lower price Binance accepts, rounded up for display. */
-function formatMinPrice(bounds: SpotGridBounds): string | null {
+function formatMinPrice(bounds: GridBounds): string | null {
 	return (
 		bounds.minPrice && formatCalculatorInput(bounds, bounds.minPrice, "ceil")
 	);
 }
 
 /** Returns the highest upper price Binance accepts, rounded down for display. */
-function formatMaxPrice(bounds: SpotGridBounds): string | null {
+function formatMaxPrice(bounds: GridBounds): string | null {
 	return (
 		bounds.maxPrice && formatCalculatorInput(bounds, bounds.maxPrice, "floor")
 	);
@@ -192,7 +210,7 @@ function formatMaxPrice(bounds: SpotGridBounds): string | null {
 
 /** Returns the upper price that sits `markupPercent` above the anchor. */
 export function upperPriceFromMarkup(
-	bounds: SpotGridBounds,
+	bounds: GridBounds,
 	markupPercent: number,
 ): string | null {
 	const { anchor } = bounds;
@@ -203,13 +221,13 @@ export function upperPriceFromMarkup(
 	)
 		return null;
 	try {
-		const upper = new SpotGridDecimal(anchor).times(
-			new SpotGridDecimal(1).plus(new SpotGridDecimal(markupPercent).div(100)),
+		const upper = new GridDecimal(anchor).times(
+			new GridDecimal(1).plus(new GridDecimal(markupPercent).div(100)),
 		);
 		if (!upper.isFinite() || !upper.gt(0)) return null;
 		// Never above the Binance maximum.
 		const formatted = formatCalculatorInput(bounds, upper);
-		return bounds.maxPrice && new SpotGridDecimal(formatted).gt(bounds.maxPrice)
+		return bounds.maxPrice && new GridDecimal(formatted).gt(bounds.maxPrice)
 			? formatMaxPrice(bounds)
 			: formatted;
 	} catch {
@@ -219,7 +237,7 @@ export function upperPriceFromMarkup(
 
 /** Returns the lower price that sits `markupPercent` below the anchor. */
 export function lowerPriceFromMarkup(
-	bounds: SpotGridBounds,
+	bounds: GridBounds,
 	markupPercent: number,
 ): string | null {
 	const { anchor } = bounds;
@@ -231,18 +249,16 @@ export function lowerPriceFromMarkup(
 	)
 		return null;
 	try {
-		const lower = new SpotGridDecimal(anchor).times(
-			new SpotGridDecimal(1).minus(new SpotGridDecimal(markupPercent).div(100)),
+		const lower = new GridDecimal(anchor).times(
+			new GridDecimal(1).minus(new GridDecimal(markupPercent).div(100)),
 		);
 		if (!lower.gt(0)) return null;
 		// Round down so the range only widens and grid steps never shrink, but
 		// never below the Binance minimum.
 		const formatted = formatCalculatorInput(bounds, lower, "floor");
-		if (bounds.minPrice && new SpotGridDecimal(formatted).lt(bounds.minPrice))
+		if (bounds.minPrice && new GridDecimal(formatted).lt(bounds.minPrice))
 			return formatMinPrice(bounds);
-		return parseSpotGridDecimal(formatted, "Lower price").gt(0)
-			? formatted
-			: null;
+		return parseGridDecimal(formatted, "Lower price").gt(0) ? formatted : null;
 	} catch {
 		return null;
 	}
@@ -260,8 +276,8 @@ export function lowerMarkupPercent(
 ): number | null {
 	if (!validPositiveNumber(anchor)) return null;
 	try {
-		const lower = parseSpotGridDecimal(lowerPrice, "Lower price");
-		return percentNumber(new SpotGridDecimal(1).minus(lower.div(anchor)));
+		const lower = parseGridDecimal(lowerPrice, "Lower price");
+		return percentNumber(new GridDecimal(1).minus(lower.div(anchor)));
 	} catch {
 		return null;
 	}
@@ -274,7 +290,7 @@ export function upperMarkupPercent(
 ): number | null {
 	if (!validPositiveNumber(anchor)) return null;
 	try {
-		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
+		const upper = parseGridDecimal(upperPrice, "Upper price");
 		return percentNumber(upper.div(anchor).minus(1));
 	} catch {
 		return null;
@@ -283,13 +299,13 @@ export function upperMarkupPercent(
 
 /** Returns why a lower price is below the Binance minimum, or null. */
 export function lowerPriceLimitError(
-	bounds: SpotGridBounds,
+	bounds: GridBounds,
 	lowerPrice: string,
 	priceUnit: string,
 ): string | null {
 	if (!bounds.minPrice) return null;
 	try {
-		return parseSpotGridDecimal(lowerPrice, "Lower price").lt(bounds.minPrice)
+		return parseGridDecimal(lowerPrice, "Lower price").lt(bounds.minPrice)
 			? `Binance minimum is ${formatMinPrice(bounds)} ${priceUnit}`
 			: null;
 	} catch {
@@ -299,13 +315,13 @@ export function lowerPriceLimitError(
 
 /** Returns why an upper price is above the Binance maximum, or null. */
 export function upperPriceLimitError(
-	bounds: SpotGridBounds,
+	bounds: GridBounds,
 	upperPrice: string,
 	priceUnit: string,
 ): string | null {
 	if (!bounds.maxPrice) return null;
 	try {
-		return parseSpotGridDecimal(upperPrice, "Upper price").gt(bounds.maxPrice)
+		return parseGridDecimal(upperPrice, "Upper price").gt(bounds.maxPrice)
 			? `Binance maximum is ${formatMaxPrice(bounds)} ${priceUnit}`
 			: null;
 	} catch {
@@ -313,20 +329,18 @@ export function upperPriceLimitError(
 	}
 }
 
-function floorGridCount(
-	upper: Decimal,
-	lower: Decimal,
-	target: Decimal,
-	gridType: GridType,
-): Decimal {
-	return (
-		gridType === "arithmetic"
-			? upper
-					.minus(lower)
-					.times(new SpotGridDecimal(1).plus(target))
-					.div(target.times(upper))
-			: upper.div(lower).ln().div(new SpotGridDecimal(1).plus(target).ln())
-	).floor();
+// Parses a price range whose upper price lies above its lower price.
+function parsedRange(
+	lowerPrice: string,
+	upperPrice: string,
+): { lower: Decimal; upper: Decimal } | null {
+	try {
+		const upper = parseGridDecimal(upperPrice, "Upper price");
+		const lower = parseGridDecimal(lowerPrice, "Lower price");
+		return upper.gt(lower) ? { lower, upper } : null;
+	} catch {
+		return null;
+	}
 }
 
 /**
@@ -344,33 +358,61 @@ export function gridCountForStep(
 	lowerMarkupPercent?: number,
 ): string | null {
 	if (!validPositiveNumber(stepPercent)) return null;
+	const range = parsedRange(lowerPrice, upperPrice);
+	if (!range) return null;
+	const { lower, upper } = range;
 	try {
-		const upper = parseSpotGridDecimal(upperPrice, "Upper price");
-		const lower = parseSpotGridDecimal(lowerPrice, "Lower price");
-		if (!upper.gt(lower)) return null;
-		const target = new SpotGridDecimal(stepPercent).div(100);
-		let count = floorGridCount(upper, lower, target, gridType);
+		const target = new GridDecimal(stepPercent).div(100);
+		let count = gridCountForMinimumStep(lower, upper, target, gridType);
 		if (
 			validPositiveNumber(anchor) &&
 			validPositiveNumber(lowerMarkupPercent) &&
 			lowerMarkupPercent < 100
 		) {
-			const markupLower = new SpotGridDecimal(anchor).times(
-				new SpotGridDecimal(1).minus(
-					new SpotGridDecimal(lowerMarkupPercent).div(100),
-				),
+			const markupLower = new GridDecimal(anchor).times(
+				new GridDecimal(1).minus(new GridDecimal(lowerMarkupPercent).div(100)),
 			);
 			if (upper.gt(markupLower))
-				count = SpotGridDecimal.min(
+				count = GridDecimal.min(
 					count,
-					floorGridCount(upper, markupLower, target, gridType),
+					gridCountForMinimumStep(markupLower, upper, target, gridType),
 				);
 		}
 		if (!count.isFinite() || count.lt(1)) return null;
-		return SpotGridDecimal.min(count, SPOT_GRID_MAX_COUNT).toString();
+		return GridDecimal.min(count, GRID_MAX_COUNT).toString();
 	} catch {
 		return null;
 	}
+}
+
+/**
+ * Returns the grid count of a new range: the largest that keeps its minimum
+ * step at `rangePercent`. Keeps `gridCount`, with an error, when the range is
+ * narrower than one step, and without one when the range is not valid yet or
+ * no step is selected.
+ */
+export function gridCountForRange(
+	range: GridRangeValues,
+	gridCount: string,
+	anchor: number | null,
+	lowerMarkup: number,
+): GridRangeCount {
+	if (!(range.rangePercent > 0)) return { error: null, gridCount };
+	const derived = gridCountForStep(
+		range.upperPrice,
+		range.lowerPrice,
+		range.rangePercent,
+		range.gridType,
+		anchor,
+		lowerMarkup,
+	);
+	if (derived !== null) return { error: null, gridCount: derived };
+	return {
+		error: parsedRange(range.lowerPrice, range.upperPrice)
+			? `The price range is narrower than one ${formatRangePercent(range.rangePercent)} step, so the grid count is unchanged`
+			: null,
+		gridCount,
+	};
 }
 
 /**
@@ -379,12 +421,12 @@ export function gridCountForStep(
  * the largest that keeps the hourly step.
  */
 export function gridRecommendation(
-	bounds: SpotGridBounds,
+	bounds: GridBounds,
 	hourlyVolatilityPercent: number | undefined,
 	gridType: GridType = "geometric",
 	markups: GridMarkups = DEFAULT_MARKUPS.spot,
 	investment = DEFAULT_INVESTMENT,
-): SpotGridRecommendation {
+): GridRecommendation {
 	const upperMarkup = Math.min(markups.upper, bounds.upperMarkupMax);
 	const upperPrice = upperPriceFromMarkup(bounds, upperMarkup) ?? "";
 	const lowerMarkup = Math.min(
@@ -408,8 +450,6 @@ export function gridRecommendation(
 			gridCount,
 			investment,
 		},
-		hasAnchor: bounds.anchor !== null,
-		hasHourlyVolatility: validPositiveNumber(hourlyVolatilityPercent),
 		lowerMarkup,
 		upperMarkup,
 	};
@@ -437,7 +477,7 @@ export function investmentFromUsdt(
 ): string | null {
 	if (!isInverseMarket(market)) return usdt;
 	if (!validPositiveNumber(anchor)) return null;
-	return formatInputNumber(new SpotGridDecimal(usdt).div(anchor));
+	return formatInputNumber(new GridDecimal(usdt).div(anchor));
 }
 
 function isInverseMarket(market: GridMarket): boolean {
@@ -466,7 +506,7 @@ export function spotGridMinimumStepPercent(estimate: SpotGridEstimate): number {
 // Runs a grid calculation once every input field is filled, reporting a
 // rejected input as an error rather than throwing.
 function calculateGrid<Estimate>(
-	input: SpotGridInput,
+	input: GridInput,
 	calculate: () => Estimate,
 ): GridCalculation<Estimate> | null {
 	if (!Object.values(input).every((value) => value.length > 0)) return null;
@@ -482,7 +522,7 @@ function calculateGrid<Estimate>(
 }
 
 export function calculateSpotGridInput(
-	input: SpotGridInput,
+	input: GridInput,
 	gridType: GridType = "arithmetic",
 ): SpotGridCalculation | null {
 	return calculateGrid(input, () =>
@@ -493,7 +533,7 @@ export function calculateSpotGridInput(
 }
 
 export function calculateFuturesGridInput(
-	input: SpotGridInput,
+	input: GridInput,
 	{ currentPrice, ...options }: FuturesGridOptions,
 	contract: FuturesContract = "linear",
 ): GridCalculation<FuturesGridEstimate> | null {
@@ -510,13 +550,11 @@ export function calculateFuturesGridInput(
 }
 
 function profitSplit(
-	label: string,
 	unit: string,
-	grossProfit: Decimal,
-	netProfit: Decimal,
-	netProfitPercent: Decimal,
-): SpotGridProfitSplit {
-	const feeCost = grossProfit.minus(netProfit);
+	{ grossProfit, profit, profitPercent }: GridTradeAmounts,
+	label?: string,
+): GridProfitSplit {
+	const feeCost = grossProfit.minus(profit);
 	const feeShareOfGross = feeCost.div(grossProfit).times(100);
 	const feeSegmentPercent = feeShareOfGross.gte(100)
 		? 100
@@ -525,59 +563,79 @@ function profitSplit(
 			: feeShareOfGross.toNumber();
 
 	return {
-		cleanProfit: formatAmount(netProfit, unit),
-		cleanReturnPercent: `${formatNumber(netProfitPercent.toFixed())}% per trade`,
+		cleanProfit: formatAmount(profit, unit),
+		cleanReturnPercent: `${formatNumber(profitPercent.toFixed())}% per trade`,
 		cleanSegmentPercent: 100 - feeSegmentPercent,
 		feeCost: formatAmount(feeCost, unit),
 		feeSegmentPercent,
 		feeShareOfGross: `${formatNumber(feeShareOfGross.toFixed())}% of gross`,
-		grossProfit: formatAmount(grossProfit, unit),
-		isLoss: netProfit.lt(0),
+		isLoss: profit.lt(0),
 		label,
 	};
 }
 
+function sameValue(left: Decimal, right: Decimal): boolean {
+	return left
+		.toSignificantDigits(TRADE_COMPARISON_DIGITS)
+		.eq(right.toSignificantDigits(TRADE_COMPARISON_DIGITS));
+}
+
+// Splits the lowest- and highest-profit trades, or one trade when both earn
+// the same.
+function tradeProfitSplits(
+	unit: string,
+	lowest: GridTradeAmounts,
+	highest: GridTradeAmounts,
+): GridProfitSplit[] {
+	const isSame =
+		sameValue(lowest.grossProfit, highest.grossProfit) &&
+		sameValue(lowest.profit, highest.profit) &&
+		sameValue(lowest.profitPercent, highest.profitPercent);
+	return isSame
+		? [profitSplit(unit, lowest)]
+		: [
+				profitSplit(unit, lowest, "Lowest-profit trade"),
+				profitSplit(unit, highest, "Highest-profit trade"),
+			];
+}
+
 export function spotGridProfitSplits(
 	estimate: SpotGridEstimate,
-): SpotGridProfitSplit[] {
-	const split = (
-		label: string,
+): GridProfitSplit[] {
+	const trade = (
 		stepPercent: Decimal,
-		netProfit: Decimal,
-		netProfitPercent: Decimal,
-	) =>
-		profitSplit(
-			label,
-			"USDT",
-			estimate.allocationPerBuy.times(stepPercent).div(100),
-			netProfit,
-			netProfitPercent,
-		);
+		profit: Decimal,
+		profitPercent: Decimal,
+	): GridTradeAmounts => ({
+		grossProfit: estimate.allocationPerBuy.times(stepPercent).div(100),
+		profit,
+		profitPercent,
+	});
 	if ("cycleProfit" in estimate) {
 		return [
-			split(
-				"Every trade",
-				estimate.stepPercent,
-				estimate.cycleProfit,
-				estimate.cycleProfitPercent,
+			profitSplit(
+				"USDT",
+				trade(
+					estimate.stepPercent,
+					estimate.cycleProfit,
+					estimate.cycleProfitPercent,
+				),
 			),
 		];
 	}
-
-	return [
-		split(
-			"Lowest-profit trade",
+	return tradeProfitSplits(
+		"USDT",
+		trade(
 			estimate.stepPercentMinimum,
 			estimate.cycleProfitMinimum,
 			estimate.cycleProfitMinimumPercent,
 		),
-		split(
-			"Highest-profit trade",
+		trade(
 			estimate.stepPercentMaximum,
 			estimate.cycleProfitMaximum,
 			estimate.cycleProfitMaximumPercent,
 		),
-	];
+	);
 }
 
 export function formatAmount(value: Decimal | number, unit: string): string {
@@ -602,9 +660,7 @@ function emptyEstimateValues(unit: string): GridEstimateValues {
 				feeCost: zero,
 				feeSegmentPercent: 0,
 				feeShareOfGross: "0% of gross",
-				grossProfit: zero,
 				isLoss: false,
-				label: "Every trade",
 			},
 		],
 	};
@@ -612,39 +668,54 @@ function emptyEstimateValues(unit: string): GridEstimateValues {
 
 /**
  * Formats the lowest- and highest-profit trades in `unit`, the margin
- * currency, or one trade when both show the same amounts.
+ * currency, or one trade when both earn the same.
  */
 export function futuresGridEstimateValues(
 	estimate: FuturesGridEstimate | null,
 	unit: string,
 ): GridEstimateValues {
 	if (!estimate) return emptyEstimateValues(unit);
-	const split = (label: string, trade: FuturesGridEstimate["tradeMinimum"]) =>
-		profitSplit(
-			label,
-			unit,
-			trade.grossProfit,
-			trade.profit,
-			trade.profitPercent,
-		);
-	const lowest = split("Every trade", estimate.tradeMinimum);
-	const highest = split("Every trade", estimate.tradeMaximum);
-	const shown = ({
-		cleanProfit,
-		cleanReturnPercent,
-		feeCost,
-		feeShareOfGross,
-	}: SpotGridProfitSplit) =>
-		[cleanProfit, cleanReturnPercent, feeCost, feeShareOfGross].join();
 	return {
-		profitSplits:
-			shown(lowest) === shown(highest)
-				? [lowest]
-				: [
-						{ ...lowest, label: "Lowest-profit trade" },
-						{ ...highest, label: "Highest-profit trade" },
-					],
+		profitSplits: tradeProfitSplits(
+			unit,
+			estimate.tradeMinimum,
+			estimate.tradeMaximum,
+		),
 	};
+}
+
+/** Returns the rows of the profit-per-trade bars. */
+export function profitSplitRows(
+	splits: readonly GridProfitSplit[],
+	colors: ProfitSplitColors,
+): ProfitSplitRow[] {
+	return splits.map((split) => ({
+		ariaLabel: `${split.label ?? "Every trade"}: fees ${split.feeCost}, ${split.feeShareOfGross} profit; ${split.isLoss ? "net loss" : "clean profit"} ${split.cleanProfit}, ${split.cleanReturnPercent}`,
+		items: [
+			{
+				color: "orange",
+				label: "Fees",
+				secondaryValue: split.feeShareOfGross,
+				value: split.feeCost,
+			},
+			{
+				color: split.isLoss ? "red" : "green",
+				label: split.isLoss ? "Net loss" : "Profit",
+				secondaryValue: split.cleanReturnPercent,
+				value: split.cleanProfit,
+			},
+		],
+		key: split.label ?? "every-trade",
+		label: split.label,
+		segments: [
+			{ color: colors.fee, key: "fees", percentage: split.feeSegmentPercent },
+			{
+				color: colors.profit,
+				key: "clean-profit",
+				percentage: split.cleanSegmentPercent,
+			},
+		],
+	}));
 }
 
 /**
@@ -676,11 +747,13 @@ export function liquidationRangeBar(
 	let summary = "No liquidation";
 	if (liquidationPrice?.lt(lowerPrice))
 		summary = `Liquidation ${formatNumber(
-			lowerPrice.minus(liquidationPrice).div(lowerPrice).times(100).toFixed(2),
+			lowerPrice.minus(liquidationPrice).div(lowerPrice).times(100).toFixed(),
+			2,
 		)}% below the lower price`;
 	else if (liquidationPrice?.gt(upperPrice))
 		summary = `Liquidation ${formatNumber(
-			liquidationPrice.minus(upperPrice).div(upperPrice).times(100).toFixed(2),
+			liquidationPrice.minus(upperPrice).div(upperPrice).times(100).toFixed(),
+			2,
 		)}% above the upper price`;
 	else if (isInsideGrid) summary = "Liquidation inside the grid range";
 
@@ -703,7 +776,7 @@ export function liquidationRangeBar(
  */
 export function gridMarketEstimate(
 	market: GridMarket,
-	input: SpotGridInput,
+	input: GridInput,
 	options: FuturesGridOptions,
 	baseAsset: string,
 ): GridMarketEstimate {

@@ -4,6 +4,7 @@ import {
 	mergeMantineTheme,
 	NumberInput,
 	Tooltip,
+	type TooltipCssVariables,
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 
@@ -23,7 +24,7 @@ export const theme = createTheme({
 					tooltip: {
 						"--tooltip-bg": colors.dark[5],
 						"--tooltip-color": colors.dark[0],
-					},
+					} satisfies Partial<Record<TooltipCssVariables["tooltip"], string>>,
 				};
 			},
 		}),

@@ -4,7 +4,7 @@ import type {
 	IndicatorType,
 	ScannerIndicatorInput,
 } from "@/api/generated/models";
-import { chartIntervalOptions } from "@/components/price-history-chart/config";
+import { chartIntervalOptions } from "@/features/candle-chart/config";
 import { ScannerIndicatorParameterField } from "@/features/scanner-settings/scanner-indicator-parameter-field";
 import { ScannerIndicatorPeriodsField } from "@/features/scanner-settings/scanner-indicator-periods-field";
 import { ScannerIndicatorScaleFields } from "@/features/scanner-settings/scanner-indicator-scale-fields";

@@ -1,4 +1,4 @@
-import type { ChartReadoutOptions } from "@/components/price-history-chart";
+import type { ChartReadoutOptions } from "@/features/candle-chart";
 import { formatRangePercent } from "@/utils/range-percent";
 
 export const rangeReadout: ChartReadoutOptions = {

@@ -9,8 +9,8 @@ import type {
 import { ExternalLink } from "@/components/external-link";
 import { PercentChange } from "@/components/percent-change";
 import { FavoriteToggle } from "@/features/favorites/favorite-toggle";
-import { PriceHistoryChart } from "@/features/market-scan/price-history-chart";
-import { oscillatorColor } from "@/features/market-scan/results-table/utils";
+import { PriceSparkline } from "@/features/market-scan/price-sparkline";
+import { OscillatorValue } from "@/features/market-scan/results-table/oscillator-value";
 import { formatMarketCapUsd } from "@/utils/market-cap";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
@@ -36,7 +36,7 @@ export const cellRenderers: Record<TableColumnKind, CellRenderer> = {
 	percent_change: ({ cell }) => <PercentChange value={cell?.value ?? null} />,
 	sparkline: ({ cell, row, window }) =>
 		window && cell?.series ? (
-			<PriceHistoryChart
+			<PriceSparkline
 				prices={cell.series}
 				symbol={row.symbol}
 				window={window}
@@ -57,12 +57,3 @@ export const cellRenderers: Record<TableColumnKind, CellRenderer> = {
 	count: ({ cell }) => cell?.value ?? "—",
 	number: ({ cell }) => (cell?.value == null ? "—" : formatNumber(cell.value)),
 };
-
-function OscillatorValue({ value }: { value: number | null }) {
-	if (value === null) {
-		return "—";
-	}
-	return (
-		<span style={{ color: oscillatorColor(value) }}>{value.toFixed(1)}</span>
-	);
-}

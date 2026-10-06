@@ -66,6 +66,16 @@ export class LiveCandlesClient {
 		}
 	}
 
+	// Subscribing again to a subscribed chart makes the backend send a new
+	// snapshot of it.
+	resync(symbol: string, interval: CandleInterval): void {
+		if (!this.ready) return;
+		const subscription = this.subscriptions.find(
+			(item) => item.symbol === symbol && item.interval === interval,
+		);
+		if (subscription) this.send({ type: "subscribe", ...subscription });
+	}
+
 	disconnect(): void {
 		if (this.stopped) return;
 		this.stopped = true;

@@ -4,6 +4,7 @@ import type { PriceAlert } from "@/api/generated/models";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { TargetChange } from "@/features/price-alerts/target-change";
 import { sortAlertsDescending } from "@/features/price-alerts/utils";
+import { formatNumber } from "@/utils/number-format";
 
 interface PriceAlertListProps {
 	alerts: readonly PriceAlert[];
@@ -23,7 +24,7 @@ export function PriceAlertList({
 	return sortAlertsDescending(alerts).map((alert) => (
 		<Group justify="space-between" key={alert.id} wrap="nowrap">
 			<Text ff="monospace" fw={600}>
-				{alert.target} USDT
+				{formatNumber(alert.target)} USDT
 			</Text>
 			<Group gap="xs" wrap="nowrap">
 				<TargetChange source={priceSource} target={alert.target} />

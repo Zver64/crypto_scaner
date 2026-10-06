@@ -15,7 +15,7 @@ import { resolvedTheme } from "@/app/theme";
 import type {
 	ChartInterval,
 	ChartIntervalOption,
-} from "@/components/price-history-chart/types";
+} from "@/features/candle-chart/types";
 
 export const chartIntervalOptions: readonly [
 	ChartIntervalOption,

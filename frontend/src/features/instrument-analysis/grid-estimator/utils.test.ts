@@ -3,26 +3,34 @@ import { describe, expect, it } from "vitest";
 import {
 	DEFAULT_MARKUPS,
 	LOWER_MARKUP_MAX_PERCENT,
+	UPPER_MARKUP_MAX_PERCENT,
 } from "@/features/instrument-analysis/grid-estimator/config";
 import {
 	calculateFuturesGridInput,
 	calculateSpotGridInput,
+	defaultInvestment,
 	futuresGridEstimateValues,
+	gridBounds,
+	gridCountForRange,
 	gridCountForStep,
 	gridMarketEstimate,
 	gridRecommendation,
+	investmentFromUsdt,
 	latestAvailableCandle,
 	liquidationRangeBar,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
-	spotGridBounds,
+	lowerPriceLimitError,
+	markupScaleLabels,
+	profitSplitRows,
 	spotGridEstimateValues,
 	spotGridMinimumStepPercent,
 	spotGridProfitSplits,
 	upperMarkupPercent,
 	upperPriceFromMarkup,
+	upperPriceLimitError,
 } from "@/features/instrument-analysis/grid-estimator/utils";
-import type { GridType } from "@/utils/calculator/spot-grid";
+import type { GridType } from "@/utils/calculator/types";
 
 const validInput = {
 	lowerPrice: "100",
@@ -40,9 +48,7 @@ const zeroValues = {
 			feeCost: "0 USDT",
 			feeSegmentPercent: 0,
 			feeShareOfGross: "0% of gross",
-			grossProfit: "0 USDT",
 			isLoss: false,
-			label: "Every trade",
 		},
 	],
 };
@@ -55,7 +61,7 @@ describe("spot grid recommendations", () => {
 		open: 99,
 		open_time: "2026-09-01T00:00:00Z",
 	};
-	const bounds = spotGridBounds([candle, null], null);
+	const bounds = gridBounds("spot", [candle, null], null);
 	const at = (anchor: number) => ({ ...bounds, anchor });
 
 	it("uses Decimal arithmetic for 0%, 5%, and 50% markup", () => {
@@ -182,7 +188,7 @@ describe("spot grid recommendations", () => {
 		});
 		expect(
 			gridRecommendation(
-				spotGridBounds([{ ...candle, close: Number.NaN }], null),
+				gridBounds("spot", [{ ...candle, close: Number.NaN }], null),
 				1,
 			).input,
 		).toEqual({
@@ -231,9 +237,7 @@ describe("calculateSpotGridInput", () => {
 					feeCost: "0.2419 USDT",
 					feeSegmentPercent: 2.1989,
 					feeShareOfGross: "2.199% of gross",
-					grossProfit: "11 USDT",
 					isLoss: false,
-					label: "Every trade",
 				},
 			],
 		});
@@ -252,7 +256,6 @@ describe("calculateSpotGridInput", () => {
 				feeCost: "0.2399 USDT",
 				feeSegmentPercent: 2.3988,
 				feeShareOfGross: "2.399% of gross",
-				grossProfit: "10 USDT",
 				isLoss: false,
 				label: "Lowest-profit trade",
 			},
@@ -263,7 +266,6 @@ describe("calculateSpotGridInput", () => {
 				feeCost: "0.2419 USDT",
 				feeSegmentPercent: 2.1989,
 				feeShareOfGross: "2.199% of gross",
-				grossProfit: "11 USDT",
 				isLoss: false,
 				label: "Highest-profit trade",
 			},
@@ -280,9 +282,9 @@ describe("calculateSpotGridInput", () => {
 
 		const originalSplits = spotGridProfitSplits(original.estimate);
 		const doubledSplits = spotGridProfitSplits(doubled.estimate);
-		expect(doubledSplits.map((split) => split.grossProfit)).toEqual([
-			"20 USDT",
-			"22 USDT",
+		expect(doubledSplits.map((split) => split.cleanProfit)).toEqual([
+			"19.52 USDT",
+			"21.52 USDT",
 		]);
 		expect(doubledSplits.map((split) => split.feeShareOfGross)).toEqual(
 			originalSplits.map((split) => split.feeShareOfGross),
@@ -312,9 +314,7 @@ describe("calculateSpotGridInput", () => {
 				feeCost: "0.2001 USDT",
 				feeSegmentPercent: 100,
 				feeShareOfGross: "200.1% of gross",
-				grossProfit: "0.1 USDT",
 				isLoss: true,
-				label: "Every trade",
 			},
 		]);
 	});
@@ -363,7 +363,7 @@ describe("calculateFuturesGridInput", () => {
 
 		expect(calculation?.error).toBeNull();
 		expect(values.profitSplits.map((split) => split.label)).toEqual([
-			"Every trade",
+			undefined,
 		]);
 	});
 
@@ -449,5 +449,164 @@ describe("liquidationRangeBar", () => {
 		expect(bar.currentPosition).toBeNull();
 		expect(bar.gridStartPosition).toBeCloseTo((5 / 110) * 100);
 		expect(bar.summary).toBe("No liquidation");
+	});
+});
+
+describe("gridBounds with Binance limits", () => {
+	const limits = {
+		askMultiplierUp: 1.5,
+		averagePrice: 100,
+		bidMultiplierDown: 0.25,
+		maxPrice: 140,
+		minPrice: 0.01,
+		tickSize: 0.5,
+	};
+	const bounds = gridBounds("spot", undefined, limits);
+
+	it("limits spot prices to the filter share and the symbol maximum", () => {
+		// 100 × (1 − 0.75 × 0.85) = 36.25; min(140, 100 × (1 + 0.5 × 0.85)).
+		expect(bounds.minPrice?.toString()).toBe("36.25");
+		expect(bounds.maxPrice?.toString()).toBe("140");
+		expect(bounds).toMatchObject({
+			anchor: 100,
+			lowerMarkupMax: 63.75,
+			upperMarkupMax: 40,
+		});
+	});
+
+	it("rounds markup maximums down and caps them", () => {
+		expect(
+			gridBounds("spot", undefined, { ...limits, bidMultiplierDown: 0.333 })
+				.lowerMarkupMax,
+		).toBe(56.69);
+		expect(
+			gridBounds("spot", undefined, {
+				...limits,
+				askMultiplierUp: 5,
+				maxPrice: 0,
+			}).upperMarkupMax,
+		).toBe(200);
+		expect(
+			gridBounds("spot", undefined, {
+				...limits,
+				bidMultiplierDown: 0,
+				minPrice: 0,
+			}).lowerMarkupMax,
+		).toBe(50);
+	});
+
+	it("rounds prices to the tick size and keeps them inside the limits", () => {
+		expect(upperPriceFromMarkup(bounds, 5.3)).toBe("105.5");
+		expect(lowerPriceFromMarkup(bounds, 10.3)).toBe("89.5");
+		expect(upperPriceFromMarkup(bounds, 50)).toBe("140");
+		expect(lowerPriceFromMarkup(bounds, 63.75)).toBe("36.5");
+	});
+
+	it("explains prices outside the limits", () => {
+		expect(lowerPriceLimitError(bounds, "36", "USDT")).toBe(
+			"Binance minimum is 36.5 USDT",
+		);
+		expect(lowerPriceLimitError(bounds, "36.25", "USDT")).toBeNull();
+		expect(upperPriceLimitError(bounds, "140.5", "USDT")).toBe(
+			"Binance maximum is 140 USDT",
+		);
+		expect(upperPriceLimitError(bounds, "140", "USDT")).toBeNull();
+		expect(upperPriceLimitError(bounds, "", "USDT")).toBeNull();
+	});
+
+	it.each([
+		"usdm",
+		"coinm",
+	] as const)("does not apply the spot limits to %s grids", (market) => {
+		const futures = gridBounds(market, undefined, limits);
+
+		expect(futures).toEqual({
+			anchor: 100,
+			lowerMarkupMax: LOWER_MARKUP_MAX_PERCENT,
+			maxPrice: null,
+			minPrice: null,
+			tickSize: null,
+			upperMarkupMax: UPPER_MARKUP_MAX_PERCENT,
+		});
+		expect(upperPriceLimitError(futures, "1000", "USDT")).toBeNull();
+		expect(lowerPriceFromMarkup(futures, 10.3)).toBe("89.7");
+	});
+});
+
+describe("investments", () => {
+	it("converts USDT into the coin only for COIN-M grids", () => {
+		expect(investmentFromUsdt("usdm", null, "1000")).toBe("1000");
+		expect(investmentFromUsdt("coinm", 40_000, "1000")).toBe("0.025");
+		expect(investmentFromUsdt("coinm", 0.1, "1000")).toBe("10000");
+		expect(investmentFromUsdt("coinm", null, "1000")).toBeNull();
+	});
+
+	it("starts COIN-M grids at the default worth, or one coin without a price", () => {
+		expect(defaultInvestment("spot", null)).toBe("1000");
+		expect(defaultInvestment("coinm", 3)).toBe("333.3");
+		expect(defaultInvestment("coinm", null)).toBe("1");
+	});
+});
+
+describe("markupScaleLabels", () => {
+	it("labels the default markup only inside the slider", () => {
+		expect(markupScaleLabels(50, 5)).toEqual([
+			{ label: "0%", position: 0 },
+			{ label: "5%", position: 10 },
+			{ label: "50%", position: 100 },
+		]);
+		expect(markupScaleLabels(4, 10)).toEqual([
+			{ label: "0%", position: 0 },
+			{ label: "4%", position: 100 },
+		]);
+	});
+});
+
+describe("gridCountForRange", () => {
+	const range = {
+		gridType: "geometric",
+		lowerPrice: "1230",
+		rangePercent: 1,
+		upperPrice: "1640",
+	} as const;
+
+	it("derives the count of a range wide enough for one step", () => {
+		expect(gridCountForRange(range, "40", null, 0)).toEqual({
+			error: null,
+			gridCount: gridCountForStep("1640", "1230", 1, "geometric"),
+		});
+	});
+
+	it("keeps the count and explains a range narrower than one step", () => {
+		expect(
+			gridCountForRange({ ...range, lowerPrice: "1639" }, "40", null, 0),
+		).toEqual({
+			error:
+				"The price range is narrower than one 1% step, so the grid count is unchanged",
+			gridCount: "40",
+		});
+	});
+
+	it("keeps the count without an error for an invalid range or no step", () => {
+		expect(
+			gridCountForRange({ ...range, upperPrice: "" }, "40", null, 0),
+		).toEqual({ error: null, gridCount: "40" });
+		expect(
+			gridCountForRange({ ...range, rangePercent: 0 }, "40", null, 0),
+		).toEqual({ error: null, gridCount: "40" });
+	});
+});
+
+describe("profitSplitRows", () => {
+	it("leaves a single trade unlabelled", () => {
+		const colors = { fee: "orange", profit: "green" };
+		const rows = profitSplitRows(
+			spotGridEstimateValues(null).profitSplits,
+			colors,
+		);
+
+		expect(rows.map(({ key, label }) => ({ key, label }))).toEqual([
+			{ key: "every-trade", label: undefined },
+		]);
 	});
 });

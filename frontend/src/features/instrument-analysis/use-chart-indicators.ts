@@ -11,8 +11,8 @@ import type {
 	CandleInterval,
 	ChartIndicatorDefinition,
 } from "@/api/generated/models";
-import type { ChartIndicatorOptions } from "@/components/price-history-chart";
 import { unexpectedApiError } from "@/features/analysis/api-error";
+import type { ChartIndicatorOptions } from "@/features/candle-chart";
 import {
 	type ChartCatalogs,
 	chartIntervals,

@@ -15,7 +15,10 @@ const queryClient = new QueryClient();
 
 const router = getRouter();
 
-const rootElement = document.getElementById("app")!;
+const rootElement = document.getElementById("app");
+if (!rootElement) {
+	throw new Error("The #app root element is missing from index.html.");
+}
 
 if (!rootElement.innerHTML) {
 	const root = ReactDOM.createRoot(rootElement);

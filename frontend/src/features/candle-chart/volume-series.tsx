@@ -5,12 +5,12 @@ import {
 	volumeColors,
 	volumePriceScaleOptions,
 	volumeSeriesOptions,
-} from "@/components/price-history-chart/config";
+} from "@/features/candle-chart/config";
 import type {
 	ChartCandleSlot,
 	PriceCandle,
-} from "@/components/price-history-chart/types";
-import { createVolumeData } from "@/components/price-history-chart/utils";
+} from "@/features/candle-chart/types";
+import { createVolumeData } from "@/features/candle-chart/utils";
 
 interface VolumeSeriesProps {
 	candles: readonly PriceCandle[];

@@ -1,6 +1,6 @@
 import { useComputedColorScheme } from "@mantine/core";
 import { PriceLine } from "@/components/lightweight-chart";
-import { minMaxPriceLineOptions } from "@/components/price-history-chart/config";
+import { minMaxPriceLineOptions } from "@/features/candle-chart/config";
 
 interface MinMaxPriceLinesProps {
 	max: number;

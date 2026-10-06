@@ -11,8 +11,8 @@ import {
 import type { DeepPartial, Time, TimeChartOptions } from "lightweight-charts";
 import { memo, useCallback, useMemo, useState } from "react";
 import { ChartCanvas } from "@/components/lightweight-chart";
-import { CandleSeries } from "@/components/price-history-chart/candle-series";
-import { ChartReadout } from "@/components/price-history-chart/chart-readout";
+import { CandleSeries } from "@/features/candle-chart/candle-series";
+import { ChartReadout } from "@/features/candle-chart/chart-readout";
 import {
 	barSpacing,
 	chartOptions as baseChartOptions,
@@ -22,19 +22,19 @@ import {
 	indicatorPaneHeight,
 	loadOlderThreshold,
 	minVisibleBars,
-} from "@/components/price-history-chart/config";
-import { IndicatorLegend } from "@/components/price-history-chart/indicator-legend";
-import { LiveStatus } from "@/components/price-history-chart/live-status";
-import { OverlayIndicatorSeries } from "@/components/price-history-chart/overlay-indicator-series";
-import { PaneIndicatorSeries } from "@/components/price-history-chart/pane-indicator-series";
+} from "@/features/candle-chart/config";
+import { IndicatorLegend } from "@/features/candle-chart/indicator-legend";
+import { LiveStatus } from "@/features/candle-chart/live-status";
+import { OverlayIndicatorSeries } from "@/features/candle-chart/overlay-indicator-series";
+import { PaneIndicatorSeries } from "@/features/candle-chart/pane-indicator-series";
 import type {
 	ChartCandle,
 	ChartInterval,
 	PriceHistoryChartProps,
-} from "@/components/price-history-chart/types";
-import { useChartViewport } from "@/components/price-history-chart/use-chart-viewport";
-import { usePriceFormat } from "@/components/price-history-chart/use-price-format";
-import { usePriceHistory } from "@/components/price-history-chart/use-price-history";
+} from "@/features/candle-chart/types";
+import { useChartViewport } from "@/features/candle-chart/use-chart-viewport";
+import { usePriceFormat } from "@/features/candle-chart/use-price-format";
+import { usePriceHistory } from "@/features/candle-chart/use-price-history";
 import {
 	createCandlestickData,
 	createIndicatorData,
@@ -42,8 +42,8 @@ import {
 	createIndicatorPanes,
 	createMarkerData,
 	formatChartTime,
-} from "@/components/price-history-chart/utils";
-import { VolumeSeries } from "@/components/price-history-chart/volume-series";
+} from "@/features/candle-chart/utils";
+import { VolumeSeries } from "@/features/candle-chart/volume-series";
 
 export type {
 	ChartIndicatorOptions,
@@ -52,7 +52,7 @@ export type {
 	ChartReadoutOptions,
 	PriceHistorySnapshot,
 	PriceHistorySource,
-} from "@/components/price-history-chart/types";
+} from "@/features/candle-chart/types";
 
 const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
 	label,
@@ -153,9 +153,9 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		threshold: loadOlderThreshold,
 	});
 
-	const selectInterval = (value: string) => {
+	const selectInterval = (value: ChartInterval) => {
 		setActiveCandle(null);
-		setInterval(value as ChartInterval);
+		setInterval(value);
 	};
 	const readoutCandle = activeCandle ?? candles.at(-1);
 	const legendSlotIndex = activeCandle
@@ -171,7 +171,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	return (
 		<Paper component="section" p={paperPadding}>
 			<Stack gap="md">
-				<SegmentedControl
+				<SegmentedControl<ChartInterval>
 					data={intervalOptions}
 					fullWidth
 					onChange={selectInterval}

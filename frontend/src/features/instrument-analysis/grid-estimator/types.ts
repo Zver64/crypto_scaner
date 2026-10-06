@@ -1,9 +1,14 @@
 import type Decimal from "decimal.js";
+import type { ComponentProps } from "react";
+import type { SegmentedValueGroup } from "@/components/segmented-value-group";
 import type { ArithmeticSpotGridEstimate } from "@/utils/calculator/arithmetic-spot-grid";
 import type { FuturesGridEstimate } from "@/utils/calculator/futures-grid";
 import type { GeometricSpotGridEstimate } from "@/utils/calculator/geometric-spot-grid";
-import type { GridType, SpotGridInput } from "@/utils/calculator/spot-grid";
-import type { PositionDirection } from "@/utils/calculator/types";
+import type {
+	GridInput,
+	GridType,
+	PositionDirection,
+} from "@/utils/calculator/types";
 
 export type SpotGridEstimate =
 	| ArithmeticSpotGridEstimate
@@ -16,7 +21,7 @@ export interface GridCalculation<Estimate> {
 
 export type SpotGridCalculation = GridCalculation<SpotGridEstimate>;
 
-export interface SpotGridProfitSplit {
+export interface GridProfitSplit {
 	cleanProfit: string;
 	// Net return of the trade relative to its order, e.g. "0.52% per trade".
 	cleanReturnPercent: string;
@@ -24,9 +29,26 @@ export interface SpotGridProfitSplit {
 	feeCost: string;
 	feeSegmentPercent: number;
 	feeShareOfGross: string;
-	grossProfit: string;
 	isLoss: boolean;
-	label: string;
+	// Absent when every trade of the grid shows the same result.
+	label?: string;
+}
+
+/** The amounts of one grid trade, in the margin currency. */
+export interface GridTradeAmounts {
+	grossProfit: Decimal;
+	profit: Decimal;
+	profitPercent: Decimal;
+}
+
+export type ProfitSplitRow = ComponentProps<
+	typeof SegmentedValueGroup
+>["rows"][number];
+
+/** Theme colors of the profit bar segments. */
+export interface ProfitSplitColors {
+	fee: string;
+	profit: string;
 }
 
 export type PriceRounding = "ceil" | "floor" | undefined;
@@ -42,11 +64,11 @@ export interface SpotGridLimits {
 }
 
 /**
- * The price both markups are measured from and the price range a Binance grid
- * bot accepts. Without the Binance limits the anchor is the latest hourly
- * close and the prices are not limited.
+ * The price both markups are measured from and, for spot grids, the price
+ * range a Binance spot grid bot accepts. Without the Binance limits the anchor
+ * is the latest hourly close and the prices are not limited.
  */
-export interface SpotGridBounds {
+export interface GridBounds {
 	anchor: number | null;
 	lowerMarkupMax: number;
 	maxPrice: Decimal | null;
@@ -55,10 +77,8 @@ export interface SpotGridBounds {
 	upperMarkupMax: number;
 }
 
-export interface SpotGridRecommendation {
-	input: SpotGridInput;
-	hasAnchor: boolean;
-	hasHourlyVolatility: boolean;
+export interface GridRecommendation {
+	input: GridInput;
 	lowerMarkup: number;
 	upperMarkup: number;
 }
@@ -81,7 +101,7 @@ export interface LiquidationRangeBarLayout {
 }
 
 export interface GridEstimateValues {
-	profitSplits: SpotGridProfitSplit[];
+	profitSplits: GridProfitSplit[];
 }
 
 export type FuturesMarket = "usdm" | "coinm";
@@ -99,4 +119,28 @@ export interface GridMarketEstimate {
 export interface GridMarkups {
 	lower?: number;
 	upper: number;
+}
+
+export type GridEstimatorFormValues = GridInput & {
+	// Futures only.
+	direction: PositionDirection;
+	gridType: GridType;
+	// Futures only.
+	leverage: number;
+	lowerMarkup: number;
+	markup: number;
+	rangePercent: number;
+};
+
+export type GridInputField = keyof GridInput;
+
+export type GridRangeValues = Pick<
+	GridEstimatorFormValues,
+	"gridType" | "lowerPrice" | "rangePercent" | "upperPrice"
+>;
+
+/** A range's grid count, or the kept count and why none was derived. */
+export interface GridRangeCount {
+	error: string | null;
+	gridCount: string;
 }

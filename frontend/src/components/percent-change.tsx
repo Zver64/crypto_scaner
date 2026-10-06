@@ -1,3 +1,5 @@
+import { useMantineTheme } from "@mantine/core";
+import { themeToVars } from "@mantine/vanilla-extract";
 import { formatRangePercent } from "@/utils/range-percent";
 
 interface PercentChangeProps {
@@ -5,12 +7,13 @@ interface PercentChangeProps {
 }
 
 export function PercentChange({ value }: PercentChangeProps) {
+	const { colors } = themeToVars(useMantineTheme());
 	const color =
 		value === null || value === 0
 			? undefined
 			: value > 0
-				? "var(--mantine-color-green-6)"
-				: "var(--mantine-color-red-6)";
+				? colors.green[6]
+				: colors.red[6];
 
 	return (
 		<span style={{ color }}>

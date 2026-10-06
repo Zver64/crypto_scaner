@@ -5,11 +5,11 @@ import {
 } from "lightweight-charts";
 import { useMemo } from "react";
 import { Series } from "@/components/lightweight-chart";
-import { overlayIndicatorSeriesOptions } from "@/components/price-history-chart/config";
+import { overlayIndicatorSeriesOptions } from "@/features/candle-chart/config";
 import type {
 	ChartIndicatorLine,
 	ChartIndicatorSlot,
-} from "@/components/price-history-chart/types";
+} from "@/features/candle-chart/types";
 
 interface OverlayIndicatorSeriesProps {
 	data: readonly ChartIndicatorSlot[];

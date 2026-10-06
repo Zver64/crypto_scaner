@@ -9,6 +9,9 @@ import {
 	validateCandlePage,
 } from "@/features/instrument-analysis/candle-page";
 
+// The 7-day window moves with the clock, so the history refreshes hourly.
+const refreshMilliseconds = 60 * 60 * 1_000;
+
 // Hourly candles for the page's 7d change and spot grid, not for the chart.
 export function useHourlyHistory(symbol: string, enabled: boolean) {
 	const query = useListInstrumentCandlesInfinite<
@@ -21,8 +24,9 @@ export function useHourlyHistory(symbol: string, enabled: boolean) {
 				enabled,
 				getNextPageParam: nextCandlePageParam,
 				initialPageParam: undefined,
+				refetchInterval: refreshMilliseconds,
 				retry: false,
-				staleTime: Number.POSITIVE_INFINITY,
+				staleTime: refreshMilliseconds,
 				select: (history) => ({
 					...history,
 					pages: history.pages.map((page) =>

@@ -30,6 +30,12 @@ class FakeSocket {
 	}
 }
 
+function firstSocket(): FakeSocket {
+	const socket = FakeSocket.instances[0];
+	if (!socket) throw new Error("The client opened no socket.");
+	return socket;
+}
+
 afterEach(() => {
 	vi.unstubAllGlobals();
 	FakeSocket.instances = [];
@@ -52,7 +58,7 @@ it("subscribes to every chart interval on one socket and retains them while swit
 	}));
 	client.setSubscriptions(subscriptions);
 	client.connect();
-	const socket = FakeSocket.instances[0]!;
+	const socket = firstSocket();
 	socket.emit("open");
 	await vi.waitFor(() => expect(socket.messages).not.toHaveLength(0));
 	// Subscriptions follow authenticate without waiting for its reply.
@@ -82,7 +88,7 @@ it("updates only changed subscriptions without reopening the socket", async () =
 	});
 	client.setSubscriptions([{ symbol: "BTC", interval: "1h" }]);
 	client.connect();
-	const socket = FakeSocket.instances[0]!;
+	const socket = firstSocket();
 	socket.emit("open");
 	await vi.waitFor(() => expect(socket.messages).toHaveLength(2));
 	socket.emit("message", JSON.stringify({ type: "authenticated" }));

@@ -38,11 +38,13 @@ function cachedFormatter<K>(
 // Keeps the whole integer part and lets Intl pick whichever of "whole number"
 // or "four significant digits" shows more, so 5785.4 formats as 5,785 and
 // 0.012345 as 0.01235. An optional fraction digit limit then drops values below
-// that resolution (such as floating-point noise) to zero.
+// that resolution (such as floating-point noise) to zero. Pass useGrouping
+// false for input values, which must not contain group separators.
 export function formatNumber(
 	value: NumericValue,
 	maximumFractionDigits = defaultMaximumFractionDigits,
 	roundingMode: RoundingMode = "halfExpand",
+	useGrouping = true,
 ): string {
 	const adaptive = cachedFormatter(adaptiveNumberFormatters, roundingMode, {
 		maximumFractionDigits: 0,
@@ -53,8 +55,13 @@ export function formatNumber(
 	}).format(toNumeric(value));
 	return cachedFormatter(
 		fractionLimitFormatters,
-		`${maximumFractionDigits}:${roundingMode}`,
-		{ maximumFractionDigits, roundingMode, signDisplay: "negative" },
+		`${maximumFractionDigits}:${roundingMode}:${useGrouping}`,
+		{
+			maximumFractionDigits,
+			roundingMode,
+			signDisplay: "negative",
+			useGrouping,
+		},
 	).format(adaptive as Intl.StringNumericLiteral);
 }
 

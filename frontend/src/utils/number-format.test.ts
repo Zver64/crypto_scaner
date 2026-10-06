@@ -34,6 +34,13 @@ describe("formatNumber", () => {
 		expect(formatNumber("1597.9", undefined, "floor")).toBe("1,597");
 		expect(formatNumber("1.09999", undefined, "floor")).toBe("1.099");
 	});
+
+	it("leaves out group separators on request", () => {
+		expect(formatNumber("12345678.9", undefined, "floor", false)).toBe(
+			"12345678",
+		);
+		expect(formatNumber("12345678.9")).toBe("12,345,679");
+	});
 });
 
 describe("formatCompactNumber", () => {

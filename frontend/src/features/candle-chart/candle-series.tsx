@@ -9,17 +9,14 @@ import { Series, SeriesMarkers } from "@/components/lightweight-chart";
 import {
 	candlePriceScaleOptions,
 	candleSeriesOptions,
-} from "@/components/price-history-chart/config";
-import { MinMaxPriceLines } from "@/components/price-history-chart/min-max-price-lines";
+} from "@/features/candle-chart/config";
+import { MinMaxPriceLines } from "@/features/candle-chart/min-max-price-lines";
 import type {
 	ChartCandle,
 	ChartCandleSlot,
 	ChartMarker,
-} from "@/components/price-history-chart/types";
-import {
-	getVisibleMinMax,
-	isChartCandle,
-} from "@/components/price-history-chart/utils";
+} from "@/features/candle-chart/types";
+import { getVisibleMinMax, isChartCandle } from "@/features/candle-chart/utils";
 
 interface CandleSeriesProps {
 	data: readonly ChartCandleSlot[];

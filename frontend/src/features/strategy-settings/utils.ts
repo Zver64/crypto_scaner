@@ -12,7 +12,14 @@ import {
 	parseCEL,
 } from "react-querybuilder/parseCEL";
 import type { StrategyVariable } from "@/api/generated/models";
-import { chartIntervalOptions } from "@/components/price-history-chart/config";
+import { chartIntervalOptions } from "@/features/candle-chart/config";
+import {
+	anyField,
+	arithmeticTokens,
+	comparisonTokens,
+	operandBoundaries,
+	tokenPattern,
+} from "@/features/strategy-settings/constants";
 import {
 	callSource,
 	expressionComplete,
@@ -24,6 +31,7 @@ import {
 import type {
 	StrategyOperator,
 	StrategyQuery,
+	Token,
 } from "@/features/strategy-settings/types";
 
 export function isRangeOperator(operator: string): boolean {
@@ -148,19 +156,6 @@ export function importedStrategyQuery(
 		: undefined;
 }
 
-const tokenPattern =
-	/\s+|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|\.\d+|[A-Za-z_]\w*|&&|\|\||[<>=!]=|./g;
-const comparisonTokens = [">", ">=", "<", "<=", "==", "!="];
-const arithmeticTokens = ["+", "-", "*", "/", "%"];
-// Tokens that end an operand of a comparison at its own depth.
-const operandBoundaries = ["&&", "||", ",", "?", ":", ...comparisonTokens];
-
-interface Token {
-	text: string;
-	start: number;
-	end: number;
-}
-
 // The parser restores arithmetic operands of comparisons only in
 // parentheses, as the builder writes them, so h_volume >= 1.5 * h_sma becomes
 // h_volume >= (1.5 * h_sma). A negative number stays bare.
@@ -237,8 +232,6 @@ function needsParentheses(operand: readonly Token[]): boolean {
 		return depth === 0 && arithmeticTokens.includes(text);
 	});
 }
-
-const anyField = { fieldExists: () => true };
 
 // Whether restoring expression dropped conditions the builder cannot show.
 // The builder may rewrite kept conditions, such as dropping outer parentheses

@@ -1,10 +1,10 @@
 import type { PriceFormatCustom } from "lightweight-charts";
 import { useMemo } from "react";
-import type { ChartCandleSlot } from "@/components/price-history-chart/types";
+import type { ChartCandleSlot } from "@/features/candle-chart/types";
 import {
 	chartPriceResolution,
 	formatPrice,
-} from "@/components/price-history-chart/utils";
+} from "@/features/candle-chart/utils";
 
 // Price format shared by the candles and every overlay on their price scale,
 // so all axis labels in the candle pane look the same.

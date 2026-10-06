@@ -10,16 +10,16 @@ import {
 	paneIndicatorLevelOptions,
 	paneIndicatorPriceScaleOptions,
 	paneIndicatorSeriesOptions,
-} from "@/components/price-history-chart/config";
+} from "@/features/candle-chart/config";
 import type {
 	ChartIndicatorLine,
 	ChartIndicatorScale,
 	ChartIndicatorSlot,
-} from "@/components/price-history-chart/types";
+} from "@/features/candle-chart/types";
 import {
 	fitPaneIndicatorScale,
 	valueResolution,
-} from "@/components/price-history-chart/utils";
+} from "@/features/candle-chart/utils";
 import { formatNumber } from "@/utils/number-format";
 
 interface PaneIndicatorSeriesProps {

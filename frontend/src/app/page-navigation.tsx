@@ -1,5 +1,5 @@
-import { Box, Group, Paper, Title, VisuallyHidden } from "@mantine/core";
-import { Link } from "@tanstack/react-router";
+import { Group, Paper, Title, VisuallyHidden } from "@mantine/core";
+import { PageLink } from "@/app/page-link";
 
 type Page = "favorites" | "market-scan" | "top-coins";
 
@@ -32,42 +32,5 @@ export function PageNavigation({ current, title }: PageNavigationProps) {
 				</Group>
 			</Paper>
 		</>
-	);
-}
-
-interface PageLinkProps {
-	active: boolean;
-	label: string;
-	to: "/" | "/favorites" | "/top-coins";
-	withDivider?: boolean;
-}
-
-function PageLink({ active, label, to, withDivider }: PageLinkProps) {
-	return (
-		<Box
-			aria-current={active ? "page" : undefined}
-			bg={active ? "var(--mantine-color-default-hover)" : "transparent"}
-			component={Link}
-			c="inherit"
-			fz="sm"
-			fw={600}
-			px="xs"
-			style={{
-				alignItems: "center",
-				borderInlineStart: withDivider
-					? "1px solid var(--mantine-color-default-border)"
-					: undefined,
-				display: "flex",
-				justifyContent: "center",
-				lineHeight: 1.2,
-				minHeight: 44,
-				textAlign: "center",
-				textDecoration: "none",
-				whiteSpace: "nowrap",
-			}}
-			to={to}
-		>
-			{label}
-		</Box>
 	);
 }

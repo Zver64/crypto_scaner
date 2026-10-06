@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { indicatorScale, scaleDraft } from "./utils";
+import { indicatorScale, scaleDraft } from "@/features/scanner-settings/utils";
 
 describe("indicator scale", () => {
 	it("round-trips a saved scale through the editor draft", () => {

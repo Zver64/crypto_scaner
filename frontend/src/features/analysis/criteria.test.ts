@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { defaultAnalysisCriteria, validateAnalysisCriteria } from "./criteria";
+import {
+	defaultAnalysisCriteria,
+	validateAnalysisCriteria,
+} from "@/features/analysis/criteria";
 
 describe("analysis criteria", () => {
 	it("accepts supported day and hour boundaries", () => {

@@ -17,7 +17,7 @@ import type {
 	ScannerIndicatorScale,
 	ScannerIndicatorUpdate,
 } from "@/api/generated/models";
-import { chartIntervalOptions } from "@/components/price-history-chart/config";
+import { chartIntervalOptions } from "@/features/candle-chart/config";
 import { ScannerIndicatorScaleEditor } from "@/features/scanner-settings/scanner-indicator-scale-editor";
 import {
 	formatParameters,

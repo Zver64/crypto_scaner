@@ -1,6 +1,6 @@
 import { List, Paper, Stack, Text } from "@mantine/core";
 import type { StrategyBacktest } from "@/api/generated/models";
-import { formatChartTime } from "@/components/price-history-chart/utils";
+import { formatChartTime } from "@/features/candle-chart/utils";
 
 interface BacktestAlertsProps {
 	backtest: StrategyBacktest;

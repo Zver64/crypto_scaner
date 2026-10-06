@@ -1,6 +1,6 @@
 import { expect, it } from "vitest";
+import { criteriaFromValidDraft } from "@/features/market-scan/form/utils";
 import { defaultMarketScanCriteria } from "@/features/market-scan/pipeline";
-import { criteriaFromValidDraft } from "./utils";
 
 it("rejects incomplete and invalid numeric drafts", () => {
 	expect(

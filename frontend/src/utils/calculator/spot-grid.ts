@@ -1,75 +1,63 @@
-import Decimal from "decimal.js";
+import type Decimal from "decimal.js";
+import {
+	assertSupportedGridValue,
+	GridDecimal,
+	gridLevels,
+	parseGridInput,
+} from "@/utils/calculator/grid";
+import type { GridInput, GridType } from "@/utils/calculator/types";
 
-export const SpotGridDecimal = Decimal.clone({
-	precision: 60,
-	maxE: 1000,
-	minE: -1000,
-	toExpNeg: -6,
-	toExpPos: 9,
-});
+const SPOT_GRID_FEE_RATE = new GridDecimal("0.001");
+const SPOT_GRID_ONE_MINUS_FEE = new GridDecimal(1).minus(SPOT_GRID_FEE_RATE);
 
-export const SPOT_GRID_FEE_RATE = new SpotGridDecimal("0.001");
-export const SPOT_GRID_ONE_MINUS_FEE = new SpotGridDecimal(1).minus(
-	SPOT_GRID_FEE_RATE,
-);
-export const SPOT_GRID_MAX_COUNT = 1000;
-
-export type GridType = "arithmetic" | "geometric";
-
-const MAX_INPUT_LENGTH = 80;
-const MAX_SIGNIFICANT_DIGITS = 50;
-const DECIMAL_INPUT = /^\+?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?$/i;
-
-export interface SpotGridInput {
-	gridCount: string;
-	investment: string;
-	lowerPrice: string;
-	upperPrice: string;
+export interface SpotGrid {
+	allocationPerBuy: Decimal;
+	gridCount: number;
+	levels: Decimal[];
+	lowerPrice: Decimal;
+	upperPrice: Decimal;
 }
 
-export function parseSpotGridDecimal(value: string, name: string): Decimal {
-	if (value.length > MAX_INPUT_LENGTH || !DECIMAL_INPUT.test(value)) {
-		throw new RangeError(`${name} must be a valid positive decimal`);
+/**
+ * Parses a spot grid with equal quote allocations: a buy order on every level
+ * but the upper one, which is a sell level. Rejects a grid whose buy orders
+ * would get a quantity outside the supported range.
+ */
+export function spotGrid(input: GridInput, gridType: GridType): SpotGrid {
+	const { gridCount, investment, lowerPrice, upperPrice } =
+		parseGridInput(input);
+	const levels = gridLevels(lowerPrice, upperPrice, gridCount, gridType);
+	const allocationPerBuy = investment.div(gridCount);
+	assertSupportedGridValue(allocationPerBuy, "Allocation per buy", true);
+	for (const buyPrice of levels.slice(0, -1)) {
+		const netQuantity = allocationPerBuy
+			.div(buyPrice)
+			.times(SPOT_GRID_ONE_MINUS_FEE);
+		assertSupportedGridValue(netQuantity, "Net buy quantity", true);
 	}
-
-	const exponentText = value.match(/e([+-]?\d+)$/i)?.[1];
-	if (exponentText && Math.abs(Number(exponentText)) > 1000) {
-		throw new RangeError(`${name} exponent is outside the supported range`);
-	}
-
-	const coefficient = value.split(/e/i, 1)[0];
-	const significantDigits = coefficient
-		.replace(/^\+/, "")
-		.replace(".", "")
-		.replace(/^0+/, "").length;
-	if (significantDigits > MAX_SIGNIFICANT_DIGITS) {
-		throw new RangeError(`${name} has too many significant digits`);
-	}
-
-	const decimal = new SpotGridDecimal(value);
-	if (!decimal.isFinite() || !decimal.gt(0)) {
-		throw new RangeError(`${name} is outside the supported range`);
-	}
-	return decimal;
+	return { allocationPerBuy, gridCount, levels, lowerPrice, upperPrice };
 }
 
-export function parseSpotGridCount(value: string): number {
-	if (!/^\d+$/.test(value) || value.length > 4) {
-		throw new RangeError("Grid count must be a whole number");
-	}
-	const count = Number(value);
-	if (count < 1 || count > SPOT_GRID_MAX_COUNT) {
-		throw new RangeError(`Grid count must be from 1 to ${SPOT_GRID_MAX_COUNT}`);
-	}
-	return count;
+export interface SpotGridCycle {
+	profit: Decimal;
+	profitPercent: Decimal;
 }
 
-export function assertSupportedSpotGridValue(
-	value: Decimal,
-	name: string,
-	mustBePositive = false,
-): void {
-	if (!value.isFinite() || (mustBePositive && !value.gt(0))) {
-		throw new RangeError(`${name} is outside the supported range`);
-	}
+/**
+ * Returns the net result of buying `allocationPerBuy` at one level and selling
+ * the bought quantity at a level `sellToBuyRatio` higher, with the fee charged
+ * on both legs.
+ */
+export function spotGridCycle(
+	allocationPerBuy: Decimal,
+	sellToBuyRatio: Decimal,
+): SpotGridCycle {
+	const cycleReturn = sellToBuyRatio
+		.times(SPOT_GRID_ONE_MINUS_FEE.pow(2))
+		.minus(1);
+	const profit = allocationPerBuy.times(cycleReturn);
+	const profitPercent = cycleReturn.times(100);
+	assertSupportedGridValue(profit, "Cycle profit");
+	assertSupportedGridValue(profitPercent, "Cycle return percent");
+	return { profit, profitPercent };
 }

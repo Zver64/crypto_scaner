@@ -17,26 +17,28 @@ const longFixture: FuturesGridInput = {
 };
 
 describe("calculateFuturesGrid", () => {
-	it("fills every long order without leverage and is never liquidated", () => {
-		const result = calculateFuturesGrid(longFixture);
-
-		expect(result.allocationPerOrder.toString()).toBe("110");
-		expect(result.filledOrderCount).toBe(2);
-		expect(result.averageEntryPrice.toFixed(8)).toBe("104.76190476");
-		expect(result.liquidationPrice).toBeNull();
+	it("never liquidates an unleveraged long", () => {
+		expect(calculateFuturesGrid(longFixture).liquidationPrice).toBeNull();
 	});
 
-	it("fills orders beyond the current price at market", () => {
-		const result = calculateFuturesGrid({ ...longFixture, currentPrice: 105 });
+	it.each([
+		// 330 USDT at 110 and at 100; LP = (660 − 220) / (6.3 × 0.99).
+		{ currentPrice: 115, liquidationPrice: "70.54673721" },
+		// The 110 order fills at market at 105.
+		{ currentPrice: 105, liquidationPrice: "68.98250801" },
+		// Every order fills at market below the range.
+		{ currentPrice: 90, liquidationPrice: "60.60606061" },
+	])("fills orders beyond the current price $currentPrice at market", ({
+		currentPrice,
+		liquidationPrice,
+	}) => {
+		const result = calculateFuturesGrid({
+			...longFixture,
+			currentPrice,
+			leverage: 3,
+		});
 
-		// 110 USDT at 105, then 110 USDT at 100.
-		expect(result.averageEntryPrice.toFixed(8)).toBe("102.43902439");
-	});
-
-	it("fills every order at market when the current price is beyond the range", () => {
-		const result = calculateFuturesGrid({ ...longFixture, currentPrice: 90 });
-
-		expect(result.averageEntryPrice.toFixed(8)).toBe("90.00000000");
+		expect(result.liquidationPrice?.toFixed(8)).toBe(liquidationPrice);
 	});
 
 	it("liquidates a leveraged short above the grid once every order fills", () => {
@@ -48,9 +50,6 @@ describe("calculateFuturesGrid", () => {
 		});
 
 		// 330 USDT at 110 and 330 USDT at 121, with 220 USDT of margin.
-		expect(result.allocationPerOrder.toString()).toBe("330");
-		expect(result.filledOrderCount).toBe(2);
-		expect(result.averageEntryPrice.toFixed(8)).toBe("115.23809524");
 		expect(result.liquidationPrice?.toFixed(8)).toBe("152.12949866");
 	});
 
@@ -69,8 +68,6 @@ describe("calculateFuturesGrid", () => {
 
 		// The 55 order fills; LP = (150 − 100) / (150 / 55 × 0.99) lies
 		// above the 10 order, so it never fills.
-		expect(result.filledOrderCount).toBe(1);
-		expect(result.averageEntryPrice.toFixed(8)).toBe("55.00000000");
 		expect(result.liquidationPrice?.toFixed(8)).toBe("18.51851852");
 	});
 
@@ -128,9 +125,6 @@ describe("calculateFuturesGrid with inverse contracts", () => {
 		const result = calculateFuturesGrid(inverseFixture);
 
 		// 2 coins × 100 USD split into two 100 USD orders at 110 and 121.
-		expect(result.allocationPerOrder.toString()).toBe("100");
-		expect(result.filledOrderCount).toBe(2);
-		expect(result.averageEntryPrice.toFixed(8)).toBe("115.23809524");
 		expect(result.liquidationPrice).toBeNull();
 	});
 
@@ -153,7 +147,6 @@ describe("calculateFuturesGrid with inverse contracts", () => {
 		});
 
 		// LP = N(1 − MMR) / (K − M) with 315 USD orders at 110 and 121.
-		expect(result.allocationPerOrder.toString()).toBe("315");
 		expect(result.liquidationPrice?.toFixed(8)).toBe("179.89916567");
 	});
 
@@ -170,7 +163,6 @@ describe("calculateFuturesGrid with inverse contracts", () => {
 
 		// The 55 order fills; LP = 150 × 1.01 / (1 + 150 / 55) ≈ 40.6 lies
 		// above the 10 order, so it never fills.
-		expect(result.filledOrderCount).toBe(1);
 		expect(result.liquidationPrice?.toFixed(8)).toBe("40.64634146");
 	});
 

@@ -1,26 +1,29 @@
 import type Decimal from "decimal.js";
 import {
-	assertSupportedSpotGridValue,
-	type GridType,
-	parseSpotGridCount,
-	parseSpotGridDecimal,
-	SpotGridDecimal,
-	type SpotGridInput,
-} from "@/utils/calculator/spot-grid";
-import type { PositionDirection } from "@/utils/calculator/types";
+	assertSupportedGridValue,
+	extremes,
+	GridDecimal,
+	gridLevels,
+	parseGridInput,
+} from "@/utils/calculator/grid";
+import type {
+	GridInput,
+	GridType,
+	PositionDirection,
+} from "@/utils/calculator/types";
 
 // A common futures maker fee; grid orders are limit orders.
-export const FUTURES_GRID_FEE_RATE = new SpotGridDecimal("0.0002");
+export const FUTURES_GRID_FEE_RATE = new GridDecimal("0.0002");
 // A general maintenance margin rate rather than a per-symbol exchange bracket,
 // conservative for most symbols' first bracket.
-export const FUTURES_GRID_MAINTENANCE_MARGIN_RATE = new SpotGridDecimal("0.01");
+export const FUTURES_GRID_MAINTENANCE_MARGIN_RATE = new GridDecimal("0.01");
 export const FUTURES_GRID_MAX_LEVERAGE = 3;
 
 // Linear contracts are margined and settled in the quote currency; inverse
 // contracts have a fixed USD notional and are margined and settled in the coin.
 export type FuturesContract = "linear" | "inverse";
 
-export interface FuturesGridInput extends SpotGridInput {
+export interface FuturesGridInput extends GridInput {
 	contract: FuturesContract;
 	// The price the bot starts at; orders on its far side fill at market.
 	currentPrice: number;
@@ -38,13 +41,6 @@ export interface FuturesGridTrade {
 }
 
 export interface FuturesGridEstimate {
-	// Quote (USD) notional of each grid order.
-	allocationPerOrder: Decimal;
-	// Average entry price of the position at liquidation, or once every order
-	// has filled when the position is never liquidated.
-	averageEntryPrice: Decimal;
-	filledOrderCount: number;
-	gridCount: number;
 	// Null when the position can never be liquidated.
 	liquidationPrice: Decimal | null;
 	lowerPrice: Decimal;
@@ -53,34 +49,6 @@ export interface FuturesGridEstimate {
 	tradeMaximum: FuturesGridTrade;
 	tradeMinimum: FuturesGridTrade;
 	upperPrice: Decimal;
-}
-
-function gridLevels(
-	lowerPrice: Decimal,
-	upperPrice: Decimal,
-	gridCount: number,
-	gridType: GridType,
-): Decimal[] {
-	const step = upperPrice.minus(lowerPrice).div(gridCount);
-	const ratio =
-		gridType === "geometric"
-			? upperPrice.div(lowerPrice).pow(new SpotGridDecimal(1).div(gridCount))
-			: null;
-	const nextLevel = (level: Decimal) =>
-		ratio ? level.times(ratio) : level.plus(step);
-	const levels = [lowerPrice];
-	for (let index = 1; index <= gridCount; index += 1) {
-		// The upper level is exact rather than accumulated.
-		const level =
-			index === gridCount ? upperPrice : nextLevel(levels[index - 1]);
-		if (!level.gt(levels[index - 1])) {
-			throw new RangeError(
-				"Price range is too narrow at the supported precision",
-			);
-		}
-		levels.push(level);
-	}
-	return levels;
 }
 
 // Net result of one grid trade relative to its opening order in the margin
@@ -105,11 +73,11 @@ function gridTrade(
 		? closePrice.div(openPrice)
 		: openPrice.div(closePrice);
 	const netReturn = grossReturn.minus(
-		FUTURES_GRID_FEE_RATE.times(new SpotGridDecimal(1).plus(closeLegShare)),
+		FUTURES_GRID_FEE_RATE.times(new GridDecimal(1).plus(closeLegShare)),
 	);
 	const openAmount = isLinear ? allocation : allocation.div(openPrice);
 	const profit = openAmount.times(netReturn);
-	assertSupportedSpotGridValue(profit, "Trade profit");
+	assertSupportedGridValue(profit, "Trade profit");
 	return {
 		grossProfit: openAmount.times(grossReturn),
 		profit,
@@ -129,7 +97,7 @@ function liquidationPriceOf(
 	notional: Decimal,
 	margin: Decimal,
 ): Decimal | null {
-	const one = new SpotGridDecimal(1);
+	const one = new GridDecimal(1);
 	const mmr = FUTURES_GRID_MAINTENANCE_MARGIN_RATE;
 	let price: Decimal;
 	if (contract === "linear") {
@@ -145,7 +113,7 @@ function liquidationPriceOf(
 			.times(isLong ? one.plus(mmr) : one.minus(mmr))
 			.div(denominator);
 	}
-	assertSupportedSpotGridValue(price, "Liquidation price");
+	assertSupportedGridValue(price, "Liquidation price");
 	return price.gt(0) ? price : null;
 }
 
@@ -162,10 +130,8 @@ function liquidationPriceOf(
 export function calculateFuturesGrid(
 	input: FuturesGridInput,
 ): FuturesGridEstimate {
-	const lowerPrice = parseSpotGridDecimal(input.lowerPrice, "Lower price");
-	const upperPrice = parseSpotGridDecimal(input.upperPrice, "Upper price");
-	const investment = parseSpotGridDecimal(input.investment, "Investment");
-	const gridCount = parseSpotGridCount(input.gridCount);
+	const { gridCount, investment, lowerPrice, upperPrice } =
+		parseGridInput(input);
 	if (!Number.isFinite(input.currentPrice) || input.currentPrice <= 0) {
 		throw new RangeError("Current price must be a positive number");
 	}
@@ -178,23 +144,17 @@ export function calculateFuturesGrid(
 			`Leverage must be from 1 to ${FUTURES_GRID_MAX_LEVERAGE}`,
 		);
 	}
-	if (!upperPrice.gt(lowerPrice)) {
-		throw new RangeError("Upper price must be greater than lower price");
-	}
-	const currentPrice = new SpotGridDecimal(input.currentPrice);
+	const currentPrice = new GridDecimal(input.currentPrice);
 	const isLong = input.direction === "long";
 
 	const levels = gridLevels(lowerPrice, upperPrice, gridCount, input.gridType);
 	const isLinear = input.contract === "linear";
+	// Quote (USD) notional of each grid order.
 	const allocationPerOrder = investment
 		.times(input.leverage)
 		.times(isLinear ? 1 : currentPrice)
 		.div(gridCount);
-	assertSupportedSpotGridValue(
-		allocationPerOrder,
-		"Allocation per order",
-		true,
-	);
+	assertSupportedGridValue(allocationPerOrder, "Allocation per order", true);
 
 	// Long buy orders sit on every level but the upper one, short sell orders
 	// on every level but the lower one, in the order the price reaches them.
@@ -204,16 +164,14 @@ export function calculateFuturesGrid(
 	const reached = (liquidationPrice: Decimal, price: Decimal) =>
 		isLong ? liquidationPrice.gte(price) : liquidationPrice.lte(price);
 
-	let quantity = new SpotGridDecimal(0);
-	let notional = new SpotGridDecimal(0);
+	let quantity = new GridDecimal(0);
+	let notional = new GridDecimal(0);
 	let liquidationPrice: Decimal | null = null;
-	let filledOrderCount = 0;
 	for (const orderPrice of orderPrices) {
 		const fillPrice = filledAtMarket(orderPrice) ? currentPrice : orderPrice;
 		if (liquidationPrice && reached(liquidationPrice, fillPrice)) break;
 		quantity = quantity.plus(allocationPerOrder.div(fillPrice));
 		notional = notional.plus(allocationPerOrder);
-		filledOrderCount += 1;
 		liquidationPrice = liquidationPriceOf(
 			input.contract,
 			isLong,
@@ -222,46 +180,31 @@ export function calculateFuturesGrid(
 			investment,
 		);
 	}
-	assertSupportedSpotGridValue(quantity, "Position quantity", true);
-	const averageEntryPrice = notional.div(quantity);
-	assertSupportedSpotGridValue(averageEntryPrice, "Average entry price", true);
+	assertSupportedGridValue(quantity, "Position quantity", true);
 
-	let tradeMinimum: FuturesGridTrade | undefined;
-	let tradeMaximum: FuturesGridTrade | undefined;
-	let stepPercentMinimum: Decimal | undefined;
-	let stepPercentMaximum: Decimal | undefined;
-	for (let index = 0; index < gridCount; index += 1) {
-		const lower = levels[index];
+	const steps = levels.slice(0, -1).map((lower, index) => {
 		const upper = levels[index + 1];
-		const trade = gridTrade(
-			lower,
-			upper,
-			input.direction,
-			input.contract,
-			allocationPerOrder,
-		);
-		if (!tradeMinimum || trade.profit.lt(tradeMinimum.profit))
-			tradeMinimum = trade;
-		if (!tradeMaximum || trade.profit.gt(tradeMaximum.profit))
-			tradeMaximum = trade;
-		const stepPercent = upper.minus(lower).div(lower).times(100);
-		if (!stepPercentMinimum || stepPercent.lt(stepPercentMinimum))
-			stepPercentMinimum = stepPercent;
-		if (!stepPercentMaximum || stepPercent.gt(stepPercentMaximum))
-			stepPercentMaximum = stepPercent;
-	}
+		return {
+			percent: upper.minus(lower).div(lower).times(100),
+			trade: gridTrade(
+				lower,
+				upper,
+				input.direction,
+				input.contract,
+				allocationPerOrder,
+			),
+		};
+	});
+	const trades = extremes(steps, (step) => step.trade.profit);
+	const stepPercents = extremes(steps, (step) => step.percent);
 
 	return {
-		allocationPerOrder,
-		averageEntryPrice,
-		filledOrderCount,
-		gridCount,
 		liquidationPrice,
 		lowerPrice,
-		stepPercentMaximum: stepPercentMaximum as Decimal,
-		stepPercentMinimum: stepPercentMinimum as Decimal,
-		tradeMaximum: tradeMaximum as FuturesGridTrade,
-		tradeMinimum: tradeMinimum as FuturesGridTrade,
+		stepPercentMaximum: stepPercents.maximum.percent,
+		stepPercentMinimum: stepPercents.minimum.percent,
+		tradeMaximum: trades.maximum.trade,
+		tradeMinimum: trades.minimum.trade,
 		upperPrice,
 	};
 }

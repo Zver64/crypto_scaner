@@ -4,7 +4,7 @@ import {
 	validateMarketScanCriteria,
 	volatilityCriterionSelection,
 	volatilityEvaluation,
-} from "./criteria";
+} from "@/features/market-scan/criteria";
 
 describe("validateMarketScanCriteria", () => {
 	it("accepts zero minimum ranges", () => {

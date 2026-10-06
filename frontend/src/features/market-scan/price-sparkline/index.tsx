@@ -1,7 +1,9 @@
+import { useMantineTheme } from "@mantine/core";
+import { themeToVars } from "@mantine/vanilla-extract";
 import { Sparkline } from "@microcharts/react/sparkline";
 import type { PriceHistoryWindow } from "@/api/generated/models";
 
-interface PriceHistoryChartProps {
+interface PriceSparklineProps {
 	height?: number;
 	prices: readonly (number | null)[];
 	responsive?: boolean;
@@ -10,14 +12,15 @@ interface PriceHistoryChartProps {
 	window: PriceHistoryWindow;
 }
 
-export function PriceHistoryChart({
+export function PriceSparkline({
 	height = 40,
 	prices,
 	responsive = false,
 	symbol,
 	width = 140,
 	window,
-}: PriceHistoryChartProps) {
+}: PriceSparklineProps) {
+	const { colors } = themeToVars(useMantineTheme());
 	const available = prices.filter((price) => price !== null);
 	const first = available[0];
 	const last = available.at(-1);
@@ -32,7 +35,7 @@ export function PriceHistoryChart({
 		);
 	}
 	const direction = last > first ? "green" : last < first ? "red" : "gray";
-	const color = `var(--mantine-color-${direction}-6)`;
+	const color = colors[direction][6];
 	const low = Math.min(...available);
 	const high = Math.max(...available);
 	return (

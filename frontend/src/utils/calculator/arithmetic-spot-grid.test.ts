@@ -12,12 +12,7 @@ describe("calculateArithmeticSpotGrid", () => {
 	it("uses N intervals, excludes the upper level from buys, and applies both fees", () => {
 		const result = calculateArithmeticSpotGrid(positiveFixture);
 
-		expect(result.gridCount).toBe(2);
-		expect(result.levelCount).toBe(3);
 		expect(result.allocationPerBuy.toString()).toBe("110");
-		expect(result.stepPrice.toString()).toBe("10");
-		expect(result.totalNetQuantity.toString()).toBe("2.0979");
-		expect(result.averageEntryPrice.toFixed(8)).toBe("104.86677153");
 		expect(result.stepPercentMinimum.toFixed(6)).toBe("9.090909");
 		expect(result.stepPercentMaximum.toString()).toBe("10");
 		expect(result.cycleProfitMaximum.toFixed(6)).toBe("10.758121");
@@ -34,12 +29,11 @@ describe("calculateArithmeticSpotGrid", () => {
 			investment: "100",
 		});
 
-		expect(result.averageEntryPrice.toFixed(7)).toBe("100.1001001");
 		expect(result.cycleProfitMinimum.toFixed(7)).toBe("-0.1000999");
 		expect(result.cycleProfitMinimumPercent.toFixed(7)).toBe("-0.1000999");
 	});
 
-	it("scales quantities and profit with investment but not prices or percentages", () => {
+	it("scales profit with investment but not percentages", () => {
 		const original = calculateArithmeticSpotGrid(positiveFixture);
 		const doubled = calculateArithmeticSpotGrid({
 			...positiveFixture,
@@ -47,12 +41,11 @@ describe("calculateArithmeticSpotGrid", () => {
 		});
 
 		expect(
-			doubled.totalNetQuantity.eq(original.totalNetQuantity.times(2)),
-		).toBe(true);
-		expect(
 			doubled.cycleProfitMinimum.eq(original.cycleProfitMinimum.times(2)),
 		).toBe(true);
-		expect(doubled.averageEntryPrice.eq(original.averageEntryPrice)).toBe(true);
+		expect(doubled.stepPercentMinimum.eq(original.stepPercentMinimum)).toBe(
+			true,
+		);
 		expect(
 			doubled.cycleProfitMinimumPercent.eq(original.cycleProfitMinimumPercent),
 		).toBe(true);
@@ -78,8 +71,8 @@ describe("calculateArithmeticSpotGrid", () => {
 			investment: "1e-20",
 		});
 
-		expect(result.stepPrice.gt(0)).toBe(true);
-		expect(result.averageEntryPrice.isFinite()).toBe(true);
+		expect(result.stepPercentMinimum.gt(0)).toBe(true);
+		expect(result.cycleProfitMinimum.isFinite()).toBe(true);
 	});
 
 	it("treats leading fractional zeros as non-significant", () => {
@@ -96,7 +89,7 @@ describe("calculateArithmeticSpotGrid", () => {
 			investment: "1",
 		});
 
-		expect(plain.averageEntryPrice.eq(exponent.averageEntryPrice)).toBe(true);
+		expect(plain.cycleProfitMinimum.eq(exponent.cycleProfitMinimum)).toBe(true);
 	});
 
 	it.each([

@@ -27,3 +27,10 @@ export interface StrategyDraft {
 	// show, which saving would remove.
 	incomplete: boolean;
 }
+
+// A token of a strategy expression and its position in the source.
+export interface Token {
+	text: string;
+	start: number;
+	end: number;
+}

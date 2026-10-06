@@ -2,8 +2,8 @@ import { Text, useMantineTheme } from "@mantine/core";
 import type {
 	ChartReadoutOptions,
 	PriceCandle,
-} from "@/components/price-history-chart/types";
-import { formatOhlc } from "@/components/price-history-chart/utils";
+} from "@/features/candle-chart/types";
+import { formatOhlc } from "@/features/candle-chart/utils";
 
 interface ChartReadoutProps {
 	candle: Pick<PriceCandle, "open" | "high" | "low" | "close">;

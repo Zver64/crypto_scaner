@@ -9,7 +9,7 @@ import type {
 	ChartIndicatorPoints,
 	PriceHistorySnapshot,
 	PriceHistorySource,
-} from "@/components/price-history-chart";
+} from "@/features/candle-chart";
 import {
 	type ChartCatalogs,
 	chartIntervals,
@@ -34,7 +34,10 @@ export function createCoinChartData(
 	catalogs: ChartCatalogs,
 ): CoinChartData {
 	const upper = symbol.toUpperCase();
-	const live = createLiveStore(upper, catalogs);
+	let connection: LiveCandlesClient | undefined;
+	const live = createLiveStore(upper, catalogs, (interval) =>
+		connection?.resync(upper, interval),
+	);
 	const listeners = new Set<() => void>();
 	type IntervalState = {
 		limit: number;
@@ -48,7 +51,6 @@ export function createCoinChartData(
 			{ limit: initialLimit, loadingMore: false },
 		]),
 	);
-	let connection: LiveCandlesClient | undefined;
 	let unsubscribeLive: (() => void) | undefined;
 	let shown: CandleInterval | undefined;
 	const subscriptions = () =>

@@ -12,7 +12,13 @@ permissions:
   contents: read
 
 jobs:
+  quality:
+    uses: ./.github/workflows/ci.yaml
+    permissions:
+      contents: read
+
   release:
+    needs: quality
     permissions:
       contents: write
       issues: write
@@ -96,9 +102,10 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           ref: ${{ needs.release.outputs.tag }}
+      # Only the app images are pulled; PostgreSQL is never upgraded implicitly.
       # The backend is stopped once the new images are pulled, so migrations
       # never run under an old backend. The app is down until the new backend
-      # is healthy.
+      # is healthy. Unused images of this app (labelled at build time) are pruned.
       - name: Deploy with Compose
         env:
           DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
@@ -109,6 +116,7 @@ jobs:
           SSH_KNOWN_HOSTS: ${{ secrets.SSH_KNOWN_HOSTS }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ needs.release.outputs.tag }}
+          IMAGE_SOURCE: ${{ github.server_url }}/${{ github.repository }}
         run: |
           install -m 700 -d ~/.ssh
           printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_deploy
@@ -121,4 +129,4 @@ jobs:
 
           ssh "${ssh_options[@]}" "$target" "mkdir -p '$DEPLOY_PATH'"
           scp -i ~/.ssh/id_deploy -P "$SSH_PORT" -o StrictHostKeyChecking=yes compose.production.yaml "$target:$DEPLOY_PATH/"
-          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" "set -e; docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin; trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT; cd '$DEPLOY_PATH'; export BACKEND_IMAGE='ghcr.io/$repository-backend:$RELEASE_TAG' FRONTEND_IMAGE='ghcr.io/$repository-frontend:$RELEASE_TAG'; docker compose -f compose.production.yaml pull; docker compose -f compose.production.yaml stop backend; docker compose -f compose.production.yaml up -d --wait --wait-timeout 300 --remove-orphans; docker image prune -f"
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_options[@]}" "$target" "set -e; docker login ghcr.io -u '$GITHUB_ACTOR' --password-stdin; trap 'docker logout ghcr.io >/dev/null 2>&1' EXIT; cd '$DEPLOY_PATH'; export BACKEND_IMAGE='ghcr.io/$repository-backend:$RELEASE_TAG' FRONTEND_IMAGE='ghcr.io/$repository-frontend:$RELEASE_TAG'; docker compose -f compose.production.yaml pull migrate backend frontend; docker compose -f compose.production.yaml stop backend; docker compose -f compose.production.yaml up -d --wait --wait-timeout 300 --remove-orphans; docker image prune -af --filter 'label=org.opencontainers.image.source=$IMAGE_SOURCE'"

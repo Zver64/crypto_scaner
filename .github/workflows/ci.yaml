@@ -1,12 +1,15 @@
 name: CI
 
+# Pull requests run this directly; pushes to main run it through deploy.yaml
+# (workflow_call) so a release never starts before the checks pass.
 on:
   pull_request:
     branches: [main]
+  workflow_call:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

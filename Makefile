@@ -15,6 +15,7 @@ generate-sqlc:
 
 generate-frontend:
 	npm -C frontend run generate-api
+	npm -C frontend run generate-routes
 
 check:
 	test -z "$$(gofmt -l $$(find backend -type f -name '*.go'))"

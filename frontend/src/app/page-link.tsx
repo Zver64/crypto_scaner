@@ -1,4 +1,4 @@
-import { Box, useMantineTheme } from "@mantine/core";
+import { Button, useMantineTheme } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 import { Link } from "@tanstack/react-router";
 
@@ -9,34 +9,31 @@ interface PageLinkProps {
 	withDivider?: boolean;
 }
 
+// A page tab sized like the small inputs through Mantine's button sizes.
 export function PageLink({ active, label, to, withDivider }: PageLinkProps) {
 	const { colors } = themeToVars(useMantineTheme());
 
 	return (
-		<Box
+		<Button
 			aria-current={active ? "page" : undefined}
-			bg={active ? colors.defaultHover : "transparent"}
-			component={Link}
+			bg={active ? colors.defaultHover : undefined}
 			c="inherit"
-			fz="sm"
-			fw={600}
+			color="gray"
+			component={Link}
+			// Like the preset buttons: a tap leaves no focus ring behind.
+			onClick={(event) => event.currentTarget.blur()}
 			px="xs"
+			radius={0}
+			size="sm"
 			style={{
-				alignItems: "center",
 				borderInlineStart: withDivider
 					? `1px solid ${colors.defaultBorder}`
 					: undefined,
-				display: "flex",
-				justifyContent: "center",
-				lineHeight: 1.2,
-				minHeight: 44,
-				textAlign: "center",
-				textDecoration: "none",
-				whiteSpace: "nowrap",
 			}}
 			to={to}
+			variant="subtle"
 		>
 			{label}
-		</Box>
+		</Button>
 	);
 }

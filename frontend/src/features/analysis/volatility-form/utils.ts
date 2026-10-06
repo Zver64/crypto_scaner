@@ -14,7 +14,6 @@ export function buildVolatilityInputs({
 	percentilePresets,
 	period,
 	periodPresets,
-	size,
 }: Omit<VolatilityFieldsetProps, "title">): NumberInputField[] {
 	return [
 		input(period, periodPresets, {
@@ -22,14 +21,12 @@ export function buildVolatilityInputs({
 			label: "Period",
 			max: analysisCriteriaConstraints.period.maximum,
 			min: analysisCriteriaConstraints.period.minimum,
-			size,
 		}),
 		input(percentile, percentilePresets, {
 			allowDecimal: false,
 			label: "Percentile",
 			max: analysisCriteriaConstraints.percentile.maximum,
 			min: analysisCriteriaConstraints.percentile.minimum,
-			size,
 		}),
 		...(minimumRangePercent
 			? [
@@ -37,7 +34,6 @@ export function buildVolatilityInputs({
 						decimalScale: 10,
 						label: "Candle Range (%)",
 						min: marketScanCriteriaConstraints.minimumRangePercent.minimum,
-						size,
 						step: 0.1,
 					}),
 				]

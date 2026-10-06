@@ -5,7 +5,6 @@ import { useAnalyzeMarket } from "@/api/generated/api";
 import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
-import { useControlSize } from "@/app/use-control-size";
 import { EmptyState } from "@/components/empty-state";
 import { PageStack } from "@/components/page-stack";
 import { SettingsForm } from "@/components/settings-form";
@@ -48,7 +47,6 @@ export function TopCoinsScreen({
 }: TopCoinsScreenProps) {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const wide = useWideLayout();
-	const controlSize = useControlSize();
 	const permission = useBusinessRequestPermission();
 	const [settings, setSettings] = useState(initialSettings);
 	const scanCriteria = buildTopCoinsScanCriteria(settings);
@@ -129,7 +127,6 @@ export function TopCoinsScreen({
 										onSymbolFilterChange(event.currentTarget.value)
 									}
 									placeholder="e.g. BTC"
-									size={controlSize}
 									value={symbolFilter}
 								/>
 								{rows.length > 0 ? (

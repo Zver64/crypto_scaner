@@ -8,7 +8,6 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import type { FormEvent } from "react";
-import { useControlSize } from "@/app/use-control-size";
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import { applicationConfig } from "@/config";
 import { VolatilityFieldset } from "@/features/analysis/volatility-form";
@@ -41,7 +40,6 @@ export function MarketScanForm({
 	onCommit,
 }: MarketScanFormProps) {
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
-	const inputSize = useControlSize();
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const volatilityPresets = applicationConfig.volatility;
 	const form = useForm<MarketScanDraft>({
@@ -85,7 +83,6 @@ export function MarketScanForm({
 							value: form.values.period,
 						}}
 						periodPresets={volatilityPresets.days.periodPresets}
-						size={inputSize}
 						title="Daily Volatility"
 						unit="days"
 					/>
@@ -113,7 +110,6 @@ export function MarketScanForm({
 							value: form.values.hourlyPeriod,
 						}}
 						periodPresets={volatilityPresets.hours.periodPresets}
-						size={inputSize}
 						title="Hourly Volatility"
 						unit="hours"
 					/>
@@ -132,7 +128,6 @@ export function MarketScanForm({
 									label: formatMarketCapPreset(value),
 									value,
 								})),
-								size: inputSize,
 								step: 1,
 								value: form.values.minimumMarketCapMillions,
 							},
@@ -143,7 +138,6 @@ export function MarketScanForm({
 				<Button
 					disabled={disabled || !draftCriteria}
 					loading={isSubmitting}
-					size={inputSize}
 					type="submit"
 				>
 					Run Market Scan

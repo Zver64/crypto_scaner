@@ -17,7 +17,6 @@ export interface VolatilityFieldsetProps {
 	percentilePresets: readonly number[];
 	period: VolatilityFormField;
 	periodPresets: readonly number[];
-	size?: string;
 	title: string;
 	unit: AnalysisUnit;
 }

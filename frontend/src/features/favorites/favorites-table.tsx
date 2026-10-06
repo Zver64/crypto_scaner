@@ -1,5 +1,4 @@
 import { Button, Center, Loader, TextInput } from "@mantine/core";
-import { useControlSize } from "@/app/use-control-size";
 import { EmptyState } from "@/components/empty-state";
 import type { FavoritesAnalysis } from "@/features/favorites/use-favorites-analysis";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
@@ -35,7 +34,6 @@ export function FavoritesTable({
 	sort,
 	symbolFilter,
 }: FavoritesTableProps) {
-	const controlSize = useControlSize();
 	const analysisFailed = hasFavorites && query.isError && !query.data;
 	const rows = filterMarketScanRows(allRows, symbolFilter);
 	return (
@@ -85,7 +83,6 @@ export function FavoritesTable({
 							onSymbolFilterChange(event.currentTarget.value)
 						}
 						placeholder="e.g. BTC"
-						size={controlSize}
 						value={symbolFilter}
 					/>
 					{rows.length > 0 ? (

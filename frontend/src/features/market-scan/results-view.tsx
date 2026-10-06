@@ -12,7 +12,6 @@ import type {
 	InsufficientDataInstrument,
 	MarketAnalysisResponse,
 } from "@/api/generated/models";
-import { useControlSize } from "@/app/use-control-size";
 import { DataTable } from "@/components/data-table";
 import { EmptyState } from "@/components/empty-state";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
@@ -61,7 +60,6 @@ export function MarketScanResults({
 	sort,
 	symbolFilter,
 }: MarketScanResultsProps) {
-	const controlSize = useControlSize();
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const textSize = useMatches({ base: "xs", sm: "sm" });
 	const rows = filterMarketScanRows(result.table.rows, symbolFilter);
@@ -101,7 +99,6 @@ export function MarketScanResults({
 					labelProps={{ mb: "xs" }}
 					onChange={(event) => onSymbolFilterChange(event.currentTarget.value)}
 					placeholder="e.g. BTC"
-					size={controlSize}
 					value={symbolFilter}
 				/>
 				{result.table.rows.length === 0 ? (

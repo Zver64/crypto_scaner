@@ -1,5 +1,4 @@
 import { useForm } from "@mantine/form";
-import { useControlSize } from "@/app/use-control-size";
 import type { SettingsFormProps } from "@/components/settings-form/types";
 import { applicationConfig } from "@/config";
 import type { VolatilityFormField } from "@/features/analysis/volatility-form/types";
@@ -19,7 +18,6 @@ export function useVolatilitySettingsForm({
 	loading,
 	onCommit,
 }: UseVolatilitySettingsFormOptions): SettingsFormProps {
-	const controlSize = useControlSize();
 	const presets = applicationConfig.volatility;
 	const form = useForm<VolatilitySettingsDraft>({
 		initialValues: initialSettings,
@@ -48,7 +46,6 @@ export function useVolatilitySettingsForm({
 					percentile: field("percentile"),
 					periodPresets: presets.days.periodPresets,
 					percentilePresets: presets.percentilePresets,
-					size: controlSize,
 					unit: "days",
 				}),
 			},
@@ -60,7 +57,6 @@ export function useVolatilitySettingsForm({
 					percentile: field("hourlyPercentile"),
 					periodPresets: presets.hours.periodPresets,
 					percentilePresets: presets.percentilePresets,
-					size: controlSize,
 					unit: "hours",
 				}),
 			},

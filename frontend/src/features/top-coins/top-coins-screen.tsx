@@ -1,6 +1,5 @@
 import {
 	Center,
-	Container,
 	Loader,
 	Paper,
 	Stack,
@@ -15,6 +14,8 @@ import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
 import { SettingsForm } from "@/components/settings-form";
+import { SidebarLayout } from "@/components/sidebar-layout";
+import { sidebarColumns } from "@/components/sidebar-layout/constants";
 import {
 	apiErrorMessage,
 	unexpectedApiError,
@@ -99,62 +100,70 @@ export function TopCoinsScreen({
 	);
 
 	return (
-		<Container maw={880} px={0} size="md">
-			<Stack gap={pageGap}>
-				<PageNavigation current="top-coins" title="Top Market Cap" />
-				<SettingsForm {...settingsForm} />
-				{query.isFetching && !query.data ? (
-					<Center mih={180}>
-						<Loader aria-label="Loading Top Market Cap" />
-					</Center>
-				) : null}
-				{query.error && !query.data ? (
-					<Paper p="xl" ta="center">
-						<Text fw={600}>Unable to load the top coins.</Text>
-						<Text c="dimmed" mt={4} size="sm">
-							Try again when market data is available.
-						</Text>
-					</Paper>
-				) : null}
-				{query.data ? (
-					allRows.length > 0 ? (
-						<>
-							<TextInput
-								aria-label="Filter Top Market Cap by symbol"
-								label="Symbol filter"
-								labelProps={{ mb: "xs" }}
-								onChange={(event) =>
-									onSymbolFilterChange(event.currentTarget.value)
-								}
-								placeholder="e.g. BTC"
-								size="md"
-								value={symbolFilter}
-							/>
-							{rows.length > 0 ? (
-								<MarketScanResultsTable
-									criteria={scanCriteria}
-									onSortChange={onSortChange}
-									rows={rows}
-									sort={sort}
-									table={query.data.table}
-									window={query.data.price_history_window}
-								/>
-							) : (
-								<Paper p="xl" ta="center">
-									<Text fw={600}>No instruments match this symbol filter.</Text>
-									<Text c="dimmed" mt={4} size="sm">
-										Clear or change the filter to see all instruments.
-									</Text>
-								</Paper>
-							)}
-						</>
-					) : (
+		<Stack gap={pageGap}>
+			<PageNavigation current="top-coins" title="Top Market Cap" />
+			<SidebarLayout
+				desktop="sticky"
+				gap={pageGap}
+				sidebar={<SettingsForm {...settingsForm} columns={sidebarColumns} />}
+				sidebarPosition="start"
+			>
+				<Stack gap={pageGap}>
+					{query.isFetching && !query.data ? (
+						<Center mih={180}>
+							<Loader aria-label="Loading Top Market Cap" />
+						</Center>
+					) : null}
+					{query.error && !query.data ? (
 						<Paper p="xl" ta="center">
-							<Text fw={600}>No market cap data is available.</Text>
+							<Text fw={600}>Unable to load the top coins.</Text>
+							<Text c="dimmed" mt={4} size="sm">
+								Try again when market data is available.
+							</Text>
 						</Paper>
-					)
-				) : null}
-			</Stack>
-		</Container>
+					) : null}
+					{query.data ? (
+						allRows.length > 0 ? (
+							<>
+								<TextInput
+									aria-label="Filter Top Market Cap by symbol"
+									label="Symbol filter"
+									labelProps={{ mb: "xs" }}
+									onChange={(event) =>
+										onSymbolFilterChange(event.currentTarget.value)
+									}
+									placeholder="e.g. BTC"
+									size="md"
+									value={symbolFilter}
+								/>
+								{rows.length > 0 ? (
+									<MarketScanResultsTable
+										criteria={scanCriteria}
+										onSortChange={onSortChange}
+										rows={rows}
+										sort={sort}
+										table={query.data.table}
+										window={query.data.price_history_window}
+									/>
+								) : (
+									<Paper p="xl" ta="center">
+										<Text fw={600}>
+											No instruments match this symbol filter.
+										</Text>
+										<Text c="dimmed" mt={4} size="sm">
+											Clear or change the filter to see all instruments.
+										</Text>
+									</Paper>
+								)}
+							</>
+						) : (
+							<Paper p="xl" ta="center">
+								<Text fw={600}>No market cap data is available.</Text>
+							</Paper>
+						)
+					) : null}
+				</Stack>
+			</SidebarLayout>
+		</Stack>
 	);
 }

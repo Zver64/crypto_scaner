@@ -1,9 +1,14 @@
-import { Center, Container, Loader, Stack, useMatches } from "@mantine/core";
+import { Center, Loader, Paper, Stack, Text, useMatches } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
+import { SidebarLayout } from "@/components/sidebar-layout";
+import {
+	sidebarColumns,
+	sidebarLayoutBreakpoint,
+} from "@/components/sidebar-layout/constants";
 import { type ApiError, apiErrorMessage } from "@/features/analysis/api-error";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanForm } from "@/features/market-scan/form";
@@ -71,28 +76,55 @@ export function MarketScanScreen({
 	);
 
 	return (
-		<Container maw={880} px={0} size="md">
-			<Stack gap={pageGap}>
-				<PageNavigation current="market-scan" title="Market Scan" />
-				<MarketScanForm
-					initialCriteria={initialCriteria ?? defaultMarketScanCriteria}
-					disabled={!permission.allowed || isScanPending}
-					isSubmitting={isScanPending}
-					onCommit={(criteria) => {
-						mutation.mutate(criteria, {
-							onError: showMarketScanError,
-							onSuccess: () => {
-								setCommittedCriteria(criteria);
-								onCriteriaCommit(criteria);
-							},
-						});
-						return Promise.resolve();
-					}}
-				/>
+		<Stack gap={pageGap}>
+			<PageNavigation current="market-scan" title="Market Scan" />
+			<SidebarLayout
+				desktop="sticky"
+				gap={pageGap}
+				sidebar={
+					<MarketScanForm
+						columns={sidebarColumns}
+						initialCriteria={initialCriteria ?? defaultMarketScanCriteria}
+						disabled={!permission.allowed || isScanPending}
+						isSubmitting={isScanPending}
+						onCommit={(criteria) => {
+							mutation.mutate(criteria, {
+								onError: showMarketScanError,
+								onSuccess: () => {
+									setCommittedCriteria(criteria);
+									onCriteriaCommit(criteria);
+								},
+							});
+							return Promise.resolve();
+						}}
+					/>
+				}
+				sidebarPosition="start"
+			>
 				{isScanPending && !displayedData ? (
 					<Center mih={180}>
 						<Loader aria-label="Loading Market Scan" />
 					</Center>
+				) : null}
+				{/* Phones show the form alone; beside the sidebar the main area
+				explains why it is empty. */}
+				{!isScanPending && !displayedData ? (
+					<Paper p="xl" ta="center" visibleFrom={sidebarLayoutBreakpoint}>
+						<Text fw={600}>
+							{!permission.allowed
+								? "Market Scan is unavailable."
+								: query.isError
+									? "Market Scan failed."
+									: "No Scan Result yet."}
+						</Text>
+						<Text c="dimmed" mt={4} size="sm">
+							{!permission.allowed
+								? "Try again when the backend is available."
+								: query.isError
+									? "Adjust the criteria or run the Market Scan again."
+									: "Set the criteria and run a Market Scan to see matching instruments."}
+						</Text>
+					</Paper>
 				) : null}
 				{committedCriteria && displayedData ? (
 					<MarketScanResults
@@ -105,7 +137,7 @@ export function MarketScanScreen({
 						symbolFilter={symbolFilter}
 					/>
 				) : null}
-			</Stack>
-		</Container>
+			</SidebarLayout>
+		</Stack>
 	);
 }

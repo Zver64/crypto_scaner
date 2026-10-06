@@ -1,4 +1,11 @@
-import { Button, Paper, Stack, useMatches } from "@mantine/core";
+import {
+	Button,
+	Paper,
+	SimpleGrid,
+	type SimpleGridProps,
+	Stack,
+	useMatches,
+} from "@mantine/core";
 import { useForm } from "@mantine/form";
 import type { FormEvent } from "react";
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
@@ -17,6 +24,8 @@ function formatMarketCapPreset(value: number) {
 }
 
 interface MarketScanFormProps {
+	// Grid columns of the fieldsets; one per row by default.
+	columns?: SimpleGridProps["cols"];
 	initialCriteria: MarketScanCriteria;
 	disabled: boolean;
 	isSubmitting: boolean;
@@ -24,6 +33,7 @@ interface MarketScanFormProps {
 }
 
 export function MarketScanForm({
+	columns = 1,
 	initialCriteria,
 	disabled,
 	isSubmitting,
@@ -50,82 +60,85 @@ export function MarketScanForm({
 	return (
 		<Paper component="form" onSubmit={handleSubmit} p={paperPadding}>
 			<Stack gap={contentSpacing}>
-				<VolatilityFieldset
-					minimumRangePercent={{
-						error: form.errors.minimumRangePercent,
-						id: form.key("minimumRangePercent"),
-						onChange: (value) =>
-							form.setFieldValue("minimumRangePercent", value),
-						value: form.values.minimumRangePercent,
-					}}
-					minimumRangePresets={volatilityPresets.days.candleRangePresets}
-					percentile={{
-						error: form.errors.percentile,
-						id: form.key("percentile"),
-						onChange: (value) => form.setFieldValue("percentile", value),
-						value: form.values.percentile,
-					}}
-					percentilePresets={volatilityPresets.percentilePresets}
-					period={{
-						error: form.errors.period,
-						id: form.key("period"),
-						onChange: (value) => form.setFieldValue("period", value),
-						value: form.values.period,
-					}}
-					periodPresets={volatilityPresets.days.periodPresets}
-					size={inputSize}
-					title="Daily Volatility"
-					unit="days"
-				/>
-				<VolatilityFieldset
-					minimumRangePercent={{
-						error: form.errors.hourlyMinimumRangePercent,
-						id: form.key("hourlyMinimumRangePercent"),
-						onChange: (value) =>
-							form.setFieldValue("hourlyMinimumRangePercent", value),
-						value: form.values.hourlyMinimumRangePercent,
-					}}
-					minimumRangePresets={volatilityPresets.hours.candleRangePresets}
-					percentile={{
-						error: form.errors.hourlyPercentile,
-						id: form.key("hourlyPercentile"),
-						onChange: (value) => form.setFieldValue("hourlyPercentile", value),
-						value: form.values.hourlyPercentile,
-					}}
-					percentilePresets={volatilityPresets.percentilePresets}
-					period={{
-						error: form.errors.hourlyPeriod,
-						id: form.key("hourlyPeriod"),
-						onChange: (value) => form.setFieldValue("hourlyPeriod", value),
-						value: form.values.hourlyPeriod,
-					}}
-					periodPresets={volatilityPresets.hours.periodPresets}
-					size={inputSize}
-					title="Hourly Volatility"
-					unit="hours"
-				/>
-				<NumberInputFieldset
-					inputs={[
-						{
-							decimalScale: 2,
-							error: form.errors.minimumMarketCapMillions,
-							id: form.key("minimumMarketCapMillions"),
-							label: "Minimum Market Cap",
-							min: marketScanCriteriaConstraints.minimumMarketCapMillions
-								.minimum,
+				<SimpleGrid cols={columns} spacing={contentSpacing}>
+					<VolatilityFieldset
+						minimumRangePercent={{
+							error: form.errors.minimumRangePercent,
+							id: form.key("minimumRangePercent"),
 							onChange: (value) =>
-								form.setFieldValue("minimumMarketCapMillions", value),
-							presets: applicationConfig.marketCap.presets.map((value) => ({
-								label: formatMarketCapPreset(value),
-								value,
-							})),
-							size: inputSize,
-							step: 1,
-							value: form.values.minimumMarketCapMillions,
-						},
-					]}
-					title="Market Cap"
-				/>
+								form.setFieldValue("minimumRangePercent", value),
+							value: form.values.minimumRangePercent,
+						}}
+						minimumRangePresets={volatilityPresets.days.candleRangePresets}
+						percentile={{
+							error: form.errors.percentile,
+							id: form.key("percentile"),
+							onChange: (value) => form.setFieldValue("percentile", value),
+							value: form.values.percentile,
+						}}
+						percentilePresets={volatilityPresets.percentilePresets}
+						period={{
+							error: form.errors.period,
+							id: form.key("period"),
+							onChange: (value) => form.setFieldValue("period", value),
+							value: form.values.period,
+						}}
+						periodPresets={volatilityPresets.days.periodPresets}
+						size={inputSize}
+						title="Daily Volatility"
+						unit="days"
+					/>
+					<VolatilityFieldset
+						minimumRangePercent={{
+							error: form.errors.hourlyMinimumRangePercent,
+							id: form.key("hourlyMinimumRangePercent"),
+							onChange: (value) =>
+								form.setFieldValue("hourlyMinimumRangePercent", value),
+							value: form.values.hourlyMinimumRangePercent,
+						}}
+						minimumRangePresets={volatilityPresets.hours.candleRangePresets}
+						percentile={{
+							error: form.errors.hourlyPercentile,
+							id: form.key("hourlyPercentile"),
+							onChange: (value) =>
+								form.setFieldValue("hourlyPercentile", value),
+							value: form.values.hourlyPercentile,
+						}}
+						percentilePresets={volatilityPresets.percentilePresets}
+						period={{
+							error: form.errors.hourlyPeriod,
+							id: form.key("hourlyPeriod"),
+							onChange: (value) => form.setFieldValue("hourlyPeriod", value),
+							value: form.values.hourlyPeriod,
+						}}
+						periodPresets={volatilityPresets.hours.periodPresets}
+						size={inputSize}
+						title="Hourly Volatility"
+						unit="hours"
+					/>
+					<NumberInputFieldset
+						inputs={[
+							{
+								decimalScale: 2,
+								error: form.errors.minimumMarketCapMillions,
+								id: form.key("minimumMarketCapMillions"),
+								label: "Minimum Market Cap",
+								min: marketScanCriteriaConstraints.minimumMarketCapMillions
+									.minimum,
+								onChange: (value) =>
+									form.setFieldValue("minimumMarketCapMillions", value),
+								presets: applicationConfig.marketCap.presets.map((value) => ({
+									label: formatMarketCapPreset(value),
+									value,
+								})),
+								size: inputSize,
+								step: 1,
+								value: form.values.minimumMarketCapMillions,
+							},
+						]}
+						title="Market Cap"
+					/>
+				</SimpleGrid>
 				<Button
 					disabled={disabled || !draftCriteria}
 					loading={isSubmitting}

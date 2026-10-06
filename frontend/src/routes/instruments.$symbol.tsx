@@ -5,7 +5,7 @@ import {
 	useRouter,
 } from "@tanstack/react-router";
 import { InstrumentAnalysisScreen } from "@/features/instrument-analysis/instrument-analysis-screen";
-import { criterionSelections } from "@/features/market-scan/pipeline";
+import { volatilityCriterionSelections } from "@/features/market-scan/pipeline";
 import {
 	parseRequiredScanCriteriaSearch,
 	requiredScanCriteriaFromSearch,
@@ -28,7 +28,7 @@ function InstrumentRoute() {
 
 	return (
 		<InstrumentAnalysisScreen
-			criterionSelections={criterionSelections(criteria)}
+			criterionSelections={volatilityCriterionSelections(criteria)}
 			// A coin opened directly (a link or a reload) has no page to go back
 			// to, so it returns to the Market Scan with its criteria.
 			onBack={() => {

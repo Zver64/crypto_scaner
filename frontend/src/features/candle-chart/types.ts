@@ -87,6 +87,9 @@ export interface PriceHistoryChartProps {
 	// Indicators drawn on the chart of each interval.
 	indicators: Readonly<Record<ChartInterval, readonly ChartIndicatorOptions[]>>;
 	extraReadout?: ChartReadoutOptions;
+	// Stretches the chart over the free height of its flex column parent,
+	// keeping its fixed height as the minimum.
+	fillHeight?: boolean;
 	// Restricts the interval switch to these intervals; the first is shown
 	// first.
 	intervals?: readonly ChartInterval[];

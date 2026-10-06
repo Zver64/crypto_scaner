@@ -3,6 +3,7 @@ import {
 	criterionSelections,
 	defaultMarketScanCriteria,
 	validateMarketScanCriteria,
+	volatilityCriterionSelections,
 } from "@/features/market-scan/pipeline";
 
 it("keeps independent settings and includes Market Cap at zero", () => {
@@ -90,4 +91,12 @@ it.each([
 			}),
 		).toHaveProperty(field);
 	}
+});
+
+it("selects only the volatility criteria for the coin page", () => {
+	expect(
+		volatilityCriterionSelections(defaultMarketScanCriteria).map(
+			({ key }) => key,
+		),
+	).toEqual(["daily_volatility", "hourly_volatility"]);
 });

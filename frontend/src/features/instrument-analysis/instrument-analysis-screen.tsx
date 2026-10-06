@@ -1,16 +1,16 @@
-import { Center, Container, Loader, Stack } from "@mantine/core";
+import { Center, Loader, Stack } from "@mantine/core";
 import { useMemo } from "react";
 import type { CriterionRequest } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
+import { SidebarLayout } from "@/components/sidebar-layout";
+import { useSidebarLayoutActive } from "@/components/sidebar-layout/use-sidebar-layout-active";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import { CoinBackButton } from "@/features/instrument-analysis/coin-back-button";
 import { CoinChart } from "@/features/instrument-analysis/coin-chart";
 import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
-import { CoinOverview } from "@/features/instrument-analysis/coin-overview";
 import { CurrentPrice } from "@/features/instrument-analysis/current-price";
 import { GridCalculator } from "@/features/instrument-analysis/grid-estimator/grid-calculator";
-import { currentSevenDayHourlyCloses } from "@/features/instrument-analysis/hourly-history";
 import { useChartIndicators } from "@/features/instrument-analysis/use-chart-indicators";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 import { useGridLimits } from "@/features/instrument-analysis/use-grid-limits";
@@ -19,7 +19,6 @@ import { useInstrumentAnalysis } from "@/features/instrument-analysis/use-instru
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { PriceAlertsPanel } from "@/features/price-alerts/price-alerts-panel";
 import { baseAssetOfUsdtSymbol } from "@/utils/base-asset";
-import { sevenDayChangePercent } from "@/utils/seven-day-change-percent";
 
 interface InstrumentAnalysisScreenProps {
 	criterionSelections: readonly CriterionRequest[];
@@ -33,6 +32,9 @@ export function InstrumentAnalysisScreen({
 	symbol,
 }: InstrumentAnalysisScreenProps) {
 	const { contentSpacing, paperPadding } = useCoinPageLayout();
+	// Beside the sidebar the page fits the viewport and the chart takes the
+	// free height.
+	const fillChart = useSidebarLayoutActive();
 	const permission = useBusinessRequestPermission();
 	const { insufficientHistory, isFetching, result } = useInstrumentAnalysis(
 		symbol,
@@ -48,9 +50,6 @@ export function InstrumentAnalysisScreen({
 		[chart.catalogs, symbol],
 	);
 
-	const sevenDayChange = result
-		? sevenDayChangePercent(currentSevenDayHourlyCloses(hourlyHistory.candles))
-		: null;
 	// The previous symbol's result stays visible while refetching; the spot grid
 	// only uses a result for this symbol.
 	const current = result?.symbol === symbol ? result : undefined;
@@ -64,30 +63,16 @@ export function InstrumentAnalysisScreen({
 	};
 
 	return (
-		<Container maw={720} px={0} size="sm">
-			<Stack gap={contentSpacing}>
-				<CoinBackButton onBack={onBack} />
-				{isFetching && !result ? (
-					<Center mih={180}>
-						<Loader aria-label="Loading Instrument Analysis" />
-					</Center>
-				) : null}
-				{result || insufficientHistory ? (
-					<RefreshingOverlay
-						label="Refreshing Instrument Analysis"
-						visible={isFetching}
-					>
-						<Stack gap={contentSpacing}>
-							<CoinOverview result={result} sevenDayChange={sevenDayChange} />
-							{result ? (
-								<CoinChart
-									enabled={permission.allowed}
-									failed={chart.failed}
-									indicators={chart.indicators}
-									source={chartSource}
-									symbol={symbol}
-								/>
-							) : null}
+		<SidebarLayout
+			desktop="fill"
+			gap={contentSpacing}
+			sidebar={
+				<Stack gap={contentSpacing}>
+					{result || insufficientHistory ? (
+						<RefreshingOverlay
+							label="Refreshing the grid calculator"
+							visible={isFetching}
+						>
 							<GridCalculator
 								baseAsset={baseAssetOfUsdtSymbol(symbol)}
 								candles={
@@ -104,19 +89,45 @@ export function InstrumentAnalysisScreen({
 								key={`binance:spot:USDT:${symbol}:${recommendationReady ? "ready" : "pending"}`}
 								paperPadding={paperPadding}
 							/>
-						</Stack>
+						</RefreshingOverlay>
+					) : null}
+					{permission.allowed ? (
+						<PriceAlertsPanel
+							currentPrice={
+								chartSource ? <CurrentPrice source={chartSource} /> : null
+							}
+							priceSource={chartSource}
+							symbol={symbol}
+						/>
+					) : null}
+				</Stack>
+			}
+			sidebarPosition="end"
+		>
+			<Stack flex={fillChart ? 1 : undefined} gap={contentSpacing}>
+				<CoinBackButton onBack={onBack} />
+				{isFetching && !result ? (
+					<Center mih={180}>
+						<Loader aria-label="Loading Instrument Analysis" />
+					</Center>
+				) : null}
+				{result ? (
+					<RefreshingOverlay
+						fillHeight={fillChart}
+						label="Refreshing Instrument Analysis"
+						visible={isFetching}
+					>
+						<CoinChart
+							enabled={permission.allowed}
+							failed={chart.failed}
+							fillHeight={fillChart}
+							indicators={chart.indicators}
+							source={chartSource}
+							symbol={symbol}
+						/>
 					</RefreshingOverlay>
 				) : null}
-				{permission.allowed ? (
-					<PriceAlertsPanel
-						currentPrice={
-							chartSource ? <CurrentPrice source={chartSource} /> : null
-						}
-						priceSource={chartSource}
-						symbol={symbol}
-					/>
-				) : null}
 			</Stack>
-		</Container>
+		</SidebarLayout>
 	);
 }

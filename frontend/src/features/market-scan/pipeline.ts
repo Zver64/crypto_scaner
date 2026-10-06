@@ -73,3 +73,13 @@ export function criterionSelections(
 		...existingCriteria,
 	];
 }
+
+// The daily and hourly volatility criteria without Market Cap, for the coin
+// page, which reads only the volatility.
+export function volatilityCriterionSelections(
+	criteria: MarketScanCriteria,
+): CriterionRequest[] {
+	return criterionSelections(criteria).filter(
+		({ key }) => key !== criterionKeys.marketCap,
+	);
+}

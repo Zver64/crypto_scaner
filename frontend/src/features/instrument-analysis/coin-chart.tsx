@@ -11,6 +11,7 @@ import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-
 interface CoinChartProps {
 	enabled: boolean;
 	failed: boolean;
+	fillHeight: boolean;
 	indicators: Readonly<
 		Record<CandleInterval, readonly ChartIndicatorOptions[]>
 	>;
@@ -23,6 +24,7 @@ interface CoinChartProps {
 export function CoinChart({
 	enabled,
 	failed,
+	fillHeight,
 	indicators,
 	source,
 	symbol,
@@ -35,6 +37,7 @@ export function CoinChart({
 		<PriceHistoryChart
 			enabled={enabled}
 			extraReadout={rangeReadout}
+			fillHeight={fillHeight}
 			indicators={indicators}
 			key={symbol}
 			paperPadding={paperPadding}

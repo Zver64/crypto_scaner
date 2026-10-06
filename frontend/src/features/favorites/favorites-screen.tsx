@@ -1,8 +1,10 @@
-import { Container, Stack } from "@mantine/core";
+import { Stack } from "@mantine/core";
 import { useState } from "react";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
 import { SettingsForm } from "@/components/settings-form";
+import { SidebarLayout } from "@/components/sidebar-layout";
+import { sidebarColumns } from "@/components/sidebar-layout/constants";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import { useVolatilitySettingsForm } from "@/features/analysis/volatility-settings-form/use-volatility-settings-form";
 import { FavoritesTable } from "@/features/favorites/favorites-table";
@@ -38,18 +40,24 @@ export function FavoritesScreen({
 		},
 	});
 	return (
-		<Container maw={880} px={0} size="md">
-			<Stack gap="md">
-				<PageNavigation current="favorites" title="Favorites" />
-				<SettingsForm {...settingsForm} />
-				<FavoritesTable
-					analysis={analysis}
-					onSortChange={onSortChange}
-					onSymbolFilterChange={onSymbolFilterChange}
-					sort={sort}
-					symbolFilter={symbolFilter}
-				/>
-			</Stack>
-		</Container>
+		<Stack gap="md">
+			<PageNavigation current="favorites" title="Favorites" />
+			<SidebarLayout
+				desktop="sticky"
+				gap="md"
+				sidebar={<SettingsForm {...settingsForm} columns={sidebarColumns} />}
+				sidebarPosition="start"
+			>
+				<Stack gap="md">
+					<FavoritesTable
+						analysis={analysis}
+						onSortChange={onSortChange}
+						onSymbolFilterChange={onSymbolFilterChange}
+						sort={sort}
+						symbolFilter={symbolFilter}
+					/>
+				</Stack>
+			</SidebarLayout>
+		</Stack>
 	);
 }

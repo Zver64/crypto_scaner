@@ -4,6 +4,7 @@ import { useGetReadiness } from "@/api/generated/api";
 import { AppName } from "@/app/app-name";
 import { BusinessRequestContext } from "@/app/business-request-context";
 import { OpenInTelegram } from "@/app/open-in-telegram";
+import { headerContentHeight } from "@/app/page-height";
 import { ReadinessBadge } from "@/app/readiness-badge";
 import { useTelegramMiniApp } from "@/app/telegram";
 import type { ReadinessStatus } from "@/app/types";
@@ -11,8 +12,6 @@ import { useAdministrator } from "@/app/use-administrator";
 import { FavoritesProvider } from "@/features/favorites/favorites-provider";
 import { getAppVersion } from "@/utils/app-version";
 import { getBusinessRequestPermission } from "@/utils/business-request-permission";
-
-const headerContentHeight = "3.25rem";
 
 export function MiniAppShell() {
 	const { webApp } = useTelegramMiniApp();

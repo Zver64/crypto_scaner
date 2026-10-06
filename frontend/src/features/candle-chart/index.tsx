@@ -9,7 +9,13 @@ import {
 	useComputedColorScheme,
 } from "@mantine/core";
 import type { DeepPartial, Time, TimeChartOptions } from "lightweight-charts";
-import { memo, useCallback, useMemo, useState } from "react";
+import {
+	type CSSProperties,
+	memo,
+	useCallback,
+	useMemo,
+	useState,
+} from "react";
 import { ChartCanvas } from "@/components/lightweight-chart";
 import { CandleSeries } from "@/features/candle-chart/candle-series";
 import { ChartReadout } from "@/features/candle-chart/chart-readout";
@@ -63,6 +69,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	enabled,
 	indicators: intervalIndicators,
 	extraReadout,
+	fillHeight = false,
 	intervals,
 	markers,
 	paperPadding,
@@ -167,17 +174,21 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		legendSlotIndex,
 	);
 	const hasCandles = candles.length > 0;
+	const chartHeight = candlePaneHeight + panes.length * indicatorPaneHeight;
+	const fillStyle: CSSProperties | undefined = fillHeight
+		? { display: "flex", flex: 1, flexDirection: "column" }
+		: undefined;
 
 	return (
-		<Paper component="section" p={paperPadding}>
-			<Stack gap="md">
+		<Paper component="section" p={paperPadding} style={fillStyle}>
+			<Stack gap="md" style={fillStyle}>
 				<SegmentedControl<ChartInterval>
 					data={intervalOptions}
 					fullWidth
 					onChange={selectInterval}
 					value={interval}
 				/>
-				<Box pos="relative">
+				<Box pos="relative" style={fillStyle}>
 					<LiveStatus
 						connection={connection}
 						error={error}
@@ -201,10 +212,11 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 						]}
 						ref={chartRef}
 						role="img"
-						style={{
-							height: candlePaneHeight + panes.length * indicatorPaneHeight,
-							width: "100%",
-						}}
+						style={
+							fillHeight
+								? { flex: 1, minHeight: chartHeight, width: "100%" }
+								: { height: chartHeight, width: "100%" }
+						}
 					>
 						{/* Added first so the volume bars are drawn behind the candles. As the
 						first series to receive data, it also records the viewport first. */}
@@ -250,8 +262,15 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 							<Loader aria-label={`Loading ${interval} candle history`} />
 						</Center>
 					) : null}
-					{isLoadingMore ? (
-						<Text c="dimmed" size="xs" ta="center">
+					{/* A filling chart keeps the line's place, so the canvas does not
+					resize while older candles load. */}
+					{isLoadingMore || fillHeight ? (
+						<Text
+							c="dimmed"
+							size="xs"
+							style={isLoadingMore ? undefined : { visibility: "hidden" }}
+							ta="center"
+						>
 							Loading older candles…
 						</Text>
 					) : null}

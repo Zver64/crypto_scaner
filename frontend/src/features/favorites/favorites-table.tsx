@@ -1,4 +1,6 @@
-import { Button, Center, Loader, Paper, Text, TextInput } from "@mantine/core";
+import { Button, Center, Loader, TextInput } from "@mantine/core";
+import { useControlSize } from "@/app/use-control-size";
+import { EmptyState } from "@/components/empty-state";
 import type { FavoritesAnalysis } from "@/features/favorites/use-favorites-analysis";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import { filterMarketScanRows } from "@/features/market-scan/results-table/utils";
@@ -6,6 +8,8 @@ import type { MarketScanSort } from "@/features/market-scan/sort";
 
 interface FavoritesTableProps {
 	analysis: FavoritesAnalysis;
+	// Lets empty states fill the free height of a flex column parent.
+	fillHeight?: boolean;
 	onRowClick?(symbol: string): void;
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
@@ -24,12 +28,14 @@ export function FavoritesTable({
 		scanCriteria,
 		table,
 	},
+	fillHeight = false,
 	onRowClick,
 	onSortChange,
 	onSymbolFilterChange,
 	sort,
 	symbolFilter,
 }: FavoritesTableProps) {
+	const controlSize = useControlSize();
 	const analysisFailed = hasFavorites && query.isError && !query.data;
 	const rows = filterMarketScanRows(allRows, symbolFilter);
 	return (
@@ -40,19 +46,18 @@ export function FavoritesTable({
 				</Center>
 			) : null}
 			{isError && !hasFavorites ? (
-				<Paper p="xl" ta="center">
-					<Text fw={600}>Unable to load favorites.</Text>
-					<Text c="dimmed" mt={4} size="sm">
-						Try again when access and the backend are available.
-					</Text>
-				</Paper>
+				<EmptyState
+					description="Try again when access and the backend are available."
+					fillHeight={fillHeight}
+					title="Unable to load favorites."
+				/>
 			) : null}
 			{analysisFailed ? (
-				<Paper p="xl" ta="center">
-					<Text fw={600}>Unable to analyze favorites.</Text>
-					<Text c="dimmed" mt={4} size="sm">
-						Try again when market data is available.
-					</Text>
+				<EmptyState
+					description="Try again when market data is available."
+					fillHeight={fillHeight}
+					title="Unable to analyze favorites."
+				>
 					<Button
 						loading={query.isFetching}
 						mt="md"
@@ -61,15 +66,14 @@ export function FavoritesTable({
 					>
 						Try again
 					</Button>
-				</Paper>
+				</EmptyState>
 			) : null}
 			{!isLoading && !isError && !hasFavorites ? (
-				<Paper p="xl" ta="center">
-					<Text fw={600}>No favorites yet.</Text>
-					<Text c="dimmed" mt={4} size="sm">
-						Use the star in a market table to add one.
-					</Text>
-				</Paper>
+				<EmptyState
+					description="Use the star in a market table to add one."
+					fillHeight={fillHeight}
+					title="No favorites yet."
+				/>
 			) : null}
 			{table && allRows.length > 0 ? (
 				<>
@@ -81,7 +85,7 @@ export function FavoritesTable({
 							onSymbolFilterChange(event.currentTarget.value)
 						}
 						placeholder="e.g. BTC"
-						size="md"
+						size={controlSize}
 						value={symbolFilter}
 					/>
 					{rows.length > 0 ? (
@@ -95,12 +99,11 @@ export function FavoritesTable({
 							window={query.data?.price_history_window}
 						/>
 					) : (
-						<Paper p="xl" ta="center">
-							<Text fw={600}>No instruments match this symbol filter.</Text>
-							<Text c="dimmed" mt={4} size="sm">
-								Clear or change the filter to see all instruments.
-							</Text>
-						</Paper>
+						<EmptyState
+							description="Clear or change the filter to see all instruments."
+							fillHeight={fillHeight}
+							title="No instruments match this symbol filter."
+						/>
 					)}
 				</>
 			) : null}

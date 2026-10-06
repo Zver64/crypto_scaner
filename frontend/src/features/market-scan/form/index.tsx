@@ -8,6 +8,7 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import type { FormEvent } from "react";
+import { useControlSize } from "@/app/use-control-size";
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import { applicationConfig } from "@/config";
 import { VolatilityFieldset } from "@/features/analysis/volatility-form";
@@ -40,7 +41,7 @@ export function MarketScanForm({
 	onCommit,
 }: MarketScanFormProps) {
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
-	const inputSize = "md";
+	const inputSize = useControlSize();
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const volatilityPresets = applicationConfig.volatility;
 	const form = useForm<MarketScanDraft>({

@@ -1,4 +1,4 @@
-import { Loader, Stack, Text } from "@mantine/core";
+import { Loader, SimpleGrid, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -69,20 +69,23 @@ export function UserSettings() {
 			<Text c="dimmed" size="sm">
 				Add users from the chat with the bot.
 			</Text>
-			{users.data.map((user) => (
-				<UserRow
-					disabled={deleteMutation.isPending || updateMutation.isPending}
-					key={user.telegram_id}
-					onDelete={() => setRemoving(user)}
-					onStrategyAlertsChange={(enabled) =>
-						updateMutation.mutate({
-							data: { strategy_alerts: enabled },
-							telegramId: user.telegram_id,
-						})
-					}
-					user={user}
-				/>
-			))}
+			{/* Cards fill the width two or three per row on wider screens. */}
+			<SimpleGrid cols={{ base: 1, sm: 2, xl: 3 }} spacing="xs">
+				{users.data.map((user) => (
+					<UserRow
+						disabled={deleteMutation.isPending || updateMutation.isPending}
+						key={user.telegram_id}
+						onDelete={() => setRemoving(user)}
+						onStrategyAlertsChange={(enabled) =>
+							updateMutation.mutate({
+								data: { strategy_alerts: enabled },
+								telegramId: user.telegram_id,
+							})
+						}
+						user={user}
+					/>
+				))}
+			</SimpleGrid>
 			<UserRemovalConfirmation
 				isPending={deleteMutation.isPending}
 				name={removing ? formatUserName(removing) : undefined}

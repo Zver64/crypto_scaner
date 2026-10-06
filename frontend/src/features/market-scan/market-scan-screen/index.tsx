@@ -1,14 +1,14 @@
-import { Center, Loader, Paper, Stack, Text, useMatches } from "@mantine/core";
+import { Center, Loader, useMatches } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
+import { EmptyState } from "@/components/empty-state";
+import { PageStack } from "@/components/page-stack";
 import { SidebarLayout } from "@/components/sidebar-layout";
-import {
-	sidebarColumns,
-	sidebarLayoutBreakpoint,
-} from "@/components/sidebar-layout/constants";
+import { sidebarColumns } from "@/components/sidebar-layout/constants";
+import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { type ApiError, apiErrorMessage } from "@/features/analysis/api-error";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanForm } from "@/features/market-scan/form";
@@ -51,6 +51,7 @@ export function MarketScanScreen({
 	symbolFilter,
 }: MarketScanScreenProps) {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
+	const wide = useWideLayout();
 	const permission = useBusinessRequestPermission();
 	const queryClient = useQueryClient();
 	const [committedCriteria, setCommittedCriteria] = useState(initialCriteria);
@@ -76,10 +77,9 @@ export function MarketScanScreen({
 	);
 
 	return (
-		<Stack gap={pageGap}>
+		<PageStack gap={pageGap}>
 			<PageNavigation current="market-scan" title="Market Scan" />
 			<SidebarLayout
-				desktop="sticky"
 				gap={pageGap}
 				sidebar={
 					<MarketScanForm
@@ -108,27 +108,30 @@ export function MarketScanScreen({
 				) : null}
 				{/* Phones show the form alone; beside the sidebar the main area
 				explains why it is empty. */}
-				{!isScanPending && !displayedData ? (
-					<Paper p="xl" ta="center" visibleFrom={sidebarLayoutBreakpoint}>
-						<Text fw={600}>
-							{!permission.allowed
-								? "Market Scan is unavailable."
-								: query.isError
-									? "Market Scan failed."
-									: "No Scan Result yet."}
-						</Text>
-						<Text c="dimmed" mt={4} size="sm">
-							{!permission.allowed
+				{wide && !isScanPending && !displayedData ? (
+					<EmptyState
+						description={
+							!permission.allowed
 								? "Try again when the backend is available."
 								: query.isError
 									? "Adjust the criteria or run the Market Scan again."
-									: "Set the criteria and run a Market Scan to see matching instruments."}
-						</Text>
-					</Paper>
+									: "Set the criteria and run a Market Scan to see matching instruments."
+						}
+						failed={permission.allowed && query.isError}
+						fillHeight
+						title={
+							!permission.allowed
+								? "Market Scan is unavailable."
+								: query.isError
+									? "Market Scan failed."
+									: "No Scan Result yet."
+						}
+					/>
 				) : null}
 				{committedCriteria && displayedData ? (
 					<MarketScanResults
 						criteria={committedCriteria}
+						fillHeight={wide}
 						isRefreshing={isScanPending}
 						onSortChange={onSortChange}
 						onSymbolFilterChange={onSymbolFilterChange}
@@ -138,6 +141,6 @@ export function MarketScanScreen({
 					/>
 				) : null}
 			</SidebarLayout>
-		</Stack>
+		</PageStack>
 	);
 }

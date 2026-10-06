@@ -2,9 +2,11 @@ import { Stack } from "@mantine/core";
 import { useState } from "react";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
+import { PageStack } from "@/components/page-stack";
 import { SettingsForm } from "@/components/settings-form";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { sidebarColumns } from "@/components/sidebar-layout/constants";
+import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import { useVolatilitySettingsForm } from "@/features/analysis/volatility-settings-form/use-volatility-settings-form";
 import { FavoritesTable } from "@/features/favorites/favorites-table";
@@ -27,6 +29,7 @@ export function FavoritesScreen({
 	symbolFilter: string;
 }) {
 	const permission = useBusinessRequestPermission();
+	const wide = useWideLayout();
 	const [settings, setSettings] = useState(initialSettings);
 	const analysis = useFavoritesAnalysis(settings);
 	const settingsForm = useVolatilitySettingsForm({
@@ -40,17 +43,17 @@ export function FavoritesScreen({
 		},
 	});
 	return (
-		<Stack gap="md">
+		<PageStack gap="md">
 			<PageNavigation current="favorites" title="Favorites" />
 			<SidebarLayout
-				desktop="sticky"
 				gap="md"
 				sidebar={<SettingsForm {...settingsForm} columns={sidebarColumns} />}
 				sidebarPosition="start"
 			>
-				<Stack gap="md">
+				<Stack flex={wide ? 1 : undefined} gap="md">
 					<FavoritesTable
 						analysis={analysis}
+						fillHeight={wide}
 						onSortChange={onSortChange}
 						onSymbolFilterChange={onSymbolFilterChange}
 						sort={sort}
@@ -58,6 +61,6 @@ export function FavoritesScreen({
 					/>
 				</Stack>
 			</SidebarLayout>
-		</Stack>
+		</PageStack>
 	);
 }

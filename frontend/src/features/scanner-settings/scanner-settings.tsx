@@ -12,6 +12,7 @@ import {
 	useUpdateScannerIndicator,
 } from "@/api/generated/api";
 import type { ScannerIndicator } from "@/api/generated/models";
+import { SidebarLayout } from "@/components/sidebar-layout";
 import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
 import { ScannerIndicatorForm } from "@/features/scanner-settings/scanner-indicator-form";
 import { ScannerIndicatorList } from "@/features/scanner-settings/scanner-indicator-list";
@@ -80,74 +81,81 @@ export function ScannerSettings() {
 		);
 	}
 	return (
-		<Stack gap="md">
-			<ScannerIndicatorForm
-				isSaving={createMutation.isPending}
-				onSubmit={(data) => createMutation.mutate({ data })}
-				types={types.data}
-			/>
-			<Group justify="space-between">
-				<Title order={2} size="h4">
-					Indicators
-				</Title>
-				{indicators.data.some(({ strategies }) => strategies.length === 0) ? (
-					<Button
-						color="red"
-						disabled={clearMutation.isPending}
-						onClick={() => setClearing(true)}
-						size="compact-sm"
-						variant="subtle"
-					>
-						Remove unused
-					</Button>
-				) : null}
-			</Group>
-			<ScannerIndicatorList
-				disabled={
-					updateMutation.isPending ||
-					deleteMutation.isPending ||
-					reorderMutation.isPending ||
-					clearMutation.isPending
-				}
-				indicators={orderIndicators(
-					indicators.data,
-					reorderMutation.isPending
-						? reorderMutation.variables.data.ids
-						: undefined,
-				)}
-				onDelete={setRemoving}
-				onReorder={(ids) => reorderMutation.mutate({ data: { ids } })}
-				onDisplayChange={(indicator, display) =>
-					updateMutation.mutate({
-						data: { ...display, scale: indicator.scale },
-						indicatorId: indicator.id,
-					})
-				}
-				onScaleChange={(indicator, scale) =>
-					updateMutation.mutate({
-						data: {
-							scale,
-							show_in_chart: indicator.show_in_chart,
-							show_in_table: indicator.show_in_table,
-						},
-						indicatorId: indicator.id,
-					})
-				}
-			/>
-			<ScannerIndicatorRemovalConfirmation
-				isPending={deleteMutation.isPending}
-				onCancel={() => setRemoving(undefined)}
-				onConfirm={() => {
-					if (removing) deleteMutation.mutate({ indicatorId: removing.id });
-				}}
-				subject={removing?.title}
-			/>
-			<ScannerIndicatorRemovalConfirmation
-				isPending={clearMutation.isPending}
-				onCancel={() => setClearing(false)}
-				onConfirm={() => clearMutation.mutate()}
-				subject={clearing ? "unused indicators" : undefined}
-			/>
-		</Stack>
+		<SidebarLayout
+			gap="md"
+			sidebar={
+				<ScannerIndicatorForm
+					isSaving={createMutation.isPending}
+					onSubmit={(data) => createMutation.mutate({ data })}
+					types={types.data}
+				/>
+			}
+			sidebarPosition="start"
+		>
+			<Stack gap="md">
+				<Group justify="space-between">
+					<Title order={2} size="h4">
+						Indicators
+					</Title>
+					{indicators.data.some(({ strategies }) => strategies.length === 0) ? (
+						<Button
+							color="red"
+							disabled={clearMutation.isPending}
+							onClick={() => setClearing(true)}
+							size="compact-sm"
+							variant="subtle"
+						>
+							Remove unused
+						</Button>
+					) : null}
+				</Group>
+				<ScannerIndicatorList
+					disabled={
+						updateMutation.isPending ||
+						deleteMutation.isPending ||
+						reorderMutation.isPending ||
+						clearMutation.isPending
+					}
+					indicators={orderIndicators(
+						indicators.data,
+						reorderMutation.isPending
+							? reorderMutation.variables.data.ids
+							: undefined,
+					)}
+					onDelete={setRemoving}
+					onReorder={(ids) => reorderMutation.mutate({ data: { ids } })}
+					onDisplayChange={(indicator, display) =>
+						updateMutation.mutate({
+							data: { ...display, scale: indicator.scale },
+							indicatorId: indicator.id,
+						})
+					}
+					onScaleChange={(indicator, scale) =>
+						updateMutation.mutate({
+							data: {
+								scale,
+								show_in_chart: indicator.show_in_chart,
+								show_in_table: indicator.show_in_table,
+							},
+							indicatorId: indicator.id,
+						})
+					}
+				/>
+				<ScannerIndicatorRemovalConfirmation
+					isPending={deleteMutation.isPending}
+					onCancel={() => setRemoving(undefined)}
+					onConfirm={() => {
+						if (removing) deleteMutation.mutate({ indicatorId: removing.id });
+					}}
+					subject={removing?.title}
+				/>
+				<ScannerIndicatorRemovalConfirmation
+					isPending={clearMutation.isPending}
+					onCancel={() => setClearing(false)}
+					onConfirm={() => clearMutation.mutate()}
+					subject={clearing ? "unused indicators" : undefined}
+				/>
+			</Stack>
+		</SidebarLayout>
 	);
 }

@@ -1,21 +1,17 @@
-import {
-	Center,
-	Loader,
-	Paper,
-	Stack,
-	Text,
-	TextInput,
-	useMatches,
-} from "@mantine/core";
+import { Center, Loader, Stack, TextInput, useMatches } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { useAnalyzeMarket } from "@/api/generated/api";
 import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
+import { useControlSize } from "@/app/use-control-size";
+import { EmptyState } from "@/components/empty-state";
+import { PageStack } from "@/components/page-stack";
 import { SettingsForm } from "@/components/settings-form";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { sidebarColumns } from "@/components/sidebar-layout/constants";
+import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import {
 	apiErrorMessage,
 	unexpectedApiError,
@@ -51,6 +47,8 @@ export function TopCoinsScreen({
 	symbolFilter,
 }: TopCoinsScreenProps) {
 	const pageGap = useMatches({ base: "sm", sm: "md" });
+	const wide = useWideLayout();
+	const controlSize = useControlSize();
 	const permission = useBusinessRequestPermission();
 	const [settings, setSettings] = useState(initialSettings);
 	const scanCriteria = buildTopCoinsScanCriteria(settings);
@@ -100,27 +98,25 @@ export function TopCoinsScreen({
 	);
 
 	return (
-		<Stack gap={pageGap}>
+		<PageStack gap={pageGap}>
 			<PageNavigation current="top-coins" title="Top Market Cap" />
 			<SidebarLayout
-				desktop="sticky"
 				gap={pageGap}
 				sidebar={<SettingsForm {...settingsForm} columns={sidebarColumns} />}
 				sidebarPosition="start"
 			>
-				<Stack gap={pageGap}>
+				<Stack flex={wide ? 1 : undefined} gap={pageGap}>
 					{query.isFetching && !query.data ? (
 						<Center mih={180}>
 							<Loader aria-label="Loading Top Market Cap" />
 						</Center>
 					) : null}
 					{query.error && !query.data ? (
-						<Paper p="xl" ta="center">
-							<Text fw={600}>Unable to load the top coins.</Text>
-							<Text c="dimmed" mt={4} size="sm">
-								Try again when market data is available.
-							</Text>
-						</Paper>
+						<EmptyState
+							description="Try again when market data is available."
+							fillHeight={wide}
+							title="Unable to load the top coins."
+						/>
 					) : null}
 					{query.data ? (
 						allRows.length > 0 ? (
@@ -133,7 +129,7 @@ export function TopCoinsScreen({
 										onSymbolFilterChange(event.currentTarget.value)
 									}
 									placeholder="e.g. BTC"
-									size="md"
+									size={controlSize}
 									value={symbolFilter}
 								/>
 								{rows.length > 0 ? (
@@ -146,24 +142,22 @@ export function TopCoinsScreen({
 										window={query.data.price_history_window}
 									/>
 								) : (
-									<Paper p="xl" ta="center">
-										<Text fw={600}>
-											No instruments match this symbol filter.
-										</Text>
-										<Text c="dimmed" mt={4} size="sm">
-											Clear or change the filter to see all instruments.
-										</Text>
-									</Paper>
+									<EmptyState
+										description="Clear or change the filter to see all instruments."
+										fillHeight={wide}
+										title="No instruments match this symbol filter."
+									/>
 								)}
 							</>
 						) : (
-							<Paper p="xl" ta="center">
-								<Text fw={600}>No market cap data is available.</Text>
-							</Paper>
+							<EmptyState
+								fillHeight={wide}
+								title="No market cap data is available."
+							/>
 						)
 					) : null}
 				</Stack>
 			</SidebarLayout>
-		</Stack>
+		</PageStack>
 	);
 }

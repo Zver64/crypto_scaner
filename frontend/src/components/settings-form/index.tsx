@@ -1,4 +1,5 @@
 import { Button, Paper, SimpleGrid, Stack, useMatches } from "@mantine/core";
+import { useControlSize } from "@/app/use-control-size";
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import type { SettingsFormProps } from "@/components/settings-form/types";
 
@@ -10,6 +11,7 @@ export function SettingsForm({
 	onSubmit,
 	submitLabel,
 }: SettingsFormProps) {
+	const controlSize = useControlSize();
 	const spacing = useMatches({ base: "xs", sm: "sm" });
 	const padding = useMatches({ base: "xs", sm: "md" });
 
@@ -25,7 +27,12 @@ export function SettingsForm({
 						/>
 					))}
 				</SimpleGrid>
-				<Button disabled={disabled} loading={loading} size="md" type="submit">
+				<Button
+					disabled={disabled}
+					loading={loading}
+					size={controlSize}
+					type="submit"
+				>
 					{submitLabel}
 				</Button>
 			</Stack>

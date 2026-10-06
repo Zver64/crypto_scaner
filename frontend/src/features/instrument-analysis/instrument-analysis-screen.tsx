@@ -4,7 +4,7 @@ import type { CriterionRequest } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { SidebarLayout } from "@/components/sidebar-layout";
-import { useSidebarLayoutActive } from "@/components/sidebar-layout/use-sidebar-layout-active";
+import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import { CoinBackButton } from "@/features/instrument-analysis/coin-back-button";
 import { CoinChart } from "@/features/instrument-analysis/coin-chart";
@@ -34,7 +34,7 @@ export function InstrumentAnalysisScreen({
 	const { contentSpacing, paperPadding } = useCoinPageLayout();
 	// Beside the sidebar the page fits the viewport and the chart takes the
 	// free height.
-	const fillChart = useSidebarLayoutActive();
+	const fillChart = useWideLayout();
 	const permission = useBusinessRequestPermission();
 	const { insufficientHistory, isFetching, result } = useInstrumentAnalysis(
 		symbol,
@@ -64,7 +64,6 @@ export function InstrumentAnalysisScreen({
 
 	return (
 		<SidebarLayout
-			desktop="fill"
 			gap={contentSpacing}
 			sidebar={
 				<Stack gap={contentSpacing}>

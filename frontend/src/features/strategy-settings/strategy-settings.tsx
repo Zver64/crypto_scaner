@@ -1,4 +1,4 @@
-import { Button, Loader, Stack, Text } from "@mantine/core";
+import { Button, Group, Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -13,6 +13,7 @@ import {
 	useUpdateStrategy,
 } from "@/api/generated/api";
 import type { Strategy } from "@/api/generated/models";
+import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { StrategyForm } from "@/features/strategy-settings/strategy-form";
 import { StrategyRemovalConfirmation } from "@/features/strategy-settings/strategy-removal-confirmation";
 import { StrategyRow } from "@/features/strategy-settings/strategy-row";
@@ -25,6 +26,7 @@ import {
 } from "@/features/strategy-settings/utils";
 
 export function StrategySettings() {
+	const wide = useWideLayout();
 	const queryClient = useQueryClient();
 	const [draft, setDraft] = useState<StrategyDraft>();
 	const [removing, setRemoving] = useState<Strategy>();
@@ -96,21 +98,23 @@ export function StrategySettings() {
 					Add indicators first.
 				</Text>
 			) : null}
-			<Button
-				disabled={variables.data.length === 0}
-				fullWidth
-				onClick={() =>
-					setDraft({
-						id: undefined,
-						name: "",
-						message: "",
-						query: emptyStrategyQuery(),
-						incomplete: false,
-					})
-				}
-			>
-				Add strategy
-			</Button>
+			{/* Full width on phones, a regular button on wide screens. */}
+			<Group grow={!wide}>
+				<Button
+					disabled={variables.data.length === 0}
+					onClick={() =>
+						setDraft({
+							id: undefined,
+							name: "",
+							message: "",
+							query: emptyStrategyQuery(),
+							incomplete: false,
+						})
+					}
+				>
+					Add strategy
+				</Button>
+			</Group>
 			{strategies.data.length === 0 ? null : (
 				<Stack gap="xs">
 					{strategies.data.map((strategy) => (

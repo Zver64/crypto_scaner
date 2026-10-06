@@ -12,7 +12,9 @@ import type {
 	InsufficientDataInstrument,
 	MarketAnalysisResponse,
 } from "@/api/generated/models";
+import { useControlSize } from "@/app/use-control-size";
 import { DataTable } from "@/components/data-table";
+import { EmptyState } from "@/components/empty-state";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
@@ -38,6 +40,9 @@ function formatInsufficientData(
 
 interface MarketScanResultsProps {
 	criteria: MarketScanCriteria;
+	// Lets the results and their empty states fill the free height of a flex
+	// column parent.
+	fillHeight?: boolean;
 	isRefreshing: boolean;
 	onSortChange(sort: MarketScanSort): void;
 	onSymbolFilterChange(symbolFilter: string): void;
@@ -48,6 +53,7 @@ interface MarketScanResultsProps {
 
 export function MarketScanResults({
 	criteria,
+	fillHeight = false,
 	isRefreshing,
 	onSortChange,
 	onSymbolFilterChange,
@@ -55,13 +61,18 @@ export function MarketScanResults({
 	sort,
 	symbolFilter,
 }: MarketScanResultsProps) {
+	const controlSize = useControlSize();
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const textSize = useMatches({ base: "xs", sm: "sm" });
 	const rows = filterMarketScanRows(result.table.rows, symbolFilter);
 
 	return (
-		<RefreshingOverlay label="Refreshing Market Scan" visible={isRefreshing}>
-			<Stack gap={contentSpacing}>
+		<RefreshingOverlay
+			fillHeight={fillHeight}
+			label="Refreshing Market Scan"
+			visible={isRefreshing}
+		>
+			<Stack flex={fillHeight ? 1 : undefined} gap={contentSpacing}>
 				<Paper p={contentSpacing}>
 					<Group gap="lg">
 						<Text size={textSize}>
@@ -90,23 +101,21 @@ export function MarketScanResults({
 					labelProps={{ mb: "xs" }}
 					onChange={(event) => onSymbolFilterChange(event.currentTarget.value)}
 					placeholder="e.g. BTC"
-					size="md"
+					size={controlSize}
 					value={symbolFilter}
 				/>
 				{result.table.rows.length === 0 ? (
-					<Paper p="xl" ta="center">
-						<Text fw={600}>No instruments matched these criteria.</Text>
-						<Text c="dimmed" mt={4} size="sm">
-							Adjust the criteria and run another Market Scan.
-						</Text>
-					</Paper>
+					<EmptyState
+						description="Adjust the criteria and run another Market Scan."
+						fillHeight={fillHeight}
+						title="No instruments matched these criteria."
+					/>
 				) : rows.length === 0 ? (
-					<Paper p="xl" ta="center">
-						<Text fw={600}>No instruments match this symbol filter.</Text>
-						<Text c="dimmed" mt={4} size="sm">
-							Clear or change the filter to see this Scan Result.
-						</Text>
-					</Paper>
+					<EmptyState
+						description="Clear or change the filter to see this Scan Result."
+						fillHeight={fillHeight}
+						title="No instruments match this symbol filter."
+					/>
 				) : (
 					<MarketScanResultsTable
 						criteria={criteria}

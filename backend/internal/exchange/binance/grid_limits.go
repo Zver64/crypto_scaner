@@ -9,6 +9,7 @@ import (
 	"net/url"
 
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/market/gridlimits"
 	"crypto-scanner/internal/platform/numeric"
 )
 
@@ -34,7 +35,7 @@ func (exchange *Exchange) AveragePrice(ctx context.Context, symbol string) (floa
 
 // PriceFilters returns the order price filters of a symbol that bound how far
 // from the average price its orders may go.
-func (exchange *Exchange) PriceFilters(ctx context.Context, symbol string) (market.PriceFilters, error) {
+func (exchange *Exchange) PriceFilters(ctx context.Context, symbol string) (gridlimits.PriceFilters, error) {
 	symbol = market.NormalizeSymbol(symbol)
 	var response struct {
 		Symbols []struct {
@@ -52,13 +53,13 @@ func (exchange *Exchange) PriceFilters(ctx context.Context, symbol string) (mark
 		} `json:"symbols"`
 	}
 	if err := exchange.getSymbolJSON(ctx, "/api/v3/exchangeInfo", symbol, &response); err != nil {
-		return market.PriceFilters{}, fmt.Errorf("get Binance price filters for %s: %w", symbol, err)
+		return gridlimits.PriceFilters{}, fmt.Errorf("get Binance price filters for %s: %w", symbol, err)
 	}
 	for _, info := range response.Symbols {
 		if market.NormalizeSymbol(info.Symbol) != symbol {
 			continue
 		}
-		var filters market.PriceFilters
+		var filters gridlimits.PriceFilters
 		for _, filter := range info.Filters {
 			type field struct {
 				value  string
@@ -76,14 +77,14 @@ func (exchange *Exchange) PriceFilters(ctx context.Context, symbol string) (mark
 			for _, field := range fields {
 				parsed, err := numeric.ParseFinite(field.value)
 				if err != nil || parsed < 0 {
-					return market.PriceFilters{}, fmt.Errorf("get Binance price filters for %s: invalid %s value %q", symbol, filter.FilterType, field.value)
+					return gridlimits.PriceFilters{}, fmt.Errorf("get Binance price filters for %s: invalid %s value %q", symbol, filter.FilterType, field.value)
 				}
 				*field.target = parsed
 			}
 		}
 		return filters, nil
 	}
-	return market.PriceFilters{}, market.ErrInstrumentNotFound
+	return gridlimits.PriceFilters{}, market.ErrInstrumentNotFound
 }
 
 // getSymbolJSON decodes a public endpoint that takes a symbol through the

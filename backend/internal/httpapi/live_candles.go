@@ -29,10 +29,14 @@ import (
 const (
 	maxLiveConnections        = 128
 	maxLiveConnectionsPerUser = 4
-	clientWriteTimeout        = 5 * time.Second
-	clientPongTimeout         = 60 * time.Second
-	clientPingPeriod          = 25 * time.Second
-	clientAuthTimeout         = 5 * time.Second
+	// maxUnauthenticatedLiveConnections bounds the sockets that have not
+	// authenticated yet. They never hold a slot of maxLiveConnections, so
+	// unauthenticated clients cannot take live charts from users.
+	maxUnauthenticatedLiveConnections = 16
+	clientWriteTimeout                = 5 * time.Second
+	clientPongTimeout                 = 60 * time.Second
+	clientPingPeriod                  = 25 * time.Second
+	clientAuthTimeout                 = 5 * time.Second
 	// sessionCheckPeriod bounds how long a connection outlives its session,
 	// for example after the user is deleted.
 	sessionCheckPeriod  = time.Minute
@@ -54,12 +58,13 @@ type liveCandleHandler struct {
 	logger      *slog.Logger
 	upgrader    websocket.Upgrader
 	connections chan struct{}
+	pending     chan struct{}
 	userMu      sync.Mutex
 	userCounts  map[int64]int
 }
 
 func newLiveCandleHandler(sessions Sessions, service LiveCandles, charts ChartService, logger *slog.Logger) http.Handler {
-	handler := &liveCandleHandler{sessions: sessions, service: service, charts: charts, logger: logger, connections: make(chan struct{}, maxLiveConnections), userCounts: make(map[int64]int)}
+	handler := &liveCandleHandler{sessions: sessions, service: service, charts: charts, logger: logger, connections: make(chan struct{}, maxLiveConnections), pending: make(chan struct{}, maxUnauthenticatedLiveConnections), userCounts: make(map[int64]int)}
 	// Chart snapshots are large, repetitive JSON; compressing them saves round
 	// trips on high-latency links, where TCP slow start dominates delivery.
 	handler.upgrader = websocket.Upgrader{HandshakeTimeout: 5 * time.Second, CheckOrigin: sameWebSocketOrigin, EnableCompression: true}
@@ -77,30 +82,25 @@ func sameWebSocketOrigin(request *http.Request) bool {
 
 func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
 	select {
-	case handler.connections <- struct{}{}:
-		defer func() { <-handler.connections }()
+	case handler.pending <- struct{}{}:
 	default:
 		http.Error(response, "Live connection limit reached", http.StatusServiceUnavailable)
 		return
 	}
-	connection, err := handler.upgrader.Upgrade(response, request, nil)
-	if err != nil {
+	connection, client, user, token, ok := handler.authenticate(response, request)
+	<-handler.pending
+	if connection == nil {
 		return
 	}
-	client := newLiveSocketClient(newRequestID(), connection)
-	subscriber := newChartClient(request.Context(), client, handler.charts, handler.logger)
-	defer func() { handler.service.RemoveClient(client.ID()); subscriber.Close() }()
-	connection.SetReadLimit(maxClientMessage)
-	_ = connection.SetReadDeadline(time.Now().Add(clientAuthTimeout))
-	message, err := readLiveClientMessage(connection)
-	if err != nil || message.Type != Authenticate || message.Token == nil {
-		client.writeError("unauthenticated", authenticationRequiredMessage)
+	defer client.Close()
+	if !ok {
 		return
 	}
-	token := *message.Token
-	user, err := handler.sessions.Authenticate(request.Context(), token)
-	if err != nil {
-		handler.writeAuthenticationError(request.Context(), client, err)
+	select {
+	case handler.connections <- struct{}{}:
+		defer func() { <-handler.connections }()
+	default:
+		client.writeError("unavailable", "Live connection limit reached")
 		return
 	}
 	if !handler.acquireUser(user.ID) {
@@ -108,6 +108,10 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 		return
 	}
 	defer handler.releaseUser(user.ID)
+	subscriber := newChartClient(client, handler.charts, handler.logger)
+	// Chart streams may read storage until they stop, so the handler waits
+	// for them before it returns.
+	defer func() { handler.service.RemoveClient(client.ID()); subscriber.Close(); subscriber.Wait() }()
 	if !handler.service.RegisterClient(subscriber) {
 		return
 	}
@@ -133,7 +137,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			client.writeError("rate_limited", "Too many WebSocket messages")
 			return
 		}
-		message, err = readLiveClientMessage(connection)
+		message, err := readLiveClientMessage(connection)
 		if err != nil {
 			return
 		}
@@ -169,7 +173,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			// The range is set first, so the snapshot of a new subscription
 			// builds the chart once. Subscribing again to the same key only
 			// changes the chart range.
-			subscriber.setRange(key, limit, configs)
+			subscriber.setRange(request.Context(), key, limit, configs)
 			err := handler.service.Subscribe(request.Context(), subscriber, key.Symbol, key.Interval)
 			if err != nil {
 				subscriber.forget(key)
@@ -195,6 +199,31 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 			client.enqueueError("invalid_message", "Unsupported WebSocket message")
 		}
 	}
+}
+
+// authenticate upgrades the request and reads its authenticate message. The
+// connection is nil when the upgrade failed; ok is false when authentication
+// failed, which has been reported to the client.
+func (handler *liveCandleHandler) authenticate(response http.ResponseWriter, request *http.Request) (connection *websocket.Conn, client *liveSocketClient, user auth.User, token string, ok bool) {
+	connection, err := handler.upgrader.Upgrade(response, request, nil)
+	if err != nil {
+		return nil, nil, auth.User{}, "", false
+	}
+	client = newLiveSocketClient(newRequestID(), connection)
+	connection.SetReadLimit(maxClientMessage)
+	_ = connection.SetReadDeadline(time.Now().Add(clientAuthTimeout))
+	message, err := readLiveClientMessage(connection)
+	if err != nil || message.Type != Authenticate || message.Token == nil {
+		client.writeError("unauthenticated", authenticationRequiredMessage)
+		return connection, client, auth.User{}, "", false
+	}
+	token = *message.Token
+	user, err = handler.sessions.Authenticate(request.Context(), token)
+	if err != nil {
+		handler.writeAuthenticationError(request.Context(), client, err)
+		return connection, client, auth.User{}, "", false
+	}
+	return connection, client, user, token, true
 }
 
 // watchSession closes the connection once its session is no longer valid. It

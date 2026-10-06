@@ -14,7 +14,6 @@ import (
 	"sync"
 	"unicode/utf8"
 
-	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
@@ -120,6 +119,9 @@ type Indicators interface {
 	List() []scannerindicator.Entry
 	// Preview derives the entry of an indicator that is not configured.
 	Preview(scannerindicator.Indicator) (scannerindicator.Entry, error)
+	// CapacityProblems names the intervals that cannot take the added
+	// indicators.
+	CapacityProblems(added []scannerindicator.Entry) []string
 }
 
 // Service keeps the strategies in memory and persists every change.
@@ -211,7 +213,7 @@ func (service *Service) Validate(ctx context.Context, expression string) (Valida
 		}
 	}
 	if errors.As(err, &invalid) {
-		return Validation{Problems: append(invalid.Problems, capacityProblems(configured, missing)...), Missing: missing}, nil
+		return Validation{Problems: append(invalid.Problems, service.indicators.CapacityProblems(missing)...), Missing: missing}, nil
 	}
 	if err != nil {
 		return Validation{}, err
@@ -220,35 +222,13 @@ func (service *Service) Validate(ctx context.Context, expression string) (Valida
 	if err != nil {
 		return Validation{}, err
 	}
-	problems := capacityProblems(configured, missing)
+	problems := service.indicators.CapacityProblems(missing)
 	for _, symbol := range compiled.Symbols() {
 		if !slices.Contains(favorites, symbol) {
 			problems = append(problems, symbol+" is not an active coin in the administrator's favorites")
 		}
 	}
 	return Validation{Problems: problems, Missing: missing}, nil
-}
-
-// capacityProblems names the intervals whose charts cannot take the missing
-// indicators, which are added only all together.
-func capacityProblems(configured, missing []scannerindicator.Entry) []string {
-	count := func(entries []scannerindicator.Entry, interval market.CandleInterval) int {
-		total := 0
-		for _, entry := range entries {
-			if entry.Interval == interval {
-				total++
-			}
-		}
-		return total
-	}
-	problems := []string{}
-	for _, interval := range market.CandleIntervals() {
-		existing, needed := count(configured, interval), count(missing, interval)
-		if needed > 0 && existing+needed > chart.MaxIndicators {
-			problems = append(problems, fmt.Sprintf("%s has %d of at most %d indicators, the expression needs %d more", interval, existing, chart.MaxIndicators, needed))
-		}
-	}
-	return problems
 }
 
 // Load replaces the strategies with the stored ones. A strategy that no

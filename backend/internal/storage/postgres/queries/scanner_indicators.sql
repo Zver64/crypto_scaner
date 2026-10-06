@@ -3,7 +3,13 @@ SELECT id, interval, indicator_type, parameters, show_in_table, show_in_chart, s
 FROM app.scanner_indicators
 ORDER BY position, id;
 
--- name: InsertScannerIndicator :one
+-- name: LockScannerIndicators :exec
+-- Serializes appends, which number positions after the current maximum, with
+-- each other and with other writes; reads stay allowed.
+LOCK TABLE app.scanner_indicators IN SHARE ROW EXCLUSIVE MODE;
+
+-- name: InsertScannerIndicator :batchone
+-- Runs after LockScannerIndicators; each insert sees the previous ones.
 INSERT INTO app.scanner_indicators (interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels, position)
 SELECT $1, $2, $3, $4, $5, $6, $7, $8, COALESCE(MAX(position) + 1, 0)::INTEGER
 FROM app.scanner_indicators

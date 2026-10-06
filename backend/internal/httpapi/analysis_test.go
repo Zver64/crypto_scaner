@@ -15,9 +15,9 @@ import (
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/analysis/criteria/volatility"
 	"crypto-scanner/internal/auth"
+	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/httpapi"
-	"crypto-scanner/internal/indicator"
-	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/markettable"
 	"crypto-scanner/internal/platform/logging"
@@ -415,6 +415,10 @@ func (service *countingAnalysis) Search(_ context.Context, request analysis.Sear
 	return markettable.Result{}, analysis.ErrInvalidArgument
 }
 
+func (service *countingAnalysis) Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error) {
+	return markettable.Result{}, analysis.ErrInvalidArgument
+}
+
 // analysisSessions accepts only analysisSessionToken.
 type analysisSessions struct{}
 
@@ -437,9 +441,8 @@ func (analysisSessions) Authenticate(_ context.Context, token string) (auth.User
 func (analysisSessions) Revoke(context.Context, string) error { return nil }
 func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysis.Factory) http.Handler {
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
-	service, _ := analysis.NewService(store, nil, factories...)
-	registry, _ := indicator.NewRegistry(indicatortalib.New()...)
-	table, err := markettable.NewCatalog(registry, noConfiguredColumns{}, markettable.Sort{Column: "market_cap_usd", Direction: markettable.Descending},
+	service, _ := analysis.NewService(store, noClosedIndicators{}, factories...)
+	table, err := markettable.NewCatalog(noConfiguredColumns{}, markettable.Sort{Column: "market_cap_usd", Direction: markettable.Descending},
 		markettable.Column{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
 		markettable.Column{ID: "market_cap_usd", Title: "MCap", Kind: markettable.KindUSDCompact, Sortable: true, Source: markettable.CriterionMetric{Criterion: "market_cap", Metric: "market_cap_usd"}},
 		markettable.Column{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{}},
@@ -447,7 +450,11 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	if err != nil {
 		panic(err)
 	}
-	return httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: markettable.NewService(service, table), Sessions: analysisSessions{}}, httpapi.Options{})
+	tables, err := markettable.NewService(service, noClosedIndicators{}, table, table)
+	if err != nil {
+		panic(err)
+	}
+	return httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{Readiness: readinessStub{marketSync: true}, Analysis: service, MarketTables: tables, Sessions: analysisSessions{}}, httpapi.Options{})
 }
 
 type httpStore struct {
@@ -507,7 +514,9 @@ type httpMarketCapCriterion struct{}
 
 func (httpMarketCapCriterion) Name() string                               { return "market_cap" }
 func (httpMarketCapCriterion) Requirements() []analysis.CandleRequirement { return nil }
-func (httpMarketCapCriterion) MinimumMarketCapUSD() float64               { return 0 }
+func (httpMarketCapCriterion) Constrain(selection *analysis.Selection) {
+	selection.ConstrainAtLeast(analysis.SelectionFactMarketCapUSD, 0)
+}
 func (httpMarketCapCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
 	return analysis.Evaluation{Matched: true, Metrics: map[string]float64{"market_cap_usd": 1}}, nil
 }
@@ -522,4 +531,11 @@ func httpCandles(end time.Time, count int, step time.Duration, rangePercent floa
 
 func httpCandle(openTime time.Time, rangePercent float64) market.Candle {
 	return market.Candle{OpenTime: openTime, Open: 100, High: 100 + rangePercent, Low: 100}
+}
+
+// noClosedIndicators supplies no closed indicator values.
+type noClosedIndicators struct{}
+
+func (noClosedIndicators) Latest(context.Context, []int64) map[int64][]closedindicator.Value {
+	return nil
 }

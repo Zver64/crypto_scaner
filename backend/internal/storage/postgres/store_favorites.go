@@ -6,10 +6,10 @@ import (
 	"fmt"
 
 	"crypto-scanner/internal/favorites"
-	"crypto-scanner/internal/market"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 // ListFavorites returns saved instruments even after delisting.
@@ -19,8 +19,8 @@ func (store *Store) ListFavorites(ctx context.Context, userID int64) ([]favorite
 		return nil, fmt.Errorf("list favorites: %w", err)
 	}
 	items := make([]favorites.Favorite, 0, len(rows))
-	for _, r := range rows {
-		items = append(items, favorites.Favorite{InstrumentID: r.InstrumentID, Symbol: r.Symbol, BaseAsset: r.BaseAsset, QuoteAsset: r.QuoteAsset, Active: r.IsActive, AlertCount: int(r.AlertCount), CreatedAt: r.CreatedAt.Time.UTC()})
+	for _, row := range rows {
+		items = append(items, favoriteFromRow(row.BinanceSpotInstrument, row.CreatedAt, row.AlertCount))
 	}
 	return items, nil
 }
@@ -28,35 +28,35 @@ func (store *Store) ListFavorites(ctx context.Context, userID int64) ([]favorite
 func (store *Store) AddFavorite(ctx context.Context, userID int64, symbol string) (favorites.Favorite, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return favorites.Favorite{}, err
+		return favorites.Favorite{}, fmt.Errorf("begin favorite addition: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	var locked int64
-	if err = tx.QueryRow(ctx, `SELECT id FROM app.users WHERE id=$1 FOR UPDATE`, userID).Scan(&locked); err != nil {
-		return favorites.Favorite{}, err
-	}
-	var instrumentID int64
-	if err = tx.QueryRow(ctx, `SELECT id FROM binance_spot.instruments WHERE symbol=$1 AND is_active`, symbol).Scan(&instrumentID); errors.Is(err, pgx.ErrNoRows) {
-		return favorites.Favorite{}, market.ErrInstrumentNotFound
-	} else if err != nil {
-		return favorites.Favorite{}, err
-	}
 	q := store.queries.WithTx(tx)
-	if err = q.AddFavorite(ctx, generated.AddFavoriteParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
+	if _, err = lockUser(ctx, q, userID); err != nil {
 		return favorites.Favorite{}, err
 	}
-	row, err := q.GetFavorite(ctx, generated.GetFavoriteParams{UserID: userID, Symbol: symbol})
+	instrumentID, err := activeInstrumentID(ctx, q, symbol)
 	if err != nil {
 		return favorites.Favorite{}, err
 	}
-	if err = tx.Commit(ctx); err != nil {
-		return favorites.Favorite{}, err
+	if _, err = q.AddFavorite(ctx, generated.AddFavoriteParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
+		return favorites.Favorite{}, fmt.Errorf("add favorite: %w", err)
 	}
-	return favoriteFromRow(row), nil
+	row, err := q.GetFavorite(ctx, generated.GetFavoriteParams{UserID: userID, InstrumentID: instrumentID})
+	if err != nil {
+		return favorites.Favorite{}, fmt.Errorf("get added favorite: %w", err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		return favorites.Favorite{}, fmt.Errorf("commit favorite addition: %w", err)
+	}
+	return favoriteFromRow(row.BinanceSpotInstrument, row.CreatedAt, row.AlertCount), nil
 }
 
-func favoriteFromRow(r generated.GetFavoriteRow) favorites.Favorite {
-	return favorites.Favorite{InstrumentID: r.InstrumentID, Symbol: r.Symbol, BaseAsset: r.BaseAsset, QuoteAsset: r.QuoteAsset, Active: r.IsActive, AlertCount: int(r.AlertCount), CreatedAt: r.CreatedAt.Time.UTC()}
+func favoriteFromRow(instrument generated.BinanceSpotInstrument, createdAt pgtype.Timestamptz, alertCount int32) favorites.Favorite {
+	return favorites.Favorite{
+		InstrumentID: instrument.ID, Symbol: instrument.Symbol, BaseAsset: instrument.BaseAsset, QuoteAsset: instrument.QuoteAsset,
+		Active: instrument.IsActive, AlertCount: int(alertCount), CreatedAt: createdAt.Time.UTC(),
+	}
 }
 
 // RemoveFavorite fails with strategy.InstrumentsInUseError when the
@@ -64,20 +64,21 @@ func favoriteFromRow(r generated.GetFavoriteRow) favorites.Favorite {
 func (store *Store) RemoveFavorite(ctx context.Context, userID, administratorTelegramID int64, symbol string, confirm bool) (int, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("begin favorite removal: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	telegramID, err := lockUser(ctx, tx, userID)
+	q := store.queries.WithTx(tx)
+	telegramID, err := lockUser(ctx, q, userID)
 	if err != nil {
 		return 0, err
 	}
-	var instrumentID int64
-	if err = tx.QueryRow(ctx, `SELECT i.id FROM app.favorites f JOIN binance_spot.instruments i ON i.id=f.instrument_id WHERE f.user_id=$1 AND i.symbol=$2 FOR UPDATE OF f`, userID, symbol).Scan(&instrumentID); errors.Is(err, pgx.ErrNoRows) {
+	instrumentID, err := q.LockFavoriteInstrumentID(ctx, generated.LockFavoriteInstrumentIDParams{UserID: userID, Symbol: symbol})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, favorites.ErrNotFound
-	} else if err != nil {
-		return 0, err
 	}
-	q := store.queries.WithTx(tx)
+	if err != nil {
+		return 0, fmt.Errorf("lock favorite: %w", err)
+	}
 	if telegramID == administratorTelegramID {
 		if err := strategiesReading(ctx, q, instrumentID); err != nil {
 			return 0, err
@@ -85,17 +86,20 @@ func (store *Store) RemoveFavorite(ctx context.Context, userID, administratorTel
 	}
 	count, err := q.CountFavoriteAlerts(ctx, generated.CountFavoriteAlertsParams{UserID: userID, InstrumentID: instrumentID})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("count favorite price alerts: %w", err)
 	}
 	if count > 0 && !confirm {
 		return int(count), favorites.ErrAlertsExist
 	}
 	rows, err := q.DeleteFavorite(ctx, generated.DeleteFavoriteParams{UserID: userID, InstrumentID: instrumentID})
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("delete favorite: %w", err)
 	}
 	if rows == 0 {
 		return 0, favorites.ErrNotFound
 	}
-	return int(count), tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit favorite removal: %w", err)
+	}
+	return int(count), nil
 }

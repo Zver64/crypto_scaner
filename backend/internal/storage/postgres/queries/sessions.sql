@@ -33,5 +33,7 @@ DELETE FROM app.sessions
 WHERE token_hash = $1;
 
 -- name: DeleteExpiredSessions :execrows
+-- The table checks idle_expires_at <= absolute_expires_at, so the idle expiry
+-- alone finds every expired session.
 DELETE FROM app.sessions
-WHERE idle_expires_at <= $1 OR absolute_expires_at <= $1;
+WHERE idle_expires_at <= $1;

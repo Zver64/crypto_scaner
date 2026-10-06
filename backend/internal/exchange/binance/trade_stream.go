@@ -156,7 +156,7 @@ func (stream *TradeStream) handle(ctx context.Context, payload []byte, epoch int
 	if message.Symbol == "" || message.TradeID < 0 || !validPrice || price.Sign() <= 0 || message.EventTime <= 0 {
 		return errors.New("invalid Binance trade event")
 	}
-	symbol := strings.ToUpper(message.Symbol)
+	symbol := market.NormalizeSymbol(message.Symbol)
 	eventTime := time.UnixMilli(message.EventTime).UTC()
 	stream.pendingMu.Lock()
 	merged := stream.pending[symbol]

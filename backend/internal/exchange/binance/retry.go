@@ -1,6 +1,7 @@
 package binance
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strconv"
@@ -29,7 +30,10 @@ type retryTransport struct {
 	repairLimiter *rate.Limiter // history repair requests per second
 	attempts      int
 	baseDelay     time.Duration
-	retryCount    atomic.Uint64
+	// timeout bounds one attempt, from sending the request until its body is
+	// closed, so a hung response is retried instead of blocking forever.
+	timeout    time.Duration
+	retryCount atomic.Uint64
 	// weightLimit is Binance's REQUEST_WEIGHT per minute, 0 until discovered.
 	weightLimit atomic.Int64
 	// pausedUntil (Unix nanoseconds) stops every request after a rate-limit
@@ -56,14 +60,24 @@ func (transport *retryTransport) RoundTrip(request *http.Request) (*http.Respons
 				return nil, err
 			}
 		}
-		response, err = transport.base.RoundTrip(request.Clone(ctx))
+		attemptCtx, cancel := context.WithTimeout(ctx, transport.timeout)
+		response, err = transport.base.RoundTrip(request.Clone(attemptCtx))
 		transport.observe(response)
 		if !retryable(response, err) || attempt == transport.attempts-1 {
+			if response == nil || response.Body == nil {
+				cancel()
+				return response, err
+			}
+			response.Body = cancelOnClose{ReadCloser: response.Body, cancel: cancel}
 			return response, err
 		}
 		if response != nil && response.Body != nil {
 			_, _ = io.Copy(io.Discard, response.Body)
 			_ = response.Body.Close()
+		}
+		cancel()
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
 		}
 		transport.retryCount.Add(1)
 		delay := retryDelay(response, transport.baseDelay, attempt)
@@ -72,6 +86,18 @@ func (transport *retryTransport) RoundTrip(request *http.Request) (*http.Respons
 		}
 	}
 	return response, err
+}
+
+// cancelOnClose ends an attempt's context once its response body is closed.
+type cancelOnClose struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (body cancelOnClose) Close() error {
+	err := body.ReadCloser.Close()
+	body.cancel()
+	return err
 }
 
 // observe pauses all requests when Binance reports a rate limit (429), an IP

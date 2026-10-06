@@ -31,16 +31,16 @@ type Analysis interface {
 	AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error)
 }
 
-// MarketTables runs market searches and presents them as tables.
+// MarketTables runs market and favorites analyses and presents them as tables.
 type MarketTables interface {
 	Search(context.Context, analysis.SearchRequest) (markettable.Result, error)
+	Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error)
 }
 
 type Favorites interface {
 	List(context.Context, int64) ([]favorites.Favorite, error)
 	Add(context.Context, int64, string) (favorites.Favorite, error)
 	Remove(context.Context, int64, string, bool) (int, error)
-	Analyze(context.Context, int64, analysis.SearchRequest) (markettable.Result, error)
 }
 
 type PriceAlerts interface {
@@ -50,7 +50,7 @@ type PriceAlerts interface {
 	Delete(context.Context, int64, int64) error
 }
 
-const maxAnalysisRequestBody = 1 << 20
+const maxRequestBody = 1 << 20
 
 // Dependencies are the use cases served by the API. All are required.
 type Dependencies struct {
@@ -169,12 +169,12 @@ func newHandler(logger *slog.Logger, dependencies Dependencies, options Options,
 
 	router := http.NewServeMux()
 	router.Handle("/health/", operations)
-	router.Handle("POST /api/v1/auth/session", requireInitData(validator(operations)))
-	protectedOperations := authenticate(defaultJSONContentType(limitAnalysisRequestBody(validator(operations))))
+	router.Handle("POST /api/v1/auth/session", requireInitData(limitRequestBody(validator(operations))))
+	protectedOperations := authenticate(defaultJSONContentType(limitRequestBody(validator(operations))))
 	for _, route := range protectedRoutes {
 		router.Handle(route, protectedOperations)
 	}
-	administratorOperations := authenticate(requireAdministrator(defaultJSONContentType(limitAnalysisRequestBody(validator(operations)))))
+	administratorOperations := authenticate(requireAdministrator(defaultJSONContentType(limitRequestBody(validator(operations)))))
 	for _, route := range administratorRoutes {
 		router.Handle(route, administratorOperations)
 	}
@@ -244,11 +244,10 @@ func candleValidationMessage(request *http.Request, options nethttpmiddleware.Er
 	return "Invalid request"
 }
 
-func limitAnalysisRequestBody(next http.Handler) http.Handler {
+// limitRequestBody bounds the body of every request, whatever its method.
+func limitRequestBody(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if request.Method == http.MethodPost {
-			request.Body = http.MaxBytesReader(response, request.Body, maxAnalysisRequestBody)
-		}
+		request.Body = http.MaxBytesReader(response, request.Body, maxRequestBody)
 		next.ServeHTTP(response, request)
 	})
 }

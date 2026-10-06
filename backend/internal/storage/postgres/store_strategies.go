@@ -124,11 +124,14 @@ func replaceStrategySymbols(ctx context.Context, queries *generated.Queries, str
 // read it as strategy.InstrumentsInUseError.
 func strategiesReading(ctx context.Context, queries *generated.Queries, instrumentID int64) error {
 	if err := queries.LockInstrument(ctx, instrumentID); err != nil {
-		return err
+		return fmt.Errorf("lock instrument: %w", err)
 	}
 	rows, err := queries.ListStrategiesReading(ctx, instrumentID)
-	if err != nil || len(rows) == 0 {
-		return err
+	if err != nil {
+		return fmt.Errorf("list strategies reading instrument: %w", err)
+	}
+	if len(rows) == 0 {
+		return nil
 	}
 	use := strategy.InstrumentUse{Symbol: rows[0].Symbol}
 	for _, row := range rows {

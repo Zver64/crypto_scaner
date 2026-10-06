@@ -187,7 +187,7 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 	}
 
 	tracked := snapshot{reads: readsOf([]Entry{entry}, instruments, instruments), bySymbol: bySymbol(instruments), now: now}
-	tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler), subscriptionSource(tracked.reads.subscriptions))
+	tracker, err := closedindicator.New(store, registry, subscriptionSource(tracked.reads.subscriptions), nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -279,14 +279,15 @@ func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *
 
 type testIndicators struct{ entries []scannerindicator.Entry }
 
-func (indicators testIndicators) List() []scannerindicator.Entry { return indicators.entries }
+func (indicators testIndicators) List() []scannerindicator.Entry          { return indicators.entries }
+func (testIndicators) CapacityProblems([]scannerindicator.Entry) []string { return []string{} }
 func (testIndicators) Preview(scannerindicator.Indicator) (scannerindicator.Entry, error) {
 	return scannerindicator.Entry{}, errors.New("not configured")
 }
 
 type subscriptionSource []closedindicator.Subscription
 
-func (source subscriptionSource) Subscriptions(context.Context, []closedindicator.Target) ([]closedindicator.Subscription, error) {
+func (source subscriptionSource) Subscriptions(context.Context) ([]closedindicator.Subscription, error) {
 	return source, nil
 }
 

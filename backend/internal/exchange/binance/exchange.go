@@ -30,6 +30,8 @@ type Options struct {
 	HTTPClient     *http.Client
 	RetryAttempts  int
 	RetryBaseDelay time.Duration
+	// RequestTimeout bounds each attempt including its response body.
+	RequestTimeout time.Duration
 	// Limiter meters request weight per second; its burst must cover the
 	// heaviest request (exchange information, weight 20).
 	Limiter              *rate.Limiter
@@ -51,6 +53,9 @@ func New(options Options) *Exchange {
 	if options.RetryBaseDelay <= 0 {
 		options.RetryBaseDelay = 200 * time.Millisecond
 	}
+	if options.RequestTimeout <= 0 {
+		options.RequestTimeout = 30 * time.Second
+	}
 	if options.Limiter == nil {
 		// Conservative until exchange information reports the real budget.
 		options.Limiter = rate.NewLimiter(rate.Limit(20), 40)
@@ -68,7 +73,7 @@ func New(options Options) *Exchange {
 	}
 	transport := &retryTransport{
 		base: baseTransport, limiter: options.Limiter, repairLimiter: options.HistoryRepairLimiter,
-		attempts: options.RetryAttempts, baseDelay: options.RetryBaseDelay,
+		attempts: options.RetryAttempts, baseDelay: options.RetryBaseDelay, timeout: options.RequestTimeout,
 	}
 	httpClient.Transport = transport
 	client.HTTPClient = &httpClient

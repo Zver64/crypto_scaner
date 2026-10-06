@@ -86,6 +86,17 @@ func (q *Queries) GetActiveInstrumentBySymbol(ctx context.Context, symbol string
 	return i, err
 }
 
+const getActiveInstrumentIDBySymbol = `-- name: GetActiveInstrumentIDBySymbol :one
+SELECT id FROM binance_spot.instruments WHERE symbol = $1 AND is_active
+`
+
+func (q *Queries) GetActiveInstrumentIDBySymbol(ctx context.Context, symbol string) (int64, error) {
+	row := q.db.QueryRow(ctx, getActiveInstrumentIDBySymbol, symbol)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listActiveInstruments = `-- name: ListActiveInstruments :many
 SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active, instrument.deactivated_at
 FROM binance_spot.instruments AS instrument
@@ -130,11 +141,13 @@ FROM binance_spot.instruments AS instrument
 WHERE NOT instrument.is_active
   AND instrument.deactivated_at < $1
   AND NOT EXISTS (SELECT 1 FROM app.favorites AS favorite WHERE favorite.instrument_id = instrument.id)
+ORDER BY instrument.id
 FOR UPDATE
 `
 
 // Locks instruments inactive since before inactive_before that nobody has
 // favorited, so a concurrent snapshot cannot reactivate them mid-deletion.
+// Locks in id order, like the other instrument row locks.
 func (q *Queries) ListDelistedInstrumentIDs(ctx context.Context, inactiveBefore pgtype.Timestamptz) ([]int64, error) {
 	rows, err := q.db.Query(ctx, listDelistedInstrumentIDs, inactiveBefore)
 	if err != nil {
@@ -155,6 +168,23 @@ func (q *Queries) ListDelistedInstrumentIDs(ctx context.Context, inactiveBefore 
 	return items, nil
 }
 
+const lockSnapshotInstruments = `-- name: LockSnapshotInstruments :exec
+SELECT id FROM binance_spot.instruments
+WHERE is_active OR symbol = ANY($1::text[])
+ORDER BY id
+FOR NO KEY UPDATE
+`
+
+// Locks every row the snapshot may update in id order, the order of the
+// other instrument row locks (strategy symbols, delisted instrument
+// retention), so these transactions cannot deadlock. NO KEY UPDATE is the
+// lock the updates take themselves and does not block the KEY SHARE locks of
+// foreign key inserts such as candles and favorites.
+func (q *Queries) LockSnapshotInstruments(ctx context.Context, symbols []string) error {
+	_, err := q.db.Exec(ctx, lockSnapshotInstruments, symbols)
+	return err
+}
+
 const selectActiveInstruments = `-- name: SelectActiveInstruments :many
 SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active, instrument.deactivated_at,
        (market_cap.coin_id IS NOT NULL)::boolean AS market_cap_available,
@@ -173,7 +203,7 @@ WHERE instrument.is_active = TRUE
 ORDER BY
   CASE WHEN $5::text = 'asc' THEN market_cap.market_cap_usd END ASC NULLS LAST,
   CASE WHEN $5::text = 'desc' THEN market_cap.market_cap_usd END DESC NULLS LAST,
-  CASE WHEN $5::text <> '' THEN instrument.symbol END ASC
+  instrument.symbol ASC
 LIMIT NULLIF($6::int, 0)
 `
 

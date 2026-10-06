@@ -136,45 +136,52 @@ func (service *Service) Validate(configs []indicator.Selection) error {
 	return nil
 }
 
-// warmup validates the selection and returns the largest lookback, the number
-// of closed candles loaded before the visible range.
+// warmup validates the selection and returns the number of closed candles
+// loaded before the visible range: the largest Window but one.
 func (service *Service) warmup(configs []indicator.Selection) (int, error) {
 	if err := service.Validate(configs); err != nil {
 		return 0, err
 	}
 	largest := 0
 	for _, config := range configs {
-		value, err := service.indicators.Lookback(config.Type, config.Parameters)
+		window, err := Window(service.indicators, config)
 		if err != nil {
 			return 0, err
 		}
-		largest = max(largest, value)
+		largest = max(largest, window-1)
 	}
 	return largest, nil
 }
 
-// calculate runs indicators over the warm-up and visible candles and keeps only
-// the points of visible candles.
+// calculate runs each indicator over its own Window of warm-up before the
+// visible candles, so its points do not depend on the other indicators, and
+// keeps only the points of visible candles.
 func (service *Service) calculate(interval market.CandleInterval, warmup, candles []market.Candle, configs []indicator.Selection) ([]indicator.Calculation, error) {
-	all := append(append([]market.Candle(nil), warmup...), candles...)
-	results, err := service.indicators.CalculateCandles(interval, all, configs)
-	if err != nil || len(warmup) == 0 {
-		return results, err
-	}
-	var from time.Time
-	if len(candles) > 0 {
-		from = candles[0].OpenTime
-	}
-	for i := range results {
-		for j := range results[i].Series {
-			points := results[i].Series[j].Points
-			first, _ := slices.BinarySearchFunc(points, from, func(point indicator.Point, target time.Time) int {
-				return point.Time.Compare(target)
-			})
-			if len(candles) == 0 {
-				first = len(points)
+	results := make([]indicator.Calculation, len(configs))
+	for index, config := range configs {
+		window, err := Window(service.indicators, config)
+		if err != nil {
+			return nil, err
+		}
+		own := warmup[max(0, len(warmup)-(window-1)):]
+		all := append(append([]market.Candle(nil), own...), candles...)
+		calculated, err := service.indicators.CalculateCandles(interval, all, []indicator.Selection{config})
+		if err != nil {
+			return nil, err
+		}
+		results[index] = calculated[0]
+		if len(own) == 0 {
+			continue
+		}
+		for j := range results[index].Series {
+			points := results[index].Series[j].Points
+			first := len(points)
+			if len(candles) > 0 {
+				first, _ = slices.BinarySearchFunc(points, candles[0].OpenTime, func(point indicator.Point, target time.Time) int {
+					return point.Time.Compare(target)
+				})
 			}
-			results[i].Series[j].Points = points[first:]
+			results[index].Series[j].Points = points[first:]
 		}
 	}
 	return results, nil

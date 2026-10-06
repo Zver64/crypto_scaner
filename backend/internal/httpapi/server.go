@@ -10,8 +10,13 @@ import (
 	"time"
 )
 
+// The read and write timeouts bound plain requests only: net/http clears a
+// connection's deadlines when a handler hijacks it, so live candle WebSockets
+// stay open and manage their own deadlines.
 const (
 	readHeaderTimeout = 5 * time.Second
+	readTimeout       = 30 * time.Second
+	writeTimeout      = 2 * time.Minute
 	idleTimeout       = 60 * time.Second
 )
 
@@ -28,6 +33,8 @@ func Serve(
 	server := &http.Server{
 		Handler:           handler,
 		ReadHeaderTimeout: readHeaderTimeout,
+		ReadTimeout:       readTimeout,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       idleTimeout,
 		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
 	}

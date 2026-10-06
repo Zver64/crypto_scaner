@@ -13,12 +13,11 @@ import (
 )
 
 func (store *Store) BootstrapCompleted(ctx context.Context) (bool, error) {
-	value, err := store.queries.MappingBootstrapCompleted(ctx)
+	completed, err := store.queries.MappingBootstrapCompleted(ctx)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("read CoinGecko mapping bootstrap: %w", err)
 	}
-	completed, ok := value.(bool)
-	return completed && ok, nil
+	return completed, nil
 }
 
 func (store *Store) ReplaceSnapshot(ctx context.Context, mappings []marketcap.Mapping) error {

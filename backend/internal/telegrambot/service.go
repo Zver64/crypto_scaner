@@ -32,11 +32,8 @@ const (
 // Options makes the bot boundary testable without changing its production
 // transport. ServerURL is only useful for a fake Telegram endpoint in tests.
 type Options struct {
-	ServerURL     string
-	HTTPClient    telegram.HttpClient
-	PollTimeout   time.Duration
-	Synchronous   bool
-	AccessChanged func()
+	ServerURL   string
+	Synchronous bool
 }
 
 // Service owns one long-polling Telegram Bot API consumer and its ephemeral
@@ -70,8 +67,9 @@ type operation struct {
 
 // New constructs a Telegram Bot API client without changing any BotFather
 // settings. The configured administrator ID is the only authority for granting
-// access; other application users never gain that authority.
-func New(token string, administratorID int64, store auth.AccessStore, logger *slog.Logger, options Options) (*Service, error) {
+// access; other application users never gain that authority. accessChanged
+// runs after the bot grants access.
+func New(token string, administratorID int64, store auth.AccessStore, logger *slog.Logger, accessChanged func(), options Options) (*Service, error) {
 	if administratorID <= 0 {
 		return nil, fmt.Errorf("administrator Telegram ID must be positive")
 	}
@@ -81,20 +79,16 @@ func New(token string, administratorID int64, store auth.AccessStore, logger *sl
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-	service := &Service{store: store, administratorID: administratorID, logger: logger, operations: map[string]*operation{}, sendLimiter: rate.NewLimiter(rate.Limit(25), 25), accessChanged: options.AccessChanged}
+	if accessChanged == nil {
+		return nil, fmt.Errorf("access change listener is required")
+	}
+	service := &Service{store: store, administratorID: administratorID, logger: logger, operations: map[string]*operation{}, sendLimiter: rate.NewLimiter(rate.Limit(25), 25), accessChanged: accessChanged}
 	botOptions := []telegram.Option{
 		telegram.WithAllowedUpdates(telegram.AllowedUpdates{"message", "callback_query"}),
 		telegram.WithDefaultHandler(service.handleUpdate),
 	}
 	if options.ServerURL != "" {
 		botOptions = append(botOptions, telegram.WithServerURL(options.ServerURL))
-	}
-	if options.HTTPClient != nil {
-		pollTimeout := options.PollTimeout
-		if pollTimeout <= 0 {
-			pollTimeout = 30 * time.Second
-		}
-		botOptions = append(botOptions, telegram.WithHTTPClient(pollTimeout, options.HTTPClient))
 	}
 	if options.Synchronous {
 		botOptions = append(botOptions, telegram.WithNotAsyncHandlers())
@@ -281,9 +275,7 @@ func (service *Service) handleCallback(ctx context.Context, client *telegram.Bot
 		service.sendMenu(ctx, client, chat.ID, formatUser(operation.user)+" already has Scanner Access.")
 		return
 	}
-	if service.accessChanged != nil {
-		service.accessChanged()
-	}
+	service.accessChanged()
 	service.sendMenu(ctx, client, chat.ID, "Scanner Access granted to "+formatUser(operation.user)+".")
 }
 

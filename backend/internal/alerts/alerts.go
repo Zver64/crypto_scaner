@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"crypto-scanner/internal/market"
 )
 
 const MaxPerInstrument = 10
@@ -83,7 +85,9 @@ type Fired struct {
 
 type CRUDStore interface {
 	ListAlerts(context.Context, int64, string) ([]Alert, error)
-	CreateAlert(context.Context, int64, string, string) (Alert, error)
+	// CreateAlert adds the instrument to the user's favorites when needed and
+	// reports whether it did.
+	CreateAlert(ctx context.Context, userID int64, symbol, target string) (item Alert, favoriteAdded bool, err error)
 	UpdateAlert(context.Context, int64, int64, string) (Alert, error)
 	DeleteAlert(context.Context, int64, int64) error
 }
@@ -97,22 +101,34 @@ type LiveIndex interface {
 type Service struct {
 	store CRUDStore
 	live  LiveIndex
+	// favoritesChanged runs when creating an alert added a favorite, which
+	// changes the monitored instruments.
+	favoritesChanged func()
 }
 
-func New(store CRUDStore, live LiveIndex) *Service { return &Service{store: store, live: live} }
+func New(store CRUDStore, live LiveIndex, favoritesChanged func()) (*Service, error) {
+	if store == nil || live == nil || favoritesChanged == nil {
+		return nil, errors.New("price alert service dependencies are required")
+	}
+	return &Service{store: store, live: live, favoritesChanged: favoritesChanged}, nil
+}
 func (s *Service) List(ctx context.Context, userID int64, symbol string) ([]Alert, error) {
-	return s.store.ListAlerts(ctx, userID, symbol)
+	return s.store.ListAlerts(ctx, userID, market.NormalizeSymbol(symbol))
 }
 func (s *Service) Create(ctx context.Context, userID int64, symbol, raw string) (Alert, error) {
 	target, err := NormalizeTarget(raw)
 	if err != nil {
 		return Alert{}, err
 	}
-	item, err := s.store.CreateAlert(ctx, userID, symbol, target)
-	if err == nil && s.live != nil {
-		s.live.Apply(item)
+	item, favoriteAdded, err := s.store.CreateAlert(ctx, userID, market.NormalizeSymbol(symbol), target)
+	if err != nil {
+		return Alert{}, err
 	}
-	return item, err
+	s.live.Apply(item)
+	if favoriteAdded {
+		s.favoritesChanged()
+	}
+	return item, nil
 }
 func (s *Service) Update(ctx context.Context, userID, id int64, raw string) (Alert, error) {
 	target, err := NormalizeTarget(raw)
@@ -120,15 +136,16 @@ func (s *Service) Update(ctx context.Context, userID, id int64, raw string) (Ale
 		return Alert{}, err
 	}
 	item, err := s.store.UpdateAlert(ctx, userID, id, target)
-	if err == nil && s.live != nil {
-		s.live.Apply(item)
+	if err != nil {
+		return Alert{}, err
 	}
-	return item, err
+	s.live.Apply(item)
+	return item, nil
 }
 func (s *Service) Delete(ctx context.Context, userID, id int64) error {
-	err := s.store.DeleteAlert(ctx, userID, id)
-	if err == nil && s.live != nil {
-		s.live.Remove(userID, id)
+	if err := s.store.DeleteAlert(ctx, userID, id); err != nil {
+		return err
 	}
-	return err
+	s.live.Remove(userID, id)
+	return nil
 }

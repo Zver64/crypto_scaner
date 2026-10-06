@@ -132,6 +132,18 @@ func (q *Queries) ListUsers(ctx context.Context) ([]ListUsersRow, error) {
 	return items, nil
 }
 
+const lockUser = `-- name: LockUser :one
+SELECT telegram_id FROM app.users WHERE id = $1 FOR UPDATE
+`
+
+// Serializes a user's favorite and price alert writes.
+func (q *Queries) LockUser(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, lockUser, id)
+	var telegram_id int64
+	err := row.Scan(&telegram_id)
+	return telegram_id, err
+}
+
 const setUserStrategyAlerts = `-- name: SetUserStrategyAlerts :execrows
 UPDATE app.users
 SET strategy_alerts = $2, updated_at = now()

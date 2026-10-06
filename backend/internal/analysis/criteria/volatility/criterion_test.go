@@ -176,8 +176,8 @@ func TestPercentileRejectsInvalidCandleWithSufficientHistory(t *testing.T) {
 	data := []market.Candle{candle(start, 1), candle(start.AddDate(0, 0, 1), 2)}
 	data[0].Open = 0
 	_, err = c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: data}})
-	if !errors.Is(err, analysis.ErrInvalidCandleData) {
-		t.Fatalf("err=%v", err)
+	if err == nil {
+		t.Fatal("expected an invalid candle error")
 	}
 }
 func TestPercentileRejectsInvalidParameters(t *testing.T) {

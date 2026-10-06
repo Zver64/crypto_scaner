@@ -37,19 +37,22 @@ func (store *Store) ListScannerIndicators(ctx context.Context) ([]scannerindicat
 }
 
 func (store *Store) CreateScannerIndicators(ctx context.Context, items []scannerindicator.Indicator) ([]int64, error) {
+	if len(items) == 0 {
+		return []int64{}, nil
+	}
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	ids := make([]int64, len(items))
+	params := make([]generated.InsertScannerIndicatorParams, len(items))
 	for i, item := range items {
 		parameters, err := json.Marshal(item.Selection.Parameters)
 		if err != nil {
 			return nil, fmt.Errorf("encode scanner indicator parameters: %w", err)
 		}
-		ids[i], err = queries.InsertScannerIndicator(ctx, generated.InsertScannerIndicatorParams{
+		params[i] = generated.InsertScannerIndicatorParams{
 			Interval:      string(item.Interval),
 			IndicatorType: string(item.Selection.Type),
 			Parameters:    parameters,
@@ -58,13 +61,27 @@ func (store *Store) CreateScannerIndicators(ctx context.Context, items []scanner
 			ScaleMin:      float8(item.Scale.Min),
 			ScaleMax:      float8(item.Scale.Max),
 			ScaleLevels:   append([]float64{}, item.Scale.Levels...),
-		})
-		if duplicateViolation(err) {
-			return nil, scannerindicator.ErrConflict
 		}
-		if err != nil {
-			return nil, err
+	}
+	if err := queries.LockScannerIndicators(ctx); err != nil {
+		return nil, fmt.Errorf("lock scanner indicators: %w", err)
+	}
+	// One round trip; each insert takes the position after the previous one.
+	ids := make([]int64, len(items))
+	var insertErr error
+	queries.InsertScannerIndicator(ctx, params).QueryRow(func(i int, id int64, err error) {
+		switch {
+		case insertErr != nil:
+		case duplicateViolation(err):
+			insertErr = scannerindicator.ErrConflict
+		case err != nil:
+			insertErr = fmt.Errorf("insert scanner indicator: %w", err)
+		default:
+			ids[i] = id
 		}
+	})
+	if insertErr != nil {
+		return nil, insertErr
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return nil, err

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"os"
+	"reflect"
 	"strconv"
 	"sync"
 	"testing"
@@ -14,6 +15,7 @@ import (
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/market/marketsync"
 	"crypto-scanner/internal/migrate"
 	"crypto-scanner/internal/storage/postgres"
 )
@@ -212,8 +214,8 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if err != nil || len(listed) != 1 || listed[0].Symbol != "BTCUSDT" || !listed[0].Active {
 			t.Fatalf("ListFavorites() = %#v, %v", listed, err)
 		}
-		first, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "1")
-		if err != nil || first.Target != "1" || first.Version != 1 || first.TelegramID != owner.TelegramID {
+		first, favoriteAdded, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "1")
+		if err != nil || favoriteAdded || first.Target != "1" || first.Version != 1 || first.TelegramID != owner.TelegramID {
 			t.Fatalf("CreateAlert() = %#v, %v", first, err)
 		}
 		updated, err := store.UpdateAlert(ctx, owner.ID, first.ID, "1.5")
@@ -223,15 +225,15 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if _, err := store.UpdateAlert(ctx, owner.ID, first.ID, "1"); err != nil {
 			t.Fatalf("restore first alert target: %v", err)
 		}
-		if _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "1.0"); !errors.Is(err, alerts.ErrDuplicate) {
+		if _, _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "1.0"); !errors.Is(err, alerts.ErrDuplicate) {
 			t.Fatalf("numeric duplicate error = %v", err)
 		}
 		for target := 2; target <= alerts.MaxPerInstrument; target++ {
-			if _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", strconv.Itoa(target)); err != nil {
+			if _, _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", strconv.Itoa(target)); err != nil {
 				t.Fatalf("create alert %d: %v", target, err)
 			}
 		}
-		if _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "11"); !errors.Is(err, alerts.ErrLimit) {
+		if _, _, err := store.CreateAlert(ctx, owner.ID, "BTCUSDT", "11"); !errors.Is(err, alerts.ErrLimit) {
 			t.Fatalf("eleventh alert error = %v", err)
 		}
 		if count, err := store.RemoveFavorite(ctx, owner.ID, 0, "BTCUSDT", false); !errors.Is(err, favorites.ErrAlertsExist) || count != alerts.MaxPerInstrument {
@@ -248,7 +250,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 			t.Fatalf("alerts after cascade = %d, %v", len(items), err)
 		}
 
-		if _, err := store.CreateAlert(ctx, owner.ID, "ETHUSDT", "999999999999999999999"); err == nil {
+		if _, _, err := store.CreateAlert(ctx, owner.ID, "ETHUSDT", "999999999999999999999"); err == nil {
 			t.Fatal("oversized target unexpectedly succeeded")
 		}
 		favoritesList, err := store.ListFavorites(ctx, owner.ID)
@@ -267,7 +269,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 			wait.Add(1)
 			go func(target int) {
 				defer wait.Done()
-				_, createErr := store.CreateAlert(ctx, owner.ID, "ETHUSDT", strconv.Itoa(target))
+				_, _, createErr := store.CreateAlert(ctx, owner.ID, "ETHUSDT", strconv.Itoa(target))
 				results <- createErr
 			}(target)
 		}
@@ -438,6 +440,66 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 		if _, err := store.ListLatestCandles(ctx, []int64{instrumentID}, market.IntervalDay, 30); err == nil {
 			t.Fatal("ListLatestCandles() accepted a non-finite candle value")
+		}
+	})
+
+	t.Run("candle history summary reports bounds, gaps, empty gaps and coverage", func(t *testing.T) {
+		instruments, err := store.ListActiveInstruments(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		instrumentID := instruments[0].ID
+		t.Cleanup(func() {
+			for _, statement := range []string{
+				`DELETE FROM binance_spot.candles WHERE instrument_id = $1 AND interval = '1w'`,
+				`DELETE FROM binance_spot.empty_candle_gaps WHERE instrument_id = $1`,
+				`DELETE FROM binance_spot.candle_history_coverage WHERE instrument_id = $1`,
+			} {
+				if _, err := db.Exec(ctx, statement, instrumentID); err != nil {
+					t.Errorf("clean candle history fixture: %v", err)
+				}
+			}
+		})
+		week := func(index int) time.Time {
+			return time.Date(2026, time.June, 1, 0, 0, 0, 0, time.UTC).AddDate(0, 0, 7*index)
+		}
+		for _, index := range []int{0, 1, 3, 5, 6} {
+			open := week(index)
+			candle := market.Candle{InstrumentID: instrumentID, Interval: market.IntervalWeek, OpenTime: open, CloseTime: week(index + 1).Add(-time.Millisecond), Open: 1, High: 2, Low: 1, Close: 1}
+			if err := store.UpsertCandles(ctx, []market.Candle{candle}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		retry := week(9)
+		for _, gap := range []marketsync.HistoryGap{{From: week(2), To: week(3), RetryAfter: retry}, {From: week(4), To: week(6), RetryAfter: retry}} {
+			if err := store.SaveEmptyCandleGap(ctx, instrumentID, market.IntervalWeek, gap); err != nil {
+				t.Fatal(err)
+			}
+		}
+		histories, err := store.SummarizeCandleHistory(ctx, []int64{instrumentID, instrumentID + 1000}, market.IntervalWeek, 10)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The second saved gap no longer matches the stored candles.
+		want := marketsync.HistorySummary{Count: 5, Oldest: week(0), Latest: week(6), Gaps: []marketsync.HistoryGap{
+			{From: week(2), To: week(3), RetryAfter: retry}, {From: week(4), To: week(5)},
+		}}
+		if len(histories) != 1 || !reflect.DeepEqual(histories[instrumentID], want) {
+			t.Fatalf("summary = %+v, want %+v", histories, want)
+		}
+		histories, err = store.SummarizeCandleHistory(ctx, []int64{instrumentID}, market.IntervalWeek, 3)
+		want = marketsync.HistorySummary{Count: 3, Oldest: week(3), Latest: week(6), Gaps: []marketsync.HistoryGap{{From: week(4), To: week(5)}}}
+		if err != nil || !reflect.DeepEqual(histories[instrumentID], want) {
+			t.Fatalf("bounded summary = %+v / %v, want %+v", histories, err, want)
+		}
+
+		coverage := market.HistoryCoverage{InstrumentID: instrumentID, Interval: market.IntervalWeek, VerifiedOldestOpenTime: week(0), TargetDepth: 2000, PolicyVersion: 1, RetryAfter: retry}
+		if err := store.SaveCandleHistoryCoverage(ctx, coverage); err != nil {
+			t.Fatal(err)
+		}
+		coverages, err := store.ListCandleHistoryCoverage(ctx, []int64{instrumentID, instrumentID + 1000}, market.IntervalWeek)
+		if err != nil || len(coverages) != 1 || coverages[instrumentID] != coverage {
+			t.Fatalf("coverage = %+v / %v, want %+v", coverages, err, coverage)
 		}
 	})
 

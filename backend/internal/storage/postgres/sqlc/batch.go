@@ -17,6 +17,73 @@ var (
 	ErrBatchAlreadyClosed = errors.New("batch already closed")
 )
 
+const insertScannerIndicator = `-- name: InsertScannerIndicator :batchone
+INSERT INTO app.scanner_indicators (interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels, position)
+SELECT $1, $2, $3, $4, $5, $6, $7, $8, COALESCE(MAX(position) + 1, 0)::INTEGER
+FROM app.scanner_indicators
+RETURNING id
+`
+
+type InsertScannerIndicatorBatchResults struct {
+	br     pgx.BatchResults
+	tot    int
+	closed bool
+}
+
+type InsertScannerIndicatorParams struct {
+	Interval      string
+	IndicatorType string
+	Parameters    []byte
+	ShowInTable   bool
+	ShowInChart   bool
+	ScaleMin      pgtype.Float8
+	ScaleMax      pgtype.Float8
+	ScaleLevels   []float64
+}
+
+// Runs after LockScannerIndicators; each insert sees the previous ones.
+func (q *Queries) InsertScannerIndicator(ctx context.Context, arg []InsertScannerIndicatorParams) *InsertScannerIndicatorBatchResults {
+	batch := &pgx.Batch{}
+	for _, a := range arg {
+		vals := []interface{}{
+			a.Interval,
+			a.IndicatorType,
+			a.Parameters,
+			a.ShowInTable,
+			a.ShowInChart,
+			a.ScaleMin,
+			a.ScaleMax,
+			a.ScaleLevels,
+		}
+		batch.Queue(insertScannerIndicator, vals...)
+	}
+	br := q.db.SendBatch(ctx, batch)
+	return &InsertScannerIndicatorBatchResults{br, len(arg), false}
+}
+
+func (b *InsertScannerIndicatorBatchResults) QueryRow(f func(int, int64, error)) {
+	defer b.br.Close()
+	for t := 0; t < b.tot; t++ {
+		var id int64
+		if b.closed {
+			if f != nil {
+				f(t, id, ErrBatchAlreadyClosed)
+			}
+			continue
+		}
+		row := b.br.QueryRow()
+		err := row.Scan(&id)
+		if f != nil {
+			f(t, id, err)
+		}
+	}
+}
+
+func (b *InsertScannerIndicatorBatchResults) Close() error {
+	b.closed = true
+	return b.br.Close()
+}
+
 const upsertCandle = `-- name: UpsertCandle :batchone
 INSERT INTO binance_spot.candles (
     instrument_id, interval, open_time, close_time, open, high, low, close,

@@ -336,6 +336,27 @@ func TestExchangeRetriesServerFailuresButNotPermanentClientFailures(t *testing.T
 	})
 }
 
+func TestExchangeRetriesHungAttemptAfterRequestTimeout(t *testing.T) {
+	calls := 0
+	exchange := binance.New(binance.Options{
+		BaseURL: "https://fixture.invalid", RetryAttempts: 2, RetryBaseDelay: time.Millisecond, RequestTimeout: 20 * time.Millisecond,
+		Limiter: rate.NewLimiter(rate.Inf, 1), HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+			calls++
+			if calls == 1 {
+				<-request.Context().Done()
+				return nil, request.Context().Err()
+			}
+			return jsonResponse(`{"symbols":[{"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT","permissions":["SPOT"]}]}`), nil
+		})},
+	})
+	if _, err := exchange.ListInstruments(context.Background()); err != nil {
+		t.Fatalf("ListInstruments() error = %v", err)
+	}
+	if calls != 2 {
+		t.Fatalf("calls = %d, want the hung attempt retried once", calls)
+	}
+}
+
 func TestExchangeUsesDiscoveryRequestWeightMetadata(t *testing.T) {
 	limiter := rate.NewLimiter(rate.Inf, 4)
 	httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {

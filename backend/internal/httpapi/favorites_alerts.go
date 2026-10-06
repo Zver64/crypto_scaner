@@ -7,8 +7,10 @@ import (
 	"net/http"
 
 	"crypto-scanner/internal/alerts"
+	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/favorites"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/markettable"
 )
 
 const invalidTargetMessage = "Target must be a positive decimal"
@@ -47,7 +49,7 @@ func (api *api) AnalyzeFavorites(ctx context.Context, request AnalyzeFavoritesRe
 	if request.Body != nil {
 		body = *request.Body
 	}
-	result, err := api.favorites.Analyze(ctx, currentUserID(ctx), marketSearchRequest(body))
+	result, err := api.analyzeFavorites(ctx, marketSearchRequest(body))
 	if err != nil {
 		mapped, ok := analysisError(ctx, err, "")
 		switch {
@@ -62,6 +64,14 @@ func (api *api) AnalyzeFavorites(ctx context.Context, request AnalyzeFavoritesRe
 		}
 	}
 	return AnalyzeFavorites200JSONResponse(marketAnalysisResponse(result)), nil
+}
+
+func (api *api) analyzeFavorites(ctx context.Context, request analysis.SearchRequest) (markettable.Result, error) {
+	items, err := api.favorites.List(ctx, currentUserID(ctx))
+	if err != nil {
+		return markettable.Result{}, err
+	}
+	return api.tables.Favorites(ctx, items, request)
 }
 
 func (api *api) AddFavorite(ctx context.Context, request AddFavoriteRequestObject) (AddFavoriteResponseObject, error) {

@@ -16,7 +16,7 @@ func New() Factory { return Factory{} }
 // Name identifies the criterion, and USDMetric its market capitalization.
 const (
 	Name      = "market_cap"
-	USDMetric = "market_cap_usd"
+	USDMetric = analysis.MarketCapUSD
 )
 
 func (Factory) Name() string { return Name }
@@ -33,8 +33,9 @@ type criterion struct{ minimum float64 }
 func (criterion) Name() string                               { return Name }
 func (criterion) Requirements() []analysis.CandleRequirement { return nil }
 
-// MinimumMarketCapUSD identifies this criterion as a SQL selection constraint.
-func (c *criterion) MinimumMarketCapUSD() float64 { return c.minimum }
+func (c *criterion) Constrain(selection *analysis.Selection) {
+	selection.ConstrainAtLeast(analysis.SelectionFactMarketCapUSD, c.minimum)
+}
 func (c *criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	if input.Instrument.MarketCapUSD == nil {
 		return analysis.Evaluation{}, &analysis.UnresolvedError{Code: "market_cap_missing", Message: "Market capitalization could not be resolved"}

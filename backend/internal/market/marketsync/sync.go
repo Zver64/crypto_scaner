@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -30,8 +31,13 @@ type Store interface {
 	SummarizeCandleHistory(context.Context, []int64, market.CandleInterval, int) (map[int64]HistorySummary, error)
 	// Returns only committed insertions/corrections; unchanged rows are omitted.
 	UpsertCandlesWithChanges(context.Context, []market.Candle) ([]market.Candle, error)
-	GetCandleHistoryCoverage(context.Context, int64, market.CandleInterval) (market.HistoryCoverage, bool, error)
+	// ListCandleHistoryCoverage returns the coverage of the instruments that
+	// have one, by instrument ID.
+	ListCandleHistoryCoverage(context.Context, []int64, market.CandleInterval) (map[int64]market.HistoryCoverage, error)
 	SaveCandleHistoryCoverage(context.Context, market.HistoryCoverage) error
+	// SaveEmptyCandleGap records a gap the exchange returned no candles for;
+	// summaries report its RetryAfter while the gap stays unchanged.
+	SaveEmptyCandleGap(context.Context, int64, market.CandleInterval, HistoryGap) error
 }
 
 // HistorySummary describes the latest stored candles of one instrument, at
@@ -45,8 +51,10 @@ type HistorySummary struct {
 }
 
 // HistoryGap is a hole between stored candles: From is the first missing open
-// time and To the open time of the next stored candle.
-type HistoryGap struct{ From, To time.Time }
+// time and To the open time of the next stored candle. RetryAfter is set when
+// the exchange returned no candles for the gap (such as a trading halt); the
+// gap is not requested again before it.
+type HistoryGap struct{ From, To, RetryAfter time.Time }
 
 // Synchronizer coordinates instrument discovery, backfill, and incremental loading.
 type Synchronizer struct {
@@ -57,12 +65,18 @@ type Synchronizer struct {
 	depth    int
 	profile  market.SyncProfile
 	runLock  sync.Mutex
+	// retryIDs are the instruments that failed in the last run, which closed
+	// candles through retryClosed; guarded by runLock. A run before the next
+	// candle closes synchronizes only them.
+	retryIDs    map[int64]struct{}
+	retryClosed time.Time
 }
 
 const (
 	exchangePageLimit           = 1000
 	historyDepthPolicyVersion   = 1
 	historyExhaustionRetryDelay = 7 * 24 * time.Hour
+	emptyGapRetryDelay          = 7 * 24 * time.Hour
 )
 
 type intervalPolicy struct {
@@ -77,6 +91,13 @@ func policyForInterval(interval market.CandleInterval, depth int) intervalPolicy
 
 // ErrSyncInProgress reports that another process-local synchronization owns the run lock.
 var ErrSyncInProgress = errors.New("market synchronization already in progress")
+
+// ErrInstrumentsFailed reports a run that succeeded except for some
+// instruments; the next run before another candle closes retries only them.
+var ErrInstrumentsFailed = errors.New("some instruments failed to synchronize")
+
+// maxReportedFailures bounds the instrument errors a partial failure carries.
+const maxReportedFailures = 3
 
 // New creates a synchronizer for one independently persisted interval that
 // backfills depth closed candles per instrument. The logger must be non-nil.
@@ -102,7 +123,9 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	defer func() {
 		stats.retryCount = synchronizer.exchange.RetryCount() - retriesBefore
 		outcome := "succeeded"
-		if syncErr != nil {
+		if errors.Is(syncErr, ErrInstrumentsFailed) {
+			outcome = "partial"
+		} else if syncErr != nil {
 			outcome = "failed"
 		}
 		synchronizer.logger.InfoContext(ctx, "market synchronization completed",
@@ -142,6 +165,13 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	if err != nil {
 		return synchronizer.recordFailure(ctx, &state, fmt.Errorf("list active instruments: %w", err))
 	}
+	closedThrough := profile.Interval.LastClosedOpenTime(startedAt)
+	if len(synchronizer.retryIDs) > 0 && synchronizer.retryClosed.Equal(closedThrough) {
+		active = slices.DeleteFunc(active, func(instrument market.Instrument) bool {
+			_, retry := synchronizer.retryIDs[instrument.ID]
+			return !retry
+		})
+	}
 	stats.instrumentsTotal = len(active)
 	ids := make([]int64, len(active))
 	for index, instrument := range active {
@@ -151,12 +181,20 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	if err != nil {
 		return synchronizer.recordFailure(ctx, &state, fmt.Errorf("inspect candle history: %w", err))
 	}
-	results := synchronizer.syncInstruments(ctx, active, histories, profile, startedAt)
+	coverages, err := synchronizer.store.ListCandleHistoryCoverage(ctx, ids, profile.Interval)
+	if err != nil {
+		return synchronizer.recordFailure(ctx, &state, fmt.Errorf("load candle history coverage: %w", err))
+	}
+	results := synchronizer.syncInstruments(ctx, active, histories, coverages, profile, startedAt)
 	var instrumentFailures []error
+	failedIDs := make(map[int64]struct{})
 	for result := range results {
 		if result.err != nil {
 			stats.instrumentsFailed++
-			instrumentFailures = append(instrumentFailures, result.err)
+			failedIDs[result.instrumentID] = struct{}{}
+			if len(instrumentFailures) < maxReportedFailures {
+				instrumentFailures = append(instrumentFailures, result.err)
+			}
 			continue
 		}
 		stats.instrumentsSucceeded++
@@ -173,8 +211,15 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 			stats.lagIntervals++
 		}
 	}
-	if len(instrumentFailures) > 0 {
-		return synchronizer.recordFailure(ctx, &state, errors.Join(instrumentFailures...))
+	if err := ctx.Err(); err != nil {
+		return synchronizer.recordFailure(ctx, &state, err)
+	}
+	synchronizer.retryIDs, synchronizer.retryClosed = failedIDs, closedThrough
+	var partial error
+	if len(failedIDs) > 0 {
+		// The other instruments are current, so the profile still succeeds.
+		partial = fmt.Errorf("%w: %d of %d: %w", ErrInstrumentsFailed, len(failedIDs), stats.instrumentsTotal, errors.Join(instrumentFailures...))
+		state.ErrorMessage = partial.Error()
 	}
 
 	succeededAt := time.Now().UTC()
@@ -185,20 +230,23 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 		state.LastSucceededAt = previousSucceededAt
 		return synchronizer.recordFailure(ctx, &state, fmt.Errorf("record successful synchronization: %w", err))
 	}
-	return nil
+	return partial
 }
 
 type instrumentResult struct {
-	err               error
-	exchangeRequests  int
-	rowsRequested     int
-	rowsWritten       int
+	instrumentID     int64
+	err              error
+	exchangeRequests int
+	rowsRequested    int
+	rowsWritten      int
+	// rowsChanged counts committed insertions and corrections.
+	rowsChanged       int
 	gapRangesRepaired int
 	latestOpenTime    *time.Time
 	oldestOpenTime    *time.Time
 }
 
-func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instruments []market.Instrument, histories map[int64]HistorySummary, profile market.SyncProfile, startedAt time.Time) <-chan instrumentResult {
+func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instruments []market.Instrument, histories map[int64]HistorySummary, coverages map[int64]market.HistoryCoverage, profile market.SyncProfile, startedAt time.Time) <-chan instrumentResult {
 	jobs := make(chan market.Instrument)
 	results := make(chan instrumentResult)
 	var workers sync.WaitGroup
@@ -208,7 +256,10 @@ func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instrumen
 		go func() {
 			defer workers.Done()
 			for instrument := range jobs {
-				results <- synchronizer.syncInstrument(ctx, instrument, histories[instrument.ID], profile, startedAt)
+				coverage, covered := coverages[instrument.ID]
+				result := synchronizer.syncInstrument(ctx, instrument, histories[instrument.ID], coverage, covered, profile, startedAt)
+				result.instrumentID = instrument.ID
+				results <- result
 			}
 		}()
 	}
@@ -229,17 +280,15 @@ func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instrumen
 	return results
 }
 
-func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument market.Instrument, history HistorySummary, profile market.SyncProfile, startedAt time.Time) instrumentResult {
+// syncInstrument synchronizes one instrument from its history summary and
+// coverage, both read before the run; the instrument's own writes are the
+// only ones that change them during the run.
+func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument market.Instrument, history HistorySummary, coverage market.HistoryCoverage, covered bool, profile market.SyncProfile, startedAt time.Time) instrumentResult {
 	policy := policyForInterval(profile.Interval, synchronizer.depth)
 	result := instrumentResult{}
 	initiallyEmpty := history.Count == 0
 	if initiallyEmpty {
-		coverage, found, err := synchronizer.store.GetCandleHistoryCoverage(ctx, instrument.ID, profile.Interval)
-		if err != nil {
-			result.err = fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
-			return result
-		}
-		if found && coverageCurrent(coverage, policy, startedAt) {
+		if covered && coverageCurrent(coverage, policy, startedAt) {
 			return result
 		}
 		// The first page is the newest one; older pages follow as history repair.
@@ -259,6 +308,8 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 		}
 	}
 
+	// Changes committed after history was read; without them it is current.
+	changedAtRead := result.rowsChanged
 	latest := history.Latest.UTC()
 	result.latestOpenTime = laterOf(result.latestOpenTime, &latest)
 
@@ -278,14 +329,26 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	}
 	if policy.repairGaps {
 		for _, gap := range history.Gaps {
+			if startedAt.Before(gap.RetryAfter) {
+				continue
+			}
 			after := gap.From.Add(-time.Millisecond)
 			loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
 				Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
 				ClosedBefore: gap.To, AfterOpenTime: &after,
 			}, true)
-			loaded.gapRangesRepaired = 1
 			result = mergeInstrumentResults(result, loaded)
 			if result.err != nil {
+				return result
+			}
+			if loaded.rowsWritten > 0 {
+				result.gapRangesRepaired++
+				continue
+			}
+			// The exchange has nothing for the gap, such as a trading halt.
+			gap.RetryAfter = startedAt.Add(emptyGapRetryDelay)
+			if err := synchronizer.store.SaveEmptyCandleGap(ctx, instrument.ID, profile.Interval, gap); err != nil {
+				result.err = fmt.Errorf("save empty candle gap for %s: %w", instrument.Symbol, err)
 				return result
 			}
 		}
@@ -298,19 +361,16 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	// Forward and gap writes can change both the count and boundaries. The
 	// persisted rows are the durable repair cursor, so decide depth from a
 	// fresh read rather than from responses held in memory.
-	if history, result.err = synchronizer.history(ctx, instrument, profile.Interval); result.err != nil {
-		return result
+	if result.rowsChanged != changedAtRead {
+		if history, result.err = synchronizer.history(ctx, instrument, profile.Interval); result.err != nil {
+			return result
+		}
 	}
 	if history.Count >= policy.initialLimit || history.Count == 0 {
 		return result
 	}
 	oldest := history.Oldest.UTC()
-	coverage, found, err := synchronizer.store.GetCandleHistoryCoverage(ctx, instrument.ID, profile.Interval)
-	if err != nil {
-		result.err = fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
-		return result
-	}
-	if found && coverageCurrent(coverage, policy, startedAt) && coverage.VerifiedOldestOpenTime.Equal(oldest) {
+	if covered && coverageCurrent(coverage, policy, startedAt) && coverage.VerifiedOldestOpenTime.Equal(oldest) {
 		return result
 	}
 
@@ -368,11 +428,13 @@ func (synchronizer *Synchronizer) loadRange(ctx context.Context, instrument mark
 			pageLatest = laterOf(pageLatest, &openTime)
 			pageOldest = earlierOf(pageOldest, &openTime)
 		}
-		if _, err := synchronizer.store.UpsertCandlesWithChanges(ctx, closed); err != nil {
+		changed, err := synchronizer.store.UpsertCandlesWithChanges(ctx, closed)
+		if err != nil {
 			result.err = fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)
 			return result
 		}
 		result.rowsWritten += len(closed)
+		result.rowsChanged += len(changed)
 		result.latestOpenTime = laterOf(result.latestOpenTime, pageLatest)
 		result.oldestOpenTime = earlierOf(result.oldestOpenTime, pageOldest)
 		if !paginate || len(candles) < request.Limit || pageLatest == nil {
@@ -386,6 +448,7 @@ func mergeInstrumentResults(current, addition instrumentResult) instrumentResult
 	current.exchangeRequests += addition.exchangeRequests
 	current.rowsRequested += addition.rowsRequested
 	current.rowsWritten += addition.rowsWritten
+	current.rowsChanged += addition.rowsChanged
 	current.gapRangesRepaired += addition.gapRangesRepaired
 	if addition.err != nil {
 		current.err = addition.err

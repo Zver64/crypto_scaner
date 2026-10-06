@@ -1,11 +1,10 @@
 package analysis
 
-import (
-	"fmt"
-)
-
 // SelectionFact is a closed set of persisted facts supported by candidate SQL.
 type SelectionFact uint8
+
+// MarketCapUSD is the market capitalization metric and the only sort field.
+const MarketCapUSD = "market_cap_usd"
 
 const (
 	SelectionFactStablecoin SelectionFact = iota + 1
@@ -72,56 +71,4 @@ func (selection Selection) HasConstraint(fact SelectionFact) bool {
 		}
 	}
 	return false
-}
-
-// SelectionFilter is shared by backend defaults and request-activated filters.
-// BackendDefault controls activation only; all modules contribute constraints
-// through the same Apply method and the same registry.
-type SelectionFilter interface {
-	Name() string
-	BackendDefault() bool
-	SortField() string
-	Apply(Criterion, *Selection) error
-	ApplySort(string, *Selection) error
-}
-
-type stablecoinSelectionFilter struct{}
-
-func (stablecoinSelectionFilter) Name() string         { return "exclude_stablecoins" }
-func (stablecoinSelectionFilter) BackendDefault() bool { return true }
-func (stablecoinSelectionFilter) SortField() string    { return "" }
-func (stablecoinSelectionFilter) Apply(_ Criterion, selection *Selection) error {
-	selection.ConstrainBoolean(SelectionFactStablecoin, false)
-	return nil
-}
-func (stablecoinSelectionFilter) ApplySort(string, *Selection) error {
-	return ErrInvalidArgument
-}
-
-type marketCapSelectionFilter struct{}
-
-func (marketCapSelectionFilter) Name() string         { return "market_cap" }
-func (marketCapSelectionFilter) BackendDefault() bool { return false }
-func (marketCapSelectionFilter) SortField() string    { return "market_cap_usd" }
-func (marketCapSelectionFilter) Apply(criterion Criterion, selection *Selection) error {
-	provider, ok := criterion.(interface{ MinimumMarketCapUSD() float64 })
-	if !ok {
-		return fmt.Errorf("market cap selection criterion: %w", ErrInvalidArgument)
-	}
-	selection.ConstrainAtLeast(SelectionFactMarketCapUSD, provider.MinimumMarketCapUSD())
-	return nil
-}
-func (marketCapSelectionFilter) ApplySort(direction string, selection *Selection) error {
-	if !selection.HasConstraint(SelectionFactMarketCapUSD) {
-		return ErrInvalidArgument
-	}
-	selection.SortFact = SelectionFactMarketCapUSD
-	selection.SortDirection = direction
-	return nil
-}
-
-// selectionFilterModules is the single composition point. A filter over an
-// already supported fact needs its module plus one registry entry here.
-func selectionFilterModules() []SelectionFilter {
-	return []SelectionFilter{stablecoinSelectionFilter{}, marketCapSelectionFilter{}}
 }

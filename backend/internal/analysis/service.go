@@ -4,13 +4,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"maps"
 	"strings"
 	"time"
 
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
 )
+
+// MaxCriteria bounds the criteria of one request; the OpenAPI contract
+// mirrors it.
+const MaxCriteria = 16
 
 var ErrMarketDataUnavailable = errors.New("market data unavailable")
 
@@ -81,11 +84,9 @@ type InsufficientItem struct {
 }
 
 type Service struct {
-	store                Store
-	closed               ClosedIndicators
-	factories            map[string]Factory
-	selectionFilters     map[string]SelectionFilter
-	selectionSortFilters map[string]SelectionFilter
+	store     Store
+	closed    ClosedIndicators
+	factories map[string]Factory
 }
 
 type criterionInstance struct {
@@ -95,9 +96,11 @@ type criterionInstance struct {
 }
 
 // NewService validates and registers the explicitly composed criterion
-// factories. closed attaches closed indicator values to search items; it may
-// be nil.
+// factories. closed attaches closed indicator values to search items.
 func NewService(store Store, closed ClosedIndicators, factories ...Factory) (*Service, error) {
+	if store == nil || closed == nil {
+		return nil, fmt.Errorf("analysis dependencies: %w", ErrInvalidArgument)
+	}
 	if len(factories) == 0 {
 		return nil, fmt.Errorf("criterion factories: %w", ErrInvalidArgument)
 	}
@@ -111,25 +114,11 @@ func NewService(store Store, closed ClosedIndicators, factories ...Factory) (*Se
 		}
 		registry[factory.Name()] = factory
 	}
-	selectionFilters := selectionFilterModules()
-	selectionRegistry := make(map[string]SelectionFilter, len(selectionFilters))
-	sortRegistry := make(map[string]SelectionFilter, len(selectionFilters))
-	for _, filter := range selectionFilters {
-		if filter == nil || filter.Name() == "" || selectionRegistry[filter.Name()] != nil {
-			return nil, fmt.Errorf("selection filter: %w", ErrInvalidArgument)
-		}
-		selectionRegistry[filter.Name()] = filter
-		if field := filter.SortField(); field != "" {
-			if sortRegistry[field] != nil {
-				return nil, fmt.Errorf("selection sort filter: %w", ErrInvalidArgument)
-			}
-			sortRegistry[field] = filter
-		}
-	}
-	return &Service{store: store, closed: closed, factories: registry, selectionFilters: selectionRegistry, selectionSortFilters: sortRegistry}, nil
+	return &Service{store: store, closed: closed, factories: registry}, nil
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
+	symbol := market.NormalizeSymbol(request.Symbol)
 	criteria, requirements, err := service.prepare(request.Criteria)
 	if err != nil {
 		return SymbolResult{}, err
@@ -139,15 +128,15 @@ func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest
 	}
 	// Direct symbol analysis intentionally does not activate market-wide backend
 	// defaults such as stablecoin exclusion.
-	instruments, err := service.store.SelectActiveInstruments(ctx, Selection{Symbol: request.Symbol})
+	instruments, err := service.store.SelectActiveInstruments(ctx, Selection{Symbol: symbol})
 	if err != nil {
 		return SymbolResult{}, fmt.Errorf("select active instrument: %w", err)
 	}
 	for _, instrument := range instruments {
-		if instrument.Symbol == request.Symbol {
+		if instrument.Symbol == symbol {
 			result, err := service.evaluate(ctx, instrument, criteria)
 			if err != nil {
-				return SymbolResult{}, fmt.Errorf("analyze %s: %w", request.Symbol, err)
+				return SymbolResult{}, fmt.Errorf("analyze %s: %w", symbol, err)
 			}
 			return result, nil
 		}
@@ -239,10 +228,11 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	if err != nil {
 		return SearchResult{}, err
 	}
-	closed := map[int64][]closedindicator.Value{}
-	if service.closed != nil {
-		service.loadClosedIndicators(ctx, candidates, closed)
+	ids := make([]int64, len(candidates))
+	for index, instrument := range candidates {
+		ids[index] = instrument.ID
 	}
+	closed := service.closed.Latest(ctx, ids)
 	for _, instrument := range candidates {
 		item := results[instrument.ID]
 		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID], ClosedIndicators: closed[instrument.ID]})
@@ -276,58 +266,32 @@ func (service *Service) loadCandleData(ctx context.Context, instruments []market
 	return nil
 }
 
-// loadClosedIndicators batch-loads closed indicator values for instruments
-// that do not have them yet.
-func (service *Service) loadClosedIndicators(ctx context.Context, instruments []market.Instrument, closed map[int64][]closedindicator.Value) {
-	ids := make([]int64, 0, len(instruments))
-	for _, instrument := range instruments {
-		if _, ok := closed[instrument.ID]; !ok {
-			ids = append(ids, instrument.ID)
-		}
-	}
-	if len(ids) == 0 {
-		return
-	}
-	maps.Copy(closed, service.closed.Latest(ctx, ids))
-}
-
 func (service *Service) selection(request SearchRequest, criteria []criterionInstance) (Selection, error) {
 	if request.Limit < 0 || request.Limit > 100 {
 		return Selection{}, ErrInvalidArgument
 	}
 	selection := Selection{Limit: request.Limit}
-	for _, filter := range service.selectionFilters {
-		if filter.BackendDefault() {
-			if err := filter.Apply(nil, &selection); err != nil {
-				return Selection{}, err
-			}
-		}
-	}
+	// Market searches always exclude stablecoins.
+	selection.ConstrainBoolean(SelectionFactStablecoin, false)
 	for _, criterion := range criteria {
-		if filter := service.selectionFilters[criterion.Name()]; filter != nil {
-			if err := filter.Apply(criterion.Criterion, &selection); err != nil {
-				return Selection{}, err
-			}
-		}
+		criterion.Constrain(&selection)
 	}
 	if request.Sort == nil {
 		return selection, nil
 	}
-	if request.Sort.Direction != "asc" && request.Sort.Direction != "desc" {
+	// Sorting by market capitalization needs a market cap criterion, whose
+	// constraint keeps instruments without a capitalization out of the order.
+	if (request.Sort.Direction != "asc" && request.Sort.Direction != "desc") ||
+		request.Sort.Field != MarketCapUSD || !selection.HasConstraint(SelectionFactMarketCapUSD) {
 		return Selection{}, ErrInvalidArgument
 	}
-	filter := service.selectionSortFilters[request.Sort.Field]
-	if filter == nil {
-		return Selection{}, ErrInvalidArgument
-	}
-	if err := filter.ApplySort(request.Sort.Direction, &selection); err != nil {
-		return Selection{}, err
-	}
+	selection.SortFact = SelectionFactMarketCapUSD
+	selection.SortDirection = request.Sort.Direction
 	return selection, nil
 }
 
 func (service *Service) prepare(configs []CriterionConfig) ([]criterionInstance, map[Unit]int, error) {
-	if len(configs) == 0 {
+	if len(configs) == 0 || len(configs) > MaxCriteria {
 		return nil, nil, ErrInvalidArgument
 	}
 	criteria := make([]criterionInstance, 0, len(configs))

@@ -4,11 +4,9 @@ package favorites
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
-	"crypto-scanner/internal/analysis"
-	"crypto-scanner/internal/markettable"
+	"crypto-scanner/internal/market"
 )
 
 var (
@@ -35,81 +33,36 @@ type Store interface {
 	RemoveFavorite(ctx context.Context, userID, administratorTelegramID int64, symbol string, confirm bool) (int, error)
 }
 
-type Analyzer interface {
-	SearchSymbols(context.Context, analysis.SearchRequest, []string) (analysis.SearchResult, error)
-}
-
 type Service struct {
 	store Store
 	// administratorID cannot remove favorites that strategies read.
 	administratorID int64
 	changed         func()
-	analyzer        Analyzer
-	closed          analysis.ClosedIndicators
-	table           markettable.Catalog
 }
 
-func New(store Store, administratorID int64, changed func(), analyzer Analyzer, closed analysis.ClosedIndicators, table markettable.Catalog) *Service {
-	return &Service{store: store, administratorID: administratorID, changed: changed, analyzer: analyzer, closed: closed, table: table}
+func New(store Store, administratorID int64, changed func()) (*Service, error) {
+	if store == nil || changed == nil {
+		return nil, errors.New("favorites service dependencies are required")
+	}
+	return &Service{store: store, administratorID: administratorID, changed: changed}, nil
 }
 func (s *Service) List(ctx context.Context, userID int64) ([]Favorite, error) {
 	return s.store.ListFavorites(ctx, userID)
 }
 
-// Analyze analyzes the active favorites and returns a table row for every
-// favorite, in favorites order. Favorites the analysis skipped or rejected keep
-// the cells that do not depend on it, such as closed indicator values.
-func (s *Service) Analyze(ctx context.Context, userID int64, request analysis.SearchRequest) (markettable.Result, error) {
-	items, err := s.store.ListFavorites(ctx, userID)
-	if err != nil {
-		return markettable.Result{}, err
-	}
-	if s.analyzer == nil || s.closed == nil {
-		return markettable.Result{}, fmt.Errorf("favorites analyzer is unavailable")
-	}
-	symbols := make([]string, 0, len(items))
-	for _, item := range items {
-		if item.Active {
-			symbols = append(symbols, item.Symbol)
-		}
-	}
-	search, err := s.analyzer.SearchSymbols(ctx, request, symbols)
-	if err != nil {
-		return markettable.Result{}, err
-	}
-	analyzed := make(map[string]analysis.SearchItem, len(search.Items))
-	for _, item := range search.Items {
-		analyzed[item.Symbol] = item
-	}
-	var missing []int64
-	for _, item := range items {
-		if _, ok := analyzed[item.Symbol]; !ok {
-			missing = append(missing, item.InstrumentID)
-		}
-	}
-	closed := s.closed.Latest(ctx, missing)
-	rows := make([]markettable.Row, len(items))
-	for i, item := range items {
-		row := markettable.Row{Symbol: item.Symbol, ClosedIndicators: closed[item.InstrumentID]}
-		if analyzedItem, ok := analyzed[item.Symbol]; ok {
-			row = markettable.RowFromSearchItem(analyzedItem)
-		}
-		row.AlertCount = item.AlertCount
-		rows[i] = row
-	}
-	return markettable.Result{Search: search, Table: s.table.Build(rows)}, nil
-}
 func (s *Service) Add(ctx context.Context, userID int64, symbol string) (Favorite, error) {
-	item, err := s.store.AddFavorite(ctx, userID, symbol)
-	if err == nil && s.changed != nil {
-		s.changed()
+	item, err := s.store.AddFavorite(ctx, userID, market.NormalizeSymbol(symbol))
+	if err != nil {
+		return Favorite{}, err
 	}
-	return item, err
+	s.changed()
+	return item, nil
 }
 func (s *Service) Remove(ctx context.Context, userID int64, symbol string, confirm bool) (int, error) {
-	count, err := s.store.RemoveFavorite(ctx, userID, s.administratorID, symbol, confirm)
-	if err == nil && s.changed != nil {
-		s.changed()
+	count, err := s.store.RemoveFavorite(ctx, userID, s.administratorID, market.NormalizeSymbol(symbol), confirm)
+	if err != nil {
+		return count, err
 	}
-	return count, err
+	s.changed()
+	return count, nil
 }

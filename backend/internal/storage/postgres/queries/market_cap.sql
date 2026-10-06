@@ -1,5 +1,5 @@
 -- name: MappingBootstrapCompleted :one
-SELECT completed_at IS NOT NULL FROM app.coingecko_mapping_bootstrap WHERE id = TRUE;
+SELECT (completed_at IS NOT NULL)::boolean AS completed FROM app.coingecko_mapping_bootstrap WHERE id = TRUE;
 
 -- name: ReplaceMappingsAndCompleteBootstrap :exec
 UPDATE app.coingecko_mapping_bootstrap SET completed_at = now() WHERE id = TRUE;
@@ -15,6 +15,11 @@ ON CONFLICT (base_asset) DO UPDATE SET coin_id=EXCLUDED.coin_id, quote_asset=EXC
 -- name: ReplaceStablecoinClassifications :exec
 UPDATE app.coingecko_asset_mappings
 SET is_stablecoin = CASE
+    WHEN status = 'resolved' THEN coin_id = ANY(sqlc.arg(stablecoin_ids)::text[])
+    ELSE NULL
+END
+-- Rows already classified this way are not rewritten.
+WHERE is_stablecoin IS DISTINCT FROM CASE
     WHEN status = 'resolved' THEN coin_id = ANY(sqlc.arg(stablecoin_ids)::text[])
     ELSE NULL
 END;

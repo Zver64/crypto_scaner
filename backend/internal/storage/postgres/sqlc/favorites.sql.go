@@ -11,7 +11,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const addFavorite = `-- name: AddFavorite :exec
+const addFavorite = `-- name: AddFavorite :execrows
 INSERT INTO app.favorites (user_id, instrument_id)
 VALUES ($1, $2)
 ON CONFLICT DO NOTHING
@@ -22,9 +22,13 @@ type AddFavoriteParams struct {
 	InstrumentID int64
 }
 
-func (q *Queries) AddFavorite(ctx context.Context, arg AddFavoriteParams) error {
-	_, err := q.db.Exec(ctx, addFavorite, arg.UserID, arg.InstrumentID)
-	return err
+// Affects no row when the favorite already exists.
+func (q *Queries) AddFavorite(ctx context.Context, arg AddFavoriteParams) (int64, error) {
+	result, err := q.db.Exec(ctx, addFavorite, arg.UserID, arg.InstrumentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const countFavoriteAlerts = `-- name: CountFavoriteAlerts :one
@@ -61,40 +65,36 @@ func (q *Queries) DeleteFavorite(ctx context.Context, arg DeleteFavoriteParams) 
 }
 
 const getFavorite = `-- name: GetFavorite :one
-SELECT i.id AS instrument_id, i.symbol, i.base_asset, i.quote_asset,
-       i.is_active, f.created_at,
-       count(a.id)::int AS alert_count
+SELECT i.id, i.symbol, i.base_asset, i.quote_asset, i.exchange_status, i.is_active, i.deactivated_at, f.created_at, count(a.id)::int AS alert_count
 FROM app.favorites f
 JOIN binance_spot.instruments i ON i.id = f.instrument_id
 LEFT JOIN app.price_alerts a ON a.user_id = f.user_id AND a.instrument_id = f.instrument_id
-WHERE f.user_id = $1 AND i.symbol = $2
-GROUP BY i.id, i.symbol, i.base_asset, i.quote_asset, i.exchange_status, i.is_active, f.created_at
+WHERE f.user_id = $1 AND f.instrument_id = $2
+GROUP BY i.id, f.created_at
 `
 
 type GetFavoriteParams struct {
-	UserID int64
-	Symbol string
+	UserID       int64
+	InstrumentID int64
 }
 
 type GetFavoriteRow struct {
-	InstrumentID int64
-	Symbol       string
-	BaseAsset    string
-	QuoteAsset   string
-	IsActive     bool
-	CreatedAt    pgtype.Timestamptz
-	AlertCount   int32
+	BinanceSpotInstrument BinanceSpotInstrument
+	CreatedAt             pgtype.Timestamptz
+	AlertCount            int32
 }
 
 func (q *Queries) GetFavorite(ctx context.Context, arg GetFavoriteParams) (GetFavoriteRow, error) {
-	row := q.db.QueryRow(ctx, getFavorite, arg.UserID, arg.Symbol)
+	row := q.db.QueryRow(ctx, getFavorite, arg.UserID, arg.InstrumentID)
 	var i GetFavoriteRow
 	err := row.Scan(
-		&i.InstrumentID,
-		&i.Symbol,
-		&i.BaseAsset,
-		&i.QuoteAsset,
-		&i.IsActive,
+		&i.BinanceSpotInstrument.ID,
+		&i.BinanceSpotInstrument.Symbol,
+		&i.BinanceSpotInstrument.BaseAsset,
+		&i.BinanceSpotInstrument.QuoteAsset,
+		&i.BinanceSpotInstrument.ExchangeStatus,
+		&i.BinanceSpotInstrument.IsActive,
+		&i.BinanceSpotInstrument.DeactivatedAt,
 		&i.CreatedAt,
 		&i.AlertCount,
 	)
@@ -102,25 +102,19 @@ func (q *Queries) GetFavorite(ctx context.Context, arg GetFavoriteParams) (GetFa
 }
 
 const listFavorites = `-- name: ListFavorites :many
-SELECT i.id AS instrument_id, i.symbol, i.base_asset, i.quote_asset,
-       i.is_active, f.created_at,
-       count(a.id)::int AS alert_count
+SELECT i.id, i.symbol, i.base_asset, i.quote_asset, i.exchange_status, i.is_active, i.deactivated_at, f.created_at, count(a.id)::int AS alert_count
 FROM app.favorites f
 JOIN binance_spot.instruments i ON i.id = f.instrument_id
 LEFT JOIN app.price_alerts a ON a.user_id = f.user_id AND a.instrument_id = f.instrument_id
 WHERE f.user_id = $1
-GROUP BY i.id, i.symbol, i.base_asset, i.quote_asset, i.exchange_status, i.is_active, f.created_at
+GROUP BY i.id, f.created_at
 ORDER BY f.created_at DESC, i.symbol
 `
 
 type ListFavoritesRow struct {
-	InstrumentID int64
-	Symbol       string
-	BaseAsset    string
-	QuoteAsset   string
-	IsActive     bool
-	CreatedAt    pgtype.Timestamptz
-	AlertCount   int32
+	BinanceSpotInstrument BinanceSpotInstrument
+	CreatedAt             pgtype.Timestamptz
+	AlertCount            int32
 }
 
 func (q *Queries) ListFavorites(ctx context.Context, userID int64) ([]ListFavoritesRow, error) {
@@ -133,11 +127,13 @@ func (q *Queries) ListFavorites(ctx context.Context, userID int64) ([]ListFavori
 	for rows.Next() {
 		var i ListFavoritesRow
 		if err := rows.Scan(
-			&i.InstrumentID,
-			&i.Symbol,
-			&i.BaseAsset,
-			&i.QuoteAsset,
-			&i.IsActive,
+			&i.BinanceSpotInstrument.ID,
+			&i.BinanceSpotInstrument.Symbol,
+			&i.BinanceSpotInstrument.BaseAsset,
+			&i.BinanceSpotInstrument.QuoteAsset,
+			&i.BinanceSpotInstrument.ExchangeStatus,
+			&i.BinanceSpotInstrument.IsActive,
+			&i.BinanceSpotInstrument.DeactivatedAt,
 			&i.CreatedAt,
 			&i.AlertCount,
 		); err != nil {
@@ -177,4 +173,24 @@ func (q *Queries) ListMonitoredSymbols(ctx context.Context) ([]string, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockFavoriteInstrumentID = `-- name: LockFavoriteInstrumentID :one
+SELECT i.id
+FROM app.favorites f
+JOIN binance_spot.instruments i ON i.id = f.instrument_id
+WHERE f.user_id = $1 AND i.symbol = $2
+FOR UPDATE OF f
+`
+
+type LockFavoriteInstrumentIDParams struct {
+	UserID int64
+	Symbol string
+}
+
+func (q *Queries) LockFavoriteInstrumentID(ctx context.Context, arg LockFavoriteInstrumentIDParams) (int64, error) {
+	row := q.db.QueryRow(ctx, lockFavoriteInstrumentID, arg.UserID, arg.Symbol)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }

@@ -52,40 +52,6 @@ func (q *Queries) DeleteUnusedScannerIndicators(ctx context.Context) ([]int64, e
 	return items, nil
 }
 
-const insertScannerIndicator = `-- name: InsertScannerIndicator :one
-INSERT INTO app.scanner_indicators (interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels, position)
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, COALESCE(MAX(position) + 1, 0)::INTEGER
-FROM app.scanner_indicators
-RETURNING id
-`
-
-type InsertScannerIndicatorParams struct {
-	Interval      string
-	IndicatorType string
-	Parameters    []byte
-	ShowInTable   bool
-	ShowInChart   bool
-	ScaleMin      pgtype.Float8
-	ScaleMax      pgtype.Float8
-	ScaleLevels   []float64
-}
-
-func (q *Queries) InsertScannerIndicator(ctx context.Context, arg InsertScannerIndicatorParams) (int64, error) {
-	row := q.db.QueryRow(ctx, insertScannerIndicator,
-		arg.Interval,
-		arg.IndicatorType,
-		arg.Parameters,
-		arg.ShowInTable,
-		arg.ShowInChart,
-		arg.ScaleMin,
-		arg.ScaleMax,
-		arg.ScaleLevels,
-	)
-	var id int64
-	err := row.Scan(&id)
-	return id, err
-}
-
 const listScannerIndicators = `-- name: ListScannerIndicators :many
 SELECT id, interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels
 FROM app.scanner_indicators
@@ -132,6 +98,17 @@ func (q *Queries) ListScannerIndicators(ctx context.Context) ([]ListScannerIndic
 		return nil, err
 	}
 	return items, nil
+}
+
+const lockScannerIndicators = `-- name: LockScannerIndicators :exec
+LOCK TABLE app.scanner_indicators IN SHARE ROW EXCLUSIVE MODE
+`
+
+// Serializes appends, which number positions after the current maximum, with
+// each other and with other writes; reads stay allowed.
+func (q *Queries) LockScannerIndicators(ctx context.Context) error {
+	_, err := q.db.Exec(ctx, lockScannerIndicators)
+	return err
 }
 
 const reorderScannerIndicators = `-- name: ReorderScannerIndicators :execrows

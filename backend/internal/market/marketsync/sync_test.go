@@ -265,9 +265,10 @@ func TestSynchronizerContinuesAfterInstrumentFailureAndReportsRunTotals(t *testi
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
 
-	err := marketsync.New(exchange, store, logger, 4, 1000, market.BinanceSpotSyncProfile(market.IntervalDay)).Sync(context.Background())
-	if !errors.Is(err, permanentErr) {
-		t.Fatalf("Sync() error = %v, want permanent instrument failure", err)
+	synchronizer := marketsync.New(exchange, store, logger, 4, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
+	err := synchronizer.Sync(context.Background())
+	if !errors.Is(err, permanentErr) || !errors.Is(err, marketsync.ErrInstrumentsFailed) {
+		t.Fatalf("Sync() error = %v, want partial instrument failure", err)
 	}
 	requested := map[string]bool{}
 	for _, request := range exchange.candleRequests {
@@ -280,13 +281,27 @@ func TestSynchronizerContinuesAfterInstrumentFailureAndReportsRunTotals(t *testi
 	if len(written) == 0 || written[0].InstrumentID != eth.ID {
 		t.Fatalf("upserted batches = %#v, want successful ETH history retained", store.upserted)
 	}
-	if len(store.saved) != 2 || store.saved[1].Status != market.SyncStatusFailed || store.saved[1].ErrorMessage == "" {
-		t.Fatalf("saved states = %#v, want running then failed", store.saved)
+	if len(store.saved) != 2 || store.saved[1].Status != market.SyncStatusSucceeded || store.saved[1].LastSucceededAt == nil || store.saved[1].ErrorMessage == "" {
+		t.Fatalf("saved states = %#v, want running then succeeded with the instrument failure", store.saved)
 	}
-	for _, field := range []string{`"outcome":"failed"`, `"instruments_total":2`, `"instruments_succeeded":1`, `"instruments_failed":1`, `"candle_rows_written":1`} {
+	for _, field := range []string{`"outcome":"partial"`, `"instruments_total":2`, `"instruments_succeeded":1`, `"instruments_failed":1`, `"candle_rows_written":1`} {
 		if !strings.Contains(logs.String(), field) {
 			t.Fatalf("structured log %s missing %s", logs.String(), field)
 		}
+	}
+
+	// Before another candle closes, a retry synchronizes only the failed instrument.
+	exchange.candleRequests = nil
+	if err := synchronizer.Sync(context.Background()); !errors.Is(err, permanentErr) {
+		t.Fatalf("retry Sync() error = %v, want the instrument failure again", err)
+	}
+	for _, request := range exchange.candleRequests {
+		if request.Symbol != "BTCUSDT" {
+			t.Fatalf("retry requested %s, want only the failed instrument", request.Symbol)
+		}
+	}
+	if len(exchange.candleRequests) == 0 {
+		t.Fatal("retry did not request the failed instrument")
 	}
 }
 
@@ -456,6 +471,7 @@ type fakeMarketStore struct {
 	active     []market.Instrument
 	latest     map[int64][]market.Candle
 	coverage   map[string]market.HistoryCoverage
+	emptyGaps  map[string]marketsync.HistoryGap
 	upserted   [][]market.Candle
 	upsertErrs map[int64]error
 	saveErrors []error
@@ -491,11 +507,13 @@ func (store *fakeMarketStore) ListLatestCandles(_ context.Context, instrumentIDs
 
 func (store *fakeMarketStore) SummarizeCandleHistory(ctx context.Context, instrumentIDs []int64, interval market.CandleInterval, limit int) (map[int64]marketsync.HistorySummary, error) {
 	latest, err := store.ListLatestCandles(ctx, instrumentIDs, interval, limit)
-	return summarizeLatest(latest, interval), err
+	return store.summarizeLatest(latest, interval), err
 }
 
 // summarizeLatest builds history summaries from chronological latest candles.
-func summarizeLatest(latest map[int64][]market.Candle, interval market.CandleInterval) map[int64]marketsync.HistorySummary {
+func (store *fakeMarketStore) summarizeLatest(latest map[int64][]market.Candle, interval market.CandleInterval) map[int64]marketsync.HistorySummary {
+	store.mu.Lock()
+	defer store.mu.Unlock()
 	histories := map[int64]marketsync.HistorySummary{}
 	for id, candles := range latest {
 		if len(candles) == 0 {
@@ -504,7 +522,11 @@ func summarizeLatest(latest map[int64][]market.Candle, interval market.CandleInt
 		history := marketsync.HistorySummary{Count: len(candles), Oldest: candles[0].OpenTime.UTC(), Latest: candles[len(candles)-1].OpenTime.UTC()}
 		for index := 1; index < len(candles); index++ {
 			if next := interval.NextOpenTime(candles[index-1].OpenTime); next.Before(candles[index].OpenTime) {
-				history.Gaps = append(history.Gaps, marketsync.HistoryGap{From: next, To: candles[index].OpenTime.UTC()})
+				gap := marketsync.HistoryGap{From: next, To: candles[index].OpenTime.UTC()}
+				if empty, found := store.emptyGaps[emptyGapKey(id, interval, gap.From)]; found && empty.To.Equal(gap.To) {
+					gap.RetryAfter = empty.RetryAfter
+				}
+				history.Gaps = append(history.Gaps, gap)
 			}
 		}
 		histories[id] = history
@@ -573,11 +595,30 @@ func (store *fakeMarketStore) UpsertCandles(_ context.Context, items []market.Ca
 	return nil
 }
 
-func (store *fakeMarketStore) GetCandleHistoryCoverage(_ context.Context, instrumentID int64, interval market.CandleInterval) (market.HistoryCoverage, bool, error) {
+func (store *fakeMarketStore) ListCandleHistoryCoverage(_ context.Context, instrumentIDs []int64, interval market.CandleInterval) (map[int64]market.HistoryCoverage, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	coverage, found := store.coverage[fmt.Sprintf("%d:%s", instrumentID, interval)]
-	return coverage, found, nil
+	coverages := map[int64]market.HistoryCoverage{}
+	for _, id := range instrumentIDs {
+		if coverage, found := store.coverage[fmt.Sprintf("%d:%s", id, interval)]; found {
+			coverages[id] = coverage
+		}
+	}
+	return coverages, nil
+}
+
+func (store *fakeMarketStore) SaveEmptyCandleGap(_ context.Context, instrumentID int64, interval market.CandleInterval, gap marketsync.HistoryGap) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.emptyGaps == nil {
+		store.emptyGaps = map[string]marketsync.HistoryGap{}
+	}
+	store.emptyGaps[emptyGapKey(instrumentID, interval, gap.From)] = gap
+	return nil
+}
+
+func emptyGapKey(instrumentID int64, interval market.CandleInterval, from time.Time) string {
+	return fmt.Sprintf("%d:%s:%d", instrumentID, interval, from.UnixMilli())
 }
 
 func (store *fakeMarketStore) SaveCandleHistoryCoverage(_ context.Context, coverage market.HistoryCoverage) error {

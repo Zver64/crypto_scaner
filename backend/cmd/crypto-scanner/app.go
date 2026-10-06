@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"time"
 
 	"crypto-scanner/internal/alerts"
@@ -63,15 +62,15 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	// The tracker is created after the configuration loads; changes before
 	// that are covered by its initial targets.
 	var closedIndicators *closedindicator.Tracker
-	var tables []markettable.Catalog
 	// Strategies read the configured indicators, which stay while in use.
 	var strategies *strategy.Service
 	var strategyMonitor *strategy.Monitor
-	scannerIndicators, err := scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func() {
+	var scannerIndicators *scannerindicator.Service
+	scannerIndicators, err = scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func() {
 		if closedIndicators == nil {
 			return
 		}
-		if err := closedIndicators.SetTargets(tableTargets(tables)); err != nil {
+		if err := closedIndicators.SetTargets(scannerIndicators.TableTargets()); err != nil {
 			logger.Error("apply table indicator targets failed", "module", "scanner_indicator", "error", err)
 		}
 	}, func() map[int64][]string {
@@ -101,18 +100,17 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err := strategies.Load(ctx); err != nil {
 		return app{}, err
 	}
-	marketTable, err := markettable.NewCatalog(indicatorRegistry, scannerIndicators, defaultTableSort, marketTableColumns()...)
+	marketTable, err := markettable.NewCatalog(scannerIndicators, defaultTableSort, marketTableColumns()...)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize market table: %w", err)
 	}
-	favoritesTable, err := markettable.NewCatalog(indicatorRegistry, scannerIndicators, defaultTableSort, favoritesTableColumns()...)
+	favoritesTable, err := markettable.NewCatalog(scannerIndicators, defaultTableSort, favoritesTableColumns()...)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites table: %w", err)
 	}
 	// Tables calculate the values they show on demand; only the values
 	// enabled strategies read stay current in the background.
-	tables = []markettable.Catalog{marketTable, favoritesTable}
-	closedIndicators, err = closedindicator.New(store, indicatorRegistry, tableTargets(tables), logger, strategySource{strategies})
+	closedIndicators, err = closedindicator.New(store, indicatorRegistry, strategies, scannerIndicators.TableTargets(), logger)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
 	}
@@ -151,7 +149,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 
 	// Access and favorite changes both change the monitored instrument set.
 	var monitoredChanged listeners
-	botService, err := telegrambot.New(cfg.TelegramBotToken, cfg.AdminTelegramID, store, logger, telegrambot.Options{AccessChanged: monitoredChanged.notify})
+	botService, err := telegrambot.New(cfg.TelegramBotToken, cfg.AdminTelegramID, store, logger, monitoredChanged.notify, telegrambot.Options{})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize Telegram bot: %w", err)
 	}
@@ -163,21 +161,32 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	alertMonitor := alerts.NewMonitor(store, tradeStream, botService, logger)
 	strategyMonitor = strategy.NewMonitor(store, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
 	monitoredChanged = append(monitoredChanged, alertMonitor.Changed, closedIndicators.Refresh, strategyMonitor.Changed)
-	favoriteService := favorites.New(store, cfg.AdminTelegramID, monitoredChanged.notify, analysisService, closedIndicators, favoritesTable)
+	favoriteService, err := favorites.New(store, cfg.AdminTelegramID, monitoredChanged.notify)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize favorites service: %w", err)
+	}
+	marketTables, err := markettable.NewService(analysisService, closedIndicators, marketTable, favoritesTable)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize market table service: %w", err)
+	}
+	alertService, err := alerts.New(store, alertMonitor, monitoredChanged.notify)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize price alert service: %w", err)
+	}
 
 	sessions := auth.NewSessions(store, authtelegram.New(cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, authtelegram.Options{}),
 		cfg.AdminTelegramID, cfg.SessionIdleTTL, cfg.SessionAbsoluteTTL, logger, auth.SessionOptions{})
 	handler := httpapi.New(logger, httpapi.Dependencies{
 		Readiness:    store,
 		Analysis:     analysisService,
-		MarketTables: markettable.NewService(analysisService, marketTable),
+		MarketTables: marketTables,
 		History:      store,
-		GridLimits:   gridlimits.New(exchange, logger, gridlimits.Options{}),
+		GridLimits:   gridlimits.New(exchange, store, logger, gridlimits.Options{}),
 		Sessions:     sessions,
 		Chart:        chartService,
 		LiveCandles:  liveService,
 		Favorites:    favoriteService,
-		Alerts:       alerts.New(store, alertMonitor),
+		Alerts:       alertService,
 
 		ScannerIndicators: scannerIndicators,
 		IndicatorTypes:    indicatorRegistry,
@@ -198,27 +207,4 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		{"session pruner", sessions},
 		{"operations notifier", notifier},
 	}}, nil
-}
-
-// strategySource keeps the values enabled strategies read current on the
-// instruments that read them, among the administrator's favorites.
-type strategySource struct {
-	strategies *strategy.Service
-}
-
-func (source strategySource) Subscriptions(ctx context.Context, _ []closedindicator.Target) ([]closedindicator.Subscription, error) {
-	return source.strategies.Subscriptions(ctx)
-}
-
-// tableTargets returns the distinct closed indicator targets the tables read.
-func tableTargets(tables []markettable.Catalog) []closedindicator.Target {
-	var targets []closedindicator.Target
-	for _, table := range tables {
-		for _, target := range table.ClosedTargets() {
-			if !slices.ContainsFunc(targets, target.Equal) {
-				targets = append(targets, target)
-			}
-		}
-	}
-	return targets
 }

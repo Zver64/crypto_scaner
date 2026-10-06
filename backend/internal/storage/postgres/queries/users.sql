@@ -28,3 +28,7 @@ RETURNING id;
 INSERT INTO app.users (telegram_id)
 VALUES ($1)
 ON CONFLICT (telegram_id) DO NOTHING;
+
+-- name: LockUser :one
+-- Serializes a user's favorite and price alert writes.
+SELECT telegram_id FROM app.users WHERE id = $1 FOR UPDATE;

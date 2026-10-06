@@ -3,7 +3,9 @@ package volatility
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"time"
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/market"
@@ -50,6 +52,8 @@ func (c criterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: c.unit, Count: c.period}}
 }
 
+func (criterion) Constrain(*analysis.Selection) {}
+
 func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	candles := input.Candles[c.unit]
 	if len(candles) < c.period {
@@ -59,7 +63,7 @@ func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.E
 	ranges := make([]float64, len(candles))
 	for i, candle := range candles {
 		if !(candle.Open > 0) {
-			return analysis.Evaluation{}, analysis.ErrInvalidCandleData
+			return analysis.Evaluation{}, fmt.Errorf("invalid %s candle at %s: open %v is not positive", c.unit, candle.OpenTime.UTC().Format(time.RFC3339), candle.Open)
 		}
 		ranges[i] = ((candle.High - candle.Low) / candle.Open) * 100
 	}

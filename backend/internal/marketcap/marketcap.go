@@ -3,6 +3,7 @@ package marketcap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -118,7 +119,7 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 		return Batch{}, err
 	}
 	if !done {
-		return Batch{}, fmt.Errorf("%w: mapping bootstrap incomplete", ErrBootstrapIncomplete)
+		return Batch{}, errors.New("market cap mapping bootstrap incomplete")
 	}
 	bases := map[string]market.Instrument{}
 	for _, i := range instruments {
@@ -221,8 +222,6 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 	result.ProviderWarning = providerFailed || mappingProviderWarning
 	return result, nil
 }
-
-var ErrBootstrapIncomplete = fmt.Errorf("market cap bootstrap incomplete")
 
 // cachedMappings adds the valid persisted mappings of bases to mappings and
 // returns the bases that still need a scan.

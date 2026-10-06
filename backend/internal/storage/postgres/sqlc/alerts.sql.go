@@ -7,8 +7,6 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const deletePriceAlert = `-- name: DeletePriceAlert :execrows
@@ -62,7 +60,7 @@ func (q *Queries) FirePriceAlert(ctx context.Context, arg FirePriceAlertParams) 
 const insertPriceAlert = `-- name: InsertPriceAlert :one
 INSERT INTO app.price_alerts (user_id, instrument_id, target)
 VALUES ($1, $2, $3)
-RETURNING id, user_id, instrument_id, target::text AS target, version, created_at, updated_at
+RETURNING id, user_id, instrument_id, target, version, created_at, updated_at
 `
 
 type InsertPriceAlertParams struct {
@@ -71,19 +69,9 @@ type InsertPriceAlertParams struct {
 	Target       string
 }
 
-type InsertPriceAlertRow struct {
-	ID           int64
-	UserID       int64
-	InstrumentID int64
-	Target       string
-	Version      int64
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
-}
-
-func (q *Queries) InsertPriceAlert(ctx context.Context, arg InsertPriceAlertParams) (InsertPriceAlertRow, error) {
+func (q *Queries) InsertPriceAlert(ctx context.Context, arg InsertPriceAlertParams) (AppPriceAlert, error) {
 	row := q.db.QueryRow(ctx, insertPriceAlert, arg.UserID, arg.InstrumentID, arg.Target)
-	var i InsertPriceAlertRow
+	var i AppPriceAlert
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -97,8 +85,7 @@ func (q *Queries) InsertPriceAlert(ctx context.Context, arg InsertPriceAlertPara
 }
 
 const listEnabledPriceAlerts = `-- name: ListEnabledPriceAlerts :many
-SELECT a.id, a.user_id, u.telegram_id, a.instrument_id, i.symbol,
-       a.target::text AS target, a.version, a.created_at, a.updated_at
+SELECT a.id, a.user_id, a.instrument_id, a.target, a.version, a.created_at, a.updated_at, i.symbol, u.telegram_id
 FROM app.price_alerts a
 JOIN app.users u ON u.id = a.user_id
 JOIN binance_spot.instruments i ON i.id = a.instrument_id AND i.is_active
@@ -106,15 +93,9 @@ ORDER BY i.symbol, a.target, a.id
 `
 
 type ListEnabledPriceAlertsRow struct {
-	ID           int64
-	UserID       int64
-	TelegramID   int64
-	InstrumentID int64
-	Symbol       string
-	Target       string
-	Version      int64
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	AppPriceAlert AppPriceAlert
+	Symbol        string
+	TelegramID    int64
 }
 
 func (q *Queries) ListEnabledPriceAlerts(ctx context.Context) ([]ListEnabledPriceAlertsRow, error) {
@@ -127,15 +108,15 @@ func (q *Queries) ListEnabledPriceAlerts(ctx context.Context) ([]ListEnabledPric
 	for rows.Next() {
 		var i ListEnabledPriceAlertsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.TelegramID,
-			&i.InstrumentID,
+			&i.AppPriceAlert.ID,
+			&i.AppPriceAlert.UserID,
+			&i.AppPriceAlert.InstrumentID,
+			&i.AppPriceAlert.Target,
+			&i.AppPriceAlert.Version,
+			&i.AppPriceAlert.CreatedAt,
+			&i.AppPriceAlert.UpdatedAt,
 			&i.Symbol,
-			&i.Target,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.TelegramID,
 		); err != nil {
 			return nil, err
 		}
@@ -148,9 +129,9 @@ func (q *Queries) ListEnabledPriceAlerts(ctx context.Context) ([]ListEnabledPric
 }
 
 const listPriceAlerts = `-- name: ListPriceAlerts :many
-SELECT a.id, a.user_id, a.instrument_id, i.symbol, a.target::text AS target,
-       a.version, a.created_at, a.updated_at
+SELECT a.id, a.user_id, a.instrument_id, a.target, a.version, a.created_at, a.updated_at, i.symbol, u.telegram_id
 FROM app.price_alerts a
+JOIN app.users u ON u.id = a.user_id
 JOIN binance_spot.instruments i ON i.id = a.instrument_id
 WHERE a.user_id = $1 AND i.symbol = $2
 ORDER BY a.target, a.id
@@ -162,14 +143,9 @@ type ListPriceAlertsParams struct {
 }
 
 type ListPriceAlertsRow struct {
-	ID           int64
-	UserID       int64
-	InstrumentID int64
-	Symbol       string
-	Target       string
-	Version      int64
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
+	AppPriceAlert AppPriceAlert
+	Symbol        string
+	TelegramID    int64
 }
 
 func (q *Queries) ListPriceAlerts(ctx context.Context, arg ListPriceAlertsParams) ([]ListPriceAlertsRow, error) {
@@ -182,14 +158,15 @@ func (q *Queries) ListPriceAlerts(ctx context.Context, arg ListPriceAlertsParams
 	for rows.Next() {
 		var i ListPriceAlertsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.InstrumentID,
+			&i.AppPriceAlert.ID,
+			&i.AppPriceAlert.UserID,
+			&i.AppPriceAlert.InstrumentID,
+			&i.AppPriceAlert.Target,
+			&i.AppPriceAlert.Version,
+			&i.AppPriceAlert.CreatedAt,
+			&i.AppPriceAlert.UpdatedAt,
 			&i.Symbol,
-			&i.Target,
-			&i.Version,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.TelegramID,
 		); err != nil {
 			return nil, err
 		}
@@ -201,11 +178,31 @@ func (q *Queries) ListPriceAlerts(ctx context.Context, arg ListPriceAlertsParams
 	return items, nil
 }
 
+const lockPriceAlertSymbol = `-- name: LockPriceAlertSymbol :one
+SELECT i.symbol
+FROM app.price_alerts a
+JOIN binance_spot.instruments i ON i.id = a.instrument_id
+WHERE a.id = $1 AND a.user_id = $2
+FOR UPDATE OF a
+`
+
+type LockPriceAlertSymbolParams struct {
+	ID     int64
+	UserID int64
+}
+
+func (q *Queries) LockPriceAlertSymbol(ctx context.Context, arg LockPriceAlertSymbolParams) (string, error) {
+	row := q.db.QueryRow(ctx, lockPriceAlertSymbol, arg.ID, arg.UserID)
+	var symbol string
+	err := row.Scan(&symbol)
+	return symbol, err
+}
+
 const updatePriceAlert = `-- name: UpdatePriceAlert :one
 UPDATE app.price_alerts
 SET target = $3, version = version + 1, updated_at = now()
 WHERE id = $1 AND user_id = $2
-RETURNING id, user_id, instrument_id, target::text AS target, version, created_at, updated_at
+RETURNING id, user_id, instrument_id, target, version, created_at, updated_at
 `
 
 type UpdatePriceAlertParams struct {
@@ -214,19 +211,9 @@ type UpdatePriceAlertParams struct {
 	Target string
 }
 
-type UpdatePriceAlertRow struct {
-	ID           int64
-	UserID       int64
-	InstrumentID int64
-	Target       string
-	Version      int64
-	CreatedAt    pgtype.Timestamptz
-	UpdatedAt    pgtype.Timestamptz
-}
-
-func (q *Queries) UpdatePriceAlert(ctx context.Context, arg UpdatePriceAlertParams) (UpdatePriceAlertRow, error) {
+func (q *Queries) UpdatePriceAlert(ctx context.Context, arg UpdatePriceAlertParams) (AppPriceAlert, error) {
 	row := q.db.QueryRow(ctx, updatePriceAlert, arg.ID, arg.UserID, arg.Target)
-	var i UpdatePriceAlertRow
+	var i AppPriceAlert
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,

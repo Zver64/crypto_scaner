@@ -96,14 +96,14 @@ func (q *Queries) ListCoinGeckoMarketCaps(ctx context.Context, coinIds []string)
 }
 
 const mappingBootstrapCompleted = `-- name: MappingBootstrapCompleted :one
-SELECT completed_at IS NOT NULL FROM app.coingecko_mapping_bootstrap WHERE id = TRUE
+SELECT (completed_at IS NOT NULL)::boolean AS completed FROM app.coingecko_mapping_bootstrap WHERE id = TRUE
 `
 
-func (q *Queries) MappingBootstrapCompleted(ctx context.Context) (interface{}, error) {
+func (q *Queries) MappingBootstrapCompleted(ctx context.Context) (bool, error) {
 	row := q.db.QueryRow(ctx, mappingBootstrapCompleted)
-	var column_1 interface{}
-	err := row.Scan(&column_1)
-	return column_1, err
+	var completed bool
+	err := row.Scan(&completed)
+	return completed, err
 }
 
 const replaceMappingsAndCompleteBootstrap = `-- name: ReplaceMappingsAndCompleteBootstrap :exec
@@ -121,8 +121,13 @@ SET is_stablecoin = CASE
     WHEN status = 'resolved' THEN coin_id = ANY($1::text[])
     ELSE NULL
 END
+WHERE is_stablecoin IS DISTINCT FROM CASE
+    WHEN status = 'resolved' THEN coin_id = ANY($1::text[])
+    ELSE NULL
+END
 `
 
+// Rows already classified this way are not rewritten.
 func (q *Queries) ReplaceStablecoinClassifications(ctx context.Context, stablecoinIds []string) error {
 	_, err := q.db.Exec(ctx, replaceStablecoinClassifications, stablecoinIds)
 	return err

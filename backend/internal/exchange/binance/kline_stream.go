@@ -165,5 +165,5 @@ func decodeKline(eventTime int64, value wireKline) (kline.Event, error) {
 	if high < max(open, closePrice) || low > min(open, closePrice) || volume < 0 || quote < 0 {
 		return kline.Event{}, errors.New("invalid Binance kline values")
 	}
-	return kline.Event{Key: kline.Key{Symbol: strings.ToUpper(value.Symbol), Interval: interval}, Candle: market.Candle{Interval: interval, OpenTime: time.UnixMilli(value.OpenTime).UTC(), CloseTime: time.UnixMilli(value.CloseTime).UTC(), Open: open, High: high, Low: low, Close: closePrice, Volume: volume, QuoteAssetVolume: quote, TradeCount: value.Trades}, Final: value.Final, EventTime: time.UnixMilli(eventTime).UTC()}, nil
+	return kline.Event{Key: kline.Key{Symbol: market.NormalizeSymbol(value.Symbol), Interval: interval}, Candle: market.Candle{Interval: interval, OpenTime: time.UnixMilli(value.OpenTime).UTC(), CloseTime: time.UnixMilli(value.CloseTime).UTC(), Open: open, High: high, Low: low, Close: closePrice, Volume: volume, QuoteAssetVolume: quote, TradeCount: value.Trades}, Final: value.Final, EventTime: time.UnixMilli(eventTime).UTC()}, nil
 }

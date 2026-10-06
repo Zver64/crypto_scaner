@@ -81,7 +81,7 @@ func TestChartClientBuildsANewSubscriptionOnce(t *testing.T) {
 	client, socket := newTestChartClient(t, store)
 	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 
-	client.setRange(key, chart.DefaultRange, nil)
+	client.setRange(context.Background(), key, chart.DefaultRange, nil)
 	client.Enqueue(marketlive.Message{Kind: marketlive.KindSubscribed, Key: key})
 	client.Enqueue(marketlive.Message{Kind: marketlive.KindSnapshot, Key: key, Freshness: marketlive.FreshnessWaiting})
 
@@ -105,7 +105,7 @@ func TestChartClientMergesEventsQueuedDuringABuild(t *testing.T) {
 	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 	selections := []indicator.Selection{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}}
 
-	client.setRange(key, chart.DefaultRange, selections)
+	client.setRange(context.Background(), key, chart.DefaultRange, selections)
 	client.Enqueue(marketlive.Message{Kind: marketlive.KindSnapshot, Key: key})
 	<-store.entered
 	forming := chartTestCandles(market.IntervalHour, 31)[30]
@@ -135,7 +135,7 @@ func TestChartClientSendsNothingAfterASubscriptionEnds(t *testing.T) {
 		client, socket := newTestChartClient(t, store)
 		key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 
-		client.setRange(key, chart.DefaultRange, nil)
+		client.setRange(context.Background(), key, chart.DefaultRange, nil)
 		client.Enqueue(marketlive.Message{Kind: marketlive.KindSnapshot, Key: key})
 		<-store.entered
 		client.forget(key)
@@ -155,8 +155,8 @@ func TestChartClientBuildsKeysIndependently(t *testing.T) {
 	hour := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 	day := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalDay}
 
-	client.setRange(hour, chart.DefaultRange, nil)
-	client.setRange(day, chart.DefaultRange, nil)
+	client.setRange(context.Background(), hour, chart.DefaultRange, nil)
+	client.setRange(context.Background(), day, chart.DefaultRange, nil)
 	client.Enqueue(marketlive.Message{Kind: marketlive.KindSnapshot, Key: hour})
 	client.Enqueue(marketlive.Message{Kind: marketlive.KindSnapshot, Key: day})
 
@@ -178,9 +178,10 @@ func newTestChartClient(t *testing.T, store chart.Store) (*chartClient, *liveSoc
 	}
 	// The socket has no connection; the test never lets its queue overflow.
 	socket := &liveSocketClient{id: "test", queue: make(chan LiveCandleServerMessage, 64), done: make(chan struct{})}
-	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	return newChartClient(ctx, socket, service, slog.New(slog.DiscardHandler)), socket
+	client := newChartClient(socket, service, slog.New(slog.DiscardHandler))
+	// The socket has no connection to close, so only the streams stop.
+	t.Cleanup(func() { client.stop(); client.Wait() })
+	return client, socket
 }
 
 type emptyChartCatalog struct{}

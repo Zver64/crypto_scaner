@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"crypto-scanner/internal/alerts"
-	"crypto-scanner/internal/market"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
 
 	"github.com/jackc/pgx/v5"
@@ -15,119 +14,127 @@ import (
 func (store *Store) ListAlerts(ctx context.Context, userID int64, symbol string) ([]alerts.Alert, error) {
 	rows, err := store.queries.ListPriceAlerts(ctx, generated.ListPriceAlertsParams{UserID: userID, Symbol: symbol})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list price alerts: %w", err)
 	}
 	items := make([]alerts.Alert, 0, len(rows))
-	for _, r := range rows {
-		target, normalizeErr := alerts.NormalizeTarget(r.Target)
-		if normalizeErr != nil {
-			return nil, fmt.Errorf("invalid persisted alert target: %w", normalizeErr)
+	for _, row := range rows {
+		item, err := alertFromRow(row.AppPriceAlert, row.Symbol, row.TelegramID)
+		if err != nil {
+			return nil, err
 		}
-		items = append(items, alerts.Alert{ID: r.ID, UserID: r.UserID, InstrumentID: r.InstrumentID, Symbol: r.Symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()})
+		items = append(items, item)
 	}
 	return items, nil
 }
 
-func (store *Store) CreateAlert(ctx context.Context, userID int64, symbol, target string) (alerts.Alert, error) {
+// CreateAlert adds the instrument to the user's favorites when it is not one
+// yet and reports whether it did.
+func (store *Store) CreateAlert(ctx context.Context, userID int64, symbol, target string) (alerts.Alert, bool, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return alerts.Alert{}, err
+		return alerts.Alert{}, false, fmt.Errorf("begin price alert creation: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	telegramID, err := lockUser(ctx, tx, userID)
-	if err != nil {
-		return alerts.Alert{}, err
-	}
-	var instrumentID int64
-	if err = tx.QueryRow(ctx, `SELECT id FROM binance_spot.instruments WHERE symbol=$1 AND is_active`, symbol).Scan(&instrumentID); errors.Is(err, pgx.ErrNoRows) {
-		return alerts.Alert{}, market.ErrInstrumentNotFound
-	} else if err != nil {
-		return alerts.Alert{}, err
-	}
 	q := store.queries.WithTx(tx)
-	if err = q.AddFavorite(ctx, generated.AddFavoriteParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
-		return alerts.Alert{}, err
+	telegramID, err := lockUser(ctx, q, userID)
+	if err != nil {
+		return alerts.Alert{}, false, err
+	}
+	instrumentID, err := activeInstrumentID(ctx, q, symbol)
+	if err != nil {
+		return alerts.Alert{}, false, err
+	}
+	added, err := q.AddFavorite(ctx, generated.AddFavoriteParams{UserID: userID, InstrumentID: instrumentID})
+	if err != nil {
+		return alerts.Alert{}, false, fmt.Errorf("add favorite for price alert: %w", err)
 	}
 	count, err := q.CountFavoriteAlerts(ctx, generated.CountFavoriteAlertsParams{UserID: userID, InstrumentID: instrumentID})
 	if err != nil {
-		return alerts.Alert{}, err
+		return alerts.Alert{}, false, fmt.Errorf("count price alerts: %w", err)
 	}
 	if count >= alerts.MaxPerInstrument {
-		return alerts.Alert{}, alerts.ErrLimit
+		return alerts.Alert{}, false, alerts.ErrLimit
 	}
-	r, err := q.InsertPriceAlert(ctx, generated.InsertPriceAlertParams{UserID: userID, InstrumentID: instrumentID, Target: target})
+	row, err := q.InsertPriceAlert(ctx, generated.InsertPriceAlertParams{UserID: userID, InstrumentID: instrumentID, Target: target})
 	if duplicateViolation(err) {
-		return alerts.Alert{}, alerts.ErrDuplicate
+		return alerts.Alert{}, false, alerts.ErrDuplicate
 	}
 	if err != nil {
-		return alerts.Alert{}, err
+		return alerts.Alert{}, false, fmt.Errorf("insert price alert: %w", err)
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return alerts.Alert{}, err
+		return alerts.Alert{}, false, fmt.Errorf("commit price alert creation: %w", err)
 	}
-	return alertFromInsert(r, symbol, target, telegramID), nil
+	item, err := alertFromRow(row, symbol, telegramID)
+	return item, added > 0, err
 }
 
 func (store *Store) UpdateAlert(ctx context.Context, userID, id int64, target string) (alerts.Alert, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return alerts.Alert{}, err
+		return alerts.Alert{}, fmt.Errorf("begin price alert update: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	telegramID, err := lockUser(ctx, tx, userID)
+	q := store.queries.WithTx(tx)
+	telegramID, err := lockUser(ctx, q, userID)
 	if err != nil {
 		return alerts.Alert{}, err
 	}
-	var symbol string
-	if err = tx.QueryRow(ctx, `SELECT i.symbol FROM app.price_alerts a JOIN binance_spot.instruments i ON i.id=a.instrument_id WHERE a.id=$1 AND a.user_id=$2 FOR UPDATE OF a`, id, userID).Scan(&symbol); errors.Is(err, pgx.ErrNoRows) {
+	symbol, err := q.LockPriceAlertSymbol(ctx, generated.LockPriceAlertSymbolParams{ID: id, UserID: userID})
+	if errors.Is(err, pgx.ErrNoRows) {
 		return alerts.Alert{}, alerts.ErrNotFound
-	} else if err != nil {
-		return alerts.Alert{}, err
 	}
-	r, err := store.queries.WithTx(tx).UpdatePriceAlert(ctx, generated.UpdatePriceAlertParams{ID: id, UserID: userID, Target: target})
+	if err != nil {
+		return alerts.Alert{}, fmt.Errorf("lock price alert: %w", err)
+	}
+	row, err := q.UpdatePriceAlert(ctx, generated.UpdatePriceAlertParams{ID: id, UserID: userID, Target: target})
 	if duplicateViolation(err) {
 		return alerts.Alert{}, alerts.ErrDuplicate
 	}
 	if err != nil {
-		return alerts.Alert{}, err
+		return alerts.Alert{}, fmt.Errorf("update price alert: %w", err)
 	}
 	if err = tx.Commit(ctx); err != nil {
-		return alerts.Alert{}, err
+		return alerts.Alert{}, fmt.Errorf("commit price alert update: %w", err)
 	}
-	return alerts.Alert{ID: r.ID, UserID: r.UserID, TelegramID: telegramID, InstrumentID: r.InstrumentID, Symbol: symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()}, nil
+	return alertFromRow(row, symbol, telegramID)
 }
 
 func (store *Store) DeleteAlert(ctx context.Context, userID, id int64) error {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return err
+		return fmt.Errorf("begin price alert deletion: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
-	if _, err = lockUser(ctx, tx, userID); err != nil {
+	q := store.queries.WithTx(tx)
+	if _, err = lockUser(ctx, q, userID); err != nil {
 		return err
 	}
-	rows, err := store.queries.WithTx(tx).DeletePriceAlert(ctx, generated.DeletePriceAlertParams{ID: id, UserID: userID})
+	rows, err := q.DeletePriceAlert(ctx, generated.DeletePriceAlertParams{ID: id, UserID: userID})
 	if err != nil {
-		return err
+		return fmt.Errorf("delete price alert: %w", err)
 	}
 	if rows == 0 {
 		return alerts.ErrNotFound
 	}
-	return tx.Commit(ctx)
+	if err = tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit price alert deletion: %w", err)
+	}
+	return nil
 }
 
 func (store *Store) ListEnabledAlerts(ctx context.Context) ([]alerts.Alert, error) {
 	rows, err := store.queries.ListEnabledPriceAlerts(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list enabled price alerts: %w", err)
 	}
 	items := make([]alerts.Alert, 0, len(rows))
-	for _, r := range rows {
-		target, normalizeErr := alerts.NormalizeTarget(r.Target)
-		if normalizeErr != nil {
-			return nil, fmt.Errorf("invalid persisted alert target: %w", normalizeErr)
+	for _, row := range rows {
+		item, err := alertFromRow(row.AppPriceAlert, row.Symbol, row.TelegramID)
+		if err != nil {
+			return nil, err
 		}
-		items = append(items, alerts.Alert{ID: r.ID, UserID: r.UserID, TelegramID: r.TelegramID, InstrumentID: r.InstrumentID, Symbol: r.Symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()})
+		items = append(items, item)
 	}
 	return items, nil
 }
@@ -137,13 +144,29 @@ func (store *Store) FireAlert(ctx context.Context, id, version int64) (bool, err
 	if errors.Is(err, pgx.ErrNoRows) {
 		return false, nil
 	}
-	return err == nil, err
+	if err != nil {
+		return false, fmt.Errorf("fire price alert: %w", err)
+	}
+	return true, nil
 }
 
 func (store *Store) ListMonitoredSymbols(ctx context.Context) ([]string, error) {
-	return store.queries.ListMonitoredSymbols(ctx)
+	symbols, err := store.queries.ListMonitoredSymbols(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list monitored symbols: %w", err)
+	}
+	return symbols, nil
 }
 
-func alertFromInsert(r generated.InsertPriceAlertRow, symbol, target string, telegramID int64) alerts.Alert {
-	return alerts.Alert{ID: r.ID, UserID: r.UserID, TelegramID: telegramID, InstrumentID: r.InstrumentID, Symbol: symbol, Target: target, Version: r.Version, CreatedAt: r.CreatedAt.Time.UTC(), UpdatedAt: r.UpdatedAt.Time.UTC()}
+// alertFromRow normalizes the persisted NUMERIC target, which carries the
+// column's trailing zeros.
+func alertFromRow(row generated.AppPriceAlert, symbol string, telegramID int64) (alerts.Alert, error) {
+	target, err := alerts.NormalizeTarget(row.Target)
+	if err != nil {
+		return alerts.Alert{}, fmt.Errorf("invalid persisted alert target: %w", err)
+	}
+	return alerts.Alert{
+		ID: row.ID, UserID: row.UserID, TelegramID: telegramID, InstrumentID: row.InstrumentID, Symbol: symbol, Target: target,
+		Version: row.Version, CreatedAt: row.CreatedAt.Time.UTC(), UpdatedAt: row.UpdatedAt.Time.UTC(),
+	}, nil
 }

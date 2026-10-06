@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"slices"
 	"time"
 
 	"crypto-scanner/internal/analysis"
@@ -31,6 +32,9 @@ func (store *Store) ApplyInstrumentSnapshot(ctx context.Context, items []market.
 	for index, item := range items {
 		params.Symbols[index], params.BaseAssets[index], params.QuoteAssets[index] = item.Symbol, item.BaseAsset, item.QuoteAsset
 		params.Statuses[index], params.Actives[index] = item.Status, item.Active
+	}
+	if err := queries.LockSnapshotInstruments(ctx, params.Symbols); err != nil {
+		return fmt.Errorf("lock instruments of snapshot: %w", err)
 	}
 	if err := queries.DeactivateInstrumentsExcept(ctx, params.Symbols); err != nil {
 		return fmt.Errorf("deactivate instruments absent from snapshot: %w", err)
@@ -186,7 +190,14 @@ func (store *Store) ListLatestCandles(ctx context.Context, instrumentIDs []int64
 	if err != nil {
 		return nil, fmt.Errorf("list latest candles: %w", err)
 	}
-	items := make(map[int64][]market.Candle, len(instrumentIDs))
+	counts := make(map[int64]int, len(instrumentIDs))
+	for _, row := range rows {
+		counts[row.InstrumentID]++
+	}
+	items := make(map[int64][]market.Candle, len(counts))
+	for id, count := range counts {
+		items[id] = make([]market.Candle, 0, count)
+	}
 	for _, row := range rows {
 		item, err := candleFromRow(row)
 		if err != nil {
@@ -194,8 +205,19 @@ func (store *Store) ListLatestCandles(ctx context.Context, instrumentIDs []int64
 		}
 		items[row.InstrumentID] = append(items[row.InstrumentID], item)
 	}
+	// The query reads each instrument newest first and does not sort rows
+	// globally; reversing restores chronological order without a sort, which
+	// remains only as a fallback.
+	for _, candles := range items {
+		slices.Reverse(candles)
+		if !slices.IsSortedFunc(candles, compareOpenTime) {
+			slices.SortFunc(candles, compareOpenTime)
+		}
+	}
 	return items, nil
 }
+
+func compareOpenTime(left, right market.Candle) int { return left.OpenTime.Compare(right.OpenTime) }
 
 // PruneCandles keeps the newest keep candles of interval per instrument and
 // returns how many were deleted.
@@ -252,30 +274,39 @@ func (store *Store) SummarizeCandleHistory(ctx context.Context, instrumentIDs []
 		return histories, nil
 	}
 	rows, err := store.queries.SummarizeCandleHistory(ctx, generated.SummarizeCandleHistoryParams{
-		InstrumentIds: instrumentIDs, Interval: string(interval), RowLimit: int32(limit),
+		InstrumentIds: instrumentIDs, Interval: string(interval), RowLimit: int32(limit), Step: step,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("summarize candle history: %w", err)
 	}
 	for _, row := range rows {
-		histories[row.InstrumentID] = marketsync.HistorySummary{
-			Count: int(row.CandleCount), Oldest: row.OldestOpenTime.Time.UTC(), Latest: row.LatestOpenTime.Time.UTC(),
+		history := histories[row.InstrumentID]
+		history.Count, history.Oldest, history.Latest = int(row.CandleCount), row.OldestOpenTime.Time.UTC(), row.LatestOpenTime.Time.UTC()
+		if row.GapFrom.Valid {
+			gap := marketsync.HistoryGap{From: row.GapFrom.Time.UTC(), To: row.GapTo.Time.UTC()}
+			if row.GapRetryAfter.Valid {
+				gap.RetryAfter = row.GapRetryAfter.Time.UTC()
+			}
+			history.Gaps = append(history.Gaps, gap)
 		}
-	}
-	gaps, err := store.queries.ListCandleGaps(ctx, generated.ListCandleGapsParams{
-		InstrumentIds: instrumentIDs, Interval: string(interval), RowLimit: int32(limit), Step: step,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("list candle gaps: %w", err)
-	}
-	for _, gap := range gaps {
-		history := histories[gap.InstrumentID]
-		history.Gaps = append(history.Gaps, marketsync.HistoryGap{
-			From: interval.NextOpenTime(gap.PreviousOpenTime.Time.UTC()), To: gap.NextOpenTime.Time.UTC(),
-		})
-		histories[gap.InstrumentID] = history
+		histories[row.InstrumentID] = history
 	}
 	return histories, nil
+}
+
+// SaveEmptyCandleGap records that the exchange returned no candles for gap of
+// the instrument, so it is not requested again before gap.RetryAfter.
+func (store *Store) SaveEmptyCandleGap(ctx context.Context, instrumentID int64, interval market.CandleInterval, gap marketsync.HistoryGap) error {
+	if instrumentID <= 0 || !interval.Valid() || !gap.From.Before(gap.To) || gap.RetryAfter.IsZero() {
+		return fmt.Errorf("invalid empty candle gap")
+	}
+	if err := store.queries.SaveEmptyCandleGap(ctx, generated.SaveEmptyCandleGapParams{
+		InstrumentID: instrumentID, Interval: string(interval),
+		GapFrom: timestamptz(&gap.From), GapTo: timestamptz(&gap.To), RetryAfter: timestamptz(&gap.RetryAfter),
+	}); err != nil {
+		return fmt.Errorf("save empty candle gap: %w", err)
+	}
+	return nil
 }
 
 // intervalStep is one interval as a PostgreSQL calendar interval.
@@ -294,19 +325,25 @@ func intervalStep(interval market.CandleInterval) (pgtype.Interval, bool) {
 	}
 }
 
-func (store *Store) GetCandleHistoryCoverage(ctx context.Context, instrumentID int64, interval market.CandleInterval) (market.HistoryCoverage, bool, error) {
-	row, err := store.queries.GetCandleHistoryCoverage(ctx, generated.GetCandleHistoryCoverageParams{InstrumentID: instrumentID, Interval: string(interval)})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return market.HistoryCoverage{}, false, nil
+// ListCandleHistoryCoverage returns the persisted coverage of the instruments
+// that have one, by instrument ID.
+func (store *Store) ListCandleHistoryCoverage(ctx context.Context, instrumentIDs []int64, interval market.CandleInterval) (map[int64]market.HistoryCoverage, error) {
+	coverages := make(map[int64]market.HistoryCoverage, len(instrumentIDs))
+	if len(instrumentIDs) == 0 {
+		return coverages, nil
 	}
+	rows, err := store.queries.ListCandleHistoryCoverage(ctx, generated.ListCandleHistoryCoverageParams{InstrumentIds: instrumentIDs, Interval: string(interval)})
 	if err != nil {
-		return market.HistoryCoverage{}, false, fmt.Errorf("get candle history coverage: %w", err)
+		return nil, fmt.Errorf("list candle history coverage: %w", err)
 	}
-	return market.HistoryCoverage{
-		InstrumentID: row.InstrumentID, Interval: market.CandleInterval(row.Interval),
-		VerifiedOldestOpenTime: row.VerifiedOldestOpenTime.Time.UTC(), TargetDepth: int(row.TargetDepth),
-		PolicyVersion: int(row.PolicyVersion), RetryAfter: row.RetryAfter.Time.UTC(),
-	}, true, nil
+	for _, row := range rows {
+		coverages[row.InstrumentID] = market.HistoryCoverage{
+			InstrumentID: row.InstrumentID, Interval: market.CandleInterval(row.Interval),
+			VerifiedOldestOpenTime: row.VerifiedOldestOpenTime.Time.UTC(), TargetDepth: int(row.TargetDepth),
+			PolicyVersion: int(row.PolicyVersion), RetryAfter: row.RetryAfter.Time.UTC(),
+		}
+	}
+	return coverages, nil
 }
 
 func (store *Store) SaveCandleHistoryCoverage(ctx context.Context, coverage market.HistoryCoverage) error {
@@ -404,7 +441,8 @@ func candleParams(item market.Candle) (generated.UpsertCandleParams, error) {
 }
 
 // candleFromRow rejects NaN and infinities, which DOUBLE PRECISION columns
-// accept and CHECK constraints do not exclude.
+// accept; the finiteness CHECK constraint is NOT VALID, so rows written before
+// it may still hold them.
 func candleFromRow(row generated.BinanceSpotCandle) (market.Candle, error) {
 	for _, value := range []float64{row.Open, row.High, row.Low, row.Close, row.Volume, row.QuoteAssetVolume} {
 		if !numeric.Finite(value) {

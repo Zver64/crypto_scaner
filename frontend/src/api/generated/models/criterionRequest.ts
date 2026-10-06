@@ -20,8 +20,11 @@
 import type { CriterionRequestParameters } from './criterionRequestParameters.ts';
 
 export interface CriterionRequest {
+  /** @maxLength 64 */
   key: string;
+  /** @maxLength 64 */
   name: string;
+  /** @maxLength 128 */
   label: string;
   parameters: CriterionRequestParameters;
 }

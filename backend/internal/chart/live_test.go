@@ -35,11 +35,12 @@ func (store *historyStub) ListCandlePage(_ context.Context, _ int64, _ market.Ca
 
 func TestLiveSessionReloadsOnlyTheTailOfContiguousHistory(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	store := &historyStub{candles: testCandles(start, 300)}
+	store := &historyStub{candles: testCandles(start, 600)}
 	service := newLiveTestService(t, store)
 	session := service.NewLiveSession("BTCUSDT", market.IntervalHour)
 	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 	selections := []indicator.Selection{{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}}}
+	window := rsiWindow(t)
 
 	trigger, _ := session.Apply(marketlive.Message{Kind: marketlive.KindSnapshot, Key: key})
 	if _, ok, err := session.Next(context.Background(), trigger, chart.DefaultRange, selections); err != nil || !ok {
@@ -47,14 +48,14 @@ func TestLiveSessionReloadsOnlyTheTailOfContiguousHistory(t *testing.T) {
 	}
 	// A correction and a new close reach storage, then the stream reports it.
 	store.candles[len(store.candles)-1].Close += 5
-	store.candles = append(store.candles, testCandles(start.Add(300*time.Hour), 1)...)
+	store.candles = append(store.candles, testCandles(start.Add(600*time.Hour), 1)...)
 	closed := store.candles[len(store.candles)-1]
 	trigger, _ = session.Apply(marketlive.Message{Kind: marketlive.KindUpdate, Key: key, Candle: &marketlive.CandleState{Candle: closed, Final: true}})
 	frame, ok, err := session.Next(context.Background(), trigger, chart.DefaultRange, selections)
 	if err != nil || !ok || !frame.Snapshot {
 		t.Fatalf("stream Next() ok=%v snapshot=%v error=%v", ok, frame.Snapshot, err)
 	}
-	if store.resolveCalls != 1 || !slices.Equal(store.limits, []int{214, 16}) {
+	if store.resolveCalls != 1 || !slices.Equal(store.limits, []int{chart.DefaultRange + window - 1, 16}) {
 		t.Fatalf("store resolve calls=%d limits=%v, want one lookup, a full load, and a tail reload", store.resolveCalls, store.limits)
 	}
 
@@ -126,4 +127,18 @@ func newLiveTestService(t *testing.T, store chart.Store) *chart.Service {
 		t.Fatal(err)
 	}
 	return service
+}
+
+// rsiWindow is the chart window of RSI 14, the warm-up the tests load.
+func rsiWindow(t *testing.T) int {
+	t.Helper()
+	registry, err := indicator.NewRegistry(indicatortalib.New()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	window, err := chart.Window(registry, indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return window
 }

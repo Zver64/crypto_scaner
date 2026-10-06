@@ -62,6 +62,9 @@ type streamPool[K comparable] struct {
 	// non-blocking under mu, and Run starts every pending worker per wake-up.
 	added chan struct{}
 
+	// runningWorkers tracks worker goroutines; Run waits for them before returning.
+	runningWorkers sync.WaitGroup
+
 	mu      sync.Mutex
 	workers []*streamWorker[K]
 	started int // workers[:started] run under the current Run's context
@@ -90,6 +93,7 @@ func (pool *streamPool[K]) Run(ctx context.Context) error {
 			pool.mu.Lock()
 			pool.running, pool.started = false, 0
 			pool.mu.Unlock()
+			pool.runningWorkers.Wait()
 			return nil
 		case <-pool.added:
 			pool.mu.Lock()
@@ -102,7 +106,7 @@ func (pool *streamPool[K]) Run(ctx context.Context) error {
 // startPendingLocked starts workers not yet running; pool.mu must be held.
 func (pool *streamPool[K]) startPendingLocked(ctx context.Context) {
 	for _, worker := range pool.workers[pool.started:] {
-		go worker.run(ctx)
+		pool.runningWorkers.Go(func() { worker.run(ctx) })
 	}
 	pool.started = len(pool.workers)
 }
@@ -213,12 +217,22 @@ func (worker *streamWorker[K]) connect(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	defer conn.Close()
-
 	epoch := pool.epoch.Add(1)
 	readResult := make(chan error, 1)
+	readDone := make(chan struct{})
 	acks := make(chan controlReply, 16)
-	go func() { readResult <- worker.readLoop(ctx, conn, acks, epoch) }()
+	// The reader of this connection must finish before the worker reports a
+	// new connection, so no message of this one is delivered after that.
+	readCtx, stopRead := context.WithCancel(ctx)
+	go func() {
+		defer close(readDone)
+		readResult <- worker.readLoop(readCtx, conn, acks, epoch)
+	}()
+	defer func() {
+		stopRead()
+		_ = conn.Close()
+		<-readDone
+	}()
 	active := make(map[K]struct{})
 	limiter := rate.NewLimiter(rate.Every(250*time.Millisecond), 1) // reserve capacity below Binance's 5 msg/s limit.
 	rotation := time.NewTimer(streamRotation)

@@ -20,6 +20,9 @@
 import type { CriterionRequest } from './criterionRequest.ts';
 
 export interface InstrumentAnalysisRequest {
-  /** @minItems 1 */
+  /**
+     * @minItems 1
+     * @maxItems 16
+     */
   criteria: CriterionRequest[];
 }

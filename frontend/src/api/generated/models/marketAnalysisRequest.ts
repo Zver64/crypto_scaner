@@ -21,7 +21,10 @@ import type { CriterionRequest } from './criterionRequest.ts';
 import type { MarketSort } from './marketSort.ts';
 
 export interface MarketAnalysisRequest {
-  /** @minItems 1 */
+  /**
+     * @minItems 1
+     * @maxItems 16
+     */
   criteria: CriterionRequest[];
   /**
      * Maximum instruments to select. Zero or omission means no limit.

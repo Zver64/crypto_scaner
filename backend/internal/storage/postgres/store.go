@@ -3,12 +3,14 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"time"
 
 	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/favorites"
+	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/marketcap"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
 	"crypto-scanner/internal/strategy"
@@ -67,10 +69,27 @@ func timePointer(value pgtype.Timestamptz) *time.Time {
 	return &result
 }
 
-func lockUser(ctx context.Context, tx pgx.Tx, userID int64) (int64, error) {
-	var telegramID int64
-	err := tx.QueryRow(ctx, `SELECT telegram_id FROM app.users WHERE id=$1 FOR UPDATE`, userID).Scan(&telegramID)
-	return telegramID, err
+// lockUser serializes the user's favorite and price alert writes and returns
+// the user's Telegram ID.
+func lockUser(ctx context.Context, queries *generated.Queries, userID int64) (int64, error) {
+	telegramID, err := queries.LockUser(ctx, userID)
+	if err != nil {
+		return 0, fmt.Errorf("lock user: %w", err)
+	}
+	return telegramID, nil
+}
+
+// activeInstrumentID fails with market.ErrInstrumentNotFound unless symbol
+// names an active instrument.
+func activeInstrumentID(ctx context.Context, queries *generated.Queries, symbol string) (int64, error) {
+	id, err := queries.GetActiveInstrumentIDBySymbol(ctx, symbol)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, market.ErrInstrumentNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("get active instrument: %w", err)
+	}
+	return id, nil
 }
 
 func duplicateViolation(err error) bool {

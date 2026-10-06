@@ -20,7 +20,9 @@ WHERE (binance_spot.candles.close_time, binance_spot.candles.open, binance_spot.
 RETURNING open_time;
 
 -- name: ListLatestCandles :many
--- Returns up to row_limit latest candles per instrument in chronological order.
+-- Returns up to row_limit latest candles per instrument, grouped by
+-- instrument. Rows are not sorted globally; callers order each instrument's
+-- candles, which avoids sorting every returned row.
 SELECT candle.instrument_id, candle.interval, candle.open_time, candle.close_time,
        candle.open, candle.high, candle.low, candle.close,
        candle.volume, candle.quote_asset_volume, candle.trade_count
@@ -33,50 +35,58 @@ CROSS JOIN LATERAL (
       AND interval = sqlc.arg(interval)
     ORDER BY open_time DESC
     LIMIT sqlc.arg(row_limit)
-) AS candle
-ORDER BY candle.instrument_id, candle.open_time;
+) AS candle;
 
 -- name: SummarizeCandleHistory :many
--- Counts the latest row_limit candles per instrument and returns their time
--- bounds. It reads only the primary key index; instruments without candles
--- are omitted.
+-- Walks the latest row_limit candles per instrument once, on the primary key
+-- index. Every returned row carries the count and time bounds of those
+-- candles; the oldest one has no gap, and every other returned row is a
+-- candle that follows a gap of more than one interval step (calendar-aware in
+-- UTC), with the retry time of a gap verified empty. Instruments without
+-- candles are omitted.
 SELECT selected.instrument_id::bigint AS instrument_id,
-       count(*)::int AS candle_count,
-       min(recent.open_time)::timestamptz AS oldest_open_time,
-       max(recent.open_time)::timestamptz AS latest_open_time
+       history.candle_count::int AS candle_count,
+       history.oldest_open_time::timestamptz AS oldest_open_time,
+       history.latest_open_time::timestamptz AS latest_open_time,
+       history.gap_from::timestamptz AS gap_from,
+       history.open_time::timestamptz AS gap_to,
+       empty_gap.retry_after::timestamptz AS gap_retry_after
 FROM unnest(sqlc.arg(instrument_ids)::bigint[]) AS selected(instrument_id)
 CROSS JOIN LATERAL (
-    SELECT candle.open_time
-    FROM binance_spot.candles AS candle
-    WHERE candle.instrument_id = selected.instrument_id
-      AND candle.interval = sqlc.arg(interval)
-    ORDER BY candle.open_time DESC
-    LIMIT sqlc.arg(row_limit)
-) AS recent
-GROUP BY selected.instrument_id;
-
--- name: ListCandleGaps :many
--- Returns consecutive pairs among the latest row_limit candles per instrument
--- that are further apart than one interval step (calendar-aware in UTC).
-SELECT selected.instrument_id::bigint AS instrument_id,
-       gap.previous_open_time::timestamptz AS previous_open_time,
-       gap.open_time::timestamptz AS next_open_time
-FROM unnest(sqlc.arg(instrument_ids)::bigint[]) AS selected(instrument_id)
-CROSS JOIN LATERAL (
-    SELECT recent.open_time,
-           lag(recent.open_time) OVER (ORDER BY recent.open_time) AS previous_open_time
+    SELECT bounded.open_time, bounded.previous_open_time, bounded.candle_count,
+           bounded.oldest_open_time, bounded.latest_open_time,
+           ((bounded.previous_open_time AT TIME ZONE 'UTC') + sqlc.arg(step)::interval) AT TIME ZONE 'UTC' AS gap_from
     FROM (
-        SELECT candle.open_time
-        FROM binance_spot.candles AS candle
-        WHERE candle.instrument_id = selected.instrument_id
-          AND candle.interval = sqlc.arg(interval)
-        ORDER BY candle.open_time DESC
-        LIMIT sqlc.arg(row_limit)
-    ) AS recent
-) AS gap
-WHERE gap.previous_open_time IS NOT NULL
-  AND gap.open_time > ((gap.previous_open_time AT TIME ZONE 'UTC') + sqlc.arg(step)::interval) AT TIME ZONE 'UTC'
-ORDER BY 1, 2;
+        SELECT recent.open_time,
+               lag(recent.open_time) OVER (ORDER BY recent.open_time) AS previous_open_time,
+               count(*) OVER () AS candle_count,
+               min(recent.open_time) OVER () AS oldest_open_time,
+               max(recent.open_time) OVER () AS latest_open_time
+        FROM (
+            SELECT candle.open_time
+            FROM binance_spot.candles AS candle
+            WHERE candle.instrument_id = selected.instrument_id
+              AND candle.interval = sqlc.arg(interval)
+            ORDER BY candle.open_time DESC
+            LIMIT sqlc.arg(row_limit)
+        ) AS recent
+    ) AS bounded
+) AS history
+LEFT JOIN binance_spot.empty_candle_gaps AS empty_gap
+    ON empty_gap.instrument_id = selected.instrument_id
+   AND empty_gap.interval = sqlc.arg(interval)
+   AND empty_gap.gap_from = history.gap_from
+   AND empty_gap.gap_to = history.open_time
+WHERE history.previous_open_time IS NULL
+   OR history.open_time > history.gap_from
+ORDER BY 1, history.open_time;
+
+-- name: SaveEmptyCandleGap :exec
+INSERT INTO binance_spot.empty_candle_gaps (instrument_id, interval, gap_from, gap_to, retry_after)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (instrument_id, interval, gap_from) DO UPDATE SET
+    gap_to = EXCLUDED.gap_to,
+    retry_after = EXCLUDED.retry_after;
 
 -- name: ListCandlePage :many
 SELECT instrument_id, interval, open_time, close_time, open, high, low, close,
@@ -108,11 +118,12 @@ WHERE candle.instrument_id = bound.instrument_id
   AND candle.interval = sqlc.arg(interval)
   AND candle.open_time <= bound.open_time;
 
--- name: GetCandleHistoryCoverage :one
+-- name: ListCandleHistoryCoverage :many
 SELECT instrument_id, interval, verified_oldest_open_time, target_depth,
        policy_version, retry_after
 FROM binance_spot.candle_history_coverage
-WHERE instrument_id = $1 AND interval = $2;
+WHERE instrument_id = ANY(sqlc.arg(instrument_ids)::bigint[])
+  AND interval = sqlc.arg(interval);
 
 -- name: SaveCandleHistoryCoverage :exec
 INSERT INTO binance_spot.candle_history_coverage (

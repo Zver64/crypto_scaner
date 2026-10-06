@@ -52,9 +52,11 @@ func (q *Queries) CreateSession(ctx context.Context, arg CreateSessionParams) er
 
 const deleteExpiredSessions = `-- name: DeleteExpiredSessions :execrows
 DELETE FROM app.sessions
-WHERE idle_expires_at <= $1 OR absolute_expires_at <= $1
+WHERE idle_expires_at <= $1
 `
 
+// The table checks idle_expires_at <= absolute_expires_at, so the idle expiry
+// alone finds every expired session.
 func (q *Queries) DeleteExpiredSessions(ctx context.Context, idleExpiresAt pgtype.Timestamptz) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteExpiredSessions, idleExpiresAt)
 	if err != nil {

@@ -9,7 +9,6 @@ import (
 	"crypto-scanner/internal/market"
 )
 
-var ErrInvalidCandleData = errors.New("invalid candle data")
 var ErrInvalidArgument = errors.New("invalid analysis argument")
 
 // InsufficientHistoryError identifies the criterion whose required history is unavailable.
@@ -63,6 +62,9 @@ type Factory interface {
 type Criterion interface {
 	Name() string
 	Requirements() []CandleRequirement
+	// Constrain adds the persisted-fact predicates the criterion implies, so
+	// searches apply them in SQL before ordering, limiting, and evaluation.
+	Constrain(*Selection)
 	Evaluate(context.Context, Input) (Evaluation, error)
 }
 type Input struct {

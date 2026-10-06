@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -87,6 +88,8 @@ func NewScheduler(profiles map[market.CandleInterval]Runner, logger *slog.Logger
 const (
 	scheduleDelay = 30 * time.Second
 	maxRetryDelay = 15 * time.Minute
+	// maxInstrumentRetries bounds the retries of a run's failed instruments.
+	maxInstrumentRetries = 4
 )
 
 func retryDelay(base time.Duration, attempt uint) time.Duration {
@@ -124,7 +127,17 @@ func (scheduler *Scheduler) Run(ctx context.Context) error {
 				generation := queue.complete(job.profile)
 				if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, ErrSyncInProgress) {
 					delay := retryDelay(scheduler.retryDelay, job.retryAttempt)
-					scheduler.logger.ErrorContext(ctx, "scheduled market synchronization failed", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "failure", "retry_after", delay, "error", err)
+					if errors.Is(err, ErrInstrumentsFailed) {
+						// The profile succeeded; only its failed instruments are retried,
+						// a few times before the next scheduled run takes over.
+						if job.retryAttempt >= maxInstrumentRetries {
+							scheduler.logger.WarnContext(ctx, "market synchronization instruments still failing", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "partial", "error", err)
+							continue
+						}
+						scheduler.logger.InfoContext(ctx, "market synchronization instruments failed", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "partial", "retry_after", delay, "error", err)
+					} else {
+						scheduler.logger.ErrorContext(ctx, "scheduled market synchronization failed", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "failure", "retry_after", delay, "error", err)
+					}
 					retryJob := job
 					retryJob.retryAttempt++
 					runs.Add(1)
@@ -139,8 +152,9 @@ func (scheduler *Scheduler) Run(ctx context.Context) error {
 		}
 	}()
 
-	startupOrder := []market.CandleInterval{market.IntervalDay, market.IntervalHour, market.IntervalWeek, market.IntervalMonth}
-	for _, interval := range startupOrder {
+	// The daily profile catches up first; the others follow in interval order.
+	startupOrder := slices.DeleteFunc(market.CandleIntervals(), func(interval market.CandleInterval) bool { return interval == market.IntervalDay })
+	for _, interval := range append([]market.CandleInterval{market.IntervalDay}, startupOrder...) {
 		runner := scheduler.profiles[interval]
 		if runner == nil {
 			continue

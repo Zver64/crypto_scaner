@@ -1,24 +1,8 @@
 version: "2"
 sql:
   - engine: postgresql
-    schema:
-      - migrations/000001_initial.up.sql
-      - migrations/000002_hourly_candles.up.sql
-      - migrations/000003_market_cap.up.sql
-      - migrations/000004_weekly_monthly_candles.up.sql
-      - migrations/000005_market_selection.up.sql
-      - migrations/000006_coin_metadata.up.sql
-      - migrations/000007_candle_history_coverage.up.sql
-      - migrations/000008_favorites_price_alerts.up.sql
-      - migrations/000009_candle_storage.up.sql
-      - migrations/000010_scanner_indicators.up.sql
-      - migrations/000011_scanner_indicator_order.up.sql
-      - migrations/000012_delete_disabled_users.up.sql
-      - migrations/000013_strategies.up.sql
-      - migrations/000014_sessions.up.sql
-      - migrations/000015_strategy_symbols.up.sql
-      - migrations/000016_strategy_messages.up.sql
-      - migrations/000017_scanner_indicator_show_in_chart.up.sql
+    # golang-migrate down migrations (*.down.sql) are ignored by sqlc.
+    schema: migrations
     queries: internal/storage/postgres/queries
     gen:
       go:

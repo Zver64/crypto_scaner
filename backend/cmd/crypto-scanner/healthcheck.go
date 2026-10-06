@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"time"
+
+	"crypto-scanner/internal/platform/config"
 )
 
 const healthcheckTimeout = 3 * time.Second
@@ -14,13 +15,13 @@ const healthcheckTimeout = 3 * time.Second
 // healthcheck probes the liveness endpoint of a running server. Container
 // images without a shell or HTTP client use it as their healthcheck command.
 func healthcheck(ctx context.Context) error {
-	address := os.Getenv("HTTP_ADDRESS")
-	if address == "" {
-		address = "127.0.0.1:8080"
+	address, err := config.LoadHTTPAddress()
+	if err != nil {
+		return err
 	}
 	host, port, err := net.SplitHostPort(address)
 	if err != nil {
-		return fmt.Errorf("HTTP_ADDRESS must be a valid host:port address")
+		return fmt.Errorf("split HTTP address: %w", err)
 	}
 	if ip := net.ParseIP(host); host == "" || ip != nil && ip.IsUnspecified() {
 		host = "127.0.0.1"

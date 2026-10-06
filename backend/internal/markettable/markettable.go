@@ -11,7 +11,6 @@ import (
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/closedindicator"
-	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 )
 
@@ -126,15 +125,13 @@ type Catalog struct {
 	configured  ColumnSource
 }
 
-// NewCatalog validates the columns against their kinds and the indicator
-// registry. Closed indicator selections are normalized, so they match the
-// targets the background tracker calculates. A ConfiguredIndicators column is
-// a slot that Build replaces with the current columns of configured.
-func NewCatalog(registry *indicator.Registry, configured ColumnSource, defaultSort Sort, columns ...Column) (Catalog, error) {
-	if registry == nil || configured == nil || len(columns) == 0 {
-		return Catalog{}, errors.New("table catalog needs an indicator registry, a configured column source, and columns")
+// NewCatalog validates the static columns against their kinds. Indicator
+// columns come only from configured: a ConfiguredIndicators column is a slot
+// that Build replaces with its current columns.
+func NewCatalog(configured ColumnSource, defaultSort Sort, columns ...Column) (Catalog, error) {
+	if configured == nil || len(columns) == 0 {
+		return Catalog{}, errors.New("table catalog needs a configured column source and columns")
 	}
-	normalized := make([]Column, len(columns))
 	ids := map[string]Column{}
 	slots := 0
 	for i, column := range columns {
@@ -142,7 +139,6 @@ func NewCatalog(registry *indicator.Registry, configured ColumnSource, defaultSo
 			if slots++; slots > 1 {
 				return Catalog{}, errors.New("table catalog has more than one configured indicator slot")
 			}
-			normalized[i] = column
 			continue
 		}
 		if strings.TrimSpace(column.ID) == "" || strings.TrimSpace(column.Title) == "" || column.Source == nil {
@@ -161,35 +157,16 @@ func NewCatalog(registry *indicator.Registry, configured ColumnSource, defaultSo
 		if column.Sortable && kindData != dataValue {
 			return Catalog{}, fmt.Errorf("table column %q: only numeric columns are sortable", column.ID)
 		}
-		if source, ok := column.Source.(ClosedIndicator); ok {
-			normalizedSource, err := source.normalize(registry)
-			if err != nil {
-				return Catalog{}, fmt.Errorf("table column %q: %w", column.ID, err)
-			}
-			column.Source = normalizedSource
+		if _, ok := column.Source.(ClosedIndicator); ok {
+			return Catalog{}, fmt.Errorf("table column %q: indicator columns are configured, not static", column.ID)
 		}
-		normalized[i] = column
 		ids[column.ID] = column
 	}
 	if sorted, ok := ids[defaultSort.Column]; !ok || !sorted.Sortable ||
 		(defaultSort.Direction != Ascending && defaultSort.Direction != Descending) {
 		return Catalog{}, fmt.Errorf("default sort %q must name a sortable column with a valid direction", defaultSort.Column)
 	}
-	return Catalog{columns: normalized, defaultSort: defaultSort, configured: configured}, nil
-}
-
-// ClosedTargets returns the closed indicator targets the current columns
-// read, including the configured indicator columns.
-func (catalog Catalog) ClosedTargets() []closedindicator.Target {
-	var targets []closedindicator.Target
-	for _, column := range catalog.expand() {
-		if source, ok := column.Source.(ClosedIndicator); ok {
-			if !slices.ContainsFunc(targets, source.Target.Equal) {
-				targets = append(targets, source.Target)
-			}
-		}
-	}
-	return targets
+	return Catalog{columns: slices.Clone(columns), defaultSort: defaultSort, configured: configured}, nil
 }
 
 // Build fills every column for each row, in row order.
@@ -273,25 +250,6 @@ func (source CriterionMetric) cell(row Row) (Cell, bool) {
 type ClosedIndicator struct {
 	Target closedindicator.Target
 	Output string
-}
-
-func (source ClosedIndicator) normalize(registry *indicator.Registry) (ClosedIndicator, error) {
-	if !source.Target.Interval.Valid() {
-		return ClosedIndicator{}, fmt.Errorf("invalid interval %q", source.Target.Interval)
-	}
-	selection, err := registry.Normalize(source.Target.Selection)
-	if err != nil {
-		return ClosedIndicator{}, err
-	}
-	outputs, err := registry.Outputs(selection.Type)
-	if err != nil {
-		return ClosedIndicator{}, err
-	}
-	if !slices.Contains(outputs, source.Output) {
-		return ClosedIndicator{}, fmt.Errorf("output %q is not produced by %q", source.Output, selection.Type)
-	}
-	source.Target.Selection = selection
-	return source, nil
 }
 
 func (ClosedIndicator) data() data { return dataValue }

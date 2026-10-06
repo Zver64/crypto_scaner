@@ -11,84 +11,36 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getCandleHistoryCoverage = `-- name: GetCandleHistoryCoverage :one
+const listCandleHistoryCoverage = `-- name: ListCandleHistoryCoverage :many
 SELECT instrument_id, interval, verified_oldest_open_time, target_depth,
        policy_version, retry_after
 FROM binance_spot.candle_history_coverage
-WHERE instrument_id = $1 AND interval = $2
+WHERE instrument_id = ANY($1::bigint[])
+  AND interval = $2
 `
 
-type GetCandleHistoryCoverageParams struct {
-	InstrumentID int64
-	Interval     string
-}
-
-func (q *Queries) GetCandleHistoryCoverage(ctx context.Context, arg GetCandleHistoryCoverageParams) (BinanceSpotCandleHistoryCoverage, error) {
-	row := q.db.QueryRow(ctx, getCandleHistoryCoverage, arg.InstrumentID, arg.Interval)
-	var i BinanceSpotCandleHistoryCoverage
-	err := row.Scan(
-		&i.InstrumentID,
-		&i.Interval,
-		&i.VerifiedOldestOpenTime,
-		&i.TargetDepth,
-		&i.PolicyVersion,
-		&i.RetryAfter,
-	)
-	return i, err
-}
-
-const listCandleGaps = `-- name: ListCandleGaps :many
-SELECT selected.instrument_id::bigint AS instrument_id,
-       gap.previous_open_time::timestamptz AS previous_open_time,
-       gap.open_time::timestamptz AS next_open_time
-FROM unnest($1::bigint[]) AS selected(instrument_id)
-CROSS JOIN LATERAL (
-    SELECT recent.open_time,
-           lag(recent.open_time) OVER (ORDER BY recent.open_time) AS previous_open_time
-    FROM (
-        SELECT candle.open_time
-        FROM binance_spot.candles AS candle
-        WHERE candle.instrument_id = selected.instrument_id
-          AND candle.interval = $2
-        ORDER BY candle.open_time DESC
-        LIMIT $3
-    ) AS recent
-) AS gap
-WHERE gap.previous_open_time IS NOT NULL
-  AND gap.open_time > ((gap.previous_open_time AT TIME ZONE 'UTC') + $4::interval) AT TIME ZONE 'UTC'
-ORDER BY 1, 2
-`
-
-type ListCandleGapsParams struct {
+type ListCandleHistoryCoverageParams struct {
 	InstrumentIds []int64
 	Interval      string
-	RowLimit      int32
-	Step          pgtype.Interval
 }
 
-type ListCandleGapsRow struct {
-	InstrumentID     int64
-	PreviousOpenTime pgtype.Timestamptz
-	NextOpenTime     pgtype.Timestamptz
-}
-
-// Returns consecutive pairs among the latest row_limit candles per instrument
-// that are further apart than one interval step (calendar-aware in UTC).
-func (q *Queries) ListCandleGaps(ctx context.Context, arg ListCandleGapsParams) ([]ListCandleGapsRow, error) {
-	rows, err := q.db.Query(ctx, listCandleGaps,
-		arg.InstrumentIds,
-		arg.Interval,
-		arg.RowLimit,
-		arg.Step,
-	)
+func (q *Queries) ListCandleHistoryCoverage(ctx context.Context, arg ListCandleHistoryCoverageParams) ([]BinanceSpotCandleHistoryCoverage, error) {
+	rows, err := q.db.Query(ctx, listCandleHistoryCoverage, arg.InstrumentIds, arg.Interval)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListCandleGapsRow
+	var items []BinanceSpotCandleHistoryCoverage
 	for rows.Next() {
-		var i ListCandleGapsRow
-		if err := rows.Scan(&i.InstrumentID, &i.PreviousOpenTime, &i.NextOpenTime); err != nil {
+		var i BinanceSpotCandleHistoryCoverage
+		if err := rows.Scan(
+			&i.InstrumentID,
+			&i.Interval,
+			&i.VerifiedOldestOpenTime,
+			&i.TargetDepth,
+			&i.PolicyVersion,
+			&i.RetryAfter,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -212,7 +164,6 @@ CROSS JOIN LATERAL (
     ORDER BY open_time DESC
     LIMIT $3
 ) AS candle
-ORDER BY candle.instrument_id, candle.open_time
 `
 
 type ListLatestCandlesParams struct {
@@ -221,7 +172,9 @@ type ListLatestCandlesParams struct {
 	RowLimit      int32
 }
 
-// Returns up to row_limit latest candles per instrument in chronological order.
+// Returns up to row_limit latest candles per instrument, grouped by
+// instrument. Rows are not sorted globally; callers order each instrument's
+// candles, which avoids sorting every returned row.
 func (q *Queries) ListLatestCandles(ctx context.Context, arg ListLatestCandlesParams) ([]BinanceSpotCandle, error) {
 	rows, err := q.db.Query(ctx, listLatestCandles, arg.InstrumentIds, arg.Interval, arg.RowLimit)
 	if err != nil {
@@ -320,25 +273,75 @@ func (q *Queries) SaveCandleHistoryCoverage(ctx context.Context, arg SaveCandleH
 	return err
 }
 
+const saveEmptyCandleGap = `-- name: SaveEmptyCandleGap :exec
+INSERT INTO binance_spot.empty_candle_gaps (instrument_id, interval, gap_from, gap_to, retry_after)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (instrument_id, interval, gap_from) DO UPDATE SET
+    gap_to = EXCLUDED.gap_to,
+    retry_after = EXCLUDED.retry_after
+`
+
+type SaveEmptyCandleGapParams struct {
+	InstrumentID int64
+	Interval     string
+	GapFrom      pgtype.Timestamptz
+	GapTo        pgtype.Timestamptz
+	RetryAfter   pgtype.Timestamptz
+}
+
+func (q *Queries) SaveEmptyCandleGap(ctx context.Context, arg SaveEmptyCandleGapParams) error {
+	_, err := q.db.Exec(ctx, saveEmptyCandleGap,
+		arg.InstrumentID,
+		arg.Interval,
+		arg.GapFrom,
+		arg.GapTo,
+		arg.RetryAfter,
+	)
+	return err
+}
+
 const summarizeCandleHistory = `-- name: SummarizeCandleHistory :many
 SELECT selected.instrument_id::bigint AS instrument_id,
-       count(*)::int AS candle_count,
-       min(recent.open_time)::timestamptz AS oldest_open_time,
-       max(recent.open_time)::timestamptz AS latest_open_time
+       history.candle_count::int AS candle_count,
+       history.oldest_open_time::timestamptz AS oldest_open_time,
+       history.latest_open_time::timestamptz AS latest_open_time,
+       history.gap_from::timestamptz AS gap_from,
+       history.open_time::timestamptz AS gap_to,
+       empty_gap.retry_after::timestamptz AS gap_retry_after
 FROM unnest($1::bigint[]) AS selected(instrument_id)
 CROSS JOIN LATERAL (
-    SELECT candle.open_time
-    FROM binance_spot.candles AS candle
-    WHERE candle.instrument_id = selected.instrument_id
-      AND candle.interval = $2
-    ORDER BY candle.open_time DESC
-    LIMIT $3
-) AS recent
-GROUP BY selected.instrument_id
+    SELECT bounded.open_time, bounded.previous_open_time, bounded.candle_count,
+           bounded.oldest_open_time, bounded.latest_open_time,
+           ((bounded.previous_open_time AT TIME ZONE 'UTC') + $2::interval) AT TIME ZONE 'UTC' AS gap_from
+    FROM (
+        SELECT recent.open_time,
+               lag(recent.open_time) OVER (ORDER BY recent.open_time) AS previous_open_time,
+               count(*) OVER () AS candle_count,
+               min(recent.open_time) OVER () AS oldest_open_time,
+               max(recent.open_time) OVER () AS latest_open_time
+        FROM (
+            SELECT candle.open_time
+            FROM binance_spot.candles AS candle
+            WHERE candle.instrument_id = selected.instrument_id
+              AND candle.interval = $3
+            ORDER BY candle.open_time DESC
+            LIMIT $4
+        ) AS recent
+    ) AS bounded
+) AS history
+LEFT JOIN binance_spot.empty_candle_gaps AS empty_gap
+    ON empty_gap.instrument_id = selected.instrument_id
+   AND empty_gap.interval = $3
+   AND empty_gap.gap_from = history.gap_from
+   AND empty_gap.gap_to = history.open_time
+WHERE history.previous_open_time IS NULL
+   OR history.open_time > history.gap_from
+ORDER BY 1, history.open_time
 `
 
 type SummarizeCandleHistoryParams struct {
 	InstrumentIds []int64
+	Step          pgtype.Interval
 	Interval      string
 	RowLimit      int32
 }
@@ -348,13 +351,24 @@ type SummarizeCandleHistoryRow struct {
 	CandleCount    int32
 	OldestOpenTime pgtype.Timestamptz
 	LatestOpenTime pgtype.Timestamptz
+	GapFrom        pgtype.Timestamptz
+	GapTo          pgtype.Timestamptz
+	GapRetryAfter  pgtype.Timestamptz
 }
 
-// Counts the latest row_limit candles per instrument and returns their time
-// bounds. It reads only the primary key index; instruments without candles
-// are omitted.
+// Walks the latest row_limit candles per instrument once, on the primary key
+// index. Every returned row carries the count and time bounds of those
+// candles; the oldest one has no gap, and every other returned row is a
+// candle that follows a gap of more than one interval step (calendar-aware in
+// UTC), with the retry time of a gap verified empty. Instruments without
+// candles are omitted.
 func (q *Queries) SummarizeCandleHistory(ctx context.Context, arg SummarizeCandleHistoryParams) ([]SummarizeCandleHistoryRow, error) {
-	rows, err := q.db.Query(ctx, summarizeCandleHistory, arg.InstrumentIds, arg.Interval, arg.RowLimit)
+	rows, err := q.db.Query(ctx, summarizeCandleHistory,
+		arg.InstrumentIds,
+		arg.Step,
+		arg.Interval,
+		arg.RowLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -367,6 +381,9 @@ func (q *Queries) SummarizeCandleHistory(ctx context.Context, arg SummarizeCandl
 			&i.CandleCount,
 			&i.OldestOpenTime,
 			&i.LatestOpenTime,
+			&i.GapFrom,
+			&i.GapTo,
+			&i.GapRetryAfter,
 		); err != nil {
 			return nil, err
 		}

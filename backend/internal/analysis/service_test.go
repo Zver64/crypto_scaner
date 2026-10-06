@@ -3,18 +3,20 @@ package analysis_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
 	"crypto-scanner/internal/analysis"
 	marketcapcriterion "crypto-scanner/internal/analysis/criteria/marketcap"
 	"crypto-scanner/internal/analysis/criteria/volatility"
+	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
 )
 
 func TestServiceCombinesCriteriaAndLoadsMergedRequirementsOnce(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}}, candles: map[string][]market.Candle{"1d": {testCandle(1), testCandle(2)}, "1h": {testCandle(1)}}, failRepeatedLoad: true}
-	service, err := analysis.NewService(store, nil, volatility.New(), fakeFactory{})
+	service, err := analysis.NewService(store, noClosedIndicators{}, volatility.New(), fakeFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +32,7 @@ func TestAnalyzeSymbolShortCircuitsLaterCriteria(t *testing.T) {
 		candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}},
 	}
 	second := &trackingFactory{}
-	service, err := analysis.NewService(store, nil, firstFactory{}, second)
+	service, err := analysis.NewService(store, noClosedIndicators{}, firstFactory{}, second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,7 +60,7 @@ func TestServiceCorrelatesRepeatedCriterionTypesByInstanceIdentity(t *testing.T)
 			"1h": {testCandle(2)},
 		},
 	}
-	service, err := analysis.NewService(store, nil, volatility.New())
+	service, err := analysis.NewService(store, noClosedIndicators{}, volatility.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +94,7 @@ func TestSearchEvaluatesRepeatedCriterionTypesOnlyForSurvivors(t *testing.T) {
 			2: {"1d": {testCandle(6)}, "1h": {testCandle(3)}},
 		},
 	}
-	service, err := analysis.NewService(store, nil, volatility.New())
+	service, err := analysis.NewService(store, noClosedIndicators{}, volatility.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -127,7 +129,7 @@ func TestServiceSearchCombinesCriteriaAndPreservesStoreOrder(t *testing.T) {
 			6: {"1d": {}, "1h": {testCandle(6)}},
 		},
 	}
-	service, err := analysis.NewService(store, nil, volatility.New(), hourlyMatchFactory{})
+	service, err := analysis.NewService(store, noClosedIndicators{}, volatility.New(), hourlyMatchFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,7 +155,7 @@ func TestServiceSearchCombinesCriteriaAndPreservesStoreOrder(t *testing.T) {
 func TestSearchDoesNotPrepareMarketCapsOnRequest(t *testing.T) {
 	cap := 100.0
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT", BaseAsset: "BTC", MarketCapUSD: &cap}}}
-	service, err := analysis.NewService(store, nil, marketcapcriterion.New())
+	service, err := analysis.NewService(store, noClosedIndicators{}, marketcapcriterion.New())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +172,7 @@ func TestSearchUsesBackendMarketCapSortAndLimit(t *testing.T) {
 			{ID: 1, Symbol: "ETHUSDT"},
 		},
 	}
-	service, err := analysis.NewService(store, nil, marketCapTestFactory{})
+	service, err := analysis.NewService(store, noClosedIndicators{}, marketCapTestFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +194,7 @@ func TestSearchUsesBackendMarketCapSortAndLimit(t *testing.T) {
 
 func TestSearchSymbolsReturnsValidatedEmptyResultWithoutMarketReadiness(t *testing.T) {
 	store := &storeStub{syncUnavailable: true}
-	service, err := analysis.NewService(store, nil, fakeFactory{})
+	service, err := analysis.NewService(store, noClosedIndicators{}, fakeFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -209,7 +211,7 @@ func TestSearchSymbolsRestrictsPipelineAndIgnoresMarketLimit(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{
 		{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"},
 	}}
-	service, err := analysis.NewService(store, nil, marketCapTestFactory{})
+	service, err := analysis.NewService(store, noClosedIndicators{}, marketCapTestFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,7 +237,7 @@ func TestSearchUsesBackendLimitWithoutChangingStoreOrder(t *testing.T) {
 			{ID: 2, Symbol: "AAAUSDT"},
 		},
 	}
-	service, err := analysis.NewService(store, nil, marketCapTestFactory{})
+	service, err := analysis.NewService(store, noClosedIndicators{}, marketCapTestFactory{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -256,7 +258,7 @@ func TestSearchUsesBackendLimitWithoutChangingStoreOrder(t *testing.T) {
 
 func TestServiceRejectsInvalidSelectionBeforeReads(t *testing.T) {
 	store := &storeStub{}
-	service, _ := analysis.NewService(store, nil, volatility.New())
+	service, _ := analysis.NewService(store, noClosedIndicators{}, volatility.New())
 	for _, request := range []analysis.SearchRequest{
 		{},
 		{Criteria: []analysis.CriterionConfig{{Key: "missing", Name: "missing", Label: "Missing"}}},
@@ -278,7 +280,7 @@ func TestServiceRejectsInvalidSelectionBeforeReads(t *testing.T) {
 
 func TestServiceRejectsInvalidCriterionInstanceIdentityBeforeReads(t *testing.T) {
 	store := &storeStub{}
-	service, _ := analysis.NewService(store, nil, volatility.New())
+	service, _ := analysis.NewService(store, noClosedIndicators{}, volatility.New())
 	validParameters := map[string]any{"unit": "days", "period": float64(1), "percentile": float64(50), "minimum_range_percent": float64(0)}
 	tests := []struct {
 		name     string
@@ -307,15 +309,26 @@ func TestServiceRejectsInvalidCriterionInstanceIdentityBeforeReads(t *testing.T)
 	}
 }
 func TestServiceRejectsDuplicateFactoryNames(t *testing.T) {
-	_, err := analysis.NewService(&storeStub{}, nil, fakeFactory{}, fakeFactory{})
+	_, err := analysis.NewService(&storeStub{}, noClosedIndicators{}, fakeFactory{}, fakeFactory{})
 	if !errors.Is(err, analysis.ErrInvalidArgument) {
+		t.Fatalf("err=%v", err)
+	}
+}
+func TestServiceRejectsTooManyCriteria(t *testing.T) {
+	store := &storeStub{}
+	service, _ := analysis.NewService(store, noClosedIndicators{}, unresolvedFactory{})
+	criteria := make([]analysis.CriterionConfig, analysis.MaxCriteria+1)
+	for i := range criteria {
+		criteria[i] = analysis.CriterionConfig{Key: fmt.Sprint(i), Name: "unresolved", Label: "Unresolved", Parameters: map[string]any{}}
+	}
+	if _, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: criteria}); !errors.Is(err, analysis.ErrInvalidArgument) {
 		t.Fatalf("err=%v", err)
 	}
 }
 func TestSearchPreparesAndLoadsSecondCriterionOnlyForSurvivors(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "DROP"}, {ID: 2, Symbol: "KEEP"}}, candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}, 2: {"1d": {testCandle(2)}, "1h": {testCandle(1)}}}}
 	second := &trackingFactory{}
-	service, _ := analysis.NewService(store, nil, firstFactory{}, second)
+	service, _ := analysis.NewService(store, noClosedIndicators{}, firstFactory{}, second)
 	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "first", Name: "first", Label: "First", Parameters: map[string]any{}}, {Key: "second", Name: "second", Label: "Second", Parameters: map[string]any{}}}})
 	if err != nil || result.MatchedCount != 1 || second.evaluated != 1 {
 		t.Fatalf("result=%+v err=%v evaluated=%d", result, err, second.evaluated)
@@ -327,7 +340,7 @@ func TestSearchPreparesAndLoadsSecondCriterionOnlyForSurvivors(t *testing.T) {
 func TestSearchSkipsLaterCriteriaWhenNoCandidatesSurvive(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "DROP"}}, candlesByInstrument: map[int64]map[string][]market.Candle{1: {"1d": {testCandle(1)}}}}
 	second := &trackingFactory{}
-	service, _ := analysis.NewService(store, nil, firstFactory{}, second)
+	service, _ := analysis.NewService(store, noClosedIndicators{}, firstFactory{}, second)
 	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "first", Name: "first", Label: "First", Parameters: map[string]any{}}, {Key: "second", Name: "second", Label: "Second", Parameters: map[string]any{}}}})
 	if err != nil || result.MatchedCount != 0 || second.evaluated != 0 {
 		t.Fatalf("result=%+v err=%v evaluated=%d", result, err, second.evaluated)
@@ -336,7 +349,7 @@ func TestSearchSkipsLaterCriteriaWhenNoCandidatesSurvive(t *testing.T) {
 
 func TestSearchDoesNotCountUnresolvedInstrumentsAsAnalyzed(t *testing.T) {
 	store := &storeStub{instruments: []market.Instrument{{ID: 1, Symbol: "UNKNOWN"}}}
-	service, _ := analysis.NewService(store, nil, unresolvedFactory{})
+	service, _ := analysis.NewService(store, noClosedIndicators{}, unresolvedFactory{})
 	result, err := service.Search(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "unresolved", Name: "unresolved", Label: "Unresolved", Parameters: map[string]any{}}}})
 	if err != nil || result.AnalyzedCount != 0 || len(result.Unresolved) != 1 {
 		t.Fatalf("result=%+v err=%v", result, err)
@@ -350,7 +363,8 @@ func (firstFactory) Build(map[string]any) (analysis.Criterion, error) { return f
 
 type firstCriterion struct{}
 
-func (firstCriterion) Name() string { return "first" }
+func (firstCriterion) Constrain(*analysis.Selection) {}
+func (firstCriterion) Name() string                  { return "first" }
 func (firstCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitDays, Count: 1}}
 }
@@ -367,7 +381,8 @@ func (t *trackingFactory) Build(map[string]any) (analysis.Criterion, error) {
 
 type trackingCriterion struct{ factory *trackingFactory }
 
-func (*trackingCriterion) Name() string { return "second" }
+func (*trackingCriterion) Constrain(*analysis.Selection) {}
+func (*trackingCriterion) Name() string                  { return "second" }
 func (*trackingCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitHours, Count: 1}}
 }
@@ -385,6 +400,7 @@ func (unresolvedFactory) Build(map[string]any) (analysis.Criterion, error) {
 
 type unresolvedCriterion struct{}
 
+func (unresolvedCriterion) Constrain(*analysis.Selection)              {}
 func (unresolvedCriterion) Name() string                               { return "unresolved" }
 func (unresolvedCriterion) Requirements() []analysis.CandleRequirement { return nil }
 func (unresolvedCriterion) Evaluate(context.Context, analysis.Input) (analysis.Evaluation, error) {
@@ -402,7 +418,9 @@ type marketCapTestCriterion struct{}
 
 func (marketCapTestCriterion) Name() string                               { return "market_cap" }
 func (marketCapTestCriterion) Requirements() []analysis.CandleRequirement { return nil }
-func (marketCapTestCriterion) MinimumMarketCapUSD() float64               { return 0 }
+func (marketCapTestCriterion) Constrain(selection *analysis.Selection) {
+	selection.ConstrainAtLeast(analysis.SelectionFactMarketCapUSD, 0)
+}
 func (marketCapTestCriterion) Evaluate(_ context.Context, input analysis.Input) (analysis.Evaluation, error) {
 	return analysis.Evaluation{Matched: true, Metrics: map[string]float64{"market_cap_usd": float64(input.Instrument.ID)}}, nil
 }
@@ -414,7 +432,8 @@ func (fakeFactory) Build(map[string]any) (analysis.Criterion, error) { return fa
 
 type fakeCriterion struct{}
 
-func (fakeCriterion) Name() string { return "fake" }
+func (fakeCriterion) Constrain(*analysis.Selection) {}
+func (fakeCriterion) Name() string                  { return "fake" }
 func (fakeCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitDays, Count: 1}, {Unit: analysis.UnitHours, Count: 1}}
 }
@@ -428,7 +447,8 @@ func (hourlyMatchFactory) Build(map[string]any) (analysis.Criterion, error) {
 
 type hourlyMatchCriterion struct{}
 
-func (hourlyMatchCriterion) Name() string { return "hourly-match" }
+func (hourlyMatchCriterion) Constrain(*analysis.Selection) {}
+func (hourlyMatchCriterion) Name() string                  { return "hourly-match" }
 func (hourlyMatchCriterion) Requirements() []analysis.CandleRequirement {
 	return []analysis.CandleRequirement{{Unit: analysis.UnitHours, Count: 1}}
 }
@@ -528,4 +548,11 @@ func (s *storeStub) ListLatestCandles(_ context.Context, instrumentIDs []int64, 
 }
 func testCandle(r float64) market.Candle {
 	return market.Candle{OpenTime: time.Now(), Open: 100, High: 100 + r, Low: 100}
+}
+
+// noClosedIndicators supplies no closed indicator values.
+type noClosedIndicators struct{}
+
+func (noClosedIndicators) Latest(context.Context, []int64) map[int64][]closedindicator.Value {
+	return nil
 }

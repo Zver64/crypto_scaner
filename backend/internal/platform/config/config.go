@@ -54,13 +54,12 @@ func LoadServer() (ServerConfig, error) {
 	if cfg.AdminTelegramID, err = positiveInt64("ADMIN_TELEGRAM_ID"); err != nil {
 		return ServerConfig{}, err
 	}
-	cfg.HTTPAddress = valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress)
+	if cfg.HTTPAddress, err = LoadHTTPAddress(); err != nil {
+		return ServerConfig{}, err
+	}
 	cfg.CoinGeckoDemoAPIKey = os.Getenv("COINGECKO_DEMO_API_KEY")
 	if cfg.APIDocsEnabled, err = boolean("API_DOCS_ENABLED", false); err != nil {
 		return ServerConfig{}, err
-	}
-	if !isHostPort(cfg.HTTPAddress) {
-		return ServerConfig{}, fmt.Errorf("HTTP_ADDRESS must be a valid host:port address")
 	}
 	cfg.LogLevel = valueOrDefault("LOG_LEVEL", defaultLogLevel)
 	if !validLogLevel(cfg.LogLevel) {
@@ -232,4 +231,13 @@ func valueOrDefault(name, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+// LoadHTTPAddress reads the host:port address the server listens on.
+func LoadHTTPAddress() (string, error) {
+	address := valueOrDefault("HTTP_ADDRESS", defaultHTTPAddress)
+	if !isHostPort(address) {
+		return "", fmt.Errorf("HTTP_ADDRESS must be a valid host:port address")
+	}
+	return address, nil
 }

@@ -138,6 +138,14 @@ type BinanceSpotCandleHistoryCoverage struct {
 	RetryAfter             pgtype.Timestamptz
 }
 
+type BinanceSpotEmptyCandleGap struct {
+	InstrumentID int64
+	Interval     string
+	GapFrom      pgtype.Timestamptz
+	GapTo        pgtype.Timestamptz
+	RetryAfter   pgtype.Timestamptz
+}
+
 type BinanceSpotInstrument struct {
 	ID             int64
 	Symbol         string

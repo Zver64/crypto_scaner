@@ -1,12 +1,14 @@
 package marketsync_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"log/slog"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -161,6 +163,73 @@ func TestHistoryRepairFailureKeepsDurableProgressAndDoesNotMarkExhausted(t *test
 	})
 }
 
+func TestEmptyGapIsNotRequestedAgainBeforeItsRetry(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
+		all := intervalCandles(market.IntervalDay, 1003)
+		halted := all[500].OpenTime
+		listed := append(cloneCandles(all[:500]), all[501:]...) // the exchange has no candle for the halt
+		exchange := &historyExchange{instrument: instrument, candles: listed}
+		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: cloneCandles(listed[:len(listed)-1])}
+		gapRequests := func(from int) int {
+			count := 0
+			for _, request := range exchange.requests[from:] {
+				if request.AfterOpenTime != nil && request.AfterOpenTime.Equal(halted.Add(-time.Millisecond)) {
+					count++
+				}
+			}
+			return count
+		}
+		var logs bytes.Buffer
+		synchronizer := marketsync.New(exchange, store, slog.New(slog.NewJSONHandler(&logs, nil)), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
+
+		if err := synchronizer.Sync(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if gapRequests(0) != 1 || !strings.Contains(logs.String(), `"gap_ranges_repaired":0`) {
+			t.Fatalf("first run made %d gap requests and logged %s, want one request not counted as repaired", gapRequests(0), logs.String())
+		}
+		requests := len(exchange.requests)
+		if err := synchronizer.Sync(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if gapRequests(requests) != 0 {
+			t.Fatal("a verified-empty gap was requested again before its retry")
+		}
+
+		time.Sleep(8 * 24 * time.Hour)
+		requests = len(exchange.requests)
+		if err := synchronizer.Sync(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if gapRequests(requests) != 1 {
+			t.Fatalf("expired empty gap made %d requests, want a retry", gapRequests(requests))
+		}
+	})
+}
+
+func TestUnchangedHistoryIsSummarizedOncePerRun(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
+		all := intervalCandles(market.IntervalDay, 74)
+		exchange := &historyExchange{instrument: instrument, candles: all}
+		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: cloneCandles(all[23:73])}
+		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
+		if err := synchronizer.Sync(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		store.summaries = 0
+
+		if err := synchronizer.Sync(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if store.summaries != 1 {
+			t.Fatalf("young listing with current coverage was summarized %d times, want once", store.summaries)
+		}
+		assertContinuousHistory(t, store, market.IntervalDay, 73)
+	})
+}
+
 func assertContinuousHistory(t *testing.T, store *historyStore, interval market.CandleInterval, want int) {
 	t.Helper()
 	latest, err := store.ListLatestCandles(t.Context(), []int64{1}, interval, 3000)
@@ -229,11 +298,13 @@ type historyStore struct {
 	candles       []market.Candle
 	coverage      map[string]market.HistoryCoverage
 	upsertErrOnce error
+	summaries     int
 }
 
 func (s *historyStore) SummarizeCandleHistory(ctx context.Context, instrumentIDs []int64, interval market.CandleInterval, limit int) (map[int64]marketsync.HistorySummary, error) {
+	s.summaries++
 	latest, err := s.ListLatestCandles(ctx, instrumentIDs, interval, limit)
-	return summarizeLatest(latest, interval), err
+	return s.summarizeLatest(latest, interval), err
 }
 
 func (s *historyStore) ListLatestCandles(_ context.Context, instrumentIDs []int64, _ market.CandleInterval, limit int) (map[int64][]market.Candle, error) {
@@ -288,9 +359,14 @@ func (s *historyStore) UpsertCandles(_ context.Context, candles []market.Candle)
 	return nil
 }
 
-func (s *historyStore) GetCandleHistoryCoverage(_ context.Context, instrumentID int64, interval market.CandleInterval) (market.HistoryCoverage, bool, error) {
-	coverage, found := s.coverage[coverageKey(instrumentID, interval)]
-	return coverage, found, nil
+func (s *historyStore) ListCandleHistoryCoverage(_ context.Context, instrumentIDs []int64, interval market.CandleInterval) (map[int64]market.HistoryCoverage, error) {
+	coverages := map[int64]market.HistoryCoverage{}
+	for _, id := range instrumentIDs {
+		if coverage, found := s.coverage[coverageKey(id, interval)]; found {
+			coverages[id] = coverage
+		}
+	}
+	return coverages, nil
 }
 
 func (s *historyStore) SaveCandleHistoryCoverage(_ context.Context, coverage market.HistoryCoverage) error {

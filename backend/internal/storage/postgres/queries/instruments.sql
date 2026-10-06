@@ -1,3 +1,14 @@
+-- name: LockSnapshotInstruments :exec
+-- Locks every row the snapshot may update in id order, the order of the
+-- other instrument row locks (strategy symbols, delisted instrument
+-- retention), so these transactions cannot deadlock. NO KEY UPDATE is the
+-- lock the updates take themselves and does not block the KEY SHARE locks of
+-- foreign key inserts such as candles and favorites.
+SELECT id FROM binance_spot.instruments
+WHERE is_active OR symbol = ANY(sqlc.arg(symbols)::text[])
+ORDER BY id
+FOR NO KEY UPDATE;
+
 -- name: DeactivateInstrumentsExcept :exec
 UPDATE binance_spot.instruments SET is_active = FALSE, deactivated_at = now()
 WHERE is_active AND symbol <> ALL(sqlc.arg(symbols)::text[]);
@@ -33,6 +44,9 @@ SELECT sqlc.embed(instrument)
 FROM binance_spot.instruments AS instrument
 WHERE instrument.symbol = $1 AND instrument.is_active = TRUE;
 
+-- name: GetActiveInstrumentIDBySymbol :one
+SELECT id FROM binance_spot.instruments WHERE symbol = $1 AND is_active;
+
 -- name: ListActiveInstruments :many
 SELECT sqlc.embed(instrument)
 FROM binance_spot.instruments AS instrument
@@ -56,7 +70,7 @@ WHERE instrument.is_active = TRUE
 ORDER BY
   CASE WHEN sqlc.arg(market_cap_sort)::text = 'asc' THEN market_cap.market_cap_usd END ASC NULLS LAST,
   CASE WHEN sqlc.arg(market_cap_sort)::text = 'desc' THEN market_cap.market_cap_usd END DESC NULLS LAST,
-  CASE WHEN sqlc.arg(market_cap_sort)::text <> '' THEN instrument.symbol END ASC
+  instrument.symbol ASC
 LIMIT NULLIF(sqlc.arg(result_limit)::int, 0);
 
 -- name: DeleteDelistedInstrumentCandles :execrows
@@ -72,9 +86,11 @@ RETURNING instrument.symbol;
 -- name: ListDelistedInstrumentIDs :many
 -- Locks instruments inactive since before inactive_before that nobody has
 -- favorited, so a concurrent snapshot cannot reactivate them mid-deletion.
+-- Locks in id order, like the other instrument row locks.
 SELECT instrument.id
 FROM binance_spot.instruments AS instrument
 WHERE NOT instrument.is_active
   AND instrument.deactivated_at < sqlc.arg(inactive_before)
   AND NOT EXISTS (SELECT 1 FROM app.favorites AS favorite WHERE favorite.instrument_id = instrument.id)
+ORDER BY instrument.id
 FOR UPDATE;

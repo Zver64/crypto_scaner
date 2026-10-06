@@ -1,6 +1,9 @@
 package market
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 // CandleInterval identifies a Binance Spot candlestick granularity supported by
 // synchronization and chart history.
@@ -24,12 +27,7 @@ func CandleIntervals() []CandleInterval {
 }
 
 func (interval CandleInterval) Valid() bool {
-	switch interval {
-	case IntervalHour, IntervalDay, IntervalWeek, IntervalMonth:
-		return true
-	default:
-		return false
-	}
+	return slices.Contains(CandleIntervals(), interval)
 }
 
 // OpenTime returns the UTC open boundary of the interval containing at.

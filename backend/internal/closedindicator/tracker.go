@@ -12,17 +12,15 @@ import (
 	"sync"
 	"time"
 
+	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/numeric"
 )
 
 const (
-	// minimumHistory matches the initial closed range of a chart, so a table
-	// value equals the last closed point of that chart on the same history.
-	minimumHistory = 200
-	retryDelay     = 30 * time.Second
-	refreshPeriod  = 5 * time.Minute
+	retryDelay    = 30 * time.Second
+	refreshPeriod = 5 * time.Minute
 )
 
 // Target is an indicator selection calculated on one candle interval.
@@ -100,9 +98,8 @@ type Subscription struct {
 func (subscription Subscription) points() int { return max(1, subscription.Points) }
 
 // Source supplies the pairs that must stay current without any clients.
-// targets are the tracker's table targets; a source may track other ones.
 type Source interface {
-	Subscriptions(ctx context.Context, targets []Target) ([]Subscription, error)
+	Subscriptions(ctx context.Context) ([]Subscription, error)
 }
 
 type Store interface {
@@ -127,7 +124,7 @@ type historyKey struct {
 type Tracker struct {
 	store    Store
 	registry *indicator.Registry
-	sources  []Source
+	source   Source
 	logger   *slog.Logger
 	wake     chan struct{}
 	// retries are applied by Run after retryDelay; only Run's goroutine
@@ -147,19 +144,19 @@ type Tracker struct {
 	dirty            map[historyKey]struct{}
 	// synced lets the next step recalculate the dirty histories, which
 	// otherwise wait for the end of the synchronization round.
-	synced    bool
-	refresh   bool
-	listeners []func(Change)
+	synced   bool
+	refresh  bool
+	listener func(Change)
 }
 
-// New creates a tracker. Targets are the values served to tables; sources
-// decide which pairs are kept current in the background.
-func New(store Store, registry *indicator.Registry, targets []Target, logger *slog.Logger, sources ...Source) (*Tracker, error) {
-	if store == nil || registry == nil || logger == nil {
-		return nil, fmt.Errorf("closed indicator store, indicator registry, and logger are required")
+// New creates a tracker. Targets are the values served to tables; source
+// decides which pairs are kept current in the background.
+func New(store Store, registry *indicator.Registry, source Source, targets []Target, logger *slog.Logger) (*Tracker, error) {
+	if store == nil || registry == nil || source == nil || logger == nil {
+		return nil, fmt.Errorf("closed indicator store, indicator registry, source, and logger are required")
 	}
 	tracker := &Tracker{
-		store: store, registry: registry, targets: targets, tableKeys: keysByInterval(targets), sources: sources, logger: logger,
+		store: store, registry: registry, targets: targets, tableKeys: keysByInterval(targets), source: source, logger: logger,
 		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, trackedHistories: map[historyKey]struct{}{}, values: map[pairKey]Value{},
 		versions: map[historyKey]uint64{}, dirty: map[historyKey]struct{}{},
 	}
@@ -179,11 +176,11 @@ func keysByInterval(targets []Target) map[market.CandleInterval][]string {
 	return result
 }
 
-// Listen registers a consumer of recalculated tracked values. It is called
-// outside the tracker lock and must not block.
+// Listen sets the consumer of recalculated tracked values, replacing any
+// earlier one. It is called outside the tracker lock and must not block.
 func (tracker *Tracker) Listen(listener func(Change)) {
 	tracker.mu.Lock()
-	tracker.listeners = append(tracker.listeners, listener)
+	tracker.listener = listener
 	tracker.mu.Unlock()
 }
 
@@ -215,7 +212,7 @@ func (tracker *Tracker) SetTargets(targets []Target) error {
 	return nil
 }
 
-// Refresh reloads the tracked pairs from all sources.
+// Refresh reloads the tracked pairs from the source.
 func (tracker *Tracker) Refresh() {
 	tracker.mu.Lock()
 	tracker.refresh = true
@@ -486,32 +483,28 @@ func (tracker *Tracker) step(ctx context.Context) {
 			changes = append(changes, Change{InstrumentID: subscription.InstrumentID, Previous: previous, Current: current})
 		}
 	}
-	listeners := slices.Clone(tracker.listeners)
+	listener := tracker.listener
 	tracker.mu.Unlock()
+	if listener == nil {
+		return
+	}
 	for _, change := range changes {
-		for _, listener := range listeners {
-			listener(change)
-		}
+		listener(change)
 	}
 }
 
 func (tracker *Tracker) collect(ctx context.Context) ([]Subscription, error) {
-	tracker.mu.Lock()
-	targets := tracker.targets
-	tracker.mu.Unlock()
-	var result []Subscription
-	for _, source := range tracker.sources {
-		subscriptions, err := source.Subscriptions(ctx, targets)
-		if err != nil {
-			return nil, err
+	subscriptions, err := tracker.source.Subscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Subscription, 0, len(subscriptions))
+	for _, subscription := range subscriptions {
+		if _, err := Depth(tracker.registry, subscription.Target, subscription.points()); err != nil {
+			tracker.logger.WarnContext(ctx, "skip invalid closed indicator subscription", "module", "closed_indicator", "instrument_id", subscription.InstrumentID, "error", err)
+			continue
 		}
-		for _, subscription := range subscriptions {
-			if _, err := Depth(tracker.registry, subscription.Target, subscription.points()); err != nil {
-				tracker.logger.WarnContext(ctx, "skip invalid closed indicator subscription", "module", "closed_indicator", "instrument_id", subscription.InstrumentID, "error", err)
-				continue
-			}
-			result = append(result, subscription)
-		}
+		result = append(result, subscription)
 	}
 	return result, nil
 }
@@ -533,19 +526,19 @@ func (tracker *Tracker) versionSnapshot(subscriptions []Subscription) map[histor
 }
 
 // Depth is the number of closed candles loaded to calculate points values of
-// target. Every point gets the warm-up of the latest one, so unstable
-// indicators agree with charts on all of them. A depth beyond
-// market.HistoryDepth only loads the kept candles, so the values it needs
-// stay missing.
+// target. Every point gets at least the chart.Window of target, the warm-up
+// charts give it, so recursive indicators settle and agree with charts. A
+// depth beyond market.HistoryDepth only loads the kept candles, so the values
+// it needs stay missing.
 func Depth(registry *indicator.Registry, target Target, points int) (int, error) {
 	if !target.Interval.Valid() {
 		return 0, fmt.Errorf("closed indicator interval %q is unsupported", target.Interval)
 	}
-	lookback, err := registry.Lookback(target.Selection.Type, target.Selection.Parameters)
+	window, err := chart.Window(registry, target.Selection)
 	if err != nil {
 		return 0, fmt.Errorf("closed indicator %q: %w", target.Selection.Type, err)
 	}
-	return max(minimumHistory, lookback+1) + max(1, points) - 1, nil
+	return window + max(1, points) - 1, nil
 }
 
 // calculate loads the closed history of each interval once, as deep as its

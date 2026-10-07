@@ -14,11 +14,12 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as TopCoinsRouteImport } from './routes/top-coins'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
+import { Route as AdminCommandsRouteImport } from './routes/admin.commands'
 import { Route as AdminStrategiesRouteImport } from './routes/admin.strategies'
+import { Route as AdminTokensRouteImport } from './routes/admin.tokens'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as InstrumentsSymbolRouteImport } from './routes/instruments.$symbol'
 import { Route as AdminBacktestIndexRouteImport } from './routes/admin.backtest.index'
-import { Route as AdminBacktestSymbolRouteImport } from './routes/admin.backtest.$symbol'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -45,9 +46,19 @@ const AdminIndexRoute = AdminIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminCommandsRoute = AdminCommandsRouteImport.update({
+  id: '/commands',
+  path: '/commands',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminStrategiesRoute = AdminStrategiesRouteImport.update({
   id: '/strategies',
   path: '/strategies',
+  getParentRoute: () => AdminRoute,
+} as any)
+const AdminTokensRoute = AdminTokensRouteImport.update({
+  id: '/tokens',
+  path: '/tokens',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminUsersRoute = AdminUsersRouteImport.update({
@@ -65,33 +76,30 @@ const AdminBacktestIndexRoute = AdminBacktestIndexRouteImport.update({
   path: '/backtest/',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminBacktestSymbolRoute = AdminBacktestSymbolRouteImport.update({
-  id: '/backtest/$symbol',
-  path: '/backtest/$symbol',
-  getParentRoute: () => AdminRoute,
-} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
+  '/admin/commands': typeof AdminCommandsRoute
   '/admin/strategies': typeof AdminStrategiesRoute
+  '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin/': typeof AdminIndexRoute
-  '/admin/backtest/$symbol': typeof AdminBacktestSymbolRoute
   '/admin/backtest/': typeof AdminBacktestIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
+  '/admin/commands': typeof AdminCommandsRoute
   '/admin/strategies': typeof AdminStrategiesRoute
+  '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin': typeof AdminIndexRoute
-  '/admin/backtest/$symbol': typeof AdminBacktestSymbolRoute
   '/admin/backtest': typeof AdminBacktestIndexRoute
 }
 export interface FileRoutesById {
@@ -100,11 +108,12 @@ export interface FileRoutesById {
   '/admin': typeof AdminRouteWithChildren
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
+  '/admin/commands': typeof AdminCommandsRoute
   '/admin/strategies': typeof AdminStrategiesRoute
+  '/admin/tokens': typeof AdminTokensRoute
   '/admin/users': typeof AdminUsersRoute
   '/instruments/$symbol': typeof InstrumentsSymbolRoute
   '/admin/': typeof AdminIndexRoute
-  '/admin/backtest/$symbol': typeof AdminBacktestSymbolRoute
   '/admin/backtest/': typeof AdminBacktestIndexRoute
 }
 export interface FileRouteTypes {
@@ -114,22 +123,24 @@ export interface FileRouteTypes {
     | '/admin'
     | '/favorites'
     | '/top-coins'
+    | '/admin/commands'
     | '/admin/strategies'
+    | '/admin/tokens'
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin/'
-    | '/admin/backtest/$symbol'
     | '/admin/backtest/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/favorites'
     | '/top-coins'
+    | '/admin/commands'
     | '/admin/strategies'
+    | '/admin/tokens'
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin'
-    | '/admin/backtest/$symbol'
     | '/admin/backtest'
   id:
     | '__root__'
@@ -137,11 +148,12 @@ export interface FileRouteTypes {
     | '/admin'
     | '/favorites'
     | '/top-coins'
+    | '/admin/commands'
     | '/admin/strategies'
+    | '/admin/tokens'
     | '/admin/users'
     | '/instruments/$symbol'
     | '/admin/'
-    | '/admin/backtest/$symbol'
     | '/admin/backtest/'
   fileRoutesById: FileRoutesById
 }
@@ -190,11 +202,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminIndexRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/commands': {
+      id: '/admin/commands'
+      path: '/commands'
+      fullPath: '/admin/commands'
+      preLoaderRoute: typeof AdminCommandsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/strategies': {
       id: '/admin/strategies'
       path: '/strategies'
       fullPath: '/admin/strategies'
       preLoaderRoute: typeof AdminStrategiesRouteImport
+      parentRoute: typeof AdminRoute
+    }
+    '/admin/tokens': {
+      id: '/admin/tokens'
+      path: '/tokens'
+      fullPath: '/admin/tokens'
+      preLoaderRoute: typeof AdminTokensRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/users': {
@@ -218,29 +244,24 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminBacktestIndexRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/backtest/$symbol': {
-      id: '/admin/backtest/$symbol'
-      path: '/backtest/$symbol'
-      fullPath: '/admin/backtest/$symbol'
-      preLoaderRoute: typeof AdminBacktestSymbolRouteImport
-      parentRoute: typeof AdminRoute
-    }
   }
 }
 
 interface AdminRouteChildren {
+  AdminCommandsRoute: typeof AdminCommandsRoute
   AdminStrategiesRoute: typeof AdminStrategiesRoute
+  AdminTokensRoute: typeof AdminTokensRoute
   AdminUsersRoute: typeof AdminUsersRoute
   AdminIndexRoute: typeof AdminIndexRoute
-  AdminBacktestSymbolRoute: typeof AdminBacktestSymbolRoute
   AdminBacktestIndexRoute: typeof AdminBacktestIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
+  AdminCommandsRoute: AdminCommandsRoute,
   AdminStrategiesRoute: AdminStrategiesRoute,
+  AdminTokensRoute: AdminTokensRoute,
   AdminUsersRoute: AdminUsersRoute,
   AdminIndexRoute: AdminIndexRoute,
-  AdminBacktestSymbolRoute: AdminBacktestSymbolRoute,
   AdminBacktestIndexRoute: AdminBacktestIndexRoute,
 }
 

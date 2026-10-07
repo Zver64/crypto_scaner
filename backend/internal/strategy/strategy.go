@@ -153,7 +153,7 @@ func NewService(store Store, indicators Indicators, registry *indicator.Registry
 	return &Service{store: store, indicators: indicators, registry: registry, administratorID: administratorID, logger: logger.With("module", "strategy"), changed: changed}, nil
 }
 
-// compile compiles source and checks that the kept history covers its
+// compile compiles source and checks that the synchronized history covers its
 // deepest reads, so a strategy never waits for values that cannot exist.
 func (service *Service) compile(source string, variables []Variable) (*Expression, error) {
 	compiled, err := Compile(source, variables)
@@ -174,8 +174,8 @@ func (service *Service) compile(source string, variables []Variable) (*Expressio
 		if err != nil {
 			return nil, err
 		}
-		if depth > market.HistoryDepth {
-			problems = append(problems, fmt.Sprintf("%s %s needs %d closed candles, %d are kept", target.Interval, target.Selection.Type, depth, market.HistoryDepth))
+		if depth > market.SyncDepth {
+			problems = append(problems, fmt.Sprintf("%s %s needs %d closed candles, %d are synchronized", target.Interval, target.Selection.Type, depth, market.SyncDepth))
 		}
 	}
 	if len(problems) > 0 {
@@ -201,17 +201,8 @@ type Validation struct {
 // configured yet are resolved into Missing, and the problems assume they
 // were added.
 func (service *Service) Validate(ctx context.Context, expression string) (Validation, error) {
-	expression = strings.TrimSpace(expression)
-	configured := service.indicators.List()
-	compiled, err := service.compile(expression, Variables(configured))
+	compiled, missing, err := service.compileResolving(expression)
 	var invalid *InvalidExpressionError
-	var missing []scannerindicator.Entry
-	if errors.As(err, &invalid) && len(invalid.Unknown) > 0 {
-		missing = service.missingIndicators(configured, invalid.Unknown)
-		if len(missing) > 0 {
-			compiled, err = service.compile(expression, Variables(append(slices.Clone(configured), missing...)))
-		}
-	}
 	if errors.As(err, &invalid) {
 		return Validation{Problems: append(invalid.Problems, service.indicators.CapacityProblems(missing)...), Missing: missing}, nil
 	}
@@ -229,6 +220,24 @@ func (service *Service) Validate(ctx context.Context, expression string) (Valida
 		}
 	}
 	return Validation{Problems: problems, Missing: missing}, nil
+}
+
+// compileResolving compiles expression over the configured indicators and,
+// for the names of indicators that are not configured, over the indicators
+// missingIndicators resolves them into, which it returns.
+func (service *Service) compileResolving(expression string) (*Expression, []scannerindicator.Entry, error) {
+	expression = strings.TrimSpace(expression)
+	configured := service.indicators.List()
+	compiled, err := service.compile(expression, Variables(configured))
+	var invalid *InvalidExpressionError
+	if !errors.As(err, &invalid) || len(invalid.Unknown) == 0 {
+		return compiled, nil, err
+	}
+	missing := service.missingIndicators(configured, invalid.Unknown)
+	if len(missing) > 0 {
+		compiled, err = service.compile(expression, Variables(append(slices.Clone(configured), missing...)))
+	}
+	return compiled, missing, err
 }
 
 // Load replaces the strategies with the stored ones. A strategy that no

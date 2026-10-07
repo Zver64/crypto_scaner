@@ -19,8 +19,8 @@ const (
 	// DefaultRange is the initial chart range; larger ranges come from scroll-back.
 	DefaultRange = 200
 	// MaxRange bounds the number of closed candles in one chart to the
-	// history the backend keeps.
-	MaxRange = market.HistoryDepth
+	// history synchronization keeps complete.
+	MaxRange = market.SyncDepth
 	// MaxIndicators bounds the indicator selection of one chart.
 	MaxIndicators        = 8
 	maxIndicatorLookback = 5000

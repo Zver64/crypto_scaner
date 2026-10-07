@@ -296,6 +296,19 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AccessDenied" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/instruments:
+    get:
+      operationId: listInstruments
+      summary: List the active instruments
+      tags: [Market Data]
+      security: [{ sessionToken: [] }]
+      responses:
+        "200":
+          description: Active instruments, by symbol.
+          content: { application/json: { schema: { $ref: "#/components/schemas/InstrumentList" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AccessDenied" }
+        "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/favorites:
     get:
       operationId: listFavorites
@@ -486,10 +499,11 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
     delete:
       operationId: deleteUnusedScannerIndicators
-      summary: Remove every scanner indicator no strategy reads
+      summary: Remove every unused scanner indicator
       description: |
-        Indicators read by a strategy stay. Charts and tables no longer show the
-        removed indicators, and their values are no longer tracked.
+        Removes every indicator that no strategy reads (disabled strategies
+        included) and that is shown in no market table and on no chart. Every
+        other indicator stays.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       responses:
@@ -760,15 +774,29 @@ paths:
   /api/v1/admin/strategies/{strategy_id}/backtest:
     get:
       operationId: backtestStrategy
-      summary: Replay the alerts of a strategy on one coin
+      summary: Backtest a saved strategy on one coin
       description: |
-        Evaluates the strategy, enabled or not, at the close of every kept
-        candle of the finest interval its expression reads, exactly as live
-        alerts are evaluated, and lists the candles where it starts matching,
-        starting from not matching. Coins read through `of` must be in the
-        administrator's favorites, otherwise their values are unknown. Only
-        the kept closed history is replayed; when older candles were pruned,
-        candles before the full indicator warm-up are not evaluated.
+        Evaluates the saved strategy, enabled or not, at the close of every
+        stored candle of the finest interval its expression reads, exactly as
+        live alerts are evaluated, and simulates the trades its alerts (the
+        candles where it starts matching) would open. Any active coin can be
+        backtested; coins read through `of` must be in the administrator's
+        favorites, otherwise their values are unknown. Only the stored closed
+        history is replayed (up to 20,000 candles; the administrator loads
+        deeper history with `POST /api/v1/admin/candle-history-loads`,
+        backtests never load it); when older candles may be missing, candles
+        before the full indicator warm-up are not evaluated.
+
+        Trades are simulated one position at a time:
+        each enters at the open of the candle after its alert and exits at
+        the close of its `hold`-th consecutive candle, paying `fee` on entry
+        and on exit. Alerts that fire while a position is open are skipped;
+        a trade whose hold the stored consecutive candles do not reach, at
+        the end of the history or at a gap, is unfinished and left out of
+        the metrics. Two baselines cover the same evaluated period: buying
+        and holding, and taking every evaluated candle as an alert. A
+        backtest that does not finish within its time limit fails with
+        `backtest_too_heavy`.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       parameters:
@@ -777,10 +805,17 @@ paths:
           in: query
           required: true
           description: Market symbol of the replayed coin.
-          schema: { type: string, minLength: 1, maxLength: 32 }
+          schema: { $ref: "#/components/schemas/BacktestSymbolName" }
+        - name: hold
+          in: query
+          required: false
+          description: >-
+            Candles of the interval every trade holds; omitted, the default
+            of the interval: `1h` 24, `1d` 7, `1w` 4, `1M` 3.
+          schema: { type: integer, minimum: 1, maximum: 1000 }
       responses:
         "200":
-          description: Replayed alerts.
+          description: Simulated trades and their metrics.
           content: { application/json: { schema: { $ref: "#/components/schemas/StrategyBacktest" } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
@@ -792,6 +827,111 @@ paths:
               $ref: "#/components/headers/RequestID"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
         "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/BacktestTooHeavy" }
+  /api/v1/admin/candle-history-loads:
+    post:
+      operationId: startCandleHistoryLoad
+      summary: Start loading deeper candle history
+      description: |
+        Starts a background job that extends the stored closed history of
+        each coin on each interval backwards to `depth` candles, or to the
+        oldest candle Binance has, and returns at once. Synchronization keeps
+        only the latest 2,000 candles complete; deeper candles serve backtests
+        and stay until the retention pruner removes those beyond 20,000.
+        Histories already deep enough cost nothing, and a history that
+        synchronization has not filled yet is skipped as `not_ready` while
+        the job goes on. Pages are fetched at most
+        one per second, so a first hourly load to 20,000 candles takes about
+        20 seconds per coin. One job runs at a time; follow it with
+        `GET /api/v1/admin/candle-history-loads`. Only the administrator
+        starts loads, from the Mini App: requests authenticated with an API
+        token are refused (`session_required`). Backtests never load history.
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/CandleHistoryLoadInput" } } }
+      responses:
+        "202":
+          description: The started job.
+          content: { application/json: { schema: { $ref: "#/components/schemas/CandleHistoryLoadJob" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/SessionRequired" }
+        "404": { $ref: "#/components/responses/SymbolNotFound" }
+        "409": { $ref: "#/components/responses/HistoryLoadRunning" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    get:
+      operationId: getCandleHistoryLoad
+      summary: Show the current or last history load
+      description: |
+        The running job, or the last one since the server started; jobs are
+        kept in memory only, so a restart forgets them and stops a running
+        one.
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      responses:
+        "200":
+          description: The current or last job.
+          content: { application/json: { schema: { $ref: "#/components/schemas/CandleHistoryLoadJob" } } }
+        "204": { description: No job ran since the server started. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/api-tokens:
+    get:
+      operationId: listApiTokens
+      summary: List the administrator's API tokens
+      description: |
+        Newest first. A deleted token is no longer listed. API tokens are
+        managed only from the Mini App: requests authenticated with an API
+        token are refused (`session_required`).
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      responses:
+        "200":
+          description: API tokens without their secrets.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ApiTokenList" } } }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/SessionRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+    post:
+      operationId: createApiToken
+      summary: Issue an API token
+      description: |
+        Issues a token for clients other than the Mini App, such as the scanner
+        CLI. It authenticates as a session of the calling administrator, with
+        the same rights, except managing API tokens and starting history
+        loads (`session_required`), until it is deleted; it does not expire.
+        The token is returned only in this response; only its hash is stored.
+        Only a Mini App session issues tokens.
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/ApiTokenInput" } } }
+      responses:
+        "201":
+          description: Issued token.
+          content: { application/json: { schema: { $ref: "#/components/schemas/IssuedApiToken" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/SessionRequired" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /api/v1/admin/api-tokens/{token_id}:
+    delete:
+      operationId: deleteApiToken
+      summary: Revoke an API token
+      description: The token stops authenticating immediately. Only a Mini App session revokes tokens (`session_required`).
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      parameters: [{ $ref: "#/components/parameters/ApiTokenID" }]
+      responses:
+        "204": { description: Token revoked. }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/SessionRequired" }
+        "404": { $ref: "#/components/responses/ApiTokenNotFound" }
+        "500": { $ref: "#/components/responses/InternalError" }
 components:
   securitySchemes:
     telegramInitData:
@@ -802,8 +942,16 @@ components:
     sessionToken:
       type: http
       scheme: bearer
-      description: Session token issued by `createSession`.
+      description: Session token issued by `createSession`, or an API token (`cst_…`) issued by `createApiToken`.
   parameters:
+    ApiTokenID:
+      name: token_id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+        minimum: 1
     RequestID:
       name: X-Request-ID
       in: header
@@ -859,6 +1007,9 @@ components:
       schema:
         type: string
   responses:
+    ApiTokenNotFound:
+      description: The administrator has no such API token.
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     UserNotFound:
       description: The user does not exist.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
@@ -962,6 +1113,24 @@ components:
     StrategyConflict:
       description: Another strategy has the name.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    BacktestTooHeavy:
+      description: The backtest did not finish within its time limit (`backtest_too_heavy`).
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    SessionRequired:
+      description: The user is not the scanner administrator (`administrator_required`), or authenticated with an API token instead of a Mini App session (`session_required`).
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    HistoryLoadRunning:
+      description: Another history load is running (`history_load_running`).
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     AnalysisUnavailable:
       description: Required market data or market-capitalization data is unavailable.
       headers:
@@ -972,6 +1141,47 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorResponse"
   schemas:
+    ApiTokenInput:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: Where the token is used, such as `laptop CLI`. Surrounding whitespace is trimmed; a blank name is rejected.
+    ApiTokenList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ApiToken" }
+    ApiToken:
+      type: object
+      additionalProperties: false
+      required: [id, name, created_at]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at:
+          type: string
+          format: date-time
+          description: Last authenticated request, recorded at most once a minute; absent until the first use.
+    IssuedApiToken:
+      type: object
+      additionalProperties: false
+      required: [id, name, created_at, token]
+      properties:
+        id: { type: integer, format: int64 }
+        name: { type: string }
+        created_at: { type: string, format: date-time }
+        token:
+          type: string
+          description: Bearer token starting with `cst_`. It is shown only once.
     Session:
       type: object
       additionalProperties: false
@@ -995,6 +1205,18 @@ components:
         active: { type: boolean }
         alert_count: { type: integer, minimum: 0 }
         created_at: { type: string, format: date-time }
+    InstrumentList:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items: { type: array, items: { $ref: "#/components/schemas/InstrumentListItem" } }
+    InstrumentListItem:
+      type: object
+      additionalProperties: false
+      required: [symbol]
+      properties:
+        symbol: { type: string }
     FavoritesResponse:
       type: object
       additionalProperties: false
@@ -1650,9 +1872,12 @@ components:
             - administrator_required
             - alert_limit
             - alert_not_found
+            - api_token_not_found
+            - backtest_too_heavy
             - duplicate_target
             - favorite_has_alerts
             - favorite_not_found
+            - history_load_running
             - instrument_used_by_strategy
             - insufficient_data
             - internal_error
@@ -1667,6 +1892,7 @@ components:
             - scanner_indicator_in_use
             - scanner_indicator_limit
             - scanner_indicator_not_found
+            - session_required
             - strategy_exists
             - strategy_not_found
             - symbol_not_found
@@ -1800,10 +2026,20 @@ components:
     StrategyBacktest:
       type: object
       additionalProperties: false
-      required: [interval, from, to, alerts]
+      required: [interval, symbol, hold, fee, from, to, summary, trades, unfinished_trades, skipped_alerts, equity, baselines]
+      description: Returns, drawdowns, and fees are fractions, such as 0.012 for 1.2%.
       properties:
         interval:
           $ref: "#/components/schemas/CandleInterval"
+        symbol: { type: string }
+        hold:
+          type: integer
+          minimum: 1
+          description: Candles of the interval every trade holds.
+        fee:
+          type: number
+          format: double
+          description: Fee paid on entry and again on exit, as a fraction of the traded value.
         from:
           type: [string, "null"]
           format: date-time
@@ -1812,16 +2048,185 @@ components:
           type: [string, "null"]
           format: date-time
           description: Open time of the last evaluated candle of the interval; null when none is evaluated.
-        alerts:
+        summary: { $ref: "#/components/schemas/BacktestSummary" }
+        trades:
           type: array
-          description: Candles of the interval whose close would have alerted, oldest first.
-          items: { $ref: "#/components/schemas/StrategyBacktestAlert" }
-    StrategyBacktestAlert:
+          description: Closed trades, oldest first.
+          items: { $ref: "#/components/schemas/BacktestTrade" }
+        unfinished_trades:
+          type: integer
+          description: Trades left out because the stored consecutive candles end or have a gap before their exit.
+        skipped_alerts:
+          type: integer
+          description: Alerts that fired while a position was open and opened no trade.
+        equity:
+          type: array
+          description: Equity after each closed trade, compounded from 1, oldest first.
+          items: { $ref: "#/components/schemas/BacktestEquityPoint" }
+        baselines: { $ref: "#/components/schemas/BacktestBaselines" }
+    BacktestSymbolName:
+      type: string
+      minLength: 1
+      maxLength: 32
+      pattern: '^[A-Za-z0-9]+$'
+      description: Market symbol, such as `BTCUSDT`.
+    BacktestSummary:
       type: object
       additionalProperties: false
-      required: [open_time]
+      required: [net_profit, max_drawdown, stats]
+      description: Results of the strategy's closed trades.
       properties:
-        open_time: { type: string, format: date-time }
+        net_profit:
+          type: number
+          format: double
+          description: Compounded net return of the closed trades; 0 without trades.
+        max_drawdown:
+          type: number
+          format: double
+          description: Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at trade exits; 0 without falls.
+        stats: { $ref: "#/components/schemas/BacktestTradeStats" }
+    BacktestTradeStats:
+      type: object
+      additionalProperties: false
+      required: [trade_count, win_rate, profit_factor, average_trade, average_win, average_loss]
+      description: Statistics of net trade returns.
+      properties:
+        trade_count: { type: integer }
+        win_rate:
+          type: [number, "null"]
+          format: double
+          description: Share of positive returns, from 0 to 1; null without trades.
+        profit_factor:
+          type: [number, "null"]
+          format: double
+          description: Sum of positive returns over the sum of negative ones, as a positive number; null without losses.
+        average_trade:
+          type: [number, "null"]
+          format: double
+          description: Mean return; null without trades.
+        average_win:
+          type: [number, "null"]
+          format: double
+          description: Mean positive return; null without wins.
+        average_loss:
+          type: [number, "null"]
+          format: double
+          description: Mean negative return; null without losses.
+    BacktestTrade:
+      type: object
+      additionalProperties: false
+      required: [entry_time, entry_price, exit_time, exit_price, net_return]
+      properties:
+        entry_time:
+          type: string
+          format: date-time
+          description: Open time of the entry candle; the trade buys at its open.
+        entry_price: { type: number, format: double }
+        exit_time:
+          type: string
+          format: date-time
+          description: Open time of the exit candle; the trade sells at its close.
+        exit_price: { type: number, format: double }
+        net_return:
+          type: number
+          format: double
+          description: Return net of the fees on both sides.
+    BacktestEquityPoint:
+      type: object
+      additionalProperties: false
+      required: [time, equity]
+      properties:
+        time:
+          type: string
+          format: date-time
+          description: Exit time of the trade, the open time of its exit candle.
+        equity: { type: number, format: double }
+    BacktestBaselines:
+      type: object
+      additionalProperties: false
+      required: [buy_and_hold, every_candle]
+      description: References over the same evaluated period, net of the same fees.
+      properties:
+        buy_and_hold:
+          type: [number, "null"]
+          format: double
+          description: Return from the open of the candle after the first evaluated candle to the close of the last; null when fewer than two candles are evaluated.
+        every_candle:
+          $ref: "#/components/schemas/BacktestTradeStats"
+          description: Every evaluated candle taken as an alert with the same hold, trades overlapping; unfinished ones are left out.
+    CandleHistoryLoadInput:
+      type: object
+      additionalProperties: false
+      required: [symbols, intervals, depth]
+      properties:
+        symbols:
+          type: array
+          minItems: 1
+          maxItems: 10
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/BacktestSymbolName" }
+        intervals:
+          type: array
+          minItems: 1
+          maxItems: 4
+          uniqueItems: true
+          items: { $ref: "#/components/schemas/CandleInterval" }
+        depth:
+          type: integer
+          minimum: 2001
+          maximum: 20000
+          description: Closed candles to keep per coin and interval, beyond the 2,000 synchronization keeps.
+    CandleHistoryLoadJob:
+      type: object
+      additionalProperties: false
+      required: [status, symbols, intervals, depth, started_at, finished_at, items, history_changed, error]
+      properties:
+        status:
+          type: string
+          enum: [running, done, failed]
+        symbols:
+          type: array
+          items: { type: string }
+        intervals:
+          type: array
+          items: { $ref: "#/components/schemas/CandleInterval" }
+        depth: { type: integer }
+        started_at: { type: string, format: date-time }
+        finished_at:
+          type: [string, "null"]
+          format: date-time
+          description: Null while the job runs.
+        items:
+          type: array
+          description: The stored history of every successfully completed coin and interval, by coin and then interval.
+          items: { $ref: "#/components/schemas/CandleHistoryLoad" }
+        history_changed:
+          type: boolean
+          description: The job committed candle changes, including partial loads that later failed.
+        error:
+          type: [string, "null"]
+          description: A short reason when the job failed, such as a shutdown; the cause is in the server log. Null unless it failed.
+    CandleHistoryLoad:
+      type: object
+      additionalProperties: false
+      required: [symbol, interval, count, oldest_open_time, exhausted, not_ready]
+      properties:
+        symbol: { type: string }
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+        count:
+          type: integer
+          description: Stored closed candles, at most 20,000; 0 before the coin's first synchronization.
+        oldest_open_time:
+          type: [string, "null"]
+          format: date-time
+          description: Open time of the oldest of them; null without candles.
+        exhausted:
+          type: boolean
+          description: Binance has no older candles.
+        not_ready:
+          type: boolean
+          description: Skipped because the coin has no synchronized candles on this interval yet, such as a coin listed this month on `1M`; synchronization backfills it first, and the job goes on with the other pairs.
     StrategyUpdate:
       type: object
       additionalProperties: false

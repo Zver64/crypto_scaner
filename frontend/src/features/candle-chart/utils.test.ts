@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
 	createCandlestickData,
 	createIndicatorData,
-	createMarkerData,
+	createMarkerDataSelector,
 	fitPaneIndicatorScale,
 	formatChartTime,
 	formatOhlc,
@@ -50,7 +50,7 @@ describe("price history chart data", () => {
 		]);
 	});
 
-	it("marks the loaded candles containing the times and counts several", () => {
+	it("marks the loaded candles containing the trade times and counts several", () => {
 		const weeks = createCandlestickData(
 			[
 				{ ...candle(0, 10), open_time: "2026-08-24T00:00:00Z" },
@@ -60,30 +60,47 @@ describe("price history chart data", () => {
 		);
 		// Sunday 23:00 closes the first week; Monday 00:00 opens the second.
 		expect(
-			createMarkerData(
-				weeks,
-				[
-					"2026-08-17T05:00:00Z",
-					"2026-08-24T00:00:00Z",
-					"2026-08-30T23:00:00Z",
-					"2026-08-31T00:00:00Z",
-				],
+			createMarkerDataSelector(
+				{
+					entries: [
+						"2026-08-17T05:00:00Z",
+						"2026-08-24T00:00:00Z",
+						"2026-08-30T23:00:00Z",
+						"2026-08-31T00:00:00Z",
+					],
+					exits: ["2026-08-25T00:00:00Z"],
+				},
 				"1w",
-			).map(({ text, time }) => ({ text, time })),
+			)(weeks).map(({ position, text, time }) => ({ position, text, time })),
 		).toEqual([
-			{ text: "2", time: Date.parse("2026-08-24T00:00:00Z") / 1_000 },
-			{ text: undefined, time: Date.parse("2026-08-31T00:00:00Z") / 1_000 },
+			{
+				position: "belowBar",
+				text: "2",
+				time: Date.parse("2026-08-24T00:00:00Z") / 1_000,
+			},
+			{
+				position: "aboveBar",
+				text: undefined,
+				time: Date.parse("2026-08-24T00:00:00Z") / 1_000,
+			},
+			{
+				position: "belowBar",
+				text: undefined,
+				time: Date.parse("2026-08-31T00:00:00Z") / 1_000,
+			},
 		]);
 		const months = createCandlestickData(
 			[{ ...candle(0, 10), open_time: "2026-08-01T00:00:00Z" }],
 			"1M",
 		);
 		expect(
-			createMarkerData(
-				months,
-				["2026-07-31T23:00:00Z", "2026-08-31T23:00:00Z"],
+			createMarkerDataSelector(
+				{
+					entries: [],
+					exits: ["2026-07-31T23:00:00Z", "2026-08-31T23:00:00Z"],
+				},
 				"1M",
-			).map(({ text, time }) => ({ text, time })),
+			)(months).map(({ text, time }) => ({ text, time })),
 		).toEqual([
 			{ text: undefined, time: Date.parse("2026-08-01T00:00:00Z") / 1_000 },
 		]);
@@ -120,6 +137,87 @@ describe("price history chart data", () => {
 		expect(nextCandleOpen("2026-08-26T23:00:00Z", "1h")).toBe(
 			"2026-08-27T00:00:00.000Z",
 		);
+	});
+});
+
+describe("marker data selector", () => {
+	it("reuses markers on OHLC updates and aggregates trades only once", () => {
+		const candles = [candle(0, 10), candle(1, 11)];
+		const entries = candles.map(({ open_time }) => open_time);
+		const iterate = vi.spyOn(entries, Symbol.iterator);
+		const select = createMarkerDataSelector({ entries, exits: [] }, "1h");
+		const data = createCandlestickData(candles, "1h");
+		const markers = select(data);
+		const updated = createCandlestickData(
+			candles.map((item) => ({ ...item, close: 20, volume: 200 })),
+			"1h",
+		);
+		expect(select(updated)).toBe(markers);
+		select(createCandlestickData([...candles, candle(2, 12)], "1h"));
+		expect(iterate).toHaveBeenCalledTimes(1);
+		iterate.mockRestore();
+	});
+
+	it("detects added, removed, replaced interior slots and candle/gap changes", () => {
+		const candles = [0, 1, 2, 3].map((index) => candle(index, 10));
+		const data = createCandlestickData(candles, "1h");
+		const select = createMarkerDataSelector(
+			{ entries: candles.map(({ open_time }) => open_time), exits: [] },
+			"1h",
+		);
+		const original = [data[0], data[1], data[3]];
+		const markers = select(original);
+		expect(select(data).map(({ time }) => time)).toEqual(
+			data.map(({ time }) => time),
+		);
+		expect(select(original).map(({ time }) => time)).toEqual(
+			original.map(({ time }) => time),
+		);
+		const replaced = [data[0], data[2], data[3]];
+		expect(select(replaced)).not.toBe(markers);
+		expect(select(replaced).map(({ time }) => time)).toEqual(
+			replaced.map(({ time }) => time),
+		);
+		const gap = [data[0], { time: data[2].time }, data[3]];
+		expect(select(gap).map(({ time }) => time)).toEqual([
+			data[0].time,
+			data[3].time,
+		]);
+		expect(select(replaced).map(({ time }) => time)).toEqual(
+			replaced.map(({ time }) => time),
+		);
+		expect(select([])).toEqual([]);
+		expect(select(original).map(({ time }) => time)).toEqual(
+			original.map(({ time }) => time),
+		);
+	});
+
+	it("uses the new trades and interval when a selector is replaced", () => {
+		const candles = [candle(1, 10), candle(2, 11)];
+		const data = createCandlestickData(candles, "1h");
+		const entries = candles.map(({ open_time }) => open_time);
+		const first = createMarkerDataSelector(
+			{ entries: [entries[0]], exits: [] },
+			"1h",
+		);
+		const changed = createMarkerDataSelector(
+			{ entries: [], exits: [entries[1]] },
+			"1h",
+		);
+		expect(
+			first(data).map(({ time, position }) => ({ time, position })),
+		).toEqual([{ time: data[0].time, position: "belowBar" }]);
+		expect(
+			changed(data).map(({ time, position }) => ({ time, position })),
+		).toEqual([{ time: data[1].time, position: "aboveBar" }]);
+		const daily = createMarkerDataSelector({ entries, exits: [] }, "1d");
+		const days = createCandlestickData(
+			[{ ...candles[0], open_time: "2026-08-27T00:00:00Z" }],
+			"1d",
+		);
+		expect(daily(days).map(({ time, text }) => ({ time, text }))).toEqual([
+			{ time: days[0].time, text: "2" },
+		]);
 	});
 });
 

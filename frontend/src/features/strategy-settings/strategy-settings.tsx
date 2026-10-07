@@ -2,6 +2,7 @@ import { Button, Group, Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import type { ErrorType } from "@/api/fetch";
 import {
 	getListScannerIndicatorsQueryKey,
 	getListStrategiesQueryKey,
@@ -12,7 +13,7 @@ import {
 	useSetStrategyEnabled,
 	useUpdateStrategy,
 } from "@/api/generated/api";
-import type { Strategy } from "@/api/generated/models";
+import type { ErrorResponse, Strategy } from "@/api/generated/models";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { StrategyForm } from "@/features/strategy-settings/strategy-form";
 import { StrategyRemovalConfirmation } from "@/features/strategy-settings/strategy-removal-confirmation";
@@ -45,7 +46,7 @@ export function StrategySettings() {
 			queryKey: getListStrategiesQueryKey(),
 		});
 	};
-	const failed = (error: unknown) => {
+	const failed = (error: ErrorType<ErrorResponse>) => {
 		notifications.show({
 			color: "red",
 			message: strategyErrorMessage(error),

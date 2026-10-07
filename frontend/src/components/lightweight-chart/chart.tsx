@@ -78,6 +78,7 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 			() => ({
 				generation: () => lifecycle.generation(),
 				containerWidth: () => containerRef.current?.clientWidth ?? 0,
+				fitContent: () => lifecycle.api().timeScale().fitContent(),
 				getVisibleLogicalRange: () =>
 					lifecycle.api().timeScale().getVisibleLogicalRange(),
 				setVisibleLogicalRange: (range) =>

@@ -1,43 +1,37 @@
-import { Button, Group, Modal, Text } from "@mantine/core";
-import { useState } from "react";
+import { ConfirmationDialog } from "@/components/confirmation-dialog";
 
 interface ScannerIndicatorRemovalConfirmationProps {
+	// Replaces the default description of what deleting the subject does.
+	description?: string;
 	isPending: boolean;
+	subject: string | undefined;
 	onCancel(): void;
 	onConfirm(): void;
-	// What is removed, such as "d-rsi" or "unused indicators"; the dialog is open
-	// while it is set.
-	subject: string | undefined;
 }
 
 export function ScannerIndicatorRemovalConfirmation({
+	description,
 	isPending,
+	subject,
 	onCancel,
 	onConfirm,
-	subject,
 }: ScannerIndicatorRemovalConfirmationProps) {
-	// The dialog fades out after subject is cleared; keep showing the last one.
-	const [shown, setShown] = useState(subject);
-	if (subject !== undefined && subject !== shown) setShown(subject);
 	return (
-		<Modal
-			centered
-			onClose={onCancel}
-			opened={subject !== undefined}
-			title={`Delete ${shown}?`}
-		>
-			<Text size="sm">
-				The scanner stops calculating {shown}, and charts and tables no longer
-				show it.
-			</Text>
-			<Group justify="flex-end" mt="md">
-				<Button disabled={isPending} onClick={onCancel} variant="default">
-					Cancel
-				</Button>
-				<Button color="red" loading={isPending} onClick={onConfirm}>
-					Delete
-				</Button>
-			</Group>
-		</Modal>
+		<ConfirmationDialog
+			confirmLabel="Delete"
+			content={
+				subject === undefined
+					? undefined
+					: {
+							title: `Delete ${subject}?`,
+							description:
+								description ??
+								`The scanner stops calculating ${subject}, and charts and tables no longer show it.`,
+						}
+			}
+			isPending={isPending}
+			onCancel={onCancel}
+			onConfirm={onConfirm}
+		/>
 	);
 }

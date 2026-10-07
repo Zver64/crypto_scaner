@@ -1,23 +1,28 @@
 import { useMantineTheme } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
-import { formatRangePercent } from "@/utils/range-percent";
+import {
+	displayedPercentSign,
+	formatRangePercent,
+} from "@/utils/range-percent";
 
 interface PercentChangeProps {
+	maximumFractionDigits?: number;
 	value: number | null;
 }
 
-export function PercentChange({ value }: PercentChangeProps) {
+export function PercentChange({
+	maximumFractionDigits,
+	value,
+}: PercentChangeProps) {
 	const { colors } = themeToVars(useMantineTheme());
+	const sign =
+		value === null ? 0 : displayedPercentSign(value, maximumFractionDigits);
 	const color =
-		value === null || value === 0
-			? undefined
-			: value > 0
-				? colors.green[6]
-				: colors.red[6];
+		sign === 0 ? undefined : sign > 0 ? colors.green[6] : colors.red[6];
 
 	return (
 		<span style={{ color }}>
-			{value === null ? "—" : formatRangePercent(value)}
+			{value === null ? "—" : formatRangePercent(value, maximumFractionDigits)}
 		</span>
 	);
 }

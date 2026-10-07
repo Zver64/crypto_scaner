@@ -78,6 +78,11 @@ export interface ChartIndicatorPane {
 	indicators: readonly ChartPaneIndicatorOptions[];
 	scale: ChartIndicatorScale;
 }
+// Entry and exit times of trades.
+export interface ChartTradeMarkers {
+	entries: readonly string[];
+	exits: readonly string[];
+}
 export interface ChartReadoutOptions {
 	label: string;
 	format(candle: Pick<PriceCandle, "open" | "high" | "low" | "close">): string;
@@ -93,9 +98,8 @@ export interface PriceHistoryChartProps {
 	// Restricts the interval switch to these intervals; the first is shown
 	// first.
 	intervals?: readonly ChartInterval[];
-	// Times marked with an arrow on the candle containing them; several in one
-	// candle are counted on its arrow.
-	markers?: readonly string[];
+	// Trades marked with arrows on the candles containing their times.
+	markers?: ChartTradeMarkers;
 	paperPadding: string;
 	source: PriceHistorySource;
 	symbol: string;

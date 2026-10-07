@@ -30,8 +30,11 @@ FROM unnest(@ids::BIGINT[]) WITH ORDINALITY AS ordered(id, position)
 WHERE indicators.id = ordered.id;
 
 -- name: DeleteUnusedScannerIndicators :many
+-- Unused: read by no strategy, and shown in no market table and on no chart.
 DELETE FROM app.scanner_indicators AS indicators
-WHERE NOT EXISTS (
+WHERE NOT indicators.show_in_table
+    AND NOT indicators.show_in_chart
+    AND NOT EXISTS (
         SELECT 1 FROM app.strategy_indicators AS used
         WHERE used.indicator_id = indicators.id
     )

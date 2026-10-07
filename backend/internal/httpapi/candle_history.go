@@ -15,6 +15,7 @@ const (
 
 type CandleHistory interface {
 	GetActiveInstrumentBySymbol(context.Context, string) (market.Instrument, error)
+	ListActiveInstruments(context.Context) ([]market.Instrument, error)
 	ListCandlePage(context.Context, int64, market.CandleInterval, *time.Time, int) (market.CandlePage, error)
 }
 

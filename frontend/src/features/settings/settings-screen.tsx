@@ -7,21 +7,18 @@ import { PageStack } from "@/components/page-stack";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { useCloseScannerSettings } from "@/features/scanner-settings/use-close-scanner-settings";
 import { SettingsNavigation } from "@/features/settings/settings-navigation";
-import { useBackToBacktestCoins } from "@/features/strategy-backtest/use-back-to-backtest-coins";
 
 // The administrator settings with a switch between their pages.
 export function SettingsScreen() {
 	const permission = useBusinessRequestPermission();
 	const administrator = useAdministrator(permission.allowed);
 	const closeSettings = useCloseScannerSettings();
-	const backToCoins = useBackToBacktestCoins();
 	const pathname = useLocation({ select: (location) => location.pathname });
 	// On wide screens the settings fit the viewport: the section switch stays
 	// in view and the section scrolls, or fills the height, below it.
 	const fitViewport = useWideLayout();
-	// Telegram's native back button leaves the settings like the header cross,
-	// or a backtest coin for its list.
-	useTelegramBackButton(backToCoins ?? closeSettings);
+	// Telegram's native back button leaves the settings like the header cross.
+	useTelegramBackButton(closeSettings);
 	if (!administrator) {
 		return (
 			<Text c="dimmed" size="sm">

@@ -17,11 +17,25 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { BacktestBaselines } from './backtestBaselines.ts';
+import type { BacktestEquityPoint } from './backtestEquityPoint.ts';
+import type { BacktestSummary } from './backtestSummary.ts';
+import type { BacktestTrade } from './backtestTrade.ts';
 import type { CandleInterval } from './candleInterval.ts';
-import type { StrategyBacktestAlert } from './strategyBacktestAlert.ts';
 
+/**
+ * Returns, drawdowns, and fees are fractions, such as 0.012 for 1.2%.
+ */
 export interface StrategyBacktest {
   interval: CandleInterval;
+  symbol: string;
+  /**
+     * Candles of the interval every trade holds.
+     * @minimum 1
+     */
+  hold: number;
+  /** Fee paid on entry and again on exit, as a fraction of the traded value. */
+  fee: number;
   /**
      * Open time of the first evaluated candle of the interval; null when none is evaluated.
      * @nullable
@@ -32,6 +46,14 @@ export interface StrategyBacktest {
      * @nullable
      */
   to: string | null;
-  /** Candles of the interval whose close would have alerted, oldest first. */
-  alerts: StrategyBacktestAlert[];
+  summary: BacktestSummary;
+  /** Closed trades, oldest first. */
+  trades: BacktestTrade[];
+  /** Trades left out because the stored consecutive candles end or have a gap before their exit. */
+  unfinished_trades: number;
+  /** Alerts that fired while a position was open and opened no trade. */
+  skipped_alerts: number;
+  /** Equity after each closed trade, compounded from 1, oldest first. */
+  equity: BacktestEquityPoint[];
+  baselines: BacktestBaselines;
 }

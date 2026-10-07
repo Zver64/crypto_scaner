@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/oapi-codegen/oapi-codegen/v2.8.0/configuration-schema.json
+# The HTTP client of the scanner CLI, generated from the same contract as the
+# server.
+package: apiclient
+output: ../../apiclient/client.gen.go
+generate:
+  models: true
+  client: true
+output-options:
+  # Only the administrator starts history loads and manages API tokens,
+  # from the Mini App; the server refuses API tokens there.
+  exclude-operation-ids: [startCandleHistoryLoad, listApiTokens, createApiToken, deleteApiToken]

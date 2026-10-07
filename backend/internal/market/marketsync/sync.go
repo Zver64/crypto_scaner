@@ -292,14 +292,14 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 			return result
 		}
 		// The first page is the newest one; older pages follow as history repair.
-		result = synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+		result = synchronizer.loadRange(ctx, synchronizer.store, instrument, market.CandleRequest{
 			Symbol: instrument.Symbol, Interval: profile.Interval,
 			Limit: min(policy.initialLimit, exchangePageLimit), ClosedBefore: startedAt,
 		}, false)
 		if result.err != nil {
 			return result
 		}
-		if history, result.err = synchronizer.history(ctx, instrument, profile.Interval); result.err != nil {
+		if history, result.err = synchronizer.summary(ctx, instrument, synchronizer.depth); result.err != nil {
 			return result
 		}
 		if history.Count == 0 {
@@ -318,7 +318,7 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	// cursor makes that correction durable and notifies active graphs.
 	if !initiallyEmpty {
 		previous := profile.Interval.PreviousOpenTime(latest)
-		loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+		loaded := synchronizer.loadRange(ctx, synchronizer.store, instrument, market.CandleRequest{
 			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
 			ClosedBefore: startedAt, AfterOpenTime: &previous,
 		}, true)
@@ -333,7 +333,7 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 				continue
 			}
 			after := gap.From.Add(-time.Millisecond)
-			loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
+			loaded := synchronizer.loadRange(ctx, synchronizer.store, instrument, market.CandleRequest{
 				Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
 				ClosedBefore: gap.To, AfterOpenTime: &after,
 			}, true)
@@ -362,7 +362,7 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	// persisted rows are the durable repair cursor, so decide depth from a
 	// fresh read rather than from responses held in memory.
 	if result.rowsChanged != changedAtRead {
-		if history, result.err = synchronizer.history(ctx, instrument, profile.Interval); result.err != nil {
+		if history, result.err = synchronizer.summary(ctx, instrument, synchronizer.depth); result.err != nil {
 			return result
 		}
 	}
@@ -374,38 +374,47 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 		return result
 	}
 
-	// Load older pages until the depth is reached or the exchange runs out.
-	for remaining := policy.initialLimit - history.Count; remaining > 0; {
+	loaded, _ := synchronizer.loadOlder(ctx, synchronizer.store, instrument, policy, oldest, policy.initialLimit-history.Count, startedAt)
+	return mergeInstrumentResults(result, loaded)
+}
+
+// loadOlder loads up to remaining candles before oldest, page by page, until
+// they are loaded or the exchange runs out, writing them to store; exhausted
+// reports the latter, which is recorded as coverage.
+func (synchronizer *Synchronizer) loadOlder(ctx context.Context, store Store, instrument market.Instrument, policy intervalPolicy, oldest time.Time, remaining int, startedAt time.Time) (result instrumentResult, exhausted bool) {
+	for remaining > 0 {
 		limit := min(remaining, exchangePageLimit)
-		loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
-			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: limit,
+		loaded := synchronizer.loadRange(ctx, store, instrument, market.CandleRequest{
+			Symbol: instrument.Symbol, Interval: policy.interval, Limit: limit,
 			ClosedBefore: oldest, HistoryRepair: true,
 		}, false)
 		result = mergeInstrumentResults(result, loaded)
 		if result.err != nil {
-			return result
+			return result, false
 		}
 		if loaded.rowsRequested < limit || loaded.oldestOpenTime == nil {
 			verifiedOldest := *earlierOf(&oldest, loaded.oldestOpenTime)
-			result.err = synchronizer.saveExhaustedHistory(ctx, instrument, profile.Interval, policy, verifiedOldest, startedAt)
-			return result
+			result.err = synchronizer.saveExhaustedHistory(ctx, instrument, policy.interval, policy, verifiedOldest, startedAt)
+			return result, result.err == nil
 		}
 		remaining -= loaded.rowsRequested
 		oldest = *loaded.oldestOpenTime
 	}
-	return result
+	return result, false
 }
 
-// history reads the current summary of one instrument.
-func (synchronizer *Synchronizer) history(ctx context.Context, instrument market.Instrument, interval market.CandleInterval) (HistorySummary, error) {
-	histories, err := synchronizer.store.SummarizeCandleHistory(ctx, []int64{instrument.ID}, interval, synchronizer.depth)
+// summary reads the current summary of up to limit latest candles of one
+// instrument.
+func (synchronizer *Synchronizer) summary(ctx context.Context, instrument market.Instrument, limit int) (HistorySummary, error) {
+	histories, err := synchronizer.store.SummarizeCandleHistory(ctx, []int64{instrument.ID}, synchronizer.profile.Interval, limit)
 	if err != nil {
 		return HistorySummary{}, fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)
 	}
 	return histories[instrument.ID], nil
 }
 
-func (synchronizer *Synchronizer) loadRange(ctx context.Context, instrument market.Instrument, request market.CandleRequest, paginate bool) instrumentResult {
+// loadRange writes the loaded candles to store.
+func (synchronizer *Synchronizer) loadRange(ctx context.Context, store Store, instrument market.Instrument, request market.CandleRequest, paginate bool) instrumentResult {
 	result := instrumentResult{}
 	for {
 		result.exchangeRequests++
@@ -428,7 +437,7 @@ func (synchronizer *Synchronizer) loadRange(ctx context.Context, instrument mark
 			pageLatest = laterOf(pageLatest, &openTime)
 			pageOldest = earlierOf(pageOldest, &openTime)
 		}
-		changed, err := synchronizer.store.UpsertCandlesWithChanges(ctx, closed)
+		changed, err := store.UpsertCandlesWithChanges(ctx, closed)
 		if err != nil {
 			result.err = fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)
 			return result

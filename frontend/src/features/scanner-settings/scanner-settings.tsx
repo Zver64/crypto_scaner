@@ -2,6 +2,7 @@ import { Button, Group, Loader, Stack, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+import type { ErrorType } from "@/api/fetch";
 import {
 	useCreateScannerIndicator,
 	useDeleteScannerIndicator,
@@ -11,7 +12,7 @@ import {
 	useReorderScannerIndicators,
 	useUpdateScannerIndicator,
 } from "@/api/generated/api";
-import type { ScannerIndicator } from "@/api/generated/models";
+import type { ErrorResponse, ScannerIndicator } from "@/api/generated/models";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
 import { ScannerIndicatorForm } from "@/features/scanner-settings/scanner-indicator-form";
@@ -37,7 +38,7 @@ export function ScannerSettings() {
 		query: { retry: false, select: (response) => response.data.items },
 	});
 	const refresh = () => invalidateScannerIndicatorQueries(queryClient);
-	const failed = (error: unknown) => {
+	const failed = (error: ErrorType<ErrorResponse>) => {
 		notifications.show({
 			color: "red",
 			message: mutationErrorMessage(error),
@@ -97,7 +98,12 @@ export function ScannerSettings() {
 					<Title order={2} size="h4">
 						Indicators
 					</Title>
-					{indicators.data.some(({ strategies }) => strategies.length === 0) ? (
+					{/* Mirrors the backend rule only to hide a button that would
+					delete nothing. */}
+					{indicators.data.some(
+						({ show_in_chart, show_in_table, strategies }) =>
+							strategies.length === 0 && !show_in_table && !show_in_chart,
+					) ? (
 						<Button
 							color="red"
 							disabled={clearMutation.isPending}
@@ -150,6 +156,7 @@ export function ScannerSettings() {
 					subject={removing?.title}
 				/>
 				<ScannerIndicatorRemovalConfirmation
+					description="Deletes every indicator that no strategy reads and no table or chart shows."
 					isPending={clearMutation.isPending}
 					onCancel={() => setClearing(false)}
 					onConfirm={() => clearMutation.mutate()}

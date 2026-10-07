@@ -11,7 +11,8 @@ import {
 	type CELFunctionCall,
 	parseCEL,
 } from "react-querybuilder/parseCEL";
-import type { StrategyVariable } from "@/api/generated/models";
+import type { ErrorType } from "@/api/fetch";
+import type { ErrorResponse, StrategyVariable } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import {
 	anyField,
@@ -33,6 +34,7 @@ import type {
 	StrategyQuery,
 	Token,
 } from "@/features/strategy-settings/types";
+import { describeApiError } from "@/utils/api-error";
 
 export function isRangeOperator(operator: string): boolean {
 	return operator === "between" || operator === "notBetween";
@@ -355,27 +357,18 @@ function ruleComplete(rule: RuleType): boolean {
 }
 
 // Validation and conflict messages come from the backend.
-export function strategyErrorMessage(error: unknown): string {
-	const info = (
-		error as { info?: { error?: { code?: unknown; message?: unknown } } }
-	).info?.error;
-	switch (info?.code) {
-		case "invalid_argument":
-			return typeof info.message === "string"
-				? info.message
-				: "The strategy could not be saved.";
-		case "strategy_exists":
-			return "Another strategy has this name.";
-		case "strategy_not_found":
-			return "This strategy no longer exists.";
-		case "administrator_required":
-		case "access_denied":
-			return "Only the scanner administrator can change strategies.";
-		case "unauthenticated":
-			return "Telegram authorization has expired. Reopen the Mini App.";
-		default:
-			return "The strategy could not be saved.";
-	}
+export function strategyErrorMessage(
+	error: ErrorType<ErrorResponse> | null,
+): string {
+	return describeApiError(error, {
+		fallback: "The strategy could not be saved.",
+		forbidden: "Only the scanner administrator can change strategies.",
+		messages: {
+			strategy_exists: "Another strategy has this name.",
+			strategy_not_found: "This strategy no longer exists.",
+		},
+		server: ["invalid_argument"],
+	});
 }
 
 // Select data for indicator variables, grouped by candle interval.

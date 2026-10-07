@@ -16,10 +16,17 @@ const (
 	IntervalMonth CandleInterval = "1M"
 )
 
-// HistoryDepth is the number of closed candles backfilled and kept per
-// instrument and interval; the retention pruner deletes older ones. It also
-// bounds chart ranges and analysis periods.
-const HistoryDepth = 2000
+// SyncDepth is the number of closed candles synchronization backfills and
+// keeps complete per instrument and interval. It bounds chart ranges,
+// indicator warm-ups and parameters, analysis periods, and what strategies
+// read, so everything live works on the synchronized history alone.
+const SyncDepth = 2000
+
+// RetentionDepth is the number of closed candles kept per instrument and
+// interval; the retention pruner deletes older ones. Candles beyond SyncDepth
+// come from on-demand history loads and from synchronized candles
+// accumulating, and serve backtests.
+const RetentionDepth = 20000
 
 // CandleIntervals returns the supported intervals in increasing granularity.
 func CandleIntervals() []CandleInterval {

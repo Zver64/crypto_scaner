@@ -17,12 +17,17 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { BacktestSymbolName } from './backtestSymbolName.ts';
 
 export type BacktestStrategyParams = {
 /**
  * Market symbol of the replayed coin.
- * @minLength 1
- * @maxLength 32
  */
-symbol: string;
+symbol: BacktestSymbolName;
+/**
+ * Candles of the interval every trade holds; omitted, the default of the interval: `1h` 24, `1d` 7, `1w` 4, `1M` 3.
+ * @minimum 1
+ * @maximum 1000
+ */
+hold?: number;
 };

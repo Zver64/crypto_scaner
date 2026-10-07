@@ -61,7 +61,9 @@ type Dependencies struct {
 	GridLimits   GridLimits
 	// Sessions issues session tokens and authenticates HTTP and WebSocket
 	// requests by them.
-	Sessions    Sessions
+	Sessions Sessions
+	// APITokens serves the administrator's API tokens.
+	APITokens   APITokens
 	Chart       ChartService
 	LiveCandles LiveCandles
 	Favorites   Favorites
@@ -73,6 +75,8 @@ type Dependencies struct {
 	Users Users
 	// Strategies serves the administrator's strategies.
 	Strategies Strategies
+	// HistoryLoads loads deeper candle history for backtests.
+	HistoryLoads HistoryLoads
 }
 
 type Options struct {
@@ -90,11 +94,13 @@ type api struct {
 	alerts     PriceAlerts
 	chart      ChartService
 	sessions   Sessions
+	apiTokens  APITokens
 
 	scannerIndicators ScannerIndicators
 	indicatorTypes    IndicatorTypes
 	users             Users
 	strategies        Strategies
+	historyLoads      HistoryLoads
 }
 
 var _ StrictServerInterface = (*api)(nil)
@@ -107,6 +113,7 @@ var protectedRoutes = []string{
 	"GET /api/v1/instruments/{symbol}/candles",
 	"GET /api/v1/instruments/{symbol}/grid-limits",
 	"GET /api/v1/chart/indicators",
+	"GET /api/v1/instruments",
 	"GET /api/v1/favorites",
 	"PUT /api/v1/favorites/{symbol}",
 	"DELETE /api/v1/favorites/{symbol}",
@@ -142,6 +149,11 @@ var administratorRoutes = []string{
 	"PATCH /api/v1/admin/strategies/{strategy_id}",
 	"DELETE /api/v1/admin/strategies/{strategy_id}",
 	"GET /api/v1/admin/strategies/{strategy_id}/backtest",
+	"POST /api/v1/admin/candle-history-loads",
+	"GET /api/v1/admin/candle-history-loads",
+	"GET /api/v1/admin/api-tokens",
+	"POST /api/v1/admin/api-tokens",
+	"DELETE /api/v1/admin/api-tokens/{token_id}",
 }
 
 // New returns the service HTTP handler with process-wide middleware applied.
@@ -151,8 +163,8 @@ func New(logger *slog.Logger, dependencies Dependencies, options Options) http.H
 
 func newHandler(logger *slog.Logger, dependencies Dependencies, options Options, authenticate func(http.Handler) http.Handler) http.Handler {
 	operations := http.NewServeMux()
-	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, gridLimits: dependencies.GridLimits, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart, sessions: dependencies.Sessions,
-		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes, users: dependencies.Users, strategies: dependencies.Strategies}
+	handlers := &api{logger: logger, readiness: dependencies.Readiness, analysis: dependencies.Analysis, tables: dependencies.MarketTables, history: dependencies.History, gridLimits: dependencies.GridLimits, favorites: dependencies.Favorites, alerts: dependencies.Alerts, chart: dependencies.Chart, sessions: dependencies.Sessions, apiTokens: dependencies.APITokens,
+		scannerIndicators: dependencies.ScannerIndicators, indicatorTypes: dependencies.IndicatorTypes, users: dependencies.Users, strategies: dependencies.Strategies, historyLoads: dependencies.HistoryLoads}
 	strict := NewStrictHandlerWithOptions(handlers, nil, StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: openAPIRequestError,
 		ResponseErrorHandlerFunc: func(response http.ResponseWriter, request *http.Request, err error) {

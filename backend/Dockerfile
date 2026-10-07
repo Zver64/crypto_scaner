@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
     cp -a /talib-cache/. /root/.cache/go-build/ && \
     CGO_ENABLED=1 go build -trimpath \
-        -ldflags="-s -w -linkmode external -extldflags -static" -o /out/ ./cmd/...
+        -ldflags="-s -w -linkmode external -extldflags -static" -o /out/ ./cmd/crypto-scanner ./cmd/migrate
 
 # The binaries are linked statically against musl, so they need no libc.
 # Distroless static ships CA certificates and time zone data, runs as a

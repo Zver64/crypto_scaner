@@ -15,7 +15,6 @@ export function StrategySelect({ onChange, strategy }: StrategySelectProps) {
 	return (
 		<Select
 			allowDeselect={false}
-			aria-label="Strategy"
 			data={(strategies.data ?? []).map(({ enabled, id, name, valid }) => ({
 				disabled: !valid,
 				label: !valid
@@ -31,7 +30,8 @@ export function StrategySelect({ onChange, strategy }: StrategySelectProps) {
 			onChange={(value) => {
 				if (value !== null) onChange(Number(value));
 			}}
-			placeholder="Strategy"
+			label="Strategy"
+			placeholder="Choose a strategy"
 			searchable
 			value={strategy === undefined ? null : String(strategy)}
 		/>

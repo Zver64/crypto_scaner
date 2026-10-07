@@ -25,13 +25,16 @@ func (q *Queries) DeleteScannerIndicator(ctx context.Context, id int64) (int64, 
 
 const deleteUnusedScannerIndicators = `-- name: DeleteUnusedScannerIndicators :many
 DELETE FROM app.scanner_indicators AS indicators
-WHERE NOT EXISTS (
+WHERE NOT indicators.show_in_table
+    AND NOT indicators.show_in_chart
+    AND NOT EXISTS (
         SELECT 1 FROM app.strategy_indicators AS used
         WHERE used.indicator_id = indicators.id
     )
 RETURNING indicators.id
 `
 
+// Unused: read by no strategy, and shown in no market table and on no chart.
 func (q *Queries) DeleteUnusedScannerIndicators(ctx context.Context) ([]int64, error) {
 	rows, err := q.db.Query(ctx, deleteUnusedScannerIndicators)
 	if err != nil {

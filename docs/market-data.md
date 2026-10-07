@@ -7,12 +7,39 @@ The backend stores closed Binance Spot/USDT candles for `1h`, `1d`, `1w`, and
 00:00 UTC and months begin on the first day at 00:00 UTC. Forming candles are
 not stored or returned by the chart API.
 
-A newly discovered instrument receives one Binance page, up to 1,000 candles,
-for each interval. This is initial coverage, not a retention cap. Later runs
-retain all stored rows and request only intervals after the latest stored open
-time. Catch-up is paginated when an outage spans more than one Binance page.
-Internal gaps within the latest 1,000 stored rows are grouped into bounded ranges
-and repaired without downloading the whole window.
+Synchronization keeps the latest 2,000 closed candles (`market.SyncDepth`) of
+every instrument and interval complete. A newly discovered instrument receives
+the newest Binance page, up to 1,000 candles, and older pages follow as
+history repair until it has 2,000 candles or Binance has no older ones, which
+is recorded as coverage and retried after a week. Later runs request only
+intervals after the latest stored open time. Catch-up is paginated when an
+outage spans more than one Binance page. Internal gaps within the latest 2,000
+stored rows are grouped into bounded ranges and repaired without downloading
+the whole window.
+
+Stored candles accumulate beyond that depth up to 20,000 per instrument and
+interval (`market.RetentionDepth`); the weekly retention pruner deletes older
+ones. Because synchronization covers every active instrument, every hourly
+history grows by about 8,760 rows a year until it reaches 20,000 (about 2.3
+years), so hourly candle storage grows up to tenfold over the former 2,000-row
+cap; daily, weekly, and monthly histories grow by 365, 52, and 12 rows a year.
+
+Backtests read only stored candles, up to 20,000, and never call Binance. Only
+the administrator loads deeper history, from the Commands section of the Mini
+App: `POST /api/v1/admin/candle-history-loads` starts a background job that
+extends the named coins and intervals backwards to the requested depth (2,001
+to 20,000 candles) or to Binance's oldest candle, at most one request per
+second, and `GET` on the same path shows its progress. One job runs at a time;
+it is kept in memory only, so a restart stops it and forgets it. Already
+committed pages remain stored if a later page fails; `history_changed` reports
+these changes even when the job fails, and retrying resumes from stored
+history. A coin and interval without stored candles is skipped as `not_ready`
+until its initial synchronization stores them, and the job goes on with the
+other pairs. The server
+refuses to start a load for a request authenticated with an API token
+(`session_required`), and the `scanner` CLI has no such command, so agents
+cannot trigger Binance loads. Synchronization never inspects rows older than
+its latest 2,000, so deeper rows are neither refetched nor repaired.
 
 The authenticated candle endpoint uses keyset pagination:
 

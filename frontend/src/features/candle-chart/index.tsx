@@ -46,7 +46,7 @@ import {
 	createIndicatorData,
 	createIndicatorLegend,
 	createIndicatorPanes,
-	createMarkerData,
+	createMarkerDataSelector,
 	formatChartTime,
 } from "@/features/candle-chart/utils";
 import { VolumeSeries } from "@/features/candle-chart/volume-series";
@@ -101,9 +101,13 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		[candles, interval],
 	);
 	const priceFormat = usePriceFormat(data);
+	const selectMarkerData = useMemo(
+		() => markers && createMarkerDataSelector(markers, interval),
+		[markers, interval],
+	);
 	const markerData = useMemo(
-		() => markers && createMarkerData(data, markers, interval),
-		[data, markers, interval],
+		() => selectMarkerData?.(data),
+		[data, selectMarkerData],
 	);
 	// Aligns every indicator line with the candle slots, keyed by "id:output".
 	const indicatorData = useMemo(

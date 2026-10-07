@@ -30,9 +30,12 @@ const (
 	APIErrorCodeAdministratorRequired      APIErrorCode = "administrator_required"
 	APIErrorCodeAlertLimit                 APIErrorCode = "alert_limit"
 	APIErrorCodeAlertNotFound              APIErrorCode = "alert_not_found"
+	APIErrorCodeApiTokenNotFound           APIErrorCode = "api_token_not_found"
+	APIErrorCodeBacktestTooHeavy           APIErrorCode = "backtest_too_heavy"
 	APIErrorCodeDuplicateTarget            APIErrorCode = "duplicate_target"
 	APIErrorCodeFavoriteHasAlerts          APIErrorCode = "favorite_has_alerts"
 	APIErrorCodeFavoriteNotFound           APIErrorCode = "favorite_not_found"
+	APIErrorCodeHistoryLoadRunning         APIErrorCode = "history_load_running"
 	APIErrorCodeInstrumentUsedByStrategy   APIErrorCode = "instrument_used_by_strategy"
 	APIErrorCodeInsufficientData           APIErrorCode = "insufficient_data"
 	APIErrorCodeInternalError              APIErrorCode = "internal_error"
@@ -47,6 +50,7 @@ const (
 	APIErrorCodeScannerIndicatorInUse      APIErrorCode = "scanner_indicator_in_use"
 	APIErrorCodeScannerIndicatorLimit      APIErrorCode = "scanner_indicator_limit"
 	APIErrorCodeScannerIndicatorNotFound   APIErrorCode = "scanner_indicator_not_found"
+	APIErrorCodeSessionRequired            APIErrorCode = "session_required"
 	APIErrorCodeStrategyExists             APIErrorCode = "strategy_exists"
 	APIErrorCodeStrategyNotFound           APIErrorCode = "strategy_not_found"
 	APIErrorCodeSymbolNotFound             APIErrorCode = "symbol_not_found"
@@ -67,11 +71,17 @@ func (e APIErrorCode) Valid() bool {
 		return true
 	case APIErrorCodeAlertNotFound:
 		return true
+	case APIErrorCodeApiTokenNotFound:
+		return true
+	case APIErrorCodeBacktestTooHeavy:
+		return true
 	case APIErrorCodeDuplicateTarget:
 		return true
 	case APIErrorCodeFavoriteHasAlerts:
 		return true
 	case APIErrorCodeFavoriteNotFound:
+		return true
+	case APIErrorCodeHistoryLoadRunning:
 		return true
 	case APIErrorCodeInstrumentUsedByStrategy:
 		return true
@@ -101,6 +111,8 @@ func (e APIErrorCode) Valid() bool {
 		return true
 	case APIErrorCodeScannerIndicatorNotFound:
 		return true
+	case APIErrorCodeSessionRequired:
+		return true
 	case APIErrorCodeStrategyExists:
 		return true
 	case APIErrorCodeStrategyNotFound:
@@ -110,6 +122,27 @@ func (e APIErrorCode) Valid() bool {
 	case APIErrorCodeUnauthenticated:
 		return true
 	case APIErrorCodeUserNotFound:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CandleHistoryLoadJobStatus.
+const (
+	Done    CandleHistoryLoadJobStatus = "done"
+	Failed  CandleHistoryLoadJobStatus = "failed"
+	Running CandleHistoryLoadJobStatus = "running"
+)
+
+// Valid indicates whether the value is a known member of the CandleHistoryLoadJobStatus enum.
+func (e CandleHistoryLoadJobStatus) Valid() bool {
+	switch e {
+	case Done:
+		return true
+	case Failed:
+		return true
+	case Running:
 		return true
 	default:
 		return false
@@ -528,6 +561,93 @@ type APIError struct {
 // APIErrorCode defines model for APIError.Code.
 type APIErrorCode string
 
+// ApiToken defines model for ApiToken.
+type ApiToken struct {
+	CreatedAt time.Time `json:"created_at"`
+	Id        int64     `json:"id"`
+
+	// LastUsedAt Last authenticated request, recorded at most once a minute; absent until the first use.
+	LastUsedAt *time.Time `json:"last_used_at,omitempty"`
+	Name       string     `json:"name"`
+}
+
+// ApiTokenInput defines model for ApiTokenInput.
+type ApiTokenInput struct {
+	// Name Where the token is used, such as `laptop CLI`. Surrounding whitespace is trimmed; a blank name is rejected.
+	Name string `json:"name"`
+}
+
+// ApiTokenList defines model for ApiTokenList.
+type ApiTokenList struct {
+	Items []ApiToken `json:"items"`
+}
+
+// BacktestBaselines References over the same evaluated period, net of the same fees.
+type BacktestBaselines struct {
+	// BuyAndHold Return from the open of the candle after the first evaluated candle to the close of the last; null when fewer than two candles are evaluated.
+	BuyAndHold *float64 `json:"buy_and_hold"`
+
+	// EveryCandle Every evaluated candle taken as an alert with the same hold, trades overlapping; unfinished ones are left out.
+	EveryCandle BacktestTradeStats `json:"every_candle"`
+}
+
+// BacktestEquityPoint defines model for BacktestEquityPoint.
+type BacktestEquityPoint struct {
+	Equity float64 `json:"equity"`
+
+	// Time Exit time of the trade, the open time of its exit candle.
+	Time time.Time `json:"time"`
+}
+
+// BacktestSummary Results of the strategy's closed trades.
+type BacktestSummary struct {
+	// MaxDrawdown Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at trade exits; 0 without falls.
+	MaxDrawdown float64 `json:"max_drawdown"`
+
+	// NetProfit Compounded net return of the closed trades; 0 without trades.
+	NetProfit float64 `json:"net_profit"`
+
+	// Stats Statistics of net trade returns.
+	Stats BacktestTradeStats `json:"stats"`
+}
+
+// BacktestSymbolName Market symbol, such as `BTCUSDT`.
+type BacktestSymbolName = string
+
+// BacktestTrade defines model for BacktestTrade.
+type BacktestTrade struct {
+	EntryPrice float64 `json:"entry_price"`
+
+	// EntryTime Open time of the entry candle; the trade buys at its open.
+	EntryTime time.Time `json:"entry_time"`
+	ExitPrice float64   `json:"exit_price"`
+
+	// ExitTime Open time of the exit candle; the trade sells at its close.
+	ExitTime time.Time `json:"exit_time"`
+
+	// NetReturn Return net of the fees on both sides.
+	NetReturn float64 `json:"net_return"`
+}
+
+// BacktestTradeStats Statistics of net trade returns.
+type BacktestTradeStats struct {
+	// AverageLoss Mean negative return; null without losses.
+	AverageLoss *float64 `json:"average_loss"`
+
+	// AverageTrade Mean return; null without trades.
+	AverageTrade *float64 `json:"average_trade"`
+
+	// AverageWin Mean positive return; null without wins.
+	AverageWin *float64 `json:"average_win"`
+
+	// ProfitFactor Sum of positive returns over the sum of negative ones, as a positive number; null without losses.
+	ProfitFactor *float64 `json:"profit_factor"`
+	TradeCount   int      `json:"trade_count"`
+
+	// WinRate Share of positive returns, from 0 to 1; null without trades.
+	WinRate *float64 `json:"win_rate"`
+}
+
 // Candle defines model for Candle.
 type Candle struct {
 	Close            float64   `json:"close"`
@@ -540,6 +660,55 @@ type Candle struct {
 	TradeCount       int64     `json:"trade_count"`
 	Volume           float64   `json:"volume"`
 }
+
+// CandleHistoryLoad defines model for CandleHistoryLoad.
+type CandleHistoryLoad struct {
+	// Count Stored closed candles, at most 20,000; 0 before the coin's first synchronization.
+	Count int `json:"count"`
+
+	// Exhausted Binance has no older candles.
+	Exhausted bool           `json:"exhausted"`
+	Interval  CandleInterval `json:"interval"`
+
+	// NotReady Skipped because the coin has no synchronized candles on this interval yet, such as a coin listed this month on `1M`; synchronization backfills it first, and the job goes on with the other pairs.
+	NotReady bool `json:"not_ready"`
+
+	// OldestOpenTime Open time of the oldest of them; null without candles.
+	OldestOpenTime *time.Time `json:"oldest_open_time"`
+	Symbol         string     `json:"symbol"`
+}
+
+// CandleHistoryLoadInput defines model for CandleHistoryLoadInput.
+type CandleHistoryLoadInput struct {
+	// Depth Closed candles to keep per coin and interval, beyond the 2,000 synchronization keeps.
+	Depth     int                  `json:"depth"`
+	Intervals []CandleInterval     `json:"intervals"`
+	Symbols   []BacktestSymbolName `json:"symbols"`
+}
+
+// CandleHistoryLoadJob defines model for CandleHistoryLoadJob.
+type CandleHistoryLoadJob struct {
+	Depth int `json:"depth"`
+
+	// Error A short reason when the job failed, such as a shutdown; the cause is in the server log. Null unless it failed.
+	Error *string `json:"error"`
+
+	// FinishedAt Null while the job runs.
+	FinishedAt *time.Time `json:"finished_at"`
+
+	// HistoryChanged The job committed candle changes, including partial loads that later failed.
+	HistoryChanged bool             `json:"history_changed"`
+	Intervals      []CandleInterval `json:"intervals"`
+
+	// Items The stored history of every successfully completed coin and interval, by coin and then interval.
+	Items     []CandleHistoryLoad        `json:"items"`
+	StartedAt time.Time                  `json:"started_at"`
+	Status    CandleHistoryLoadJobStatus `json:"status"`
+	Symbols   []string                   `json:"symbols"`
+}
+
+// CandleHistoryLoadJobStatus defines model for CandleHistoryLoadJob.Status.
+type CandleHistoryLoadJobStatus string
 
 // CandleInterval defines model for CandleInterval.
 type CandleInterval string
@@ -747,6 +916,16 @@ type InstrumentAnalysisResponse struct {
 	Warnings    []Warning    `json:"warnings"`
 }
 
+// InstrumentList defines model for InstrumentList.
+type InstrumentList struct {
+	Items []InstrumentListItem `json:"items"`
+}
+
+// InstrumentListItem defines model for InstrumentListItem.
+type InstrumentListItem struct {
+	Symbol string `json:"symbol"`
+}
+
 // InstrumentUse defines model for InstrumentUse.
 type InstrumentUse struct {
 	// Strategies Names of the strategies that read the coin.
@@ -769,6 +948,16 @@ type InsufficientDataInstrument struct {
 
 // InsufficientDataInstrumentUnit defines model for InsufficientDataInstrument.Unit.
 type InsufficientDataInstrumentUnit string
+
+// IssuedApiToken defines model for IssuedApiToken.
+type IssuedApiToken struct {
+	CreatedAt time.Time `json:"created_at"`
+	Id        int64     `json:"id"`
+	Name      string    `json:"name"`
+
+	// Token Bearer token starting with `cst_`. It is shown only once.
+	Token string `json:"token"`
+}
 
 // LiveCandleClientMessage defines model for LiveCandleClientMessage.
 type LiveCandleClientMessage struct {
@@ -1042,22 +1231,39 @@ type Strategy struct {
 	Valid bool `json:"valid"`
 }
 
-// StrategyBacktest defines model for StrategyBacktest.
+// StrategyBacktest Returns, drawdowns, and fees are fractions, such as 0.012 for 1.2%.
 type StrategyBacktest struct {
-	// Alerts Candles of the interval whose close would have alerted, oldest first.
-	Alerts []StrategyBacktestAlert `json:"alerts"`
+	// Baselines References over the same evaluated period, net of the same fees.
+	Baselines BacktestBaselines `json:"baselines"`
+
+	// Equity Equity after each closed trade, compounded from 1, oldest first.
+	Equity []BacktestEquityPoint `json:"equity"`
+
+	// Fee Fee paid on entry and again on exit, as a fraction of the traded value.
+	Fee float64 `json:"fee"`
 
 	// From Open time of the first evaluated candle of the interval; null when none is evaluated.
-	From     *time.Time     `json:"from"`
+	From *time.Time `json:"from"`
+
+	// Hold Candles of the interval every trade holds.
+	Hold     int            `json:"hold"`
 	Interval CandleInterval `json:"interval"`
+
+	// SkippedAlerts Alerts that fired while a position was open and opened no trade.
+	SkippedAlerts int `json:"skipped_alerts"`
+
+	// Summary Results of the strategy's closed trades.
+	Summary BacktestSummary `json:"summary"`
+	Symbol  string          `json:"symbol"`
 
 	// To Open time of the last evaluated candle of the interval; null when none is evaluated.
 	To *time.Time `json:"to"`
-}
 
-// StrategyBacktestAlert defines model for StrategyBacktestAlert.
-type StrategyBacktestAlert struct {
-	OpenTime time.Time `json:"open_time"`
+	// Trades Closed trades, oldest first.
+	Trades []BacktestTrade `json:"trades"`
+
+	// UnfinishedTrades Trades left out because the stored consecutive candles end or have a gap before their exit.
+	UnfinishedTrades int `json:"unfinished_trades"`
 }
 
 // StrategyEnabled defines model for StrategyEnabled.
@@ -1240,6 +1446,9 @@ type Warning struct {
 // AlertID defines model for AlertID.
 type AlertID = int64
 
+// ApiTokenID defines model for ApiTokenID.
+type ApiTokenID = int64
+
 // RequestID defines model for RequestID.
 type RequestID = string
 
@@ -1273,6 +1482,12 @@ type AlertNotFound = ErrorResponse
 // AnalysisUnavailable defines model for AnalysisUnavailable.
 type AnalysisUnavailable = ErrorResponse
 
+// ApiTokenNotFound defines model for ApiTokenNotFound.
+type ApiTokenNotFound = ErrorResponse
+
+// BacktestTooHeavy defines model for BacktestTooHeavy.
+type BacktestTooHeavy = ErrorResponse
+
 // BadRequest defines model for BadRequest.
 type BadRequest = ErrorResponse
 
@@ -1281,6 +1496,9 @@ type FavoriteConflict = ErrorResponse
 
 // FavoriteNotFound defines model for FavoriteNotFound.
 type FavoriteNotFound = ErrorResponse
+
+// HistoryLoadRunning defines model for HistoryLoadRunning.
+type HistoryLoadRunning = ErrorResponse
 
 // InsufficientData defines model for InsufficientData.
 type InsufficientData = ErrorResponse
@@ -1296,6 +1514,9 @@ type ScannerIndicatorInUse = ErrorResponse
 
 // ScannerIndicatorNotFound defines model for ScannerIndicatorNotFound.
 type ScannerIndicatorNotFound = ErrorResponse
+
+// SessionRequired defines model for SessionRequired.
+type SessionRequired = ErrorResponse
 
 // StrategyConflict defines model for StrategyConflict.
 type StrategyConflict = ErrorResponse
@@ -1318,7 +1539,10 @@ type UserNotFound = ErrorResponse
 // BacktestStrategyParams defines parameters for BacktestStrategy.
 type BacktestStrategyParams struct {
 	// Symbol Market symbol of the replayed coin.
-	Symbol string `form:"symbol" json:"symbol"`
+	Symbol BacktestSymbolName `form:"symbol" json:"symbol"`
+
+	// Hold Candles of the interval every trade holds; omitted, the default of the interval: `1h` 24, `1d` 7, `1w` 4, `1M` 3.
+	Hold *int `form:"hold,omitempty" json:"hold,omitempty"`
 }
 
 // AnalyzeInstrumentParams defines parameters for AnalyzeInstrument.
@@ -1388,6 +1612,12 @@ type GetReadinessParams struct {
 	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
 }
 
+// CreateApiTokenJSONRequestBody defines body for CreateApiToken for application/json ContentType.
+type CreateApiTokenJSONRequestBody = ApiTokenInput
+
+// StartCandleHistoryLoadJSONRequestBody defines body for StartCandleHistoryLoad for application/json ContentType.
+type StartCandleHistoryLoadJSONRequestBody = CandleHistoryLoadInput
+
 // CreateScannerIndicatorBatchJSONRequestBody defines body for CreateScannerIndicatorBatch for application/json ContentType.
 type CreateScannerIndicatorBatchJSONRequestBody = ScannerIndicatorBatch
 
@@ -1432,6 +1662,21 @@ type CreatePriceAlertJSONRequestBody = PriceAlertInput
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// ListApiTokens List the administrator's API tokens
+	// (GET /api/v1/admin/api-tokens)
+	ListApiTokens(w http.ResponseWriter, r *http.Request)
+	// CreateApiToken Issue an API token
+	// (POST /api/v1/admin/api-tokens)
+	CreateApiToken(w http.ResponseWriter, r *http.Request)
+	// DeleteApiToken Revoke an API token
+	// (DELETE /api/v1/admin/api-tokens/{token_id})
+	DeleteApiToken(w http.ResponseWriter, r *http.Request, tokenId ApiTokenID)
+	// GetCandleHistoryLoad Show the current or last history load
+	// (GET /api/v1/admin/candle-history-loads)
+	GetCandleHistoryLoad(w http.ResponseWriter, r *http.Request)
+	// StartCandleHistoryLoad Start loading deeper candle history
+	// (POST /api/v1/admin/candle-history-loads)
+	StartCandleHistoryLoad(w http.ResponseWriter, r *http.Request)
 	// ListIndicatorTypes List every indicator the scanner can calculate
 	// (GET /api/v1/admin/indicator-types)
 	ListIndicatorTypes(w http.ResponseWriter, r *http.Request)
@@ -1441,7 +1686,7 @@ type ServerInterface interface {
 	// ReorderScannerIndicators Set the display order of the scanner indicators
 	// (PUT /api/v1/admin/scanner-indicator-order)
 	ReorderScannerIndicators(w http.ResponseWriter, r *http.Request)
-	// DeleteUnusedScannerIndicators Remove every scanner indicator no strategy reads
+	// DeleteUnusedScannerIndicators Remove every unused scanner indicator
 	// (DELETE /api/v1/admin/scanner-indicators)
 	DeleteUnusedScannerIndicators(w http.ResponseWriter, r *http.Request)
 	// ListScannerIndicators List the configured scanner indicators
@@ -1471,7 +1716,7 @@ type ServerInterface interface {
 	// UpdateStrategy Change the name and expression of a strategy
 	// (PUT /api/v1/admin/strategies/{strategy_id})
 	UpdateStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID)
-	// BacktestStrategy Replay the alerts of a strategy on one coin
+	// BacktestStrategy Backtest a saved strategy on one coin
 	// (GET /api/v1/admin/strategies/{strategy_id}/backtest)
 	BacktestStrategy(w http.ResponseWriter, r *http.Request, strategyId StrategyID, params BacktestStrategyParams)
 	// ListStrategySymbols List the coins strategy expressions can read through of
@@ -1525,6 +1770,9 @@ type ServerInterface interface {
 
 	// (PUT /api/v1/favorites/{symbol})
 	AddFavorite(w http.ResponseWriter, r *http.Request, symbol Symbol)
+	// ListInstruments List the active instruments
+	// (GET /api/v1/instruments)
+	ListInstruments(w http.ResponseWriter, r *http.Request)
 
 	// (GET /api/v1/instruments/{symbol}/alerts)
 	ListPriceAlerts(w http.ResponseWriter, r *http.Request, symbol Symbol)
@@ -1556,6 +1804,88 @@ type ServerInterfaceWrapper struct {
 }
 
 type MiddlewareFunc func(http.Handler) http.Handler
+
+// ListApiTokens operation middleware
+func (siw *ServerInterfaceWrapper) ListApiTokens(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListApiTokens(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateApiToken operation middleware
+func (siw *ServerInterfaceWrapper) CreateApiToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateApiToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteApiToken operation middleware
+func (siw *ServerInterfaceWrapper) DeleteApiToken(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "token_id" -------------
+	var tokenId ApiTokenID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "token_id", r.PathValue("token_id"), &tokenId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "token_id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteApiToken(w, r, tokenId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetCandleHistoryLoad operation middleware
+func (siw *ServerInterfaceWrapper) GetCandleHistoryLoad(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetCandleHistoryLoad(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// StartCandleHistoryLoad operation middleware
+func (siw *ServerInterfaceWrapper) StartCandleHistoryLoad(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.StartCandleHistoryLoad(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
 
 // ListIndicatorTypes operation middleware
 func (siw *ServerInterfaceWrapper) ListIndicatorTypes(w http.ResponseWriter, r *http.Request) {
@@ -1826,6 +2156,19 @@ func (siw *ServerInterfaceWrapper) BacktestStrategy(w http.ResponseWriter, r *ht
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "symbol"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "symbol", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "hold" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "hold", r.URL.Query(), &params.Hold, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "hold"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "hold", Err: err})
 		}
 		return
 	}
@@ -2303,6 +2646,20 @@ func (siw *ServerInterfaceWrapper) AddFavorite(w http.ResponseWriter, r *http.Re
 	handler.ServeHTTP(w, r)
 }
 
+// ListInstruments operation middleware
+func (siw *ServerInterfaceWrapper) ListInstruments(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListInstruments(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListPriceAlerts operation middleware
 func (siw *ServerInterfaceWrapper) ListPriceAlerts(w http.ResponseWriter, r *http.Request) {
 
@@ -2719,6 +3076,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instruments/{symbol}/candles", wrapper.ListInstrumentCandles)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instruments/{symbol}/grid-limits", wrapper.GetInstrumentGridLimits)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/chart/indicators", wrapper.ListChartIndicators)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/instruments", wrapper.ListInstruments)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/favorites", wrapper.ListFavorites)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/favorites/{symbol}", wrapper.RemoveFavorite)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/favorites/{symbol}", wrapper.AddFavorite)
@@ -2748,6 +3106,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.SetStrategyEnabled)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}", wrapper.UpdateStrategy)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategies/{strategy_id}/backtest", wrapper.BacktestStrategy)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/candle-history-loads", wrapper.GetCandleHistoryLoad)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/candle-history-loads", wrapper.StartCandleHistoryLoad)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/api-tokens", wrapper.ListApiTokens)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/api-tokens", wrapper.CreateApiToken)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/admin/api-tokens/{token_id}", wrapper.DeleteApiToken)
 
 	return m
 }
@@ -2778,6 +3141,17 @@ type AnalysisUnavailableJSONResponse struct {
 	Headers AnalysisUnavailableResponseHeaders
 }
 
+type ApiTokenNotFoundJSONResponse ErrorResponse
+
+type BacktestTooHeavyResponseHeaders struct {
+	XRequestID string
+}
+type BacktestTooHeavyJSONResponse struct {
+	Body ErrorResponse
+
+	Headers BacktestTooHeavyResponseHeaders
+}
+
 type BadRequestResponseHeaders struct {
 	XRequestID string
 }
@@ -2790,6 +3164,15 @@ type BadRequestJSONResponse struct {
 type FavoriteConflictJSONResponse ErrorResponse
 
 type FavoriteNotFoundJSONResponse ErrorResponse
+
+type HistoryLoadRunningResponseHeaders struct {
+	XRequestID string
+}
+type HistoryLoadRunningJSONResponse struct {
+	Body ErrorResponse
+
+	Headers HistoryLoadRunningResponseHeaders
+}
 
 type InsufficientDataResponseHeaders struct {
 	XRequestID string
@@ -2814,6 +3197,15 @@ type ScannerIndicatorConflictJSONResponse ErrorResponse
 type ScannerIndicatorInUseJSONResponse ErrorResponse
 
 type ScannerIndicatorNotFoundJSONResponse ErrorResponse
+
+type SessionRequiredResponseHeaders struct {
+	XRequestID string
+}
+type SessionRequiredJSONResponse struct {
+	Body ErrorResponse
+
+	Headers SessionRequiredResponseHeaders
+}
 
 type StrategyConflictJSONResponse ErrorResponse
 
@@ -2847,6 +3239,416 @@ type UnprocessableAnalysisJSONResponse struct {
 }
 
 type UserNotFoundJSONResponse ErrorResponse
+
+type ListApiTokensRequestObject struct {
+}
+
+type ListApiTokensResponseObject interface {
+	VisitListApiTokensResponse(w http.ResponseWriter) error
+}
+
+type ListApiTokens200JSONResponse ApiTokenList
+
+func (response ListApiTokens200JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListApiTokens401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListApiTokens401JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListApiTokens403JSONResponse struct{ SessionRequiredJSONResponse }
+
+func (response ListApiTokens403JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListApiTokens500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListApiTokens500JSONResponse) VisitListApiTokensResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiTokenRequestObject struct {
+	Body *CreateApiTokenJSONRequestBody
+}
+
+type CreateApiTokenResponseObject interface {
+	VisitCreateApiTokenResponse(w http.ResponseWriter) error
+}
+
+type CreateApiToken201JSONResponse IssuedApiToken
+
+func (response CreateApiToken201JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiToken400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response CreateApiToken400JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiToken401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response CreateApiToken401JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiToken403JSONResponse struct{ SessionRequiredJSONResponse }
+
+func (response CreateApiToken403JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateApiToken500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response CreateApiToken500JSONResponse) VisitCreateApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteApiTokenRequestObject struct {
+	TokenId ApiTokenID `json:"token_id"`
+}
+
+type DeleteApiTokenResponseObject interface {
+	VisitDeleteApiTokenResponse(w http.ResponseWriter) error
+}
+
+type DeleteApiToken204Response struct {
+}
+
+func (response DeleteApiToken204Response) VisitDeleteApiTokenResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteApiToken401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response DeleteApiToken401JSONResponse) VisitDeleteApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteApiToken403JSONResponse struct{ SessionRequiredJSONResponse }
+
+func (response DeleteApiToken403JSONResponse) VisitDeleteApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteApiToken404JSONResponse struct{ ApiTokenNotFoundJSONResponse }
+
+func (response DeleteApiToken404JSONResponse) VisitDeleteApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteApiToken500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response DeleteApiToken500JSONResponse) VisitDeleteApiTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCandleHistoryLoadRequestObject struct {
+}
+
+type GetCandleHistoryLoadResponseObject interface {
+	VisitGetCandleHistoryLoadResponse(w http.ResponseWriter) error
+}
+
+type GetCandleHistoryLoad200JSONResponse CandleHistoryLoadJob
+
+func (response GetCandleHistoryLoad200JSONResponse) VisitGetCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCandleHistoryLoad204Response struct {
+}
+
+func (response GetCandleHistoryLoad204Response) VisitGetCandleHistoryLoadResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type GetCandleHistoryLoad401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetCandleHistoryLoad401JSONResponse) VisitGetCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCandleHistoryLoad403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response GetCandleHistoryLoad403JSONResponse) VisitGetCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetCandleHistoryLoad500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetCandleHistoryLoad500JSONResponse) VisitGetCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCandleHistoryLoadRequestObject struct {
+	Body *StartCandleHistoryLoadJSONRequestBody
+}
+
+type StartCandleHistoryLoadResponseObject interface {
+	VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error
+}
+
+type StartCandleHistoryLoad202JSONResponse CandleHistoryLoadJob
+
+func (response StartCandleHistoryLoad202JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(202)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCandleHistoryLoad400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response StartCandleHistoryLoad400JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCandleHistoryLoad401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response StartCandleHistoryLoad401JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCandleHistoryLoad403JSONResponse struct{ SessionRequiredJSONResponse }
+
+func (response StartCandleHistoryLoad403JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCandleHistoryLoad404JSONResponse struct{ SymbolNotFoundJSONResponse }
+
+func (response StartCandleHistoryLoad404JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCandleHistoryLoad409JSONResponse struct{ HistoryLoadRunningJSONResponse }
+
+func (response StartCandleHistoryLoad409JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type StartCandleHistoryLoad500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response StartCandleHistoryLoad500JSONResponse) VisitStartCandleHistoryLoadResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
 
 type ListIndicatorTypesRequestObject struct {
 }
@@ -4087,6 +4889,21 @@ func (response BacktestStrategy500JSONResponse) VisitBacktestStrategyResponse(w 
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
 	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type BacktestStrategy503JSONResponse struct{ BacktestTooHeavyJSONResponse }
+
+func (response BacktestStrategy503JSONResponse) VisitBacktestStrategyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5584,6 +6401,72 @@ func (response AddFavorite500JSONResponse) VisitAddFavoriteResponse(w http.Respo
 	return err
 }
 
+type ListInstrumentsRequestObject struct {
+}
+
+type ListInstrumentsResponseObject interface {
+	VisitListInstrumentsResponse(w http.ResponseWriter) error
+}
+
+type ListInstruments200JSONResponse InstrumentList
+
+func (response ListInstruments200JSONResponse) VisitListInstrumentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstruments401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response ListInstruments401JSONResponse) VisitListInstrumentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstruments403JSONResponse struct{ AccessDeniedJSONResponse }
+
+func (response ListInstruments403JSONResponse) VisitListInstrumentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListInstruments500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response ListInstruments500JSONResponse) VisitListInstrumentsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListPriceAlertsRequestObject struct {
 	Symbol Symbol `json:"symbol"`
 }
@@ -6142,6 +7025,21 @@ func (response GetReadiness503JSONResponse) VisitGetReadinessResponse(w http.Res
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
+	// ListApiTokens List the administrator's API tokens
+	// (GET /api/v1/admin/api-tokens)
+	ListApiTokens(ctx context.Context, request ListApiTokensRequestObject) (ListApiTokensResponseObject, error)
+	// CreateApiToken Issue an API token
+	// (POST /api/v1/admin/api-tokens)
+	CreateApiToken(ctx context.Context, request CreateApiTokenRequestObject) (CreateApiTokenResponseObject, error)
+	// DeleteApiToken Revoke an API token
+	// (DELETE /api/v1/admin/api-tokens/{token_id})
+	DeleteApiToken(ctx context.Context, request DeleteApiTokenRequestObject) (DeleteApiTokenResponseObject, error)
+	// GetCandleHistoryLoad Show the current or last history load
+	// (GET /api/v1/admin/candle-history-loads)
+	GetCandleHistoryLoad(ctx context.Context, request GetCandleHistoryLoadRequestObject) (GetCandleHistoryLoadResponseObject, error)
+	// StartCandleHistoryLoad Start loading deeper candle history
+	// (POST /api/v1/admin/candle-history-loads)
+	StartCandleHistoryLoad(ctx context.Context, request StartCandleHistoryLoadRequestObject) (StartCandleHistoryLoadResponseObject, error)
 	// ListIndicatorTypes List every indicator the scanner can calculate
 	// (GET /api/v1/admin/indicator-types)
 	ListIndicatorTypes(ctx context.Context, request ListIndicatorTypesRequestObject) (ListIndicatorTypesResponseObject, error)
@@ -6151,7 +7049,7 @@ type StrictServerInterface interface {
 	// ReorderScannerIndicators Set the display order of the scanner indicators
 	// (PUT /api/v1/admin/scanner-indicator-order)
 	ReorderScannerIndicators(ctx context.Context, request ReorderScannerIndicatorsRequestObject) (ReorderScannerIndicatorsResponseObject, error)
-	// DeleteUnusedScannerIndicators Remove every scanner indicator no strategy reads
+	// DeleteUnusedScannerIndicators Remove every unused scanner indicator
 	// (DELETE /api/v1/admin/scanner-indicators)
 	DeleteUnusedScannerIndicators(ctx context.Context, request DeleteUnusedScannerIndicatorsRequestObject) (DeleteUnusedScannerIndicatorsResponseObject, error)
 	// ListScannerIndicators List the configured scanner indicators
@@ -6181,7 +7079,7 @@ type StrictServerInterface interface {
 	// UpdateStrategy Change the name and expression of a strategy
 	// (PUT /api/v1/admin/strategies/{strategy_id})
 	UpdateStrategy(ctx context.Context, request UpdateStrategyRequestObject) (UpdateStrategyResponseObject, error)
-	// BacktestStrategy Replay the alerts of a strategy on one coin
+	// BacktestStrategy Backtest a saved strategy on one coin
 	// (GET /api/v1/admin/strategies/{strategy_id}/backtest)
 	BacktestStrategy(ctx context.Context, request BacktestStrategyRequestObject) (BacktestStrategyResponseObject, error)
 	// ListStrategySymbols List the coins strategy expressions can read through of
@@ -6235,6 +7133,9 @@ type StrictServerInterface interface {
 
 	// (PUT /api/v1/favorites/{symbol})
 	AddFavorite(ctx context.Context, request AddFavoriteRequestObject) (AddFavoriteResponseObject, error)
+	// ListInstruments List the active instruments
+	// (GET /api/v1/instruments)
+	ListInstruments(ctx context.Context, request ListInstrumentsRequestObject) (ListInstrumentsResponseObject, error)
 
 	// (GET /api/v1/instruments/{symbol}/alerts)
 	ListPriceAlerts(ctx context.Context, request ListPriceAlertsRequestObject) (ListPriceAlertsResponseObject, error)
@@ -6295,6 +7196,142 @@ type strictHandler struct {
 	ssi         StrictServerInterface
 	middlewares []StrictMiddlewareFunc
 	options     StrictHTTPServerOptions
+}
+
+// ListApiTokens operation middleware
+func (sh *strictHandler) ListApiTokens(w http.ResponseWriter, r *http.Request) {
+	var request ListApiTokensRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListApiTokens(ctx, request.(ListApiTokensRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListApiTokens")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListApiTokensResponseObject); ok {
+		if err := validResponse.VisitListApiTokensResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateApiToken operation middleware
+func (sh *strictHandler) CreateApiToken(w http.ResponseWriter, r *http.Request) {
+	var request CreateApiTokenRequestObject
+
+	var body CreateApiTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateApiToken(ctx, request.(CreateApiTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateApiToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateApiTokenResponseObject); ok {
+		if err := validResponse.VisitCreateApiTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteApiToken operation middleware
+func (sh *strictHandler) DeleteApiToken(w http.ResponseWriter, r *http.Request, tokenId ApiTokenID) {
+	var request DeleteApiTokenRequestObject
+
+	request.TokenId = tokenId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteApiToken(ctx, request.(DeleteApiTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteApiToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteApiTokenResponseObject); ok {
+		if err := validResponse.VisitDeleteApiTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetCandleHistoryLoad operation middleware
+func (sh *strictHandler) GetCandleHistoryLoad(w http.ResponseWriter, r *http.Request) {
+	var request GetCandleHistoryLoadRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetCandleHistoryLoad(ctx, request.(GetCandleHistoryLoadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetCandleHistoryLoad")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetCandleHistoryLoadResponseObject); ok {
+		if err := validResponse.VisitGetCandleHistoryLoadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// StartCandleHistoryLoad operation middleware
+func (sh *strictHandler) StartCandleHistoryLoad(w http.ResponseWriter, r *http.Request) {
+	var request StartCandleHistoryLoadRequestObject
+
+	var body StartCandleHistoryLoadJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.StartCandleHistoryLoad(ctx, request.(StartCandleHistoryLoadRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "StartCandleHistoryLoad")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(StartCandleHistoryLoadResponseObject); ok {
+		if err := validResponse.VisitStartCandleHistoryLoadResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
 }
 
 // ListIndicatorTypes operation middleware
@@ -7169,6 +8206,30 @@ func (sh *strictHandler) AddFavorite(w http.ResponseWriter, r *http.Request, sym
 	}
 }
 
+// ListInstruments operation middleware
+func (sh *strictHandler) ListInstruments(w http.ResponseWriter, r *http.Request) {
+	var request ListInstrumentsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListInstruments(ctx, request.(ListInstrumentsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListInstruments")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListInstrumentsResponseObject); ok {
+		if err := validResponse.VisitListInstrumentsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListPriceAlerts operation middleware
 func (sh *strictHandler) ListPriceAlerts(w http.ResponseWriter, r *http.Request, symbol Symbol) {
 	var request ListPriceAlertsRequestObject
@@ -7363,176 +8424,230 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
-	"zKt+848c7+faM+392HDJ+OM25d39+/v/HwAA//8=",
+	"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",
+	"V07wc+N6CH5smWTCcdv87v7n+/8fAAD//w==",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

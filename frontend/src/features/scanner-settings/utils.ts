@@ -1,5 +1,7 @@
+import type { ErrorType } from "@/api/fetch";
 import type {
 	CandleInterval,
+	ErrorResponse,
 	IndicatorType,
 	ScannerIndicator,
 	ScannerIndicatorInput,
@@ -11,6 +13,7 @@ import type {
 	ScaleDraft,
 	ScannerIndicatorDraft,
 } from "@/features/scanner-settings/types";
+import { describeApiError } from "@/utils/api-error";
 
 export function defaultParameterValues(type: IndicatorType): ParameterValues {
 	return Object.fromEntries(
@@ -157,27 +160,21 @@ export function formatScale(scale: ScannerIndicatorScale): string {
 }
 
 // Validation and conflict messages come from the backend.
-export function mutationErrorMessage(error: unknown): string {
-	const info = (
-		error as { info?: { error?: { code?: unknown; message?: unknown } } }
-	).info?.error;
-	switch (info?.code) {
-		case "invalid_argument":
-		case "scanner_indicator_exists":
-		case "scanner_indicator_limit":
-			return typeof info.message === "string"
-				? info.message
-				: "The indicator could not be saved.";
-		case "scanner_indicator_not_found":
-			return "This indicator no longer exists.";
-		case "scanner_indicator_in_use":
-			return "A strategy uses this indicator. Change or delete the strategy first.";
-		case "administrator_required":
-		case "access_denied":
-			return "Only the scanner administrator can change indicators.";
-		case "unauthenticated":
-			return "Telegram authorization has expired. Reopen the Mini App.";
-		default:
-			return "The indicator could not be saved.";
-	}
+export function mutationErrorMessage(
+	error: ErrorType<ErrorResponse> | null,
+): string {
+	return describeApiError(error, {
+		fallback: "The indicator could not be saved.",
+		forbidden: "Only the scanner administrator can change indicators.",
+		messages: {
+			scanner_indicator_in_use:
+				"A strategy uses this indicator. Change or delete the strategy first.",
+			scanner_indicator_not_found: "This indicator no longer exists.",
+		},
+		server: [
+			"invalid_argument",
+			"scanner_indicator_exists",
+			"scanner_indicator_limit",
+		],
+	});
 }

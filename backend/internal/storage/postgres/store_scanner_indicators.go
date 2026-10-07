@@ -120,8 +120,8 @@ func (store *Store) ReorderScannerIndicators(ctx context.Context, ids []int64) e
 	return nil
 }
 
-// DeleteUnusedScannerIndicators removes every indicator no strategy references
-// and returns the removed ids.
+// DeleteUnusedScannerIndicators removes every indicator that no strategy
+// references and no market table or chart shows, and returns the removed ids.
 func (store *Store) DeleteUnusedScannerIndicators(ctx context.Context) ([]int64, error) {
 	deleted, err := store.queries.DeleteUnusedScannerIndicators(ctx)
 	if foreignKeyViolation(err) {

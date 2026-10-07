@@ -54,7 +54,7 @@ func (emptyCatalog) ChartCatalog(market.CandleInterval) []chart.CatalogIndicator
 // settle to the value of a much longer history.
 func TestTrackerSettlesRecursiveIndicators(t *testing.T) {
 	registry := testRegistry(t)
-	long := testHistory(3 * market.HistoryDepth)
+	long := testHistory(3 * market.SyncDepth)
 	target := closedindicator.Target{Interval: market.IntervalHour, Selection: selection(t, registry, "ema", 200)}
 	reference, err := registry.CalculateCandles(market.IntervalHour, long, []indicator.Selection{target.Selection})
 	if err != nil {
@@ -63,7 +63,7 @@ func TestTrackerSettlesRecursiveIndicators(t *testing.T) {
 	points := reference[0].Series[0].Points
 	want := points[len(points)-1].Value
 
-	tracker := newTracker(t, registry, long[len(long)-market.HistoryDepth:], target)
+	tracker := newTracker(t, registry, long[len(long)-market.SyncDepth:], target)
 	got := tracker.Latest(context.Background(), []int64{1})[1][0]
 	if len(got.Outputs) != 1 || !settled(got.Outputs[0].Value, want) {
 		t.Fatalf("tracked EMA 200 = %+v, want %v from the long history", got.Outputs, want)
@@ -74,7 +74,7 @@ func TestTrackerSettlesRecursiveIndicators(t *testing.T) {
 // chart shows and however many points a strategy keeps.
 func TestTrackerAgreesWithChartsAndPoints(t *testing.T) {
 	registry := testRegistry(t)
-	history := testHistory(market.HistoryDepth)
+	history := testHistory(market.SyncDepth)
 	targets := []closedindicator.Target{
 		{Interval: market.IntervalHour, Selection: selection(t, registry, "ema", 200)},
 		{Interval: market.IntervalHour, Selection: selection(t, registry, "rsi", 14)},

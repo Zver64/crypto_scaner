@@ -96,11 +96,17 @@ export const candlePriceScaleOptions = {
 	scaleMargins: { bottom: 0.05, top: 0.05 },
 } satisfies DeepPartial<PriceScaleOptions>;
 
-// Arrows under the candles chosen by the markers prop.
-export const markerOptions = {
-	color: colors.yellow[5],
+// Trade arrows: entries under their candles, exits over them.
+export const entryMarkerOptions = {
+	color: colors.blue[5],
 	position: "belowBar",
 	shape: "arrowUp",
+} satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
+
+export const exitMarkerOptions = {
+	color: colors.orange[5],
+	position: "aboveBar",
+	shape: "arrowDown",
 } satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
 export const volumeSeriesOptions = {

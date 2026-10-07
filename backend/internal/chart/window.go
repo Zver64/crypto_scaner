@@ -11,9 +11,9 @@ const (
 	// MACD, and so on) start from a seed such as an SMA and need many more
 	// candles before the seed stops mattering.
 	settleFactor = 10
-	// maxWindow bounds the warm-up so that half of the kept history remains
-	// for scroll-back, earlier points, and backtests.
-	maxWindow = market.HistoryDepth / 2
+	// maxWindow bounds the warm-up so that half of the synchronized history
+	// remains for scroll-back and earlier points.
+	maxWindow = market.SyncDepth / 2
 )
 
 // Window is the number of closed candles, ending at a candle, over which the

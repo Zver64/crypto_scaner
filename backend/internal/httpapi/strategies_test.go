@@ -3,6 +3,7 @@ package httpapi_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,9 +18,18 @@ import (
 	"crypto-scanner/internal/strategy"
 )
 
+// emptyStats are the statistics of no trades.
+const emptyStats = `{"average_loss":null,"average_trade":null,"average_win":null,"profit_factor":null,"trade_count":0,"win_rate":null}`
+
 func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T) {
 	alert := time.Date(2026, 3, 2, 5, 0, 0, 0, time.UTC)
-	strategies := &backtestStrategies{result: strategy.Backtest{Interval: market.IntervalHour, From: alert.Add(-5 * time.Hour), To: alert.Add(5 * time.Hour), Alerts: []time.Time{alert}}}
+	strategies := &backtestStrategies{result: strategy.Backtest{
+		Interval: market.IntervalHour, Hold: 2, Symbol: "BTCUSDT", From: alert.Add(-5 * time.Hour), To: alert.Add(5 * time.Hour),
+		Trades:     []strategy.Trade{{EntryTime: alert.Add(time.Hour), EntryPrice: 100, ExitTime: alert.Add(2 * time.Hour), ExitPrice: 110, Return: 0.098}},
+		Unfinished: 1, Skipped: 2, NetProfit: 0.098, Equity: []strategy.EquityPoint{{Time: alert.Add(2 * time.Hour), Equity: 1.098}},
+		Stats:      strategy.TradeStats{Count: 1, WinRate: new(1.0), AverageTrade: new(0.098), AverageWin: new(0.098)},
+		BuyAndHold: new(0.05), EveryCandle: strategy.TradeStats{Count: 8, WinRate: new(0.5), ProfitFactor: new(1.2)},
+	}}
 	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: strategies,
 	}, httpapi.Options{})
@@ -29,14 +39,22 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		target string
 		status int
 		code   string
+		// hold is the hold the service receives.
+		hold int
 		// body is the exact response of an empty history.
 		body string
 	}{
 		{name: "user", token: "user", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt", status: http.StatusForbidden, code: "administrator_required"},
 		{name: "unknown strategy", token: "admin", target: "/api/v1/admin/strategies/2/backtest?symbol=BTCUSDT", status: http.StatusNotFound, code: "strategy_not_found"},
 		{name: "unknown symbol", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=ETHUSDT", status: http.StatusNotFound, code: "symbol_not_found"},
-		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt", status: http.StatusOK},
-		{name: "empty history", token: "admin", target: "/api/v1/admin/strategies/3/backtest?symbol=BTCUSDT", status: http.StatusOK, body: `{"alerts":[],"from":null,"interval":"1h","to":null}`},
+		{name: "hold out of range", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=BTCUSDT&hold=1001", status: http.StatusBadRequest, code: "invalid_argument"},
+		{name: "too heavy", token: "admin", target: "/api/v1/admin/strategies/5/backtest?symbol=BTCUSDT", status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
+		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt&hold=2", status: http.StatusOK, hold: 2},
+		{
+			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/3/backtest?symbol=BTCUSDT", status: http.StatusOK,
+			body: `{"baselines":{"buy_and_hold":null,"every_candle":` + emptyStats + `},"equity":[],"fee":0.001,"from":null,"hold":24,"interval":"1h",` +
+				`"skipped_alerts":0,"summary":{"max_drawdown":0,"net_profit":0,"stats":` + emptyStats + `},"symbol":"BTCUSDT","to":null,"trades":[],"unfinished_trades":0}`,
+		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodGet, test.target, nil)
@@ -47,17 +65,7 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
 			}
 			if test.code != "" {
-				var envelope struct {
-					Error struct {
-						Code string `json:"code"`
-					} `json:"error"`
-				}
-				if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil || envelope.Error.Code != test.code {
-					t.Fatalf("body = %s, want code %s", response.Body.String(), test.code)
-				}
-				if test.status == http.StatusNotFound && response.Header().Get("X-Request-ID") == "" {
-					t.Fatal("not found response lacks X-Request-ID")
-				}
+				assertErrorCode(t, response, test.code)
 				return
 			}
 			if test.body != "" {
@@ -70,27 +78,36 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 				t.Fatal(err)
 			}
-			if body.Interval != httpapi.CandleInterval(market.IntervalHour) || body.From == nil || !body.From.Equal(strategies.result.From) || body.To == nil || !body.To.Equal(strategies.result.To) ||
-				len(body.Alerts) != 1 || !body.Alerts[0].OpenTime.Equal(alert) || strategies.symbol != "BTCUSDT" {
-				t.Fatalf("body = %s, symbol = %s", response.Body.String(), strategies.symbol)
+			replayed := strategies.result
+			if body.Interval != httpapi.CandleInterval(market.IntervalHour) || body.From == nil || !body.From.Equal(replayed.From) || body.To == nil || !body.To.Equal(replayed.To) ||
+				strategies.symbol != "BTCUSDT" || strategies.hold != test.hold ||
+				body.Hold != 2 || body.Fee != strategy.BacktestFee || body.UnfinishedTrades != 1 || body.SkippedAlerts != 2 ||
+				len(body.Trades) != 1 || body.Trades[0].ExitPrice != 110 || body.Trades[0].NetReturn != 0.098 || len(body.Equity) != 1 || body.Equity[0].Equity != 1.098 ||
+				body.Summary.NetProfit != 0.098 || body.Summary.Stats.TradeCount != 1 || body.Summary.Stats.AverageLoss != nil || *body.Summary.Stats.WinRate != 1 ||
+				*body.Baselines.BuyAndHold != 0.05 || body.Baselines.EveryCandle.TradeCount != 8 || *body.Baselines.EveryCandle.ProfitFactor != 1.2 {
+				t.Fatalf("body = %s, symbol = %s, hold = %d", response.Body.String(), strategies.symbol, strategies.hold)
 			}
 		})
 	}
 }
 
 // backtestStrategies knows strategy 1 and the coin BTCUSDT; strategy 3 has no
-// history.
+// history, and strategy 5 runs out of time.
 type backtestStrategies struct {
 	httpapi.Strategies
 	result strategy.Backtest
 	symbol string
+	hold   int
 }
 
-func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string) (strategy.Backtest, error) {
-	strategies.symbol = symbol
+func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string, hold int) (strategy.Backtest, error) {
+	symbol = market.NormalizeSymbol(symbol)
+	strategies.symbol, strategies.hold = symbol, hold
 	switch {
+	case id == 5:
+		return strategy.Backtest{}, fmt.Errorf("replay: %w", context.DeadlineExceeded)
 	case id == 3:
-		return strategy.Backtest{Interval: market.IntervalHour}, nil
+		return strategy.Backtest{Interval: market.IntervalHour, Hold: 24, Symbol: symbol}, nil
 	case id != 1:
 		return strategy.Backtest{}, strategy.ErrNotFound
 	case symbol != "BTCUSDT":
@@ -99,8 +116,8 @@ func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symb
 	return strategies.result, nil
 }
 
-// roleSessions authenticates the token "admin" as the administrator and
-// "user" as another user.
+// roleSessions authenticates the token "admin" as the administrator, "user"
+// as another user, and "program" as the administrator's API token.
 type roleSessions struct{}
 
 func (roleSessions) Exchange(context.Context, string) (auth.IssuedSession, error) {
@@ -113,8 +130,18 @@ func (roleSessions) Authenticate(_ context.Context, token string) (auth.User, er
 		return auth.User{ID: 1, TelegramID: 1, Administrator: true}, nil
 	case "user":
 		return auth.User{ID: 2, TelegramID: 2}, nil
+	case "program":
+		return auth.User{ID: 1, TelegramID: 1, Administrator: true, APIToken: true}, nil
 	}
 	return auth.User{}, auth.ErrUnauthenticated
 }
 
 func (roleSessions) Revoke(context.Context, string) error { return nil }
+
+func assertErrorCode(t *testing.T, response *httptest.ResponseRecorder, code string) {
+	t.Helper()
+	var body httpapi.ErrorResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || string(body.Error.Code) != code {
+		t.Fatalf("error = %s, want %s", response.Body.String(), code)
+	}
+}

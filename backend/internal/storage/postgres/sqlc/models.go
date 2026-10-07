@@ -8,6 +8,15 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type AppApiToken struct {
+	ID         int64
+	UserID     int64
+	Name       string
+	TokenHash  []byte
+	CreatedAt  pgtype.Timestamptz
+	LastUsedAt pgtype.Timestamptz
+}
+
 type AppCoingeckoAssetMapping struct {
 	BaseAsset    string
 	CoinID       pgtype.Text

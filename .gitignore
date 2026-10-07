@@ -13,4 +13,6 @@ docs/plans
 *.swo
 *~
 
-.claude/
+# Local agent settings; project skills are shared.
+.claude/*
+!.claude/skills/

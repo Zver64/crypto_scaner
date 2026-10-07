@@ -34,7 +34,7 @@ func (Factory) Build(parameters map[string]any) (analysis.Criterion, error) {
 	minimum, minimumOK := number(parameters["minimum_range_percent"])
 	unit := analysis.Unit(unitValue)
 	if !unitOK || !periodOK || period != math.Trunc(period) || !percentileOK || !minimumOK ||
-		(unit != analysis.UnitDays && unit != analysis.UnitHours) || period < 1 || period > market.HistoryDepth ||
+		(unit != analysis.UnitDays && unit != analysis.UnitHours) || period < 1 || period > market.SyncDepth ||
 		!numeric.Finite(percentile) || percentile < 0 || percentile > 100 || !numeric.Finite(minimum) || minimum < 0 {
 		return nil, analysis.ErrInvalidArgument
 	}

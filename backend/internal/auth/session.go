@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"crypto-scanner/internal/platform/backoff"
@@ -53,6 +54,7 @@ type NewSession struct {
 // SessionStore persists sessions by token hash.
 type SessionStore interface {
 	UserStore
+	APITokenStore
 	// CreateSession stores a session and keeps at most MaxSessionsPerUser
 	// sessions of its user.
 	CreateSession(context.Context, NewSession) error
@@ -132,9 +134,13 @@ func (sessions *Sessions) Exchange(ctx context.Context, rawInitData string) (Iss
 }
 
 // Authenticate returns the user of a live session and extends its idle
-// expiry. It fails with ErrUnauthenticated, also once the user is deleted.
+// expiry, or the user of an API token (APITokenPrefix). It fails with
+// ErrUnauthenticated, also once the user or the API token is deleted.
 func (sessions *Sessions) Authenticate(ctx context.Context, token string) (User, error) {
 	if !wellFormedToken(token) {
+		if secret, ok := strings.CutPrefix(token, APITokenPrefix); ok && wellFormedToken(secret) {
+			return sessions.authenticateAPIToken(ctx, token)
+		}
 		return User{}, ErrUnauthenticated
 	}
 	tokenHash := hashToken(token)
@@ -154,9 +160,12 @@ func (sessions *Sessions) Authenticate(ctx context.Context, token string) (User,
 			return User{}, fmt.Errorf("extend session: %w", err)
 		}
 	}
-	user := session.User
+	return sessions.withRole(session.User), nil
+}
+
+func (sessions *Sessions) withRole(user User) User {
 	user.Administrator = user.TelegramID == sessions.administratorID
-	return user, nil
+	return user
 }
 
 // Revoke deletes the session of a token; unknown tokens are ignored.

@@ -527,9 +527,9 @@ func (tracker *Tracker) versionSnapshot(subscriptions []Subscription) map[histor
 
 // Depth is the number of closed candles loaded to calculate points values of
 // target. Every point gets at least the chart.Window of target, the warm-up
-// charts give it, so recursive indicators settle and agree with charts. A
-// depth beyond market.HistoryDepth only loads the kept candles, so the values
-// it needs stay missing.
+// charts give it, so recursive indicators settle and agree with charts. Only
+// market.SyncDepth candles are always stored; a deeper depth may load fewer
+// candles, so the values it needs stay missing.
 func Depth(registry *indicator.Registry, target Target, points int) (int, error) {
 	if !target.Interval.Valid() {
 		return 0, fmt.Errorf("closed indicator interval %q is unsupported", target.Interval)

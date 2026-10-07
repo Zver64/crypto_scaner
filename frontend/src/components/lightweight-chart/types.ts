@@ -4,6 +4,7 @@ import type { CSSProperties, ReactNode } from "react";
 export interface ChartCanvasHandle {
 	generation(): number;
 	containerWidth(): number;
+	fitContent(): void;
 	getVisibleLogicalRange(): IRange<number> | null;
 	setVisibleLogicalRange(range: IRange<number>): void;
 }

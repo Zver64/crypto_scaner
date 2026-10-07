@@ -25,6 +25,9 @@ type User struct {
 	// Administrator reports the scanner administrator, who manages global
 	// settings such as the scanner indicators.
 	Administrator bool
+	// APIToken reports a user authenticated by an API token, a program,
+	// rather than by a Telegram session.
+	APIToken bool
 }
 
 // UserStore is the persistence seam used by authentication.

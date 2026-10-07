@@ -17,7 +17,8 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { InstrumentListItem } from './instrumentListItem.ts';
 
-export interface StrategyBacktestAlert {
-  open_time: string;
+export interface InstrumentList {
+  items: InstrumentListItem[];
 }

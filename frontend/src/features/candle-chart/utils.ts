@@ -1,5 +1,8 @@
 import type { AutoscaleInfo, IRange, UTCTimestamp } from "lightweight-charts";
-import { markerOptions } from "@/features/candle-chart/config";
+import {
+	entryMarkerOptions,
+	exitMarkerOptions,
+} from "@/features/candle-chart/config";
 import {
 	dayTimeFormat,
 	hourTimeFormat,
@@ -16,6 +19,7 @@ import type {
 	ChartLegendItem,
 	ChartMarker,
 	ChartPaneIndicatorOptions,
+	ChartTradeMarkers,
 	ChartVolumeSlot,
 	IndicatorPoint,
 	PriceCandle,
@@ -72,28 +76,74 @@ export function createIndicatorData(
 	});
 }
 
-// Marks the loaded candles containing the given times, counting several times
-// in one candle on its marker; a time outside the loaded candles gets its
-// marker once its page loads.
-export function createMarkerData(
-	data: readonly ChartCandleSlot[],
+// Aggregate trades once per selection/interval. Each chart owns its selector;
+// immutable candle arrays with only OHLC changes reuse the marker array.
+export function createMarkerDataSelector(
+	{ entries, exits }: ChartTradeMarkers,
+	interval: ChartInterval,
+) {
+	const entryCounts = countByCandle(entries, interval);
+	const exitCounts = countByCandle(exits, interval);
+	let previous: readonly ChartCandleSlot[] = [];
+	let result: ChartMarker[] = [];
+	return (data: readonly ChartCandleSlot[]): ChartMarker[] => {
+		if (
+			data.length === previous.length &&
+			data.every((slot, index) => {
+				const old = previous[index];
+				return (
+					old !== undefined &&
+					old.time === slot.time &&
+					"open" in old === "open" in slot
+				);
+			})
+		) {
+			return result;
+		}
+		previous = data;
+		result = data.flatMap((slot) =>
+			"open" in slot
+				? [
+						...candleMarker(
+							entryMarkerOptions,
+							entryCounts.get(slot.time),
+							slot.time,
+						),
+						...candleMarker(
+							exitMarkerOptions,
+							exitCounts.get(slot.time),
+							slot.time,
+						),
+					]
+				: [],
+		);
+		return result;
+	};
+}
+
+function countByCandle(
 	times: readonly string[],
 	interval: ChartInterval,
-): ChartMarker[] {
+): Map<number, number> {
 	const counts = new Map<number, number>();
 	for (const time of times) {
 		const open = candleOpenTime(time, interval);
 		counts.set(open, (counts.get(open) ?? 0) + 1);
 	}
-	return data.flatMap((slot) => {
-		const count = "open" in slot ? counts.get(slot.time) : undefined;
-		if (count === undefined) return [];
-		return [
-			count > 1
-				? { ...markerOptions, text: String(count), time: slot.time }
-				: { ...markerOptions, time: slot.time },
-		];
-	});
+	return counts;
+}
+
+function candleMarker(
+	options: Omit<ChartMarker, "time">,
+	count: number | undefined,
+	time: UTCTimestamp,
+): ChartMarker[] {
+	if (count === undefined) return [];
+	return [
+		count > 1
+			? { ...options, text: String(count), time }
+			: { ...options, time },
+	];
 }
 
 // Open time of the candle containing the given time, on the exchange's UTC

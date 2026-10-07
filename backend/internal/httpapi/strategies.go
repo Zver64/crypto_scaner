@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/strategy"
@@ -19,7 +20,7 @@ type Strategies interface {
 	Update(ctx context.Context, id int64, name, expression, message string) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
 	Delete(context.Context, int64) error
-	Backtest(ctx context.Context, id int64, symbol string) (strategy.Backtest, error)
+	Backtest(ctx context.Context, id int64, symbol string, hold int) (strategy.Backtest, error)
 }
 
 func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequestObject) (ListStrategyVariablesResponseObject, error) {
@@ -118,13 +119,17 @@ func (api *api) DeleteStrategy(ctx context.Context, request DeleteStrategyReques
 }
 
 func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRequestObject) (BacktestStrategyResponseObject, error) {
-	symbol := market.NormalizeSymbol(request.Params.Symbol)
-	if symbol == "" {
-		return BacktestStrategy400JSONResponse{invalidArgument(ctx, "Symbol is required").badRequest()}, nil
+	timed, cancel := context.WithTimeout(ctx, backtestTimeout)
+	defer cancel()
+	hold := 0 // the default of the interval
+	if request.Params.Hold != nil {
+		hold = *request.Params.Hold
 	}
-	backtest, err := api.strategies.Backtest(ctx, request.StrategyId, symbol)
+	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol, hold)
 	switch {
 	case err == nil:
+	case backtestExpired(timed, err):
+		return BacktestStrategy503JSONResponse{backtestTooHeavy(ctx)}, nil
 	case errors.Is(err, strategy.ErrInvalidArgument):
 		return BacktestStrategy400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, strategy.ErrNotFound):
@@ -134,15 +139,47 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	default:
 		return BacktestStrategy500JSONResponse{api.internalError(ctx, "backtest_strategy", err)}, nil
 	}
-	alerts := make([]StrategyBacktestAlert, len(backtest.Alerts))
-	for i, openTime := range backtest.Alerts {
-		alerts[i] = StrategyBacktestAlert{OpenTime: openTime}
+	trades := make([]BacktestTrade, len(backtest.Trades))
+	for i, trade := range backtest.Trades {
+		trades[i] = BacktestTrade{EntryTime: trade.EntryTime, EntryPrice: trade.EntryPrice, ExitTime: trade.ExitTime, ExitPrice: trade.ExitPrice, NetReturn: trade.Return}
 	}
-	dto := StrategyBacktest{Interval: CandleInterval(backtest.Interval), Alerts: alerts}
+	equity := make([]BacktestEquityPoint, len(backtest.Equity))
+	for i, point := range backtest.Equity {
+		equity[i] = BacktestEquityPoint{Time: point.Time, Equity: point.Equity}
+	}
+	dto := StrategyBacktest{
+		Interval: CandleInterval(backtest.Interval), Symbol: backtest.Symbol, Hold: backtest.Hold, Fee: strategy.BacktestFee,
+		Trades: trades, UnfinishedTrades: backtest.Unfinished, SkippedAlerts: backtest.Skipped, Equity: equity,
+		Summary:   BacktestSummary{NetProfit: backtest.NetProfit, MaxDrawdown: backtest.MaxDrawdown, Stats: tradeStatsDTO(backtest.Stats)},
+		Baselines: BacktestBaselines{BuyAndHold: backtest.BuyAndHold, EveryCandle: tradeStatsDTO(backtest.EveryCandle)},
+	}
 	if !backtest.From.IsZero() {
 		dto.From, dto.To = &backtest.From, &backtest.To
 	}
 	return BacktestStrategy200JSONResponse(dto), nil
+}
+
+func tradeStatsDTO(stats strategy.TradeStats) BacktestTradeStats {
+	return BacktestTradeStats{
+		TradeCount: stats.Count, WinRate: stats.WinRate, ProfitFactor: stats.ProfitFactor,
+		AverageTrade: stats.AverageTrade, AverageWin: stats.AverageWin, AverageLoss: stats.AverageLoss,
+	}
+}
+
+// backtestTimeout bounds a backtest well below the server's read and write
+// timeouts: once the read timeout passes, the server's background read
+// cancels the request context, and the response must still be written.
+const backtestTimeout = min(readTimeout, writeTimeout) - 10*time.Second
+
+// backtestExpired reports that a backtest failed because its time limit
+// passed, which is the request's weight, not a server fault.
+func backtestExpired(timed context.Context, err error) bool {
+	return errors.Is(err, context.DeadlineExceeded) || errors.Is(timed.Err(), context.DeadlineExceeded)
+}
+
+func backtestTooHeavy(ctx context.Context) BacktestTooHeavyJSONResponse {
+	body := newAPIError(ctx, http.StatusServiceUnavailable, "backtest_too_heavy", "The backtest did not finish within its time limit", nil).body
+	return BacktestTooHeavyJSONResponse{Body: body, Headers: BacktestTooHeavyResponseHeaders{XRequestID: body.RequestId}}
 }
 
 func backtestNotFound(body ErrorResponse) BacktestStrategy404JSONResponse {

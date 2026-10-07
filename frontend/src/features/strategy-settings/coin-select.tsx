@@ -1,5 +1,5 @@
 import { Select } from "@mantine/core";
-import { useListStrategySymbols } from "@/api/generated/api";
+import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
 
 export interface CoinSelectProps {
 	coin: string;
@@ -11,9 +11,7 @@ export interface CoinSelectProps {
 // strategies can read.
 // A stored coin that left them stays shown, so the expression is kept.
 export function CoinSelect({ coin, disabled, onChange }: CoinSelectProps) {
-	const symbols = useListStrategySymbols({
-		query: { retry: false, select: (response) => response.data.items },
-	});
+	const symbols = useFavoriteSymbols();
 	const data = symbols.data ?? [];
 	return (
 		<Select

@@ -8,6 +8,7 @@ import {
 	useEffect,
 	useState,
 } from "react";
+import type { ErrorType } from "@/api/fetch";
 import {
 	getListPriceAlertsQueryKey,
 	useCreatePriceAlert,
@@ -15,6 +16,7 @@ import {
 	useListPriceAlerts,
 	useUpdatePriceAlert,
 } from "@/api/generated/api";
+import type { ErrorResponse } from "@/api/generated/models";
 import { useFavorites } from "@/features/favorites/favorites-provider";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
@@ -22,26 +24,20 @@ import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-da
 import { PriceAlertForm } from "@/features/price-alerts/price-alert-form";
 import { PriceAlertList } from "@/features/price-alerts/price-alert-list";
 import { normalizePriceTarget } from "@/features/price-alerts/target";
+import { describeApiError } from "@/utils/api-error";
 
-function mutationErrorMessage(error: unknown): string {
-	const code = (error as { info?: { error?: { code?: unknown } } }).info?.error
-		?.code;
-	switch (code) {
-		case "duplicate_target":
-			return "An alert with this target already exists.";
-		case "alert_limit":
-			return "The maximum number of alerts for this instrument has been reached.";
-		case "symbol_not_found":
-			return "This instrument is no longer active.";
-		case "alert_not_found":
-			return "This alert no longer exists.";
-		case "access_denied":
-			return "Your Telegram account no longer has access.";
-		case "unauthenticated":
-			return "Telegram authorization has expired. Reopen the Mini App.";
-		default:
-			return "The price alert could not be saved.";
-	}
+function mutationErrorMessage(error: ErrorType<ErrorResponse> | null): string {
+	return describeApiError(error, {
+		fallback: "The price alert could not be saved.",
+		messages: {
+			access_denied: "Your Telegram account no longer has access.",
+			alert_limit:
+				"The maximum number of alerts for this instrument has been reached.",
+			alert_not_found: "This alert no longer exists.",
+			duplicate_target: "An alert with this target already exists.",
+			symbol_not_found: "This instrument is no longer active.",
+		},
+	});
 }
 
 interface PriceAlertsControllerProps {
@@ -98,7 +94,7 @@ export function PriceAlertsController({
 		resetEditor();
 		refresh();
 	};
-	const failed = (error: unknown) => {
+	const failed = (error: ErrorType<ErrorResponse>) => {
 		handleAccessError(error);
 		notifications.show({
 			color: "red",

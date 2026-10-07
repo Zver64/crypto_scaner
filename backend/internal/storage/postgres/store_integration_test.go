@@ -14,10 +14,13 @@ import (
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/favorites"
+	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/market/marketsync"
 	"crypto-scanner/internal/migrate"
+	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/storage/postgres"
+	"crypto-scanner/internal/strategy"
 )
 
 func TestPostgresStoreContracts(t *testing.T) {
@@ -146,6 +149,51 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 		if deleted, err := store.DeleteUser(ctx, granted.TelegramID); err != nil || deleted {
 			t.Fatalf("deletion of a missing user = %t, %v", deleted, err)
+		}
+	})
+
+	t.Run("API tokens belong to their user, record use sparingly, and cascade from users", func(t *testing.T) {
+		owner, _, err := store.GrantAccess(ctx, 301, "owner", "Owner")
+		if err != nil {
+			t.Fatalf("GrantAccess(owner) error = %v", err)
+		}
+		other, _, err := store.GrantAccess(ctx, 302, "other", "Other")
+		if err != nil {
+			t.Fatalf("GrantAccess(other) error = %v", err)
+		}
+		hash := make([]byte, 32)
+		hash[0] = 1
+		created := time.Date(2026, time.October, 1, 0, 0, 0, 0, time.UTC)
+		id, err := store.CreateAPIToken(ctx, auth.NewAPIToken{UserID: owner.ID, Name: "cli", TokenHash: hash, CreatedAt: created})
+		if err != nil {
+			t.Fatalf("CreateAPIToken() error = %v", err)
+		}
+		if _, err := store.CreateAPIToken(ctx, auth.NewAPIToken{UserID: owner.ID, Name: "", TokenHash: make([]byte, 32), CreatedAt: created}); err == nil {
+			t.Fatal("empty API token name was stored")
+		}
+		found, err := store.FindAPIToken(ctx, hash)
+		if err != nil || found.ID != id || found.User.TelegramID != 301 || !found.LastUsedAt.IsZero() {
+			t.Fatalf("FindAPIToken() = %#v, %v", found, err)
+		}
+		used := created.Add(time.Hour)
+		if err := store.TouchAPIToken(ctx, id, used, time.Minute); err != nil {
+			t.Fatalf("TouchAPIToken() error = %v", err)
+		}
+		if err := store.TouchAPIToken(ctx, id, used.Add(30*time.Second), time.Minute); err != nil {
+			t.Fatalf("early TouchAPIToken() error = %v", err)
+		}
+		tokens, err := store.ListAPITokens(ctx, owner.ID)
+		if err != nil || len(tokens) != 1 || tokens[0].Name != "cli" || !tokens[0].LastUsedAt.Equal(used) || !tokens[0].CreatedAt.Equal(created) {
+			t.Fatalf("ListAPITokens() = %#v, %v; want one token last used at %s", tokens, err, used)
+		}
+		if err := store.DeleteAPIToken(ctx, other.ID, id); !errors.Is(err, auth.ErrAPITokenNotFound) {
+			t.Fatalf("DeleteAPIToken() by another user error = %v, want ErrAPITokenNotFound", err)
+		}
+		if _, err := store.DeleteUser(ctx, owner.TelegramID); err != nil {
+			t.Fatalf("DeleteUser() error = %v", err)
+		}
+		if _, err := store.FindAPIToken(ctx, hash); !errors.Is(err, auth.ErrAPITokenNotFound) {
+			t.Fatalf("token of a deleted user error = %v, want ErrAPITokenNotFound", err)
 		}
 	})
 
@@ -567,6 +615,31 @@ func TestPostgresStoreContracts(t *testing.T) {
 		got, err = store.GetSyncState(ctx, profile)
 		if err != nil || got.LastSucceededAt == nil || !got.LastSucceededAt.Equal(succeeded) || got.LastClosedOpenTime == nil || !got.LastClosedOpenTime.Equal(closed) {
 			t.Fatalf("later failure discarded successful progress: state = %#v, error = %v", got, err)
+		}
+	})
+
+	t.Run("unused scanner indicators are read by no strategy and shown nowhere", func(t *testing.T) {
+		rsi := func(period int, table, chart bool) scannerindicator.Indicator {
+			return scannerindicator.Indicator{Interval: market.IntervalDay, Selection: indicator.Selection{Type: "rsi", Parameters: indicator.Parameters{"period": period}}, ShowInTable: table, ShowInChart: chart}
+		}
+		ids, err := store.CreateScannerIndicators(ctx, []scannerindicator.Indicator{rsi(11, true, false), rsi(12, false, true), rsi(13, false, false), rsi(14, false, false)})
+		if err != nil {
+			t.Fatalf("create indicators: %v", err)
+		}
+		table, chart, read, unused := ids[0], ids[1], ids[2], ids[3]
+		strategyID, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Reads RSI 13", Expression: "d_rsi_13 > 1"}, []int64{read}, nil, 0)
+		if err != nil {
+			t.Fatalf("create strategy: %v", err)
+		}
+		t.Cleanup(func() {
+			if _, err := db.Exec(ctx, `DELETE FROM app.strategies WHERE id = $1; DELETE FROM app.scanner_indicators WHERE id = ANY($2)`, strategyID, ids); err != nil {
+				t.Errorf("clean indicator fixtures: %v", err)
+			}
+		})
+
+		deleted, err := store.DeleteUnusedScannerIndicators(ctx)
+		if err != nil || !reflect.DeepEqual(deleted, []int64{unused}) {
+			t.Fatalf("deleted = %v, error = %v; want only %d, keeping table %d, chart %d and strategy %d", deleted, err, unused, table, chart, read)
 		}
 	})
 }

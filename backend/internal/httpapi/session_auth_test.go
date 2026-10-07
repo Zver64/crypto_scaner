@@ -197,12 +197,23 @@ func TestAuthenticationErrorCarriesTheRequestIDWithoutExposingCredentials(t *tes
 	}
 }
 
-// memorySessionStore keeps sessions in memory, keyed by token hash.
+// memorySessionStore keeps sessions and API tokens in memory, keyed by token
+// hash.
 type memorySessionStore struct {
-	find     func(context.Context, int64) (auth.User, error)
-	mu       sync.Mutex
-	sessions map[string]auth.NewSession
-	users    map[int64]auth.User
+	find      func(context.Context, int64) (auth.User, error)
+	mu        sync.Mutex
+	sessions  map[string]auth.NewSession
+	users     map[int64]auth.User
+	apiTokens map[string]memoryAPIToken
+	lastID    int64
+	touches   int
+	// touchErr fails recording the last use of API tokens.
+	touchErr error
+}
+
+type memoryAPIToken struct {
+	auth.APIToken
+	userID int64
 }
 
 func (store *memorySessionStore) FindByTelegramID(ctx context.Context, telegramID int64) (auth.User, error) {
@@ -257,6 +268,67 @@ func (store *memorySessionStore) DeleteSession(_ context.Context, tokenHash []by
 
 func (store *memorySessionStore) DeleteExpiredSessions(context.Context, time.Time) (int64, error) {
 	return 0, nil
+}
+
+func (store *memorySessionStore) CreateAPIToken(_ context.Context, token auth.NewAPIToken) (int64, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.apiTokens == nil {
+		store.apiTokens = make(map[string]memoryAPIToken)
+	}
+	store.lastID++
+	store.apiTokens[string(token.TokenHash)] = memoryAPIToken{APIToken: auth.APIToken{ID: store.lastID, Name: token.Name, CreatedAt: token.CreatedAt}, userID: token.UserID}
+	return store.lastID, nil
+}
+
+func (store *memorySessionStore) ListAPITokens(_ context.Context, userID int64) ([]auth.APIToken, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	var tokens []auth.APIToken
+	for _, token := range store.apiTokens {
+		if token.userID == userID {
+			tokens = append(tokens, token.APIToken)
+		}
+	}
+	return tokens, nil
+}
+
+func (store *memorySessionStore) DeleteAPIToken(_ context.Context, userID, id int64) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	for hash, token := range store.apiTokens {
+		if token.ID == id && token.userID == userID {
+			delete(store.apiTokens, hash)
+			return nil
+		}
+	}
+	return auth.ErrAPITokenNotFound
+}
+
+func (store *memorySessionStore) FindAPIToken(_ context.Context, tokenHash []byte) (auth.StoredAPIToken, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	token, ok := store.apiTokens[string(tokenHash)]
+	if !ok {
+		return auth.StoredAPIToken{}, auth.ErrAPITokenNotFound
+	}
+	return auth.StoredAPIToken{ID: token.ID, User: store.users[token.userID], LastUsedAt: token.LastUsedAt}, nil
+}
+
+func (store *memorySessionStore) TouchAPIToken(_ context.Context, id int64, usedAt time.Time, minimumInterval time.Duration) error {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	if store.touchErr != nil {
+		return store.touchErr
+	}
+	for hash, token := range store.apiTokens {
+		if token.ID == id && !token.LastUsedAt.After(usedAt.Add(-minimumInterval)) {
+			token.LastUsedAt = usedAt
+			store.apiTokens[hash] = token
+			store.touches++
+		}
+	}
+	return nil
 }
 
 func assertErrorResponse(t *testing.T, response *httptest.ResponseRecorder, wantStatus int, wantCode string) {

@@ -98,3 +98,7 @@ func (stub *candleHistoryStub) ListCandlePage(_ context.Context, _ int64, interv
 	stub.interval, stub.before, stub.limit = interval, before, limit
 	return stub.page, nil
 }
+
+func (stub *candleHistoryStub) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
+	return []market.Instrument{{ID: 1, Symbol: "BTCUSDT", Active: true}, {ID: 2, Symbol: "ETHUSDT", Active: true}}, nil
+}

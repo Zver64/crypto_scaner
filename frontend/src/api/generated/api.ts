@@ -48,8 +48,14 @@ import type {
   AlertConflictResponse,
   AlertNotFoundResponse,
   AnalysisUnavailableResponse,
+  ApiTokenInput,
+  ApiTokenList,
+  ApiTokenNotFoundResponse,
   BacktestStrategyParams,
+  BacktestTooHeavyResponse,
   BadRequestResponse,
+  CandleHistoryLoadInput,
+  CandleHistoryLoadJob,
   CandlePageResponse,
   ChartIndicatorCatalog,
   CurrentUser,
@@ -59,11 +65,14 @@ import type {
   FavoriteNotFoundResponse,
   FavoritesResponse,
   GridLimitsResponse,
+  HistoryLoadRunningResponse,
   IndicatorTypeCatalog,
   InstrumentAnalysisRequest,
   InstrumentAnalysisResponse,
+  InstrumentList,
   InsufficientDataResponse,
   InternalErrorResponse,
+  IssuedApiToken,
   ListChartIndicatorsParams,
   ListInstrumentCandlesParams,
   LivenessResponse,
@@ -84,6 +93,7 @@ import type {
   ScannerIndicatorOrder,
   ScannerIndicatorUpdate,
   Session,
+  SessionRequiredResponse,
   Strategy,
   StrategyBacktest,
   StrategyConflictResponse,
@@ -1320,6 +1330,134 @@ export function useListChartIndicators<TData = Awaited<ReturnType<typeof listCha
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
   const queryOptions = getListChartIndicatorsQueryOptions(params,options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listInstrumentsResponse200 = {
+  data: InstrumentList
+  status: 200
+}
+
+export type listInstrumentsResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listInstrumentsResponse403 = {
+  data: AccessDeniedResponse
+  status: 403
+}
+
+export type listInstrumentsResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listInstrumentsResponseSuccess = (listInstrumentsResponse200) & {
+  headers: Headers;
+};
+export type listInstrumentsResponseError = (listInstrumentsResponse401 | listInstrumentsResponse403 | listInstrumentsResponse500) & {
+  headers: Headers;
+};
+
+export const getListInstrumentsUrl = () => {
+
+
+
+
+  return `/api/v1/instruments`
+}
+
+/**
+ * @summary List the active instruments
+ */
+export const listInstruments = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listInstrumentsResponseSuccess> => {
+
+  return apiFetch<listInstrumentsResponseSuccess>(getListInstrumentsUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListInstrumentsQueryKey = () => {
+    return [
+    `/api/v1/instruments`
+    ] as const;
+    }
+
+
+export const getListInstrumentsQueryOptions = <TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListInstrumentsQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstruments>>> = ({ signal }) => listInstruments({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListInstrumentsQueryResult = NonNullable<Awaited<ReturnType<typeof listInstruments>>>
+export type ListInstrumentsQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
+
+
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInstruments>>,
+          TError,
+          Awaited<ReturnType<typeof listInstruments>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listInstruments>>,
+          TError,
+          Awaited<ReturnType<typeof listInstruments>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the active instruments
+ */
+
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListInstrumentsQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -2853,9 +2991,10 @@ export const getDeleteUnusedScannerIndicatorsUrl = () => {
 }
 
 /**
- * Indicators read by a strategy stay. Charts and tables no longer show the
- * removed indicators, and their values are no longer tracked.
- * @summary Remove every scanner indicator no strategy reads
+ * Removes every indicator that no strategy reads (disabled strategies
+ * included) and that is shown in no market table and on no chart. Every
+ * other indicator stays.
+ * @summary Remove every unused scanner indicator
  */
 export const deleteUnusedScannerIndicators = async ( options?: Parameters<typeof apiFetch>[1]): Promise<deleteUnusedScannerIndicatorsResponseSuccess> => {
 
@@ -2907,7 +3046,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
 
     /**
- * @summary Remove every scanner indicator no strategy reads
+ * @summary Remove every unused scanner indicator
  */
 export const useDeleteUnusedScannerIndicators = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
@@ -4812,10 +4951,15 @@ export type backtestStrategyResponse500 = {
   status: 500
 }
 
+export type backtestStrategyResponse503 = {
+  data: BacktestTooHeavyResponse
+  status: 503
+}
+
 export type backtestStrategyResponseSuccess = (backtestStrategyResponse200) & {
   headers: Headers;
 };
-export type backtestStrategyResponseError = (backtestStrategyResponse400 | backtestStrategyResponse401 | backtestStrategyResponse403 | backtestStrategyResponse404 | backtestStrategyResponse500) & {
+export type backtestStrategyResponseError = (backtestStrategyResponse400 | backtestStrategyResponse401 | backtestStrategyResponse403 | backtestStrategyResponse404 | backtestStrategyResponse500 | backtestStrategyResponse503) & {
   headers: Headers;
 };
 
@@ -4836,14 +4980,28 @@ export const getBacktestStrategyUrl = (strategyId: number,
 }
 
 /**
- * Evaluates the strategy, enabled or not, at the close of every kept
- * candle of the finest interval its expression reads, exactly as live
- * alerts are evaluated, and lists the candles where it starts matching,
- * starting from not matching. Coins read through `of` must be in the
- * administrator's favorites, otherwise their values are unknown. Only
- * the kept closed history is replayed; when older candles were pruned,
- * candles before the full indicator warm-up are not evaluated.
- * @summary Replay the alerts of a strategy on one coin
+ * Evaluates the saved strategy, enabled or not, at the close of every
+ * stored candle of the finest interval its expression reads, exactly as
+ * live alerts are evaluated, and simulates the trades its alerts (the
+ * candles where it starts matching) would open. Any active coin can be
+ * backtested; coins read through `of` must be in the administrator's
+ * favorites, otherwise their values are unknown. Only the stored closed
+ * history is replayed (up to 20,000 candles; the administrator loads
+ * deeper history with `POST /api/v1/admin/candle-history-loads`,
+ * backtests never load it); when older candles may be missing, candles
+ * before the full indicator warm-up are not evaluated.
+ *
+ * Trades are simulated one position at a time:
+ * each enters at the open of the candle after its alert and exits at
+ * the close of its `hold`-th consecutive candle, paying `fee` on entry
+ * and on exit. Alerts that fire while a position is open are skipped;
+ * a trade whose hold the stored consecutive candles do not reach, at
+ * the end of the history or at a gap, is unfinished and left out of
+ * the metrics. Two baselines cover the same evaluated period: buying
+ * and holding, and taking every evaluated candle as an alert. A
+ * backtest that does not finish within its time limit fails with
+ * `backtest_too_heavy`.
+ * @summary Backtest a saved strategy on one coin
  */
 export const backtestStrategy = async (strategyId: number,
     params: BacktestStrategyParams, options?: Parameters<typeof apiFetch>[1]): Promise<backtestStrategyResponseSuccess> => {
@@ -4869,7 +5027,7 @@ export const getBacktestStrategyQueryKey = (strategyId: number,
     }
 
 
-export const getBacktestStrategyQueryOptions = <TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(strategyId: number,
+export const getBacktestStrategyQueryOptions = <TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(strategyId: number,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
@@ -4889,10 +5047,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type BacktestStrategyQueryResult = NonNullable<Awaited<ReturnType<typeof backtestStrategy>>>
-export type BacktestStrategyQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>
+export type BacktestStrategyQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>
 
 
-export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
  strategyId: number,
     params: BacktestStrategyParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -4903,7 +5061,7 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
  strategyId: number,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -4914,16 +5072,16 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
  strategyId: number,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Replay the alerts of a strategy on one coin
+ * @summary Backtest a saved strategy on one coin
  */
 
-export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse>>(
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
  strategyId: number,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
@@ -4935,3 +5093,652 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
 
   return withQueryKey(query, queryOptions.queryKey);
 }
+
+
+
+
+
+
+
+export type startCandleHistoryLoadResponse202 = {
+  data: CandleHistoryLoadJob
+  status: 202
+}
+
+export type startCandleHistoryLoadResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type startCandleHistoryLoadResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type startCandleHistoryLoadResponse403 = {
+  data: SessionRequiredResponse
+  status: 403
+}
+
+export type startCandleHistoryLoadResponse404 = {
+  data: SymbolNotFoundResponse
+  status: 404
+}
+
+export type startCandleHistoryLoadResponse409 = {
+  data: HistoryLoadRunningResponse
+  status: 409
+}
+
+export type startCandleHistoryLoadResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type startCandleHistoryLoadResponseSuccess = (startCandleHistoryLoadResponse202) & {
+  headers: Headers;
+};
+export type startCandleHistoryLoadResponseError = (startCandleHistoryLoadResponse400 | startCandleHistoryLoadResponse401 | startCandleHistoryLoadResponse403 | startCandleHistoryLoadResponse404 | startCandleHistoryLoadResponse409 | startCandleHistoryLoadResponse500) & {
+  headers: Headers;
+};
+
+export const getStartCandleHistoryLoadUrl = () => {
+
+
+
+
+  return `/api/v1/admin/candle-history-loads`
+}
+
+/**
+ * Starts a background job that extends the stored closed history of
+ * each coin on each interval backwards to `depth` candles, or to the
+ * oldest candle Binance has, and returns at once. Synchronization keeps
+ * only the latest 2,000 candles complete; deeper candles serve backtests
+ * and stay until the retention pruner removes those beyond 20,000.
+ * Histories already deep enough cost nothing, and a history that
+ * synchronization has not filled yet is skipped as `not_ready` while
+ * the job goes on. Pages are fetched at most
+ * one per second, so a first hourly load to 20,000 candles takes about
+ * 20 seconds per coin. One job runs at a time; follow it with
+ * `GET /api/v1/admin/candle-history-loads`. Only the administrator
+ * starts loads, from the Mini App: requests authenticated with an API
+ * token are refused (`session_required`). Backtests never load history.
+ * @summary Start loading deeper candle history
+ */
+export const startCandleHistoryLoad = async (candleHistoryLoadInput: CandleHistoryLoadInput, options?: Parameters<typeof apiFetch>[1]): Promise<startCandleHistoryLoadResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<startCandleHistoryLoadResponseSuccess>(getStartCandleHistoryLoadUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(candleHistoryLoadInput)
+  }
+);}
+
+
+
+
+
+export const getStartCandleHistoryLoadMutationKey = () => ['startCandleHistoryLoad'] as const;
+
+export const getStartCandleHistoryLoadMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | SessionRequiredResponse | SymbolNotFoundResponse | HistoryLoadRunningResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startCandleHistoryLoad>>, TError,StartCandleHistoryLoadMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof startCandleHistoryLoad>>, TError,StartCandleHistoryLoadMutationVariables, TContext> => {
+
+const mutationKey = getStartCandleHistoryLoadMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof startCandleHistoryLoad>>, StartCandleHistoryLoadMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  startCandleHistoryLoad(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type StartCandleHistoryLoadMutationResult = NonNullable<Awaited<ReturnType<typeof startCandleHistoryLoad>>>
+    export type StartCandleHistoryLoadMutationBody = CandleHistoryLoadInput
+    export type StartCandleHistoryLoadMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | SessionRequiredResponse | SymbolNotFoundResponse | HistoryLoadRunningResponse | InternalErrorResponse>
+    export type StartCandleHistoryLoadMutationVariables = {data: CandleHistoryLoadInput}
+
+    /**
+ * @summary Start loading deeper candle history
+ */
+export const useStartCandleHistoryLoad = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | SessionRequiredResponse | SymbolNotFoundResponse | HistoryLoadRunningResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof startCandleHistoryLoad>>, TError,StartCandleHistoryLoadMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof startCandleHistoryLoad>>,
+        TError,
+        StartCandleHistoryLoadMutationVariables,
+        TContext
+      > => {
+      return useMutation(getStartCandleHistoryLoadMutationOptions(options), queryClient);
+    }
+
+export type getCandleHistoryLoadResponse200 = {
+  data: CandleHistoryLoadJob
+  status: 200
+}
+
+export type getCandleHistoryLoadResponse204 = {
+  data: void
+  status: 204
+}
+
+export type getCandleHistoryLoadResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type getCandleHistoryLoadResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type getCandleHistoryLoadResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type getCandleHistoryLoadResponseSuccess = (getCandleHistoryLoadResponse200 | getCandleHistoryLoadResponse204) & {
+  headers: Headers;
+};
+export type getCandleHistoryLoadResponseError = (getCandleHistoryLoadResponse401 | getCandleHistoryLoadResponse403 | getCandleHistoryLoadResponse500) & {
+  headers: Headers;
+};
+
+export const getGetCandleHistoryLoadUrl = () => {
+
+
+
+
+  return `/api/v1/admin/candle-history-loads`
+}
+
+/**
+ * The running job, or the last one since the server started; jobs are
+ * kept in memory only, so a restart forgets them and stops a running
+ * one.
+ * @summary Show the current or last history load
+ */
+export const getCandleHistoryLoad = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getCandleHistoryLoadResponseSuccess> => {
+
+  return apiFetch<getCandleHistoryLoadResponseSuccess>(getGetCandleHistoryLoadUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getGetCandleHistoryLoadQueryKey = () => {
+    return [
+    `/api/v1/admin/candle-history-loads`
+    ] as const;
+    }
+
+
+export const getGetCandleHistoryLoadQueryOptions = <TData = Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getGetCandleHistoryLoadQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getCandleHistoryLoad>>> = ({ signal }) => getCandleHistoryLoad({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type GetCandleHistoryLoadQueryResult = NonNullable<Awaited<ReturnType<typeof getCandleHistoryLoad>>>
+export type GetCandleHistoryLoadQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
+
+
+export function useGetCandleHistoryLoad<TData = Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCandleHistoryLoad>>,
+          TError,
+          Awaited<ReturnType<typeof getCandleHistoryLoad>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCandleHistoryLoad<TData = Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof getCandleHistoryLoad>>,
+          TError,
+          Awaited<ReturnType<typeof getCandleHistoryLoad>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useGetCandleHistoryLoad<TData = Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary Show the current or last history load
+ */
+
+export function useGetCandleHistoryLoad<TData = Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getCandleHistoryLoad>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getGetCandleHistoryLoadQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type listApiTokensResponse200 = {
+  data: ApiTokenList
+  status: 200
+}
+
+export type listApiTokensResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type listApiTokensResponse403 = {
+  data: SessionRequiredResponse
+  status: 403
+}
+
+export type listApiTokensResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type listApiTokensResponseSuccess = (listApiTokensResponse200) & {
+  headers: Headers;
+};
+export type listApiTokensResponseError = (listApiTokensResponse401 | listApiTokensResponse403 | listApiTokensResponse500) & {
+  headers: Headers;
+};
+
+export const getListApiTokensUrl = () => {
+
+
+
+
+  return `/api/v1/admin/api-tokens`
+}
+
+/**
+ * Newest first. A deleted token is no longer listed. API tokens are
+ * managed only from the Mini App: requests authenticated with an API
+ * token are refused (`session_required`).
+ * @summary List the administrator's API tokens
+ */
+export const listApiTokens = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listApiTokensResponseSuccess> => {
+
+  return apiFetch<listApiTokensResponseSuccess>(getListApiTokensUrl(),
+  {
+    ...options,
+    method: 'GET'
+
+
+  }
+);}
+
+
+
+
+
+export const getListApiTokensQueryKey = () => {
+    return [
+    `/api/v1/admin/api-tokens`
+    ] as const;
+    }
+
+
+export const getListApiTokensQueryOptions = <TData = Awaited<ReturnType<typeof listApiTokens>>, TError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+) => {
+
+const {query: queryOptions, request: requestOptions} = options ?? {};
+
+  const queryKey =  queryOptions?.queryKey ?? getListApiTokensQueryKey();
+
+
+
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listApiTokens>>> = ({ signal }) => listApiTokens({ signal, ...requestOptions });
+
+
+
+
+
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+}
+
+export type ListApiTokensQueryResult = NonNullable<Awaited<ReturnType<typeof listApiTokens>>>
+export type ListApiTokensQueryError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>
+
+
+export function useListApiTokens<TData = Awaited<ReturnType<typeof listApiTokens>>, TError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData>> & Pick<
+        DefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listApiTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listApiTokens>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListApiTokens<TData = Awaited<ReturnType<typeof listApiTokens>>, TError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData>> & Pick<
+        UndefinedInitialDataOptions<
+          Awaited<ReturnType<typeof listApiTokens>>,
+          TError,
+          Awaited<ReturnType<typeof listApiTokens>>
+        > , 'initialData'
+      >, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+export function useListApiTokens<TData = Awaited<ReturnType<typeof listApiTokens>>, TError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
+/**
+ * @summary List the administrator's API tokens
+ */
+
+export function useListApiTokens<TData = Awaited<ReturnType<typeof listApiTokens>>, TError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listApiTokens>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient
+ ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
+
+  const queryOptions = getListApiTokensQueryOptions(options)
+
+  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
+
+  return withQueryKey(query, queryOptions.queryKey);
+}
+
+
+
+
+
+
+
+export type createApiTokenResponse201 = {
+  data: IssuedApiToken
+  status: 201
+}
+
+export type createApiTokenResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type createApiTokenResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type createApiTokenResponse403 = {
+  data: SessionRequiredResponse
+  status: 403
+}
+
+export type createApiTokenResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type createApiTokenResponseSuccess = (createApiTokenResponse201) & {
+  headers: Headers;
+};
+export type createApiTokenResponseError = (createApiTokenResponse400 | createApiTokenResponse401 | createApiTokenResponse403 | createApiTokenResponse500) & {
+  headers: Headers;
+};
+
+export const getCreateApiTokenUrl = () => {
+
+
+
+
+  return `/api/v1/admin/api-tokens`
+}
+
+/**
+ * Issues a token for clients other than the Mini App, such as the scanner
+ * CLI. It authenticates as a session of the calling administrator, with
+ * the same rights, except managing API tokens and starting history
+ * loads (`session_required`), until it is deleted; it does not expire.
+ * The token is returned only in this response; only its hash is stored.
+ * Only a Mini App session issues tokens.
+ * @summary Issue an API token
+ */
+export const createApiToken = async (apiTokenInput: ApiTokenInput, options?: Parameters<typeof apiFetch>[1]): Promise<createApiTokenResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<createApiTokenResponseSuccess>(getCreateApiTokenUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(apiTokenInput)
+  }
+);}
+
+
+
+
+
+export const getCreateApiTokenMutationKey = () => ['createApiToken'] as const;
+
+export const getCreateApiTokenMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApiToken>>, TError,CreateApiTokenMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof createApiToken>>, TError,CreateApiTokenMutationVariables, TContext> => {
+
+const mutationKey = getCreateApiTokenMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createApiToken>>, CreateApiTokenMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  createApiToken(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type CreateApiTokenMutationResult = NonNullable<Awaited<ReturnType<typeof createApiToken>>>
+    export type CreateApiTokenMutationBody = ApiTokenInput
+    export type CreateApiTokenMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>
+    export type CreateApiTokenMutationVariables = {data: ApiTokenInput}
+
+    /**
+ * @summary Issue an API token
+ */
+export const useCreateApiToken = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | SessionRequiredResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createApiToken>>, TError,CreateApiTokenMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof createApiToken>>,
+        TError,
+        CreateApiTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getCreateApiTokenMutationOptions(options), queryClient);
+    }
+
+export type deleteApiTokenResponse204 = {
+  data: void
+  status: 204
+}
+
+export type deleteApiTokenResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type deleteApiTokenResponse403 = {
+  data: SessionRequiredResponse
+  status: 403
+}
+
+export type deleteApiTokenResponse404 = {
+  data: ApiTokenNotFoundResponse
+  status: 404
+}
+
+export type deleteApiTokenResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type deleteApiTokenResponseSuccess = (deleteApiTokenResponse204) & {
+  headers: Headers;
+};
+export type deleteApiTokenResponseError = (deleteApiTokenResponse401 | deleteApiTokenResponse403 | deleteApiTokenResponse404 | deleteApiTokenResponse500) & {
+  headers: Headers;
+};
+
+export const getDeleteApiTokenUrl = (tokenId: number,) => {
+
+
+
+
+  return `/api/v1/admin/api-tokens/${encodeURIComponent(String(tokenId))}`
+}
+
+/**
+ * The token stops authenticating immediately. Only a Mini App session revokes tokens (`session_required`).
+ * @summary Revoke an API token
+ */
+export const deleteApiToken = async (tokenId: number, options?: Parameters<typeof apiFetch>[1]): Promise<deleteApiTokenResponseSuccess> => {
+
+  return apiFetch<deleteApiTokenResponseSuccess>(getDeleteApiTokenUrl(tokenId),
+  {
+    ...options,
+    method: 'DELETE'
+
+
+  }
+);}
+
+
+
+
+
+export const getDeleteApiTokenMutationKey = () => ['deleteApiToken'] as const;
+
+export const getDeleteApiTokenMutationOptions = <TError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | ApiTokenNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApiToken>>, TError,DeleteApiTokenMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof deleteApiToken>>, TError,DeleteApiTokenMutationVariables, TContext> => {
+
+const mutationKey = getDeleteApiTokenMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteApiToken>>, DeleteApiTokenMutationVariables> = (props) => {
+          const {tokenId} = props ?? {};
+
+          return  deleteApiToken(tokenId,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type DeleteApiTokenMutationResult = NonNullable<Awaited<ReturnType<typeof deleteApiToken>>>
+
+    export type DeleteApiTokenMutationError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | ApiTokenNotFoundResponse | InternalErrorResponse>
+    export type DeleteApiTokenMutationVariables = {tokenId: number}
+
+    /**
+ * @summary Revoke an API token
+ */
+export const useDeleteApiToken = <TError = ErrorType<UnauthenticatedResponse | SessionRequiredResponse | ApiTokenNotFoundResponse | InternalErrorResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteApiToken>>, TError,DeleteApiTokenMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof deleteApiToken>>,
+        TError,
+        DeleteApiTokenMutationVariables,
+        TContext
+      > => {
+      return useMutation(getDeleteApiTokenMutationOptions(options), queryClient);
+    }

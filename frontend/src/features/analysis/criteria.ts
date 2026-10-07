@@ -20,7 +20,7 @@ export const defaultAnalysisCriteria: AnalysisCriteria = {
 
 export const analysisCriteriaConstraints = {
 	percentile: { maximum: 100, minimum: 0 },
-	// Mirrors the backend market.HistoryDepth.
+	// Mirrors the backend market.SyncDepth.
 	period: { maximum: 2000, minimum: 1 },
 } as const;
 

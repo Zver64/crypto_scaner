@@ -302,7 +302,7 @@ func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 
 // integerMaximum caps TA-Lib's period limits (up to 100000) at the stored
 // history depth, which no calculation can exceed.
-func integerMaximum(p param) float64 { return min(p.maximum, market.HistoryDepth) }
+func integerMaximum(p param) float64 { return min(p.maximum, market.SyncDepth) }
 
 func parseNumber(raw any) (float64, error) {
 	var value float64

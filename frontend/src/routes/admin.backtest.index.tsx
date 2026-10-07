@@ -1,40 +1,43 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { StrategyBacktestCoins } from "@/features/strategy-backtest/strategy-backtest-coins";
-import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
+import { createFileRoute } from "@tanstack/react-router";
+import { StrategyBacktestScreen } from "@/features/strategy-backtest/strategy-backtest-screen";
 import { parseStrategyBacktestSearch } from "@/routes/-strategy-backtest-search";
-import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export const Route = createFileRoute("/admin/backtest/")({
-	component: StrategyBacktestCoinsPage,
+	component: StrategyBacktestPage,
 	validateSearch: parseStrategyBacktestSearch,
 });
 
-function StrategyBacktestCoinsPage() {
+function StrategyBacktestPage() {
 	const search = Route.useSearch();
-	const navigate = useNavigate();
+	const navigate = Route.useNavigate();
 	return (
-		<StrategyBacktestCoins
-			// Replacing keeps a single settings history entry; the coin page
-			// carries the list state to restore it.
-			onCoinClick={(symbol) =>
+		<StrategyBacktestScreen
+			allCoins={search.all_coins === true}
+			hold={search.hold}
+			onCoinChange={(symbol, allCoins) =>
 				void navigate({
-					params: { symbol },
 					replace: true,
-					search,
-					to: "/admin/backtest/$symbol",
+					search: (previous) => ({
+						...previous,
+						all_coins: allCoins || undefined,
+						symbol,
+					}),
 				})
 			}
-			onSortChange={(sort) => {
-				replaceUrlSearch({
-					sort_column: sort.column,
-					sort_direction: sort.direction,
-				});
-			}}
-			onSymbolFilterChange={(symbolFilter) => {
-				replaceUrlSearch({ symbol_filter: symbolFilter || undefined });
-			}}
-			sort={marketScanSortFromSearch(search)}
-			symbolFilter={search.symbol_filter ?? ""}
+			onHoldChange={(hold) =>
+				void navigate({
+					replace: true,
+					search: (previous) => ({ ...previous, hold }),
+				})
+			}
+			onStrategyChange={(strategy) =>
+				void navigate({
+					replace: true,
+					search: (previous) => ({ ...previous, strategy }),
+				})
+			}
+			strategy={search.strategy}
+			symbol={search.symbol}
 		/>
 	);
 }

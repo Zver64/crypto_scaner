@@ -125,14 +125,22 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		closedIndicators.HistoryChanged(candles)
 	}}
 	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
+	// History loads notify only when completing a partial live history;
+	// pages beyond SyncDepth do not affect tracked values.
+	historyExtenders := make(map[market.CandleInterval]marketsync.HistoryExtender)
 	for _, interval := range market.CandleIntervals() {
 		// The tracker recalculates once a round has committed all its changes.
 		synchronizers[interval] = marketsync.ObservableRunner{
-			Runner: marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.HistoryDepth, market.BinanceSpotSyncProfile(interval)),
+			Runner: marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.SyncDepth, market.BinanceSpotSyncProfile(interval)),
 			Synced: closedIndicators.HistorySynced,
 		}
+		historyExtenders[interval] = marketsync.New(exchange, store, logger, cfg.SyncWorkers, market.SyncDepth, market.BinanceSpotSyncProfile(interval))
 	}
 	scheduler := marketsync.NewScheduler(synchronizers, logger)
+	historyLoader := marketsync.NewHistoryLoader(store, historyExtenders, logger, marketsync.HistoryLoaderOptions{
+		Changed: syncStore.Changed,
+		Synced:  closedIndicators.HistorySynced,
+	})
 
 	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(marketcap.New(store, coingecko.NewClient("", cfg.CoinGeckoDemoAPIKey)), store, logger, time.Hour, 15*time.Minute)
 	if err != nil {
@@ -183,6 +191,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		History:      store,
 		GridLimits:   gridlimits.New(exchange, store, logger, gridlimits.Options{}),
 		Sessions:     sessions,
+		APITokens:    sessions,
 		Chart:        chartService,
 		LiveCandles:  liveService,
 		Favorites:    favoriteService,
@@ -192,6 +201,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		IndicatorTypes:    indicatorRegistry,
 		Users:             users.New(store, cfg.AdminTelegramID, monitoredChanged.notify),
 		Strategies:        strategies,
+		HistoryLoads:      historyLoader,
 	}, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled})
 	return app{handler: handler, notifier: notifier, services: []service{
 		{"market scheduler", scheduler},
@@ -203,7 +213,8 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		{"strategy monitor", strategyMonitor},
 		{"Telegram bot", botService},
 		{"coin metadata synchronizer", coinMetadataSynchronizer},
-		{"market retention", retention.New(store, logger, market.HistoryDepth)},
+		{"market history loader", historyLoader},
+		{"market retention", retention.New(store, logger, market.RetentionDepth)},
 		{"session pruner", sessions},
 		{"operations notifier", notifier},
 	}}, nil

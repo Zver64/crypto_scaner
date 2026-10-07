@@ -9,6 +9,7 @@ Agent and subagent orchestration is done via herdr.
 
 - `backend/`: Go HTTP API, Telegram authentication, market synchronization, analysis criteria, PostgreSQL storage, migrations, and service commands.
 - `frontend/`: React Telegram Mini App built with Vite and TanStack Router.
+- `backend/cmd/scanner`: the `scanner` CLI for creating strategies and backtesting saved ones against a running backend (see CLI below).
 - `docs/agents/`: repository-specific configuration consumed by engineering skills.
 - `compose.yaml`: local PostgreSQL, migrations, and backend development stack (frontend runs on the host).
 - `compose.production.yaml`: production deployment stack.
@@ -45,6 +46,10 @@ The Compose development stack starts PostgreSQL, applies migrations, and starts 
 Before any Compose lifecycle command, inspect the current state with `docker compose ps` and, when relevant, logs or health checks. Prefer read-only diagnosis with `docker compose ps` and `docker compose logs`. Reuse required services that are already running and healthy; do not run `docker compose up`, `start`, `restart`, `stop`, or `down` unless services are absent or unhealthy, or the task verifiably requires a rebuild or restart. Avoid conflicting with the user's existing Compose process or tab, and never stop, recreate, or start Compose-managed containers with raw `docker start` or `docker stop`. If a lifecycle change is necessary, state the concrete reason and use Docker Compose.
 
 Use `make migrate-up` and `make migrate-down` for manual migration control.
+
+## CLI
+
+`make install-cli` installs `scanner` with ordinary `go install` (pure Go, no cgo), without overriding Go settings. `make uninstall-cli` uses `go clean -i` with the same Go settings to remove that binary, zsh completion files, and `~/.config/scanner` (profiles under a custom `XDG_CONFIG_HOME` must be removed separately); API tokens must still be revoked in the Mini App. User instructions live in `backend/cmd/scanner/README.md`. `scanner login dev --server http://localhost:8080` reads an API token created in the Mini App settings from stdin and stores it in `~/.config/scanner/config.json` (mode 0600); `scanner help` lists the commands. `make install-cli` also writes the zsh completion to `~/.local/share/zsh/site-functions/_scanner` and refreshes it on every run; zsh loads it after a one-time line in `~/.zshrc`, placed before `compinit`: `fpath=(~/.local/share/zsh/site-functions $fpath)`. The project skill `.claude/skills/backtest/SKILL.md` describes the backtest workflow. Creating and backtesting are separate: the CLI and the Mini App create strategies (the CLI always disabled), and backtests run only saved strategies, on any active coin, over stored history. Binance history loads start only from the Mini App's Commands section, and API tokens are issued and revoked only in the Mini App settings: the server refuses API tokens for both, and the CLI has no such commands.
 
 ## Verification
 

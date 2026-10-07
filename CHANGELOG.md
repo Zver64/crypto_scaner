@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.0](https://github.com/Zver64/crypto_scaner/compare/v0.38.0...v0.39.0) (2026-10-07)
+
+
+### Features
+
+* backtest saved strategies by simulating trades, with a scanner CLI ([5a9d547](https://github.com/Zver64/crypto_scaner/commit/5a9d547956bab76b17c34a186db7b6bee8e5c68b))
+
 ## [0.38.0](https://github.com/Zver64/crypto_scaner/compare/v0.37.0...v0.38.0) (2026-10-06)
 
 

@@ -1,4 +1,4 @@
-import { ActionIcon, Button, Select, Stack } from "@mantine/core";
+import { ActionIcon, Button, Stack, Text } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconPlus, IconX } from "@tabler/icons-react";
 import {
@@ -7,21 +7,16 @@ import {
 } from "@/features/strategy-settings/expression-editor";
 import {
 	maxVariadicArguments,
-	replaceFunction,
 	strategyFunctions,
 } from "@/features/strategy-settings/expressions";
-
-const functionOptions = Object.entries(strategyFunctions).map(
-	([value, { label }]) => ({ label, value }),
-);
 
 export interface FunctionEditorProps
 	extends Omit<ExpressionEditorProps, "label"> {
 	node: Extract<ExpressionNode, { kind: "func" }>;
 }
 
-// A function and its arguments below it; the operand editor frames them as a
-// whole. Changing the function keeps the arguments that still fit.
+// The arguments of a function, each under its title; the operand editor
+// chooses the function itself in its row.
 export function FunctionEditor({
 	depth = 0,
 	disabled,
@@ -39,68 +34,61 @@ export function FunctionEditor({
 		});
 	return (
 		<Stack gap="xs">
-			<Select
-				allowDeselect={false}
-				aria-label="Function"
-				data={functionOptions}
-				disabled={disabled}
-				onChange={(name) => {
-					if (name && strategyFunctions[name]) {
-						onChange(replaceFunction(node, name));
+			{node.args.map((arg, index) => {
+				const title = titles[Math.min(index, titles.length - 1)] ?? "Value";
+				return (
+					// biome-ignore lint/suspicious/noArrayIndexKey: arguments are positional; an argument is its position.
+					<Stack gap={2} key={index}>
+						<Text c="dimmed" size="xs">
+							{title}
+						</Text>
+						<ExpressionEditor
+							action={
+								definition?.variadic && node.args.length > 2 ? (
+									<ActionIcon
+										aria-label="Remove value"
+										size="input-sm"
+										disabled={disabled}
+										onClick={() =>
+											onChange({
+												...node,
+												args: node.args.filter((_, i) => i !== index),
+											})
+										}
+										variant="default"
+									>
+										<IconX size={18} />
+									</ActionIcon>
+								) : null
+							}
+							depth={depth + 1}
+							disabled={disabled}
+							label={title}
+							node={arg}
+							onChange={(next) => replaceArg(index, next)}
+							variables={variables}
+							withoutCoin={withoutCoin}
+						/>
+					</Stack>
+				);
+			})}
+			{definition?.variadic && node.args.length < maxVariadicArguments ? (
+				<Button
+					disabled={disabled}
+					justify="flex-start"
+					leftSection={<IconPlus size={14} />}
+					onClick={() =>
+						onChange({
+							...node,
+							args: [...node.args, { kind: "value", value: 0 }],
+						})
 					}
-				}}
-				size="sm"
-				value={node.fn}
-			/>
-			<Stack gap="xs">
-				{node.args.map((arg, index) => (
-					<ExpressionEditor
-						action={
-							definition?.variadic && node.args.length > 2 ? (
-								<ActionIcon
-									aria-label="Remove value"
-									color="red"
-									disabled={disabled}
-									onClick={() =>
-										onChange({
-											...node,
-											args: node.args.filter((_, i) => i !== index),
-										})
-									}
-									variant="subtle"
-								>
-									<IconX size={16} />
-								</ActionIcon>
-							) : null
-						}
-						depth={depth + 1}
-						disabled={disabled}
-						// biome-ignore lint/suspicious/noArrayIndexKey: arguments are positional; an argument is its position.
-						key={index}
-						label={titles[Math.min(index, titles.length - 1)] ?? "Value"}
-						node={arg}
-						onChange={(next) => replaceArg(index, next)}
-						variables={variables}
-						withoutCoin={withoutCoin}
-					/>
-				))}
-				{definition?.variadic && node.args.length < maxVariadicArguments ? (
-					<Button
-						disabled={disabled}
-						leftSection={<IconPlus size={14} />}
-						onClick={() =>
-							onChange({
-								...node,
-								args: [...node.args, { kind: "value", value: 0 }],
-							})
-						}
-						size="xs"
-						variant="subtle"
-					>
-						Add value
-					</Button>
-				) : null}
-			</Stack>
+					size="compact-xs"
+					variant="subtle"
+				>
+					Add value
+				</Button>
+			) : null}
 		</Stack>
 	);
 }

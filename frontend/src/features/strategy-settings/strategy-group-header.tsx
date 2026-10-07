@@ -1,4 +1,11 @@
-import { Button, Group, SegmentedControl, Switch } from "@mantine/core";
+import {
+	ActionIcon,
+	Button,
+	Group,
+	SegmentedControl,
+	Switch,
+} from "@mantine/core";
+import { IconTrash } from "@tabler/icons-react";
 import type { RuleGroupProps, UseRuleGroup } from "react-querybuilder";
 
 // Groups nest at most this deep below the top level.
@@ -56,15 +63,16 @@ export function StrategyGroupHeader({
 					</Button>
 				) : null}
 				{path.length > 0 ? (
-					<Button
+					<ActionIcon
+						aria-label="Remove group"
 						color="red"
 						disabled={disabled}
 						onClick={(event) => removeGroup(event)}
-						size="compact-xs"
+						size="sm"
 						variant="subtle"
 					>
-						Remove
-					</Button>
+						<IconTrash size={14} />
+					</ActionIcon>
 				) : null}
 			</Group>
 		</Group>

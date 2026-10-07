@@ -1,4 +1,11 @@
-import { ActionIcon, Group, NumberInput, Select, Stack } from "@mantine/core";
+import {
+	ActionIcon,
+	Divider,
+	Group,
+	NativeSelect,
+	NumberInput,
+	Stack,
+} from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconX } from "@tabler/icons-react";
 import type { RuleProps } from "react-querybuilder";
@@ -90,22 +97,21 @@ export function StrategyRule({
 		);
 	};
 	return (
-		// No frame of its own: operands lie on the group like nested functions
-		// lie on their parent, and a wider gap separates conditions.
-		<Stack gap="xs" mt="md">
-			{/* The remove button shares the row of the kind selector, so the
-				    editor below takes the full width. */}
+		// Conditions of a group are separated by a line rather than framed, so
+		// operands keep the screen width.
+		<Stack gap="xs" mt="sm">
+			{(path.at(-1) ?? 0) > 0 ? <Divider mb="xs" /> : null}
 			<ExpressionEditor
 				depth={path.length}
 				action={
 					<ActionIcon
 						aria-label="Remove condition"
-						color="red"
+						size="input-sm"
 						disabled={disabled}
 						onClick={() => actions.onRuleRemove(path)}
-						variant="subtle"
+						variant="default"
 					>
-						<IconX size={16} />
+						<IconX size={18} />
 					</ActionIcon>
 				}
 				disabled={disabled === true}
@@ -115,13 +121,12 @@ export function StrategyRule({
 				variables={variables}
 				withoutNumber
 			/>
-			<Select
+			<NativeSelect
 				aria-label="Comparison"
-				allowDeselect={false}
 				data={operatorOptions}
 				disabled={disabled}
-				onChange={(value) => {
-					if (!value) return;
+				onChange={(event) => {
+					const value = event.currentTarget.value;
 					change("operator", value);
 					const source = isRangeOperator(value) ? "value" : rule.valueSource;
 					if (source !== rule.valueSource) change("valueSource", source);

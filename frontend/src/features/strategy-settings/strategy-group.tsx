@@ -1,20 +1,13 @@
-import { Paper, useMantineTheme } from "@mantine/core";
 import { RuleGroup, type RuleGroupProps } from "react-querybuilder";
-import { nestingBorder } from "@/features/strategy-settings/nesting-colors";
+import { NestingLine } from "@/features/strategy-settings/nesting-line";
 
-// A group bordered in the color of its depth; nested groups indent inside
-// their parent.
+// A group of conditions. Nested groups indent behind a line in the color of
+// their depth instead of a frame, so conditions keep the screen width.
 export function StrategyGroup(props: RuleGroupProps) {
-	const border = nestingBorder(useMantineTheme(), props.path.length);
+	if (props.path.length === 0) return <RuleGroup {...props} />;
 	return (
-		<Paper
-			mt={props.path.length > 0 ? "xs" : 0}
-			p="xs"
-			radius="sm"
-			style={{ borderColor: border }}
-			withBorder
-		>
+		<NestingLine depth={props.path.length} mt="md">
 			<RuleGroup {...props} />
-		</Paper>
+		</NestingLine>
 	);
 }

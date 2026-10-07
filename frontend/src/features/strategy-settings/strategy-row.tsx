@@ -8,6 +8,7 @@ import {
 	Switch,
 	Text,
 } from "@mantine/core";
+import { themeToVars } from "@mantine/vanilla-extract";
 import type { Strategy } from "@/api/generated/models";
 
 interface StrategyRowProps {
@@ -15,6 +16,8 @@ interface StrategyRowProps {
 	onDelete(): void;
 	onEdit(): void;
 	onEnabledChange(enabled: boolean): void;
+	// Whether the strategy is open in the editor beside the list.
+	selected?: boolean;
 	strategy: Strategy;
 }
 
@@ -23,10 +26,22 @@ export function StrategyRow({
 	onDelete,
 	onEdit,
 	onEnabledChange,
+	selected = false,
 	strategy,
 }: StrategyRowProps) {
 	return (
-		<Paper p="xs" radius="sm" withBorder>
+		<Paper
+			p="xs"
+			radius="sm"
+			style={
+				selected
+					? (theme) => ({
+							borderColor: themeToVars(theme).colors.primaryColors.filled,
+						})
+					: undefined
+			}
+			withBorder
+		>
 			<Stack gap={6}>
 				<Group justify="space-between" wrap="nowrap">
 					<Group gap="xs" miw={0} wrap="nowrap">

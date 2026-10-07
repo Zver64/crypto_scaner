@@ -19,6 +19,9 @@ export type StrategyQuery = RuleGroupType<StrategyRule>;
 export interface StrategyDraft {
 	// Undefined while creating a strategy.
 	id: number | undefined;
+	// Tells drafts opened one after another apart, so each opens a fresh
+	// form and a finished save closes only the draft it saved.
+	revision: number;
 	name: string;
 	// Telegram alert text; empty keeps the generated one.
 	message: string;

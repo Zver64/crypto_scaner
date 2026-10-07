@@ -11,7 +11,7 @@ import {
 	UnstyledButton,
 } from "@mantine/core";
 import { useClipboard } from "@mantine/hooks";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { StrategyUpdate, StrategyVariable } from "@/api/generated/models";
 import { StrategyImport } from "@/features/strategy-settings/strategy-import";
 import { StrategyRuleBuilder } from "@/features/strategy-settings/strategy-rule-builder";
@@ -26,6 +26,9 @@ interface StrategyFormContentProps {
 	draft: StrategyDraft;
 	isSaving: boolean;
 	onCancel(): void;
+	// Reports whether the fields differ from the draft, so the page can
+	// warn before another strategy replaces them.
+	onDirtyChange(dirty: boolean): void;
 	onSubmit(input: StrategyUpdate): void;
 	variables: readonly StrategyVariable[];
 }
@@ -35,6 +38,7 @@ export function StrategyFormContent({
 	draft,
 	isSaving,
 	onCancel,
+	onDirtyChange,
 	onSubmit,
 	variables,
 }: StrategyFormContentProps) {
@@ -47,6 +51,11 @@ export function StrategyFormContent({
 	const expression = strategyExpression(query);
 	const named = name.trim() !== "";
 	const conditionsComplete = strategyQueryComplete(query);
+	const dirty =
+		name !== draft.name ||
+		message !== draft.message ||
+		expression !== strategyExpression(draft.query);
+	useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 	return (
 		<Stack gap="md">
 			<TextInput

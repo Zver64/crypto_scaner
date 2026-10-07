@@ -30,6 +30,7 @@ import {
 	firstField,
 } from "@/features/strategy-settings/expressions";
 import type {
+	StrategyDraft,
 	StrategyOperator,
 	StrategyQuery,
 	Token,
@@ -354,6 +355,11 @@ function ruleComplete(rule: RuleType): boolean {
 		values.length === (isRangeOperator(rule.operator) ? 2 : 1) &&
 		values.every((value) => typeof value === "number" && Number.isFinite(value))
 	);
+}
+
+// The title of the form editing draft.
+export function strategyFormTitle(draft: StrategyDraft): string {
+	return draft.id === undefined ? "New strategy" : "Edit strategy";
 }
 
 // Validation and conflict messages come from the backend.

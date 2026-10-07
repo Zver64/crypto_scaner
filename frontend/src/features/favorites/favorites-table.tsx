@@ -77,12 +77,10 @@ export function FavoritesTable({
 				<>
 					<TextInput
 						aria-label="Filter Favorites by symbol"
-						label="Symbol filter"
-						labelProps={{ mb: "xs" }}
 						onChange={(event) =>
 							onSymbolFilterChange(event.currentTarget.value)
 						}
-						placeholder="e.g. BTC"
+						placeholder="Filter by symbol, e.g. BTC"
 						value={symbolFilter}
 					/>
 					{rows.length > 0 ? (

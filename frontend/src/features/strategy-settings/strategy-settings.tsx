@@ -1,12 +1,4 @@
-import {
-	Button,
-	Group,
-	Loader,
-	Paper,
-	Stack,
-	Text,
-	Title,
-} from "@mantine/core";
+import { Button, Group, Loader, Paper, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -38,7 +30,6 @@ import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
 	emptyStrategyQuery,
 	strategyErrorMessage,
-	strategyFormTitle,
 	strategyQuery,
 	strategyQueryDropped,
 } from "@/features/strategy-settings/utils";
@@ -247,9 +238,6 @@ export function StrategySettings() {
 			{draft ? (
 				<Paper p="md" radius="sm" withBorder>
 					<Stack gap="md">
-						<Title order={2} size="h4">
-							{strategyFormTitle(draft)}
-						</Title>
 						<StrategyFormContent
 							draft={draft}
 							isSaving={isSaving}

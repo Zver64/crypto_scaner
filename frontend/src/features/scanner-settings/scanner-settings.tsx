@@ -1,4 +1,4 @@
-import { Button, Group, Loader, Stack, Text, Title } from "@mantine/core";
+import { Button, Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -85,19 +85,12 @@ export function ScannerSettings() {
 		<SidebarLayout
 			gap="md"
 			sidebar={
-				<ScannerIndicatorForm
-					isSaving={createMutation.isPending}
-					onSubmit={(data) => createMutation.mutate({ data })}
-					types={types.data}
-				/>
-			}
-			sidebarPosition="start"
-		>
-			<Stack gap="md">
-				<Group justify="space-between">
-					<Title order={2} size="h4">
-						Indicators
-					</Title>
+				<Stack gap="md">
+					<ScannerIndicatorForm
+						isSaving={createMutation.isPending}
+						onSubmit={(data) => createMutation.mutate({ data })}
+						types={types.data}
+					/>
 					{/* Mirrors the backend rule only to hide a button that would
 					delete nothing. */}
 					{indicators.data.some(
@@ -107,14 +100,18 @@ export function ScannerSettings() {
 						<Button
 							color="red"
 							disabled={clearMutation.isPending}
+							fullWidth
 							onClick={() => setClearing(true)}
-							size="compact-sm"
-							variant="subtle"
+							variant="light"
 						>
 							Remove unused
 						</Button>
 					) : null}
-				</Group>
+				</Stack>
+			}
+			sidebarPosition="start"
+		>
+			<Stack gap="md">
 				<ScannerIndicatorList
 					disabled={
 						updateMutation.isPending ||

@@ -95,3 +95,20 @@ func (interval CandleInterval) PreviousOpenTime(open time.Time) time.Time {
 func (interval CandleInterval) LastClosedOpenTime(at time.Time) time.Time {
 	return interval.PreviousOpenTime(interval.OpenTime(at))
 }
+
+// CandlesBetween counts the candles from the one opening at from through the
+// one opening at to, both aligned; 0 when to is before from.
+func (interval CandleInterval) CandlesBetween(from, to time.Time) int {
+	if to.Before(from) {
+		return 0
+	}
+	switch interval {
+	case IntervalHour, IntervalDay, IntervalWeek:
+		return int(to.Sub(from)/interval.NextOpenTime(from).Sub(from)) + 1
+	case IntervalMonth:
+		from, to = from.UTC(), to.UTC()
+		return (to.Year()-from.Year())*12 + int(to.Month()-from.Month()) + 1
+	default:
+		return 0
+	}
+}

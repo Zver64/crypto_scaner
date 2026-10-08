@@ -19,7 +19,7 @@
  */
 
 export interface BacktestEquityPoint {
-  /** Exit time of the trade, the open time of its exit candle. */
+  /** Exit time of the trade. */
   time: string;
   equity: number;
 }

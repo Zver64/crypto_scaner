@@ -19,12 +19,20 @@
  */
 
 export interface BacktestTrade {
-  /** Open time of the entry candle; the trade buys at its open. */
+  /** Open time of the candle the first buy filled at, at its open. */
   entry_time: string;
+  /** Average price of the buys. */
   entry_price: number;
-  /** Open time of the exit candle; the trade sells at its close. */
+  /** Open time of the candle the trade sold at, at its open; for an open trade, of the last candle, whose close values it. */
   exit_time: string;
   exit_price: number;
+  /**
+     * Buys of the trade, each of the same amount.
+     * @minimum 1
+     */
+  buys: number;
+  /** True for a trade the history ends before it sells. */
+  open: boolean;
   /** Return net of the fees on both sides. */
   net_return: number;
 }

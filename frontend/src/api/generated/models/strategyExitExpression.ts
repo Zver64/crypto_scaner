@@ -17,25 +17,11 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyAccumulate } from './strategyAccumulate.ts';
-import type { StrategyExitExpression } from './strategyExitExpression.ts';
-import type { StrategyMaxBuys } from './strategyMaxBuys.ts';
-import type { StrategyMessage } from './strategyMessage.ts';
 
-export interface StrategyInput {
-  /**
-     * @minLength 1
-     * @maxLength 64
-     */
-  name: string;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
-  exit_expression: StrategyExitExpression;
-  accumulate: StrategyAccumulate;
-  max_buys: StrategyMaxBuys;
-  message: StrategyMessage;
-  enabled: boolean;
-}
+/**
+ * Exit rule, a CEL expression like the entry rule that may also read the
+ * position variables, such as `pnl >= 5 || bars_held >= 24`; empty
+ * for a strategy that never sells and buys at every entry signal.
+ * @maxLength 2000
+ */
+export type StrategyExitExpression = string;

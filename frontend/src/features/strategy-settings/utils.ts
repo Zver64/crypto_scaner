@@ -12,7 +12,11 @@ import {
 	parseCEL,
 } from "react-querybuilder/parseCEL";
 import type { ErrorType } from "@/api/fetch";
-import type { ErrorResponse, StrategyVariable } from "@/api/generated/models";
+import type {
+	ErrorResponse,
+	Strategy,
+	StrategyVariable,
+} from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import {
 	anyField,
@@ -36,6 +40,7 @@ import type {
 	Token,
 } from "@/features/strategy-settings/types";
 import { describeApiError } from "@/utils/api-error";
+import { formatNumber } from "@/utils/number-format";
 
 export function isRangeOperator(operator: string): boolean {
 	return operator === "between" || operator === "notBetween";
@@ -137,10 +142,12 @@ export function strategyExpression(query: StrategyQuery): string {
 	});
 }
 
-// Restores the builder query from a stored expression. Unknown parts are
-// dropped, so an expression the builder cannot show opens incomplete.
+// Restores the builder query from a stored expression, which may be
+// written by hand without parentheses around arithmetic operands. Unknown
+// parts are dropped, so an expression the builder cannot show opens
+// incomplete.
 export function strategyQuery(expression: string): StrategyQuery {
-	const parsed = parseCEL(expression, {
+	const parsed = parseCEL(parenthesizeOperands(expression), {
 		customExpressionHandler: crossRule,
 		getExpression: expressionParser,
 	});
@@ -152,7 +159,7 @@ export function strategyQuery(expression: string): StrategyQuery {
 export function importedStrategyQuery(
 	expression: string,
 ): StrategyQuery | undefined {
-	const query = strategyQuery(parenthesizeOperands(expression));
+	const query = strategyQuery(expression);
 	return strategyQueryComplete(query) &&
 		!strategyQueryDropped(expression, query)
 		? query
@@ -357,6 +364,62 @@ function ruleComplete(rule: RuleType): boolean {
 	);
 }
 
+// The draft of a new strategy.
+export function newStrategyDraft(): Omit<StrategyDraft, "revision"> {
+	return {
+		id: undefined,
+		name: "",
+		message: "",
+		query: emptyStrategyQuery(),
+		exitQuery: undefined,
+		accumulate: false,
+		maxBuys: 0,
+		incomplete: false,
+	};
+}
+
+// The draft editing strategy, with its rules parsed into the builder.
+export function strategyDraft(
+	strategy: Strategy,
+): Omit<StrategyDraft, "revision"> {
+	const query = strategyQuery(strategy.expression);
+	const exitQuery =
+		strategy.exit_expression === ""
+			? undefined
+			: strategyQuery(strategy.exit_expression);
+	return {
+		id: strategy.id,
+		name: strategy.name,
+		message: strategy.message,
+		query,
+		exitQuery,
+		accumulate: strategy.accumulate,
+		maxBuys: strategy.max_buys,
+		incomplete:
+			strategyQueryDropped(strategy.expression, query) ||
+			(exitQuery !== undefined &&
+				strategyQueryDropped(strategy.exit_expression, exitQuery)),
+	};
+}
+
+// How a strategy buys: once per trade, adding buys until its exit, or at
+// every entry signal without one, with its limit of buys.
+export function strategyBuysLabel(
+	strategy: Pick<Strategy, "accumulate" | "exit_expression" | "max_buys">,
+): string {
+	const limit =
+		strategy.max_buys > 0
+			? `, at most ${formatNumber(strategy.max_buys)} per trade`
+			: "";
+	if (strategy.exit_expression === "") {
+		return `Buys at every entry signal and never sells${limit}`;
+	}
+	if (strategy.accumulate) {
+		return `Adds a buy at every entry signal until the exit${limit}`;
+	}
+	return "One buy per trade";
+}
+
 // The title of the form editing draft.
 export function strategyFormTitle(draft: StrategyDraft): string {
 	return draft.id === undefined ? "New strategy" : "Edit strategy";
@@ -377,13 +440,25 @@ export function strategyErrorMessage(
 	});
 }
 
-// Select data for indicator variables, grouped by candle interval.
+// The variables that exist at every candle and of every coin: all but the
+// position variables of the open trade, which the backend reads only at the
+// latest candle of the evaluated coin.
+export function withoutPositionVariables(
+	variables: readonly StrategyVariable[],
+): StrategyVariable[] {
+	return variables.filter(({ position }) => !position);
+}
+
+// Select data for variables, grouped by candle interval; the position
+// variables of exit rules form their own group.
 export function variableSelectData(variables: readonly StrategyVariable[]) {
 	const groups = new Map<string, { label: string; value: string }[]>();
 	for (const variable of variables) {
 		const group =
-			chartIntervalOptions.find(({ value }) => value === variable.interval)
-				?.label ?? variable.interval;
+			variable.interval === undefined
+				? "Position"
+				: (chartIntervalOptions.find(({ value }) => value === variable.interval)
+						?.label ?? variable.interval);
 		const items = groups.get(group) ?? [];
 		items.push({ label: variable.label, value: variable.name });
 		groups.set(group, items);

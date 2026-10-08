@@ -17,25 +17,10 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyAccumulate } from './strategyAccumulate.ts';
-import type { StrategyExitExpression } from './strategyExitExpression.ts';
-import type { StrategyMaxBuys } from './strategyMaxBuys.ts';
-import type { StrategyMessage } from './strategyMessage.ts';
 
-export interface StrategyInput {
-  /**
-     * @minLength 1
-     * @maxLength 64
-     */
-  name: string;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
-  exit_expression: StrategyExitExpression;
-  accumulate: StrategyAccumulate;
-  max_buys: StrategyMaxBuys;
-  message: StrategyMessage;
-  enabled: boolean;
-}
+/**
+ * Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
+ * @minimum 0
+ * @maximum 1000
+ */
+export type StrategyMaxBuys = number;

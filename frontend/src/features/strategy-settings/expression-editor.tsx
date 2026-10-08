@@ -30,7 +30,10 @@ import {
 } from "@/features/strategy-settings/expressions";
 import { FunctionEditor } from "@/features/strategy-settings/function-editor";
 import { NestingLine } from "@/features/strategy-settings/nesting-line";
-import { variableSelectData } from "@/features/strategy-settings/utils";
+import {
+	variableSelectData,
+	withoutPositionVariables,
+} from "@/features/strategy-settings/utils";
 
 export interface ExpressionEditorProps {
 	disabled: boolean;
@@ -214,7 +217,7 @@ export function ExpressionEditor({
 							onChange={(operand) =>
 								onChange({ ...node, args: [node.args[0] ?? field, operand] })
 							}
-							variables={variables}
+							variables={withoutPositionVariables(variables)}
 							withoutCoin
 							withoutNumber
 						/>

@@ -42,7 +42,7 @@ func newTable() table.Writer {
 
 func renderStrategies(w io.Writer, strategies []apiclient.Strategy) {
 	t := newTable()
-	t.AppendHeader(table.Row{"ID", "State", "Name", "Expression"})
+	t.AppendHeader(table.Row{"ID", "State", "Name", "Entry", "Exit", "Buys"})
 	for _, strategy := range strategies {
 		state := "off"
 		if strategy.Enabled {
@@ -51,9 +51,30 @@ func renderStrategies(w io.Writer, strategies []apiclient.Strategy) {
 		if !strategy.Valid {
 			state = "invalid"
 		}
-		t.AppendRow(table.Row{strategy.Id, state, strategy.Name, strings.Join(strings.Fields(strategy.Expression), " ")})
+		exit := "-"
+		if strategy.ExitExpression != "" {
+			exit = strings.Join(strings.Fields(strategy.ExitExpression), " ")
+		}
+		t.AppendRow(table.Row{strategy.Id, state, strategy.Name, strings.Join(strings.Fields(strategy.Expression), " "), exit, buys(strategy)})
 	}
 	fmt.Fprintln(w, t.Render())
+}
+
+// buys tells how a strategy buys: once per trade, accumulating until the
+// exit, or at every signal without one, with its max buys.
+func buys(strategy apiclient.Strategy) string {
+	switch {
+	case strategy.ExitExpression != "" && !strategy.Accumulate:
+		return "one per trade"
+	case strategy.MaxBuys > 0 && strategy.ExitExpression != "":
+		return fmt.Sprintf("accumulate, max %d", strategy.MaxBuys)
+	case strategy.ExitExpression != "":
+		return "accumulate"
+	case strategy.MaxBuys > 0:
+		return fmt.Sprintf("every signal, max %d", strategy.MaxBuys)
+	default:
+		return "every signal"
+	}
 }
 
 // maxTradeRows caps the trade list; --json prints every trade.
@@ -69,52 +90,35 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest) {
 	t.AppendRows([]table.Row{
 		{"Coin", backtest.Symbol},
 		{"Period", fmt.Sprintf("%s → %s (%s candles)", day(*backtest.From), day(*backtest.To), backtest.Interval)},
-		{"Hold", fmt.Sprintf("%d candles", backtest.Hold)},
 		{"Fee", fmt.Sprintf("%g%% per buy and per sell", backtest.Fee*100)},
-		{"Skipped alerts", fmt.Sprintf("%d (a trade was open)", backtest.SkippedAlerts)},
-		{"Unfinished", fmt.Sprintf("%d (history ended or had a gap before the exit)", backtest.UnfinishedTrades)},
+		{"Skipped signals", fmt.Sprintf("%d (bought nothing: no accumulation or max buys)", backtest.SkippedAlerts)},
 	})
 	fmt.Fprintln(w, t.Render())
 	if len(backtest.Trades) == 0 {
 		// The Mini App's empty state.
-		if backtest.UnfinishedTrades > 0 {
-			fmt.Fprintf(w, "No trades: every trade is still unfinished (%d): the stored history ends or has a gap before its exit.\n", backtest.UnfinishedTrades)
-		} else {
-			fmt.Fprintln(w, "No trades: the strategy did not alert on this coin in the stored history.")
-		}
+		fmt.Fprintln(w, "No trades: the strategy did not buy on this coin in the stored history.")
 		return
 	}
 	renderSummary(w, backtest.Summary, backtest.Baselines)
-	renderAverages(w, backtest.Summary.Stats, backtest.Baselines.EveryCandle)
 	renderTrades(w, backtest.Interval, backtest.Trades)
 }
 
-// renderSummary lists the Mini App's metric cards: each strategy metric with
-// the baseline it is compared with.
+// renderSummary lists the Mini App's metric cards: the net profit with the
+// baselines it is compared with, then the statistics of the closed trades.
 func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines apiclient.BacktestBaselines) {
 	t := newTable()
 	t.AppendHeader(table.Row{"Metric", "Strategy", "Compared with"})
 	t.SetColumnConfigs([]table.ColumnConfig{{Name: "Strategy", Align: text.AlignRight}})
-	strategy, every := summary.Stats, baselines.EveryCandle
+	stats := summary.Stats
 	t.AppendRows([]table.Row{
-		{"Net profit %", percent(&summary.NetProfit), "Buy & Hold " + percent(baselines.BuyAndHold)},
-		{"Trades", strategy.TradeCount, fmt.Sprintf("Every candle %d", every.TradeCount)},
-		{"Win rate %", share(strategy.WinRate), "Every candle " + share(every.WinRate)},
-		{"Profit factor", factor(strategy.ProfitFactor), "Every candle " + factor(every.ProfitFactor)},
+		{"Net profit %", percent(&summary.NetProfit), "Buy & Hold " + percent(baselines.BuyAndHold) + ", DCA " + percent(baselines.Dca)},
 		{"Max drawdown %", fmt.Sprintf("%.2f", summary.MaxDrawdown*100), "-"},
-	})
-	fmt.Fprintln(w, t.Render())
-}
-
-// renderAverages compares the average returns with every candle.
-func renderAverages(w io.Writer, strategy, every apiclient.BacktestTradeStats) {
-	t := newTable()
-	t.AppendHeader(table.Row{"Metric", "Strategy", "Every candle"})
-	t.SetColumnConfigs([]table.ColumnConfig{{Name: "Strategy", Align: text.AlignRight}, {Name: "Every candle", Align: text.AlignRight}})
-	t.AppendRows([]table.Row{
-		{"Avg trade %", percent(strategy.AverageTrade), percent(every.AverageTrade)},
-		{"Avg win %", percent(strategy.AverageWin), percent(every.AverageWin)},
-		{"Avg loss %", percent(strategy.AverageLoss), percent(every.AverageLoss)},
+		{"Closed trades", stats.TradeCount, "-"},
+		{"Win rate %", share(stats.WinRate), "-"},
+		{"Profit factor", factor(stats.ProfitFactor), "-"},
+		{"Avg trade %", percent(stats.AverageTrade), "-"},
+		{"Avg win %", percent(stats.AverageWin), "-"},
+		{"Avg loss %", percent(stats.AverageLoss), "-"},
 	})
 	fmt.Fprintln(w, t.Render())
 }
@@ -128,15 +132,19 @@ func renderTrades(w io.Writer, interval apiclient.CandleInterval, trades []apicl
 	}
 	// A title would wrap mid-sentence on the narrow tables of daily and
 	// coarser intervals.
-	fmt.Fprintln(w, "Trades: buy at the open of the candle after an alert, sell at the close of the last held candle; returns are after fees.")
+	fmt.Fprintln(w, "Trades: buys and sells fill at the open after their signal; an open trade is valued at the last close; returns are after fees.")
 	t := newTable()
 	t.SetAutoIndex(true)
-	t.AppendHeader(table.Row{"Entry", "Price", "Exit", "Price", "Net %"})
-	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}})
+	t.AppendHeader(table.Row{"Entry", "Avg price", "Buys", "Exit", "Price", "Net %"})
+	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 6, Align: text.AlignRight}})
 	for _, trade := range slices.Backward(trades[max(0, len(trades)-maxTradeRows):]) {
+		exit := trade.ExitTime.UTC().Format(layout)
+		if trade.Open {
+			exit = "open"
+		}
 		t.AppendRow(table.Row{
-			trade.EntryTime.UTC().Format(layout), price(trade.EntryPrice),
-			trade.ExitTime.UTC().Format(layout), price(trade.ExitPrice), percent(&trade.NetReturn),
+			trade.EntryTime.UTC().Format(layout), averagePrice(trade.EntryPrice), trade.Buys,
+			exit, price(trade.ExitPrice), percent(&trade.NetReturn),
 		})
 	}
 	fmt.Fprintln(w, t.Render())
@@ -153,6 +161,12 @@ func factor(value *float64) string {
 }
 
 func price(value float64) string { return strconv.FormatFloat(value, 'f', -1, 64) }
+
+// averagePrice formats an average of prices with 8 significant digits.
+func averagePrice(value float64) string {
+	rounded, _ := strconv.ParseFloat(strconv.FormatFloat(value, 'g', 8, 64), 64)
+	return price(rounded)
+}
 
 // percent formats a fractional return as a signed percentage.
 func percent(value *float64) string {

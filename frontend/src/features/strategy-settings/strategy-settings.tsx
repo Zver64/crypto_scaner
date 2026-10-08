@@ -28,10 +28,9 @@ import { StrategyRemovalConfirmation } from "@/features/strategy-settings/strate
 import { StrategyRow } from "@/features/strategy-settings/strategy-row";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
-	emptyStrategyQuery,
+	newStrategyDraft,
+	strategyDraft,
 	strategyErrorMessage,
-	strategyQuery,
-	strategyQueryDropped,
 } from "@/features/strategy-settings/utils";
 
 export function StrategySettings() {
@@ -151,15 +150,7 @@ export function StrategySettings() {
 			<Group grow>
 				<Button
 					disabled={variables.data.length === 0}
-					onClick={() =>
-						open({
-							id: undefined,
-							name: "",
-							message: "",
-							query: emptyStrategyQuery(),
-							incomplete: false,
-						})
-					}
+					onClick={() => open(newStrategyDraft())}
 				>
 					Add strategy
 				</Button>
@@ -171,16 +162,7 @@ export function StrategySettings() {
 							disabled={busy}
 							key={strategy.id}
 							onDelete={() => setRemoving(strategy)}
-							onEdit={() => {
-								const query = strategyQuery(strategy.expression);
-								open({
-									id: strategy.id,
-									name: strategy.name,
-									message: strategy.message,
-									query,
-									incomplete: strategyQueryDropped(strategy.expression, query),
-								});
-							}}
+							onEdit={() => open(strategyDraft(strategy))}
 							onEnabledChange={(enabled) =>
 								enabledMutation.mutate({
 									data: { enabled },

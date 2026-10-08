@@ -20,6 +20,9 @@ import type { StrategyQuery } from "@/features/strategy-settings/types";
 import { importedStrategyQuery } from "@/features/strategy-settings/utils";
 
 interface StrategyImportProps {
+	// Whether the expression is an exit rule, which may read the position
+	// variables.
+	exit: boolean;
 	onClose(): void;
 	onImport(query: StrategyQuery): void;
 	opened: boolean;
@@ -36,6 +39,7 @@ interface PendingImport {
 // problem in it and the builder can show all of it. Indicators the expression
 // reads but nobody configured are added first, once the administrator agrees.
 export function StrategyImport({
+	exit,
 	onClose,
 	onImport,
 	opened,
@@ -64,7 +68,7 @@ export function StrategyImport({
 	};
 	const check = () =>
 		validation.mutate(
-			{ data: { expression } },
+			{ data: { exit, expression } },
 			{
 				onError: () => setProblems(["The expression could not be checked."]),
 				onSuccess: (response) => {

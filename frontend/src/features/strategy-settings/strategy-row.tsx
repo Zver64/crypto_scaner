@@ -10,6 +10,7 @@ import {
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 import type { Strategy } from "@/api/generated/models";
+import { strategyBuysLabel } from "@/features/strategy-settings/utils";
 
 interface StrategyRowProps {
 	disabled: boolean;
@@ -68,6 +69,17 @@ export function StrategyRow({
 					</Text>
 				)}
 				<Code block>{strategy.expression}</Code>
+				{strategy.exit_expression === "" ? null : (
+					<>
+						<Text c="dimmed" size="xs">
+							Exit
+						</Text>
+						<Code block>{strategy.exit_expression}</Code>
+					</>
+				)}
+				<Text c="dimmed" size="xs">
+					{strategyBuysLabel(strategy)}
+				</Text>
 				{strategy.message === "" ? null : (
 					<Text c="dimmed" size="xs" style={{ whiteSpace: "pre-wrap" }}>
 						{strategy.message}

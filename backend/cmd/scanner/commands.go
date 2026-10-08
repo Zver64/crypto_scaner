@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -26,7 +27,7 @@ func (c *cli) varsCommand() *cobra.Command {
 	var filter string
 	command := &cobra.Command{
 		Use:   "vars",
-		Short: "Variables of the configured indicators and candle fields",
+		Short: "Variables: configured indicators, candle fields, and the position variables of exit rules",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			client, err := c.client()
@@ -56,16 +57,17 @@ func (c *cli) varsCommand() *cobra.Command {
 }
 
 func (c *cli) validateCommand() *cobra.Command {
-	return &cobra.Command{
-		Use:   "validate EXPR",
-		Short: "Check an expression",
+	var exit bool
+	command := &cobra.Command{
+		Use:   "validate EXPR [--exit]",
+		Short: "Check an entry or exit rule",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			client, err := c.client()
 			if err != nil {
 				return err
 			}
-			validation, err := client.ValidateStrategyWithResponse(command.Context(), apiclient.StrategyValidationInput{Expression: args[0]})
+			validation, err := client.ValidateStrategyWithResponse(command.Context(), apiclient.StrategyValidationInput{Expression: args[0], Exit: &exit})
 			if err == nil {
 				err = check(validation, validation.JSON200 != nil, validation.JSON400)
 			}
@@ -79,6 +81,8 @@ func (c *cli) validateCommand() *cobra.Command {
 			return nil
 		},
 	}
+	command.Flags().BoolVar(&exit, "exit", false, "check an exit rule, which may also read entry_price, pnl, and bars_held")
+	return command
 }
 
 func (c *cli) favoritesCommand() *cobra.Command {
@@ -179,9 +183,13 @@ func (c *cli) deleteStrategyCommand() *cobra.Command {
 // createStrategyCommand saves a strategy the way the Mini App does, always
 // disabled: only the administrator turns alerts on, in the Mini App.
 func (c *cli) createStrategyCommand() *cobra.Command {
-	var expression, message string
+	var (
+		expression, exit, message string
+		accumulate                bool
+		maxBuys                   int
+	)
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR [--message TEXT]",
+		Use:   "create NAME --expr EXPR [--exit EXPR [--accumulate]] [--max-buys N] [--message TEXT]",
 		Short: "Save a disabled strategy, adding the indicators it reads that are not configured",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -189,10 +197,17 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := prepareStrategyExpression(command, client, expression); err != nil {
+			if err := prepareStrategyExpression(command, client, expression, false); err != nil {
 				return err
 			}
-			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{Name: args[0], Expression: expression, Message: message})
+			if exit != "" {
+				if err := prepareStrategyExpression(command, client, exit, true); err != nil {
+					return err
+				}
+			}
+			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
+				Name: args[0], Expression: expression, ExitExpression: exit, Accumulate: accumulate, MaxBuys: maxBuys, Message: message,
+			})
 			if err == nil {
 				err = check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
 			}
@@ -203,15 +218,20 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().StringVar(&expression, "expr", "", "the strategy `EXPR`ession, see docs/strategy-language.md")
-	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
+	flags := command.Flags()
+	flags.StringVar(&expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
+	flags.StringVar(&exit, "exit", "", "the exit rule `EXPR`ession; omitted, every entry signal buys and nothing sells")
+	flags.BoolVar(&accumulate, "accumulate", false, "let entry signals add buys to an open trade; ignored without --exit")
+	flags.IntVar(&maxBuys, "max-buys", 0, "most buys of one trade, 0 to 1000 (`N`; 0: no limit)")
+	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	_ = command.MarkFlagRequired("expr")
 	return command
 }
 
-// prepareStrategyExpression validates before any write and adds missing indicators.
-func prepareStrategyExpression(command *cobra.Command, client *apiclient.ClientWithResponses, expression string) error {
-	validation, err := client.ValidateStrategyWithResponse(command.Context(), apiclient.StrategyValidationInput{Expression: expression})
+// prepareStrategyExpression validates an entry rule, or an exit rule when
+// exit is set, before any write and adds missing indicators.
+func prepareStrategyExpression(command *cobra.Command, client *apiclient.ClientWithResponses, expression string, exit bool) error {
+	validation, err := client.ValidateStrategyWithResponse(command.Context(), apiclient.StrategyValidationInput{Expression: expression, Exit: &exit})
 	if err == nil {
 		err = check(validation, validation.JSON200 != nil, validation.JSON400)
 	}
@@ -220,6 +240,9 @@ func prepareStrategyExpression(command *cobra.Command, client *apiclient.ClientW
 	}
 	if len(validation.JSON200.Errors) > 0 {
 		renderValidation(command.OutOrStdout(), *validation.JSON200)
+		if exit {
+			return errors.New("the exit rule is invalid")
+		}
 		return errors.New("the expression is invalid")
 	}
 	if missing := validation.JSON200.MissingIndicators; len(missing) > 0 {
@@ -239,9 +262,13 @@ func prepareStrategyExpression(command *cobra.Command, client *apiclient.ClientW
 }
 
 func (c *cli) updateStrategyCommand() *cobra.Command {
-	var name, expression, message string
+	var (
+		name, expression, exit, message string
+		accumulate                      bool
+		maxBuys                         int
+	)
 	command := &cobra.Command{
-		Use:   "update ID [--expr EXPR] [--name NAME] [--message TEXT]",
+		Use:   "update ID [--expr EXPR] [--exit EXPR] [--accumulate=BOOL] [--max-buys N] [--name NAME] [--message TEXT]",
 		Short: "Edit a disabled saved strategy, preserving unspecified fields",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -250,8 +277,8 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 				return err
 			}
 			flags := command.Flags()
-			if !flags.Changed("expr") && !flags.Changed("name") && !flags.Changed("message") {
-				return errors.New("specify at least one of --expr, --name, or --message")
+			if !slices.ContainsFunc([]string{"expr", "exit", "accumulate", "max-buys", "name", "message"}, flags.Changed) {
+				return errors.New("specify at least one of --expr, --exit, --accumulate, --max-buys, --name, or --message")
 			}
 			client, err := c.client()
 			if err != nil {
@@ -278,7 +305,10 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			if current.Enabled {
 				return fmt.Errorf("strategy %d is enabled; edit it in the Mini App", id)
 			}
-			body := apiclient.StrategyUpdate{Name: current.Name, Expression: current.Expression, Message: current.Message}
+			body := apiclient.StrategyUpdate{
+				Name: current.Name, Expression: current.Expression, ExitExpression: current.ExitExpression,
+				Accumulate: current.Accumulate, MaxBuys: current.MaxBuys, Message: current.Message,
+			}
 			if flags.Changed("name") {
 				body.Name = name
 			}
@@ -287,9 +317,23 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			}
 			if flags.Changed("expr") {
 				body.Expression = expression
-				if err := prepareStrategyExpression(command, client, expression); err != nil {
+				if err := prepareStrategyExpression(command, client, expression, false); err != nil {
 					return err
 				}
+			}
+			if flags.Changed("exit") {
+				body.ExitExpression = exit
+				if exit != "" {
+					if err := prepareStrategyExpression(command, client, exit, true); err != nil {
+						return err
+					}
+				}
+			}
+			if flags.Changed("accumulate") {
+				body.Accumulate = accumulate
+			}
+			if flags.Changed("max-buys") {
+				body.MaxBuys = maxBuys
 			}
 			updated, err := client.UpdateStrategyWithResponse(command.Context(), id, body)
 			if err == nil {
@@ -302,7 +346,10 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			return nil
 		},
 	}
-	command.Flags().StringVar(&expression, "expr", "", "the strategy `EXPR`ession; omitted preserves the current expression")
+	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")
+	command.Flags().StringVar(&exit, "exit", "", "the exit rule `EXPR`ession; empty removes it, omitted preserves it")
+	command.Flags().BoolVar(&accumulate, "accumulate", false, "let entry signals add buys to an open trade; ignored without an exit rule; omitted preserves it")
+	command.Flags().IntVar(&maxBuys, "max-buys", 0, "most buys of one trade, 0 to 1000 (`N`; 0: no limit); omitted preserves it")
 	command.Flags().StringVar(&name, "name", "", "strategy `NAME`; omitted preserves the current name")
 	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")
 	return command
@@ -312,10 +359,9 @@ func (c *cli) backtestCommand() *cobra.Command {
 	var (
 		strategyID int64
 		symbol     string
-		hold       int
 	)
 	command := &cobra.Command{
-		Use:   "backtest --strategy ID --symbol SYM [--hold N]",
+		Use:   "backtest --strategy ID --symbol SYM",
 		Short: "Simulate the trades of a saved strategy on one coin against its baselines",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
@@ -324,9 +370,6 @@ func (c *cli) backtestCommand() *cobra.Command {
 				return err
 			}
 			params := apiclient.BacktestStrategyParams{Symbol: symbol}
-			if command.Flags().Changed("hold") {
-				params.Hold = &hold
-			}
 			backtest, err := client.BacktestStrategyWithResponse(command.Context(), strategyID, &params)
 			if err == nil {
 				err = check(backtest, backtest.JSON200 != nil, backtest.JSON400, backtest.JSON404, backtest.JSON503)
@@ -341,7 +384,6 @@ func (c *cli) backtestCommand() *cobra.Command {
 	flags := command.Flags()
 	flags.Int64Var(&strategyID, "strategy", 0, "the saved strategy `ID` (see scanner strategies)")
 	flags.StringVar(&symbol, "symbol", "", "any coin `SYM`, such as BTCUSDT")
-	flags.IntVar(&hold, "hold", 0, "candles every trade holds, 1 to 1000 (`N`; default: 1h 24, 1d 7, 1w 4, 1M 3)")
 	_ = command.MarkFlagRequired("strategy")
 	_ = command.MarkFlagRequired("symbol")
 	return command

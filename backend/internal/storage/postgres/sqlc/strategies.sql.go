@@ -7,47 +7,9 @@ package sqlc
 
 import (
 	"context"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
-
-const addStrategyMatches = `-- name: AddStrategyMatches :many
-INSERT INTO app.strategy_matches (strategy_id, instrument_id)
-SELECT s.id, ids.instrument_id
-FROM app.strategies s
-CROSS JOIN unnest($1::BIGINT[]) AS ids(instrument_id)
-WHERE s.id = $2 AND s.enabled AND NOT s.baseline_pending AND s.revision = $3
-FOR SHARE OF s
-ON CONFLICT DO NOTHING
-RETURNING instrument_id
-`
-
-type AddStrategyMatchesParams struct {
-	InstrumentIds []int64
-	StrategyID    int64
-	Revision      int64
-}
-
-// Adds matches only while the evaluated revision is current and announced,
-// and returns the instruments that were not matching yet. The row lock
-// orders it with a concurrent change.
-func (q *Queries) AddStrategyMatches(ctx context.Context, arg AddStrategyMatchesParams) ([]int64, error) {
-	rows, err := q.db.Query(ctx, addStrategyMatches, arg.InstrumentIds, arg.StrategyID, arg.Revision)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []int64
-	for rows.Next() {
-		var instrument_id int64
-		if err := rows.Scan(&instrument_id); err != nil {
-			return nil, err
-		}
-		items = append(items, instrument_id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
 
 const completeStrategyBaseline = `-- name: CompleteStrategyBaseline :execrows
 UPDATE app.strategies
@@ -60,7 +22,7 @@ type CompleteStrategyBaselineParams struct {
 	Revision int64
 }
 
-// Locks the strategy while its matches are replaced; nothing changes unless
+// Locks the strategy while its states are replaced; nothing changes unless
 // the evaluated revision still awaits its baseline.
 func (q *Queries) CompleteStrategyBaseline(ctx context.Context, arg CompleteStrategyBaselineParams) (int64, error) {
 	result, err := q.db.Exec(ctx, completeStrategyBaseline, arg.ID, arg.Revision)
@@ -70,12 +32,12 @@ func (q *Queries) CompleteStrategyBaseline(ctx context.Context, arg CompleteStra
 	return result.RowsAffected(), nil
 }
 
-const deleteAllStrategyMatches = `-- name: DeleteAllStrategyMatches :exec
-DELETE FROM app.strategy_matches WHERE strategy_id = $1
+const deleteAllStrategyStates = `-- name: DeleteAllStrategyStates :exec
+DELETE FROM app.strategy_states WHERE strategy_id = $1
 `
 
-func (q *Queries) DeleteAllStrategyMatches(ctx context.Context, strategyID int64) error {
-	_, err := q.db.Exec(ctx, deleteAllStrategyMatches, strategyID)
+func (q *Queries) DeleteAllStrategyStates(ctx context.Context, strategyID int64) error {
+	_, err := q.db.Exec(ctx, deleteAllStrategyStates, strategyID)
 	return err
 }
 
@@ -100,18 +62,18 @@ func (q *Queries) DeleteStrategyIndicators(ctx context.Context, strategyID int64
 	return err
 }
 
-const deleteStrategyMatches = `-- name: DeleteStrategyMatches :exec
-DELETE FROM app.strategy_matches
+const deleteStrategyStates = `-- name: DeleteStrategyStates :exec
+DELETE FROM app.strategy_states
 WHERE strategy_id = $1::BIGINT AND instrument_id = ANY($2::BIGINT[])
 `
 
-type DeleteStrategyMatchesParams struct {
+type DeleteStrategyStatesParams struct {
 	StrategyID    int64
 	InstrumentIds []int64
 }
 
-func (q *Queries) DeleteStrategyMatches(ctx context.Context, arg DeleteStrategyMatchesParams) error {
-	_, err := q.db.Exec(ctx, deleteStrategyMatches, arg.StrategyID, arg.InstrumentIds)
+func (q *Queries) DeleteStrategyStates(ctx context.Context, arg DeleteStrategyStatesParams) error {
+	_, err := q.db.Exec(ctx, deleteStrategyStates, arg.StrategyID, arg.InstrumentIds)
 	return err
 }
 
@@ -125,22 +87,28 @@ func (q *Queries) DeleteStrategySymbols(ctx context.Context, strategyID int64) e
 }
 
 const insertStrategy = `-- name: InsertStrategy :one
-INSERT INTO app.strategies (name, expression, message, enabled, baseline_pending)
-VALUES ($1, $2, $3, $4, $4)
+INSERT INTO app.strategies (name, expression, exit_expression, accumulate, max_buys, message, enabled, baseline_pending)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 RETURNING id
 `
 
 type InsertStrategyParams struct {
-	Name       string
-	Expression string
-	Message    string
-	Enabled    bool
+	Name           string
+	Expression     string
+	ExitExpression string
+	Accumulate     bool
+	MaxBuys        int32
+	Message        string
+	Enabled        bool
 }
 
 func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, insertStrategy,
 		arg.Name,
 		arg.Expression,
+		arg.ExitExpression,
+		arg.Accumulate,
+		arg.MaxBuys,
 		arg.Message,
 		arg.Enabled,
 	)
@@ -165,20 +133,30 @@ func (q *Queries) InsertStrategyIndicators(ctx context.Context, arg InsertStrate
 	return err
 }
 
-const insertStrategyMatches = `-- name: InsertStrategyMatches :exec
-INSERT INTO app.strategy_matches (strategy_id, instrument_id)
-SELECT $1::BIGINT, instrument_id
-FROM unnest($2::BIGINT[]) AS ids(instrument_id)
-ON CONFLICT DO NOTHING
+const insertStrategyStates = `-- name: InsertStrategyStates :exec
+INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry)
+SELECT $1::BIGINT, v.instrument_id, v.open_time, v.entry
+FROM (
+    SELECT unnest($2::BIGINT[]) AS instrument_id, unnest($3::TIMESTAMPTZ[]) AS open_time,
+           unnest($4::BOOLEAN[]) AS entry
+) AS v
 `
 
-type InsertStrategyMatchesParams struct {
+type InsertStrategyStatesParams struct {
 	StrategyID    int64
 	InstrumentIds []int64
+	OpenTimes     []pgtype.Timestamptz
+	Entries       []bool
 }
 
-func (q *Queries) InsertStrategyMatches(ctx context.Context, arg InsertStrategyMatchesParams) error {
-	_, err := q.db.Exec(ctx, insertStrategyMatches, arg.StrategyID, arg.InstrumentIds)
+// Inserts the states of a baseline: no trades, only the entry values.
+func (q *Queries) InsertStrategyStates(ctx context.Context, arg InsertStrategyStatesParams) error {
+	_, err := q.db.Exec(ctx, insertStrategyStates,
+		arg.StrategyID,
+		arg.InstrumentIds,
+		arg.OpenTimes,
+		arg.Entries,
+	)
 	return err
 }
 
@@ -199,7 +177,7 @@ func (q *Queries) InsertStrategySymbols(ctx context.Context, arg InsertStrategyS
 }
 
 const listStrategies = `-- name: ListStrategies :many
-SELECT id, name, expression, message, enabled, baseline_pending, revision
+SELECT id, name, expression, exit_expression, accumulate, max_buys, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id
 `
@@ -208,6 +186,9 @@ type ListStrategiesRow struct {
 	ID              int64
 	Name            string
 	Expression      string
+	ExitExpression  string
+	Accumulate      bool
+	MaxBuys         int32
 	Message         string
 	Enabled         bool
 	BaselinePending bool
@@ -227,6 +208,9 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			&i.ID,
 			&i.Name,
 			&i.Expression,
+			&i.ExitExpression,
+			&i.Accumulate,
+			&i.MaxBuys,
 			&i.Message,
 			&i.Enabled,
 			&i.BaselinePending,
@@ -346,37 +330,6 @@ func (q *Queries) ListStrategyInstrumentsAmong(ctx context.Context, arg ListStra
 	return items, nil
 }
 
-const listStrategyMatches = `-- name: ListStrategyMatches :many
-SELECT strategy_id, instrument_id
-FROM app.strategy_matches
-ORDER BY strategy_id, instrument_id
-`
-
-type ListStrategyMatchesRow struct {
-	StrategyID   int64
-	InstrumentID int64
-}
-
-func (q *Queries) ListStrategyMatches(ctx context.Context) ([]ListStrategyMatchesRow, error) {
-	rows, err := q.db.Query(ctx, listStrategyMatches)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListStrategyMatchesRow
-	for rows.Next() {
-		var i ListStrategyMatchesRow
-		if err := rows.Scan(&i.StrategyID, &i.InstrumentID); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const listStrategyRecipients = `-- name: ListStrategyRecipients :many
 SELECT telegram_id
 FROM app.users
@@ -397,6 +350,41 @@ func (q *Queries) ListStrategyRecipients(ctx context.Context, administratorTeleg
 			return nil, err
 		}
 		items = append(items, telegram_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStrategyStates = `-- name: ListStrategyStates :many
+SELECT strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at
+FROM app.strategy_states
+ORDER BY strategy_id, instrument_id
+`
+
+func (q *Queries) ListStrategyStates(ctx context.Context) ([]AppStrategyState, error) {
+	rows, err := q.db.Query(ctx, listStrategyStates)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []AppStrategyState
+	for rows.Next() {
+		var i AppStrategyState
+		if err := rows.Scan(
+			&i.StrategyID,
+			&i.InstrumentID,
+			&i.OpenTime,
+			&i.Entry,
+			&i.Buys,
+			&i.Filled,
+			&i.Quantity,
+			&i.OpenedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -475,6 +463,70 @@ func (q *Queries) LockStrategySymbols(ctx context.Context, symbols []string) ([]
 	return items, nil
 }
 
+const saveStrategyStates = `-- name: SaveStrategyStates :many
+INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at)
+SELECT s.id, v.instrument_id, v.open_time, v.entry, v.buys, v.filled, v.quantity, v.opened_at
+FROM app.strategies s
+CROSS JOIN (
+    SELECT unnest($1::BIGINT[]) AS instrument_id, unnest($2::TIMESTAMPTZ[]) AS open_time,
+           unnest($3::BOOLEAN[]) AS entry, unnest($4::INTEGER[]) AS buys,
+           unnest($5::INTEGER[]) AS filled, unnest($6::DOUBLE PRECISION[]) AS quantity,
+           unnest($7::TIMESTAMPTZ[]) AS opened_at
+) AS v
+WHERE s.id = $8 AND s.enabled AND NOT s.baseline_pending AND s.revision = $9
+FOR SHARE OF s
+ON CONFLICT (strategy_id, instrument_id) DO UPDATE
+SET open_time = EXCLUDED.open_time, entry = EXCLUDED.entry, buys = EXCLUDED.buys,
+    filled = EXCLUDED.filled, quantity = EXCLUDED.quantity, opened_at = EXCLUDED.opened_at
+WHERE app.strategy_states.open_time < EXCLUDED.open_time
+RETURNING instrument_id
+`
+
+type SaveStrategyStatesParams struct {
+	InstrumentIds []int64
+	OpenTimes     []pgtype.Timestamptz
+	Entries       []bool
+	Buys          []int32
+	Filled        []int32
+	Quantities    []float64
+	OpenedAt      []pgtype.Timestamptz
+	StrategyID    int64
+	Revision      int64
+}
+
+// Stores states of later candles only while the evaluated revision is
+// current and announced, and returns the instruments stored. The row lock
+// orders it with a concurrent change.
+func (q *Queries) SaveStrategyStates(ctx context.Context, arg SaveStrategyStatesParams) ([]int64, error) {
+	rows, err := q.db.Query(ctx, saveStrategyStates,
+		arg.InstrumentIds,
+		arg.OpenTimes,
+		arg.Entries,
+		arg.Buys,
+		arg.Filled,
+		arg.Quantities,
+		arg.OpenedAt,
+		arg.StrategyID,
+		arg.Revision,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var instrument_id int64
+		if err := rows.Scan(&instrument_id); err != nil {
+			return nil, err
+		}
+		items = append(items, instrument_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const setStrategyEnabled = `-- name: SetStrategyEnabled :one
 UPDATE app.strategies
 SET enabled = $2, baseline_pending = $2, revision = revision + 1, updated_at = now()
@@ -496,25 +548,36 @@ func (q *Queries) SetStrategyEnabled(ctx context.Context, arg SetStrategyEnabled
 
 const updateStrategy = `-- name: UpdateStrategy :one
 UPDATE app.strategies
-SET name = $1, expression = $2, message = $3, updated_at = now(),
-    baseline_pending = baseline_pending OR $4::BOOLEAN,
-    revision = revision + (expression IS DISTINCT FROM $2)::INTEGER
-WHERE id = $5
+SET name = $1, expression = $2, exit_expression = $3,
+    accumulate = $4, max_buys = $5, message = $6, updated_at = now(),
+    baseline_pending = baseline_pending OR $7::BOOLEAN,
+    revision = revision + (expression IS DISTINCT FROM $2
+        OR exit_expression IS DISTINCT FROM $3
+        OR accumulate IS DISTINCT FROM $4
+        OR max_buys IS DISTINCT FROM $5)::INTEGER
+WHERE id = $8
 RETURNING revision
 `
 
 type UpdateStrategyParams struct {
-	Name       string
-	Expression string
-	Message    string
-	Baseline   bool
-	ID         int64
+	Name           string
+	Expression     string
+	ExitExpression string
+	Accumulate     bool
+	MaxBuys        int32
+	Message        string
+	Baseline       bool
+	ID             int64
 }
 
+// A change of how the strategy trades starts a new revision.
 func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, updateStrategy,
 		arg.Name,
 		arg.Expression,
+		arg.ExitExpression,
+		arg.Accumulate,
+		arg.MaxBuys,
 		arg.Message,
 		arg.Baseline,
 		arg.ID,

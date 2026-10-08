@@ -1,11 +1,6 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
-import {
-	type backtestStrategyResponseSuccess,
-	getBacktestStrategyQueryKey,
-	useBacktestStrategy,
-} from "@/api/generated/api";
+import { useBacktestStrategy } from "@/api/generated/api";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { EmptyState } from "@/components/empty-state";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
@@ -18,7 +13,6 @@ import { chartIntervals } from "@/features/instrument-analysis/live-candle-store
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 import { BacktestResults } from "@/features/strategy-backtest/backtest-results";
 import { CoinSelect } from "@/features/strategy-backtest/coin-select";
-import { HoldInput } from "@/features/strategy-backtest/hold-input";
 import { StrategySelect } from "@/features/strategy-backtest/strategy-select";
 
 // The backtest chart draws candles, volume and trades only.
@@ -28,9 +22,7 @@ const runFailed = "The backtest could not be run.";
 
 interface StrategyBacktestScreenProps {
 	allCoins: boolean;
-	hold: number | undefined;
 	onCoinChange(symbol: string | undefined, allCoins: boolean): void;
-	onHoldChange(hold: number | undefined): void;
 	onStrategyChange(strategy: number): void;
 	strategy: number | undefined;
 	symbol: string | undefined;
@@ -41,9 +33,7 @@ interface StrategyBacktestScreenProps {
 // reads and offers the coarser ones.
 export function StrategyBacktestScreen({
 	allCoins,
-	hold,
 	onCoinChange,
-	onHoldChange,
 	onStrategyChange,
 	strategy,
 	symbol,
@@ -51,18 +41,16 @@ export function StrategyBacktestScreen({
 	const { contentSpacing, paperPadding } = useCoinPageLayout();
 	const permission = useBusinessRequestPermission();
 	const wide = useWideLayout();
-	const queryClient = useQueryClient();
 	const [requested, setRequested] = useState<
-		{ hold: number | undefined; strategy: number; symbol: string } | undefined
+		{ strategy: number; symbol: string } | undefined
 	>();
 	const hasRun =
 		requested !== undefined &&
 		requested.strategy === strategy &&
-		requested.symbol === symbol &&
-		requested.hold === hold;
+		requested.symbol === symbol;
 	const backtest = useBacktestStrategy(
 		strategy ?? 0,
-		{ hold, symbol: symbol ?? "" },
+		{ symbol: symbol ?? "" },
 		{
 			query: {
 				// Only the Run button requests a backtest, including repeat runs.
@@ -87,20 +75,15 @@ export function StrategyBacktestScreen({
 		() =>
 			backtest.data && {
 				entries: backtest.data.trades.map(({ entry_time }) => entry_time),
-				exits: backtest.data.trades.map(({ exit_time }) => exit_time),
+				// An open trade has not sold.
+				exits: backtest.data.trades
+					.filter(({ open }) => !open)
+					.map(({ exit_time }) => exit_time),
 			},
 		[backtest.data],
 	);
 	const canRun =
 		permission.allowed && strategy !== undefined && symbol !== undefined;
-	// The default hold of the strategy's interval, once a run without a hold
-	// on this coin has shown it.
-	const defaultHold =
-		strategy === undefined || symbol === undefined
-			? undefined
-			: queryClient.getQueryData<backtestStrategyResponseSuccess>(
-					getBacktestStrategyQueryKey(strategy, { symbol }),
-				)?.data.hold;
 
 	const controls = (
 		<Stack gap={contentSpacing}>
@@ -115,26 +98,19 @@ export function StrategyBacktestScreen({
 					symbol={symbol}
 				/>
 			</Group>
-			<Group align="flex-end" grow wrap="nowrap">
-				<HoldInput
-					defaultHold={defaultHold}
-					hold={hold}
-					onChange={onHoldChange}
-				/>
-				<Button
-					disabled={!canRun}
-					loading={backtest.isFetching}
-					onClick={() => {
-						if (!canRun) return;
-						setRequested({ hold, strategy, symbol });
-						void backtest.refetch();
-					}}
-					size="sm"
-					variant="light"
-				>
-					Run backtest
-				</Button>
-			</Group>
+			<Button
+				disabled={!canRun}
+				loading={backtest.isFetching}
+				onClick={() => {
+					if (!canRun) return;
+					setRequested({ strategy, symbol });
+					void backtest.refetch();
+				}}
+				size="sm"
+				variant="light"
+			>
+				Run backtest
+			</Button>
 		</Stack>
 	);
 	const result = hasRun && !backtest.isError ? backtest.data : undefined;

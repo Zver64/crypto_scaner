@@ -17,6 +17,7 @@ import {
 	isCrossOperator,
 	isRangeOperator,
 	valueForOperator,
+	withoutPositionVariables,
 } from "@/features/strategy-settings/utils";
 
 const operatorOptions: { label: string; value: StrategyOperator }[] = [
@@ -45,6 +46,10 @@ export function StrategyRule({
 	rule,
 	variables,
 }: StrategyRuleProps) {
+	// A crossing reads the previous candle too.
+	const operandVariables = isCrossOperator(rule.operator)
+		? withoutPositionVariables(variables)
+		: variables;
 	const change = (
 		prop: "field" | "lhs" | "operator" | "value" | "valueSource",
 		value: unknown,
@@ -118,7 +123,7 @@ export function StrategyRule({
 				label="Compared value"
 				node={lhs}
 				onChange={changeLeft}
-				variables={variables}
+				variables={operandVariables}
 				withoutNumber
 			/>
 			<NativeSelect
@@ -164,10 +169,12 @@ export function StrategyRule({
 							? "Crossed value"
 							: "Value compared with"
 					}
-					defaultField={variables.find(({ name }) => name !== rule.field)?.name}
+					defaultField={
+						operandVariables.find(({ name }) => name !== rule.field)?.name
+					}
 					node={right}
 					onChange={changeRight}
-					variables={variables}
+					variables={operandVariables}
 				/>
 			)}
 		</Stack>

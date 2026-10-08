@@ -17,25 +17,8 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyAccumulate } from './strategyAccumulate.ts';
-import type { StrategyExitExpression } from './strategyExitExpression.ts';
-import type { StrategyMaxBuys } from './strategyMaxBuys.ts';
-import type { StrategyMessage } from './strategyMessage.ts';
 
-export interface StrategyInput {
-  /**
-     * @minLength 1
-     * @maxLength 64
-     */
-  name: string;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
-  exit_expression: StrategyExitExpression;
-  accumulate: StrategyAccumulate;
-  max_buys: StrategyMaxBuys;
-  message: StrategyMessage;
-  enabled: boolean;
-}
+/**
+ * Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
+ */
+export type StrategyAccumulate = boolean;

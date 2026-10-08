@@ -55,13 +55,34 @@ const (
 
 // Variable is one value expressions read, named after the indicator table
 // title, such as d_rsi or h_macd_macdsignal, or a built-in candle field, such
-// as h_close. Candle fields have no indicator.
+// as h_close. Candle fields have no indicator. Position variables, such as
+// pnl, describe the open trade, have no target, and exist only in exit
+// expressions.
 type Variable struct {
 	Name        string
 	Label       string
 	IndicatorID int64
 	Target      closedindicator.Target
 	Output      string
+	Position    bool
+}
+
+// Position variable names.
+const (
+	entryPriceVariable = "entry_price"
+	pnlVariable        = "pnl"
+	barsHeldVariable   = "bars_held"
+)
+
+// PositionVariables are the variables of the open trade that exit
+// expressions read: the average price of its buys, its return at the close
+// before fees, and the candles since its first buy filled.
+func PositionVariables() []Variable {
+	return []Variable{
+		{Name: entryPriceVariable, Label: "entry price", Position: true},
+		{Name: pnlVariable, Label: "pnl", Position: true},
+		{Name: barsHeldVariable, Label: "bars held", Position: true},
+	}
 }
 
 // Read is a variable read at the closed candle shift candles before the
@@ -191,11 +212,14 @@ func (expression *Expression) Symbols() []string {
 }
 
 // Reads lists every variable, instrument, and shift the expression reads, by
-// name, symbol, and shift.
+// name, symbol, and shift; position variables are left out, since they read
+// no calculated value.
 func (expression *Expression) Reads() []Read {
 	result := make([]Read, 0, len(expression.reads))
 	for _, read := range expression.reads {
-		result = append(result, read)
+		if !read.Variable.Position {
+			result = append(result, read)
+		}
 	}
 	slices.SortFunc(result, func(left, right Read) int {
 		return cmp.Or(cmp.Compare(left.Variable.Name, right.Variable.Name), cmp.Compare(left.Symbol, right.Symbol), cmp.Compare(left.Shift, right.Shift))
@@ -203,7 +227,8 @@ func (expression *Expression) Reads() []Read {
 	return result
 }
 
-// Evaluate runs the expression over the values value reports. Missing values
+// Evaluate runs the expression over the values value reports, position
+// variables included. Missing values
 // stay unbound, so CEL's commutative logic still decides branches that do not
 // need them; known is false when the result depends on a missing value or a
 // division by zero.
@@ -750,12 +775,20 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 		read := walker.identifiers[expr.AsIdent()]
 		if read.Variable.Name == "" {
 			name, _, _ := splitIdentifier(expr.AsIdent())
+			if slices.ContainsFunc(PositionVariables(), func(variable Variable) bool { return variable.Name == name }) {
+				walker.report("%s is available only in the exit rule", name)
+				walker.unknown = true
+				return nil
+			}
 			walker.report("%s is not a configured indicator or candle field", name)
 			walker.unknown = true
 			if !slices.Contains(walker.unknownNames, name) {
 				walker.unknownNames = append(walker.unknownNames, name)
 			}
 			return nil
+		}
+		if read.Variable.Position && (read.Shift > 0 || read.Symbol != "") {
+			walker.report("%s cannot be read through prev, percentile, crossings, or of", read.Variable.Name)
 		}
 		walker.reads[expr.AsIdent()] = read
 		walker.variables++

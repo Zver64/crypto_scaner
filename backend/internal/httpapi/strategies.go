@@ -15,19 +15,22 @@ type Strategies interface {
 	List() []strategy.Entry
 	Variables() []strategy.Variable
 	Symbols(context.Context) ([]string, error)
-	Validate(ctx context.Context, expression string) (strategy.Validation, error)
+	Validate(ctx context.Context, expression string, exit bool) (strategy.Validation, error)
 	Create(context.Context, strategy.Strategy) (strategy.Entry, error)
-	Update(ctx context.Context, id int64, name, expression, message string) (strategy.Entry, error)
+	Update(context.Context, strategy.Strategy) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
 	Delete(context.Context, int64) error
-	Backtest(ctx context.Context, id int64, symbol string, hold int) (strategy.Backtest, error)
+	Backtest(ctx context.Context, id int64, symbol string) (strategy.Backtest, error)
 }
 
 func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequestObject) (ListStrategyVariablesResponseObject, error) {
-	variables := api.strategies.Variables()
+	variables := append(api.strategies.Variables(), strategy.PositionVariables()...)
 	items := make([]StrategyVariable, len(variables))
 	for i, variable := range variables {
-		items[i] = StrategyVariable{Name: variable.Name, Label: variable.Label, Interval: CandleInterval(variable.Target.Interval)}
+		items[i] = StrategyVariable{Name: variable.Name, Label: variable.Label, Position: variable.Position}
+		if !variable.Position {
+			items[i].Interval = new(CandleInterval(variable.Target.Interval))
+		}
 		if variable.IndicatorID != 0 {
 			items[i].IndicatorId = &variable.IndicatorID
 		}
@@ -44,7 +47,7 @@ func (api *api) ListStrategySymbols(ctx context.Context, _ ListStrategySymbolsRe
 }
 
 func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRequestObject) (ValidateStrategyResponseObject, error) {
-	validation, err := api.strategies.Validate(ctx, request.Body.Expression)
+	validation, err := api.strategies.Validate(ctx, request.Body.Expression, request.Body.Exit != nil && *request.Body.Exit)
 	if err != nil {
 		return ValidateStrategy500JSONResponse{api.internalError(ctx, "validate_strategy", err)}, nil
 	}
@@ -65,7 +68,11 @@ func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (Li
 }
 
 func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyRequestObject) (CreateStrategyResponseObject, error) {
-	entry, err := api.strategies.Create(ctx, strategy.Strategy{Name: request.Body.Name, Expression: request.Body.Expression, Message: request.Body.Message, Enabled: request.Body.Enabled})
+	body := request.Body
+	entry, err := api.strategies.Create(ctx, strategy.Strategy{
+		Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression, Accumulate: body.Accumulate, MaxBuys: body.MaxBuys,
+		Message: body.Message, Enabled: body.Enabled,
+	})
 	switch {
 	case err == nil:
 		return CreateStrategy201JSONResponse(strategyDTO(entry)), nil
@@ -79,7 +86,11 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 }
 
 func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyRequestObject) (UpdateStrategyResponseObject, error) {
-	entry, err := api.strategies.Update(ctx, request.StrategyId, request.Body.Name, request.Body.Expression, request.Body.Message)
+	body := request.Body
+	entry, err := api.strategies.Update(ctx, strategy.Strategy{
+		ID: request.StrategyId, Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression,
+		Accumulate: body.Accumulate, MaxBuys: body.MaxBuys, Message: body.Message,
+	})
 	switch {
 	case err == nil:
 		return UpdateStrategy200JSONResponse(strategyDTO(entry)), nil
@@ -121,11 +132,7 @@ func (api *api) DeleteStrategy(ctx context.Context, request DeleteStrategyReques
 func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRequestObject) (BacktestStrategyResponseObject, error) {
 	timed, cancel := context.WithTimeout(ctx, backtestTimeout)
 	defer cancel()
-	hold := 0 // the default of the interval
-	if request.Params.Hold != nil {
-		hold = *request.Params.Hold
-	}
-	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol, hold)
+	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol)
 	switch {
 	case err == nil:
 	case backtestExpired(timed, err):
@@ -141,17 +148,20 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	}
 	trades := make([]BacktestTrade, len(backtest.Trades))
 	for i, trade := range backtest.Trades {
-		trades[i] = BacktestTrade{EntryTime: trade.EntryTime, EntryPrice: trade.EntryPrice, ExitTime: trade.ExitTime, ExitPrice: trade.ExitPrice, NetReturn: trade.Return}
+		trades[i] = BacktestTrade{
+			EntryTime: trade.EntryTime, EntryPrice: trade.EntryPrice, ExitTime: trade.ExitTime, ExitPrice: trade.ExitPrice,
+			Buys: trade.Buys, Open: trade.Open, NetReturn: trade.Return,
+		}
 	}
 	equity := make([]BacktestEquityPoint, len(backtest.Equity))
 	for i, point := range backtest.Equity {
 		equity[i] = BacktestEquityPoint{Time: point.Time, Equity: point.Equity}
 	}
 	dto := StrategyBacktest{
-		Interval: CandleInterval(backtest.Interval), Symbol: backtest.Symbol, Hold: backtest.Hold, Fee: strategy.BacktestFee,
-		Trades: trades, UnfinishedTrades: backtest.Unfinished, SkippedAlerts: backtest.Skipped, Equity: equity,
+		Interval: CandleInterval(backtest.Interval), Symbol: backtest.Symbol, Fee: strategy.BacktestFee,
+		Trades: trades, SkippedAlerts: backtest.Skipped, Equity: equity,
 		Summary:   BacktestSummary{NetProfit: backtest.NetProfit, MaxDrawdown: backtest.MaxDrawdown, Stats: tradeStatsDTO(backtest.Stats)},
-		Baselines: BacktestBaselines{BuyAndHold: backtest.BuyAndHold, EveryCandle: tradeStatsDTO(backtest.EveryCandle)},
+		Baselines: BacktestBaselines{BuyAndHold: backtest.BuyAndHold, Dca: backtest.DCA},
 	}
 	if !backtest.From.IsZero() {
 		dto.From, dto.To = &backtest.From, &backtest.To
@@ -195,7 +205,10 @@ func strategyConflict(ctx context.Context) StrategyConflictJSONResponse {
 }
 
 func strategyDTO(entry strategy.Entry) Strategy {
-	dto := Strategy{Id: entry.ID, Name: entry.Name, Expression: entry.Expression, Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil}
+	dto := Strategy{
+		Id: entry.ID, Name: entry.Name, Expression: entry.Expression, ExitExpression: entry.ExitExpression, Accumulate: entry.Accumulate,
+		MaxBuys: entry.MaxBuys, Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,
+	}
 	if entry.Problem != "" {
 		dto.Problem = &entry.Problem
 	}

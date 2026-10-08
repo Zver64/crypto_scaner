@@ -17,7 +17,6 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { BacktestTradeStats } from './backtestTradeStats.ts';
 
 /**
  * References over the same evaluated period, net of the same fees.
@@ -28,6 +27,9 @@ export interface BacktestBaselines {
      * @nullable
      */
   buy_and_hold: number | null;
-  /** Every evaluated candle taken as an alert with the same hold, trades overlapping; unfinished ones are left out. */
-  every_candle: BacktestTradeStats;
+  /**
+     * Return of buying the same amount at the open after every evaluated candle but the last, valued at the close of the last; null when fewer than two candles are evaluated.
+     * @nullable
+     */
+  dca: number | null;
 }

@@ -3,6 +3,8 @@ import {
 	importedStrategyQuery,
 	parenthesizeOperands,
 	strategyExpression,
+	strategyQuery,
+	strategyQueryDropped,
 } from "@/features/strategy-settings/utils";
 
 describe("parenthesizeOperands", () => {
@@ -49,5 +51,15 @@ describe("importedStrategyQuery", () => {
 		["without a condition", "h_close"],
 	])("rejects an expression %s", (_, expression) => {
 		expect(importedStrategyQuery(expression)).toBeUndefined();
+	});
+});
+
+describe("strategyQuery", () => {
+	it("keeps stored comparisons with bare arithmetic operands", () => {
+		const expression =
+			"d_close < prev(d_min_20_low) || d_close < entry_price - 2 * d_atr_20";
+		expect(strategyQueryDropped(expression, strategyQuery(expression))).toBe(
+			false,
+		);
 	});
 });

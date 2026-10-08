@@ -19,5 +19,14 @@ Reference for writing a strategy expression that the scanner imports unchanged.
 - `crosses_above(a, b)` / `crosses_below(a, b)` is a crossing at the latest candle: `prev(a) <= prev(b) && a > b`, and the reverse.
 - `of("BTCUSDT", x)` is `x` of another coin, which must be in the administrator's favorites; `of` cannot contain `of`.
 - Limits: 2000 characters and 20 comparisons (a crossing counts once).
-- Everything is calculated on closed candles. MAX and MIN include the latest candle, so a breakout of the previous range is `h_close > prev(h_max_12_high, 1)`. A division by zero is unknown, so it raises no alert.
-- A strategy is evaluated on every coin in the administrator's favorites; an alert fires when the expression becomes true.
+- Everything is calculated on closed candles. MAX and MIN include the latest candle, so a breakout of the previous range is `h_close > prev(h_max_12_high, 1)`. A division by zero is unknown, so it signals nothing.
+
+## Entry, exit, and trades
+
+- A strategy has an entry rule and an optional exit rule, both expressions of this language. It trades every coin in the administrator's favorites on the closed candles of the finest interval its rules read.
+- An entry signal is the entry rule turning from false to true at a candle close. It buys: it opens a trade, or adds a buy to the open trade when the strategy accumulates or has no exit rule, up to the max buys of a trade (0: no limit). Other entry signals during a trade buy nothing.
+- An exit signal is the exit rule being true at a candle close after the first buy. It sells every buy of the trade, and the entry counts as false on that candle, so an entry still true on the next candle signals again. An exit wins over an entry on the same candle.
+- Without an exit rule a strategy never sells: every entry signal buys, up to the max buys. Accumulation applies only with an exit rule; without one it is stored as off.
+- Signals are decided at the close and filled at the next candle's open; every buy spends the same amount. A candle is decided only once every rule it needs has its values. Live alerts check only the latest closed candle, so candles that close while the backend is down are skipped.
+- Only the exit rule reads the position variables of the open trade, at the latest candle only (not inside `prev`, `percentile`, crossings, or `of`): `entry_price`, the average price of its buys; `pnl`, its return at the close before fees in percent (`5` is 5%); and `bars_held`, the candles since its first buy filled, counting that candle. An exit rule may read only them: `pnl >= 5 || pnl <= -3 || bars_held >= 24`.
+- Telegram alerts announce every buy and sell. Enabling or changing how a strategy trades starts it afresh, without trades; an entry true at that moment buys only once it turns true again.

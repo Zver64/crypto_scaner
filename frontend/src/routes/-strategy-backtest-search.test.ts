@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parseStrategyBacktestSearch } from "@/routes/-strategy-backtest-search";
 
 describe("parseStrategyBacktestSearch", () => {
-	it("keeps the strategy, normalized coin, favorites filter and hold, dropping old list state", () => {
+	it("keeps the strategy, normalized coin and favorites filter, dropping old state", () => {
 		expect(
 			parseStrategyBacktestSearch({
 				all_coins: true,
@@ -16,7 +16,6 @@ describe("parseStrategyBacktestSearch", () => {
 			}),
 		).toEqual({
 			all_coins: true,
-			hold: 24,
 			strategy: 4,
 			symbol: "BTCUSDT",
 		});
@@ -44,13 +43,5 @@ describe("parseStrategyBacktestSearch", () => {
 
 	it.each(["true", false, 1])("drops the invalid all_coins %s", (allCoins) => {
 		expect(parseStrategyBacktestSearch({ all_coins: allCoins })).toEqual({});
-	});
-
-	it.each([1, 1000])("keeps the hold %s at the limits", (hold) => {
-		expect(parseStrategyBacktestSearch({ hold })).toEqual({ hold });
-	});
-
-	it.each(["24", 0, 1001, 2.5, null])("drops the invalid hold %s", (hold) => {
-		expect(parseStrategyBacktestSearch({ hold })).toEqual({});
 	});
 });

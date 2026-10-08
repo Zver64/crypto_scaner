@@ -20,4 +20,6 @@
 
 export interface StrategyValidationInput {
   expression: string;
+  /** Checks the expression as an exit rule, which may read the position variables. */
+  exit?: boolean;
 }

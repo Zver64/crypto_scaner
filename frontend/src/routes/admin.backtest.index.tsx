@@ -13,7 +13,6 @@ function StrategyBacktestPage() {
 	return (
 		<StrategyBacktestScreen
 			allCoins={search.all_coins === true}
-			hold={search.hold}
 			onCoinChange={(symbol, allCoins) =>
 				void navigate({
 					replace: true,
@@ -22,12 +21,6 @@ function StrategyBacktestPage() {
 						all_coins: allCoins || undefined,
 						symbol,
 					}),
-				})
-			}
-			onHoldChange={(hold) =>
-				void navigate({
-					replace: true,
-					search: (previous) => ({ ...previous, hold }),
 				})
 			}
 			onStrategyChange={(strategy) =>

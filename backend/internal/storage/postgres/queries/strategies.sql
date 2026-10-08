@@ -1,18 +1,23 @@
 -- name: ListStrategies :many
-SELECT id, name, expression, message, enabled, baseline_pending, revision
+SELECT id, name, expression, exit_expression, accumulate, max_buys, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id;
 
 -- name: InsertStrategy :one
-INSERT INTO app.strategies (name, expression, message, enabled, baseline_pending)
-VALUES (@name, @expression, @message, @enabled, @enabled)
+INSERT INTO app.strategies (name, expression, exit_expression, accumulate, max_buys, message, enabled, baseline_pending)
+VALUES (@name, @expression, @exit_expression, @accumulate, @max_buys, @message, @enabled, @enabled)
 RETURNING id;
 
 -- name: UpdateStrategy :one
+-- A change of how the strategy trades starts a new revision.
 UPDATE app.strategies
-SET name = @name, expression = @expression, message = @message, updated_at = now(),
+SET name = @name, expression = @expression, exit_expression = @exit_expression,
+    accumulate = @accumulate, max_buys = @max_buys, message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
-    revision = revision + (expression IS DISTINCT FROM @expression)::INTEGER
+    revision = revision + (expression IS DISTINCT FROM @expression
+        OR exit_expression IS DISTINCT FROM @exit_expression
+        OR accumulate IS DISTINCT FROM @accumulate
+        OR max_buys IS DISTINCT FROM @max_buys)::INTEGER
 WHERE id = @id
 RETURNING revision;
 
@@ -33,42 +38,53 @@ RETURNING revision;
 -- name: DeleteStrategy :execrows
 DELETE FROM app.strategies WHERE id = $1;
 
--- name: ListStrategyMatches :many
-SELECT strategy_id, instrument_id
-FROM app.strategy_matches
+-- name: ListStrategyStates :many
+SELECT strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at
+FROM app.strategy_states
 ORDER BY strategy_id, instrument_id;
 
--- name: DeleteAllStrategyMatches :exec
-DELETE FROM app.strategy_matches WHERE strategy_id = $1;
+-- name: DeleteAllStrategyStates :exec
+DELETE FROM app.strategy_states WHERE strategy_id = $1;
 
 -- name: CompleteStrategyBaseline :execrows
--- Locks the strategy while its matches are replaced; nothing changes unless
+-- Locks the strategy while its states are replaced; nothing changes unless
 -- the evaluated revision still awaits its baseline.
 UPDATE app.strategies
 SET baseline_pending = FALSE
 WHERE id = @id AND enabled AND baseline_pending AND revision = @revision;
 
--- name: InsertStrategyMatches :exec
-INSERT INTO app.strategy_matches (strategy_id, instrument_id)
-SELECT @strategy_id::BIGINT, instrument_id
-FROM unnest(@instrument_ids::BIGINT[]) AS ids(instrument_id)
-ON CONFLICT DO NOTHING;
+-- name: InsertStrategyStates :exec
+-- Inserts the states of a baseline: no trades, only the entry values.
+INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry)
+SELECT @strategy_id::BIGINT, v.instrument_id, v.open_time, v.entry
+FROM (
+    SELECT unnest(@instrument_ids::BIGINT[]) AS instrument_id, unnest(@open_times::TIMESTAMPTZ[]) AS open_time,
+           unnest(@entries::BOOLEAN[]) AS entry
+) AS v;
 
--- name: AddStrategyMatches :many
--- Adds matches only while the evaluated revision is current and announced,
--- and returns the instruments that were not matching yet. The row lock
+-- name: SaveStrategyStates :many
+-- Stores states of later candles only while the evaluated revision is
+-- current and announced, and returns the instruments stored. The row lock
 -- orders it with a concurrent change.
-INSERT INTO app.strategy_matches (strategy_id, instrument_id)
-SELECT s.id, ids.instrument_id
+INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at)
+SELECT s.id, v.instrument_id, v.open_time, v.entry, v.buys, v.filled, v.quantity, v.opened_at
 FROM app.strategies s
-CROSS JOIN unnest(@instrument_ids::BIGINT[]) AS ids(instrument_id)
+CROSS JOIN (
+    SELECT unnest(@instrument_ids::BIGINT[]) AS instrument_id, unnest(@open_times::TIMESTAMPTZ[]) AS open_time,
+           unnest(@entries::BOOLEAN[]) AS entry, unnest(@buys::INTEGER[]) AS buys,
+           unnest(@filled::INTEGER[]) AS filled, unnest(@quantities::DOUBLE PRECISION[]) AS quantity,
+           unnest(@opened_at::TIMESTAMPTZ[]) AS opened_at
+) AS v
 WHERE s.id = @strategy_id AND s.enabled AND NOT s.baseline_pending AND s.revision = @revision
 FOR SHARE OF s
-ON CONFLICT DO NOTHING
+ON CONFLICT (strategy_id, instrument_id) DO UPDATE
+SET open_time = EXCLUDED.open_time, entry = EXCLUDED.entry, buys = EXCLUDED.buys,
+    filled = EXCLUDED.filled, quantity = EXCLUDED.quantity, opened_at = EXCLUDED.opened_at
+WHERE app.strategy_states.open_time < EXCLUDED.open_time
 RETURNING instrument_id;
 
--- name: DeleteStrategyMatches :exec
-DELETE FROM app.strategy_matches
+-- name: DeleteStrategyStates :exec
+DELETE FROM app.strategy_states
 WHERE strategy_id = @strategy_id::BIGINT AND instrument_id = ANY(@instrument_ids::BIGINT[]);
 
 -- name: ListStrategyInstruments :many

@@ -57,3 +57,27 @@ func TestCompileAcceptsValidExpression(t *testing.T) {
 		t.Fatalf("Compile() error = %v", err)
 	}
 }
+
+// Position variables exist only in exit rules and only at the latest
+// candle; an exit rule may read nothing else.
+func TestCompileReadsPositionVariablesOnlyInExitRules(t *testing.T) {
+	exit := append(Variables(nil), PositionVariables()...)
+	if _, err := Compile("pnl > 5 || bars_held >= 24", exit); err != nil {
+		t.Fatalf("Compile(exit) error = %v", err)
+	}
+	for _, test := range []struct {
+		source    string
+		variables []Variable
+		problem   string
+	}{
+		{source: "h_close > entry_price", variables: Variables(nil), problem: "entry_price is available only in the exit rule"},
+		{source: "prev(pnl) > 0", variables: exit, problem: "pnl cannot be read through prev, percentile, crossings, or of"},
+		{source: `of("BTCUSDT", pnl) > 0 && h_close > 1`, variables: exit, problem: "pnl cannot be read through prev, percentile, crossings, or of"},
+	} {
+		_, err := Compile(test.source, test.variables)
+		var invalid *InvalidExpressionError
+		if !errors.As(err, &invalid) || !slices.Equal(invalid.Problems, []string{test.problem}) {
+			t.Fatalf("Compile(%q) error = %v, want %q", test.source, err, test.problem)
+		}
+	}
+}

@@ -20,12 +20,13 @@
 import type { BacktestTradeStats } from './backtestTradeStats.ts';
 
 /**
- * Results of the strategy's closed trades.
+ * Results of the strategy's trades.
  */
 export interface BacktestSummary {
-  /** Compounded net return of the closed trades; 0 without trades. */
+  /** Compounded net return of the trades, the open one included; 0 without trades. */
   net_profit: number;
   /** Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at trade exits; 0 without falls. */
   max_drawdown: number;
+  /** Statistics of the closed trades. */
   stats: BacktestTradeStats;
 }

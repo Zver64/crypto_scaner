@@ -9,6 +9,7 @@ import {
 	maxVariadicArguments,
 	strategyFunctions,
 } from "@/features/strategy-settings/expressions";
+import { withoutPositionVariables } from "@/features/strategy-settings/utils";
 
 export interface FunctionEditorProps
 	extends Omit<ExpressionEditorProps, "label"> {
@@ -27,6 +28,9 @@ export function FunctionEditor({
 }: FunctionEditorProps) {
 	const definition = strategyFunctions[node.fn];
 	const titles = definition?.args ?? [];
+	const argVariables = definition?.earlier
+		? withoutPositionVariables(variables)
+		: variables;
 	const replaceArg = (index: number, arg: ExpressionNode) =>
 		onChange({
 			...node,
@@ -66,7 +70,7 @@ export function FunctionEditor({
 							label={title}
 							node={arg}
 							onChange={(next) => replaceArg(index, next)}
-							variables={variables}
+							variables={argVariables}
 							withoutCoin={withoutCoin}
 						/>
 					</Stack>

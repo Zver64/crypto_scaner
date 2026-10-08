@@ -15,67 +15,55 @@ import (
 // the traded value.
 const BacktestFee = 0.001
 
-// MaxBacktestHold bounds the hold a backtest request may choose.
-const MaxBacktestHold = 1000
-
-// backtestHolds are the default holds in candles of the backtest interval: a
-// day of hours, a week of days, about a month of weeks, and a quarter of
-// months.
-var backtestHolds = map[market.CandleInterval]int{
-	market.IntervalHour:  24,
-	market.IntervalDay:   7,
-	market.IntervalWeek:  4,
-	market.IntervalMonth: 3,
-}
-
-// Backtest is where a strategy would have alerted on one instrument over its
-// stored closed history, and the trades of one position at a time that
-// followed. Every trade enters at the open of the candle after its alert and
-// exits at the close of its Hold-th consecutive candle, paying BacktestFee on
-// both sides.
+// Backtest is how a strategy would have traded one instrument over its
+// stored closed history: the monitor's trades replayed candle by candle.
+// Every buy spends one quote unit at the open of the candle after its
+// signal, and a sell sells every buy of the trade at the open of the candle
+// after its signal, paying BacktestFee on both sides.
 type Backtest struct {
-	// Interval is the finest interval the expression reads, where alerts
-	// fire and trades count candles.
+	// Interval is the finest interval the rules read, where signals fire
+	// and trades count candles.
 	Interval market.CandleInterval
 	Symbol   string
-	Hold     int
 	// From and To are the open times of the first and the last evaluated
 	// candles; both are zero when none is evaluated.
 	From, To time.Time
-	// Alerts are the open times of the candles whose close would have
-	// alerted, oldest first.
+	// Alerts are the open times of the candles whose close signaled a buy,
+	// oldest first.
 	Alerts []time.Time
-	// Trades are the closed trades, oldest first. Unfinished counts trades
-	// whose hold the stored consecutive candles do not reach, at the end of
-	// the history or at a gap; Skipped counts alerts that fired while a
-	// position was open.
-	Trades              []Trade
-	Unfinished, Skipped int
-	// Stats, NetProfit, Equity, and MaxDrawdown describe the closed trades:
-	// the equity compounds from 1 through them, and the drawdown is its
-	// largest fall from an earlier peak, as a fraction of that peak, at trade
-	// exits.
+	// Trades are the trades, oldest first; the last one is open when the
+	// history ends before its sell. Skipped counts entry signals that bought
+	// nothing, since the trade does not accumulate or holds max buys.
+	Trades  []Trade
+	Skipped int
+	// Stats describes the closed trades. NetProfit, Equity, and MaxDrawdown
+	// include the open trade, valued at the last close: the equity compounds
+	// from 1 through the trades, and the drawdown is its largest fall from an
+	// earlier peak, as a fraction of that peak, at trade exits.
 	Stats                  TradeStats
 	NetProfit, MaxDrawdown float64
 	Equity                 []EquityPoint
 	// BuyAndHold is the net return from the open of the candle after the
-	// first evaluated candle to the close of the last; nil without such
+	// first evaluated candle to the close of the last; DCA the net return of
+	// buying one quote unit at the open after every evaluated candle but the
+	// last, valued at the close of the last. Both are nil without such
 	// candles.
-	BuyAndHold *float64
-	// EveryCandle describes the trades of every evaluated candle taken as an
-	// alert, overlapping, as a reference distribution.
-	EveryCandle TradeStats
+	BuyAndHold, DCA *float64
 }
 
-// Trade is a closed trade; the times are the open times of the entry and the
-// exit candles, and Return is net of fees.
+// Trade is a trade of one or more buys. EntryTime is the open time of the
+// candle its first buy filled at and EntryPrice the average price of its
+// buys; ExitTime is the open time of the candle it sold at, or, for an open
+// trade, of the last candle, whose close values it. Return is net of fees.
 type Trade struct {
 	EntryTime, ExitTime   time.Time
 	EntryPrice, ExitPrice float64
+	Buys                  int
+	Open                  bool
 	Return                float64
 }
 
-// EquityPoint is the equity after the trade whose exit candle opened at Time.
+// EquityPoint is the equity after the trade that exited at Time.
 type EquityPoint struct {
 	Time   time.Time
 	Equity float64
@@ -90,18 +78,17 @@ type TradeStats struct {
 	WinRate, ProfitFactor, AverageTrade, AverageWin, AverageLoss *float64
 }
 
-// Backtest replays the alerts of a saved strategy, enabled or not, on the
+// Backtest replays the trades of a saved strategy, enabled or not, on the
 // instrument symbol over its stored closed history, the way the monitor
-// evaluates them: the same values at the close of every candle of the finest
-// interval read, the same freshness, and the same transitions, starting from
-// not matching. Candles are evaluated once every value is calculated over
-// the whole window the tracker loads, so the replay never reads indicators
-// the pruned history leaves unsettled; coins read through of are read only
-// among the administrator's favorites, like the monitor does. Trades hold
-// hold candles, or the default of the interval when hold is 0. It fails with
-// ErrNotFound, ErrInvalidArgument for a strategy that no longer compiles, an
-// empty symbol, or a hold out of range, and market.ErrInstrumentNotFound.
-func (service *Service) Backtest(ctx context.Context, id int64, symbol string, hold int) (Backtest, error) {
+// trades: the same values at the close of every candle of its interval, the
+// same freshness, and the same signals, starting without a trade and with a
+// false entry. Candles are evaluated once every value is calculated over the
+// whole window the tracker loads, so the replay never reads indicators the
+// pruned history leaves unsettled; coins read through of are read only among
+// the administrator's favorites, like the monitor does. It fails with
+// ErrNotFound, ErrInvalidArgument for a strategy that no longer compiles or
+// an empty symbol, and market.ErrInstrumentNotFound.
+func (service *Service) Backtest(ctx context.Context, id int64, symbol string) (Backtest, error) {
 	entries := service.List()
 	index := slices.IndexFunc(entries, func(entry Entry) bool { return entry.ID == id })
 	if index < 0 {
@@ -110,21 +97,6 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, h
 	entry := entries[index]
 	if entry.Compiled == nil {
 		return Backtest{}, fmt.Errorf("%w: %s", ErrInvalidArgument, entry.Problem)
-	}
-	// The finest interval read is replayed on the candles of the instrument,
-	// even when only of reads it; compiled expressions read at least one.
-	var interval market.CandleInterval
-	for _, candidate := range market.CandleIntervals() {
-		if slices.ContainsFunc(entry.Compiled.Reads(), func(read Read) bool { return read.Variable.Target.Interval == candidate }) {
-			interval = candidate
-			break
-		}
-	}
-	if hold == 0 {
-		hold = backtestHolds[interval]
-	}
-	if hold < 1 || hold > MaxBacktestHold {
-		return Backtest{}, fmt.Errorf("%w: the hold must be from 1 to %d candles", ErrInvalidArgument, MaxBacktestHold)
 	}
 	if symbol = market.NormalizeSymbol(symbol); symbol == "" {
 		return Backtest{}, fmt.Errorf("%w: the symbol is empty", ErrInvalidArgument)
@@ -142,7 +114,7 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, h
 	if err != nil {
 		return Backtest{}, err
 	}
-	ids := map[market.CandleInterval][]int64{interval: {instrument.ID}}
+	ids := map[market.CandleInterval][]int64{}
 	for _, subscription := range replay.current.reads.subscriptions {
 		if read := subscription.Target.Interval; !slices.Contains(ids[read], subscription.InstrumentID) {
 			ids[read] = append(ids[read], subscription.InstrumentID)
@@ -154,20 +126,32 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, h
 			return Backtest{}, fmt.Errorf("load backtest %s history: %w", read, err)
 		}
 	}
-	result := Backtest{Interval: interval, Symbol: instrument.Symbol, Hold: hold}
+	result := Backtest{Interval: entry.Interval, Symbol: instrument.Symbol}
 	if err := replay.run(ctx, entry, instrument, &result); err != nil {
 		return Backtest{}, err
 	}
 	return result, nil
 }
 
-// run replays entry on instrument over the candles of the result's interval
-// and simulates its trades.
+// run replays the trades of entry on instrument over the candles of the
+// result's interval.
 func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrument, result *Backtest) error {
 	candles := replay.histories[result.Interval][instrument.ID]
-	matching := false
+	var state TradeState
 	first := -1
-	var alerts []int
+	equity, peak := 1.0, 1.0
+	var returns []float64
+	record := func(trade Trade) {
+		trade.Return = netReturn(trade.EntryPrice, trade.ExitPrice)
+		result.Trades = append(result.Trades, trade)
+		if !trade.Open {
+			returns = append(returns, trade.Return)
+		}
+		equity *= 1 + trade.Return
+		peak = max(peak, equity)
+		result.MaxDrawdown = max(result.MaxDrawdown, 1-equity/peak)
+		result.Equity = append(result.Equity, EquityPoint{Time: trade.ExitTime, Equity: equity})
+	}
 	for index, candle := range candles {
 		if err := ctx.Err(); err != nil {
 			return err
@@ -179,91 +163,65 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 		if !warm {
 			continue
 		}
-		matched, known := current.match(entry, instrument.ID)
-		if known && matched && !matching {
-			alerts = append(alerts, index)
-			result.Alerts = append(result.Alerts, candle.OpenTime.UTC())
-		}
-		if known {
-			matching = matched
-		}
 		if first < 0 {
 			first = index
 			result.From = candle.OpenTime.UTC()
 		}
 		result.To = candle.OpenTime.UTC()
-	}
-	result.simulate(candles, first, alerts)
-	return nil
-}
-
-// simulate fills the trades, their statistics, and the baselines of result
-// from the candles of its interval, of which every candle from first on is
-// evaluated (none when first is negative), and the indexes of the alerting
-// candles, ascending. One position is open at a time: it holds the candles
-// up to the scheduled exit, even across a gap that leaves it unfinished, and
-// alerts before its last candle are skipped.
-func (result *Backtest) simulate(candles []market.Candle, first int, alerts []int) {
-	if first < 0 {
-		return
-	}
-	// runs[index] counts the consecutive candles from index on.
-	runs := make([]int, len(candles))
-	for index := len(candles) - 1; index >= 0; index-- {
-		runs[index] = 1
-		if index+1 < len(candles) && candles[index+1].OpenTime.Equal(result.Interval.NextOpenTime(candles[index].OpenTime)) {
-			runs[index] += runs[index+1]
+		var events []TradeEvent
+		state, events, _ = current.advance(entry, instrument.ID, state)
+		for _, event := range events {
+			switch event.Kind {
+			case TradeBuy:
+				result.Alerts = append(result.Alerts, candle.OpenTime.UTC())
+			case TradeSkip:
+				result.Skipped++
+			case TradeSell:
+				// The sell fills at the next open, or at this close when the
+				// history ends here.
+				exit := candle
+				price := candle.Close
+				if index+1 < len(candles) && candles[index+1].Open > 0 {
+					exit, price = candles[index+1], candles[index+1].Open
+				}
+				record(Trade{
+					EntryTime: event.Trade.OpenedAt, EntryPrice: event.Trade.EntryPrice(), Buys: event.Trade.Buys,
+					ExitTime: exit.OpenTime.UTC(), ExitPrice: price,
+				})
+			}
 		}
 	}
-	// trade is the trade after the candle at index, if the history holds it.
-	trade := func(index int) (Trade, bool) {
-		if runs[index] <= result.Hold || !(candles[index+1].Open > 0) {
-			return Trade{}, false
-		}
-		entry, exit := candles[index+1], candles[index+result.Hold]
-		return Trade{
-			EntryTime: entry.OpenTime.UTC(), EntryPrice: entry.Open,
-			ExitTime: exit.OpenTime.UTC(), ExitPrice: exit.Close, Return: netReturn(entry.Open, exit.Close),
-		}, true
-	}
-
-	var held time.Time // the open time of the last candle of the open position
-	equity, peak := 1.0, 1.0
-	returns := make([]float64, 0, len(alerts))
-	for _, index := range alerts {
-		if candles[index].OpenTime.Before(held) {
-			result.Skipped++
-			continue
-		}
-		held = candles[index].OpenTime
-		for range result.Hold {
-			held = result.Interval.NextOpenTime(held)
-		}
-		closed, ok := trade(index)
-		if !ok {
-			result.Unfinished++
-			continue
-		}
-		result.Trades = append(result.Trades, closed)
-		returns = append(returns, closed.Return)
-		equity *= 1 + closed.Return
-		peak = max(peak, equity)
-		result.MaxDrawdown = max(result.MaxDrawdown, 1-equity/peak)
-		result.Equity = append(result.Equity, EquityPoint{Time: closed.ExitTime, Equity: equity})
+	if state.Filled > 0 {
+		last := candles[len(candles)-1]
+		record(Trade{
+			EntryTime: state.OpenedAt, EntryPrice: state.EntryPrice(), Buys: state.Filled,
+			ExitTime: last.OpenTime.UTC(), ExitPrice: last.Close, Open: true,
+		})
 	}
 	result.NetProfit = equity - 1
 	result.Stats = tradeStats(returns)
+	result.baselines(candles, first)
+	return nil
+}
 
-	returns = returns[:0]
-	for index := first; index < len(candles); index++ {
-		if every, ok := trade(index); ok {
-			returns = append(returns, every.Return)
+// baselines fills the baselines from the candles of the result's interval,
+// of which every candle from first on is evaluated (none when first is
+// negative).
+func (result *Backtest) baselines(candles []market.Candle, first int) {
+	if first < 0 || first+1 >= len(candles) || !(candles[first+1].Open > 0) {
+		return
+	}
+	last := candles[len(candles)-1].Close
+	result.BuyAndHold = new(netReturn(candles[first+1].Open, last))
+	var quantity float64
+	buys := 0
+	for _, candle := range candles[first+1:] {
+		if candle.Open > 0 {
+			quantity += 1 / candle.Open
+			buys++
 		}
 	}
-	result.EveryCandle = tradeStats(returns)
-	if first+1 < len(candles) && candles[first+1].Open > 0 {
-		result.BuyAndHold = new(netReturn(candles[first+1].Open, candles[len(candles)-1].Close))
-	}
+	result.DCA = new(netReturn(float64(buys)/quantity, last))
 }
 
 // netReturn is the return of buying at entry and selling at exit, net of
@@ -315,8 +273,9 @@ type replay struct {
 	cut   []bool
 }
 
-// newReplay reads entry on instrument and on the favorites it reads through
-// of; histories, holding the subscribed pairs, is set before at is called.
+// newReplay reads entry, its candles included, on instrument and on the
+// favorites it reads through of; histories, holding the subscribed pairs, is
+// set before at is called.
 func newReplay(registry *indicator.Registry, entry Entry, instrument Instrument, favorites []Instrument) (*replay, error) {
 	reads := readsOf([]Entry{entry}, []Instrument{instrument}, favorites)
 	depths := make([]int, len(reads.subscriptions))

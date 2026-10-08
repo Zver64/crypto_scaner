@@ -20,11 +20,20 @@
 import type { CandleInterval } from './candleInterval.ts';
 
 export interface StrategyVariable {
-  /** CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, or the candle field `h_close`. */
+  /** CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, the candle field `h_close`, or the position variable `pnl`. */
   name: string;
-  /** Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, or the candle field, such as `h-close`. */
+  /** Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, the candle field, such as `h-close`, or the position variable, such as `pnl`. */
   label: string;
-  /** The indicator the variable reads; absent for candle fields, which every interval has. */
+  /** The indicator the variable reads; absent for candle fields, which every interval has, and position variables. */
   indicator_id?: number;
-  interval: CandleInterval;
+  /** Interval of the value; absent for position variables. */
+  interval?: CandleInterval;
+  /**
+     * True for the variables of the open trade, which only exit rules
+     * read and only at the latest candle: `entry_price`, the average
+     * price of its buys; `pnl`, its return at the close before fees in
+     * percent, such as 5 for 5%; and `bars_held`, the candles since its first buy
+     * filled, counting the candle it filled at.
+     */
+  position: boolean;
 }

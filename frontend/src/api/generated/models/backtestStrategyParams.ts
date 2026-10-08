@@ -24,10 +24,4 @@ export type BacktestStrategyParams = {
  * Market symbol of the replayed coin.
  */
 symbol: BacktestSymbolName;
-/**
- * Candles of the interval every trade holds; omitted, the default of the interval: `1h` 24, `1d` 7, `1w` 4, `1M` 3.
- * @minimum 1
- * @maximum 1000
- */
-hold?: number;
 };

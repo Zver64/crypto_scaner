@@ -664,8 +664,9 @@ paths:
       operationId: validateStrategy
       summary: Check a strategy expression
       description: |
-        Lists every problem that would reject the expression in a strategy:
-        syntax, unknown indicators, candle fields, and functions, history
+        Lists every problem that would reject the expression as the entry
+        rule of a strategy, or as its exit rule when `exit` is set, which may
+        also read the position variables: syntax, unknown indicators, candle fields, and functions, history
         depth, and coins read through `of` that are not active coins in the
         administrator's favorites. Variables of indicators that are not
         configured are resolved from their names into `missing_indicators`
@@ -690,9 +691,14 @@ paths:
       operationId: listStrategies
       summary: List the strategies
       description: |
-        Enabled strategies are evaluated over the favorites of every user on
-        closed candles. The administrator and users with strategy alerts get
-        a Telegram message when an instrument starts matching.
+        Enabled strategies trade the administrator's favorites on the closed
+        candles of the finest interval their rules read. An entry signal is
+        the entry rule turning from false to true; it buys, opening a trade
+        or, for a strategy that accumulates or has no exit rule, adding a buy
+        up to `max_buys`. An exit signal, the exit rule being true after the
+        first buy, sells every buy of the trade, and the entry counts as false
+        on its candle. The administrator and users with strategy alerts get a
+        Telegram message for every buy and sell.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       responses:
@@ -705,7 +711,7 @@ paths:
     post:
       operationId: createStrategy
       summary: Add a strategy
-      description: An enabled strategy announces the instruments matching it now, then alerts on new matches.
+      description: An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       requestBody:
@@ -723,8 +729,8 @@ paths:
   /api/v1/admin/strategies/{strategy_id}:
     put:
       operationId: updateStrategy
-      summary: Change the name and expression of a strategy
-      description: A changed expression of an enabled strategy announces its current matches again.
+      summary: Change a strategy
+      description: A change of how an enabled strategy trades forgets its open trades and starts it afresh.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/StrategyID" }]
@@ -744,7 +750,7 @@ paths:
     patch:
       operationId: setStrategyEnabled
       summary: Turn a strategy on or off
-      description: Enabling announces the current matches; disabling forgets them.
+      description: Enabling starts the strategy afresh, without trades; disabling forgets its trades.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/StrategyID" }]
@@ -777,9 +783,8 @@ paths:
       summary: Backtest a saved strategy on one coin
       description: |
         Evaluates the saved strategy, enabled or not, at the close of every
-        stored candle of the finest interval its expression reads, exactly as
-        live alerts are evaluated, and simulates the trades its alerts (the
-        candles where it starts matching) would open. Any active coin can be
+        stored candle of the finest interval its rules read, and replays its
+        trades exactly as live signals trade, starting without a trade. Any active coin can be
         backtested; coins read through `of` must be in the administrator's
         favorites, otherwise their values are unknown. Only the stored closed
         history is replayed (up to 20,000 candles; the administrator loads
@@ -787,16 +792,13 @@ paths:
         backtests never load it); when older candles may be missing, candles
         before the full indicator warm-up are not evaluated.
 
-        Trades are simulated one position at a time:
-        each enters at the open of the candle after its alert and exits at
-        the close of its `hold`-th consecutive candle, paying `fee` on entry
-        and on exit. Alerts that fire while a position is open are skipped;
-        a trade whose hold the stored consecutive candles do not reach, at
-        the end of the history or at a gap, is unfinished and left out of
-        the metrics. Two baselines cover the same evaluated period: buying
-        and holding, and taking every evaluated candle as an alert. A
-        backtest that does not finish within its time limit fails with
-        `backtest_too_heavy`.
+        Every buy spends the same amount at the open of the candle after its
+        signal, and a sell sells every buy of the trade at the open of the
+        candle after its signal, paying `fee` on each side. A trade still
+        open when the history ends is valued at the last close. Two baselines
+        cover the same evaluated period: buying and holding, and buying the
+        same amount at every candle (DCA). A backtest that does not finish
+        within its time limit fails with `backtest_too_heavy`.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       parameters:
@@ -806,13 +808,6 @@ paths:
           required: true
           description: Market symbol of the replayed coin.
           schema: { $ref: "#/components/schemas/BacktestSymbolName" }
-        - name: hold
-          in: query
-          required: false
-          description: >-
-            Candles of the interval every trade holds; omitted, the default
-            of the interval: `1h` 24, `1d` 7, `1w` 4, `1M` 3.
-          schema: { type: integer, minimum: 1, maximum: 1000 }
       responses:
         "200":
           description: Simulated trades and their metrics.
@@ -1984,19 +1979,29 @@ components:
     StrategyVariable:
       type: object
       additionalProperties: false
-      required: [name, label, interval]
+      required: [name, label, position]
       properties:
         name:
           type: string
-          description: CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, or the candle field `h_close`.
+          description: CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, the candle field `h_close`, or the position variable `pnl`.
         label:
           type: string
-          description: Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, or the candle field, such as `h-close`.
+          description: Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, the candle field, such as `h-close`, or the position variable, such as `pnl`.
         indicator_id:
           type: integer
           format: int64
-          description: The indicator the variable reads; absent for candle fields, which every interval has.
-        interval: { $ref: "#/components/schemas/CandleInterval" }
+          description: The indicator the variable reads; absent for candle fields, which every interval has, and position variables.
+        interval:
+          $ref: "#/components/schemas/CandleInterval"
+          description: Interval of the value; absent for position variables.
+        position:
+          type: boolean
+          description: |
+            True for the variables of the open trade, which only exit rules
+            read and only at the latest candle: `entry_price`, the average
+            price of its buys; `pnl`, its return at the close before fees in
+            percent, such as 5 for 5%; and `bars_held`, the candles since its first buy
+            filled, counting the candle it filled at.
     StrategyList:
       type: object
       additionalProperties: false
@@ -2008,34 +2013,33 @@ components:
     Strategy:
       type: object
       additionalProperties: false
-      required: [id, name, expression, message, enabled, valid]
+      required: [id, name, expression, exit_expression, accumulate, max_buys, message, enabled, valid]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
         expression:
           type: string
-          description: CEL expression, such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
+          description: Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
+        exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
+        accumulate: { $ref: "#/components/schemas/StrategyAccumulate" }
+        max_buys: { $ref: "#/components/schemas/StrategyMaxBuys" }
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
         valid:
           type: boolean
-          description: False when the stored expression no longer compiles; such a strategy is not evaluated.
+          description: False when a stored rule no longer compiles; such a strategy is not evaluated.
         problem:
           type: string
-          description: Why the stored expression no longer compiles; present only when valid is false.
+          description: Why a stored rule no longer compiles; present only when valid is false.
     StrategyBacktest:
       type: object
       additionalProperties: false
-      required: [interval, symbol, hold, fee, from, to, summary, trades, unfinished_trades, skipped_alerts, equity, baselines]
+      required: [interval, symbol, fee, from, to, summary, trades, skipped_alerts, equity, baselines]
       description: Returns, drawdowns, and fees are fractions, such as 0.012 for 1.2%.
       properties:
         interval:
           $ref: "#/components/schemas/CandleInterval"
         symbol: { type: string }
-        hold:
-          type: integer
-          minimum: 1
-          description: Candles of the interval every trade holds.
         fee:
           type: number
           format: double
@@ -2051,17 +2055,14 @@ components:
         summary: { $ref: "#/components/schemas/BacktestSummary" }
         trades:
           type: array
-          description: Closed trades, oldest first.
+          description: Trades, oldest first; the last one is open when the history ends before its sell.
           items: { $ref: "#/components/schemas/BacktestTrade" }
-        unfinished_trades:
-          type: integer
-          description: Trades left out because the stored consecutive candles end or have a gap before their exit.
         skipped_alerts:
           type: integer
-          description: Alerts that fired while a position was open and opened no trade.
+          description: Entry signals that bought nothing, since the trade does not accumulate or holds `max_buys`.
         equity:
           type: array
-          description: Equity after each closed trade, compounded from 1, oldest first.
+          description: Equity after each trade, the open one included, compounded from 1, oldest first.
           items: { $ref: "#/components/schemas/BacktestEquityPoint" }
         baselines: { $ref: "#/components/schemas/BacktestBaselines" }
     BacktestSymbolName:
@@ -2074,17 +2075,19 @@ components:
       type: object
       additionalProperties: false
       required: [net_profit, max_drawdown, stats]
-      description: Results of the strategy's closed trades.
+      description: Results of the strategy's trades.
       properties:
         net_profit:
           type: number
           format: double
-          description: Compounded net return of the closed trades; 0 without trades.
+          description: Compounded net return of the trades, the open one included; 0 without trades.
         max_drawdown:
           type: number
           format: double
           description: Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at trade exits; 0 without falls.
-        stats: { $ref: "#/components/schemas/BacktestTradeStats" }
+        stats:
+          $ref: "#/components/schemas/BacktestTradeStats"
+          description: Statistics of the closed trades.
     BacktestTradeStats:
       type: object
       additionalProperties: false
@@ -2115,18 +2118,28 @@ components:
     BacktestTrade:
       type: object
       additionalProperties: false
-      required: [entry_time, entry_price, exit_time, exit_price, net_return]
+      required: [entry_time, entry_price, exit_time, exit_price, buys, open, net_return]
       properties:
         entry_time:
           type: string
           format: date-time
-          description: Open time of the entry candle; the trade buys at its open.
-        entry_price: { type: number, format: double }
+          description: Open time of the candle the first buy filled at, at its open.
+        entry_price:
+          type: number
+          format: double
+          description: Average price of the buys.
         exit_time:
           type: string
           format: date-time
-          description: Open time of the exit candle; the trade sells at its close.
+          description: Open time of the candle the trade sold at, at its open; for an open trade, of the last candle, whose close values it.
         exit_price: { type: number, format: double }
+        buys:
+          type: integer
+          minimum: 1
+          description: Buys of the trade, each of the same amount.
+        open:
+          type: boolean
+          description: True for a trade the history ends before it sells.
         net_return:
           type: number
           format: double
@@ -2139,21 +2152,22 @@ components:
         time:
           type: string
           format: date-time
-          description: Exit time of the trade, the open time of its exit candle.
+          description: Exit time of the trade.
         equity: { type: number, format: double }
     BacktestBaselines:
       type: object
       additionalProperties: false
-      required: [buy_and_hold, every_candle]
+      required: [buy_and_hold, dca]
       description: References over the same evaluated period, net of the same fees.
       properties:
         buy_and_hold:
           type: [number, "null"]
           format: double
           description: Return from the open of the candle after the first evaluated candle to the close of the last; null when fewer than two candles are evaluated.
-        every_candle:
-          $ref: "#/components/schemas/BacktestTradeStats"
-          description: Every evaluated candle taken as an alert with the same hold, trades overlapping; unfinished ones are left out.
+        dca:
+          type: [number, "null"]
+          format: double
+          description: Return of buying the same amount at the open after every evaluated candle but the last, valued at the close of the last; null when fewer than two candles are evaluated.
     CandleHistoryLoadInput:
       type: object
       additionalProperties: false
@@ -2230,10 +2244,13 @@ components:
     StrategyUpdate:
       type: object
       additionalProperties: false
-      required: [name, expression, message]
+      required: [name, expression, exit_expression, accumulate, max_buys, message]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         message: { $ref: "#/components/schemas/StrategyMessage" }
+        exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
+        accumulate: { $ref: "#/components/schemas/StrategyAccumulate" }
+        max_buys: { $ref: "#/components/schemas/StrategyMaxBuys" }
         expression:
           type: string
           minLength: 1
@@ -2251,25 +2268,46 @@ components:
     StrategyInput:
       type: object
       additionalProperties: false
-      required: [name, expression, message, enabled]
+      required: [name, expression, exit_expression, accumulate, max_buys, message, enabled]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         expression: { type: string, minLength: 1, maxLength: 2000 }
+        exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
+        accumulate: { $ref: "#/components/schemas/StrategyAccumulate" }
+        max_buys: { $ref: "#/components/schemas/StrategyMaxBuys" }
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
+    StrategyExitExpression:
+      type: string
+      maxLength: 2000
+      description: |
+        Exit rule, a CEL expression like the entry rule that may also read the
+        position variables, such as `pnl >= 5 || bars_held >= 24`; empty
+        for a strategy that never sells and buys at every entry signal.
+    StrategyAccumulate:
+      type: boolean
+      description: Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
+    StrategyMaxBuys:
+      type: integer
+      minimum: 0
+      maximum: 1000
+      description: Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
     StrategyMessage:
       type: string
       maxLength: 1000
       description: |
-        Telegram alert text that follows the strategy name and the coin symbol
-        in place of the expression and the values it read; empty keeps the
-        generated text.
+        Telegram alert text that follows the strategy name, the coin symbol,
+        and the buy or the sell in place of the rule and the values it read;
+        empty keeps the generated text.
     StrategyValidationInput:
       type: object
       additionalProperties: false
       required: [expression]
       properties:
         expression: { type: string }
+        exit:
+          type: boolean
+          description: Checks the expression as an exit rule, which may read the position variables.
     StrategyValidation:
       type: object
       additionalProperties: false

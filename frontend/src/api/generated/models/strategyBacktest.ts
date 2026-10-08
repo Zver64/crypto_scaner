@@ -29,11 +29,6 @@ import type { CandleInterval } from './candleInterval.ts';
 export interface StrategyBacktest {
   interval: CandleInterval;
   symbol: string;
-  /**
-     * Candles of the interval every trade holds.
-     * @minimum 1
-     */
-  hold: number;
   /** Fee paid on entry and again on exit, as a fraction of the traded value. */
   fee: number;
   /**
@@ -47,13 +42,11 @@ export interface StrategyBacktest {
      */
   to: string | null;
   summary: BacktestSummary;
-  /** Closed trades, oldest first. */
+  /** Trades, oldest first; the last one is open when the history ends before its sell. */
   trades: BacktestTrade[];
-  /** Trades left out because the stored consecutive candles end or have a gap before their exit. */
-  unfinished_trades: number;
-  /** Alerts that fired while a position was open and opened no trade. */
+  /** Entry signals that bought nothing, since the trade does not accumulate or holds `max_buys`. */
   skipped_alerts: number;
-  /** Equity after each closed trade, compounded from 1, oldest first. */
+  /** Equity after each trade, the open one included, compounded from 1, oldest first. */
   equity: BacktestEquityPoint[];
   baselines: BacktestBaselines;
 }

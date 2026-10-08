@@ -96,6 +96,9 @@ type AppStrategy struct {
 	CreatedAt       pgtype.Timestamptz
 	UpdatedAt       pgtype.Timestamptz
 	Message         string
+	ExitExpression  string
+	Accumulate      bool
+	MaxBuys         int32
 }
 
 type AppStrategyIndicator struct {
@@ -103,10 +106,15 @@ type AppStrategyIndicator struct {
 	IndicatorID int64
 }
 
-type AppStrategyMatch struct {
+type AppStrategyState struct {
 	StrategyID   int64
 	InstrumentID int64
-	MatchedAt    pgtype.Timestamptz
+	OpenTime     pgtype.Timestamptz
+	Entry        bool
+	Buys         int32
+	Filled       int32
+	Quantity     float64
+	OpenedAt     pgtype.Timestamptz
 }
 
 type AppStrategySymbol struct {

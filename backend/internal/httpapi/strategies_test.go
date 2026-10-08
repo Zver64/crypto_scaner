@@ -24,11 +24,11 @@ const emptyStats = `{"average_loss":null,"average_trade":null,"average_win":null
 func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T) {
 	alert := time.Date(2026, 3, 2, 5, 0, 0, 0, time.UTC)
 	strategies := &backtestStrategies{result: strategy.Backtest{
-		Interval: market.IntervalHour, Hold: 2, Symbol: "BTCUSDT", From: alert.Add(-5 * time.Hour), To: alert.Add(5 * time.Hour),
-		Trades:     []strategy.Trade{{EntryTime: alert.Add(time.Hour), EntryPrice: 100, ExitTime: alert.Add(2 * time.Hour), ExitPrice: 110, Return: 0.098}},
-		Unfinished: 1, Skipped: 2, NetProfit: 0.098, Equity: []strategy.EquityPoint{{Time: alert.Add(2 * time.Hour), Equity: 1.098}},
+		Interval: market.IntervalHour, Symbol: "BTCUSDT", From: alert.Add(-5 * time.Hour), To: alert.Add(5 * time.Hour),
+		Trades:  []strategy.Trade{{EntryTime: alert.Add(time.Hour), EntryPrice: 100, ExitTime: alert.Add(2 * time.Hour), ExitPrice: 110, Buys: 2, Return: 0.098}},
+		Skipped: 2, NetProfit: 0.098, Equity: []strategy.EquityPoint{{Time: alert.Add(2 * time.Hour), Equity: 1.098}},
 		Stats:      strategy.TradeStats{Count: 1, WinRate: new(1.0), AverageTrade: new(0.098), AverageWin: new(0.098)},
-		BuyAndHold: new(0.05), EveryCandle: strategy.TradeStats{Count: 8, WinRate: new(0.5), ProfitFactor: new(1.2)},
+		BuyAndHold: new(0.05), DCA: new(0.03),
 	}}
 	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: strategies,
@@ -39,21 +39,18 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		target string
 		status int
 		code   string
-		// hold is the hold the service receives.
-		hold int
 		// body is the exact response of an empty history.
 		body string
 	}{
 		{name: "user", token: "user", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt", status: http.StatusForbidden, code: "administrator_required"},
 		{name: "unknown strategy", token: "admin", target: "/api/v1/admin/strategies/2/backtest?symbol=BTCUSDT", status: http.StatusNotFound, code: "strategy_not_found"},
 		{name: "unknown symbol", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=ETHUSDT", status: http.StatusNotFound, code: "symbol_not_found"},
-		{name: "hold out of range", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=BTCUSDT&hold=1001", status: http.StatusBadRequest, code: "invalid_argument"},
 		{name: "too heavy", token: "admin", target: "/api/v1/admin/strategies/5/backtest?symbol=BTCUSDT", status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
-		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt&hold=2", status: http.StatusOK, hold: 2},
+		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt", status: http.StatusOK},
 		{
 			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/3/backtest?symbol=BTCUSDT", status: http.StatusOK,
-			body: `{"baselines":{"buy_and_hold":null,"every_candle":` + emptyStats + `},"equity":[],"fee":0.001,"from":null,"hold":24,"interval":"1h",` +
-				`"skipped_alerts":0,"summary":{"max_drawdown":0,"net_profit":0,"stats":` + emptyStats + `},"symbol":"BTCUSDT","to":null,"trades":[],"unfinished_trades":0}`,
+			body: `{"baselines":{"buy_and_hold":null,"dca":null},"equity":[],"fee":0.001,"from":null,"interval":"1h",` +
+				`"skipped_alerts":0,"summary":{"max_drawdown":0,"net_profit":0,"stats":` + emptyStats + `},"symbol":"BTCUSDT","to":null,"trades":[]}`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -80,12 +77,12 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 			}
 			replayed := strategies.result
 			if body.Interval != httpapi.CandleInterval(market.IntervalHour) || body.From == nil || !body.From.Equal(replayed.From) || body.To == nil || !body.To.Equal(replayed.To) ||
-				strategies.symbol != "BTCUSDT" || strategies.hold != test.hold ||
-				body.Hold != 2 || body.Fee != strategy.BacktestFee || body.UnfinishedTrades != 1 || body.SkippedAlerts != 2 ||
-				len(body.Trades) != 1 || body.Trades[0].ExitPrice != 110 || body.Trades[0].NetReturn != 0.098 || len(body.Equity) != 1 || body.Equity[0].Equity != 1.098 ||
+				strategies.symbol != "BTCUSDT" || body.Fee != strategy.BacktestFee || body.SkippedAlerts != 2 ||
+				len(body.Trades) != 1 || body.Trades[0].ExitPrice != 110 || body.Trades[0].Buys != 2 || body.Trades[0].Open || body.Trades[0].NetReturn != 0.098 ||
+				len(body.Equity) != 1 || body.Equity[0].Equity != 1.098 ||
 				body.Summary.NetProfit != 0.098 || body.Summary.Stats.TradeCount != 1 || body.Summary.Stats.AverageLoss != nil || *body.Summary.Stats.WinRate != 1 ||
-				*body.Baselines.BuyAndHold != 0.05 || body.Baselines.EveryCandle.TradeCount != 8 || *body.Baselines.EveryCandle.ProfitFactor != 1.2 {
-				t.Fatalf("body = %s, symbol = %s, hold = %d", response.Body.String(), strategies.symbol, strategies.hold)
+				*body.Baselines.BuyAndHold != 0.05 || *body.Baselines.Dca != 0.03 {
+				t.Fatalf("body = %s, symbol = %s", response.Body.String(), strategies.symbol)
 			}
 		})
 	}
@@ -97,17 +94,16 @@ type backtestStrategies struct {
 	httpapi.Strategies
 	result strategy.Backtest
 	symbol string
-	hold   int
 }
 
-func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string, hold int) (strategy.Backtest, error) {
+func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string) (strategy.Backtest, error) {
 	symbol = market.NormalizeSymbol(symbol)
-	strategies.symbol, strategies.hold = symbol, hold
+	strategies.symbol = symbol
 	switch {
 	case id == 5:
 		return strategy.Backtest{}, fmt.Errorf("replay: %w", context.DeadlineExceeded)
 	case id == 3:
-		return strategy.Backtest{Interval: market.IntervalHour, Hold: 24, Symbol: symbol}, nil
+		return strategy.Backtest{Interval: market.IntervalHour, Symbol: symbol}, nil
 	case id != 1:
 		return strategy.Backtest{}, strategy.ErrNotFound
 	case symbol != "BTCUSDT":

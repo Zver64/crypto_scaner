@@ -17,6 +17,9 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { StrategyAccumulate } from './strategyAccumulate.ts';
+import type { StrategyExitExpression } from './strategyExitExpression.ts';
+import type { StrategyMaxBuys } from './strategyMaxBuys.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
 
 export interface StrategyUpdate {
@@ -26,6 +29,9 @@ export interface StrategyUpdate {
      */
   name: string;
   message: StrategyMessage;
+  exit_expression: StrategyExitExpression;
+  accumulate: StrategyAccumulate;
+  max_buys: StrategyMaxBuys;
   /**
      * CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
      * arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and

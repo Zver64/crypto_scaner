@@ -1,8 +1,7 @@
 import type { BacktestTradeStats } from "@/api/generated/models";
 
-// One average of the strategy's trades and of the Every candle baseline.
+// One average of the strategy's closed trades.
 export interface SummaryRow {
-	everyCandle: number | null;
 	hint: string;
 	key: keyof Pick<
 		BacktestTradeStats,

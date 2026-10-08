@@ -4217,8 +4217,9 @@ export const getValidateStrategyUrl = () => {
 }
 
 /**
- * Lists every problem that would reject the expression in a strategy:
- * syntax, unknown indicators, candle fields, and functions, history
+ * Lists every problem that would reject the expression as the entry
+ * rule of a strategy, or as its exit rule when `exit` is set, which may
+ * also read the position variables: syntax, unknown indicators, candle fields, and functions, history
  * depth, and coins read through `of` that are not active coins in the
  * administrator's favorites. Variables of indicators that are not
  * configured are resolved from their names into `missing_indicators`
@@ -4340,9 +4341,14 @@ export const getListStrategiesUrl = () => {
 }
 
 /**
- * Enabled strategies are evaluated over the favorites of every user on
- * closed candles. The administrator and users with strategy alerts get
- * a Telegram message when an instrument starts matching.
+ * Enabled strategies trade the administrator's favorites on the closed
+ * candles of the finest interval their rules read. An entry signal is
+ * the entry rule turning from false to true; it buys, opening a trade
+ * or, for a strategy that accumulates or has no exit rule, adding a buy
+ * up to `max_buys`. An exit signal, the exit rule being true after the
+ * first buy, sells every buy of the trade, and the entry counts as false
+ * on its candle. The administrator and users with strategy alerts get a
+ * Telegram message for every buy and sell.
  * @summary List the strategies
  */
 export const listStrategies = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listStrategiesResponseSuccess> => {
@@ -4481,7 +4487,7 @@ export const getCreateStrategyUrl = () => {
 }
 
 /**
- * An enabled strategy announces the instruments matching it now, then alerts on new matches.
+ * An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
  * @summary Add a strategy
  */
 export const createStrategy = async (strategyInput: StrategyInput, options?: Parameters<typeof apiFetch>[1]): Promise<createStrategyResponseSuccess> => {
@@ -4612,8 +4618,8 @@ export const getUpdateStrategyUrl = (strategyId: number,) => {
 }
 
 /**
- * A changed expression of an enabled strategy announces its current matches again.
- * @summary Change the name and expression of a strategy
+ * A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+ * @summary Change a strategy
  */
 export const updateStrategy = async (strategyId: number,
     strategyUpdate: StrategyUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateStrategyResponseSuccess> => {
@@ -4680,7 +4686,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateStrategyMutationVariables = {strategyId: number;data: StrategyUpdate}
 
     /**
- * @summary Change the name and expression of a strategy
+ * @summary Change a strategy
  */
 export const useUpdateStrategy = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateStrategy>>, TError,UpdateStrategyMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
@@ -4734,7 +4740,7 @@ export const getSetStrategyEnabledUrl = (strategyId: number,) => {
 }
 
 /**
- * Enabling announces the current matches; disabling forgets them.
+ * Enabling starts the strategy afresh, without trades; disabling forgets its trades.
  * @summary Turn a strategy on or off
  */
 export const setStrategyEnabled = async (strategyId: number,
@@ -4981,9 +4987,8 @@ export const getBacktestStrategyUrl = (strategyId: number,
 
 /**
  * Evaluates the saved strategy, enabled or not, at the close of every
- * stored candle of the finest interval its expression reads, exactly as
- * live alerts are evaluated, and simulates the trades its alerts (the
- * candles where it starts matching) would open. Any active coin can be
+ * stored candle of the finest interval its rules read, and replays its
+ * trades exactly as live signals trade, starting without a trade. Any active coin can be
  * backtested; coins read through `of` must be in the administrator's
  * favorites, otherwise their values are unknown. Only the stored closed
  * history is replayed (up to 20,000 candles; the administrator loads
@@ -4991,16 +4996,13 @@ export const getBacktestStrategyUrl = (strategyId: number,
  * backtests never load it); when older candles may be missing, candles
  * before the full indicator warm-up are not evaluated.
  *
- * Trades are simulated one position at a time:
- * each enters at the open of the candle after its alert and exits at
- * the close of its `hold`-th consecutive candle, paying `fee` on entry
- * and on exit. Alerts that fire while a position is open are skipped;
- * a trade whose hold the stored consecutive candles do not reach, at
- * the end of the history or at a gap, is unfinished and left out of
- * the metrics. Two baselines cover the same evaluated period: buying
- * and holding, and taking every evaluated candle as an alert. A
- * backtest that does not finish within its time limit fails with
- * `backtest_too_heavy`.
+ * Every buy spends the same amount at the open of the candle after its
+ * signal, and a sell sells every buy of the trade at the open of the
+ * candle after its signal, paying `fee` on each side. A trade still
+ * open when the history ends is valued at the last close. Two baselines
+ * cover the same evaluated period: buying and holding, and buying the
+ * same amount at every candle (DCA). A backtest that does not finish
+ * within its time limit fails with `backtest_too_heavy`.
  * @summary Backtest a saved strategy on one coin
  */
 export const backtestStrategy = async (strategyId: number,

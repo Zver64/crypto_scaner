@@ -101,139 +101,116 @@ func TestBacktestRejectsUnknownAndInvalidStrategiesAndArguments(t *testing.T) {
 	for _, test := range []struct {
 		id     int64
 		symbol string
-		hold   int
 		want   error
 	}{
 		{id: 3, symbol: "BTCUSDT", want: ErrNotFound},
 		{id: 1, symbol: "BTCUSDT", want: ErrInvalidArgument},
 		{id: 2, symbol: "XRPUSDT", want: market.ErrInstrumentNotFound},
 		{id: 2, symbol: " ", want: ErrInvalidArgument},
-		{id: 2, symbol: "BTCUSDT", hold: -1, want: ErrInvalidArgument},
-		{id: 2, symbol: "BTCUSDT", hold: MaxBacktestHold + 1, want: ErrInvalidArgument},
 	} {
-		if _, err := service.Backtest(context.Background(), test.id, test.symbol, test.hold); !errors.Is(err, test.want) {
-			t.Fatalf("Backtest(%d, %q, %d) error = %v, want %v", test.id, test.symbol, test.hold, err, test.want)
+		if _, err := service.Backtest(context.Background(), test.id, test.symbol); !errors.Is(err, test.want) {
+			t.Fatalf("Backtest(%d, %q) error = %v, want %v", test.id, test.symbol, err, test.want)
 		}
 	}
 }
 
-// Each trade enters at the open after its alert and exits at the close of
-// the hold-th candle, net of both fees; alerts before the exit candle are
-// skipped, an alert at its close enters next, and the last trade is
-// unfinished at the end of the history.
-func TestSimulateTradesOnePositionAtATime(t *testing.T) {
-	opens := []float64{100, 100, 100, 100, 100, 100, 100, 100}
-	closes := []float64{100, 100, 110, 100, 90, 100, 100, 120}
-	candles := make([]market.Candle, len(opens))
-	for index := range candles {
-		candles[index] = market.Candle{OpenTime: backtestHour(index), Open: opens[index], High: 200, Low: 50, Close: closes[index]}
+// An accumulating trade adds a buy at every entry signal up to max buys and
+// sells them all at the open after its exit signal; the exit wins over a
+// true entry on its candle, and the entry counts as false there, so the next
+// candle opens a new trade, which the end of the history sells at its close.
+func TestBacktestAccumulatesBuysUntilTheExit(t *testing.T) {
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 9, 1, 9, 1, 9, 30, 30, 30)), Strategy{
+		ID: 1, Name: "Dip", Expression: "h_close > 5", ExitExpression: "h_close > 20", Accumulate: true, MaxBuys: 2,
+	})
+
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT")
+	if err != nil {
+		t.Fatal(err)
 	}
-	result := Backtest{Interval: market.IntervalHour, Hold: 2}
-
-	result.simulate(candles, 0, []int{0, 1, 2, 3, 5, 7})
-
-	fees := (1 - BacktestFee) * (1 - BacktestFee)
-	first, second, third := 1.1*fees-1, 0.9*fees-1, 1.2*fees-1
+	// The buys fill at the opens of hours 2 and 5: one unit each at 9 and 1.
+	average := 2 / (1.0/9 + 1)
+	first, second := netReturn(average, 30), netReturn(30, 30)
 	wantTrades := []Trade{
-		{EntryTime: backtestHour(1), EntryPrice: 100, ExitTime: backtestHour(2), ExitPrice: 110, Return: first},
-		{EntryTime: backtestHour(3), EntryPrice: 100, ExitTime: backtestHour(4), ExitPrice: 90, Return: second},
-		{EntryTime: backtestHour(6), EntryPrice: 100, ExitTime: backtestHour(7), ExitPrice: 120, Return: third},
+		{EntryTime: backtestHour(2), EntryPrice: average, ExitTime: backtestHour(8), ExitPrice: 30, Buys: 2, Return: first},
+		{EntryTime: backtestHour(9), EntryPrice: 30, ExitTime: backtestHour(9), ExitPrice: 30, Buys: 1, Return: second},
 	}
-	if !slices.EqualFunc(result.Trades, wantTrades, tradeNear) || result.Skipped != 2 || result.Unfinished != 1 {
-		t.Fatalf("trades = %+v, skipped %d, unfinished %d", result.Trades, result.Skipped, result.Unfinished)
+	if !slices.EqualFunc(result.Trades, wantTrades, tradeNear) || result.Skipped != 1 ||
+		!slices.EqualFunc(result.Alerts, []time.Time{backtestHour(1), backtestHour(4), backtestHour(8)}, time.Time.Equal) {
+		t.Fatalf("trades = %+v, skipped %d, alerts %v", result.Trades, result.Skipped, result.Alerts)
 	}
-	equity := []float64{1 + first, (1 + first) * (1 + second), (1 + first) * (1 + second) * (1 + third)}
-	for index, point := range result.Equity {
-		if !point.Time.Equal(wantTrades[index].ExitTime) || !near(point.Equity, equity[index]) {
-			t.Fatalf("equity = %+v, want %v", result.Equity, equity)
-		}
-	}
-	if len(result.Equity) != 3 || !near(result.NetProfit, equity[2]-1) || !near(result.MaxDrawdown, 1-equity[1]/equity[0]) {
-		t.Fatalf("equity %+v, net %v, drawdown %v", result.Equity, result.NetProfit, result.MaxDrawdown)
-	}
-	assertStats(t, "strategy", result.Stats, TradeStats{
-		Count: 3, WinRate: new(2.0 / 3), AverageTrade: new((first + second + third) / 3),
-		AverageWin: new((first + third) / 2), AverageLoss: new(second), ProfitFactor: new((first + third) / -second),
-	})
-
-	// Every candle enters from the open of the next to the close of the one
-	// after it, overlapping: 110, 100, 90, 100, 100, and 120 on 100.
-	flat := fees - 1
-	assertStats(t, "every candle", result.EveryCandle, TradeStats{
-		Count: 6, WinRate: new(2.0 / 6), AverageTrade: new(6.2/6*fees - 1),
-		AverageWin: new((first + third) / 2), AverageLoss: new((second + 3*flat) / 4), ProfitFactor: new((first + third) / -(second + 3*flat)),
-	})
-	if result.BuyAndHold == nil || !near(*result.BuyAndHold, third) {
-		t.Fatalf("buy and hold = %v, want %v", result.BuyAndHold, third)
-	}
-}
-
-// A gap leaves a trade unfinished while its position stays open until the
-// scheduled exit, and no trade, of the strategy or of every candle, spans it.
-func TestSimulateLeavesTradesAcrossGapsUnfinished(t *testing.T) {
-	var candles []market.Candle
-	for _, hour := range []int{0, 1, 2, 4, 5, 6, 7, 8, 9, 10} {
-		candles = append(candles, testCandle(1, market.IntervalHour, backtestHour(hour), 100))
-	}
-	result := Backtest{Interval: market.IntervalHour, Hold: 4}
-
-	// Alerts at hours 1, 4, 5, and 10: the first trade would hold hours 2
-	// to 5, so hour 4 is skipped and hour 5 enters at hour 6.
-	result.simulate(candles, 0, []int{1, 3, 4, 9})
-
-	if len(result.Trades) != 1 || !result.Trades[0].EntryTime.Equal(backtestHour(6)) || !result.Trades[0].ExitTime.Equal(backtestHour(9)) ||
-		result.Unfinished != 2 || result.Skipped != 1 {
-		t.Fatalf("trades = %+v, unfinished %d, skipped %d", result.Trades, result.Unfinished, result.Skipped)
-	}
-	// Only hours 4, 5, and 6 are followed by four consecutive candles.
-	if result.EveryCandle.Count != 3 || result.BuyAndHold == nil {
-		t.Fatalf("every candle = %+v, buy and hold %v", result.EveryCandle, result.BuyAndHold)
-	}
-}
-
-// Without losses the profit factor and the average loss are undefined, and
-// the equity never falls; without a candle after the first evaluated one
-// buying and holding is undefined too.
-func TestSimulateWithoutLossesOrCandles(t *testing.T) {
-	candles := []market.Candle{
-		{OpenTime: backtestHour(0), Open: 100, Close: 100},
-		{OpenTime: backtestHour(1), Open: 100, Close: 120},
-	}
-	result := Backtest{Interval: market.IntervalHour, Hold: 1}
-	result.simulate(candles, 0, []int{0})
-
-	win := 1.2*(1-BacktestFee)*(1-BacktestFee) - 1
-	assertStats(t, "strategy", result.Stats, TradeStats{Count: 1, WinRate: new(1.0), AverageTrade: new(win), AverageWin: new(win)})
-	if result.MaxDrawdown != 0 || !near(result.NetProfit, win) {
+	if !near(result.NetProfit, (1+first)*(1+second)-1) || result.MaxDrawdown <= 0 {
 		t.Fatalf("net %v, drawdown %v", result.NetProfit, result.MaxDrawdown)
 	}
+	assertStats(t, "strategy", result.Stats, TradeStats{
+		Count: 2, WinRate: new(0.5), AverageTrade: new((first + second) / 2), AverageWin: new(first),
+		AverageLoss: new(second), ProfitFactor: new(first / -second),
+	})
+}
 
-	for _, first := range []int{-1, 1} {
-		empty := Backtest{Interval: market.IntervalHour, Hold: 1}
-		empty.simulate(candles, first, nil)
-		if empty.BuyAndHold != nil || empty.EveryCandle.Count != 0 || empty.Stats.WinRate != nil || empty.NetProfit != 0 {
-			t.Fatalf("simulate from %d = %+v", first, empty)
-		}
+// Position variables count the candles from the first fill: the trade fills
+// at the open of hour 2 and sells at the open of hour 4, after the close of
+// its second candle.
+func TestBacktestExitsOnPositionVariables(t *testing.T) {
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 9, 9, 9)), Strategy{
+		ID: 1, Name: "Hold", Expression: "h_close > 5", ExitExpression: "bars_held >= 2 && pnl > -1",
+	})
+
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Hour 4 signals again after the exit, but its buy never fills.
+	want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 9, ExitTime: backtestHour(4), ExitPrice: 9, Buys: 1, Return: netReturn(9, 9)}}
+	if !slices.EqualFunc(result.Trades, want, tradeNear) || !slices.EqualFunc(result.Alerts, []time.Time{backtestHour(1), backtestHour(4)}, time.Time.Equal) {
+		t.Fatalf("trades = %+v, alerts %v", result.Trades, result.Alerts)
 	}
 }
 
-// Trades hold the default of the interval unless the request chooses a hold.
-func TestBacktestHoldsTheDefaultOrTheChosenCandles(t *testing.T) {
-	var hourly []market.Candle
-	for index, close := range []float64{1, 9, 2, 2, 1, 9, 10} {
-		hourly = append(hourly, testCandle(1, market.IntervalHour, backtestHour(index), close))
+func TestBacktestPnLExitUsesPercent(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		exit   string
+		closes []float64
+	}{
+		{name: "profit", exit: "pnl >= 10", closes: []float64{1, 9, 100, 105, 120, 120}},
+		{name: "loss", exit: "pnl <= -10", closes: []float64{1, 9, 100, 95, 80, 80}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(test.closes...)), Strategy{
+				ID: 1, Name: "Percent", Expression: "h_close > 5", ExitExpression: test.exit,
+			})
+			result, err := service.Backtest(context.Background(), 1, "BTCUSDT")
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A 5% move must not exit; a 20% move signals the sell,
+			// which fills at the next open. Reported returns stay fractional.
+			want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 100, ExitTime: backtestHour(5), ExitPrice: test.closes[5], Buys: 1, Return: netReturn(100, test.closes[5])}}
+			if !slices.EqualFunc(result.Trades, want, tradeNear) {
+				t.Fatalf("trades = %+v, want %+v", result.Trades, want)
+			}
+		})
 	}
-	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourly), Strategy{ID: 1, Name: "Close", Expression: "h_close > 5"})
+}
 
-	// A day of hours outlasts the history: the first trade is unfinished and
-	// its open position skips the second alert.
-	byDefault, err := service.Backtest(context.Background(), 1, "BTCUSDT", 0)
-	if err != nil || byDefault.Hold != 24 || len(byDefault.Trades) != 0 || byDefault.Unfinished != 1 || byDefault.Skipped != 1 {
-		t.Fatalf("Backtest() = %+v, %v", byDefault, err)
+// Without an exit every entry signal buys and nothing sells: the trade stays
+// open, valued at the last close, and counts in the net profit but not in
+// the statistics. A buy signaled at the last candle never fills.
+func TestBacktestWithoutExitHoldsAnOpenTrade(t *testing.T) {
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 1, 9)), Strategy{ID: 1, Name: "Stack", Expression: "h_close > 5"})
+
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT")
+	if err != nil {
+		t.Fatal(err)
 	}
-	chosen, err := service.Backtest(context.Background(), 1, "BTCUSDT", 2)
-	if err != nil || chosen.Hold != 2 || len(chosen.Trades) != 1 || !chosen.Trades[0].ExitTime.Equal(backtestHour(3)) || chosen.Unfinished != 1 {
-		t.Fatalf("Backtest(hold 2) = %+v, %v", chosen, err)
+	want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 1, ExitTime: backtestHour(3), ExitPrice: 9, Buys: 1, Open: true, Return: netReturn(1, 9)}}
+	if !slices.EqualFunc(result.Trades, want, tradeNear) || result.Stats.Count != 0 || !near(result.NetProfit, netReturn(1, 9)) {
+		t.Fatalf("trades = %+v, stats %+v, net %v", result.Trades, result.Stats, result.NetProfit)
+	}
+	// Buying and holding enters at the open of hour 1; DCA buys at the
+	// opens of hours 1 to 3: 9, 1, and 9.
+	if result.BuyAndHold == nil || !near(*result.BuyAndHold, netReturn(9, 9)) || result.DCA == nil || !near(*result.DCA, netReturn(3/(1.0/9+1+1.0/9), 9)) {
+		t.Fatalf("buy and hold %v, DCA %v", result.BuyAndHold, result.DCA)
 	}
 }
 
@@ -260,7 +237,7 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	entry := Entry{Strategy: Strategy{ID: 1, Enabled: true}, Compiled: compiled}
+	entry := Entry{Strategy: Strategy{ID: 1, Enabled: true}, Compiled: compiled, Interval: market.IntervalHour, reads: compiled.Reads()}
 	now := backtestStart.Add(300 * time.Hour)
 
 	replay, err := newReplay(registry, entry, instruments[0], instruments)
@@ -314,8 +291,8 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 			t.Fatalf("%s shift %d of %q = %v (%v), tracked %v (%v)", read.Variable.Name, read.Shift, read.Symbol, gotValue, gotKnown, wantValue, wantKnown)
 		}
 	}
-	wantResult, wantKnown := tracked.match(entry, 1)
-	gotResult, gotKnown := replayed.match(entry, 1)
+	wantResult, wantKnown := tracked.match(compiled, entry, 1, nil)
+	gotResult, gotKnown := replayed.match(compiled, entry, 1, nil)
 	if gotResult != wantResult || gotKnown != wantKnown || !wantKnown {
 		t.Fatalf("replayed match = %v (%v), tracked %v (%v)", gotResult, gotKnown, wantResult, wantKnown)
 	}
@@ -323,7 +300,7 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 
 func assertReplay(t *testing.T, service *Service, id int64, interval market.CandleInterval, want Backtest) {
 	t.Helper()
-	got, err := service.Backtest(context.Background(), id, "BTCUSDT", 0)
+	got, err := service.Backtest(context.Background(), id, "BTCUSDT")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -339,8 +316,8 @@ func symbolReplayEqual(left, right Backtest) bool {
 func near(left, right float64) bool { return math.Abs(left-right) < 1e-9 }
 
 func tradeNear(left, right Trade) bool {
-	return left.EntryTime.Equal(right.EntryTime) && left.ExitTime.Equal(right.ExitTime) && left.EntryPrice == right.EntryPrice &&
-		left.ExitPrice == right.ExitPrice && near(left.Return, right.Return)
+	return left.EntryTime.Equal(right.EntryTime) && left.ExitTime.Equal(right.ExitTime) && near(left.EntryPrice, right.EntryPrice) &&
+		left.ExitPrice == right.ExitPrice && left.Buys == right.Buys && left.Open == right.Open && near(left.Return, right.Return)
 }
 
 func assertStats(t *testing.T, name string, got, want TradeStats) {
@@ -366,6 +343,16 @@ func formatStats(stats TradeStats) string {
 }
 
 func backtestHour(index int) time.Time { return backtestStart.Add(time.Duration(index) * time.Hour) }
+
+// hourlyCloses are BTCUSDT candles from backtestHour(0), each opening at
+// its close.
+func hourlyCloses(closes ...float64) []market.Candle {
+	candles := make([]market.Candle, len(closes))
+	for index, close := range closes {
+		candles[index] = testCandle(1, market.IntervalHour, backtestHour(index), close)
+	}
+	return candles
+}
 
 func testCandle(instrumentID int64, interval market.CandleInterval, open time.Time, close float64) market.Candle {
 	return market.Candle{
@@ -485,7 +472,7 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 		b.Fatal(err)
 	}
 	for b.Loop() {
-		if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", 0); err != nil {
+		if _, err := service.Backtest(context.Background(), 1, "BTCUSDT"); err != nil {
 			b.Fatal(err)
 		}
 	}

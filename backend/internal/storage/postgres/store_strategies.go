@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, error) {
@@ -21,7 +23,10 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 	}
 	items := make([]strategy.Strategy, len(rows))
 	for i, row := range rows {
-		items[i] = strategy.Strategy{ID: row.ID, Name: row.Name, Expression: row.Expression, Message: row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision}
+		items[i] = strategy.Strategy{
+			ID: row.ID, Name: row.Name, Expression: row.Expression, ExitExpression: row.ExitExpression, Accumulate: row.Accumulate, MaxBuys: int(row.MaxBuys),
+			Message: row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
+		}
 	}
 	return items, nil
 }
@@ -33,7 +38,10 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{Name: item.Name, Expression: item.Expression, Message: item.Message, Enabled: item.Enabled})
+	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{
+		Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression, Accumulate: item.Accumulate, MaxBuys: int32(item.MaxBuys),
+		Message: item.Message, Enabled: item.Enabled,
+	})
 	if err != nil {
 		return 0, strategyWriteError(err)
 	}
@@ -46,10 +54,9 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	return id, tx.Commit(ctx)
 }
 
-// UpdateStrategy replaces the name, expression, message, indicators, and
-// instruments
-// and returns the revision; baseline requests an announcement of the matches
-// of the new expression.
+// UpdateStrategy replaces the name, expressions, trading settings, message,
+// indicators, and instruments and returns the revision; baseline requests a
+// fresh start of the trading states.
 func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64, baseline bool) (int64, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
@@ -57,7 +64,10 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{ID: item.ID, Name: item.Name, Expression: item.Expression, Message: item.Message, Baseline: baseline})
+	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{
+		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression, Accumulate: item.Accumulate, MaxBuys: int32(item.MaxBuys),
+		Message: item.Message, Baseline: baseline,
+	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, strategy.ErrNotFound
 	}
@@ -141,8 +151,8 @@ func strategiesReading(ctx context.Context, queries *generated.Queries, instrume
 }
 
 // SetStrategyEnabled turns a strategy on or off and returns the revision. An
-// enabled strategy awaits the announcement of its matches; a disabled one
-// forgets them.
+// enabled strategy awaits its baseline; a disabled one forgets its trading
+// states.
 func (store *Store) SetStrategyEnabled(ctx context.Context, id int64, enabled bool) (int64, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
@@ -158,7 +168,7 @@ func (store *Store) SetStrategyEnabled(ctx context.Context, id int64, enabled bo
 		return 0, err
 	}
 	if !enabled {
-		if err := queries.DeleteAllStrategyMatches(ctx, id); err != nil {
+		if err := queries.DeleteAllStrategyStates(ctx, id); err != nil {
 			return 0, err
 		}
 	}
@@ -176,22 +186,31 @@ func (store *Store) DeleteStrategy(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (store *Store) ListStrategyMatches(ctx context.Context) (map[int64][]int64, error) {
-	rows, err := store.queries.ListStrategyMatches(ctx)
+// ListStrategyStates maps strategy ids to the trading states of their
+// instruments.
+func (store *Store) ListStrategyStates(ctx context.Context) (map[int64]map[int64]strategy.TradeState, error) {
+	rows, err := store.queries.ListStrategyStates(ctx)
 	if err != nil {
 		return nil, err
 	}
-	result := map[int64][]int64{}
+	result := map[int64]map[int64]strategy.TradeState{}
 	for _, row := range rows {
-		result[row.StrategyID] = append(result[row.StrategyID], row.InstrumentID)
+		if result[row.StrategyID] == nil {
+			result[row.StrategyID] = map[int64]strategy.TradeState{}
+		}
+		state := strategy.TradeState{OpenTime: row.OpenTime.Time.UTC(), Entry: row.Entry, Buys: int(row.Buys), Filled: int(row.Filled), Quantity: row.Quantity}
+		if row.OpenedAt.Valid {
+			state.OpenedAt = row.OpenedAt.Time.UTC()
+		}
+		result[row.StrategyID][row.InstrumentID] = state
 	}
 	return result, nil
 }
 
-// ReplaceStrategyMatches stores the matches announced for revision and
-// completes its pending baseline. It reports false, changing nothing, when
-// that revision no longer awaits a baseline.
-func (store *Store) ReplaceStrategyMatches(ctx context.Context, strategyID, revision int64, instrumentIDs []int64) (bool, error) {
+// ReplaceStrategyStates stores the baseline states of revision, which hold
+// no trades, and completes its pending baseline. It reports false, changing
+// nothing, when that revision no longer awaits a baseline.
+func (store *Store) ReplaceStrategyStates(ctx context.Context, strategyID, revision int64, states map[int64]strategy.TradeState) (bool, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return false, err
@@ -202,23 +221,41 @@ func (store *Store) ReplaceStrategyMatches(ctx context.Context, strategyID, revi
 	if err != nil || current == 0 {
 		return false, err
 	}
-	if err := queries.DeleteAllStrategyMatches(ctx, strategyID); err != nil {
+	if err := queries.DeleteAllStrategyStates(ctx, strategyID); err != nil {
 		return false, err
 	}
-	if err := queries.InsertStrategyMatches(ctx, generated.InsertStrategyMatchesParams{StrategyID: strategyID, InstrumentIds: instrumentIDs}); err != nil {
+	params := generated.InsertStrategyStatesParams{StrategyID: strategyID}
+	for _, id := range slices.Sorted(maps.Keys(states)) {
+		params.InstrumentIds = append(params.InstrumentIds, id)
+		params.OpenTimes = append(params.OpenTimes, pgtype.Timestamptz{Time: states[id].OpenTime, Valid: true})
+		params.Entries = append(params.Entries, states[id].Entry)
+	}
+	if err := queries.InsertStrategyStates(ctx, params); err != nil {
 		return false, err
 	}
 	return true, tx.Commit(ctx)
 }
 
-// AddStrategyMatches adds matches while revision is current and announced,
-// and returns the instruments that were not matching before.
-func (store *Store) AddStrategyMatches(ctx context.Context, strategyID, revision int64, instrumentIDs []int64) ([]int64, error) {
-	return store.queries.AddStrategyMatches(ctx, generated.AddStrategyMatchesParams{StrategyID: strategyID, Revision: revision, InstrumentIds: instrumentIDs})
+// SaveStrategyStates stores states of later candles than the stored ones
+// while revision is current and announced, and returns the instruments
+// stored.
+func (store *Store) SaveStrategyStates(ctx context.Context, strategyID, revision int64, states map[int64]strategy.TradeState) ([]int64, error) {
+	params := generated.SaveStrategyStatesParams{StrategyID: strategyID, Revision: revision}
+	for _, id := range slices.Sorted(maps.Keys(states)) {
+		state := states[id]
+		params.InstrumentIds = append(params.InstrumentIds, id)
+		params.OpenTimes = append(params.OpenTimes, pgtype.Timestamptz{Time: state.OpenTime, Valid: true})
+		params.Entries = append(params.Entries, state.Entry)
+		params.Buys = append(params.Buys, int32(state.Buys))
+		params.Filled = append(params.Filled, int32(state.Filled))
+		params.Quantities = append(params.Quantities, state.Quantity)
+		params.OpenedAt = append(params.OpenedAt, pgtype.Timestamptz{Time: state.OpenedAt, Valid: !state.OpenedAt.IsZero()})
+	}
+	return store.queries.SaveStrategyStates(ctx, params)
 }
 
-func (store *Store) DeleteStrategyMatches(ctx context.Context, strategyID int64, instrumentIDs []int64) error {
-	return store.queries.DeleteStrategyMatches(ctx, generated.DeleteStrategyMatchesParams{StrategyID: strategyID, InstrumentIds: instrumentIDs})
+func (store *Store) DeleteStrategyStates(ctx context.Context, strategyID int64, instrumentIDs []int64) error {
+	return store.queries.DeleteStrategyStates(ctx, generated.DeleteStrategyStatesParams{StrategyID: strategyID, InstrumentIds: instrumentIDs})
 }
 
 // ListStrategyInstruments returns the active favorites of the administrator,

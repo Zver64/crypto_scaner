@@ -17,12 +17,18 @@ const columns: DataTableColumn<BacktestTrade>[] = [
 	},
 	{
 		cell: (trade) => formatNumber(trade.entry_price),
-		header: "Entry price",
+		header: "Avg entry",
 		key: "entry-price",
 		textAlign: "right",
 	},
 	{
-		cell: (trade) => formatDateTime(trade.exit_time),
+		cell: (trade) => formatNumber(trade.buys),
+		header: "Buys",
+		key: "buys",
+		textAlign: "right",
+	},
+	{
+		cell: (trade) => (trade.open ? "Open" : formatDateTime(trade.exit_time)),
 		header: "Exit",
 		key: "exit-time",
 	},
@@ -40,8 +46,9 @@ const columns: DataTableColumn<BacktestTrade>[] = [
 	},
 ];
 
-// Closed trades, newest first. Entries buy at the open of the entry candle,
-// exits sell at the close of the exit candle.
+// Trades, newest first. Buys fill at the open after their signal and are
+// averaged; sells fill at the open after the exit signal. An open trade is
+// valued at the last close.
 export function BacktestTradesTable({
 	backtest: { trades },
 }: BacktestTradesTableProps) {

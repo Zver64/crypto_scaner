@@ -443,27 +443,27 @@ type BacktestBaselines struct {
 	// BuyAndHold Return from the open of the candle after the first evaluated candle to the close of the last; null when fewer than two candles are evaluated.
 	BuyAndHold *float64 `json:"buy_and_hold"`
 
-	// EveryCandle Every evaluated candle taken as an alert with the same hold, trades overlapping; unfinished ones are left out.
-	EveryCandle BacktestTradeStats `json:"every_candle"`
+	// Dca Return of buying the same amount at the open after every evaluated candle but the last, valued at the close of the last; null when fewer than two candles are evaluated.
+	Dca *float64 `json:"dca"`
 }
 
 // BacktestEquityPoint defines model for BacktestEquityPoint.
 type BacktestEquityPoint struct {
 	Equity float64 `json:"equity"`
 
-	// Time Exit time of the trade, the open time of its exit candle.
+	// Time Exit time of the trade.
 	Time time.Time `json:"time"`
 }
 
-// BacktestSummary Results of the strategy's closed trades.
+// BacktestSummary Results of the strategy's trades.
 type BacktestSummary struct {
 	// MaxDrawdown Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at trade exits; 0 without falls.
 	MaxDrawdown float64 `json:"max_drawdown"`
 
-	// NetProfit Compounded net return of the closed trades; 0 without trades.
+	// NetProfit Compounded net return of the trades, the open one included; 0 without trades.
 	NetProfit float64 `json:"net_profit"`
 
-	// Stats Statistics of net trade returns.
+	// Stats Statistics of the closed trades.
 	Stats BacktestTradeStats `json:"stats"`
 }
 
@@ -472,17 +472,24 @@ type BacktestSymbolName = string
 
 // BacktestTrade defines model for BacktestTrade.
 type BacktestTrade struct {
+	// Buys Buys of the trade, each of the same amount.
+	Buys int `json:"buys"`
+
+	// EntryPrice Average price of the buys.
 	EntryPrice float64 `json:"entry_price"`
 
-	// EntryTime Open time of the entry candle; the trade buys at its open.
+	// EntryTime Open time of the candle the first buy filled at, at its open.
 	EntryTime time.Time `json:"entry_time"`
 	ExitPrice float64   `json:"exit_price"`
 
-	// ExitTime Open time of the exit candle; the trade sells at its close.
+	// ExitTime Open time of the candle the trade sold at, at its open; for an open trade, of the last candle, whose close values it.
 	ExitTime time.Time `json:"exit_time"`
 
 	// NetReturn Return net of the fees on both sides.
 	NetReturn float64 `json:"net_return"`
+
+	// Open True for a trade the history ends before it sells.
+	Open bool `json:"open"`
 }
 
 // BacktestTradeStats Statistics of net trade returns.
@@ -962,58 +969,65 @@ type Session struct {
 
 // Strategy defines model for Strategy.
 type Strategy struct {
-	Enabled bool `json:"enabled"`
+	// Accumulate Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
+	Accumulate StrategyAccumulate `json:"accumulate"`
+	Enabled    bool               `json:"enabled"`
 
-	// Expression CEL expression, such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
+	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
+	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
+	// for a strategy that never sells and buys at every entry signal.
+	ExitExpression StrategyExitExpression `json:"exit_expression"`
+
+	// Expression Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
 	Expression string `json:"expression"`
 	Id         int64  `json:"id"`
 
-	// Message Telegram alert text that follows the strategy name and the coin symbol
-	// in place of the expression and the values it read; empty keeps the
-	// generated text.
+	// MaxBuys Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
+	MaxBuys StrategyMaxBuys `json:"max_buys"`
+
+	// Message Telegram alert text that follows the strategy name, the coin symbol,
+	// and the buy or the sell in place of the rule and the values it read;
+	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 	Name    string          `json:"name"`
 
-	// Problem Why the stored expression no longer compiles; present only when valid is false.
+	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
 
-	// Valid False when the stored expression no longer compiles; such a strategy is not evaluated.
+	// Valid False when a stored rule no longer compiles; such a strategy is not evaluated.
 	Valid bool `json:"valid"`
 }
+
+// StrategyAccumulate Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
+type StrategyAccumulate = bool
 
 // StrategyBacktest Returns, drawdowns, and fees are fractions, such as 0.012 for 1.2%.
 type StrategyBacktest struct {
 	// Baselines References over the same evaluated period, net of the same fees.
 	Baselines BacktestBaselines `json:"baselines"`
 
-	// Equity Equity after each closed trade, compounded from 1, oldest first.
+	// Equity Equity after each trade, the open one included, compounded from 1, oldest first.
 	Equity []BacktestEquityPoint `json:"equity"`
 
 	// Fee Fee paid on entry and again on exit, as a fraction of the traded value.
 	Fee float64 `json:"fee"`
 
 	// From Open time of the first evaluated candle of the interval; null when none is evaluated.
-	From *time.Time `json:"from"`
-
-	// Hold Candles of the interval every trade holds.
-	Hold     int            `json:"hold"`
+	From     *time.Time     `json:"from"`
 	Interval CandleInterval `json:"interval"`
 
-	// SkippedAlerts Alerts that fired while a position was open and opened no trade.
+	// SkippedAlerts Entry signals that bought nothing, since the trade does not accumulate or holds `max_buys`.
 	SkippedAlerts int `json:"skipped_alerts"`
 
-	// Summary Results of the strategy's closed trades.
+	// Summary Results of the strategy's trades.
 	Summary BacktestSummary `json:"summary"`
 	Symbol  string          `json:"symbol"`
 
 	// To Open time of the last evaluated candle of the interval; null when none is evaluated.
 	To *time.Time `json:"to"`
 
-	// Trades Closed trades, oldest first.
+	// Trades Trades, oldest first; the last one is open when the history ends before its sell.
 	Trades []BacktestTrade `json:"trades"`
-
-	// UnfinishedTrades Trades left out because the stored consecutive candles end or have a gap before their exit.
-	UnfinishedTrades int `json:"unfinished_trades"`
 }
 
 // StrategyEnabled defines model for StrategyEnabled.
@@ -1021,14 +1035,29 @@ type StrategyEnabled struct {
 	Enabled bool `json:"enabled"`
 }
 
+// StrategyExitExpression Exit rule, a CEL expression like the entry rule that may also read the
+// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
+// for a strategy that never sells and buys at every entry signal.
+type StrategyExitExpression = string
+
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
-	Enabled    bool   `json:"enabled"`
-	Expression string `json:"expression"`
+	// Accumulate Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
+	Accumulate StrategyAccumulate `json:"accumulate"`
+	Enabled    bool               `json:"enabled"`
 
-	// Message Telegram alert text that follows the strategy name and the coin symbol
-	// in place of the expression and the values it read; empty keeps the
-	// generated text.
+	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
+	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
+	// for a strategy that never sells and buys at every entry signal.
+	ExitExpression StrategyExitExpression `json:"exit_expression"`
+	Expression     string                 `json:"expression"`
+
+	// MaxBuys Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
+	MaxBuys StrategyMaxBuys `json:"max_buys"`
+
+	// Message Telegram alert text that follows the strategy name, the coin symbol,
+	// and the buy or the sell in place of the rule and the values it read;
+	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 	Name    string          `json:"name"`
 }
@@ -1038,9 +1067,12 @@ type StrategyList struct {
 	Items []Strategy `json:"items"`
 }
 
-// StrategyMessage Telegram alert text that follows the strategy name and the coin symbol
-// in place of the expression and the values it read; empty keeps the
-// generated text.
+// StrategyMaxBuys Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
+type StrategyMaxBuys = int
+
+// StrategyMessage Telegram alert text that follows the strategy name, the coin symbol,
+// and the buy or the sell in place of the rule and the values it read;
+// empty keeps the generated text.
 type StrategyMessage = string
 
 // StrategyMissingIndicator defines model for StrategyMissingIndicator.
@@ -1062,6 +1094,14 @@ type StrategySymbolList struct {
 
 // StrategyUpdate defines model for StrategyUpdate.
 type StrategyUpdate struct {
+	// Accumulate Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
+	Accumulate StrategyAccumulate `json:"accumulate"`
+
+	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
+	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
+	// for a strategy that never sells and buys at every entry signal.
+	ExitExpression StrategyExitExpression `json:"exit_expression"`
+
 	// Expression CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
 	// arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and
 	// numbers, combined with `&&`, `||`, and `!`. `prev(x)` and
@@ -1073,9 +1113,12 @@ type StrategyUpdate struct {
 	// which must be in the administrator's favorites.
 	Expression string `json:"expression"`
 
-	// Message Telegram alert text that follows the strategy name and the coin symbol
-	// in place of the expression and the values it read; empty keeps the
-	// generated text.
+	// MaxBuys Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
+	MaxBuys StrategyMaxBuys `json:"max_buys"`
+
+	// Message Telegram alert text that follows the strategy name, the coin symbol,
+	// and the buy or the sell in place of the rule and the values it read;
+	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 	Name    string          `json:"name"`
 }
@@ -1090,20 +1133,31 @@ type StrategyValidation struct {
 
 // StrategyValidationInput defines model for StrategyValidationInput.
 type StrategyValidationInput struct {
+	// Exit Checks the expression as an exit rule, which may read the position variables.
+	Exit       *bool  `json:"exit,omitempty"`
 	Expression string `json:"expression"`
 }
 
 // StrategyVariable defines model for StrategyVariable.
 type StrategyVariable struct {
-	// IndicatorId The indicator the variable reads; absent for candle fields, which every interval has.
-	IndicatorId *int64         `json:"indicator_id,omitempty"`
-	Interval    CandleInterval `json:"interval"`
+	// IndicatorId The indicator the variable reads; absent for candle fields, which every interval has, and position variables.
+	IndicatorId *int64 `json:"indicator_id,omitempty"`
 
-	// Label Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, or the candle field, such as `h-close`.
+	// Interval Interval of the value; absent for position variables.
+	Interval *CandleInterval `json:"interval,omitempty"`
+
+	// Label Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, the candle field, such as `h-close`, or the position variable, such as `pnl`.
 	Label string `json:"label"`
 
-	// Name CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, or the candle field `h_close`.
+	// Name CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, the candle field `h_close`, or the position variable `pnl`.
 	Name string `json:"name"`
+
+	// Position True for the variables of the open trade, which only exit rules
+	// read and only at the latest candle: `entry_price`, the average
+	// price of its buys; `pnl`, its return at the close before fees in
+	// percent, such as 5 for 5%; and `bars_held`, the candles since its first buy
+	// filled, counting the candle it filled at.
+	Position bool `json:"position"`
 }
 
 // StrategyVariableList defines model for StrategyVariableList.
@@ -1278,9 +1332,6 @@ type UserNotFound = ErrorResponse
 type BacktestStrategyParams struct {
 	// Symbol Market symbol of the replayed coin.
 	Symbol BacktestSymbolName `form:"symbol" json:"symbol"`
-
-	// Hold Candles of the interval every trade holds; omitted, the default of the interval: `1h` 24, `1d` 7, `1w` 4, `1M` 3.
-	Hold *int `form:"hold,omitempty" json:"hold,omitempty"`
 }
 
 // AnalyzeInstrumentParams defines parameters for AnalyzeInstrument.
@@ -1578,16 +1629,21 @@ type ClientInterface interface {
 
 	// ListStrategies List the strategies
 	//
-	// Enabled strategies are evaluated over the favorites of every user on
-	// closed candles. The administrator and users with strategy alerts get
-	// a Telegram message when an instrument starts matching.
+	// Enabled strategies trade the administrator's favorites on the closed
+	// candles of the finest interval their rules read. An entry signal is
+	// the entry rule turning from false to true; it buys, opening a trade
+	// or, for a strategy that accumulates or has no exit rule, adding a buy
+	// up to `max_buys`. An exit signal, the exit rule being true after the
+	// first buy, sells every buy of the trade, and the entry counts as false
+	// on its candle. The administrator and users with strategy alerts get a
+	// Telegram message for every buy and sell.
 	//
 	// Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
 	ListStrategies(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateStrategyWithBody Add a strategy
 	//
-	// An enabled strategy announces the instruments matching it now, then alerts on new matches.
+	// An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1596,7 +1652,7 @@ type ClientInterface interface {
 
 	// CreateStrategy Add a strategy
 	//
-	// An enabled strategy announces the instruments matching it now, then alerts on new matches.
+	// An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1610,7 +1666,7 @@ type ClientInterface interface {
 
 	// SetStrategyEnabledWithBody Turn a strategy on or off
 	//
-	// Enabling announces the current matches; disabling forgets them.
+	// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1619,25 +1675,25 @@ type ClientInterface interface {
 
 	// SetStrategyEnabled Turn a strategy on or off
 	//
-	// Enabling announces the current matches; disabling forgets them.
+	// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
 	//
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with PATCH /api/v1/admin/strategies/{strategy_id} (the `SetStrategyEnabled` operationId).
 	SetStrategyEnabled(ctx context.Context, strategyId StrategyID, body SetStrategyEnabledJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// UpdateStrategyWithBody Change the name and expression of a strategy
+	// UpdateStrategyWithBody Change a strategy
 	//
-	// A changed expression of an enabled strategy announces its current matches again.
+	// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /api/v1/admin/strategies/{strategy_id} (the `UpdateStrategy` operationId).
 	UpdateStrategyWithBody(ctx context.Context, strategyId StrategyID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// UpdateStrategy Change the name and expression of a strategy
+	// UpdateStrategy Change a strategy
 	//
-	// A changed expression of an enabled strategy announces its current matches again.
+	// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1647,9 +1703,8 @@ type ClientInterface interface {
 	// BacktestStrategy Backtest a saved strategy on one coin
 	//
 	// Evaluates the saved strategy, enabled or not, at the close of every
-	// stored candle of the finest interval its expression reads, exactly as
-	// live alerts are evaluated, and simulates the trades its alerts (the
-	// candles where it starts matching) would open. Any active coin can be
+	// stored candle of the finest interval its rules read, and replays its
+	// trades exactly as live signals trade, starting without a trade. Any active coin can be
 	// backtested; coins read through `of` must be in the administrator's
 	// favorites, otherwise their values are unknown. Only the stored closed
 	// history is replayed (up to 20,000 candles; the administrator loads
@@ -1657,16 +1712,13 @@ type ClientInterface interface {
 	// backtests never load it); when older candles may be missing, candles
 	// before the full indicator warm-up are not evaluated.
 	//
-	// Trades are simulated one position at a time:
-	// each enters at the open of the candle after its alert and exits at
-	// the close of its `hold`-th consecutive candle, paying `fee` on entry
-	// and on exit. Alerts that fire while a position is open are skipped;
-	// a trade whose hold the stored consecutive candles do not reach, at
-	// the end of the history or at a gap, is unfinished and left out of
-	// the metrics. Two baselines cover the same evaluated period: buying
-	// and holding, and taking every evaluated candle as an alert. A
-	// backtest that does not finish within its time limit fails with
-	// `backtest_too_heavy`.
+	// Every buy spends the same amount at the open of the candle after its
+	// signal, and a sell sells every buy of the trade at the open of the
+	// candle after its signal, paying `fee` on each side. A trade still
+	// open when the history ends is valued at the last close. Two baselines
+	// cover the same evaluated period: buying and holding, and buying the
+	// same amount at every candle (DCA). A backtest that does not finish
+	// within its time limit fails with `backtest_too_heavy`.
 	//
 	// Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
 	BacktestStrategy(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1680,8 +1732,9 @@ type ClientInterface interface {
 
 	// ValidateStrategyWithBody Check a strategy expression
 	//
-	// Lists every problem that would reject the expression in a strategy:
-	// syntax, unknown indicators, candle fields, and functions, history
+	// Lists every problem that would reject the expression as the entry
+	// rule of a strategy, or as its exit rule when `exit` is set, which may
+	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
 	// depth, and coins read through `of` that are not active coins in the
 	// administrator's favorites. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
@@ -1696,8 +1749,9 @@ type ClientInterface interface {
 
 	// ValidateStrategy Check a strategy expression
 	//
-	// Lists every problem that would reject the expression in a strategy:
-	// syntax, unknown indicators, candle fields, and functions, history
+	// Lists every problem that would reject the expression as the entry
+	// rule of a strategy, or as its exit rule when `exit` is set, which may
+	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
 	// depth, and coins read through `of` that are not active coins in the
 	// administrator's favorites. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
@@ -2126,9 +2180,14 @@ func (c *Client) UpdateScannerIndicator(ctx context.Context, indicatorId Scanner
 
 // ListStrategies List the strategies
 //
-// Enabled strategies are evaluated over the favorites of every user on
-// closed candles. The administrator and users with strategy alerts get
-// a Telegram message when an instrument starts matching.
+// Enabled strategies trade the administrator's favorites on the closed
+// candles of the finest interval their rules read. An entry signal is
+// the entry rule turning from false to true; it buys, opening a trade
+// or, for a strategy that accumulates or has no exit rule, adding a buy
+// up to `max_buys`. An exit signal, the exit rule being true after the
+// first buy, sells every buy of the trade, and the entry counts as false
+// on its candle. The administrator and users with strategy alerts get a
+// Telegram message for every buy and sell.
 //
 // Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
 func (c *Client) ListStrategies(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2145,7 +2204,7 @@ func (c *Client) ListStrategies(ctx context.Context, reqEditors ...RequestEditor
 
 // CreateStrategyWithBody Add a strategy
 //
-// An enabled strategy announces the instruments matching it now, then alerts on new matches.
+// An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2164,7 +2223,7 @@ func (c *Client) CreateStrategyWithBody(ctx context.Context, contentType string,
 
 // CreateStrategy Add a strategy
 //
-// An enabled strategy announces the instruments matching it now, then alerts on new matches.
+// An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2198,7 +2257,7 @@ func (c *Client) DeleteStrategy(ctx context.Context, strategyId StrategyID, reqE
 
 // SetStrategyEnabledWithBody Turn a strategy on or off
 //
-// Enabling announces the current matches; disabling forgets them.
+// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2217,7 +2276,7 @@ func (c *Client) SetStrategyEnabledWithBody(ctx context.Context, strategyId Stra
 
 // SetStrategyEnabled Turn a strategy on or off
 //
-// Enabling announces the current matches; disabling forgets them.
+// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2234,9 +2293,9 @@ func (c *Client) SetStrategyEnabled(ctx context.Context, strategyId StrategyID, 
 	return c.Client.Do(req)
 }
 
-// UpdateStrategyWithBody Change the name and expression of a strategy
+// UpdateStrategyWithBody Change a strategy
 //
-// A changed expression of an enabled strategy announces its current matches again.
+// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2253,9 +2312,9 @@ func (c *Client) UpdateStrategyWithBody(ctx context.Context, strategyId Strategy
 	return c.Client.Do(req)
 }
 
-// UpdateStrategy Change the name and expression of a strategy
+// UpdateStrategy Change a strategy
 //
-// A changed expression of an enabled strategy announces its current matches again.
+// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2275,9 +2334,8 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 // BacktestStrategy Backtest a saved strategy on one coin
 //
 // Evaluates the saved strategy, enabled or not, at the close of every
-// stored candle of the finest interval its expression reads, exactly as
-// live alerts are evaluated, and simulates the trades its alerts (the
-// candles where it starts matching) would open. Any active coin can be
+// stored candle of the finest interval its rules read, and replays its
+// trades exactly as live signals trade, starting without a trade. Any active coin can be
 // backtested; coins read through `of` must be in the administrator's
 // favorites, otherwise their values are unknown. Only the stored closed
 // history is replayed (up to 20,000 candles; the administrator loads
@@ -2285,16 +2343,13 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 // backtests never load it); when older candles may be missing, candles
 // before the full indicator warm-up are not evaluated.
 //
-// Trades are simulated one position at a time:
-// each enters at the open of the candle after its alert and exits at
-// the close of its `hold`-th consecutive candle, paying `fee` on entry
-// and on exit. Alerts that fire while a position is open are skipped;
-// a trade whose hold the stored consecutive candles do not reach, at
-// the end of the history or at a gap, is unfinished and left out of
-// the metrics. Two baselines cover the same evaluated period: buying
-// and holding, and taking every evaluated candle as an alert. A
-// backtest that does not finish within its time limit fails with
-// `backtest_too_heavy`.
+// Every buy spends the same amount at the open of the candle after its
+// signal, and a sell sells every buy of the trade at the open of the
+// candle after its signal, paying `fee` on each side. A trade still
+// open when the history ends is valued at the last close. Two baselines
+// cover the same evaluated period: buying and holding, and buying the
+// same amount at every candle (DCA). A backtest that does not finish
+// within its time limit fails with `backtest_too_heavy`.
 //
 // Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
 func (c *Client) BacktestStrategy(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2328,8 +2383,9 @@ func (c *Client) ListStrategySymbols(ctx context.Context, reqEditors ...RequestE
 
 // ValidateStrategyWithBody Check a strategy expression
 //
-// Lists every problem that would reject the expression in a strategy:
-// syntax, unknown indicators, candle fields, and functions, history
+// Lists every problem that would reject the expression as the entry
+// rule of a strategy, or as its exit rule when `exit` is set, which may
+// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
 // depth, and coins read through `of` that are not active coins in the
 // administrator's favorites. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
@@ -2354,8 +2410,9 @@ func (c *Client) ValidateStrategyWithBody(ctx context.Context, contentType strin
 
 // ValidateStrategy Check a strategy expression
 //
-// Lists every problem that would reject the expression in a strategy:
-// syntax, unknown indicators, candle fields, and functions, history
+// Lists every problem that would reject the expression as the entry
+// rule of a strategy, or as its exit rule when `exit` is set, which may
+// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
 // depth, and coins read through `of` that are not active coins in the
 // administrator's favorites. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
@@ -3386,18 +3443,6 @@ func NewBacktestStrategyRequest(server string, strategyId StrategyID, params *Ba
 			for _, qp := range strings.Split(queryFrag, "&") {
 				rawQueryFragments = append(rawQueryFragments, qp)
 			}
-		}
-
-		if params.Hold != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "hold", *params.Hold, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
 		}
 
 		if encoded := queryValues.Encode(); encoded != "" {
@@ -4640,9 +4685,14 @@ type ClientWithResponsesInterface interface {
 
 	// ListStrategiesWithResponse List the strategies
 	//
-	// Enabled strategies are evaluated over the favorites of every user on
-	// closed candles. The administrator and users with strategy alerts get
-	// a Telegram message when an instrument starts matching.
+	// Enabled strategies trade the administrator's favorites on the closed
+	// candles of the finest interval their rules read. An entry signal is
+	// the entry rule turning from false to true; it buys, opening a trade
+	// or, for a strategy that accumulates or has no exit rule, adding a buy
+	// up to `max_buys`. An exit signal, the exit rule being true after the
+	// first buy, sells every buy of the trade, and the entry counts as false
+	// on its candle. The administrator and users with strategy alerts get a
+	// Telegram message for every buy and sell.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -4651,7 +4701,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateStrategyWithBodyWithResponse Add a strategy
 	//
-	// An enabled strategy announces the instruments matching it now, then alerts on new matches.
+	// An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -4660,7 +4710,7 @@ type ClientWithResponsesInterface interface {
 
 	// CreateStrategyWithResponse Add a strategy
 	//
-	// An enabled strategy announces the instruments matching it now, then alerts on new matches.
+	// An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -4676,7 +4726,7 @@ type ClientWithResponsesInterface interface {
 
 	// SetStrategyEnabledWithBodyWithResponse Turn a strategy on or off
 	//
-	// Enabling announces the current matches; disabling forgets them.
+	// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -4685,25 +4735,25 @@ type ClientWithResponsesInterface interface {
 
 	// SetStrategyEnabledWithResponse Turn a strategy on or off
 	//
-	// Enabling announces the current matches; disabling forgets them.
+	// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PATCH /api/v1/admin/strategies/{strategy_id} (the `SetStrategyEnabled` operationId).
 	SetStrategyEnabledWithResponse(ctx context.Context, strategyId StrategyID, body SetStrategyEnabledJSONRequestBody, reqEditors ...RequestEditorFn) (*SetStrategyEnabledResponse, error)
 
-	// UpdateStrategyWithBodyWithResponse Change the name and expression of a strategy
+	// UpdateStrategyWithBodyWithResponse Change a strategy
 	//
-	// A changed expression of an enabled strategy announces its current matches again.
+	// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /api/v1/admin/strategies/{strategy_id} (the `UpdateStrategy` operationId).
 	UpdateStrategyWithBodyWithResponse(ctx context.Context, strategyId StrategyID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateStrategyResponse, error)
 
-	// UpdateStrategyWithResponse Change the name and expression of a strategy
+	// UpdateStrategyWithResponse Change a strategy
 	//
-	// A changed expression of an enabled strategy announces its current matches again.
+	// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -4713,9 +4763,8 @@ type ClientWithResponsesInterface interface {
 	// BacktestStrategyWithResponse Backtest a saved strategy on one coin
 	//
 	// Evaluates the saved strategy, enabled or not, at the close of every
-	// stored candle of the finest interval its expression reads, exactly as
-	// live alerts are evaluated, and simulates the trades its alerts (the
-	// candles where it starts matching) would open. Any active coin can be
+	// stored candle of the finest interval its rules read, and replays its
+	// trades exactly as live signals trade, starting without a trade. Any active coin can be
 	// backtested; coins read through `of` must be in the administrator's
 	// favorites, otherwise their values are unknown. Only the stored closed
 	// history is replayed (up to 20,000 candles; the administrator loads
@@ -4723,16 +4772,13 @@ type ClientWithResponsesInterface interface {
 	// backtests never load it); when older candles may be missing, candles
 	// before the full indicator warm-up are not evaluated.
 	//
-	// Trades are simulated one position at a time:
-	// each enters at the open of the candle after its alert and exits at
-	// the close of its `hold`-th consecutive candle, paying `fee` on entry
-	// and on exit. Alerts that fire while a position is open are skipped;
-	// a trade whose hold the stored consecutive candles do not reach, at
-	// the end of the history or at a gap, is unfinished and left out of
-	// the metrics. Two baselines cover the same evaluated period: buying
-	// and holding, and taking every evaluated candle as an alert. A
-	// backtest that does not finish within its time limit fails with
-	// `backtest_too_heavy`.
+	// Every buy spends the same amount at the open of the candle after its
+	// signal, and a sell sells every buy of the trade at the open of the
+	// candle after its signal, paying `fee` on each side. A trade still
+	// open when the history ends is valued at the last close. Two baselines
+	// cover the same evaluated period: buying and holding, and buying the
+	// same amount at every candle (DCA). A backtest that does not finish
+	// within its time limit fails with `backtest_too_heavy`.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -4750,8 +4796,9 @@ type ClientWithResponsesInterface interface {
 
 	// ValidateStrategyWithBodyWithResponse Check a strategy expression
 	//
-	// Lists every problem that would reject the expression in a strategy:
-	// syntax, unknown indicators, candle fields, and functions, history
+	// Lists every problem that would reject the expression as the entry
+	// rule of a strategy, or as its exit rule when `exit` is set, which may
+	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
 	// depth, and coins read through `of` that are not active coins in the
 	// administrator's favorites. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
@@ -4766,8 +4813,9 @@ type ClientWithResponsesInterface interface {
 
 	// ValidateStrategyWithResponse Check a strategy expression
 	//
-	// Lists every problem that would reject the expression in a strategy:
-	// syntax, unknown indicators, candle fields, and functions, history
+	// Lists every problem that would reject the expression as the entry
+	// rule of a strategy, or as its exit rule when `exit` is set, which may
+	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
 	// depth, and coins read through `of` that are not active coins in the
 	// administrator's favorites. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
@@ -8862,9 +8910,14 @@ func (c *ClientWithResponses) UpdateScannerIndicatorWithResponse(ctx context.Con
 
 // ListStrategiesWithResponse List the strategies
 //
-// Enabled strategies are evaluated over the favorites of every user on
-// closed candles. The administrator and users with strategy alerts get
-// a Telegram message when an instrument starts matching.
+// Enabled strategies trade the administrator's favorites on the closed
+// candles of the finest interval their rules read. An entry signal is
+// the entry rule turning from false to true; it buys, opening a trade
+// or, for a strategy that accumulates or has no exit rule, adding a buy
+// up to `max_buys`. An exit signal, the exit rule being true after the
+// first buy, sells every buy of the trade, and the entry counts as false
+// on its candle. The administrator and users with strategy alerts get a
+// Telegram message for every buy and sell.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -8879,7 +8932,7 @@ func (c *ClientWithResponses) ListStrategiesWithResponse(ctx context.Context, re
 
 // CreateStrategyWithBodyWithResponse Add a strategy
 //
-// An enabled strategy announces the instruments matching it now, then alerts on new matches.
+// An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8894,7 +8947,7 @@ func (c *ClientWithResponses) CreateStrategyWithBodyWithResponse(ctx context.Con
 
 // CreateStrategyWithResponse Add a strategy
 //
-// An enabled strategy announces the instruments matching it now, then alerts on new matches.
+// An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8922,7 +8975,7 @@ func (c *ClientWithResponses) DeleteStrategyWithResponse(ctx context.Context, st
 
 // SetStrategyEnabledWithBodyWithResponse Turn a strategy on or off
 //
-// Enabling announces the current matches; disabling forgets them.
+// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8937,7 +8990,7 @@ func (c *ClientWithResponses) SetStrategyEnabledWithBodyWithResponse(ctx context
 
 // SetStrategyEnabledWithResponse Turn a strategy on or off
 //
-// Enabling announces the current matches; disabling forgets them.
+// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8950,9 +9003,9 @@ func (c *ClientWithResponses) SetStrategyEnabledWithResponse(ctx context.Context
 	return ParseSetStrategyEnabledResponse(rsp)
 }
 
-// UpdateStrategyWithBodyWithResponse Change the name and expression of a strategy
+// UpdateStrategyWithBodyWithResponse Change a strategy
 //
-// A changed expression of an enabled strategy announces its current matches again.
+// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8965,9 +9018,9 @@ func (c *ClientWithResponses) UpdateStrategyWithBodyWithResponse(ctx context.Con
 	return ParseUpdateStrategyResponse(rsp)
 }
 
-// UpdateStrategyWithResponse Change the name and expression of a strategy
+// UpdateStrategyWithResponse Change a strategy
 //
-// A changed expression of an enabled strategy announces its current matches again.
+// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8983,9 +9036,8 @@ func (c *ClientWithResponses) UpdateStrategyWithResponse(ctx context.Context, st
 // BacktestStrategyWithResponse Backtest a saved strategy on one coin
 //
 // Evaluates the saved strategy, enabled or not, at the close of every
-// stored candle of the finest interval its expression reads, exactly as
-// live alerts are evaluated, and simulates the trades its alerts (the
-// candles where it starts matching) would open. Any active coin can be
+// stored candle of the finest interval its rules read, and replays its
+// trades exactly as live signals trade, starting without a trade. Any active coin can be
 // backtested; coins read through `of` must be in the administrator's
 // favorites, otherwise their values are unknown. Only the stored closed
 // history is replayed (up to 20,000 candles; the administrator loads
@@ -8993,16 +9045,13 @@ func (c *ClientWithResponses) UpdateStrategyWithResponse(ctx context.Context, st
 // backtests never load it); when older candles may be missing, candles
 // before the full indicator warm-up are not evaluated.
 //
-// Trades are simulated one position at a time:
-// each enters at the open of the candle after its alert and exits at
-// the close of its `hold`-th consecutive candle, paying `fee` on entry
-// and on exit. Alerts that fire while a position is open are skipped;
-// a trade whose hold the stored consecutive candles do not reach, at
-// the end of the history or at a gap, is unfinished and left out of
-// the metrics. Two baselines cover the same evaluated period: buying
-// and holding, and taking every evaluated candle as an alert. A
-// backtest that does not finish within its time limit fails with
-// `backtest_too_heavy`.
+// Every buy spends the same amount at the open of the candle after its
+// signal, and a sell sells every buy of the trade at the open of the
+// candle after its signal, paying `fee` on each side. A trade still
+// open when the history ends is valued at the last close. Two baselines
+// cover the same evaluated period: buying and holding, and buying the
+// same amount at every candle (DCA). A backtest that does not finish
+// within its time limit fails with `backtest_too_heavy`.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -9032,8 +9081,9 @@ func (c *ClientWithResponses) ListStrategySymbolsWithResponse(ctx context.Contex
 
 // ValidateStrategyWithBodyWithResponse Check a strategy expression
 //
-// Lists every problem that would reject the expression in a strategy:
-// syntax, unknown indicators, candle fields, and functions, history
+// Lists every problem that would reject the expression as the entry
+// rule of a strategy, or as its exit rule when `exit` is set, which may
+// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
 // depth, and coins read through `of` that are not active coins in the
 // administrator's favorites. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
@@ -9054,8 +9104,9 @@ func (c *ClientWithResponses) ValidateStrategyWithBodyWithResponse(ctx context.C
 
 // ValidateStrategyWithResponse Check a strategy expression
 //
-// Lists every problem that would reject the expression in a strategy:
-// syntax, unknown indicators, candle fields, and functions, history
+// Lists every problem that would reject the expression as the entry
+// rule of a strategy, or as its exit rule when `exit` is set, which may
+// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
 // depth, and coins read through `of` that are not active coins in the
 // administrator's favorites. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`

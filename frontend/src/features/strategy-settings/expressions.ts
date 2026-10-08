@@ -19,6 +19,9 @@ interface StrategyFunction {
 	defaults: ExpressionNode[];
 	variadic?: boolean;
 	minArgs?: number;
+	// Reads its value at earlier candles, where position variables do not
+	// exist.
+	earlier?: true;
 }
 
 type FunctionNode = Extract<ExpressionNode, { kind: "func" }>;
@@ -64,11 +67,13 @@ export const strategyFunctions: Record<string, StrategyFunction> = {
 		defaults: [number(1)],
 		// prev(x) reads one candle back.
 		minArgs: 1,
+		earlier: true,
 	},
 	percentile: {
 		label: "percentile — of earlier candles",
 		args: ["Value", "Candles", "Percentile"],
 		defaults: [number(120), number(20)],
+		earlier: true,
 	},
 };
 

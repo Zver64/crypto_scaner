@@ -22,6 +22,8 @@ import (
 
 const (
 	maxNameLength = 64
+	// MaxBuys bounds the max buys of a trade a strategy may set.
+	MaxBuys = 1000
 	// maxMessageLength keeps alerts well below Telegram's 4096-character
 	// message limit.
 	maxMessageLength = 1000
@@ -60,33 +62,68 @@ func (err *InstrumentsInUseError) Error() string {
 
 func (err *InstrumentsInUseError) Is(target error) bool { return target == ErrInstrumentsInUse }
 
-// Strategy is one stored strategy.
+// Strategy is one stored strategy. Expression is the entry rule;
+// ExitExpression, when not empty, the exit rule. Accumulate lets entry
+// signals add buys to an open trade, which only a strategy with an exit has;
+// one without an exit buys at every entry signal and never sells. MaxBuys
+// caps the buys of a trade, 0 meaning no cap.
 type Strategy struct {
-	ID         int64
-	Name       string
-	Expression string
+	ID             int64
+	Name           string
+	Expression     string
+	ExitExpression string
+	Accumulate     bool
+	MaxBuys        int
 	// Message replaces the generated alert text when it is not empty.
 	Message string
 	Enabled bool
-	// BaselinePending reports, as loaded, that the current matches still
-	// have to be announced, such as after a restart right after a change.
+	// BaselinePending reports, as loaded, that the trading states still have
+	// to start afresh, such as after a restart right after a change.
 	BaselinePending bool
-	// Revision grows with every expression or enabled change; match writes
-	// apply only to the revision that was evaluated.
+	// Revision grows with every change of how the strategy trades and with
+	// every enabled change; state writes apply only to the revision that was
+	// evaluated.
 	Revision int64
 }
 
-// Entry is a strategy with its compiled expression. Expression is nil when
-// the stored source no longer compiles, and such a strategy is not evaluated.
+// trades reports whether other differs from strategy in how it trades.
+func (strategy Strategy) trades(other Strategy) bool {
+	return strategy.Expression != other.Expression || strategy.ExitExpression != other.ExitExpression ||
+		strategy.Accumulate != other.Accumulate || strategy.MaxBuys != other.MaxBuys
+}
+
+// Entry is a strategy with its compiled expressions. Compiled, the entry
+// rule, is nil when a stored source no longer compiles, and such a strategy
+// is not evaluated; Exit is nil without an exit rule.
 type Entry struct {
 	Strategy
 	Compiled *Expression
-	// Problem explains why the stored source no longer compiles.
+	Exit     *Expression
+	// Interval is the finest interval the expressions read, whose candles
+	// the strategy trades on.
+	Interval market.CandleInterval
+	// Problem explains why a stored source no longer compiles.
 	Problem string
+	// reads lists what the entry and the exit rules read, each read once,
+	// and symbols the other instruments they read through of, ascending.
+	reads   []Read
+	symbols []string
 }
 
 // evaluated reports whether the monitor evaluates the strategy.
 func (entry Entry) evaluated() bool { return entry.Enabled && entry.Compiled != nil }
+
+// indicatorIDs lists the indicators the rules read, ascending.
+func (entry Entry) indicatorIDs() []int64 {
+	var ids []int64
+	for _, read := range entry.reads {
+		if id := read.Variable.IndicatorID; id != 0 && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return ids
+}
 
 type Store interface {
 	ListStrategies(context.Context) ([]Strategy, error)
@@ -96,12 +133,14 @@ type Store interface {
 	// indicator no longer exists or an instrument it starts reading is not
 	// in the favorites of administratorTelegramID.
 	CreateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64) (int64, error)
-	// UpdateStrategy replaces the name, expression, indicators, and
-	// instruments and returns the revision; baseline marks the matches for
-	// announcement. It fails like CreateStrategy, or with ErrNotFound.
+	// UpdateStrategy replaces the name, rules, trading settings, message,
+	// indicators, and instruments and returns the revision; baseline marks
+	// the trading states for a fresh start. It fails like CreateStrategy, or
+	// with ErrNotFound.
 	UpdateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64, baseline bool) (int64, error)
 	// SetStrategyEnabled returns the revision and fails with ErrNotFound.
-	// Enabling marks the matches for announcement; disabling forgets them.
+	// Enabling marks the trading states for a fresh start; disabling
+	// forgets them.
 	SetStrategyEnabled(context.Context, int64, bool) (int64, error)
 	DeleteStrategy(context.Context, int64) error
 	// ListStrategyInstruments returns the active favorites of the
@@ -144,8 +183,8 @@ type Service struct {
 
 // NewService creates an empty service; Load reads the stored strategies.
 // Expressions read through of the coins in the favorites of
-// administratorID. changed receives the ids of strategies whose current
-// matches must be announced after each change and must not block.
+// administratorID. changed receives the ids of strategies whose trading
+// states must start afresh after each change and must not block.
 func NewService(store Store, indicators Indicators, registry *indicator.Registry, administratorID int64, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
 	if store == nil || indicators == nil || registry == nil || logger == nil || changed == nil {
 		return nil, errors.New("strategy store, indicators, registry, logger, and change listener are required")
@@ -195,13 +234,14 @@ type Validation struct {
 	Missing []scannerindicator.Entry
 }
 
-// Validate lists every problem that would reject expression in a strategy:
-// the problems of compiling it, and the coins it reads through of that are
-// not the administrator's active favorites. Names of indicators that are not
+// Validate lists every problem that would reject expression as the entry
+// rule of a strategy, or as its exit rule when exit is set: the problems of
+// compiling it, and the coins it reads through of that are not the
+// administrator's active favorites. Names of indicators that are not
 // configured yet are resolved into Missing, and the problems assume they
 // were added.
-func (service *Service) Validate(ctx context.Context, expression string) (Validation, error) {
-	compiled, missing, err := service.compileResolving(expression)
+func (service *Service) Validate(ctx context.Context, expression string, exit bool) (Validation, error) {
+	compiled, missing, err := service.compileResolving(expression, exit)
 	var invalid *InvalidExpressionError
 	if errors.As(err, &invalid) {
 		return Validation{Problems: append(invalid.Problems, service.indicators.CapacityProblems(missing)...), Missing: missing}, nil
@@ -222,22 +262,92 @@ func (service *Service) Validate(ctx context.Context, expression string) (Valida
 	return Validation{Problems: problems, Missing: missing}, nil
 }
 
-// compileResolving compiles expression over the configured indicators and,
-// for the names of indicators that are not configured, over the indicators
-// missingIndicators resolves them into, which it returns.
-func (service *Service) compileResolving(expression string) (*Expression, []scannerindicator.Entry, error) {
+// compileResolving compiles expression, an entry rule or, when exit is set,
+// an exit rule, over the configured indicators and, for the names of
+// indicators that are not configured, over the indicators missingIndicators
+// resolves them into, which it returns.
+func (service *Service) compileResolving(expression string, exit bool) (*Expression, []scannerindicator.Entry, error) {
 	expression = strings.TrimSpace(expression)
 	configured := service.indicators.List()
-	compiled, err := service.compile(expression, Variables(configured))
+	compiled, err := service.compile(expression, ruleVariables(Variables(configured), exit))
 	var invalid *InvalidExpressionError
 	if !errors.As(err, &invalid) || len(invalid.Unknown) == 0 {
 		return compiled, nil, err
 	}
 	missing := service.missingIndicators(configured, invalid.Unknown)
 	if len(missing) > 0 {
-		compiled, err = service.compile(expression, Variables(append(slices.Clone(configured), missing...)))
+		compiled, err = service.compile(expression, ruleVariables(Variables(append(slices.Clone(configured), missing...)), exit))
 	}
 	return compiled, missing, err
+}
+
+// ruleVariables adds the position variables to variables for an exit rule.
+func ruleVariables(variables []Variable, exit bool) []Variable {
+	if !exit {
+		return variables
+	}
+	return append(slices.Clone(variables), PositionVariables()...)
+}
+
+// compileEntry compiles the rules of item over variables and finds the
+// interval it trades on. Problems of the exit rule name it.
+func (service *Service) compileEntry(item Strategy, variables []Variable) (Entry, error) {
+	entry := Entry{Strategy: item}
+	compiled, err := service.compile(item.Expression, variables)
+	if err != nil {
+		return entry, err
+	}
+	var exit *Expression
+	if item.ExitExpression != "" {
+		if exit, err = service.compile(item.ExitExpression, ruleVariables(variables, true)); err != nil {
+			var invalid *InvalidExpressionError
+			if errors.As(err, &invalid) {
+				for index, problem := range invalid.Problems {
+					invalid.Problems[index] = "exit rule: " + problem
+				}
+			}
+			return entry, err
+		}
+	}
+	entry.Compiled, entry.Exit = compiled, exit
+	entry.reads = mergeReads(compiled, exit)
+	for _, read := range entry.reads {
+		if read.Symbol != "" && !slices.Contains(entry.symbols, read.Symbol) {
+			entry.symbols = append(entry.symbols, read.Symbol)
+		}
+	}
+	slices.Sort(entry.symbols)
+	// The entry rule reads at least one interval.
+	for _, interval := range market.CandleIntervals() {
+		if slices.ContainsFunc(entry.reads, func(read Read) bool { return read.Variable.Target.Interval == interval }) {
+			entry.Interval = interval
+			break
+		}
+	}
+	return entry, nil
+}
+
+// mergeReads lists what the entry rule and the exit rule, which may be nil,
+// read, each read once.
+func mergeReads(compiled, exit *Expression) []Read {
+	reads := compiled.Reads()
+	if exit == nil {
+		return reads
+	}
+	type key struct {
+		name, symbol string
+		shift        int
+	}
+	seen := make(map[key]struct{}, len(reads))
+	for _, read := range reads {
+		seen[key{read.Variable.Name, read.Symbol, read.Shift}] = struct{}{}
+	}
+	for _, read := range exit.Reads() {
+		if _, ok := seen[key{read.Variable.Name, read.Symbol, read.Shift}]; !ok {
+			reads = append(reads, read)
+		}
+	}
+	return reads
 }
 
 // Load replaces the strategies with the stored ones. A strategy that no
@@ -250,14 +360,12 @@ func (service *Service) Load(ctx context.Context) error {
 	variables := service.Variables()
 	entries := make([]Entry, len(stored))
 	for i, item := range stored {
-		entries[i] = Entry{Strategy: item}
-		compiled, err := service.compile(item.Expression, variables)
+		entry, err := service.compileEntry(item, variables)
 		if err != nil {
 			service.logger.WarnContext(ctx, "skip invalid strategy", "strategy_id", item.ID, "error", err)
-			entries[i].Problem = err.Error()
-			continue
+			entry.Problem = err.Error()
 		}
-		entries[i].Compiled = compiled
+		entries[i] = entry
 	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
@@ -302,7 +410,7 @@ func (service *Service) IndicatorUsage() map[int64][]string {
 		if entry.Compiled == nil {
 			continue
 		}
-		for _, id := range entry.Compiled.IndicatorIDs() {
+		for _, id := range entry.indicatorIDs() {
 			usage[id] = append(usage[id], entry.Name)
 		}
 	}
@@ -335,7 +443,7 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
-	entry.ID, err = service.store.CreateStrategy(ctx, entry.Strategy, entry.Compiled.IndicatorIDs(), entry.Compiled.Symbols(), service.administratorID)
+	entry.ID, err = service.store.CreateStrategy(ctx, entry.Strategy, entry.indicatorIDs(), entry.symbols, service.administratorID)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -348,26 +456,28 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 	return entry, nil
 }
 
-// Update changes the name, expression, and message. A changed expression of
-// an enabled strategy announces its current matches again.
-func (service *Service) Update(ctx context.Context, id int64, name, expression, message string) (Entry, error) {
+// Update changes the name, rules, trading settings, and message of the
+// strategy item.ID; its enabled state stays. A change of how an enabled
+// strategy trades starts it afresh, forgetting its open trades.
+func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
-	index := slices.IndexFunc(current, func(entry Entry) bool { return entry.ID == id })
+	index := slices.IndexFunc(current, func(entry Entry) bool { return entry.ID == item.ID })
 	if index < 0 {
 		return Entry{}, ErrNotFound
 	}
 	previous := current[index]
-	entry, err := service.entry(Strategy{ID: id, Name: name, Expression: expression, Message: message, Enabled: previous.Enabled})
+	item.Enabled = previous.Enabled
+	entry, err := service.entry(item)
 	if err != nil {
 		return Entry{}, err
 	}
 	var baselines []int64
-	if entry.Enabled && (previous.Expression != entry.Expression || previous.Compiled == nil) {
-		baselines = []int64{id}
+	if entry.Enabled && (previous.trades(entry.Strategy) || previous.Compiled == nil) {
+		baselines = []int64{item.ID}
 	}
-	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, entry.Compiled.IndicatorIDs(), entry.Compiled.Symbols(), service.administratorID, len(baselines) > 0)
+	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, entry.indicatorIDs(), entry.symbols, service.administratorID, len(baselines) > 0)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -376,8 +486,8 @@ func (service *Service) Update(ctx context.Context, id int64, name, expression, 
 	return entry, nil
 }
 
-// SetEnabled turns evaluation on or off. Enabling announces the current
-// matches.
+// SetEnabled turns evaluation on or off. Enabling starts the trading states
+// afresh.
 func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) (Entry, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
@@ -403,7 +513,7 @@ func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) 
 	return current[index], nil
 }
 
-// Delete removes the strategy and its matches.
+// Delete removes the strategy and its trading states.
 func (service *Service) Delete(ctx context.Context, id int64) error {
 	service.writes.Lock()
 	defer service.writes.Unlock()
@@ -437,10 +547,21 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	if utf8.RuneCountInString(item.Message) > maxMessageLength {
 		return Entry{}, fmt.Errorf("%w: the message must have at most %d characters", ErrInvalidArgument, maxMessageLength)
 	}
+	if item.MaxBuys < 0 || item.MaxBuys > MaxBuys {
+		return Entry{}, fmt.Errorf("%w: max buys must be from 0 to %d", ErrInvalidArgument, MaxBuys)
+	}
 	item.Expression = strings.TrimSpace(item.Expression)
-	compiled, err := service.compile(item.Expression, service.Variables())
+	item.ExitExpression = strings.TrimSpace(item.ExitExpression)
+	// Without an exit every entry signal buys anyway, and a trade of one buy
+	// has no max buys to keep.
+	if item.ExitExpression == "" {
+		item.Accumulate = false
+	} else if !item.Accumulate {
+		item.MaxBuys = 0
+	}
+	entry, err := service.compileEntry(item, service.Variables())
 	if err != nil {
 		return Entry{}, err
 	}
-	return Entry{Strategy: item, Compiled: compiled}, nil
+	return entry, nil
 }

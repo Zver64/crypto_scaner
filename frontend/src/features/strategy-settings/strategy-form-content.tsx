@@ -1,25 +1,23 @@
 import {
 	Alert,
 	Button,
-	Code,
+	Checkbox,
 	Group,
+	NumberInput,
 	Stack,
 	Text,
 	Textarea,
 	TextInput,
-	Tooltip,
-	UnstyledButton,
 } from "@mantine/core";
-import { useClipboard } from "@mantine/hooks";
 import { useEffect, useState } from "react";
 import type { StrategyUpdate, StrategyVariable } from "@/api/generated/models";
-import { StrategyImport } from "@/features/strategy-settings/strategy-import";
-import { StrategyRuleBuilder } from "@/features/strategy-settings/strategy-rule-builder";
+import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
 	emptyStrategyQuery,
 	strategyExpression,
 	strategyQueryComplete,
+	withoutPositionVariables,
 } from "@/features/strategy-settings/utils";
 
 interface StrategyFormContentProps {
@@ -45,17 +43,36 @@ export function StrategyFormContent({
 	const [name, setName] = useState(draft.name);
 	const [message, setMessage] = useState(draft.message);
 	const [query, setQuery] = useState(draft.query);
-	const [importing, setImporting] = useState(false);
-	const clipboard = useClipboard({ timeout: 1500 });
-	const empty = query.rules.length === 0;
-	const expression = strategyExpression(query);
-	const named = name.trim() !== "";
-	const conditionsComplete = strategyQueryComplete(query);
+	const [exitQuery, setExitQuery] = useState(draft.exitQuery);
+	const [accumulate, setAccumulate] = useState(draft.accumulate);
+	const [maxBuys, setMaxBuys] = useState(draft.maxBuys);
+	const exitExpression = exitQuery ? strategyExpression(exitQuery) : "";
+	// Only a strategy with an exit rule accumulates.
+	const accumulates = exitQuery !== undefined && accumulate;
+	// Max buys bound trades that can hold several buys.
+	const buysMany = exitQuery === undefined || accumulates;
+	const input: StrategyUpdate = {
+		accumulate: accumulates,
+		exit_expression: exitExpression,
+		expression: strategyExpression(query),
+		max_buys: buysMany ? maxBuys : 0,
+		message: message.trim(),
+		name: name.trim(),
+	};
+	const named = input.name !== "";
+	const complete =
+		strategyQueryComplete(query) &&
+		(exitQuery === undefined || strategyQueryComplete(exitQuery));
 	const dirty =
 		name !== draft.name ||
 		message !== draft.message ||
-		expression !== strategyExpression(draft.query);
+		input.expression !== strategyExpression(draft.query) ||
+		exitExpression !==
+			(draft.exitQuery ? strategyExpression(draft.exitQuery) : "") ||
+		input.accumulate !== draft.accumulate ||
+		input.max_buys !== draft.maxBuys;
 	useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
+	const entryVariables = withoutPositionVariables(variables);
 	return (
 		<Stack gap="md">
 			<TextInput
@@ -68,7 +85,7 @@ export function StrategyFormContent({
 			/>
 			<Textarea
 				autosize
-				description="Sent in Telegram after the strategy name and coin instead of the expression and its values. Leave empty for the default text."
+				description="Sent in Telegram after the strategy name, coin, and the buy or sell instead of the rule and its values. Leave empty for the default text."
 				disabled={isSaving}
 				label="Message"
 				maxLength={1000}
@@ -78,91 +95,96 @@ export function StrategyFormContent({
 			/>
 			{draft.incomplete ? (
 				<Alert color="yellow" variant="light">
-					Part of the stored expression cannot be shown here. Saving keeps only
-					the conditions below.
+					Part of a stored rule cannot be shown here. Saving keeps only the
+					conditions below.
 				</Alert>
 			) : null}
-			<Stack gap={4}>
-				<Group justify="space-between">
-					<Text fw={500} size="sm">
-						Conditions
-					</Text>
-					{/* An empty builder imports an expression; conditions are
-					    cleared first, so an import never replaces them. */}
-					{empty ? (
-						<Button
-							disabled={isSaving}
-							onClick={() => setImporting(true)}
-							size="compact-sm"
-							variant="subtle"
-						>
-							Import
-						</Button>
-					) : (
+			<StrategyConditions
+				disabled={isSaving}
+				exit={false}
+				onChange={setQuery}
+				query={query}
+				title="Entry"
+				variables={entryVariables}
+			/>
+			{exitQuery ? (
+				<StrategyConditions
+					actions={
 						<Button
 							color="red"
 							disabled={isSaving}
-							onClick={() => setQuery(emptyStrategyQuery())}
+							onClick={() => setExitQuery(undefined)}
 							size="compact-sm"
 							variant="subtle"
 						>
-							Clear
+							Remove
 						</Button>
-					)}
-				</Group>
-				<StrategyRuleBuilder
+					}
 					disabled={isSaving}
-					onChange={setQuery}
-					query={query}
+					exit
+					onChange={setExitQuery}
+					query={exitQuery}
+					title="Exit"
 					variables={variables}
 				/>
-			</Stack>
-			{conditionsComplete ? (
+			) : (
 				<Stack gap={4}>
-					<Tooltip label="Copied" opened={clipboard.copied}>
-						<UnstyledButton
-							aria-label="Copy the expression"
-							onClick={() => clipboard.copy(expression)}
+					<Group justify="space-between">
+						<Text fw={500} size="sm">
+							Exit
+						</Text>
+						<Button
+							disabled={isSaving}
+							onClick={() => setExitQuery(emptyStrategyQuery())}
+							size="compact-sm"
+							variant="subtle"
 						>
-							<Code
-								block
-								style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-							>
-								{expression}
-							</Code>
-						</UnstyledButton>
-					</Tooltip>
-					<Text c={clipboard.error ? "red" : "dimmed"} size="xs">
-						{clipboard.error
-							? "The expression could not be copied."
-							: "Tap the expression to copy it."}
+							Add exit rule
+						</Button>
+					</Group>
+					<Text c="dimmed" size="xs">
+						Without an exit rule the strategy never sells and buys every time
+						its entry turns true.
 					</Text>
 				</Stack>
-			) : (
-				<Text c="dimmed" size="xs">
-					Add at least one condition and fill every value.
-				</Text>
 			)}
+			{exitQuery ? (
+				<Checkbox
+					checked={accumulate}
+					description="Each time the entry turns true during a trade, buy again; the exit sells every buy."
+					disabled={isSaving}
+					label="Accumulate"
+					onChange={(event) => setAccumulate(event.currentTarget.checked)}
+				/>
+			) : null}
+			{buysMany ? (
+				<NumberInput
+					allowDecimal={false}
+					allowNegative={false}
+					description="Most buys of one trade; 0 for no limit."
+					disabled={isSaving}
+					label="Max buys"
+					max={1000}
+					min={0}
+					onChange={(value) =>
+						setMaxBuys(typeof value === "number" ? value : 0)
+					}
+					value={maxBuys}
+				/>
+			) : null}
 			{named ? null : (
 				<Text c="dimmed" size="xs">
 					Enter a name to save the strategy.
 				</Text>
 			)}
-			<StrategyImport
-				onClose={() => setImporting(false)}
-				onImport={setQuery}
-				opened={importing}
-			/>
 			<Group justify="flex-end">
 				<Button disabled={isSaving} onClick={onCancel} variant="default">
 					Cancel
 				</Button>
 				<Button
-					disabled={!named || !conditionsComplete}
+					disabled={!named || !complete}
 					loading={isSaving}
-					onClick={() =>
-						onSubmit({ expression, message: message.trim(), name: name.trim() })
-					}
+					onClick={() => onSubmit(input)}
 				>
 					Save
 				</Button>

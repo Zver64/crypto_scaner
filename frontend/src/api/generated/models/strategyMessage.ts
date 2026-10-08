@@ -19,9 +19,9 @@
  */
 
 /**
- * Telegram alert text that follows the strategy name and the coin symbol
- * in place of the expression and the values it read; empty keeps the
- * generated text.
+ * Telegram alert text that follows the strategy name, the coin symbol,
+ * and the buy or the sell in place of the rule and the values it read;
+ * empty keeps the generated text.
  * @maxLength 1000
  */
 export type StrategyMessage = string;

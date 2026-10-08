@@ -26,11 +26,15 @@ func renderValidation(w io.Writer, validation apiclient.StrategyValidation) {
 		fmt.Fprintln(w, "ok")
 		return
 	}
-	titles := make([]string, len(validation.MissingIndicators))
-	for i, missing := range validation.MissingIndicators {
-		titles[i] = missing.Title
+	fmt.Fprintf(w, "ok; reads indicators that are not configured: %s\n", missingTitles(validation.MissingIndicators))
+}
+
+func missingTitles(missing []apiclient.StrategyMissingIndicator) string {
+	titles := make([]string, len(missing))
+	for i, indicator := range missing {
+		titles[i] = indicator.Title
 	}
-	fmt.Fprintf(w, "ok; indicators will be added when saving: %s\n", strings.Join(titles, ", "))
+	return strings.Join(titles, ", ")
 }
 
 // newTable returns a table in the style of every CLI table.
@@ -51,7 +55,11 @@ func renderStrategies(w io.Writer, strategies []apiclient.Strategy) {
 		if !strategy.Valid {
 			state = "invalid"
 		}
-		t.AppendRow(table.Row{strategy.Id, state, strategy.Name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy)})
+		name := strategy.Name
+		if len(strategy.MissingIndicators) > 0 {
+			name += "\nnot configured: " + missingTitles(strategy.MissingIndicators)
+		}
+		t.AppendRow(table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy)})
 	}
 	fmt.Fprintln(w, t.Render())
 }

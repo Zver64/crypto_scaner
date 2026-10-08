@@ -670,9 +670,8 @@ paths:
         depth, and coins read through `of` that are not active coins in the
         administrator's favorites. Variables of indicators that are not
         configured are resolved from their names into `missing_indicators`
-        when exactly one indicator has the name; the problems assume they
-        were added and include intervals without room for them. No problems and no missing indicators mean the expression
-        is valid.
+        when exactly one indicator has the name. Strategies read them without
+        adding them, so no problems mean the expression is valid.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       requestBody:
@@ -2030,7 +2029,7 @@ components:
     Strategy:
       type: object
       additionalProperties: false
-      required: [id, name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, valid]
+      required: [id, name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, valid, missing_indicators]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -2048,6 +2047,13 @@ components:
         problem:
           type: string
           description: Why a stored rule no longer compiles; present only when valid is false.
+        missing_indicators:
+          type: array
+          description: |
+            Indicators the rules read that are not configured, in reading
+            order. The strategy reads them all the same; the builder shows
+            the rules only once they are added.
+          items: { $ref: "#/components/schemas/StrategyMissingIndicator" }
     StrategyBacktest:
       type: object
       additionalProperties: false
@@ -2407,7 +2413,7 @@ components:
           items: { type: string }
         missing_indicators:
           type: array
-          description: Indicators to add before the expression can be saved, in reading order.
+          description: Indicators the expression reads that are not configured, in reading order; they need not be added.
           items: { $ref: "#/components/schemas/StrategyMissingIndicator" }
     StrategyMissingIndicator:
       type: object

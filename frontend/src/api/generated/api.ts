@@ -4223,9 +4223,8 @@ export const getValidateStrategyUrl = () => {
  * depth, and coins read through `of` that are not active coins in the
  * administrator's favorites. Variables of indicators that are not
  * configured are resolved from their names into `missing_indicators`
- * when exactly one indicator has the name; the problems assume they
- * were added and include intervals without room for them. No problems and no missing indicators mean the expression
- * is valid.
+ * when exactly one indicator has the name. Strategies read them without
+ * adding them, so no problems mean the expression is valid.
  * @summary Check a strategy expression
  */
 export const validateStrategy = async (strategyValidationInput: StrategyValidationInput, options?: Parameters<typeof apiFetch>[1]): Promise<validateStrategyResponseSuccess> => {

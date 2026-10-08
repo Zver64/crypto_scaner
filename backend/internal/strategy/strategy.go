@@ -164,9 +164,6 @@ type Indicators interface {
 	List() []scannerindicator.Entry
 	// Preview derives the entry of an indicator that is not configured.
 	Preview(scannerindicator.Indicator) (scannerindicator.Entry, error)
-	// CapacityProblems names the intervals that cannot take the added
-	// indicators.
-	CapacityProblems(added []scannerindicator.Entry) []string
 }
 
 // Service keeps the strategies in memory and persists every change.
@@ -254,25 +251,26 @@ func (service *Service) compile(source string, variables []Variable, kind RuleKi
 
 // Validation is the result of checking an expression.
 type Validation struct {
-	// Problems would reject the expression; none means it is valid once
-	// the missing indicators are added.
+	// Problems would reject the expression.
 	Problems []string
 	// Missing are the indicators the expression reads by names no
 	// configured indicator has but exactly one new indicator would, in
-	// reading order.
+	// reading order. They need not be added: expressions read them all the
+	// same.
 	Missing []scannerindicator.Entry
 }
 
 // Validate lists every problem that would reject expression as a rule of
 // kind: the problems of compiling it, and the coins it reads through of that
 // are not the administrator's active favorites. Names of indicators that are
-// not configured yet are resolved into Missing, and the problems assume they
-// were added.
+// not configured are resolved into Missing.
 func (service *Service) Validate(ctx context.Context, expression string, kind RuleKind) (Validation, error) {
-	compiled, missing, err := service.compileResolving(expression, kind)
+	expression = strings.TrimSpace(expression)
+	variables, missing := service.resolve(rule{expression, kind})
+	compiled, err := service.compile(expression, variables, kind)
 	var invalid *InvalidExpressionError
 	if errors.As(err, &invalid) {
-		return Validation{Problems: append(invalid.Problems, service.indicators.CapacityProblems(missing)...), Missing: missing}, nil
+		return Validation{Problems: invalid.Problems, Missing: missing}, nil
 	}
 	if err != nil {
 		return Validation{}, err
@@ -281,7 +279,7 @@ func (service *Service) Validate(ctx context.Context, expression string, kind Ru
 	if err != nil {
 		return Validation{}, err
 	}
-	problems := service.indicators.CapacityProblems(missing)
+	problems := []string{}
 	for _, symbol := range compiled.Symbols() {
 		if !slices.Contains(favorites, symbol) {
 			problems = append(problems, symbol+" is not an active coin in the administrator's favorites")
@@ -290,29 +288,66 @@ func (service *Service) Validate(ctx context.Context, expression string, kind Ru
 	return Validation{Problems: problems, Missing: missing}, nil
 }
 
-// compileResolving compiles expression, a rule of kind, over the configured
-// indicators and, for the names of indicators that are not configured, over
-// the indicators missingIndicators resolves them into, which it returns.
-func (service *Service) compileResolving(expression string, kind RuleKind) (*Expression, []scannerindicator.Entry, error) {
-	expression = strings.TrimSpace(expression)
-	configured := service.indicators.List()
-	compiled, err := service.compile(expression, Variables(configured), kind)
-	var invalid *InvalidExpressionError
-	if !errors.As(err, &invalid) || len(invalid.Unknown) == 0 {
-		return compiled, nil, err
-	}
-	missing := service.missingIndicators(configured, invalid.Unknown)
-	if len(missing) > 0 {
-		compiled, err = service.compile(expression, Variables(append(slices.Clone(configured), missing...)), kind)
-	}
-	return compiled, missing, err
+// rule is an expression of a strategy and what it is to it.
+type rule struct {
+	source string
+	kind   RuleKind
 }
 
-// compileEntry compiles the expressions of item over variables and finds the
+// resolve lists the variables rules may read: those of the configured
+// indicators and, for names no configured indicator has, those of the
+// indicators missingIndicators resolves them into, which it also returns.
+// The variables of resolved indicators belong to no indicator, so they are
+// read but never linked and keep no indicator configured.
+func (service *Service) resolve(rules ...rule) ([]Variable, []scannerindicator.Entry) {
+	configured := service.indicators.List()
+	configuredVariables := Variables(configured)
+	var unknown []string
+	for _, rule := range rules {
+		_, err := service.compile(rule.source, configuredVariables, rule.kind)
+		var invalid *InvalidExpressionError
+		if errors.As(err, &invalid) {
+			unknown = append(unknown, invalid.Unknown...)
+		}
+	}
+	missing := service.missingIndicators(unknown)
+	if len(missing) == 0 {
+		return configuredVariables, nil
+	}
+	return variables(configured, missing), missing
+}
+
+// Unconfigured lists the indicators entry reads that are not configured
+// now, in reading order: those it compiled without and those removed since.
+func (service *Service) Unconfigured(entry Entry) []scannerindicator.Entry {
+	configured := service.indicators.List()
+	var missing []scannerindicator.Entry
+	for _, read := range entry.reads {
+		target := read.Variable.Target
+		same := func(other scannerindicator.Entry) bool { return other.Target().Equal(target) }
+		if read.Variable.Position || target.Equal(CandleTarget(target.Interval)) || slices.ContainsFunc(configured, same) || slices.ContainsFunc(missing, same) {
+			continue
+		}
+		if found, err := service.indicators.Preview(scannerindicator.Indicator{Interval: target.Interval, Selection: target.Selection}); err == nil {
+			missing = append(missing, found)
+		}
+	}
+	return missing
+}
+
+// compileEntry compiles the expressions of item over the configured
+// indicators and those the names of the others resolve into, and finds the
 // interval it trades on. Problems of the other expressions than the entry
 // rule name them.
-func (service *Service) compileEntry(item Strategy, variables []Variable) (Entry, error) {
+func (service *Service) compileEntry(item Strategy) (Entry, error) {
 	entry := Entry{Strategy: item}
+	rules := []rule{{item.Expression, EntryRule}}
+	for _, other := range []rule{{item.ExitExpression, ExitRule}, {item.TakeProfitExpression, PriceRule}, {item.StopLossExpression, PriceRule}} {
+		if other.source != "" {
+			rules = append(rules, other)
+		}
+	}
+	variables, _ := service.resolve(rules...)
 	compiled, err := service.compile(item.Expression, variables, EntryRule)
 	if err != nil {
 		return entry, err
@@ -390,10 +425,9 @@ func (service *Service) Load(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("load strategies: %w", err)
 	}
-	variables := service.Variables()
 	entries := make([]Entry, len(stored))
 	for i, item := range stored {
-		entry, err := service.compileEntry(item, variables)
+		entry, err := service.compileEntry(item)
 		if err != nil {
 			service.logger.WarnContext(ctx, "skip invalid strategy", "strategy_id", item.ID, "error", err)
 			entry.Problem = err.Error()
@@ -584,7 +618,7 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	item.ExitExpression = strings.TrimSpace(item.ExitExpression)
 	item.TakeProfitExpression = strings.TrimSpace(item.TakeProfitExpression)
 	item.StopLossExpression = strings.TrimSpace(item.StopLossExpression)
-	entry, err := service.compileEntry(item, service.Variables())
+	entry, err := service.compileEntry(item)
 	if err != nil {
 		return Entry{}, err
 	}

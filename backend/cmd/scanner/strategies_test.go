@@ -11,16 +11,17 @@ import (
 
 func TestUpdateStrategyPreservesUnspecifiedFields(t *testing.T) {
 	for _, test := range []struct {
-		name    string
-		flags   []string
-		want    apiclient.StrategyUpdate
-		missing bool
+		name  string
+		flags []string
+		want  apiclient.StrategyUpdate
+		added bool
 	}{
-		{"expression", []string{"--expr", "w_rsi < 50"}, apiclient.StrategyUpdate{Name: "Test", Expression: "w_rsi < 50", Message: "custom"}, true},
+		{"expression", []string{"--expr", "w_rsi < 50"}, apiclient.StrategyUpdate{Name: "Test", Expression: "w_rsi < 50", Message: "custom"}, false},
 		{"name", []string{"--name", "New"}, apiclient.StrategyUpdate{Name: "New", Expression: "m_rsi < 40", Message: "custom"}, false},
 		{"clear message", []string{"--message", ""}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: ""}, false},
+		{"add indicators", []string{"--add-indicators"}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom"}, true},
 		{
-			"exits", []string{"--exit", "pnl > 5 || w_rsi > 70", "--take-profit", "h_close * 1.1", "--stop-loss", "w_low"},
+			"exits", []string{"--exit", "pnl > 5 || w_rsi > 70", "--take-profit", "h_close * 1.1", "--stop-loss", "w_low", "--add-indicators"},
 			apiclient.StrategyUpdate{
 				Name: "Test", Expression: "m_rsi < 40", ExitExpression: "pnl > 5 || w_rsi > 70", TakeProfitExpression: "h_close * 1.1", StopLossExpression: "w_low", Message: "custom",
 			}, true,
@@ -47,10 +48,21 @@ func TestUpdateStrategyPreservesUnspecifiedFields(t *testing.T) {
 				t.Fatal("update must not send enabled state")
 			}
 			_, added := api.bodies["POST /api/v1/admin/scanner-indicator-batches"]
-			if added != test.missing {
+			if added != test.added {
 				t.Fatalf("added indicators = %v", added)
 			}
 		})
+	}
+}
+
+// --add-indicators alone sends no update when nothing is missing.
+func TestUpdateStrategyWithNothingToAddSendsNothing(t *testing.T) {
+	_, server := newFakeAPI(t, map[string]string{
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","message":"","enabled":false,"valid":true}]}`,
+		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[]}`,
+	})
+	if got := runCLI(t, writeProfile(t, server.URL), "", "strategies", "update", "6", "--add-indicators"); got.code != 0 || got.stdout != "no indicators to add\n" {
+		t.Fatalf("update = %+v", got)
 	}
 }
 

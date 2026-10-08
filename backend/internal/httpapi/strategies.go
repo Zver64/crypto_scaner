@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/strategy"
 )
 
@@ -16,6 +17,8 @@ type Strategies interface {
 	Variables() []strategy.Variable
 	Symbols(context.Context) ([]string, error)
 	Validate(ctx context.Context, expression string, kind strategy.RuleKind) (strategy.Validation, error)
+	// Unconfigured lists the indicators entry reads that are not configured.
+	Unconfigured(entry strategy.Entry) []scannerindicator.Entry
 	Create(context.Context, strategy.Strategy) (strategy.Entry, error)
 	Update(context.Context, strategy.Strategy) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
@@ -60,18 +63,14 @@ func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRe
 	if err != nil {
 		return ValidateStrategy500JSONResponse{api.internalError(ctx, "validate_strategy", err)}, nil
 	}
-	missing := make([]StrategyMissingIndicator, len(validation.Missing))
-	for i, entry := range validation.Missing {
-		missing[i] = StrategyMissingIndicator{Interval: CandleInterval(entry.Interval), Type: string(entry.Selection.Type), Parameters: entry.Selection.Parameters, Title: entry.Title}
-	}
-	return ValidateStrategy200JSONResponse{Errors: validation.Problems, MissingIndicators: missing}, nil
+	return ValidateStrategy200JSONResponse{Errors: validation.Problems, MissingIndicators: missingIndicatorDTOs(validation.Missing)}, nil
 }
 
 func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (ListStrategiesResponseObject, error) {
 	entries := api.strategies.List()
 	items := make([]Strategy, len(entries))
 	for i, entry := range entries {
-		items[i] = strategyDTO(entry)
+		items[i] = api.strategyDTO(entry)
 	}
 	return ListStrategies200JSONResponse{Items: items}, nil
 }
@@ -85,7 +84,7 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 	})
 	switch {
 	case err == nil:
-		return CreateStrategy201JSONResponse(strategyDTO(entry)), nil
+		return CreateStrategy201JSONResponse(api.strategyDTO(entry)), nil
 	case errors.Is(err, strategy.ErrInvalidArgument):
 		return CreateStrategy400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, strategy.ErrConflict):
@@ -103,7 +102,7 @@ func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyReques
 	})
 	switch {
 	case err == nil:
-		return UpdateStrategy200JSONResponse(strategyDTO(entry)), nil
+		return UpdateStrategy200JSONResponse(api.strategyDTO(entry)), nil
 	case errors.Is(err, strategy.ErrInvalidArgument):
 		return UpdateStrategy400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, strategy.ErrNotFound):
@@ -119,7 +118,7 @@ func (api *api) SetStrategyEnabled(ctx context.Context, request SetStrategyEnabl
 	entry, err := api.strategies.SetEnabled(ctx, request.StrategyId, request.Body.Enabled)
 	switch {
 	case err == nil:
-		return SetStrategyEnabled200JSONResponse(strategyDTO(entry)), nil
+		return SetStrategyEnabled200JSONResponse(api.strategyDTO(entry)), nil
 	case errors.Is(err, strategy.ErrNotFound):
 		return SetStrategyEnabled404JSONResponse{strategyNotFound(ctx)}, nil
 	default:
@@ -249,14 +248,23 @@ func strategyConflict(ctx context.Context) StrategyConflictJSONResponse {
 	return StrategyConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "strategy_exists", "Another strategy has this name", nil).body)
 }
 
-func strategyDTO(entry strategy.Entry) Strategy {
+func (api *api) strategyDTO(entry strategy.Entry) Strategy {
 	dto := Strategy{
 		Id: entry.ID, Name: entry.Name, Expression: entry.Expression, ExitExpression: entry.ExitExpression,
 		TakeProfitExpression: entry.TakeProfitExpression, StopLossExpression: entry.StopLossExpression,
 		Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,
+		MissingIndicators: missingIndicatorDTOs(api.strategies.Unconfigured(entry)),
 	}
 	if entry.Problem != "" {
 		dto.Problem = &entry.Problem
 	}
 	return dto
+}
+
+func missingIndicatorDTOs(entries []scannerindicator.Entry) []StrategyMissingIndicator {
+	missing := make([]StrategyMissingIndicator, len(entries))
+	for i, entry := range entries {
+		missing[i] = StrategyMissingIndicator{Interval: CandleInterval(entry.Interval), Type: string(entry.Selection.Type), Parameters: entry.Selection.Parameters, Title: entry.Title}
+	}
+	return missing
 }

@@ -1079,7 +1079,12 @@ type Strategy struct {
 	// and the buy or the sell in place of the rule and the values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
-	Name    string          `json:"name"`
+
+	// MissingIndicators Indicators the rules read that are not configured, in reading
+	// order. The strategy reads them all the same; the builder shows
+	// the rules only once they are added.
+	MissingIndicators []StrategyMissingIndicator `json:"missing_indicators"`
+	Name              string                     `json:"name"`
 
 	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
@@ -1255,7 +1260,7 @@ type StrategyUpdate struct {
 type StrategyValidation struct {
 	Errors []string `json:"errors"`
 
-	// MissingIndicators Indicators to add before the expression can be saved, in reading order.
+	// MissingIndicators Indicators the expression reads that are not configured, in reading order; they need not be added.
 	MissingIndicators []StrategyMissingIndicator `json:"missing_indicators"`
 }
 
@@ -1883,9 +1888,8 @@ type ClientInterface interface {
 	// depth, and coins read through `of` that are not active coins in the
 	// administrator's favorites. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
-	// when exactly one indicator has the name; the problems assume they
-	// were added and include intervals without room for them. No problems and no missing indicators mean the expression
-	// is valid.
+	// when exactly one indicator has the name. Strategies read them without
+	// adding them, so no problems mean the expression is valid.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -1900,9 +1904,8 @@ type ClientInterface interface {
 	// depth, and coins read through `of` that are not active coins in the
 	// administrator's favorites. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
-	// when exactly one indicator has the name; the problems assume they
-	// were added and include intervals without room for them. No problems and no missing indicators mean the expression
-	// is valid.
+	// when exactly one indicator has the name. Strategies read them without
+	// adding them, so no problems mean the expression is valid.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2541,9 +2544,8 @@ func (c *Client) ListStrategySymbols(ctx context.Context, reqEditors ...RequestE
 // depth, and coins read through `of` that are not active coins in the
 // administrator's favorites. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
-// when exactly one indicator has the name; the problems assume they
-// were added and include intervals without room for them. No problems and no missing indicators mean the expression
-// is valid.
+// when exactly one indicator has the name. Strategies read them without
+// adding them, so no problems mean the expression is valid.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2568,9 +2570,8 @@ func (c *Client) ValidateStrategyWithBody(ctx context.Context, contentType strin
 // depth, and coins read through `of` that are not active coins in the
 // administrator's favorites. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
-// when exactly one indicator has the name; the problems assume they
-// were added and include intervals without room for them. No problems and no missing indicators mean the expression
-// is valid.
+// when exactly one indicator has the name. Strategies read them without
+// adding them, so no problems mean the expression is valid.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -4985,9 +4986,8 @@ type ClientWithResponsesInterface interface {
 	// depth, and coins read through `of` that are not active coins in the
 	// administrator's favorites. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
-	// when exactly one indicator has the name; the problems assume they
-	// were added and include intervals without room for them. No problems and no missing indicators mean the expression
-	// is valid.
+	// when exactly one indicator has the name. Strategies read them without
+	// adding them, so no problems mean the expression is valid.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5002,9 +5002,8 @@ type ClientWithResponsesInterface interface {
 	// depth, and coins read through `of` that are not active coins in the
 	// administrator's favorites. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
-	// when exactly one indicator has the name; the problems assume they
-	// were added and include intervals without room for them. No problems and no missing indicators mean the expression
-	// is valid.
+	// when exactly one indicator has the name. Strategies read them without
+	// adding them, so no problems mean the expression is valid.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -9277,9 +9276,8 @@ func (c *ClientWithResponses) ListStrategySymbolsWithResponse(ctx context.Contex
 // depth, and coins read through `of` that are not active coins in the
 // administrator's favorites. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
-// when exactly one indicator has the name; the problems assume they
-// were added and include intervals without room for them. No problems and no missing indicators mean the expression
-// is valid.
+// when exactly one indicator has the name. Strategies read them without
+// adding them, so no problems mean the expression is valid.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9300,9 +9298,8 @@ func (c *ClientWithResponses) ValidateStrategyWithBodyWithResponse(ctx context.C
 // depth, and coins read through `of` that are not active coins in the
 // administrator's favorites. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
-// when exactly one indicator has the name; the problems assume they
-// were added and include intervals without room for them. No problems and no missing indicators mean the expression
-// is valid.
+// when exactly one indicator has the name. Strategies read them without
+// adding them, so no problems mean the expression is valid.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //

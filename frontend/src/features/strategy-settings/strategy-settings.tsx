@@ -6,6 +6,7 @@ import type { ErrorType } from "@/api/fetch";
 import {
 	getListScannerIndicatorsQueryKey,
 	getListStrategiesQueryKey,
+	useCreateScannerIndicatorBatch,
 	useCreateStrategy,
 	useDeleteStrategy,
 	useListStrategies,
@@ -21,9 +22,12 @@ import type {
 import { EmptyState } from "@/components/empty-state";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
+import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
+import { mutationErrorMessage } from "@/features/scanner-settings/utils";
 import { StrategyDiscardConfirmation } from "@/features/strategy-settings/strategy-discard-confirmation";
 import { StrategyForm } from "@/features/strategy-settings/strategy-form";
 import { StrategyFormContent } from "@/features/strategy-settings/strategy-form-content";
+import { StrategyIndicatorsConfirmation } from "@/features/strategy-settings/strategy-indicators-confirmation";
 import { StrategyRemovalConfirmation } from "@/features/strategy-settings/strategy-removal-confirmation";
 import { StrategyRow } from "@/features/strategy-settings/strategy-row";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
@@ -43,6 +47,8 @@ export function StrategySettings() {
 	const [pending, setPending] = useState<Omit<StrategyDraft, "revision">>();
 	const revision = useRef(0);
 	const [removing, setRemoving] = useState<Strategy>();
+	// A strategy to open once the indicators it reads are added.
+	const [adding, setAdding] = useState<Strategy>();
 	const strategies = useListStrategies({
 		query: { retry: false, select: (response) => response.data.items },
 	});
@@ -89,6 +95,21 @@ export function StrategySettings() {
 		},
 	});
 
+	// The builder shows the added indicators once the variables are current.
+	const additionMutation = useCreateScannerIndicatorBatch({
+		mutation: {
+			onError: (error) => {
+				setAdding(undefined);
+				notifications.show({
+					color: "red",
+					message: mutationErrorMessage(error),
+					title: "Indicators could not be added",
+				});
+			},
+			onSuccess: () => invalidateScannerIndicatorQueries(queryClient),
+		},
+	});
+
 	if (strategies.isPending || variables.isPending) {
 		return <Loader aria-label="Loading strategies" />;
 	}
@@ -102,7 +123,10 @@ export function StrategySettings() {
 	const isSaving = createMutation.isPending || updateMutation.isPending;
 	// Rows wait for saves too, so a strategy is not deleted while it saves.
 	const busy =
-		enabledMutation.isPending || deleteMutation.isPending || isSaving;
+		enabledMutation.isPending ||
+		deleteMutation.isPending ||
+		additionMutation.isPending ||
+		isSaving;
 	const show = (next: Omit<StrategyDraft, "revision">) => {
 		revision.current += 1;
 		setDraft({ ...next, revision: revision.current });
@@ -162,7 +186,11 @@ export function StrategySettings() {
 							disabled={busy}
 							key={strategy.id}
 							onDelete={() => setRemoving(strategy)}
-							onEdit={() => open(strategyDraft(strategy))}
+							onEdit={() =>
+								strategy.missing_indicators.length > 0
+									? setAdding(strategy)
+									: open(strategyDraft(strategy))
+							}
 							onEnabledChange={(enabled) =>
 								enabledMutation.mutate({
 									data: { enabled },
@@ -186,6 +214,33 @@ export function StrategySettings() {
 					setPending(undefined);
 				}}
 				opened={pending !== undefined}
+			/>
+			<StrategyIndicatorsConfirmation
+				isPending={additionMutation.isPending}
+				missing={adding?.missing_indicators}
+				onCancel={() => setAdding(undefined)}
+				onConfirm={() => {
+					if (!adding) return;
+					additionMutation.mutate(
+						{
+							data: {
+								items: adding.missing_indicators.map(
+									({ interval, parameters, type }) => ({
+										interval,
+										parameters,
+										type,
+									}),
+								),
+							},
+						},
+						{
+							onSuccess: () => {
+								open(strategyDraft(adding));
+								setAdding(undefined);
+							},
+						},
+					);
+				}}
 			/>
 			<StrategyRemovalConfirmation
 				isPending={deleteMutation.isPending}

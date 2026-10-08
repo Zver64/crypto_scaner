@@ -154,29 +154,6 @@ func (service *Service) Preview(item Indicator) (Entry, error) {
 	return service.entry(item)
 }
 
-// CapacityProblems names the intervals whose charts cannot take the added
-// indicators, which are added only all together.
-func (service *Service) CapacityProblems(added []Entry) []string {
-	count := func(entries []Entry, interval market.CandleInterval) int {
-		total := 0
-		for _, entry := range entries {
-			if entry.Interval == interval {
-				total++
-			}
-		}
-		return total
-	}
-	configured := service.List()
-	problems := []string{}
-	for _, interval := range market.CandleIntervals() {
-		existing, needed := count(configured, interval), count(added, interval)
-		if needed > 0 && existing+needed > chart.MaxIndicators {
-			problems = append(problems, fmt.Sprintf("%s has %d of at most %d indicators, the expression needs %d more", interval, existing, chart.MaxIndicators, needed))
-		}
-	}
-	return problems
-}
-
 // Create validates, stores, and applies new indicators, such as one
 // selection on several intervals. Either all of them are added or none.
 func (service *Service) Create(ctx context.Context, items []Indicator) ([]Entry, error) {

@@ -475,8 +475,7 @@ func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *
 
 type testIndicators struct{ entries []scannerindicator.Entry }
 
-func (indicators testIndicators) List() []scannerindicator.Entry          { return indicators.entries }
-func (testIndicators) CapacityProblems([]scannerindicator.Entry) []string { return []string{} }
+func (indicators testIndicators) List() []scannerindicator.Entry { return indicators.entries }
 func (testIndicators) Preview(scannerindicator.Indicator) (scannerindicator.Entry, error) {
 	return scannerindicator.Entry{}, errors.New("not configured")
 }

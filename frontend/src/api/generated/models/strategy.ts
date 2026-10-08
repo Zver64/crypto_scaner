@@ -19,6 +19,7 @@
  */
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
+import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
 import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
 import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
 
@@ -36,4 +37,10 @@ export interface Strategy {
   valid: boolean;
   /** Why a stored rule no longer compiles; present only when valid is false. */
   problem?: string;
+  /**
+     * Indicators the rules read that are not configured, in reading
+     * order. The strategy reads them all the same; the builder shows
+     * the rules only once they are added.
+     */
+  missing_indicators: StrategyMissingIndicator[];
 }

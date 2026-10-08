@@ -21,6 +21,6 @@ import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
 
 export interface StrategyValidation {
   errors: string[];
-  /** Indicators to add before the expression can be saved, in reading order. */
+  /** Indicators the expression reads that are not configured, in reading order; they need not be added. */
   missing_indicators: StrategyMissingIndicator[];
 }

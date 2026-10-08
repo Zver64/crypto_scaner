@@ -1,7 +1,9 @@
-import { Button, Group, Modal, Text } from "@mantine/core";
+import { Button, Group, type MantineColor, Modal, Text } from "@mantine/core";
 import { useState } from "react";
 
 interface ConfirmationDialogProps {
+	// Red by default, for actions that remove something.
+	confirmColor?: MantineColor;
 	confirmLabel: string;
 	// Undefined closes the dialog; its last content stays during the fade-out.
 	content: { title: string; description: string } | undefined;
@@ -11,6 +13,7 @@ interface ConfirmationDialogProps {
 }
 
 export function ConfirmationDialog({
+	confirmColor = "red",
 	confirmLabel,
 	content,
 	isPending,
@@ -37,7 +40,7 @@ export function ConfirmationDialog({
 				<Button disabled={isPending} onClick={onCancel} variant="default">
 					Cancel
 				</Button>
-				<Button color="red" loading={isPending} onClick={onConfirm}>
+				<Button color={confirmColor} loading={isPending} onClick={onConfirm}>
 					{confirmLabel}
 				</Button>
 			</Group>

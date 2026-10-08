@@ -68,6 +68,12 @@ export function StrategyRow({
 						{strategy.problem}
 					</Text>
 				)}
+				{strategy.missing_indicators.length === 0 ? null : (
+					<Text c="dimmed" size="xs">
+						Not configured:{" "}
+						{strategy.missing_indicators.map(({ title }) => title).join(", ")}
+					</Text>
+				)}
 				<Code block>{strategy.expression}</Code>
 				{[
 					{ expression: strategy.exit_expression, title: "Exit" },

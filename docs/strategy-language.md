@@ -9,7 +9,7 @@ Reference for writing a strategy expression that the scanner imports unchanged.
 - The candle field (`source`) is spelled as a word and only when it is not `close`: `h-max-12-high`, `h-sma-20-volume`. Fields: `open`, `high`, `low`, `close`, `volume`, `quote_asset_volume`, `trade_count`.
 - A variable is the title with `.` → `p` and other characters → `_`: `h-bbands-20-2.5` → `h_bbands_20_2p5`. An indicator with several outputs appends `_<output>`: `h_bbands_20_2p5_upperband`, `h_macd_macdsignal`, `h_stoch_slowk`.
 - Candle fields need no indicator: `<interval>_open`, `_high`, `_low`, `_close`, `_volume`, `_quote_volume`, `_trades` (`h_close`).
-- A name must spell back exactly one indicator; the import then offers to add indicators that are not configured. Do not invent names or use `__`.
+- A name must spell back exactly one indicator. Strategies read indicators that are not configured without adding them; the Mini App adds them only before showing the rules in the builder. Do not invent names or use `__`.
 
 ## Expressions
 

@@ -218,35 +218,71 @@ func TestBacktestCapsTheTradeList(t *testing.T) {
 	}
 }
 
-// A strategy is created disabled, after the indicators it reads that are not
-// configured are added.
-func TestStrategiesCreateAddsMissingIndicatorsAndSavesADisabledStrategy(t *testing.T) {
-	api, server := newFakeAPI(t, map[string]string{
-		"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
-		"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
-		"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","expression":"h_atr_100 > 1","message":"","enabled":false,"valid":true}`,
-	})
-	home := writeProfile(t, server.URL)
+// A strategy is created disabled and reads the indicators that are not
+// configured without adding them; --add-indicators adds them first.
+func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		add  bool
+	}{{}, {args: []string{"--add-indicators"}, add: true}} {
+		api, server := newFakeAPI(t, map[string]string{
+			"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
+			"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
+			"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","expression":"h_atr_100 > 1","message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
+		})
+		home := writeProfile(t, server.URL)
 
-	got := runCLI(t, home, "", "strategies", "create", "ATR", "--expr", "h_atr_100 > 1")
+		got := runCLI(t, home, "", append([]string{"strategies", "create", "ATR", "--expr", "h_atr_100 > 1"}, test.args...)...)
 
-	want := `┌────┬───────┬──────┬───────────────┬──────┬──────────────┐
-│ ID │ STATE │ NAME │ ENTRY         │ EXIT │ BUYS         │
-├────┼───────┼──────┼───────────────┼──────┼──────────────┤
-│  7 │ off   │ ATR  │ h_atr_100 > 1 │ -    │ every signal │
-└────┴───────┴──────┴───────────────┴──────┴──────────────┘
+		want := `┌────┬───────┬───────────────────────────┬───────────────┬──────┬──────────────┐
+│ ID │ STATE │ NAME                      │ ENTRY         │ EXIT │ BUYS         │
+├────┼───────┼───────────────────────────┼───────────────┼──────┼──────────────┤
+│  7 │ off   │ ATR                       │ h_atr_100 > 1 │ -    │ every signal │
+│    │       │ not configured: h-atr-100 │               │      │              │
+└────┴───────┴───────────────────────────┴───────────────┴──────┴──────────────┘
 `
-	if got.code != 0 || got.stdout != want {
-		t.Fatalf("strategies create = %+v", got)
-	}
-	for key, want := range map[string]string{
-		"POST /api/v1/admin/scanner-indicator-batches": `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`,
-		"POST /api/v1/admin/strategies":                `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","message":"","name":"ATR","stop_loss_expression":"","take_profit_expression":""}`,
-	} {
-		var sent, expected any
-		if json.Unmarshal([]byte(api.bodies[key]), &sent) != nil || json.Unmarshal([]byte(want), &expected) != nil || !reflect.DeepEqual(sent, expected) {
-			t.Errorf("%s body = %s, want %s", key, api.bodies[key], want)
+		if got.code != 0 || got.stdout != want {
+			t.Fatalf("strategies create %v = %+v", test.args, got)
 		}
+		wants := map[string]string{
+			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","message":"","name":"ATR","stop_loss_expression":"","take_profit_expression":""}`,
+		}
+		if test.add {
+			wants["POST /api/v1/admin/scanner-indicator-batches"] = `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`
+		} else if body, sent := api.bodies["POST /api/v1/admin/scanner-indicator-batches"]; sent {
+			t.Errorf("indicators added without --add-indicators: %s", body)
+		}
+		for key, want := range wants {
+			var sent, expected any
+			if json.Unmarshal([]byte(api.bodies[key]), &sent) != nil || json.Unmarshal([]byte(want), &expected) != nil || !reflect.DeepEqual(sent, expected) {
+				t.Errorf("%s body = %s, want %s", key, api.bodies[key], want)
+			}
+		}
+	}
+}
+
+// Every rule is validated before any indicator is added, so an invalid
+// rule adds nothing.
+func TestStrategiesCreateWithAnInvalidRuleAddsNothing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path != "/api/v1/admin/strategy-validations" {
+			t.Errorf("unexpected request %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		raw, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(raw), "bad(") {
+			fmt.Fprint(w, `{"errors":["syntax error"],"missing_indicators":[]}`)
+			return
+		}
+		fmt.Fprint(w, `{"errors":[],"missing_indicators":[{"interval":"1h","type":"ema","parameters":{"period":3},"title":"h-ema-3"}]}`)
+	}))
+	t.Cleanup(server.Close)
+
+	got := runCLI(t, writeProfile(t, server.URL), "", "strategies", "create", "X", "--expr", "h_ema_3 > 0", "--exit", "bad(", "--add-indicators")
+	if got.code != 1 || !strings.Contains(got.stderr, "the exit rule is invalid") {
+		t.Fatalf("create = %+v", got)
 	}
 }
 
@@ -264,7 +300,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		want string
 	}{
 		{args: []string{"vars", "--filter", "RSI"}, want: "d_rsi\n"},
-		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; indicators will be added when saving: h-atr-100\n"},
+		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; reads indicators that are not configured: h-atr-100\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
 		{args: []string{"strategies"}, want: `┌────┬─────────┬─────────┬───────────────────────────┬──────────────────┬───────────────┐
 │ ID │ STATE   │ NAME    │ ENTRY                     │ EXIT             │ BUYS          │
@@ -316,7 +352,7 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 		{name: "validate", target: "/api/v1/admin/strategy-validations", args: []string{"validate", "h_close > 1"}, status: http.StatusOK},
 		{name: "favorites", target: "/api/v1/favorites", args: []string{"favorites"}, status: http.StatusOK},
 		{name: "strategies", target: "/api/v1/admin/strategies", args: []string{"strategies"}, status: http.StatusOK},
-		{name: "add indicators", target: "/api/v1/admin/scanner-indicator-batches", args: []string{"strategies", "create", "Test", "--expr", "h_atr_100 > 1"}, status: http.StatusCreated},
+		{name: "add indicators", target: "/api/v1/admin/scanner-indicator-batches", args: []string{"strategies", "create", "Test", "--expr", "h_atr_100 > 1", "--add-indicators"}, status: http.StatusCreated},
 		{name: "create", target: "/api/v1/admin/strategies", args: []string{"strategies", "create", "Test", "--expr", "h_close > 1"}, status: http.StatusCreated},
 		{name: "backtest", target: "/api/v1/admin/strategies/3/backtest", args: []string{"backtest", "--strategy", "3", "--symbol", "BTCUSDT"}, status: http.StatusOK},
 		{name: "delete", target: "/api/v1/admin/strategies/3", args: []string{"strategies", "delete", "3"}, status: http.StatusOK},

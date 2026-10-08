@@ -18,22 +18,14 @@ var spelledNumber = regexp.MustCompile(`^_([0-9]+(?:p[0-9]+)?)(?:_|$)`)
 
 // missingIndicators resolves names that no variable has into the indicators
 // that would add them, once per indicator and in the order of names. A name
-// that no indicator, or several, would add stays unresolved. The entries get
-// ids above the configured ones, so they can stand in for indicators that
-// were added.
-func (service *Service) missingIndicators(configured []scannerindicator.Entry, names []string) []scannerindicator.Entry {
-	next := int64(0)
-	for _, entry := range configured {
-		next = max(next, entry.ID)
-	}
+// that no indicator, or several, would add stays unresolved.
+func (service *Service) missingIndicators(names []string) []scannerindicator.Entry {
 	var missing []scannerindicator.Entry
 	for _, name := range names {
 		found := service.indicatorsNamed(name)
 		if len(found) != 1 || slices.ContainsFunc(missing, func(entry scannerindicator.Entry) bool { return entry.Target().Equal(found[0].Target()) }) {
 			continue
 		}
-		next++
-		found[0].ID = next
 		missing = append(missing, found[0])
 	}
 	return missing

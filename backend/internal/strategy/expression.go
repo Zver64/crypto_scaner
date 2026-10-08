@@ -136,6 +136,14 @@ func variableName(title string) string {
 // never rebinds an expression. Names containing the reserved markers of
 // hidden variables are left out.
 func Variables(entries []scannerindicator.Entry) []Variable {
+	return variables(entries, nil)
+}
+
+// variables lists the variables of configured, as Variables does, followed
+// by those of the outputs of unconfigured indicators whose names are still
+// free. Unconfigured indicators have no id, so their variables belong to no
+// indicator.
+func variables(configured, unconfigured []scannerindicator.Entry) []Variable {
 	var result []Variable
 	taken := map[string]struct{}{}
 	for _, interval := range market.CandleIntervals() {
@@ -146,26 +154,32 @@ func Variables(entries []scannerindicator.Entry) []Variable {
 			result = append(result, Variable{Name: name, Label: prefix + "-" + field.name, Target: CandleTarget(interval), Output: field.field})
 		}
 	}
-	byAge := slices.Clone(entries)
-	slices.SortFunc(byAge, func(left, right scannerindicator.Entry) int { return cmp.Compare(left.ID, right.ID) })
+	entries := append(slices.Clone(configured), unconfigured...)
+	// Indexes into entries, the configured oldest first, so the older
+	// indicator keeps a shared name, and the unconfigured last.
+	byAge := make([]int, len(entries))
+	for index := range byAge {
+		byAge[index] = index
+	}
+	slices.SortStableFunc(byAge[:len(configured)], func(left, right int) int { return cmp.Compare(entries[left].ID, entries[right].ID) })
 	type key struct {
-		id     int64
+		index  int
 		output string
 	}
 	names := map[key]string{}
-	for _, entry := range byAge {
-		for _, output := range entry.Outputs {
-			name := outputName(entry, output)
+	for _, index := range byAge {
+		for _, output := range entries[index].Outputs {
+			name := outputName(entries[index], output)
 			if _, duplicate := taken[name]; duplicate || strings.Contains(name, shiftMarker) || strings.Contains(name, symbolMarker) {
 				continue
 			}
 			taken[name] = struct{}{}
-			names[key{entry.ID, output}] = name
+			names[key{index, output}] = name
 		}
 	}
-	for _, entry := range entries {
+	for index, entry := range entries {
 		for _, output := range entry.Outputs {
-			name, ok := names[key{entry.ID, output}]
+			name, ok := names[key{index, output}]
 			if !ok {
 				continue
 			}
@@ -173,7 +187,11 @@ func Variables(entries []scannerindicator.Entry) []Variable {
 			if len(entry.Outputs) > 1 {
 				label += " " + output
 			}
-			result = append(result, Variable{Name: name, Label: label, IndicatorID: entry.ID, Target: entry.Target(), Output: output})
+			variable := Variable{Name: name, Label: label, Target: entry.Target(), Output: output}
+			if index < len(configured) {
+				variable.IndicatorID = entry.ID
+			}
+			result = append(result, variable)
 		}
 	}
 	return result

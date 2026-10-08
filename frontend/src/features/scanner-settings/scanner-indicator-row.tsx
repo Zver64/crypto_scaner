@@ -14,11 +14,11 @@ import { IconGripVertical } from "@tabler/icons-react";
 import { useState } from "react";
 import type {
 	ScannerIndicator,
-	ScannerIndicatorScale,
 	ScannerIndicatorUpdate,
 } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import { ScannerIndicatorScaleEditor } from "@/features/scanner-settings/scanner-indicator-scale-editor";
+import { useSaveScannerIndicator } from "@/features/scanner-settings/use-save-scanner-indicator";
 import {
 	formatParameters,
 	formatScale,
@@ -28,27 +28,34 @@ interface ScannerIndicatorRowProps {
 	disabled: boolean;
 	dragHandleProps: DraggableProvidedDragHandleProps | null;
 	indicator: ScannerIndicator;
-	onDelete(): void;
-	onDisplayChange(
-		display: Pick<ScannerIndicatorUpdate, "show_in_table" | "show_in_chart">,
-	): void;
-	onScaleChange(scale: ScannerIndicatorScale): void;
+	onDelete(indicator: ScannerIndicator): void;
 }
 
 export function ScannerIndicatorRow({
-	disabled,
+	disabled: listDisabled,
 	dragHandleProps,
-	indicator,
+	indicator: savedIndicator,
 	onDelete,
-	onDisplayChange,
-	onScaleChange,
 }: ScannerIndicatorRowProps) {
 	const [editingScale, setEditingScale] = useState(false);
+	const update = useSaveScannerIndicator(savedIndicator);
+	const disabled = listDisabled || update.isPending;
+	// Pending values are local to this row and fall back on failure.
+	const indicator = update.isPending
+		? { ...savedIndicator, ...update.variables.data }
+		: savedIndicator;
+	const save = (data: ScannerIndicatorUpdate) => {
+		if (disabled) return;
+		update.mutate({ indicatorId: indicator.id, data });
+	};
 	const used = indicator.strategies.length > 0;
 	const display = {
 		show_in_chart: indicator.show_in_chart,
 		show_in_table: indicator.show_in_table,
 	};
+	const onDisplayChange = (
+		next: Pick<ScannerIndicatorUpdate, "show_in_table" | "show_in_chart">,
+	) => save({ ...next, scale: indicator.scale });
 	return (
 		<Paper
 			p="xs"
@@ -84,7 +91,7 @@ export function ScannerIndicatorRow({
 						<Button
 							color="red"
 							disabled={disabled || used}
-							onClick={onDelete}
+							onClick={() => onDelete(savedIndicator)}
 							size="compact-xs"
 							variant="subtle"
 						>
@@ -126,7 +133,7 @@ export function ScannerIndicatorRow({
 							disabled={disabled}
 							onCancel={() => setEditingScale(false)}
 							onSave={(scale) => {
-								onScaleChange(scale);
+								save({ ...display, scale });
 								setEditingScale(false);
 							}}
 							scale={indicator.scale}

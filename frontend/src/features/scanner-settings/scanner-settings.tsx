@@ -10,7 +10,6 @@ import {
 	useListIndicatorTypes,
 	useListScannerIndicators,
 	useReorderScannerIndicators,
-	useUpdateScannerIndicator,
 } from "@/api/generated/api";
 import type { ErrorResponse, ScannerIndicator } from "@/api/generated/models";
 import { SidebarLayout } from "@/components/sidebar-layout";
@@ -46,9 +45,6 @@ export function ScannerSettings() {
 		});
 	};
 	const createMutation = useCreateScannerIndicator({
-		mutation: { onError: failed, onSuccess: refresh },
-	});
-	const updateMutation = useUpdateScannerIndicator({
 		mutation: { onError: failed, onSuccess: refresh },
 	});
 	// The dragged order shows until the refreshed list arrives.
@@ -114,7 +110,6 @@ export function ScannerSettings() {
 			<Stack gap="md">
 				<ScannerIndicatorList
 					disabled={
-						updateMutation.isPending ||
 						deleteMutation.isPending ||
 						reorderMutation.isPending ||
 						clearMutation.isPending
@@ -127,22 +122,6 @@ export function ScannerSettings() {
 					)}
 					onDelete={setRemoving}
 					onReorder={(ids) => reorderMutation.mutate({ data: { ids } })}
-					onDisplayChange={(indicator, display) =>
-						updateMutation.mutate({
-							data: { ...display, scale: indicator.scale },
-							indicatorId: indicator.id,
-						})
-					}
-					onScaleChange={(indicator, scale) =>
-						updateMutation.mutate({
-							data: {
-								scale,
-								show_in_chart: indicator.show_in_chart,
-								show_in_table: indicator.show_in_table,
-							},
-							indicatorId: indicator.id,
-						})
-					}
 				/>
 				<ScannerIndicatorRemovalConfirmation
 					isPending={deleteMutation.isPending}

@@ -1,10 +1,6 @@
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
 import { Box, Text } from "@mantine/core";
-import type {
-	ScannerIndicator,
-	ScannerIndicatorScale,
-	ScannerIndicatorUpdate,
-} from "@/api/generated/models";
+import type { ScannerIndicator } from "@/api/generated/models";
 import { ScannerIndicatorRow } from "@/features/scanner-settings/scanner-indicator-row";
 import { moveIndicator } from "@/features/scanner-settings/utils";
 
@@ -13,14 +9,6 @@ interface ScannerIndicatorListProps {
 	indicators: readonly ScannerIndicator[];
 	onDelete(indicator: ScannerIndicator): void;
 	onReorder(ids: number[]): void;
-	onDisplayChange(
-		indicator: ScannerIndicator,
-		display: Pick<ScannerIndicatorUpdate, "show_in_table" | "show_in_chart">,
-	): void;
-	onScaleChange(
-		indicator: ScannerIndicator,
-		scale: ScannerIndicatorScale,
-	): void;
 }
 
 // The configured indicators in display order, which orders the table columns
@@ -30,8 +18,6 @@ export function ScannerIndicatorList({
 	indicators,
 	onDelete,
 	onReorder,
-	onDisplayChange,
-	onScaleChange,
 }: ScannerIndicatorListProps) {
 	if (indicators.length === 0) {
 		return (
@@ -73,11 +59,7 @@ export function ScannerIndicatorList({
 											disabled={disabled}
 											dragHandleProps={draggable.dragHandleProps}
 											indicator={indicator}
-											onDelete={() => onDelete(indicator)}
-											onDisplayChange={(display) =>
-												onDisplayChange(indicator, display)
-											}
-											onScaleChange={(scale) => onScaleChange(indicator, scale)}
+											onDelete={onDelete}
 										/>
 									</Box>
 								)}

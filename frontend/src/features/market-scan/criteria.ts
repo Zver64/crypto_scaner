@@ -10,8 +10,7 @@ import {
 	criterionNames,
 	evaluationMetricKeys,
 } from "@/features/analysis/identifiers";
-
-const usdPerMillion = 1_000_000;
+import { usdPerMillion } from "@/utils/market-cap";
 
 export interface MarketScanCriteria extends AnalysisCriteria {
 	minimumMarketCapMillions: number;

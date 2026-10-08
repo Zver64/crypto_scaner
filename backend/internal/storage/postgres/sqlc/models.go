@@ -99,6 +99,8 @@ type AppStrategy struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
+	MinMarketCapUsd      pgtype.Float8
+	MaxMarketCapUsd      pgtype.Float8
 }
 
 type AppStrategyIndicator struct {

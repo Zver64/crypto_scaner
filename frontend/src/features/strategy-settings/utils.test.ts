@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
 	importedStrategyQuery,
+	marketCapErrors,
+	marketCapRangeLabel,
+	marketCapUsd,
 	parenthesizeOperands,
 	strategyExpression,
 	strategyQuery,
@@ -61,5 +64,46 @@ describe("strategyQuery", () => {
 		expect(strategyQueryDropped(expression, strategyQuery(expression))).toBe(
 			false,
 		);
+	});
+});
+
+describe("marketCapUsd", () => {
+	it.each([
+		[150, 150_000_000],
+		[1.1, 1_100_000],
+		[0.0005, 500],
+		["150.", 150_000_000],
+		["", null],
+		["-", Number.NaN],
+	] as const)("converts %s million", (millions, usd) => {
+		expect(marketCapUsd(millions)).toBe(usd);
+	});
+});
+
+describe("marketCapErrors", () => {
+	it.each([
+		[null, null, {}],
+		[10, 20, {}],
+		[0, null, { minimum: "Must be a positive amount" }],
+		[null, Number.NaN, { maximum: "Must be a positive amount" }],
+		[20, 10, { maximum: "Must not be below the minimum" }],
+	])("checks %s to %s", (minimum, maximum, errors) => {
+		expect(marketCapErrors(minimum, maximum)).toEqual(errors);
+	});
+});
+
+describe("marketCapRangeLabel", () => {
+	it.each([
+		[10_000_000, 1_500_000_000, "$10M – $1.5B"],
+		[1_000_000_000, null, "≥ $1B"],
+		[null, 500_000_000, "≤ $500M"],
+		[null, null, undefined],
+	])("labels %s to %s", (minimum, maximum, label) => {
+		expect(
+			marketCapRangeLabel({
+				max_market_cap_usd: maximum,
+				min_market_cap_usd: minimum,
+			}),
+		).toBe(label);
 	});
 });

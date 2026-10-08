@@ -10,7 +10,10 @@ import {
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 import type { Strategy } from "@/api/generated/models";
-import { strategyBuysLabel } from "@/features/strategy-settings/utils";
+import {
+	marketCapRangeLabel,
+	strategyBuysLabel,
+} from "@/features/strategy-settings/utils";
 
 interface StrategyRowProps {
 	disabled: boolean;
@@ -30,6 +33,7 @@ export function StrategyRow({
 	selected = false,
 	strategy,
 }: StrategyRowProps) {
+	const marketCap = marketCapRangeLabel(strategy);
 	return (
 		<Paper
 			p="xs"
@@ -91,6 +95,7 @@ export function StrategyRow({
 				)}
 				<Text c="dimmed" size="xs">
 					{strategyBuysLabel(strategy)}
+					{marketCap === undefined ? null : `; market cap ${marketCap}`}
 				</Text>
 				{strategy.message === "" ? null : (
 					<Text c="dimmed" size="xs" style={{ whiteSpace: "pre-wrap" }}>

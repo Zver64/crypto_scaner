@@ -87,8 +87,10 @@ func (q *Queries) DeleteStrategySymbols(ctx context.Context, strategyID int64) e
 }
 
 const insertStrategy = `-- name: InsertStrategy :one
-INSERT INTO app.strategies (name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, baseline_pending)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
+INSERT INTO app.strategies (name, expression, exit_expression, take_profit_expression, stop_loss_expression,
+                            min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending)
+VALUES ($1, $2, $3, $4, $5,
+        $6, $7, $8, $9, $9)
 RETURNING id
 `
 
@@ -98,6 +100,8 @@ type InsertStrategyParams struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
+	MinMarketCapUsd      pgtype.Float8
+	MaxMarketCapUsd      pgtype.Float8
 	Message              string
 	Enabled              bool
 }
@@ -109,6 +113,8 @@ func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) 
 		arg.ExitExpression,
 		arg.TakeProfitExpression,
 		arg.StopLossExpression,
+		arg.MinMarketCapUsd,
+		arg.MaxMarketCapUsd,
 		arg.Message,
 		arg.Enabled,
 	)
@@ -177,7 +183,8 @@ func (q *Queries) InsertStrategySymbols(ctx context.Context, arg InsertStrategyS
 }
 
 const listStrategies = `-- name: ListStrategies :many
-SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, baseline_pending, revision
+SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression,
+       min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id
 `
@@ -189,6 +196,8 @@ type ListStrategiesRow struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
+	MinMarketCapUsd      pgtype.Float8
+	MaxMarketCapUsd      pgtype.Float8
 	Message              string
 	Enabled              bool
 	BaselinePending      bool
@@ -211,6 +220,8 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			&i.ExitExpression,
 			&i.TakeProfitExpression,
 			&i.StopLossExpression,
+			&i.MinMarketCapUsd,
+			&i.MaxMarketCapUsd,
 			&i.Message,
 			&i.Enabled,
 			&i.BaselinePending,
@@ -263,19 +274,25 @@ func (q *Queries) ListStrategiesReading(ctx context.Context, instrumentID int64)
 }
 
 const listStrategyInstruments = `-- name: ListStrategyInstruments :many
-SELECT i.id, i.symbol
+SELECT i.id, i.symbol, COALESCE(market_cap.market_cap_usd > 0, FALSE)::BOOLEAN AS market_cap_known,
+       COALESCE(market_cap.market_cap_usd, 0)::DOUBLE PRECISION AS market_cap_usd
 FROM app.favorites f
 JOIN app.users u ON u.id = f.user_id AND u.telegram_id = $1::BIGINT
 JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
+LEFT JOIN app.coingecko_asset_mappings mapping ON mapping.base_asset = i.base_asset AND mapping.status = 'resolved'
+LEFT JOIN app.coingecko_market_caps market_cap ON market_cap.coin_id = mapping.coin_id
 ORDER BY i.id
 `
 
 type ListStrategyInstrumentsRow struct {
-	ID     int64
-	Symbol string
+	ID             int64
+	Symbol         string
+	MarketCapKnown bool
+	MarketCapUsd   float64
 }
 
-// Strategies evaluate the active favorites of the administrator.
+// Strategies evaluate the active favorites of the administrator, with their
+// market caps when known; CoinGecko reports 0 for coins without supply data.
 func (q *Queries) ListStrategyInstruments(ctx context.Context, administratorTelegramID int64) ([]ListStrategyInstrumentsRow, error) {
 	rows, err := q.db.Query(ctx, listStrategyInstruments, administratorTelegramID)
 	if err != nil {
@@ -285,7 +302,12 @@ func (q *Queries) ListStrategyInstruments(ctx context.Context, administratorTele
 	var items []ListStrategyInstrumentsRow
 	for rows.Next() {
 		var i ListStrategyInstrumentsRow
-		if err := rows.Scan(&i.ID, &i.Symbol); err != nil {
+		if err := rows.Scan(
+			&i.ID,
+			&i.Symbol,
+			&i.MarketCapKnown,
+			&i.MarketCapUsd,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -558,13 +580,14 @@ const updateStrategy = `-- name: UpdateStrategy :one
 UPDATE app.strategies
 SET name = $1, expression = $2, exit_expression = $3,
     take_profit_expression = $4, stop_loss_expression = $5,
-    message = $6, updated_at = now(),
-    baseline_pending = baseline_pending OR $7::BOOLEAN,
+    min_market_cap_usd = $6, max_market_cap_usd = $7,
+    message = $8, updated_at = now(),
+    baseline_pending = baseline_pending OR $9::BOOLEAN,
     revision = revision + (expression IS DISTINCT FROM $2
         OR exit_expression IS DISTINCT FROM $3
         OR take_profit_expression IS DISTINCT FROM $4
         OR stop_loss_expression IS DISTINCT FROM $5)::INTEGER
-WHERE id = $8
+WHERE id = $10
 RETURNING revision
 `
 
@@ -574,12 +597,15 @@ type UpdateStrategyParams struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
+	MinMarketCapUsd      pgtype.Float8
+	MaxMarketCapUsd      pgtype.Float8
 	Message              string
 	Baseline             bool
 	ID                   int64
 }
 
-// A change of how the strategy trades starts a new revision.
+// A change of how the strategy trades starts a new revision; a market cap
+// range change only limits later buys.
 func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, updateStrategy,
 		arg.Name,
@@ -587,6 +613,8 @@ func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) 
 		arg.ExitExpression,
 		arg.TakeProfitExpression,
 		arg.StopLossExpression,
+		arg.MinMarketCapUsd,
+		arg.MaxMarketCapUsd,
 		arg.Message,
 		arg.Baseline,
 		arg.ID,

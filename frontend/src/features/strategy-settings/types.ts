@@ -31,6 +31,9 @@ export interface StrategyDraft {
 	// The take profit and stop loss price expressions; empty without them.
 	takeProfit: string;
 	stopLoss: string;
+	// The market cap bounds in millions of USD; empty without a bound.
+	minMarketCap: number | "";
+	maxMarketCap: number | "";
 	// Whether the builder dropped parts of a stored rule it cannot show,
 	// which saving would remove.
 	incomplete: boolean;

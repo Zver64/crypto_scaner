@@ -73,3 +73,23 @@ func flatCandle(index int, price float64, entry, known bool, exit func(map[strin
 		Levels: func() (float64, float64, bool) { return 0, 0, true },
 	}
 }
+
+// A signal outside the market cap range buys nothing but still counts as the
+// entry, while an open trade sells as usual.
+func TestStepSkipsSignalsOutOfRange(t *testing.T) {
+	entry := Entry{Interval: market.IntervalHour}
+	candle := flatCandle(1, 10, true, true, nil)
+	candle.OutOfRange = true
+	next, events, processed := entry.step(TradeState{OpenTime: backtestHour(0)}, candle)
+	if !processed || next.Buys != 0 || !next.Entry || len(events) != 1 || events[0].Kind != TradeSkip {
+		t.Fatalf("processed %v, state %+v, events %+v", processed, next, events)
+	}
+
+	exiting := Entry{StopLoss: &Expression{}, Interval: market.IntervalHour}
+	trade := TradeState{OpenTime: backtestHour(1), Entry: true, Buys: 1, Filled: 1, Quantity: 0.1, OpenedAt: backtestHour(1), StopLoss: 9}
+	candle = flatCandle(2, 8, false, true, nil)
+	candle.OutOfRange = true
+	if next, events, processed := exiting.step(trade, candle); !processed || next.Buys != 0 || len(events) != 1 || events[0].Reason != ExitStopLoss {
+		t.Fatalf("processed %v, state %+v, events %+v", processed, next, events)
+	}
+}

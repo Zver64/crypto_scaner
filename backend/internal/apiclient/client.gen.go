@@ -1075,10 +1075,24 @@ type Strategy struct {
 	Expression string `json:"expression"`
 	Id         int64  `json:"id"`
 
+	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
+	// the enabled strategy buys; null leaves that side open. With either
+	// bound, coins of an unknown market cap buy nothing. The range limits
+	// only buys: open trades sell as usual, and backtests ignore it. The
+	// minimum must not exceed the maximum.
+	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
+
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
 	// and the buy or the sell in place of the rule and the values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
+
+	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
+	// the enabled strategy buys; null leaves that side open. With either
+	// bound, coins of an unknown market cap buy nothing. The range limits
+	// only buys: open trades sell as usual, and backtests ignore it. The
+	// minimum must not exceed the maximum.
+	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 
 	// MissingIndicators Indicators the rules read that are not configured, in reading
 	// order. The strategy reads them all the same; the builder shows
@@ -1157,11 +1171,25 @@ type StrategyInput struct {
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 	Expression     string                 `json:"expression"`
 
+	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
+	// the enabled strategy buys; null leaves that side open. With either
+	// bound, coins of an unknown market cap buy nothing. The range limits
+	// only buys: open trades sell as usual, and backtests ignore it. The
+	// minimum must not exceed the maximum.
+	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
+
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
 	// and the buy or the sell in place of the rule and the values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
-	Name    string          `json:"name"`
+
+	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
+	// the enabled strategy buys; null leaves that side open. With either
+	// bound, coins of an unknown market cap buy nothing. The range limits
+	// only buys: open trades sell as usual, and backtests ignore it. The
+	// minimum must not exceed the maximum.
+	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
+	Name            string                  `json:"name"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
@@ -1181,6 +1209,13 @@ type StrategyInput struct {
 type StrategyList struct {
 	Items []Strategy `json:"items"`
 }
+
+// StrategyMarketCapBound A bound, in USD and inclusive, of the current market caps of the coins
+// the enabled strategy buys; null leaves that side open. With either
+// bound, coins of an unknown market cap buy nothing. The range limits
+// only buys: open trades sell as usual, and backtests ignore it. The
+// minimum must not exceed the maximum.
+type StrategyMarketCapBound = float64
 
 // StrategyMessage Telegram alert text that follows the strategy name, the coin symbol,
 // and the buy or the sell in place of the rule and the values it read;
@@ -1236,11 +1271,25 @@ type StrategyUpdate struct {
 	// which must be in the administrator's favorites.
 	Expression string `json:"expression"`
 
+	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
+	// the enabled strategy buys; null leaves that side open. With either
+	// bound, coins of an unknown market cap buy nothing. The range limits
+	// only buys: open trades sell as usual, and backtests ignore it. The
+	// minimum must not exceed the maximum.
+	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
+
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
 	// and the buy or the sell in place of the rule and the values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
-	Name    string          `json:"name"`
+
+	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
+	// the enabled strategy buys; null leaves that side open. With either
+	// bound, coins of an unknown market cap buy nothing. The range limits
+	// only buys: open trades sell as usual, and backtests ignore it. The
+	// minimum must not exceed the maximum.
+	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
+	Name            string                  `json:"name"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0

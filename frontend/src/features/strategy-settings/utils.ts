@@ -40,6 +40,7 @@ import type {
 	Token,
 } from "@/features/strategy-settings/types";
 import { describeApiError } from "@/utils/api-error";
+import { formatMarketCapUsd, usdPerMillion } from "@/utils/market-cap";
 
 export function isRangeOperator(operator: string): boolean {
 	return operator === "between" || operator === "notBetween";
@@ -373,6 +374,8 @@ export function newStrategyDraft(): Omit<StrategyDraft, "revision"> {
 		exitQuery: undefined,
 		takeProfit: "",
 		stopLoss: "",
+		minMarketCap: "",
+		maxMarketCap: "",
 		incomplete: false,
 	};
 }
@@ -394,11 +397,62 @@ export function strategyDraft(
 		exitQuery,
 		takeProfit: strategy.take_profit_expression,
 		stopLoss: strategy.stop_loss_expression,
+		minMarketCap: marketCapMillions(strategy.min_market_cap_usd),
+		maxMarketCap: marketCapMillions(strategy.max_market_cap_usd),
 		incomplete:
 			strategyQueryDropped(strategy.expression, query) ||
 			(exitQuery !== undefined &&
 				strategyQueryDropped(strategy.exit_expression, exitQuery)),
 	};
+}
+
+// A market cap bound in millions of USD for the form; empty without one.
+function marketCapMillions(usd: number | null): number | "" {
+	return usd === null ? "" : usd / usdPerMillion;
+}
+
+// The market cap bound in USD of a form value in millions, which is a
+// string while being typed; null, an open bound, when empty, and NaN when
+// not a number.
+export function marketCapUsd(millions: number | string): number | null {
+	if (millions === "") return null;
+	return Math.round(Number(millions) * usdPerMillion);
+}
+
+// Why the market cap bounds in USD cannot be saved, for the minimum and the
+// maximum field; undefined for a valid one.
+export function marketCapErrors(
+	minimum: number | null,
+	maximum: number | null,
+): { maximum?: string; minimum?: string } {
+	const positive = (usd: number | null) =>
+		usd === null || usd > 0 ? undefined : "Must be a positive amount";
+	const errors = { maximum: positive(maximum), minimum: positive(minimum) };
+	if (
+		!errors.minimum &&
+		!errors.maximum &&
+		minimum !== null &&
+		maximum !== null &&
+		minimum > maximum
+	) {
+		errors.maximum = "Must not be below the minimum";
+	}
+	return errors;
+}
+
+// The market cap range of a strategy, such as "$10M – $1.5B"; undefined
+// without bounds.
+export function marketCapRangeLabel(
+	strategy: Pick<Strategy, "max_market_cap_usd" | "min_market_cap_usd">,
+): string | undefined {
+	const minimum = strategy.min_market_cap_usd;
+	const maximum = strategy.max_market_cap_usd;
+	if (minimum !== null && maximum !== null) {
+		return `${formatMarketCapUsd(minimum)} – ${formatMarketCapUsd(maximum)}`;
+	}
+	if (minimum !== null) return `≥ ${formatMarketCapUsd(minimum)}`;
+	if (maximum !== null) return `≤ ${formatMarketCapUsd(maximum)}`;
+	return undefined;
 }
 
 // Whether a strategy sells, through an exit rule, take profit, or stop loss;

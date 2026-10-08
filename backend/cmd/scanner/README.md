@@ -66,15 +66,22 @@ scanner strategies update 6 --name 'Test Weekly'
 scanner strategies update 6 --message ''
 scanner strategies update 6 --exit 'bars_held >= 24' --take-profit 'h_close * 1.05' --stop-loss 'h_close - 2 * h_atr_14'
 scanner strategies update 6 --exit '' --take-profit '' --stop-loss ''
+scanner strategies update 6 --min-market-cap 10M --max-market-cap 1.5B
+scanner strategies update 6 --min-market-cap '' --max-market-cap ''
 ```
 
 Укажите положительный int64 ID и хотя бы один флаг: `--expr`, `--exit`, `--take-profit`,
-`--stop-loss`, `--name`, `--message`. Неуказанные поля сохраняются; пустой `--message`
+`--stop-loss`, `--min-market-cap`, `--max-market-cap`, `--name`, `--message`. Неуказанные поля сохраняются; пустой `--message`
 возвращает автоматически генерируемый текст, пустые `--exit`, `--take-profit` и `--stop-loss`
 удаляют правило выхода и уровни. Стратегия с любым из них держит одну покупку на сделку;
 без всех трёх она покупает на каждом сигнале входа и не продаёт. `scanner strategies create`
 принимает те же `--exit`, `--take-profit` и `--stop-loss`. Изменять можно только отключённую стратегию: для включённой
 команда ничего не отправляет и сообщает `strategy N is enabled; edit it in the Mini App`.
+`--min-market-cap` и `--max-market-cap` (у `create` и `update`) задают диапазон текущей капитализации
+в USD, включая границы: `150M`, `1.5B`, `2T`, `500K` или число. Включённая стратегия покупает только
+монеты из диапазона, а монеты без известной капитализации при любой границе не покупает; открытые сделки
+продаются как обычно. Бэктест диапазон игнорирует и работает на любой монете. Пустое значение у `update`
+снимает границу; `scanner strategies` показывает диапазон в колонке `MARKET CAP`.
 Новые правила и цены проверяются перед записью (`scanner validate --exit` проверяет правило выхода, `scanner validate --price` — take profit или stop loss).
 Стратегия читает и ненастроенные индикаторы, например `h_atr_100`, не добавляя их в Mini App:
 она так же торгует и бэктестится, а `scanner strategies` показывает их под именем как `not configured`.

@@ -17,28 +17,14 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyExitExpression } from './strategyExitExpression.ts';
-import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
-import type { StrategyMessage } from './strategyMessage.ts';
-import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
-import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
 
-export interface StrategyInput {
-  /**
-     * @minLength 1
-     * @maxLength 64
-     */
-  name: string;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
-  exit_expression: StrategyExitExpression;
-  take_profit_expression: StrategyTakeProfitExpression;
-  stop_loss_expression: StrategyStopLossExpression;
-  min_market_cap_usd: StrategyMarketCapBound | null;
-  max_market_cap_usd: StrategyMarketCapBound | null;
-  message: StrategyMessage;
-  enabled: boolean;
-}
+/**
+ * A bound, in USD and inclusive, of the current market caps of the coins
+ * the enabled strategy buys; null leaves that side open. With either
+ * bound, coins of an unknown market cap buy nothing. The range limits
+ * only buys: open trades sell as usual, and backtests ignore it. The
+ * minimum must not exceed the maximum.
+ * @exclusiveMinimum 0
+ * @nullable
+ */
+export type StrategyMarketCapBound = number | null;

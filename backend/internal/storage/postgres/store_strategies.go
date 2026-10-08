@@ -26,7 +26,8 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 		items[i] = strategy.Strategy{
 			ID: row.ID, Name: row.Name, Expression: row.Expression, ExitExpression: row.ExitExpression,
 			TakeProfitExpression: row.TakeProfitExpression, StopLossExpression: row.StopLossExpression,
-			Message: row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
+			MarketCap: strategy.MarketCapRange{MinUSD: float8Pointer(row.MinMarketCapUsd), MaxUSD: float8Pointer(row.MaxMarketCapUsd)},
+			Message:   row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
 		}
 	}
 	return items, nil
@@ -42,6 +43,7 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{
 		Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
+		MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
 		Message: item.Message, Enabled: item.Enabled,
 	})
 	if err != nil {
@@ -69,6 +71,7 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{
 		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
+		MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
 		Message: item.Message, Baseline: baseline,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -275,6 +278,9 @@ func (store *Store) ListStrategyInstruments(ctx context.Context, administratorTe
 	items := make([]strategy.Instrument, len(rows))
 	for i, row := range rows {
 		items[i] = strategy.Instrument{ID: row.ID, Symbol: row.Symbol}
+		if row.MarketCapKnown {
+			items[i].MarketCapUSD = &row.MarketCapUsd
+		}
 	}
 	return items, nil
 }

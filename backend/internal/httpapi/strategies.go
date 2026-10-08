@@ -80,7 +80,8 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 	entry, err := api.strategies.Create(ctx, strategy.Strategy{
 		Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
-		Message: body.Message, Enabled: body.Enabled,
+		MarketCap: strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
+		Message:   body.Message, Enabled: body.Enabled,
 	})
 	switch {
 	case err == nil:
@@ -98,7 +99,9 @@ func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyReques
 	body := request.Body
 	entry, err := api.strategies.Update(ctx, strategy.Strategy{
 		ID: request.StrategyId, Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression,
-		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression, Message: body.Message,
+		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
+		MarketCap: strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
+		Message:   body.Message,
 	})
 	switch {
 	case err == nil:
@@ -252,6 +255,7 @@ func (api *api) strategyDTO(entry strategy.Entry) Strategy {
 	dto := Strategy{
 		Id: entry.ID, Name: entry.Name, Expression: entry.Expression, ExitExpression: entry.ExitExpression,
 		TakeProfitExpression: entry.TakeProfitExpression, StopLossExpression: entry.StopLossExpression,
+		MinMarketCapUsd: entry.MarketCap.MinUSD, MaxMarketCapUsd: entry.MarketCap.MaxUSD,
 		Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,
 		MissingIndicators: missingIndicatorDTOs(api.strategies.Unconfigured(entry)),
 	}

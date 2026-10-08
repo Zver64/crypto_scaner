@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"math"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"unicode/utf8"
@@ -17,6 +19,7 @@ import (
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/numeric"
 	"crypto-scanner/internal/scannerindicator"
 )
 
@@ -72,6 +75,9 @@ type Strategy struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
+	// MarketCap limits the coins the running strategy buys; backtests
+	// ignore it.
+	MarketCap MarketCapRange
 	// Message replaces the generated alert text when it is not empty.
 	Message string
 	Enabled bool
@@ -82,6 +88,63 @@ type Strategy struct {
 	// every enabled change; state writes apply only to the revision that was
 	// evaluated.
 	Revision int64
+}
+
+// MarketCapRange is a range of market caps in USD; a nil bound is open.
+type MarketCapRange struct {
+	MinUSD, MaxUSD *float64
+}
+
+// Contains reports whether a coin of the market cap, nil when unknown, lies
+// within the range. Without bounds every coin does; with any, only coins of a
+// known market cap.
+func (bounds MarketCapRange) Contains(usd *float64) bool {
+	if bounds.MinUSD == nil && bounds.MaxUSD == nil {
+		return true
+	}
+	return usd != nil && (bounds.MinUSD == nil || *usd >= *bounds.MinUSD) && (bounds.MaxUSD == nil || *usd <= *bounds.MaxUSD)
+}
+
+// String writes the range as "$10M – $500M", "≥ $1B", or "≤ $500M", and
+// as nothing without bounds.
+func (bounds MarketCapRange) String() string {
+	switch {
+	case bounds.MinUSD != nil && bounds.MaxUSD != nil:
+		return formatUSD(*bounds.MinUSD) + " – " + formatUSD(*bounds.MaxUSD)
+	case bounds.MinUSD != nil:
+		return "≥ " + formatUSD(*bounds.MinUSD)
+	case bounds.MaxUSD != nil:
+		return "≤ " + formatUSD(*bounds.MaxUSD)
+	}
+	return ""
+}
+
+// formatUSD writes an amount compactly, such as $150M or $1.5B.
+func formatUSD(usd float64) string {
+	for _, scale := range []struct {
+		suffix string
+		size   float64
+	}{{"T", 1e12}, {"B", 1e9}, {"M", 1e6}, {"K", 1e3}} {
+		// Rounding first lets 999,995,000 read $1B rather than $1000M.
+		if rounded := math.Round(usd/scale.size*100) / 100; rounded >= 1 {
+			return "$" + strconv.FormatFloat(rounded, 'f', -1, 64) + scale.suffix
+		}
+	}
+	return "$" + strconv.FormatFloat(usd, 'f', -1, 64)
+}
+
+// validate rejects bounds that are not positive and finite, and a minimum
+// above the maximum.
+func (bounds MarketCapRange) validate() error {
+	for _, bound := range []*float64{bounds.MinUSD, bounds.MaxUSD} {
+		if bound != nil && !(*bound > 0 && numeric.Finite(*bound)) {
+			return fmt.Errorf("%w: market cap bounds must be positive", ErrInvalidArgument)
+		}
+	}
+	if bounds.MinUSD != nil && bounds.MaxUSD != nil && *bounds.MinUSD > *bounds.MaxUSD {
+		return fmt.Errorf("%w: the minimum market cap must not exceed the maximum", ErrInvalidArgument)
+	}
+	return nil
 }
 
 // trades reports whether other differs from strategy in how it trades.
@@ -613,6 +676,9 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	item.Message = strings.TrimSpace(item.Message)
 	if utf8.RuneCountInString(item.Message) > maxMessageLength {
 		return Entry{}, fmt.Errorf("%w: the message must have at most %d characters", ErrInvalidArgument, maxMessageLength)
+	}
+	if err := item.MarketCap.validate(); err != nil {
+		return Entry{}, err
 	}
 	item.Expression = strings.TrimSpace(item.Expression)
 	item.ExitExpression = strings.TrimSpace(item.ExitExpression)

@@ -46,7 +46,7 @@ func newTable() table.Writer {
 
 func renderStrategies(w io.Writer, strategies []apiclient.Strategy) {
 	t := newTable()
-	t.AppendHeader(table.Row{"ID", "State", "Name", "Entry", "Exit", "Buys"})
+	t.AppendHeader(table.Row{"ID", "State", "Name", "Entry", "Exit", "Buys", "Market cap"})
 	for _, strategy := range strategies {
 		state := "off"
 		if strategy.Enabled {
@@ -59,7 +59,7 @@ func renderStrategies(w io.Writer, strategies []apiclient.Strategy) {
 		if len(strategy.MissingIndicators) > 0 {
 			name += "\nnot configured: " + missingTitles(strategy.MissingIndicators)
 		}
-		t.AppendRow(table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy)})
+		t.AppendRow(table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy), marketCapRange(strategy)})
 	}
 	fmt.Fprintln(w, t.Render())
 }

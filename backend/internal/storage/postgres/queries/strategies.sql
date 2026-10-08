@@ -1,18 +1,23 @@
 -- name: ListStrategies :many
-SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, baseline_pending, revision
+SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression,
+       min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id;
 
 -- name: InsertStrategy :one
-INSERT INTO app.strategies (name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, baseline_pending)
-VALUES (@name, @expression, @exit_expression, @take_profit_expression, @stop_loss_expression, @message, @enabled, @enabled)
+INSERT INTO app.strategies (name, expression, exit_expression, take_profit_expression, stop_loss_expression,
+                            min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending)
+VALUES (@name, @expression, @exit_expression, @take_profit_expression, @stop_loss_expression,
+        sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), @message, @enabled, @enabled)
 RETURNING id;
 
 -- name: UpdateStrategy :one
--- A change of how the strategy trades starts a new revision.
+-- A change of how the strategy trades starts a new revision; a market cap
+-- range change only limits later buys.
 UPDATE app.strategies
 SET name = @name, expression = @expression, exit_expression = @exit_expression,
     take_profit_expression = @take_profit_expression, stop_loss_expression = @stop_loss_expression,
+    min_market_cap_usd = sqlc.narg(min_market_cap_usd), max_market_cap_usd = sqlc.narg(max_market_cap_usd),
     message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
     revision = revision + (expression IS DISTINCT FROM @expression
@@ -91,11 +96,15 @@ DELETE FROM app.strategy_states
 WHERE strategy_id = @strategy_id::BIGINT AND instrument_id = ANY(@instrument_ids::BIGINT[]);
 
 -- name: ListStrategyInstruments :many
--- Strategies evaluate the active favorites of the administrator.
-SELECT i.id, i.symbol
+-- Strategies evaluate the active favorites of the administrator, with their
+-- market caps when known; CoinGecko reports 0 for coins without supply data.
+SELECT i.id, i.symbol, COALESCE(market_cap.market_cap_usd > 0, FALSE)::BOOLEAN AS market_cap_known,
+       COALESCE(market_cap.market_cap_usd, 0)::DOUBLE PRECISION AS market_cap_usd
 FROM app.favorites f
 JOIN app.users u ON u.id = f.user_id AND u.telegram_id = @administrator_telegram_id::BIGINT
 JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
+LEFT JOIN app.coingecko_asset_mappings mapping ON mapping.base_asset = i.base_asset AND mapping.status = 'resolved'
+LEFT JOIN app.coingecko_market_caps market_cap ON market_cap.coin_id = mapping.coin_id
 ORDER BY i.id;
 
 -- name: ListStrategyRecipients :many

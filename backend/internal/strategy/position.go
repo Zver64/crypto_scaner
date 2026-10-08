@@ -37,9 +37,9 @@ const (
 	TradeBuy TradeEventKind = iota + 1
 	// TradeSell is an exit that sells every buy of the trade.
 	TradeSell
-	// TradeSkip is an entry signal that buys nothing, since the strategy
-	// exits and holds a trade, or its take profit or stop loss is not on
-	// its side of the close.
+	// TradeSkip is an entry signal that buys nothing, since the coin is
+	// outside the market cap range, the strategy exits and holds a trade, or
+	// its take profit or stop loss is not on its side of the close.
 	TradeSkip
 )
 
@@ -73,12 +73,14 @@ type TradeEvent struct {
 // evaluating the exit expression over the position variables exit receives;
 // it is only asked for while a trade is open. Levels returns the take profit
 // and stop loss prices at the close, 0 for those the strategy lacks; it is
-// only asked for on a signal that opens a trade.
+// only asked for on a signal that opens a trade. OutOfRange skips entry
+// signals, as for a coin outside the strategy's market cap range.
 type TradeCandle struct {
 	OpenTime               time.Time
 	Open, High, Low, Close float64
 	Entry                  bool
 	EntryKnown             bool
+	OutOfRange             bool
 	Exit                   func(positions map[string]float64) (result, known bool)
 	Levels                 func() (takeProfit, stopLoss float64, known bool)
 }
@@ -90,7 +92,7 @@ type TradeCandle struct {
 // when the candle reaches both. Otherwise, while a trade is open, a true exit
 // rule sells every buy at the next open. A sell counts the entry as false on
 // its candle, so that the next candle can signal again. Otherwise an entry
-// signal opens a trade, fixing its take profit and stop loss when the close
+// signal outside the market cap range is skipped; otherwise it opens a trade, fixing its take profit and stop loss when the close
 // lies between them and skipping otherwise, or, for a strategy that never
 // sells, adds a buy; a strategy that exits skips signals while it holds a
 // trade. A candle waits, changing nothing and processed false, until every
@@ -135,6 +137,9 @@ func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, 
 	next.Entry = candle.Entry
 	if !signal {
 		return next, nil, true
+	}
+	if candle.OutOfRange {
+		return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true
 	}
 	switch {
 	case next.Buys == 0:

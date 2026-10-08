@@ -234,18 +234,18 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 
 		got := runCLI(t, home, "", append([]string{"strategies", "create", "ATR", "--expr", "h_atr_100 > 1"}, test.args...)...)
 
-		want := `┌────┬───────┬───────────────────────────┬───────────────┬──────┬──────────────┐
-│ ID │ STATE │ NAME                      │ ENTRY         │ EXIT │ BUYS         │
-├────┼───────┼───────────────────────────┼───────────────┼──────┼──────────────┤
-│  7 │ off   │ ATR                       │ h_atr_100 > 1 │ -    │ every signal │
-│    │       │ not configured: h-atr-100 │               │      │              │
-└────┴───────┴───────────────────────────┴───────────────┴──────┴──────────────┘
+		want := `┌────┬───────┬───────────────────────────┬───────────────┬──────┬──────────────┬────────────┐
+│ ID │ STATE │ NAME                      │ ENTRY         │ EXIT │ BUYS         │ MARKET CAP │
+├────┼───────┼───────────────────────────┼───────────────┼──────┼──────────────┼────────────┤
+│  7 │ off   │ ATR                       │ h_atr_100 > 1 │ -    │ every signal │ -          │
+│    │       │ not configured: h-atr-100 │               │      │              │            │
+└────┴───────┴───────────────────────────┴───────────────┴──────┴──────────────┴────────────┘
 `
 		if got.code != 0 || got.stdout != want {
 			t.Fatalf("strategies create %v = %+v", test.args, got)
 		}
 		wants := map[string]string{
-			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","message":"","name":"ATR","stop_loss_expression":"","take_profit_expression":""}`,
+			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","stop_loss_expression":"","take_profit_expression":""}`,
 		}
 		if test.add {
 			wants["POST /api/v1/admin/scanner-indicator-batches"] = `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`
@@ -291,7 +291,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","message":"","enabled":true,"valid":true},{"id":4,"name":"Old","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","min_market_cap_usd":10000000,"max_market_cap_usd":1500000000,"message":"","enabled":true,"valid":true},{"id":4,"name":"Old","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -303,13 +303,13 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"items":[{"indicator_id":1,"interval":"1d","label":"d-rsi","name":"d_rsi","position":false}]}` + "\n"},
 		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; reads indicators that are not configured: h-atr-100\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
-		{args: []string{"strategies"}, want: `┌────┬─────────┬─────────┬───────────────────────────┬──────────────────┬───────────────┐
-│ ID │ STATE   │ NAME    │ ENTRY                     │ EXIT             │ BUYS          │
-├────┼─────────┼─────────┼───────────────────────────┼──────────────────┼───────────────┤
-│  3 │ on      │ Dip buy │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade │
-│    │         │         │                           │ TP h_close * 1.1 │               │
-│  4 │ invalid │ Old     │ x                         │ -                │ every signal  │
-└────┴─────────┴─────────┴───────────────────────────┴──────────────────┴───────────────┘
+		{args: []string{"strategies"}, want: `┌────┬─────────┬─────────┬───────────────────────────┬──────────────────┬───────────────┬──────────────┐
+│ ID │ STATE   │ NAME    │ ENTRY                     │ EXIT             │ BUYS          │ MARKET CAP   │
+├────┼─────────┼─────────┼───────────────────────────┼──────────────────┼───────────────┼──────────────┤
+│  3 │ on      │ Dip buy │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade │ $10M – $1.5B │
+│    │         │         │                           │ TP h_close * 1.1 │               │              │
+│  4 │ invalid │ Old     │ x                         │ -                │ every signal  │ -            │
+└────┴─────────┴─────────┴───────────────────────────┴──────────────────┴───────────────┴──────────────┘
 `},
 	} {
 		if got := runCLI(t, home, "", test.args...); got.code != 0 || got.stdout != test.want {

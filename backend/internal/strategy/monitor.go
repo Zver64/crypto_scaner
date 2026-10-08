@@ -27,6 +27,8 @@ const (
 type Instrument struct {
 	ID     int64
 	Symbol string
+	// MarketCapUSD is the current market cap, nil when unknown.
+	MarketCapUSD *float64
 }
 
 type MonitorStore interface {
@@ -336,7 +338,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		changes := map[int64]TradeState{}
 		signals := map[int64][]TradeEvent{}
 		for _, instrument := range candidatesOf(entry) {
-			next, events, processed := current.advance(entry, instrument.ID, states[instrument.ID])
+			next, events, processed := current.advance(entry, instrument.ID, states[instrument.ID], !entry.MarketCap.Contains(instrument.MarketCapUSD))
 			if processed {
 				changes[instrument.ID] = next
 				signals[instrument.ID] = events
@@ -373,8 +375,8 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 }
 
 // baseline starts the trading states of entry afresh from the entry values
-// now, without trades, and announces the instruments whose entry is true.
-// Instruments with unknown entries are left out and signal once their entry
+// now, without trades, and announces the instruments within its market cap
+// range whose entry is true. Instruments with unknown entries are left out and signal once their entry
 // turns true.
 func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]TradeState, entry Entry, instruments []Instrument, current snapshot, recipients []int64) {
 	at := entry.Interval.LastClosedOpenTime(current.now)
@@ -386,7 +388,7 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 			continue
 		}
 		states[instrument.ID] = TradeState{OpenTime: at, Entry: result}
-		if result {
+		if result && entry.MarketCap.Contains(instrument.MarketCapUSD) {
 			matching = append(matching, instrument)
 		}
 	}
@@ -442,16 +444,17 @@ func (current snapshot) resolver(entry Entry, instrumentID int64, positions map[
 }
 
 // advance processes the latest closed candle of the interval of entry on
-// one instrument after state; see Entry.step. Without the fresh candle
-// nothing is processed.
-func (current snapshot) advance(entry Entry, instrumentID int64, state TradeState) (TradeState, []TradeEvent, bool) {
+// one instrument after state; see Entry.step. outOfRange skips its entry
+// signal. Without the fresh candle nothing is processed.
+func (current snapshot) advance(entry Entry, instrumentID int64, state TradeState, outOfRange bool) (TradeState, []TradeEvent, bool) {
 	at := entry.Interval.LastClosedOpenTime(current.now)
 	position, ok := current.reads.positions[pair{instrumentID, CandleTarget(entry.Interval).Key()}]
 	if !ok || !current.values[position].OpenTime.Equal(at) {
 		return state, nil, false
 	}
 	candle := TradeCandle{
-		OpenTime: at,
+		OpenTime:   at,
+		OutOfRange: outOfRange,
 		Exit: func(positions map[string]float64) (bool, bool) {
 			return current.match(entry.Exit, entry, instrumentID, positions)
 		},
@@ -617,8 +620,8 @@ func bySymbol(instruments []Instrument) map[string]int64 {
 // limit; the symbols that do not fit are counted instead.
 const maxSummaryLength = 4000
 
-// summaryText announces an enabled or changed strategy and the instruments
-// whose entry is true now, which buy only once it turns true again, and warns
+// summaryText announces an enabled or changed strategy, its market cap
+// range, and the instruments within it whose entry is true now, which buy only once it turns true again, and warns
 // about instruments it reads that are not monitored, such as delisted ones,
 // which leave its results unknown.
 func summaryText(entry Entry, matching []Instrument, current snapshot) string {
@@ -634,6 +637,9 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	}
 	if !entry.Exits() {
 		text += "No exit: every entry signal buys.\n"
+	}
+	if bounds := entry.MarketCap.String(); bounds != "" {
+		text += "Market cap: " + bounds + "\n"
 	}
 	var absent []string
 	for _, symbol := range entry.symbols {

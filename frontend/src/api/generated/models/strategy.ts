@@ -18,6 +18,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
+import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
 import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
 import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
@@ -31,6 +32,8 @@ export interface Strategy {
   exit_expression: StrategyExitExpression;
   take_profit_expression: StrategyTakeProfitExpression;
   stop_loss_expression: StrategyStopLossExpression;
+  min_market_cap_usd: StrategyMarketCapBound | null;
+  max_market_cap_usd: StrategyMarketCapBound | null;
   message: StrategyMessage;
   enabled: boolean;
   /** False when a stored rule no longer compiles; such a strategy is not evaluated. */

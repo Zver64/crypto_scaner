@@ -201,13 +201,23 @@ func (c *cli) deleteStrategyCommand() *cobra.Command {
 // createStrategyCommand saves a strategy the way the Mini App does, always
 // disabled: only the administrator turns alerts on, in the Mini App.
 func (c *cli) createStrategyCommand() *cobra.Command {
-	var expression, exit, takeProfit, stopLoss, message string
+	var expression, exit, takeProfit, stopLoss, minMarketCap, maxMarketCap, message string
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled strategy; it reads indicators that are not configured without adding them",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
+			body := apiclient.StrategyInput{
+				Name: args[0], Expression: expression, ExitExpression: exit, TakeProfitExpression: takeProfit, StopLossExpression: stopLoss, Message: message,
+			}
+			var err error
+			if body.MinMarketCapUsd, err = marketCapFlag("min-market-cap", minMarketCap); err != nil {
+				return err
+			}
+			if body.MaxMarketCapUsd, err = marketCapFlag("max-market-cap", maxMarketCap); err != nil {
+				return err
+			}
 			client, err := c.client()
 			if err != nil {
 				return err
@@ -220,9 +230,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			}, addIndicators); err != nil {
 				return err
 			}
-			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
-				Name: args[0], Expression: expression, ExitExpression: exit, TakeProfitExpression: takeProfit, StopLossExpression: stopLoss, Message: message,
-			})
+			created, err := client.CreateStrategyWithResponse(command.Context(), body)
 			if err == nil {
 				err = check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
 			}
@@ -238,10 +246,21 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 	flags.StringVar(&exit, "exit", "", "the exit rule `EXPR`ession, which may also read entry_price, pnl, and bars_held")
 	flags.StringVar(&takeProfit, "take-profit", "", "the take profit price `EXPR`ession, fixed at the entry signal, such as h_close * 1.05")
 	flags.StringVar(&stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession, fixed at the entry signal, such as h_close * 0.97")
+	flags.StringVar(&minMarketCap, "min-market-cap", "", "buy only coins whose market cap is at least `USD`, such as 50M; backtests ignore it")
+	flags.StringVar(&maxMarketCap, "max-market-cap", "", "buy only coins whose market cap is at most `USD`, such as 2B; backtests ignore it")
 	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	_ = command.MarkFlagRequired("expr")
 	return command
+}
+
+// marketCapFlag parses the market cap bound of flag, nil when empty.
+func marketCapFlag(flag, value string) (*float64, error) {
+	usd, err := parseUSD(value)
+	if err != nil {
+		return nil, fmt.Errorf("--%s: %w", flag, err)
+	}
+	return usd, nil
 }
 
 // strategyRule is an expression of a strategy, of kind, that name names in
@@ -300,10 +319,10 @@ func prepareStrategyRules(command *cobra.Command, client *apiclient.ClientWithRe
 }
 
 func (c *cli) updateStrategyCommand() *cobra.Command {
-	var name, expression, exit, takeProfit, stopLoss, message string
+	var name, expression, exit, takeProfit, stopLoss, minMarketCap, maxMarketCap, message string
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--name NAME] [--message TEXT] [--add-indicators]",
+		Use:   "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
 		Short: "Edit a disabled saved strategy, preserving unspecified fields",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -313,9 +332,17 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			}
 			flags := command.Flags()
 			// edits are the flags that change the strategy.
-			edits := []string{"expr", "exit", "take-profit", "stop-loss", "name", "message"}
+			edits := []string{"expr", "exit", "take-profit", "stop-loss", "min-market-cap", "max-market-cap", "name", "message"}
 			if !slices.ContainsFunc(append(edits, "add-indicators"), flags.Changed) {
-				return errors.New("specify at least one of --expr, --exit, --take-profit, --stop-loss, --name, --message, or --add-indicators")
+				return errors.New("specify at least one of --expr, --exit, --take-profit, --stop-loss, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
+			}
+			minimum, err := marketCapFlag("min-market-cap", minMarketCap)
+			if err != nil {
+				return err
+			}
+			maximum, err := marketCapFlag("max-market-cap", maxMarketCap)
+			if err != nil {
+				return err
 			}
 			client, err := c.client()
 			if err != nil {
@@ -344,7 +371,14 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			}
 			body := apiclient.StrategyUpdate{
 				Name: current.Name, Expression: current.Expression, ExitExpression: current.ExitExpression,
-				TakeProfitExpression: current.TakeProfitExpression, StopLossExpression: current.StopLossExpression, Message: current.Message,
+				TakeProfitExpression: current.TakeProfitExpression, StopLossExpression: current.StopLossExpression,
+				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
+			}
+			if flags.Changed("min-market-cap") {
+				body.MinMarketCapUsd = minimum
+			}
+			if flags.Changed("max-market-cap") {
+				body.MaxMarketCapUsd = maximum
 			}
 			if flags.Changed("name") {
 				body.Name = name
@@ -398,6 +432,8 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 	command.Flags().StringVar(&exit, "exit", "", "the exit rule `EXPR`ession; empty removes it, omitted preserves it")
 	command.Flags().StringVar(&takeProfit, "take-profit", "", "the take profit price `EXPR`ession; empty removes it, omitted preserves it")
 	command.Flags().StringVar(&stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession; empty removes it, omitted preserves it")
+	command.Flags().StringVar(&minMarketCap, "min-market-cap", "", "the minimum market cap in `USD`, such as 50M; empty removes it, omitted preserves it")
+	command.Flags().StringVar(&maxMarketCap, "max-market-cap", "", "the maximum market cap in `USD`, such as 2B; empty removes it, omitted preserves it")
 	command.Flags().StringVar(&name, "name", "", "strategy `NAME`; omitted preserves the current name")
 	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")
 	command.Flags().BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)

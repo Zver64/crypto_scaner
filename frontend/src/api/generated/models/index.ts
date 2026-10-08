@@ -142,6 +142,7 @@ export * from './strategyEnabled.ts';
 export * from './strategyExitExpression.ts';
 export * from './strategyInput.ts';
 export * from './strategyList.ts';
+export * from './strategyMarketCapBound.ts';
 export * from './strategyMessage.ts';
 export * from './strategyMissingIndicator.ts';
 export * from './strategyMissingIndicatorParameters.ts';

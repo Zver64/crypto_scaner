@@ -2029,7 +2029,7 @@ components:
     Strategy:
       type: object
       additionalProperties: false
-      required: [id, name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, valid, missing_indicators]
+      required: [id, name, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message, enabled, valid, missing_indicators]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -2039,6 +2039,8 @@ components:
         exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
+        min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
+        max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
         valid:
@@ -2327,13 +2329,15 @@ components:
     StrategyUpdate:
       type: object
       additionalProperties: false
-      required: [name, expression, exit_expression, take_profit_expression, stop_loss_expression, message]
+      required: [name, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         message: { $ref: "#/components/schemas/StrategyMessage" }
         exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
+        min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
+        max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         expression:
           type: string
           minLength: 1
@@ -2351,15 +2355,27 @@ components:
     StrategyInput:
       type: object
       additionalProperties: false
-      required: [name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled]
+      required: [name, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message, enabled]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         expression: { type: string, minLength: 1, maxLength: 2000 }
         exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
+        min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
+        max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
+    StrategyMarketCapBound:
+      type: [number, "null"]
+      format: double
+      exclusiveMinimum: 0
+      description: |
+        A bound, in USD and inclusive, of the current market caps of the coins
+        the enabled strategy buys; null leaves that side open. With either
+        bound, coins of an unknown market cap buy nothing. The range limits
+        only buys: open trades sell as usual, and backtests ignore it. The
+        minimum must not exceed the maximum.
     StrategyExitExpression:
       type: string
       maxLength: 2000

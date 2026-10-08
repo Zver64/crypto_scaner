@@ -10,10 +10,13 @@ import {
 import { useEffect, useState } from "react";
 import type { StrategyUpdate, StrategyVariable } from "@/api/generated/models";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
+import { StrategyMarketCapFields } from "@/features/strategy-settings/strategy-market-cap-fields";
 import { StrategyPriceInput } from "@/features/strategy-settings/strategy-price-input";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
 	emptyStrategyQuery,
+	marketCapErrors,
+	marketCapUsd,
 	strategyBuysLabel,
 	strategyExits,
 	strategyExpression,
@@ -47,16 +50,29 @@ export function StrategyFormContent({
 	const [exitQuery, setExitQuery] = useState(draft.exitQuery);
 	const [takeProfit, setTakeProfit] = useState(draft.takeProfit);
 	const [stopLoss, setStopLoss] = useState(draft.stopLoss);
+	const [minMarketCap, setMinMarketCap] = useState<number | string>(
+		draft.minMarketCap,
+	);
+	const [maxMarketCap, setMaxMarketCap] = useState<number | string>(
+		draft.maxMarketCap,
+	);
 	const exitExpression = exitQuery ? strategyExpression(exitQuery) : "";
 	const input: StrategyUpdate = {
 		exit_expression: exitExpression,
 		expression: strategyExpression(query),
+		max_market_cap_usd: marketCapUsd(maxMarketCap),
 		message: message.trim(),
+		min_market_cap_usd: marketCapUsd(minMarketCap),
 		name: name.trim(),
 		stop_loss_expression: stopLoss.trim(),
 		take_profit_expression: takeProfit.trim(),
 	};
 	const named = input.name !== "";
+	const boundErrors = marketCapErrors(
+		input.min_market_cap_usd,
+		input.max_market_cap_usd,
+	);
+	const marketCapValid = !boundErrors.minimum && !boundErrors.maximum;
 	const complete =
 		strategyQueryComplete(query) &&
 		(exitQuery === undefined || strategyQueryComplete(exitQuery));
@@ -67,7 +83,9 @@ export function StrategyFormContent({
 		exitExpression !==
 			(draft.exitQuery ? strategyExpression(draft.exitQuery) : "") ||
 		input.take_profit_expression !== draft.takeProfit ||
-		input.stop_loss_expression !== draft.stopLoss;
+		input.stop_loss_expression !== draft.stopLoss ||
+		input.min_market_cap_usd !== marketCapUsd(draft.minMarketCap) ||
+		input.max_market_cap_usd !== marketCapUsd(draft.maxMarketCap);
 	useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 	const entryVariables = withoutPositionVariables(variables);
 	return (
@@ -155,6 +173,14 @@ export function StrategyFormContent({
 				onChange={setStopLoss}
 				value={stopLoss}
 			/>
+			<StrategyMarketCapFields
+				disabled={isSaving}
+				errors={boundErrors}
+				maximum={maxMarketCap}
+				minimum={minMarketCap}
+				onMaximumChange={setMaxMarketCap}
+				onMinimumChange={setMinMarketCap}
+			/>
 			<Text c="dimmed" size="xs">
 				{strategyBuysLabel(input)}.{" "}
 				{strategyExits(input)
@@ -171,7 +197,7 @@ export function StrategyFormContent({
 					Cancel
 				</Button>
 				<Button
-					disabled={!named || !complete}
+					disabled={!named || !complete || !marketCapValid}
 					loading={isSaving}
 					onClick={() => onSubmit(input)}
 				>

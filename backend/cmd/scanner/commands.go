@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -42,12 +43,19 @@ func (c *cli) varsCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c.print(command, variables.Body, func(w io.Writer) {
-				needle := strings.ToLower(filter)
-				for _, variable := range variables.JSON200.Items {
-					if strings.Contains(strings.ToLower(variable.Name), needle) {
-						fmt.Fprintln(w, variable.Name)
-					}
+			// The filter applies to the JSON too.
+			list := *variables.JSON200
+			needle := strings.ToLower(filter)
+			list.Items = slices.DeleteFunc(list.Items, func(variable apiclient.StrategyVariable) bool {
+				return !strings.Contains(strings.ToLower(variable.Name), needle)
+			})
+			raw, err := json.Marshal(list)
+			if err != nil {
+				return err
+			}
+			c.print(command, raw, func(w io.Writer) {
+				for _, variable := range list.Items {
+					fmt.Fprintln(w, variable.Name)
 				}
 			})
 			return nil

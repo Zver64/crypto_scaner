@@ -300,6 +300,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		want string
 	}{
 		{args: []string{"vars", "--filter", "RSI"}, want: "d_rsi\n"},
+		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"items":[{"indicator_id":1,"interval":"1d","label":"d-rsi","name":"d_rsi","position":false}]}` + "\n"},
 		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; reads indicators that are not configured: h-atr-100\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
 		{args: []string{"strategies"}, want: `┌────┬─────────┬─────────┬───────────────────────────┬──────────────────┬───────────────┐

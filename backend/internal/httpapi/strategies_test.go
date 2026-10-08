@@ -149,3 +149,33 @@ func assertErrorCode(t *testing.T, response *httptest.ResponseRecorder, code str
 		t.Fatalf("error = %s, want %s", response.Body.String(), code)
 	}
 }
+
+// A request the contract rejects names the parameter or body field and why,
+// without kin-openapi's schema and value dumps.
+func TestContractViolationsNameTheirField(t *testing.T) {
+	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: &backtestStrategies{},
+	}, httpapi.Options{})
+	for _, test := range []struct {
+		method, target, body, want string
+	}{
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/0/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": minimum: got 0, want 1`},
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/abc/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": an invalid integer`},
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/" + strings.Repeat("x", 1000) + "/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": an invalid integer`},
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/1/backtest?symbol=BTC%2FUSDT", want: `Invalid query parameter "symbol": 'BTC/USDT' does not match pattern '^[A-Za-z0-9]+$'`},
+		{method: http.MethodPost, target: "/api/v1/admin/strategies", body: `{"name":"","expression":"h_close > 1","message":""}`, want: `Invalid request body field "name": minimum string length is 1`},
+	} {
+		t.Run(test.target, func(t *testing.T) {
+			request := httptest.NewRequest(test.method, test.target, strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer admin")
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			var body httpapi.ErrorResponse
+			if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil || response.Code != http.StatusBadRequest || body.Error.Code != "invalid_argument" ||
+				body.Error.Message != test.want {
+				t.Fatalf("status = %d, body = %s, want message %q", response.Code, response.Body.String(), test.want)
+			}
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -13,15 +14,13 @@ import (
 
 	"github.com/jedib0t/go-pretty/v6/table"
 	"github.com/jedib0t/go-pretty/v6/text"
+	"github.com/rivo/uniseg"
+	"golang.org/x/term"
 )
 
+// renderValidation prints a valid expression's validation; validate returns
+// the errors of an invalid one.
 func renderValidation(w io.Writer, validation apiclient.StrategyValidation) {
-	for _, problem := range validation.Errors {
-		fmt.Fprintln(w, "error:", problem)
-	}
-	if len(validation.Errors) > 0 {
-		return
-	}
 	if len(validation.MissingIndicators) == 0 {
 		fmt.Fprintln(w, "ok")
 		return
@@ -44,24 +43,168 @@ func newTable() table.Writer {
 	return t
 }
 
+// terminalWidth is the width of the terminal w writes to, 0 when w is not
+// a terminal.
+func terminalWidth(w io.Writer) int {
+	file, ok := w.(*os.File)
+	if !ok || !term.IsTerminal(int(file.Fd())) {
+		return 0
+	}
+	width, _, err := term.GetSize(int(file.Fd()))
+	if err != nil {
+		return 0
+	}
+	return width
+}
+
+// renderStrategies prints the strategies; on a terminal, the Name, Entry, and
+// Exit cells wrap to fit its width.
 func renderStrategies(w io.Writer, strategies []apiclient.Strategy) {
-	t := newTable()
-	t.AppendHeader(table.Row{"ID", "State", "Name", "Entry", "Exit", "Buys", "Market cap"})
+	renderStrategiesWidth(w, strategies, terminalWidth(w))
+}
+
+// renderStrategiesWidth also accepts an explicit width for non-terminal tests.
+func renderStrategiesWidth(w io.Writer, strategies []apiclient.Strategy, width int) {
+	header := table.Row{"ID", "State", "Name", "Entry", "Exit", "Buys", "Market cap"}
+	var rows []table.Row
+	widths := make([]int, len(header))
+	measure := func(row table.Row) {
+		for i, value := range row {
+			for line := range strings.Lines(fmt.Sprint(value)) {
+				widths[i] = max(widths[i], uniseg.StringWidth(strings.TrimSuffix(line, "\n")))
+			}
+		}
+	}
+	measure(header)
 	for _, strategy := range strategies {
 		state := "off"
 		if strategy.Enabled {
 			state = "on"
 		}
 		if !strategy.Valid {
-			state = "invalid"
+			state += ", invalid"
 		}
 		name := strategy.Name
+		if strategy.Problem != nil && *strategy.Problem != "" {
+			name += "\nproblem: " + *strategy.Problem
+		}
 		if len(strategy.MissingIndicators) > 0 {
 			name += "\nnot configured: " + missingTitles(strategy.MissingIndicators)
 		}
-		t.AppendRow(table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy), marketCapRange(strategy)})
+		if strategy.Message != "" {
+			name += "\nmessage: " + strategy.Message
+		}
+		row := table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy), marketCapRange(strategy)}
+		rows = append(rows, row)
+		measure(row)
 	}
-	fmt.Fprintln(w, t.Render())
+	if width > 0 {
+		// Each column has two padding cells and a border; the last border
+		// adds one. Keep at least two cells per column for wide Unicode
+		// characters; below that minimum, use labelled records.
+		remaining := width - (3*len(header) + 1)
+		if remaining < 2*len(header) {
+			for _, row := range rows {
+				for i, value := range row {
+					fmt.Fprintln(w, wrapCells(fmt.Sprintf("%s: %v", header[i], value), width))
+				}
+				fmt.Fprintln(w)
+			}
+			return
+		}
+		for total := sumWidths(widths); total > remaining; total-- {
+			widest := 0
+			for i := range widths {
+				if widths[i] > widths[widest] {
+					widest = i
+				}
+			}
+			widths[widest]--
+		}
+	}
+	renderStrategyRows(w, header, rows, widths)
+}
+
+// renderStrategyRows uses the same grapheme width for wrapping and padding.
+// go-pretty's rune-based padding cannot align joined emoji correctly.
+func renderStrategyRows(w io.Writer, header table.Row, rows []table.Row, widths []int) {
+	border := func(left, joint, right string) {
+		parts := make([]string, len(widths))
+		for i, width := range widths {
+			parts[i] = strings.Repeat("─", width+2)
+		}
+		fmt.Fprintln(w, left+strings.Join(parts, joint)+right)
+	}
+	row := func(values table.Row, heading bool) {
+		lines := make([][]string, len(values))
+		height := 1
+		for i, value := range values {
+			cell := fmt.Sprint(value)
+			if heading {
+				cell = strings.ToUpper(cell)
+			}
+			lines[i] = strings.Split(wrapCells(cell, widths[i]), "\n")
+			height = max(height, len(lines[i]))
+		}
+		for line := range height {
+			fmt.Fprint(w, "│")
+			for i := range values {
+				cell := ""
+				if line < len(lines[i]) {
+					cell = lines[i][line]
+				}
+				padding := strings.Repeat(" ", max(0, widths[i]-uniseg.StringWidth(cell)))
+				if i == 0 && !heading {
+					fmt.Fprintf(w, " %s%s │", padding, cell)
+				} else {
+					fmt.Fprintf(w, " %s%s │", cell, padding)
+				}
+			}
+			fmt.Fprintln(w)
+		}
+	}
+	border("┌", "┬", "┐")
+	row(header, true)
+	border("├", "┼", "┤")
+	for _, values := range rows {
+		row(values, false)
+	}
+	border("└", "┴", "┘")
+}
+
+// wrapCells checks the next grapheme's display width before placing it,
+// unlike WrapHard, which can overflow on mixed narrow and wide characters.
+func wrapCells(value string, width int) string {
+	if width <= 0 {
+		return value
+	}
+	var out strings.Builder
+	column := 0
+	graphemes := uniseg.NewGraphemes(value)
+	for graphemes.Next() {
+		cluster := graphemes.Str()
+		if strings.Contains(cluster, "\n") {
+			out.WriteString(cluster)
+			column = 0
+			continue
+		}
+		cells := graphemes.Width()
+		if column > 0 && column+cells > width {
+			out.WriteByte('\n')
+			column = 0
+		}
+		out.WriteString(cluster)
+		column += cells
+	}
+	return out.String()
+}
+
+func sumWidths(widths []int) int {
+	total := 0
+	for _, width := range widths {
+		total += width
+	}
+	return total
 }
 
 // exits lists the exit rule, take profit, and stop loss of a strategy, one

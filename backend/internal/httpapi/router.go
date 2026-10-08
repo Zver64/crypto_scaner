@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -15,6 +17,7 @@ import (
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/markettable"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/getkin/kin-openapi/openapi3filter"
 	"github.com/oapi-codegen/nethttp-middleware"
 )
@@ -209,19 +212,76 @@ func openAPIValidator() (func(http.Handler) http.Handler, error) {
 	}), nil
 }
 
-func openAPIValidationError(_ context.Context, _ error, response http.ResponseWriter, request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {
-	writeAPIError(response, options.StatusCode, "invalid_argument", validationMessage(request, options), nil)
+func openAPIValidationError(_ context.Context, err error, response http.ResponseWriter, request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {
+	writeAPIError(response, options.StatusCode, "invalid_argument", validationMessage(request, options, err), nil)
 }
 
-func validationMessage(request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) string {
+func validationMessage(request *http.Request, options nethttpmiddleware.ErrorHandlerOpts, err error) string {
 	switch {
 	case strings.HasPrefix(request.URL.Path, "/api/v1/analysis/"):
 		return "Invalid analysis argument"
 	case isCandleHistoryPath(request.URL.Path):
 		return candleValidationMessage(request, options)
 	default:
+		return requestErrorMessage(err)
+	}
+}
+
+// requestErrorMessage names the parameter or body field a request fails
+// validation on and why, without the schema and value dumps of kin-openapi
+// errors.
+func requestErrorMessage(err error) string {
+	var failure *openapi3filter.RequestError
+	if !errors.As(err, &failure) {
 		return "Invalid request"
 	}
+	reason, field := failure.Reason, ""
+	var schema *openapi3.SchemaError
+	var parsing *openapi3filter.ParseError
+	if errors.As(failure.Err, &schema) {
+		reason = cmp.Or(schema.Reason, "does not match the schema")
+		field = strings.Join(schema.JSONPointer(), "/")
+	} else if errors.As(failure.Err, &parsing) {
+		// Error() includes the complete input value and nested causes.
+		// The typed reason explains the failure without echoing that input.
+		reason = cmp.Or(parsing.Reason, reason, "invalid format")
+	} else if failure.Err != nil {
+		reason = cmp.Or(reason, failure.Err.Error())
+	}
+	reason = cmp.Or(conciseReason(reason), "invalid value")
+	switch {
+	case failure.Parameter != nil:
+		return fmt.Sprintf("Invalid %s parameter %q: %s", failure.Parameter.In, failure.Parameter.Name, reason)
+	case field != "":
+		return fmt.Sprintf("Invalid request body field %q: %s", field, reason)
+	case failure.RequestBody != nil:
+		return "Invalid request body: " + reason
+	}
+	return "Invalid request: " + reason
+}
+
+// maxReasonLength bounds the reason of a validation message.
+const maxReasonLength = 200
+
+// conciseReason keeps the findings of a JSON Schema 2020 validation error
+// (OpenAPI 3.1 parameters), whose first line only names the schema, on one
+// line.
+func conciseReason(reason string) string {
+	if header, findings, found := strings.Cut(reason, "\n"); found && strings.HasPrefix(header, "jsonschema validation failed") {
+		reason = findings
+	}
+	var parts []string
+	for line := range strings.Lines(reason) {
+		line = strings.TrimPrefix(strings.TrimSpace(line), "- ")
+		if line = strings.TrimPrefix(line, "at '': "); line != "" {
+			parts = append(parts, line)
+		}
+	}
+	reason = strings.Join(parts, "; ")
+	if len(reason) > maxReasonLength {
+		reason = strings.ToValidUTF8(reason[:maxReasonLength], "") + "…"
+	}
+	return reason
 }
 
 func isCandleHistoryPath(path string) bool {
@@ -273,8 +333,8 @@ func defaultJSONContentType(next http.Handler) http.Handler {
 	})
 }
 
-func openAPIRequestError(response http.ResponseWriter, request *http.Request, _ error) {
-	writeAPIError(response, http.StatusBadRequest, "invalid_argument", validationMessage(request, nethttpmiddleware.ErrorHandlerOpts{}), nil)
+func openAPIRequestError(response http.ResponseWriter, request *http.Request, err error) {
+	writeAPIError(response, http.StatusBadRequest, "invalid_argument", validationMessage(request, nethttpmiddleware.ErrorHandlerOpts{}, err), nil)
 }
 
 func (api *api) GetLiveness(ctx context.Context, _ GetLivenessRequestObject) (GetLivenessResponseObject, error) {

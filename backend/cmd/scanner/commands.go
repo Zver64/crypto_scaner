@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +24,17 @@ func (c *cli) print(command *cobra.Command, raw []byte, text func(io.Writer)) {
 	text(command.OutOrStdout())
 }
 
+// printJSON writes value as the --json output of a command whose API
+// response has no body of its own.
+func printJSON(command *cobra.Command, value any) error {
+	raw, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	command.Println(string(raw))
+	return nil
+}
+
 func (c *cli) varsCommand() *cobra.Command {
 	var filter string
 	command := &cobra.Command{
@@ -38,7 +48,7 @@ func (c *cli) varsCommand() *cobra.Command {
 			}
 			variables, err := client.ListStrategyVariablesWithResponse(command.Context())
 			if err == nil {
-				err = check(variables, variables.JSON200 != nil)
+				err = c.check(variables, variables.JSON200 != nil)
 			}
 			if err != nil {
 				return err
@@ -55,7 +65,11 @@ func (c *cli) varsCommand() *cobra.Command {
 			}
 			c.print(command, raw, func(w io.Writer) {
 				for _, variable := range list.Items {
-					fmt.Fprintln(w, variable.Name)
+					if variable.Position {
+						fmt.Fprintln(w, variable.Name, "(exit rule only)")
+					} else {
+						fmt.Fprintln(w, variable.Name)
+					}
 				}
 			})
 			return nil
@@ -85,15 +99,15 @@ func (c *cli) validateCommand() *cobra.Command {
 			}
 			validation, err := client.ValidateStrategyWithResponse(command.Context(), apiclient.StrategyValidationInput{Expression: args[0], Kind: &kind})
 			if err == nil {
-				err = check(validation, validation.JSON200 != nil, validation.JSON400)
+				err = c.check(validation, validation.JSON200 != nil, validation.JSON400)
 			}
 			if err != nil {
 				return err
 			}
-			c.print(command, validation.Body, func(w io.Writer) { renderValidation(w, *validation.JSON200) })
-			if len(validation.JSON200.Errors) > 0 {
-				return errors.New("the expression is invalid")
+			if problems := validation.JSON200.Errors; len(problems) > 0 {
+				return &cliError{code: "invalid_expression", message: "the expression is invalid", details: problems}
 			}
+			c.print(command, validation.Body, func(w io.Writer) { renderValidation(w, *validation.JSON200) })
 			return nil
 		},
 	}
@@ -115,7 +129,7 @@ func (c *cli) favoritesCommand() *cobra.Command {
 			}
 			favorites, err := client.ListFavoritesWithResponse(command.Context())
 			if err == nil {
-				err = check(favorites, favorites.JSON200 != nil)
+				err = c.check(favorites, favorites.JSON200 != nil)
 			}
 			if err != nil {
 				return err
@@ -138,7 +152,7 @@ func (c *cli) favoritesCommand() *cobra.Command {
 func (c *cli) strategiesCommand() *cobra.Command {
 	command := &cobra.Command{
 		Use:   "strategies",
-		Short: "Saved strategies: id, on/off, name, expression",
+		Short: "Saved strategies: ID, state, name with any problem and message, entry, exits, buys, market cap",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			client, err := c.client()
@@ -147,12 +161,18 @@ func (c *cli) strategiesCommand() *cobra.Command {
 			}
 			strategies, err := client.ListStrategiesWithResponse(command.Context())
 			if err == nil {
-				err = check(strategies, strategies.JSON200 != nil)
+				err = c.check(strategies, strategies.JSON200 != nil)
 			}
 			if err != nil {
 				return err
 			}
-			c.print(command, strategies.Body, func(w io.Writer) { renderStrategies(w, strategies.JSON200.Items) })
+			c.print(command, strategies.Body, func(w io.Writer) {
+				if len(strategies.JSON200.Items) == 0 {
+					fmt.Fprintln(w, "no strategies; create one with scanner strategies create")
+					return
+				}
+				renderStrategies(w, strategies.JSON200.Items)
+			})
 			return nil
 		},
 	}
@@ -164,16 +184,17 @@ func (c *cli) strategiesCommand() *cobra.Command {
 func strategyID(arg string) (int64, error) {
 	id, err := strconv.ParseInt(arg, 10, 64)
 	if err != nil || id <= 0 {
-		return 0, fmt.Errorf("strategy ID %q must be a positive int64", arg)
+		return 0, usageError("strategy ID %q must be a positive int64", arg)
 	}
 	return id, nil
 }
 
 func (c *cli) deleteStrategyCommand() *cobra.Command {
 	return &cobra.Command{
-		Use:   "delete ID",
-		Short: "Delete a saved strategy (--json produces no output on success)",
-		Args:  cobra.ExactArgs(1),
+		Use:               "delete ID",
+		Short:             "Delete a saved strategy",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: c.completeStrategyArg,
 		RunE: func(command *cobra.Command, args []string) error {
 			id, err := strategyID(args[0])
 			if err != nil {
@@ -185,14 +206,15 @@ func (c *cli) deleteStrategyCommand() *cobra.Command {
 			}
 			deleted, err := client.DeleteStrategyWithResponse(command.Context(), id)
 			if err == nil {
-				err = check(deleted, deleted.StatusCode() == http.StatusNoContent, deleted.JSON404)
+				err = c.check(deleted, deleted.StatusCode() == http.StatusNoContent, deleted.JSON404)
 			}
 			if err != nil {
 				return err
 			}
-			if !c.json {
-				command.Printf("deleted strategy %d\n", id)
+			if c.json {
+				return printJSON(command, map[string]int{"deleted": 1})
 			}
+			command.Printf("deleted strategy %d\n", id)
 			return nil
 		},
 	}
@@ -222,8 +244,8 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := prepareStrategyRules(command, client, []strategyRule{
-				{expression, apiclient.StrategyValidationInputKindEntry, "the expression"},
+			if _, err := c.prepareStrategyRules(command, client, []strategyRule{
+				{expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"},
 				{exit, apiclient.StrategyValidationInputKindExit, "the exit rule"},
 				{takeProfit, apiclient.StrategyValidationInputKindPrice, "the take profit"},
 				{stopLoss, apiclient.StrategyValidationInputKindPrice, "the stop loss"},
@@ -232,7 +254,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), body)
 			if err == nil {
-				err = check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
+				err = c.check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
 			}
 			if err != nil {
 				return err
@@ -258,7 +280,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 func marketCapFlag(flag, value string) (*float64, error) {
 	usd, err := parseUSD(value)
 	if err != nil {
-		return nil, fmt.Errorf("--%s: %w", flag, err)
+		return nil, usageError("--%s: %v", flag, err)
 	}
 	return usd, nil
 }
@@ -277,26 +299,25 @@ const addIndicatorsUsage = "also add the indicators the rules read that are not 
 
 // prepareStrategyRules validates every rule before any write and, with add,
 // then adds the indicators they read that are missing, so an invalid rule
-// adds nothing. It returns how many indicators the rules read that are
-// missing. An empty rule other than the entry rule is absent and needs
-// nothing.
-func prepareStrategyRules(command *cobra.Command, client *apiclient.ClientWithResponses, rules []strategyRule, add bool) (int, error) {
+// adds nothing. Every invalid rule is reported at once. It returns the
+// titles of the indicators the rules read that are missing. An empty rule
+// other than the entry rule is absent and needs nothing.
+func (c *cli) prepareStrategyRules(command *cobra.Command, client *apiclient.ClientWithResponses, rules []strategyRule, add bool) ([]string, error) {
 	var items []apiclient.ScannerIndicatorBatchItem
-	var titles []string
+	var titles, problems []string
 	for _, rule := range rules {
 		if rule.expression == "" && rule.kind != apiclient.StrategyValidationInputKindEntry {
 			continue
 		}
 		validation, err := client.ValidateStrategyWithResponse(command.Context(), apiclient.StrategyValidationInput{Expression: rule.expression, Kind: &rule.kind})
 		if err == nil {
-			err = check(validation, validation.JSON200 != nil, validation.JSON400)
+			err = c.check(validation, validation.JSON200 != nil, validation.JSON400)
 		}
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
-		if len(validation.JSON200.Errors) > 0 {
-			renderValidation(command.OutOrStdout(), *validation.JSON200)
-			return 0, fmt.Errorf("%s is invalid", rule.name)
+		for _, problem := range validation.JSON200.Errors {
+			problems = append(problems, rule.name+": "+problem)
 		}
 		for _, indicator := range validation.JSON200.MissingIndicators {
 			if !slices.Contains(titles, indicator.Title) {
@@ -305,26 +326,33 @@ func prepareStrategyRules(command *cobra.Command, client *apiclient.ClientWithRe
 			}
 		}
 	}
+	if len(problems) > 0 {
+		return nil, &cliError{code: "invalid_expression", message: "invalid rules; nothing was saved", details: problems}
+	}
 	if !add || len(items) == 0 {
-		return len(items), nil
+		return titles, nil
 	}
 	added, err := client.CreateScannerIndicatorBatchWithResponse(command.Context(), apiclient.ScannerIndicatorBatch{Items: items})
 	if err == nil {
-		err = check(added, added.JSON201 != nil, added.JSON400, added.JSON409)
+		err = c.check(added, added.JSON201 != nil, added.JSON400, added.JSON409)
 	}
 	if err != nil {
-		return 0, fmt.Errorf("add the indicators: %w", err)
+		return nil, err
 	}
-	return len(items), nil
+	if !c.json {
+		command.PrintErrf("added indicators: %s\n", strings.Join(titles, ", "))
+	}
+	return titles, nil
 }
 
 func (c *cli) updateStrategyCommand() *cobra.Command {
 	var name, expression, exit, takeProfit, stopLoss, minMarketCap, maxMarketCap, message string
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
-		Short: "Edit a disabled saved strategy, preserving unspecified fields",
-		Args:  cobra.ExactArgs(1),
+		Use:               "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
+		Short:             "Edit a disabled saved strategy, preserving unspecified fields",
+		Args:              cobra.ExactArgs(1),
+		ValidArgsFunction: c.completeStrategyArg,
 		RunE: func(command *cobra.Command, args []string) error {
 			id, err := strategyID(args[0])
 			if err != nil {
@@ -334,7 +362,7 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			// edits are the flags that change the strategy.
 			edits := []string{"expr", "exit", "take-profit", "stop-loss", "min-market-cap", "max-market-cap", "name", "message"}
 			if !slices.ContainsFunc(append(edits, "add-indicators"), flags.Changed) {
-				return errors.New("specify at least one of --expr, --exit, --take-profit, --stop-loss, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
+				return usageError("specify at least one of --expr, --exit, --take-profit, --stop-loss, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
 			}
 			minimum, err := marketCapFlag("min-market-cap", minMarketCap)
 			if err != nil {
@@ -350,7 +378,7 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			}
 			listed, err := client.ListStrategiesWithResponse(command.Context())
 			if err == nil {
-				err = check(listed, listed.JSON200 != nil)
+				err = c.check(listed, listed.JSON200 != nil)
 			}
 			if err != nil {
 				return err
@@ -363,11 +391,11 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 				}
 			}
 			if current == nil {
-				return fmt.Errorf("no strategy %d; see scanner strategies", id)
+				return failure("strategy_not_found", "no strategy %d; see scanner strategies", id)
 			}
 			// Enabled strategies alert; only the Mini App edits them.
 			if current.Enabled {
-				return fmt.Errorf("strategy %d is enabled; edit it in the Mini App", id)
+				return failure("strategy_enabled", "strategy %d is enabled; edit it in the Mini App", id)
 			}
 			body := apiclient.StrategyUpdate{
 				Name: current.Name, Expression: current.Expression, ExitExpression: current.ExitExpression,
@@ -392,7 +420,7 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 				target *string
 				rule   strategyRule
 			}{
-				{"expr", &body.Expression, strategyRule{expression, apiclient.StrategyValidationInputKindEntry, "the expression"}},
+				{"expr", &body.Expression, strategyRule{expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"}},
 				{"exit", &body.ExitExpression, strategyRule{exit, apiclient.StrategyValidationInputKindExit, "the exit rule"}},
 				{"take-profit", &body.TakeProfitExpression, strategyRule{takeProfit, apiclient.StrategyValidationInputKindPrice, "the take profit"}},
 				{"stop-loss", &body.StopLossExpression, strategyRule{stopLoss, apiclient.StrategyValidationInputKindPrice, "the stop loss"}},
@@ -406,20 +434,26 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 				change.rule.expression = *change.target
 				rules = append(rules, change.rule)
 			}
-			missing, err := prepareStrategyRules(command, client, rules, addIndicators)
+			missing, err := c.prepareStrategyRules(command, client, rules, addIndicators)
 			if err != nil {
 				return err
 			}
-			// Adding nothing changes nothing, so nothing is sent.
-			if missing == 0 && !slices.ContainsFunc(edits, flags.Changed) {
+			// Adding nothing changes nothing, so nothing is sent, and the
+			// strategy is printed as it is.
+			if len(missing) == 0 && !slices.ContainsFunc(edits, flags.Changed) {
 				if !c.json {
-					command.Println("no indicators to add")
+					command.PrintErrln("no indicators to add")
 				}
+				raw, err := json.Marshal(current)
+				if err != nil {
+					return err
+				}
+				c.print(command, raw, func(w io.Writer) { renderStrategies(w, []apiclient.Strategy{*current}) })
 				return nil
 			}
 			updated, err := client.UpdateStrategyWithResponse(command.Context(), id, body)
 			if err == nil {
-				err = check(updated, updated.JSON200 != nil, updated.JSON400, updated.JSON404, updated.JSON409)
+				err = c.check(updated, updated.JSON200 != nil, updated.JSON400, updated.JSON404, updated.JSON409)
 			}
 			if err != nil {
 				return err
@@ -441,16 +475,16 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 }
 
 func (c *cli) backtestCommand() *cobra.Command {
-	var (
-		strategyID int64
-		symbol     string
-		from, to   string
-	)
+	var strategy, symbol, from, to string
 	command := &cobra.Command{
 		Use:   "backtest --strategy ID --symbol SYM [--from TIME] [--to TIME]",
 		Short: "Simulate the trades of a saved strategy on one coin against its baselines",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
+			id, err := strategyID(strategy)
+			if err != nil {
+				return err
+			}
 			params := apiclient.BacktestStrategyParams{Symbol: symbol}
 			for _, bound := range []struct {
 				flag, value string
@@ -462,7 +496,7 @@ func (c *cli) backtestCommand() *cobra.Command {
 				}
 				parsed, err := parseTime(bound.value, bound.end)
 				if err != nil {
-					return fmt.Errorf("--%s: %w", bound.flag, err)
+					return usageError("--%s: %v", bound.flag, err)
 				}
 				*bound.target = &parsed
 			}
@@ -470,9 +504,9 @@ func (c *cli) backtestCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			backtest, err := client.BacktestStrategyWithResponse(command.Context(), strategyID, &params)
+			backtest, err := client.BacktestStrategyWithResponse(command.Context(), id, &params)
 			if err == nil {
-				err = check(backtest, backtest.JSON200 != nil, backtest.JSON400, backtest.JSON404, backtest.JSON503)
+				err = c.check(backtest, backtest.JSON200 != nil, backtest.JSON400, backtest.JSON404, backtest.JSON503)
 			}
 			if err != nil {
 				return err
@@ -483,12 +517,14 @@ func (c *cli) backtestCommand() *cobra.Command {
 		},
 	}
 	flags := command.Flags()
-	flags.Int64Var(&strategyID, "strategy", 0, "the saved strategy `ID` (see scanner strategies)")
+	flags.StringVar(&strategy, "strategy", "", "the saved strategy `ID` (see scanner strategies)")
 	flags.StringVar(&symbol, "symbol", "", "any coin `SYM`, such as BTCUSDT")
 	flags.StringVar(&from, "from", "", "evaluate candles opening at or after `TIME`: a UTC date such as 2026-01-31, or RFC 3339")
 	flags.StringVar(&to, "to", "", "evaluate candles opening at or before `TIME`: a UTC date, the whole day included, or RFC 3339")
 	_ = command.MarkFlagRequired("strategy")
 	_ = command.MarkFlagRequired("symbol")
+	_ = command.RegisterFlagCompletionFunc("strategy", c.completeStrategies)
+	_ = command.RegisterFlagCompletionFunc("symbol", c.completeFavorites)
 	return command
 }
 

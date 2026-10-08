@@ -39,10 +39,13 @@ func configPath() (string, error) {
 func readConfig() (string, config, error) {
 	path, err := configPath()
 	if err != nil {
-		return "", config{}, err
+		return "", config{}, failure("config", "%v", err)
 	}
 	loaded, err := loadConfig(path)
-	return path, loaded, err
+	if err != nil {
+		return "", config{}, failure("config", "%v", err)
+	}
+	return path, loaded, nil
 }
 
 // loadConfig returns an empty configuration when the file does not exist.
@@ -65,9 +68,16 @@ func loadConfig(path string) (config, error) {
 }
 
 // saveConfig replaces the file atomically with one only its owner can read.
-// A missing directory is created for its owner only; an existing one keeps
-// its permissions.
 func saveConfig(path string, saved config) error {
+	if err := writeConfig(path, saved); err != nil {
+		return failure("config", "%v", err)
+	}
+	return nil
+}
+
+// writeConfig writes the file of saveConfig. A missing directory is created
+// for its owner only; an existing one keeps its permissions.
+func writeConfig(path string, saved config) error {
 	raw, err := json.MarshalIndent(saved, "", "  ")
 	if err != nil {
 		return err

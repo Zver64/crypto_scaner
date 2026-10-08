@@ -116,6 +116,10 @@ func TestLoginSavesPrivateProfilesAndUseSwitchesThem(t *testing.T) {
 	if got := runCLI(t, home, "", "profiles"); !strings.HasPrefix(got.stdout, "  dev") || !strings.Contains(got.stdout, "* prod") {
 		t.Fatalf("profiles after use = %q", got.stdout)
 	}
+	want := `{"current":"prod","profiles":[{"name":"dev","server":"` + server.URL + `"},{"name":"prod","server":"` + server.URL + `"}]}` + "\n"
+	if got := runCLI(t, home, "", "profiles", "--json"); got.code != 0 || got.stdout != want {
+		t.Fatalf("profiles --json = %+v, want %s", got, want)
+	}
 }
 
 func TestLoginRejectsTokensThatCannotServeTheCLI(t *testing.T) {
@@ -241,7 +245,11 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 │    │       │ not configured: h-atr-100 │               │      │              │            │
 └────┴───────┴───────────────────────────┴───────────────┴──────┴──────────────┴────────────┘
 `
-		if got.code != 0 || got.stdout != want {
+		wantNote := ""
+		if test.add {
+			wantNote = "added indicators: h-atr-100\n"
+		}
+		if got.code != 0 || got.stdout != want || got.stderr != wantNote {
 			t.Fatalf("strategies create %v = %+v", test.args, got)
 		}
 		wants := map[string]string{
@@ -262,7 +270,7 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 }
 
 // Every rule is validated before any indicator is added, so an invalid
-// rule adds nothing.
+// rule adds nothing, and every invalid rule is reported, on stderr only.
 func TestStrategiesCreateWithAnInvalidRuleAddsNothing(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -280,18 +288,25 @@ func TestStrategiesCreateWithAnInvalidRuleAddsNothing(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	got := runCLI(t, writeProfile(t, server.URL), "", "strategies", "create", "X", "--expr", "h_ema_3 > 0", "--exit", "bad(", "--add-indicators")
-	if got.code != 1 || !strings.Contains(got.stderr, "the exit rule is invalid") {
+	home := writeProfile(t, server.URL)
+	args := []string{"strategies", "create", "X", "--expr", "h_ema_3 > 0", "--exit", "bad(", "--stop-loss", "bad(", "--add-indicators"}
+
+	if got := runCLI(t, home, "", args...); got.code != 1 || got.stdout != "" ||
+		got.stderr != "scanner: invalid rules; nothing was saved\n  the exit rule: syntax error\n  the stop loss: syntax error\n" {
 		t.Fatalf("create = %+v", got)
+	}
+	want := `{"error":{"code":"invalid_expression","details":["the exit rule: syntax error","the stop loss: syntax error"],"message":"invalid rules; nothing was saved"},"request_id":""}` + "\n"
+	if got := runCLI(t, home, "", append(args, "--json")...); got.code != 1 || got.stdout != "" || got.stderr != want {
+		t.Fatalf("create --json = %+v, want stderr %s", got, want)
 	}
 }
 
 func TestCommandsRenderCompactText(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"}]}`,
+		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"},{"name":"pnl","label":"pnl","position":true}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","min_market_cap_usd":10000000,"max_market_cap_usd":1500000000,"message":"","enabled":true,"valid":true},{"id":4,"name":"Old","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","min_market_cap_usd":10000000,"max_market_cap_usd":1500000000,"message":"Dip!","enabled":true,"valid":true},{"id":4,"name":"Old","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -300,16 +315,18 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		want string
 	}{
 		{args: []string{"vars", "--filter", "RSI"}, want: "d_rsi\n"},
+		{args: []string{"vars", "--filter", "pnl"}, want: "pnl (exit rule only)\n"},
 		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"items":[{"indicator_id":1,"interval":"1d","label":"d-rsi","name":"d_rsi","position":false}]}` + "\n"},
 		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; reads indicators that are not configured: h-atr-100\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
-		{args: []string{"strategies"}, want: `┌────┬─────────┬─────────┬───────────────────────────┬──────────────────┬───────────────┬──────────────┐
-│ ID │ STATE   │ NAME    │ ENTRY                     │ EXIT             │ BUYS          │ MARKET CAP   │
-├────┼─────────┼─────────┼───────────────────────────┼──────────────────┼───────────────┼──────────────┤
-│  3 │ on      │ Dip buy │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade │ $10M – $1.5B │
-│    │         │         │                           │ TP h_close * 1.1 │               │              │
-│  4 │ invalid │ Old     │ x                         │ -                │ every signal  │ -            │
-└────┴─────────┴─────────┴───────────────────────────┴──────────────────┴───────────────┴──────────────┘
+		{args: []string{"strategies"}, want: `┌────┬──────────────┬─────────────────────┬───────────────────────────┬──────────────────┬───────────────┬──────────────┐
+│ ID │ STATE        │ NAME                │ ENTRY                     │ EXIT             │ BUYS          │ MARKET CAP   │
+├────┼──────────────┼─────────────────────┼───────────────────────────┼──────────────────┼───────────────┼──────────────┤
+│  3 │ on           │ Dip buy             │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade │ $10M – $1.5B │
+│    │              │ message: Dip!       │                           │ TP h_close * 1.1 │               │              │
+│  4 │ off, invalid │ Old                 │ x                         │ -                │ every signal  │ -            │
+│    │              │ problem: undeclared │                           │                  │               │              │
+└────┴──────────────┴─────────────────────┴───────────────────────────┴──────────────────┴───────────────┴──────────────┘
 `},
 	} {
 		if got := runCLI(t, home, "", test.args...); got.code != 0 || got.stdout != test.want {
@@ -325,7 +342,7 @@ func TestErrorsExitWithoutPrintingTheToken(t *testing.T) {
 	})
 	home := writeProfile(t, server.URL)
 
-	if got := runCLI(t, home, "", "validate", "x > 1"); got.code != 1 || got.stdout != "error: undeclared reference to 'x'\n" {
+	if got := runCLI(t, home, "", "validate", "x > 1"); got.code != 1 || got.stdout != "" || got.stderr != "scanner: the expression is invalid\n  undeclared reference to 'x'\n" {
 		t.Errorf("invalid expression = %+v", got)
 	}
 	api.status = http.StatusNotFound
@@ -335,8 +352,74 @@ func TestErrorsExitWithoutPrintingTheToken(t *testing.T) {
 	if err := saveConfig(filepath.Join(home, "scanner", "config.json"), config{Current: "dev", Profiles: map[string]profile{"dev": {Server: server.URL, Token: "cst_revoked"}}}); err != nil {
 		t.Fatal(err)
 	}
-	if got := runCLI(t, home, "", "favorites"); got.code != 1 || !strings.Contains(got.stderr, "unauthenticated") || strings.Contains(got.stderr, "cst_revoked") {
+	if got := runCLI(t, home, "", "favorites"); got.code != 1 || !strings.Contains(got.stderr, "unauthenticated") || strings.Contains(got.stderr, "cst_revoked") ||
+		!strings.Contains(got.stderr, "run scanner login dev --server "+server.URL) {
 		t.Errorf("revoked token = %+v", got)
+	}
+	if got := runCLI(t, t.TempDir(), "", "favorites"); got.code != 1 || got.stderr != "scanner: no profile selected; run scanner login NAME --server URL, or pass --profile\n" {
+		t.Errorf("no profile = %+v", got)
+	}
+	// Login checks the token it is given, so it does not suggest logging in.
+	if got := runCLI(t, t.TempDir(), "cst_revoked", "login", "dev", "--server", server.URL); got.code != 1 || !strings.Contains(got.stderr, "create one in the Mini App settings") {
+		t.Errorf("login with a revoked token = %+v", got)
+	}
+}
+
+// Unreachable servers and unknown commands are errors in the --json error
+// shape too, and an invalid strategy ID sends nothing.
+func TestEarlyErrorsRespectJSONFlag(t *testing.T) {
+	for _, test := range []struct {
+		args []string
+		json bool
+	}{
+		{[]string{"typo", "--json=true"}, true},
+		{[]string{"profiles", "---oops", "--json"}, true},
+		{[]string{"profiles", "---oops", "--=bad", "--json"}, true},
+		{[]string{"profiles", "---oops", "--json", "--json=false"}, false},
+		{[]string{"profiles", "---oops", "--", "--json"}, false},
+		{[]string{"strategies", "create", "Test", "--expr", "---oops", "---oops", "--json"}, true},
+		{[]string{"strategies", "create", "Test", "--expr", "---oops", "---oops", "--message", "--json"}, false},
+		{[]string{"validate", "x", "--exit=oops", "--json"}, true},
+		{[]string{"favorites", "--json=false", "--unknown", "--json"}, true},
+		{[]string{"validate", "x", "--exit=oops", "--json", "--json=false"}, false},
+		{[]string{"validate", "x", "--exit=oops", "--", "--json"}, false},
+		{[]string{"strategies", "create", "Test", "--expr", "--json"}, false},
+		{[]string{"typo", "--json=false"}, false},
+		{[]string{"typo", "--json", "--json=false"}, false},
+		{[]string{"--unknown", "--json=true"}, true},
+		{[]string{"typo", "--", "--json"}, false},
+	} {
+		got := runCLI(t, t.TempDir(), "", test.args...)
+		var body apiclient.ErrorResponse
+		isJSON := json.Unmarshal([]byte(got.stderr), &body) == nil
+		if got.code != 1 || got.stdout != "" || isJSON != test.json || isJSON && body.Error.Code != "usage" {
+			t.Errorf("scanner %v = %+v", test.args, got)
+		}
+	}
+}
+
+func TestLocalErrors(t *testing.T) {
+	home := writeProfile(t, "http://127.0.0.1:1")
+	for _, test := range []struct {
+		args         []string
+		code, prefix string
+	}{
+		{args: []string{"favorites"}, code: "unreachable", prefix: "cannot reach http://127.0.0.1:1 (profile dev): "},
+		{args: []string{"indicators", "typo"}, code: "usage", prefix: `unknown command "typo" for "scanner indicators"`},
+		{args: []string{"typo"}, code: "usage", prefix: `unknown command "typo" for "scanner"`},
+		{args: []string{"backtest", "--strategy", "0", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "0" must be a positive int64`},
+		{args: []string{"backtest", "--strategy", "abc", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "abc" must be a positive int64`},
+	} {
+		got := runCLI(t, home, "", test.args...)
+		if got.code != 1 || got.stdout != "" || !strings.HasPrefix(got.stderr, "scanner: "+test.prefix) {
+			t.Errorf("scanner %v = %+v", test.args, got)
+		}
+		got = runCLI(t, home, "", append(test.args, "--json")...)
+		var body apiclient.ErrorResponse
+		if err := json.Unmarshal([]byte(got.stderr), &body); err != nil || got.code != 1 || got.stdout != "" ||
+			string(body.Error.Code) != test.code || !strings.HasPrefix(body.Error.Message, test.prefix) {
+			t.Errorf("scanner %v --json = %+v", test.args, got)
+		}
 	}
 }
 
@@ -390,7 +473,9 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 					args = append(args, "--server", server.URL)
 				}
 				got := runCLI(t, home, testToken, args...)
-				if got.code != 1 || got.stdout != "" || !strings.HasPrefix(got.stderr, "scanner: ") || !strings.Contains(got.stderr, "unexpected API response") {
+				var body apiclient.ErrorResponse
+				if err := json.Unmarshal([]byte(got.stderr), &body); err != nil || got.code != 1 || got.stdout != "" ||
+					body.Error.Code != "unexpected_response" || !strings.Contains(body.Error.Message, "unexpected API response") {
 					t.Fatalf("unexpected success response = %+v", got)
 				}
 			})
@@ -409,7 +494,7 @@ func TestDeleteStrategy(t *testing.T) {
 		want := "deleted strategy 9223372036854775807\n"
 		if jsonOutput {
 			args = append(args, "--json")
-			want = ""
+			want = `{"deleted":1}` + "\n"
 		}
 		got := runCLI(t, home, "", args...)
 		if got.code != 0 || got.stdout != want || got.stderr != "" {
@@ -421,32 +506,56 @@ func TestDeleteStrategy(t *testing.T) {
 	}
 }
 
+// With --json, errors keep the API error shape, request ID and details
+// included; SERVER stands for the server's URL.
 func TestDeleteStrategyReportsAPIErrors(t *testing.T) {
 	for _, test := range []struct {
-		status     int
-		body, want string
+		status           int
+		body, text, json string
 	}{
-		{http.StatusBadRequest, `{"error":{"code":"invalid_request","message":"Invalid ID"}}`, "HTTP 400"},
-		{http.StatusNotFound, `{"error":{"code":"strategy_not_found","message":"Strategy not found"}}`, "strategy_not_found: Strategy not found"},
-		{http.StatusUnauthorized, `{"error":{"code":"unauthenticated","message":"Session is invalid or expired"}}`, "unauthenticated: Session is invalid or expired (revoked or wrong token? run scanner login)"},
-		{http.StatusForbidden, `{"error":{"code":"administrator_required","message":"Administrator access required"}}`, "administrator_required: Administrator access required"},
-		{http.StatusInternalServerError, `{"error":{"code":"internal_error","message":"Internal server error"}}`, "internal_error: Internal server error"},
+		{
+			http.StatusBadRequest, `{"error":{"code":"invalid_request","message":"Invalid ID"},"request_id":"r"}`,
+			"HTTP 400 from SERVER; check the profile's server URL",
+			`{"error":{"code":"unexpected_response","message":"HTTP 400 from SERVER; check the profile's server URL"},"request_id":""}`,
+		},
+		{
+			http.StatusNotFound, `{"error":{"code":"strategy_not_found","message":"Strategy not found","details":{"id":3}},"request_id":"r"}`,
+			"strategy_not_found: Strategy not found",
+			`{"error":{"code":"strategy_not_found","details":{"id":3},"message":"Strategy not found"},"request_id":"r"}`,
+		},
+		{
+			http.StatusUnauthorized, `{"error":{"code":"unauthenticated","message":"Session is invalid or expired"},"request_id":"r"}`,
+			"unauthenticated: Session is invalid or expired (revoked or wrong token? run scanner login dev --server SERVER)",
+			`{"error":{"code":"unauthenticated","message":"Session is invalid or expired (revoked or wrong token? run scanner login dev --server SERVER)"},"request_id":"r"}`,
+		},
+		{
+			http.StatusInternalServerError, `{"error":{"code":"internal_error","message":"Internal server error"},"request_id":"r"}`,
+			"internal_error: Internal server error",
+			`{"error":{"code":"internal_error","message":"Internal server error"},"request_id":"r"}`,
+		},
 	} {
 		t.Run(strconv.Itoa(test.status), func(t *testing.T) {
 			api, server := newFakeAPI(t, map[string]string{"DELETE /api/v1/admin/strategies/3": test.body})
 			api.status = test.status
-			got := runCLI(t, writeProfile(t, server.URL), "", "strategies", "delete", "3", "--json")
-			if got.code != 1 || got.stdout != "" || got.stderr != "scanner: "+test.want+"\n" {
-				t.Fatalf("delete API error = %+v", got)
+			home := writeProfile(t, server.URL)
+			if got := runCLI(t, home, "", "strategies", "delete", "3"); got.code != 1 || got.stdout != "" || got.stderr != "scanner: "+strings.ReplaceAll(test.text, "SERVER", server.URL)+"\n" {
+				t.Errorf("delete API error = %+v", got)
+			}
+			if got := runCLI(t, home, "", "strategies", "delete", "3", "--json"); got.code != 1 || got.stdout != "" || got.stderr != strings.ReplaceAll(test.json, "SERVER", server.URL)+"\n" {
+				t.Errorf("delete --json API error = %+v", got)
 			}
 		})
 	}
 }
 
-func TestLoginRefusesCleartextToOtherHosts(t *testing.T) {
-	got := runCLI(t, t.TempDir(), testToken, "login", "prod", "--server", "http://scanner.example")
-	if got.code != 1 || !strings.HasPrefix(got.stderr, "scanner: ") {
-		t.Errorf("login = %+v, want a failure", got)
+// Login refuses cleartext to other hosts, and URLs with a path, which would
+// only lead to 404s.
+func TestLoginRefusesUnsuitableServers(t *testing.T) {
+	for _, server := range []string{"http://scanner.example", "https://scanner.example/api", "http://localhost:8080/?x=1"} {
+		got := runCLI(t, t.TempDir(), testToken, "login", "prod", "--server", server)
+		if got.code != 1 || !strings.HasPrefix(got.stderr, "scanner: --server ") {
+			t.Errorf("login --server %s = %+v, want a failure", server, got)
+		}
 	}
 }
 
@@ -459,6 +568,26 @@ func TestCompletionOffersProfileNames(t *testing.T) {
 	for _, args := range [][]string{{"use", ""}, {"favorites", "--profile", ""}} {
 		got := runCLI(t, home, "", append([]string{"__complete"}, args...)...)
 		if lines := strings.Split(got.stdout, "\n"); len(lines) < 3 || lines[0] != "dev" || lines[1] != "prod" {
+			t.Errorf("completion of %v = %q", args, got.stdout)
+		}
+	}
+}
+
+func TestCompletionOffersStrategiesAndFavorites(t *testing.T) {
+	_, server := newFakeAPI(t, map[string]string{
+		"GET /api/v1/admin/strategies": `{"items":[{"id":79,"name":"Dip buy","expression":"x","message":"","enabled":false,"valid":true}]}`,
+		"GET /api/v1/favorites":        `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
+	})
+	home := writeProfile(t, server.URL)
+
+	for args, want := range map[[3]string]string{
+		{"strategies", "delete", ""}:   "79\tDip buy",
+		{"strategies", "update", ""}:   "79\tDip buy",
+		{"backtest", "--strategy", ""}: "79\tDip buy",
+		{"backtest", "--symbol", ""}:   "BTCUSDT",
+	} {
+		got := runCLI(t, home, "", append([]string{"__complete"}, args[:]...)...)
+		if first, _, _ := strings.Cut(got.stdout, "\n"); first != want {
 			t.Errorf("completion of %v = %q", args, got.stdout)
 		}
 	}

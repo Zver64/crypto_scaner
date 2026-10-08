@@ -62,14 +62,22 @@ func TestUpdateStrategyPreservesUnspecifiedFields(t *testing.T) {
 	}
 }
 
-// --add-indicators alone sends no update when nothing is missing.
+// --add-indicators alone sends no update when nothing is missing and prints
+// the strategy as it is.
 func TestUpdateStrategyWithNothingToAddSendsNothing(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","message":"","enabled":false,"valid":true}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","message":"","enabled":false,"valid":true,"missing_indicators":[]}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[]}`,
 	})
-	if got := runCLI(t, writeProfile(t, server.URL), "", "strategies", "update", "6", "--add-indicators"); got.code != 0 || got.stdout != "no indicators to add\n" {
+	home := writeProfile(t, server.URL)
+
+	if got := runCLI(t, home, "", "strategies", "update", "6", "--add-indicators"); got.code != 0 || !strings.Contains(got.stdout, "│  6 │ off   │ Test │") || got.stderr != "no indicators to add\n" {
 		t.Fatalf("update = %+v", got)
+	}
+	got := runCLI(t, home, "", "strategies", "update", "6", "--add-indicators", "--json")
+	var printed apiclient.Strategy
+	if err := json.Unmarshal([]byte(got.stdout), &printed); err != nil || got.code != 0 || got.stderr != "" || printed.Id != 6 || printed.Expression != "m_rsi < 40" {
+		t.Fatalf("update --json = %+v", got)
 	}
 }
 

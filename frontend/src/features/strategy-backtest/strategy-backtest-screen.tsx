@@ -11,9 +11,15 @@ import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-d
 import { CoinChartPlaceholder } from "@/features/instrument-analysis/coin-chart-placeholder";
 import { chartIntervals } from "@/features/instrument-analysis/live-candle-store";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
+import { BacktestEvaluatedPeriod } from "@/features/strategy-backtest/backtest-evaluated-period";
+import { BacktestPeriodFields } from "@/features/strategy-backtest/backtest-period-fields";
 import { BacktestResults } from "@/features/strategy-backtest/backtest-results";
 import { CoinSelect } from "@/features/strategy-backtest/coin-select";
 import { StrategySelect } from "@/features/strategy-backtest/strategy-select";
+import {
+	backtestMarkers,
+	backtestPeriod,
+} from "@/features/strategy-backtest/utils";
 
 // The backtest chart draws candles, volume and trades only.
 const noIndicators = { "1h": [], "1d": [], "1w": [], "1M": [] } as const;
@@ -22,10 +28,15 @@ const runFailed = "The backtest could not be run.";
 
 interface StrategyBacktestScreenProps {
 	allCoins: boolean;
+	// The first and last UTC days of the period, YYYY-MM-DD; absent for the
+	// whole stored history on that side.
+	from: string | undefined;
 	onCoinChange(symbol: string | undefined, allCoins: boolean): void;
+	onPeriodChange(from: string | undefined, to: string | undefined): void;
 	onStrategyChange(strategy: number): void;
 	strategy: number | undefined;
 	symbol: string | undefined;
+	to: string | undefined;
 }
 
 // Replays a strategy over the stored history of the coin, simulates its trades
@@ -33,24 +44,39 @@ interface StrategyBacktestScreenProps {
 // reads and offers the coarser ones.
 export function StrategyBacktestScreen({
 	allCoins,
+	from,
 	onCoinChange,
+	onPeriodChange,
 	onStrategyChange,
 	strategy,
 	symbol,
+	to,
 }: StrategyBacktestScreenProps) {
 	const { contentSpacing, paperPadding } = useCoinPageLayout();
 	const permission = useBusinessRequestPermission();
 	const wide = useWideLayout();
 	const [requested, setRequested] = useState<
-		{ strategy: number; symbol: string } | undefined
+		| {
+				from: string | undefined;
+				strategy: number;
+				symbol: string;
+				to: string | undefined;
+		  }
+		| undefined
 	>();
 	const hasRun =
 		requested !== undefined &&
 		requested.strategy === strategy &&
-		requested.symbol === symbol;
+		requested.symbol === symbol &&
+		requested.from === from &&
+		requested.to === to;
+	const periodError =
+		from !== undefined && to !== undefined && from > to
+			? "The period starts after it ends."
+			: undefined;
 	const backtest = useBacktestStrategy(
 		strategy ?? 0,
-		{ symbol: symbol ?? "" },
+		{ symbol: symbol ?? "", ...backtestPeriod(from, to) },
 		{
 			query: {
 				// Only the Run button requests a backtest, including repeat runs.
@@ -72,18 +98,16 @@ export function StrategyBacktestScreen({
 		[backtest.data],
 	);
 	const tradeMarkers = useMemo(
-		() =>
-			backtest.data && {
-				entries: backtest.data.trades.map(({ entry_time }) => entry_time),
-				// An open trade has not sold.
-				exits: backtest.data.trades
-					.filter(({ open }) => !open)
-					.map(({ exit_time }) => exit_time),
-			},
+		() => backtest.data && backtestMarkers(backtest.data),
 		[backtest.data],
 	);
 	const canRun =
-		permission.allowed && strategy !== undefined && symbol !== undefined;
+		permission.allowed &&
+		strategy !== undefined &&
+		symbol !== undefined &&
+		periodError === undefined;
+
+	const result = hasRun && !backtest.isError ? backtest.data : undefined;
 
 	const controls = (
 		<Stack gap={contentSpacing}>
@@ -98,12 +122,18 @@ export function StrategyBacktestScreen({
 					symbol={symbol}
 				/>
 			</Group>
+			<BacktestPeriodFields
+				error={periodError}
+				from={from}
+				onChange={onPeriodChange}
+				to={to}
+			/>
 			<Button
 				disabled={!canRun}
 				loading={backtest.isFetching}
 				onClick={() => {
 					if (!canRun) return;
-					setRequested({ strategy, symbol });
+					setRequested({ from, strategy, symbol, to });
 					void backtest.refetch();
 				}}
 				size="sm"
@@ -111,9 +141,11 @@ export function StrategyBacktestScreen({
 			>
 				Run backtest
 			</Button>
+			{result ? (
+				<BacktestEvaluatedPeriod backtest={result} from={from} to={to} />
+			) : null}
 		</Stack>
 	);
-	const result = hasRun && !backtest.isError ? backtest.data : undefined;
 
 	// Wide screens keep the controls in the sidebar; phones show them above
 	// the chart. Results follow the chart on both.
@@ -195,6 +227,7 @@ export function StrategyBacktestScreen({
 							backtest={result}
 							gap={contentSpacing}
 							paperPadding={paperPadding}
+							period={from !== undefined || to !== undefined}
 						/>
 					</RefreshingOverlay>
 				) : null}

@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"errors"
 	"testing"
 
 	"crypto-scanner/internal/market"
@@ -91,5 +92,47 @@ func TestStepSkipsSignalsOutOfRange(t *testing.T) {
 	candle.OutOfRange = true
 	if next, events, processed := exiting.step(trade, candle); !processed || next.Buys != 0 || len(events) != 1 || events[0].Reason != ExitStopLoss {
 		t.Fatalf("processed %v, state %+v, events %+v", processed, next, events)
+	}
+}
+
+// A signal announces every turn of its entry from false to true and never
+// buys.
+func TestStepSignalsWithoutBuying(t *testing.T) {
+	entry := Entry{Strategy: Strategy{Signal: SignalShort}, Interval: market.IntervalHour}
+	state := TradeState{OpenTime: backtestHour(0)}
+	var kinds []TradeEventKind
+	for index, value := range []bool{true, true, false, true} {
+		next, events, processed := entry.step(state, flatCandle(index+1, 10, value, true, nil))
+		if !processed || next.Buys != 0 || next.Entry != value {
+			t.Fatalf("candle %d processed %v, state %+v", index+1, processed, next)
+		}
+		for _, event := range events {
+			kinds = append(kinds, event.Kind)
+		}
+		state = next
+	}
+	if len(kinds) != 2 || kinds[0] != TradeSignal || kinds[1] != TradeSignal {
+		t.Fatalf("events %v", kinds)
+	}
+}
+
+// A signal is long, short, or sideways and has no trading settings.
+func TestSignalsRejectTradingSettings(t *testing.T) {
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil))
+	usd := 1e9
+	for _, item := range []Strategy{
+		{Signal: "up"},
+		{Signal: SignalShort, ExitExpression: "h_close > 1"},
+		{Signal: SignalShort, TakeProfitExpression: "h_close * 2"},
+		{Signal: SignalShort, StopLossExpression: "h_close / 2"},
+		{Signal: SignalShort, MarketCap: MarketCapRange{MaxUSD: &usd}},
+	} {
+		item.Name, item.Expression = "Signal", "h_close > 5"
+		if _, err := service.entry(item); !errors.Is(err, ErrInvalidArgument) {
+			t.Fatalf("%+v: %v", item, err)
+		}
+	}
+	if _, err := service.entry(Strategy{Name: "Signal", Signal: SignalSideways, Expression: "h_close > 5"}); err != nil {
+		t.Fatal(err)
 	}
 }

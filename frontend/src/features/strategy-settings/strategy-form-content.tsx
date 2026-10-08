@@ -8,9 +8,18 @@ import {
 	TextInput,
 } from "@mantine/core";
 import { useEffect, useState } from "react";
-import type { StrategyUpdate, StrategyVariable } from "@/api/generated/models";
+import type {
+	SignalDirection,
+	StrategyUpdate,
+	StrategyVariable,
+} from "@/api/generated/models";
+import {
+	defaultSignalDirection,
+	signalDirectionLabels,
+} from "@/features/strategy-settings/constants";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import { StrategyMarketCapFields } from "@/features/strategy-settings/strategy-market-cap-fields";
+import { StrategyModeControl } from "@/features/strategy-settings/strategy-mode-control";
 import { StrategyPriceInput } from "@/features/strategy-settings/strategy-price-input";
 import {
 	parsePriceSetup,
@@ -18,7 +27,10 @@ import {
 	priceSetupComplete,
 	priceSetupExpression,
 } from "@/features/strategy-settings/strategy-price-input/utils";
-import type { StrategyDraft } from "@/features/strategy-settings/types";
+import type {
+	StrategyDraft,
+	StrategyMode,
+} from "@/features/strategy-settings/types";
 import {
 	emptyStrategyQuery,
 	marketCapErrors,
@@ -51,6 +63,12 @@ export function StrategyFormContent({
 	variables,
 }: StrategyFormContentProps) {
 	const [name, setName] = useState(draft.name);
+	const [mode, setMode] = useState<StrategyMode>(
+		draft.signal === null ? "strategy" : "signal",
+	);
+	const [direction, setDirection] = useState<SignalDirection>(
+		draft.signal ?? defaultSignalDirection,
+	);
 	const [message, setMessage] = useState(draft.message);
 	const [query, setQuery] = useState(draft.query);
 	const [exitQuery, setExitQuery] = useState(draft.exitQuery);
@@ -66,16 +84,20 @@ export function StrategyFormContent({
 	const [maxMarketCap, setMaxMarketCap] = useState<number | string>(
 		draft.maxMarketCap,
 	);
+	// A signal trades nothing, so its trading fields are hidden and sent
+	// empty; they come back when the strategy trades again.
+	const trades = mode === "strategy";
 	const exitExpression = exitQuery ? strategyExpression(exitQuery) : "";
 	const input: StrategyUpdate = {
-		exit_expression: exitExpression,
+		exit_expression: trades ? exitExpression : "",
 		expression: strategyExpression(query),
-		max_market_cap_usd: marketCapUsd(maxMarketCap),
+		max_market_cap_usd: trades ? marketCapUsd(maxMarketCap) : null,
 		message: message.trim(),
-		min_market_cap_usd: marketCapUsd(minMarketCap),
+		min_market_cap_usd: trades ? marketCapUsd(minMarketCap) : null,
 		name: name.trim(),
-		stop_loss_expression: priceSetupExpression(stopLoss),
-		take_profit_expression: priceSetupExpression(takeProfit),
+		signal: trades ? null : direction,
+		stop_loss_expression: trades ? priceSetupExpression(stopLoss) : "",
+		take_profit_expression: trades ? priceSetupExpression(takeProfit) : "",
 	};
 	const named = input.name !== "";
 	const boundErrors = marketCapErrors(
@@ -85,19 +107,24 @@ export function StrategyFormContent({
 	const marketCapValid = !boundErrors.minimum && !boundErrors.maximum;
 	const complete =
 		strategyQueryComplete(query) &&
-		(exitQuery === undefined || strategyQueryComplete(exitQuery)) &&
-		priceSetupComplete(takeProfit) &&
-		priceSetupComplete(stopLoss);
+		(!trades ||
+			((exitQuery === undefined || strategyQueryComplete(exitQuery)) &&
+				priceSetupComplete(takeProfit) &&
+				priceSetupComplete(stopLoss)));
+	// A stored signal has no trading fields, so they differ only when the
+	// signal does.
 	const dirty =
 		name !== draft.name ||
 		message !== draft.message ||
+		input.signal !== draft.signal ||
 		input.expression !== strategyExpression(draft.query) ||
-		exitExpression !==
-			(draft.exitQuery ? strategyExpression(draft.exitQuery) : "") ||
-		priceSetupChanged(takeProfit, parsePriceSetup(draft.takeProfit)) ||
-		priceSetupChanged(stopLoss, parsePriceSetup(draft.stopLoss)) ||
-		input.min_market_cap_usd !== marketCapUsd(draft.minMarketCap) ||
-		input.max_market_cap_usd !== marketCapUsd(draft.maxMarketCap);
+		(trades &&
+			(exitExpression !==
+				(draft.exitQuery ? strategyExpression(draft.exitQuery) : "") ||
+				priceSetupChanged(takeProfit, parsePriceSetup(draft.takeProfit)) ||
+				priceSetupChanged(stopLoss, parsePriceSetup(draft.stopLoss)) ||
+				input.min_market_cap_usd !== marketCapUsd(draft.minMarketCap) ||
+				input.max_market_cap_usd !== marketCapUsd(draft.maxMarketCap)));
 	useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 	const entryVariables = withoutPositionVariables(variables);
 	return (
@@ -112,13 +139,20 @@ export function StrategyFormContent({
 			/>
 			<Textarea
 				autosize
-				description="Sent in Telegram after the strategy name, coin, and the buy or sell instead of the rule and its values. Leave empty for the default text."
+				description="Sent in Telegram after the strategy name, coin, and the buy, sell, or signal instead of the rule and its values. Leave empty for the default text."
 				disabled={isSaving}
 				label="Message"
 				maxLength={1000}
 				minRows={2}
 				onChange={(event) => setMessage(event.currentTarget.value)}
 				value={message}
+			/>
+			<StrategyModeControl
+				direction={direction}
+				disabled={isSaving}
+				mode={mode}
+				onDirectionChange={setDirection}
+				onModeChange={setMode}
 			/>
 			{draft.incomplete ? (
 				<Alert color="yellow" variant="light">
@@ -134,70 +168,76 @@ export function StrategyFormContent({
 				title="Entry"
 				variables={entryVariables}
 			/>
-			{exitQuery ? (
-				<StrategyConditions
-					actions={
-						<Button
-							color="red"
+			{trades ? (
+				<>
+					{exitQuery ? (
+						<StrategyConditions
+							actions={
+								<Button
+									color="red"
+									disabled={isSaving}
+									onClick={() => setExitQuery(undefined)}
+									size="compact-sm"
+									variant="subtle"
+								>
+									Remove
+								</Button>
+							}
 							disabled={isSaving}
-							onClick={() => setExitQuery(undefined)}
-							size="compact-sm"
-							variant="subtle"
-						>
-							Remove
-						</Button>
-					}
-					disabled={isSaving}
-					exit
-					onChange={setExitQuery}
-					query={exitQuery}
-					title="Exit"
-					variables={variables}
-				/>
-			) : (
-				<Stack gap={4}>
-					<Group justify="space-between">
-						<Text fw={500} size="sm">
-							Exit
-						</Text>
-						<Button
-							disabled={isSaving}
-							onClick={() => setExitQuery(emptyStrategyQuery())}
-							size="compact-sm"
-							variant="subtle"
-						>
-							Add exit rule
-						</Button>
-					</Group>
-				</Stack>
-			)}
-			<StrategyPriceInput
-				disabled={isSaving}
-				label="Take profit"
-				onChange={setTakeProfit}
-				value={takeProfit}
-				variables={entryVariables}
-			/>
-			<StrategyPriceInput
-				disabled={isSaving}
-				label="Stop loss"
-				onChange={setStopLoss}
-				value={stopLoss}
-				variables={entryVariables}
-			/>
-			<StrategyMarketCapFields
-				disabled={isSaving}
-				errors={boundErrors}
-				maximum={maxMarketCap}
-				minimum={minMarketCap}
-				onMaximumChange={setMaxMarketCap}
-				onMinimumChange={setMinMarketCap}
-			/>
+							exit
+							onChange={setExitQuery}
+							query={exitQuery}
+							title="Exit"
+							variables={variables}
+						/>
+					) : (
+						<Stack gap={4}>
+							<Group justify="space-between">
+								<Text fw={500} size="sm">
+									Exit
+								</Text>
+								<Button
+									disabled={isSaving}
+									onClick={() => setExitQuery(emptyStrategyQuery())}
+									size="compact-sm"
+									variant="subtle"
+								>
+									Add exit rule
+								</Button>
+							</Group>
+						</Stack>
+					)}
+					<StrategyPriceInput
+						disabled={isSaving}
+						label="Take profit"
+						onChange={setTakeProfit}
+						value={takeProfit}
+						variables={entryVariables}
+					/>
+					<StrategyPriceInput
+						disabled={isSaving}
+						label="Stop loss"
+						onChange={setStopLoss}
+						value={stopLoss}
+						variables={entryVariables}
+					/>
+					<StrategyMarketCapFields
+						disabled={isSaving}
+						errors={boundErrors}
+						maximum={maxMarketCap}
+						minimum={minMarketCap}
+						onMaximumChange={setMaxMarketCap}
+						onMinimumChange={setMinMarketCap}
+					/>
+				</>
+			) : null}
 			<Text c="dimmed" size="xs">
 				{strategyBuysLabel(input)}.{" "}
-				{strategyExits(input)
-					? "Entry signals during a trade buy nothing."
-					: "Without an exit rule, take profit, or stop loss, every time the entry turns true buys."}
+				{!trades
+					? `Every time the entry turns true sends a ${signalDirectionLabels[direction].toLowerCase()} signal alert.`
+					: strategyExits(input)
+						? "Entry signals during a trade buy nothing."
+						: "Without an exit rule, take profit, or stop loss, every time the entry turns true buys."}
 			</Text>
 			{named ? null : (
 				<Text c="dimmed" size="xs">
@@ -209,7 +249,7 @@ export function StrategyFormContent({
 					Cancel
 				</Button>
 				<Button
-					disabled={!named || !complete || !marketCapValid}
+					disabled={!named || !complete || (trades && !marketCapValid)}
 					loading={isSaving}
 					onClick={() => onSubmit(input)}
 				>

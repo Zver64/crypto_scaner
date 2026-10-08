@@ -625,7 +625,11 @@ const maxSummaryLength = 4000
 // about instruments it reads that are not monitored, such as delisted ones,
 // which leave its results unknown.
 func summaryText(entry Entry, matching []Instrument, current snapshot) string {
-	text := "🎯 " + entry.Name + " is active\nEntry: " + entry.Expression + "\n"
+	text := "🎯 " + entry.Name + " is active\n"
+	if entry.Signal != "" {
+		text += "Signal: " + string(entry.Signal) + "\n"
+	}
+	text += "Entry: " + entry.Expression + "\n"
 	if entry.Exit != nil {
 		text += "Exit: " + entry.ExitExpression + "\n"
 	}
@@ -635,7 +639,7 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	if entry.StopLoss != nil {
 		text += "Stop loss: " + entry.StopLossExpression + "\n"
 	}
-	if !entry.Exits() {
+	if entry.Signal == "" && !entry.Exits() {
 		text += "No exit: every entry signal buys.\n"
 	}
 	if bounds := entry.MarketCap.String(); bounds != "" {
@@ -658,7 +662,11 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 		symbols[i] = instrument.Symbol
 	}
 	slices.Sort(symbols)
-	text += "Entry true now, buying once it turns true again: "
+	if entry.Signal != "" {
+		text += "Entry true now, signaling once it turns true again: "
+	} else {
+		text += "Entry true now, buying once it turns true again: "
+	}
 	for i, symbol := range symbols {
 		more := fmt.Sprintf(" and %d more", len(symbols)-i)
 		if len(text)+len(symbol)+2+len(more) > maxSummaryLength {
@@ -669,22 +677,20 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	return strings.TrimSuffix(text, ", ")
 }
 
-// alertText names the strategy, the instrument, and the buy, with the take
-// profit and stop loss of the trade it opens, or the sell of event and what
-// sold it, then the rule that signaled it and the values that rule read,
+// alertText names the strategy, the instrument, and the signal with the move
+// it expects, or the buy, with the take profit and stop loss of the trade it
+// opens, or the sell of event and what sold it, then the rule that signaled
+// it and the values that rule read,
 // named as it writes them. A sell at a take
 // profit or stop loss has no rule. A strategy message replaces the rule and
 // the values.
 func alertText(entry Entry, instrument Instrument, event TradeEvent, current snapshot) string {
-	title := "🟢 " + entry.Name + ": " + instrument.Symbol + " buy #" + strconv.Itoa(event.Buy) + " at " + formatNumber(event.Close)
-	if event.Trade.TakeProfit > 0 {
-		title += ", take profit " + formatNumber(event.Trade.TakeProfit)
-	}
-	if event.Trade.StopLoss > 0 {
-		title += ", stop loss " + formatNumber(event.Trade.StopLoss)
-	}
+	var title string
 	rule, source := entry.Compiled, entry.Expression
-	if event.Kind == TradeSell {
+	switch event.Kind {
+	case TradeSignal:
+		title = signalMarks[entry.Signal] + " " + entry.Name + ": " + instrument.Symbol + " " + string(entry.Signal) + " signal at " + formatNumber(event.Close)
+	case TradeSell:
 		price, reason := event.Close, "exit rule"
 		switch event.Reason {
 		case ExitTakeProfit:
@@ -695,6 +701,14 @@ func alertText(entry Entry, instrument Instrument, event TradeEvent, current sna
 		title = fmt.Sprintf("🔴 %s: %s sell %d buys at %s by %s, entry %s, pnl %+.2f%%",
 			entry.Name, instrument.Symbol, event.Trade.Buys, formatNumber(price), reason, formatNumber(event.Trade.EntryPrice()), 100*event.Return)
 		rule, source = entry.Exit, entry.ExitExpression
+	default:
+		title = "🟢 " + entry.Name + ": " + instrument.Symbol + " buy #" + strconv.Itoa(event.Buy) + " at " + formatNumber(event.Close)
+		if event.Trade.TakeProfit > 0 {
+			title += ", take profit " + formatNumber(event.Trade.TakeProfit)
+		}
+		if event.Trade.StopLoss > 0 {
+			title += ", stop loss " + formatNumber(event.Trade.StopLoss)
+		}
 	}
 	if entry.Message != "" {
 		return title + "\n" + entry.Message
@@ -717,6 +731,9 @@ func alertText(entry Entry, instrument Instrument, event TradeEvent, current sna
 	}
 	return strings.Join(lines, "\n")
 }
+
+// signalMarks start the alerts of signals by the move they expect.
+var signalMarks = map[Signal]string{SignalLong: "📈", SignalShort: "📉", SignalSideways: "↔️"}
 
 func formatNumber(value float64) string {
 	return strconv.FormatFloat(value, 'g', 6, 64)

@@ -27,7 +27,9 @@ type fakeAPI struct {
 	t         *testing.T
 	responses map[string]string // "METHOD path" → JSON body
 	status    int
-	bodies    map[string]string
+	// statuses override status for some "METHOD path" keys.
+	statuses map[string]int
+	bodies   map[string]string
 }
 
 func newFakeAPI(t *testing.T, responses map[string]string) (*fakeAPI, *httptest.Server) {
@@ -53,7 +55,10 @@ func (api *fakeAPI) ServeHTTP(response http.ResponseWriter, request *http.Reques
 		response.WriteHeader(http.StatusNotFound)
 		return
 	}
-	status := api.status
+	status, ok := api.statuses[key]
+	if !ok {
+		status = api.status
+	}
 	if status == http.StatusOK && request.Method == http.MethodPost && !strings.HasSuffix(request.URL.Path, "-validations") {
 		status = http.StatusCreated
 	}
@@ -253,7 +258,7 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 			t.Fatalf("strategies create %v = %+v", test.args, got)
 		}
 		wants := map[string]string{
-			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","stop_loss_expression":"","take_profit_expression":""}`,
+			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":null,"stop_loss_expression":"","take_profit_expression":""}`,
 		}
 		if test.add {
 			wants["POST /api/v1/admin/scanner-indicator-batches"] = `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`
@@ -445,6 +450,11 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 			t.Run(test.name+"/html="+strconv.FormatBool(html), func(t *testing.T) {
 				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					w.Header().Set("Content-Type", "application/json")
+					if r.URL.Path == "/api/v1/admin/strategies" && test.name == "delete" {
+						// Delete checks that the ID is a strategy first.
+						fmt.Fprint(w, `{"items":[{"id":3,"name":"Test","expression":"h_close > 1","valid":true}]}`)
+						return
+					}
 					if r.URL.Path != test.target {
 						// The create command validates before its writes.
 						if r.URL.Path != "/api/v1/admin/strategy-validations" {
@@ -484,8 +494,11 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 }
 
 func TestDeleteStrategy(t *testing.T) {
-	api, server := newFakeAPI(t, map[string]string{"DELETE /api/v1/admin/strategies/9223372036854775807": ""})
-	api.status = http.StatusNoContent
+	api, server := newFakeAPI(t, map[string]string{
+		"GET /api/v1/admin/strategies":                        `{"items":[{"id":9223372036854775807,"name":"Max","expression":"h_close > 1","valid":true}]}`,
+		"DELETE /api/v1/admin/strategies/9223372036854775807": "",
+	})
+	api.statuses = map[string]int{"DELETE /api/v1/admin/strategies/9223372036854775807": http.StatusNoContent}
 	home := writeProfile(t, server.URL)
 
 	for _, jsonOutput := range []bool{false, true} {
@@ -500,7 +513,7 @@ func TestDeleteStrategy(t *testing.T) {
 		if got.code != 0 || got.stdout != want || got.stderr != "" {
 			t.Fatalf("delete = %+v, want stdout %q", got, want)
 		}
-		if body, ok := api.bodies["DELETE /api/v1/admin/strategies/9223372036854775807"]; !ok || body != "" || len(api.bodies) != 1 {
+		if body, ok := api.bodies["DELETE /api/v1/admin/strategies/9223372036854775807"]; !ok || body != "" || len(api.bodies) != 2 {
 			t.Fatalf("delete requests = %v", api.bodies)
 		}
 	}
@@ -535,8 +548,11 @@ func TestDeleteStrategyReportsAPIErrors(t *testing.T) {
 		},
 	} {
 		t.Run(strconv.Itoa(test.status), func(t *testing.T) {
-			api, server := newFakeAPI(t, map[string]string{"DELETE /api/v1/admin/strategies/3": test.body})
-			api.status = test.status
+			api, server := newFakeAPI(t, map[string]string{
+				"GET /api/v1/admin/strategies":      `{"items":[{"id":3,"name":"Test","expression":"h_close > 1","valid":true}]}`,
+				"DELETE /api/v1/admin/strategies/3": test.body,
+			})
+			api.statuses = map[string]int{"DELETE /api/v1/admin/strategies/3": test.status}
 			home := writeProfile(t, server.URL)
 			if got := runCLI(t, home, "", "strategies", "delete", "3"); got.code != 1 || got.stdout != "" || got.stderr != "scanner: "+strings.ReplaceAll(test.text, "SERVER", server.URL)+"\n" {
 				t.Errorf("delete API error = %+v", got)

@@ -23,6 +23,7 @@ import {
 	arithmeticTokens,
 	comparisonTokens,
 	operandBoundaries,
+	signalDirectionLabels,
 	tokenPattern,
 } from "@/features/strategy-settings/constants";
 import {
@@ -369,6 +370,7 @@ export function newStrategyDraft(): Omit<StrategyDraft, "revision"> {
 	return {
 		id: undefined,
 		name: "",
+		signal: null,
 		message: "",
 		query: emptyStrategyQuery(),
 		exitQuery: undefined,
@@ -392,6 +394,7 @@ export function strategyDraft(
 	return {
 		id: strategy.id,
 		name: strategy.name,
+		signal: strategy.signal,
 		message: strategy.message,
 		query,
 		exitQuery,
@@ -470,11 +473,14 @@ export function strategyExits(
 	);
 }
 
-// How a strategy buys: once per trade when it exits, or at every entry
-// signal without any exit.
+// How a strategy buys: never for a signal, once per trade when it exits, or
+// at every entry signal without any exit.
 export function strategyBuysLabel(
-	strategy: Parameters<typeof strategyExits>[0],
+	strategy: Parameters<typeof strategyExits>[0] & Pick<Strategy, "signal">,
 ): string {
+	if (strategy.signal !== null) {
+		return `${signalDirectionLabels[strategy.signal]} signal, buys nothing`;
+	}
 	return strategyExits(strategy)
 		? "One buy per trade"
 		: "Buys at every entry signal and never sells";
@@ -482,7 +488,7 @@ export function strategyBuysLabel(
 
 // The title of the form editing draft.
 export function strategyFormTitle(draft: StrategyDraft): string {
-	return draft.id === undefined ? "New strategy" : "Edit strategy";
+	return draft.id === undefined ? "New strategy" : `Edit strategy #${draft.id}`;
 }
 
 // Validation and conflict messages come from the backend.

@@ -109,6 +109,12 @@ export const exitMarkerOptions = {
 	shape: "arrowDown",
 } satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
+export const markMarkerOptions = {
+	color: colors.gray[5],
+	position: "aboveBar",
+	shape: "circle",
+} satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
+
 export const volumeSeriesOptions = {
 	lastValueVisible: false,
 	priceFormat: { type: "volume" },

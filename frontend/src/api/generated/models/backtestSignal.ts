@@ -17,30 +17,19 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyExitExpression } from './strategyExitExpression.ts';
-import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
-import type { StrategyMessage } from './strategyMessage.ts';
-import type { StrategySignal } from './strategySignal.ts';
-import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
-import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
+import type { BacktestSignalOccurrence } from './backtestSignalOccurrence.ts';
+import type { BacktestSignalWindow } from './backtestSignalWindow.ts';
+import type { SignalDirection } from './signalDirection.ts';
 
-export interface StrategyInput {
+export interface BacktestSignal {
+  direction: SignalDirection;
+  /** Entry signals, oldest first. */
+  occurrences: BacktestSignalOccurrence[];
   /**
-     * @minLength 1
-     * @maxLength 64
+     * The moves over 3, 6, 12, and 24 candles after the close of each
+     * signal candle beside those after every evaluated candle. Moves may
+     * read stored candles after the evaluated period; a candle without
+     * enough later stored candles is left out of a window.
      */
-  name: string;
-  signal: StrategySignal;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
-  exit_expression: StrategyExitExpression;
-  take_profit_expression: StrategyTakeProfitExpression;
-  stop_loss_expression: StrategyStopLossExpression;
-  min_market_cap_usd: StrategyMarketCapBound | null;
-  max_market_cap_usd: StrategyMarketCapBound | null;
-  message: StrategyMessage;
-  enabled: boolean;
+  windows: BacktestSignalWindow[];
 }

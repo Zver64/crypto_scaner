@@ -78,7 +78,7 @@ func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (Li
 func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyRequestObject) (CreateStrategyResponseObject, error) {
 	body := request.Body
 	entry, err := api.strategies.Create(ctx, strategy.Strategy{
-		Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression,
+		Name: body.Name, Signal: strategySignal(body.Signal), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
 		MarketCap: strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
 		Message:   body.Message, Enabled: body.Enabled,
@@ -98,7 +98,7 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyRequestObject) (UpdateStrategyResponseObject, error) {
 	body := request.Body
 	entry, err := api.strategies.Update(ctx, strategy.Strategy{
-		ID: request.StrategyId, Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression,
+		ID: request.StrategyId, Name: body.Name, Signal: strategySignal(body.Signal), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
 		MarketCap: strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
 		Message:   body.Message,
@@ -182,7 +182,34 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	if !backtest.From.IsZero() {
 		dto.From, dto.To = &backtest.From, &backtest.To
 	}
+	if report := backtest.Signal; report != nil {
+		occurrences := make([]BacktestSignalOccurrence, len(report.Occurrences))
+		for i, occurrence := range report.Occurrences {
+			changes := make([]BacktestSignalChange, len(occurrence.Changes))
+			for j, change := range occurrence.Changes {
+				changes[j] = BacktestSignalChange{Candles: strategy.SignalWindows[j], Change: change}
+			}
+			occurrences[i] = BacktestSignalOccurrence{Time: occurrence.Time, Close: occurrence.Close, Values: backtestValues(occurrence.Values), Changes: changes}
+		}
+		windows := make([]BacktestSignalWindow, len(report.Windows))
+		for i, window := range report.Windows {
+			windows[i] = BacktestSignalWindow{Candles: window.Candles, Signals: signalStatsDTO(window.Signals), All: signalStatsDTO(window.All)}
+		}
+		dto.Signal = &BacktestSignal{Direction: SignalDirection(report.Direction), Occurrences: occurrences, Windows: windows}
+	}
 	return BacktestStrategy200JSONResponse(dto), nil
+}
+
+func signalStatsDTO(stats strategy.SignalStats) BacktestSignalStats {
+	return BacktestSignalStats{Count: stats.Count, Rise: stats.Rise, Fall: stats.Fall, Range: stats.Range, Hits: stats.Hits}
+}
+
+// strategySignal is the signal of a strategy, empty for a trading one.
+func strategySignal(signal *StrategySignal) strategy.Signal {
+	if signal == nil {
+		return ""
+	}
+	return strategy.Signal(*signal)
 }
 
 func backtestTradeDTO(trade strategy.Trade) BacktestTrade {
@@ -261,6 +288,9 @@ func (api *api) strategyDTO(entry strategy.Entry) Strategy {
 	}
 	if entry.Problem != "" {
 		dto.Problem = &entry.Problem
+	}
+	if entry.Signal != "" {
+		dto.Signal = new(StrategySignal(entry.Signal))
 	}
 	return dto
 }

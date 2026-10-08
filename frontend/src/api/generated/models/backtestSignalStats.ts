@@ -17,30 +17,27 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyExitExpression } from './strategyExitExpression.ts';
-import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
-import type { StrategyMessage } from './strategyMessage.ts';
-import type { StrategySignal } from './strategySignal.ts';
-import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
-import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
 
-export interface StrategyInput {
+/**
+ * Medians of the moves from a candle's close: the rise to the highest
+ * high and the fall to the lowest low over the window, and the range
+ * between them. Hits is the share of moves the signal expected: a rise
+ * above the fall for long, a fall deeper than the rise for short, and,
+ * for sideways, a range below the median range after every evaluated
+ * candle. All are null without moves.
+ */
+export interface BacktestSignalStats {
   /**
-     * @minLength 1
-     * @maxLength 64
+     * Moves measured.
+     * @minimum 0
      */
-  name: string;
-  signal: StrategySignal;
-  /**
-     * @minLength 1
-     * @maxLength 2000
-     */
-  expression: string;
-  exit_expression: StrategyExitExpression;
-  take_profit_expression: StrategyTakeProfitExpression;
-  stop_loss_expression: StrategyStopLossExpression;
-  min_market_cap_usd: StrategyMarketCapBound | null;
-  max_market_cap_usd: StrategyMarketCapBound | null;
-  message: StrategyMessage;
-  enabled: boolean;
+  count: number;
+  /** @nullable */
+  rise: number | null;
+  /** @nullable */
+  fall: number | null;
+  /** @nullable */
+  range: number | null;
+  /** @nullable */
+  hits: number | null;
 }

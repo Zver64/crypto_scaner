@@ -21,12 +21,14 @@ import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
 import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
+import type { StrategySignal } from './strategySignal.ts';
 import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
 import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
 
 export interface Strategy {
   id: number;
   name: string;
+  signal: StrategySignal;
   /** Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`. */
   expression: string;
   exit_expression: StrategyExitExpression;

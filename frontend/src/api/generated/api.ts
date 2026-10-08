@@ -4350,8 +4350,11 @@ export const getListStrategiesUrl = () => {
  * sells. A candle reaching the stop loss or the take profit sells the
  * trade there, the stop loss first when it reaches both; the exit rule
  * being true sells it at the next open. A sell counts the entry as
- * false on its candle. The administrator and users with strategy alerts
- * get a Telegram message for every buy and sell.
+ * false on its candle. A strategy with a `signal` is a signal instead:
+ * it has no exits or market cap range, buys nothing, and only announces
+ * its entry signals with the move it expects. The administrator and
+ * users with strategy alerts get a Telegram message for every buy, sell,
+ * and signal.
  * @summary List the strategies
  */
 export const listStrategies = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listStrategiesResponseSuccess> => {
@@ -5009,6 +5012,10 @@ export const getBacktestStrategyUrl = (strategyId: number,
  * cover the same evaluated period: buying and holding, and buying the
  * same amount at every candle (DCA). A backtest that does not finish
  * within its time limit fails with `backtest_too_heavy`.
+ *
+ * A signal trades nothing: its backtest has no trades and no baselines,
+ * and `signal` lists its entry signals and how the price moved after
+ * them.
  * @summary Backtest a saved strategy on one coin
  */
 export const backtestStrategy = async (strategyId: number,

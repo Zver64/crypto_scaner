@@ -20,6 +20,7 @@
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
+import type { StrategySignal } from './strategySignal.ts';
 import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
 import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
 
@@ -29,6 +30,7 @@ export interface StrategyUpdate {
      * @maxLength 64
      */
   name: string;
+  signal: StrategySignal;
   message: StrategyMessage;
   exit_expression: StrategyExitExpression;
   take_profit_expression: StrategyTakeProfitExpression;

@@ -3,6 +3,7 @@ package strategy
 import (
 	"context"
 	"fmt"
+	"math"
 	"slices"
 	"time"
 
@@ -49,8 +50,58 @@ type Backtest struct {
 	// first evaluated candle to the close of the last; DCA the net return of
 	// buying one quote unit at the open after every evaluated candle but the
 	// last, valued at the close of the last. Both are nil without such
-	// candles.
+	// candles, and for a signal.
 	BuyAndHold, DCA *float64
+	// Signal describes the entry signals of a signal, which trades nothing;
+	// nil for a trading strategy.
+	Signal *SignalReport
+}
+
+// SignalWindows are the counts of candles after a signal over which a
+// backtest measures how the price moved.
+var SignalWindows = []int{3, 6, 12, 24}
+
+// SignalReport is how the price moved after the entry signals of a signal,
+// measured from the close of each signal candle over each of SignalWindows,
+// beside the same measure after every evaluated candle.
+type SignalReport struct {
+	Direction Signal
+	// Occurrences are the entry signals, oldest first.
+	Occurrences []SignalOccurrence
+	Windows     []SignalWindow
+}
+
+// SignalOccurrence is an entry signal: Time is the open time of the candle
+// whose close signaled it, Close that close, and Values what the entry rule
+// read there. Changes holds, for each of SignalWindows, the change from that
+// close to the close as many candles later, nil when the stored history ends
+// before it.
+type SignalOccurrence struct {
+	Time    time.Time
+	Close   float64
+	Values  map[string]float64
+	Changes []*float64
+}
+
+// SignalWindow compares the moves over the Candles candles after the entry
+// signals with those after every evaluated candle. Outcomes may read stored
+// candles after the evaluated period; a candle without the Candles later
+// candles stored, without a gap, is left out of this window.
+type SignalWindow struct {
+	Candles      int
+	Signals, All SignalStats
+}
+
+// SignalStats describes the moves after Count candles: the medians of Rise,
+// the highest high over the close minus 1, Fall, the lowest low over the
+// close minus 1, and Range, the highest high minus the lowest low over the
+// close, and Hits, the share of moves the signal expected: a rise above the
+// fall for long, a fall below the rise for short, and for sideways a range
+// below the median range after every evaluated candle. All are nil without
+// moves.
+type SignalStats struct {
+	Count                   int
+	Rise, Fall, Range, Hits *float64
 }
 
 // Trade is a trade of one or more buys. EntryTime is the open time of the
@@ -165,7 +216,8 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, f
 // run replays the trades of entry on instrument over the candles of the
 // result's interval opening from from to to.
 func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrument, from, to time.Time, result *Backtest) error {
-	candles := replay.histories[result.Interval][instrument.ID]
+	history := replay.histories[result.Interval][instrument.ID]
+	candles := history
 	if !to.IsZero() {
 		end, found := slices.BinarySearchFunc(candles, to, func(candle market.Candle, to time.Time) int { return candle.OpenTime.Compare(to) })
 		if found {
@@ -177,6 +229,9 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 	// fills are the buys of the open trade, the last ones pending until
 	// their candle opens.
 	var fills []Fill
+	// signals are the indexes of the candles a signal signaled at.
+	var signals []int
+	var occurrences []SignalOccurrence
 	first := -1
 	equity, peak := 1.0, 1.0
 	var returns, bars []float64
@@ -235,6 +290,12 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 				fills = append(fills, Fill{Signal: candle.OpenTime.UTC(), Values: entry.Compiled.Values(current.resolver(entry, instrument.ID, nil))})
 			case TradeSkip:
 				result.Skipped++
+			case TradeSignal:
+				signals = append(signals, index)
+				occurrences = append(occurrences, SignalOccurrence{
+					Time: candle.OpenTime.UTC(), Close: candle.Close, Values: entry.Compiled.Values(current.resolver(entry, instrument.ID, nil)),
+					Changes: signalChanges(result.Interval, history, index),
+				})
 			case TradeSell:
 				trade := Trade{
 					EntryTime: event.Trade.OpenedAt, EntryPrice: event.Trade.EntryPrice(), Buys: event.Trade.Buys,
@@ -268,8 +329,130 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 	}
 	result.NetProfit = equity - 1
 	result.Stats = tradeStats(returns, bars, reasons)
-	result.baselines(candles, first)
+	if entry.Signal == "" {
+		result.baselines(candles, first)
+		return nil
+	}
+	result.Signal = &SignalReport{Direction: entry.Signal, Occurrences: occurrences}
+	if first >= 0 {
+		result.Signal.Windows = signalWindows(entry.Signal, result.Interval, history, signals, first, len(candles)-1)
+	}
 	return nil
+}
+
+// signalWindows measures the moves of history, candles of interval, after
+// the candles at signals and after every evaluated candle, from first through
+// last, over each of SignalWindows.
+func signalWindows(direction Signal, interval market.CandleInterval, history []market.Candle, signals []int, first, last int) []SignalWindow {
+	all, after := make([][]signalMove, len(SignalWindows)), make([][]signalMove, len(SignalWindows))
+	collect := func(moves [][]signalMove, at int) {
+		for index, move := range signalMovesAt(interval, history, at) {
+			moves[index] = append(moves[index], move)
+		}
+	}
+	for at := first; at <= last; at++ {
+		collect(all, at)
+	}
+	for _, at := range signals {
+		collect(after, at)
+	}
+	windows := make([]SignalWindow, len(SignalWindows))
+	for index, size := range SignalWindows {
+		every := signalStats(direction, all[index], nil)
+		windows[index] = SignalWindow{Candles: size, Signals: signalStats(direction, after[index], every.Range), All: every}
+	}
+	return windows
+}
+
+// signalChanges are the changes from the close of the candle of history, of
+// interval, at at to the close each of SignalWindows later, nil past the
+// history or across a gap in it.
+func signalChanges(interval market.CandleInterval, history []market.Candle, at int) []*float64 {
+	changes := make([]*float64, len(SignalWindows))
+	for index, size := range SignalWindows {
+		if signalWindowStored(interval, history, at, size) {
+			changes[index] = new(history[at+size].Close/history[at].Close - 1)
+		}
+	}
+	return changes
+}
+
+// signalWindowStored reports whether history, candles of interval, holds the
+// size candles right after the one at at, without a gap, and that candle has
+// a close to measure from.
+func signalWindowStored(interval market.CandleInterval, history []market.Candle, at, size int) bool {
+	return at+size < len(history) && history[at].Close > 0 &&
+		interval.CandlesBetween(history[at].OpenTime, history[at+size].OpenTime) == size+1
+}
+
+// signalMove is how far the price rose, fell, and ranged after a candle, as
+// fractions of its close.
+type signalMove struct {
+	rise, fall, size float64
+}
+
+// signalMovesAt measures the moves over each of SignalWindows after the
+// candle of history at at, in their order, extending one running high and
+// low; it stops at the first window without its candles stored, since the
+// longer ones lack them too.
+func signalMovesAt(interval market.CandleInterval, history []market.Candle, at int) []signalMove {
+	var moves []signalMove
+	closing := history[at].Close
+	high, low := 0.0, math.Inf(1)
+	next := at + 1
+	for _, size := range SignalWindows {
+		if !signalWindowStored(interval, history, at, size) {
+			break
+		}
+		for _, candle := range history[next : at+size+1] {
+			high, low = max(high, candle.High), min(low, candle.Low)
+		}
+		next = at + size + 1
+		moves = append(moves, signalMove{rise: high/closing - 1, fall: low/closing - 1, size: (high - low) / closing})
+	}
+	return moves
+}
+
+// signalStats describes moves, counting hits by direction; a sideways move
+// hits when its range is below typical, or below the median range of moves
+// when typical is nil.
+func signalStats(direction Signal, moves []signalMove, typical *float64) SignalStats {
+	stats := SignalStats{Count: len(moves)}
+	if len(moves) == 0 {
+		return stats
+	}
+	rises, falls, sizes := make([]float64, len(moves)), make([]float64, len(moves)), make([]float64, len(moves))
+	for index, move := range moves {
+		rises[index], falls[index], sizes[index] = move.rise, move.fall, move.size
+	}
+	stats.Rise, stats.Fall, stats.Range = median(rises), median(falls), median(sizes)
+	if typical == nil {
+		typical = stats.Range
+	}
+	hits := 0
+	for _, move := range moves {
+		switch {
+		case direction == SignalLong && move.rise > -move.fall,
+			direction == SignalShort && -move.fall > move.rise,
+			direction == SignalSideways && typical != nil && move.size < *typical:
+			hits++
+		}
+	}
+	stats.Hits = new(float64(hits) / float64(len(moves)))
+	return stats
+}
+
+// median is the median of values, nil without values; it sorts values.
+func median(values []float64) *float64 {
+	if len(values) == 0 {
+		return nil
+	}
+	slices.Sort(values)
+	middle := len(values) / 2
+	if len(values)%2 == 0 {
+		return new((values[middle-1] + values[middle]) / 2)
+	}
+	return new(values[middle])
 }
 
 // baselines fills the baselines from the candles of the result's interval,

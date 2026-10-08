@@ -19,7 +19,7 @@ func TestWrapCellsKeepsJoinedEmojiTogether(t *testing.T) {
 		t.Fatalf("wrap = %q", got)
 	}
 	var output bytes.Buffer
-	renderStrategiesWidth(&output, []apiclient.Strategy{{Id: 1, Name: "A👨‍👩‍👧‍👦B❤️", Expression: "true", Valid: true}}, 80)
+	renderStrategiesWidth(&output, strategiesKind, []apiclient.Strategy{{Id: 1, Name: "A👨‍👩‍👧‍👦B❤️", Expression: "true", Valid: true}}, 80)
 	lines := strings.Split(strings.TrimSpace(output.String()), "\n")
 	width := uniseg.StringWidth(lines[0])
 	for _, line := range lines {
@@ -37,7 +37,7 @@ func TestStrategiesFitTerminalWidth(t *testing.T) {
 	}}
 	for _, width := range []int{20, 29, 35, 36, 40, 80, 120} {
 		var output bytes.Buffer
-		renderStrategiesWidth(&output, strategies, width)
+		renderStrategiesWidth(&output, strategiesKind, strategies, width)
 		for line := range strings.Lines(output.String()) {
 			if got := uniseg.StringWidth(strings.TrimSuffix(line, "\n")); got > width {
 				t.Fatalf("width %d: line is %d cells: %q", width, got, line)

@@ -18,10 +18,10 @@ export function StrategySelect({ onChange, strategy }: StrategySelectProps) {
 			data={(strategies.data ?? []).map(({ enabled, id, name, valid }) => ({
 				disabled: !valid,
 				label: !valid
-					? `${name} (invalid)`
+					? `#${id} ${name} (invalid)`
 					: enabled
-						? name
-						: `${name} (disabled)`,
+						? `#${id} ${name}`
+						: `#${id} ${name} (disabled)`,
 				value: String(id),
 			}))}
 			disabled={strategies.isPending}

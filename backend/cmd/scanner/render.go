@@ -57,15 +57,19 @@ func terminalWidth(w io.Writer) int {
 	return width
 }
 
-// renderStrategies prints the strategies; on a terminal, the Name, Entry, and
-// Exit cells wrap to fit its width.
-func renderStrategies(w io.Writer, strategies []apiclient.Strategy) {
-	renderStrategiesWidth(w, strategies, terminalWidth(w))
+// renderStrategies prints the strategies of k; on a terminal, the Name, Entry,
+// and Exit cells wrap to fit its width. Signals show the move they expect
+// instead of how they trade.
+func renderStrategies(w io.Writer, k kind, strategies []apiclient.Strategy) {
+	renderStrategiesWidth(w, k, strategies, terminalWidth(w))
 }
 
 // renderStrategiesWidth also accepts an explicit width for non-terminal tests.
-func renderStrategiesWidth(w io.Writer, strategies []apiclient.Strategy, width int) {
+func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy, width int) {
 	header := table.Row{"ID", "State", "Name", "Entry", "Exit", "Buys", "Market cap"}
+	if k.signals {
+		header = table.Row{"ID", "State", "Name", "Entry", "Signal"}
+	}
 	var rows []table.Row
 	widths := make([]int, len(header))
 	measure := func(row table.Row) {
@@ -95,6 +99,9 @@ func renderStrategiesWidth(w io.Writer, strategies []apiclient.Strategy, width i
 			name += "\nmessage: " + strategy.Message
 		}
 		row := table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy), marketCapRange(strategy)}
+		if k.signals && strategy.Signal != nil {
+			row = table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), string(*strategy.Signal)}
+		}
 		rows = append(rows, row)
 		measure(row)
 	}
@@ -248,6 +255,10 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period boo
 		fmt.Fprintf(w, "%s: no stored candles of this interval yet; synchronization fills them first.\n", backtest.Symbol)
 		return
 	}
+	if backtest.Signal != nil {
+		renderSignal(w, backtest, *backtest.Signal)
+		return
+	}
 	t := newTable()
 	t.AppendRows([]table.Row{
 		{"Coin", backtest.Symbol},
@@ -263,6 +274,73 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period boo
 	}
 	renderSummary(w, backtest.Summary, backtest.Baselines)
 	renderTrades(w, backtest.Interval, backtest.Trades)
+}
+
+// renderSignal prints the backtest of a signal: the moves after its signals
+// beside those after every candle, then its newest maxTradeRows signals.
+func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apiclient.BacktestSignal) {
+	t := newTable()
+	t.AppendRows([]table.Row{
+		{"Coin", backtest.Symbol},
+		{"Period", fmt.Sprintf("%s → %s (%s candles)", day(*backtest.From), day(*backtest.To), backtest.Interval)},
+		{"Signal", fmt.Sprintf("%s, %d signals", signal.Direction, len(signal.Occurrences))},
+	})
+	fmt.Fprintln(w, t.Render())
+	if len(signal.Occurrences) == 0 {
+		fmt.Fprintln(w, "No signals: the entry did not turn true on this coin in the stored history.")
+		return
+	}
+	fmt.Fprintln(w, "Moves from the signal candle's close over the next candles, medians: rise to the highest high, fall to the lowest low, and the range between them. Hits: "+signalHits[signal.Direction]+". All: the same after every evaluated candle.")
+	t = newTable()
+	t.AppendHeader(table.Row{"Candles", "After", "Count", "Rise %", "Fall %", "Range %", "Hits %"})
+	t.SetColumnConfigs([]table.ColumnConfig{{Number: 3, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 6, Align: text.AlignRight}, {Number: 7, Align: text.AlignRight}})
+	for index, window := range signal.Windows {
+		if index > 0 {
+			t.AppendSeparator()
+		}
+		for _, row := range []struct {
+			label string
+			stats apiclient.BacktestSignalStats
+		}{{"signals", window.Signals}, {"all", window.All}} {
+			candles := ""
+			if row.label == "signals" {
+				candles = strconv.Itoa(window.Candles)
+			}
+			t.AppendRow(table.Row{candles, row.label, row.stats.Count, percent(row.stats.Rise), percent(row.stats.Fall), percent(row.stats.Range), share(row.stats.Hits)})
+		}
+	}
+	fmt.Fprintln(w, t.Render())
+	layout := candleTimeLayout(backtest.Interval)
+	fmt.Fprintln(w, "Signals, newest first, with the change of the close N candles later; --json adds the values the entry read.")
+	t = newTable()
+	t.SetAutoIndex(true)
+	header := table.Row{"Candle", "Close"}
+	configs := []table.ColumnConfig{{Number: 2, Align: text.AlignRight}}
+	for index, window := range signal.Windows {
+		header = append(header, fmt.Sprintf("+%d %%", window.Candles))
+		configs = append(configs, table.ColumnConfig{Number: 3 + index, Align: text.AlignRight})
+	}
+	t.AppendHeader(header)
+	t.SetColumnConfigs(configs)
+	occurrences := signal.Occurrences
+	for _, occurrence := range slices.Backward(occurrences[max(0, len(occurrences)-maxTradeRows):]) {
+		row := table.Row{occurrence.Time.UTC().Format(layout), price(occurrence.Close)}
+		for _, change := range occurrence.Changes {
+			row = append(row, percent(change.Change))
+		}
+		t.AppendRow(row)
+	}
+	fmt.Fprintln(w, t.Render())
+	if more := len(occurrences) - maxTradeRows; more > 0 {
+		fmt.Fprintf(w, "… %d more (use --json)\n", more)
+	}
+}
+
+// signalHits tells which moves a signal of each direction expected.
+var signalHits = map[apiclient.SignalDirection]string{
+	apiclient.Long:     "rise above the fall",
+	apiclient.Short:    "fall deeper than the rise",
+	apiclient.Sideways: "range below the median range of all candles",
 }
 
 // renderSummary lists the Mini App's metric cards: the net profit with the
@@ -290,10 +368,7 @@ func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines api
 // renderTrades lists the newest maxTradeRows trades, newest first like the
 // Mini App.
 func renderTrades(w io.Writer, interval apiclient.CandleInterval, trades []apiclient.BacktestTrade) {
-	layout := time.DateOnly
-	if interval == apiclient.N1h {
-		layout = "2006-01-02 15:04"
-	}
+	layout := candleTimeLayout(interval)
 	// A title would wrap mid-sentence on the narrow tables of daily and
 	// coarser intervals.
 	fmt.Fprintln(w, "Trades: buys and exit rule sells fill at the open after their signal, TP and SL on the candle reaching them; an open trade is valued at the last close; returns are after fees.")
@@ -321,6 +396,15 @@ func renderTrades(w io.Writer, interval apiclient.CandleInterval, trades []apicl
 	if more := len(trades) - maxTradeRows; more > 0 {
 		fmt.Fprintf(w, "… %d more (use --json)\n", more)
 	}
+}
+
+// candleTimeLayout writes candle times of interval: with the hour for hourly
+// candles, as dates otherwise.
+func candleTimeLayout(interval apiclient.CandleInterval) string {
+	if interval == apiclient.N1h {
+		return "2006-01-02 15:04"
+	}
+	return time.DateOnly
 }
 
 func factor(value *float64) string {

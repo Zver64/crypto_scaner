@@ -2,6 +2,7 @@ import type { AutoscaleInfo, IRange, UTCTimestamp } from "lightweight-charts";
 import {
 	entryMarkerOptions,
 	exitMarkerOptions,
+	markMarkerOptions,
 } from "@/features/candle-chart/config";
 import {
 	dayTimeFormat,
@@ -79,11 +80,12 @@ export function createIndicatorData(
 // Aggregate trades once per selection/interval. Each chart owns its selector;
 // immutable candle arrays with only OHLC changes reuse the marker array.
 export function createMarkerDataSelector(
-	{ entries, exits }: ChartTradeMarkers,
+	{ entries, exits, marks = [] }: ChartTradeMarkers,
 	interval: ChartInterval,
 ) {
 	const entryCounts = countByCandle(entries, interval);
 	const exitCounts = countByCandle(exits, interval);
+	const markCounts = countByCandle(marks, interval);
 	let previous: readonly ChartCandleSlot[] = [];
 	let result: ChartMarker[] = [];
 	return (data: readonly ChartCandleSlot[]): ChartMarker[] => {
@@ -112,6 +114,11 @@ export function createMarkerDataSelector(
 						...candleMarker(
 							exitMarkerOptions,
 							exitCounts.get(slot.time),
+							slot.time,
+						),
+						...candleMarker(
+							markMarkerOptions,
+							markCounts.get(slot.time),
 							slot.time,
 						),
 					]

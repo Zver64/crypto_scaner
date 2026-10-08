@@ -23,6 +23,13 @@ function StrategyBacktestPage() {
 					}),
 				})
 			}
+			from={search.from}
+			onPeriodChange={(from, to) =>
+				void navigate({
+					replace: true,
+					search: (previous) => ({ ...previous, from, to }),
+				})
+			}
 			onStrategyChange={(strategy) =>
 				void navigate({
 					replace: true,
@@ -31,6 +38,7 @@ function StrategyBacktestPage() {
 			}
 			strategy={search.strategy}
 			symbol={search.symbol}
+			to={search.to}
 		/>
 	);
 }

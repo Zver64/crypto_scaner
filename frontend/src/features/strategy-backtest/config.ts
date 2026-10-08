@@ -20,3 +20,8 @@ export const equitySeriesOptions = {
 	lineWidth: 2,
 	priceLineVisible: false,
 } satisfies LineSeriesPartialOptions;
+
+// Saturation and lightness, in percent, of the hits gradient of signal
+// windows.
+export const hitsColorSaturation = 70;
+export const hitsColorLightness = 50;

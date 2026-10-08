@@ -17,12 +17,15 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { BacktestSignalChange } from './backtestSignalChange.ts';
+import type { BacktestValues } from './backtestValues.ts';
 
-/**
- * Telegram alert text that follows the strategy name, the coin symbol,
- * and the buy, the sell, or the signal in place of the rule and the
- * values it read;
- * empty keeps the generated text.
- * @maxLength 1000
- */
-export type StrategyMessage = string;
+export interface BacktestSignalOccurrence {
+  /** Open time of the candle whose close signaled. */
+  time: string;
+  close: number;
+  /** What the entry rule read at the signal. */
+  values: BacktestValues;
+  /** Changes from the close of the signal candle to the close 3, 6, 12, and 24 candles later, in the order of the windows. */
+  changes: BacktestSignalChange[];
+}

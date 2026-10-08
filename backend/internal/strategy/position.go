@@ -41,6 +41,8 @@ const (
 	// outside the market cap range, the strategy exits and holds a trade, or
 	// its take profit or stop loss is not on its side of the close.
 	TradeSkip
+	// TradeSignal is an entry signal of a signal, which buys nothing.
+	TradeSignal
 )
 
 // ExitReason tells what sold a trade.
@@ -91,7 +93,8 @@ type TradeCandle struct {
 // when it opens past one, otherwise at the price itself, the stop loss first
 // when the candle reaches both. Otherwise, while a trade is open, a true exit
 // rule sells every buy at the next open. A sell counts the entry as false on
-// its candle, so that the next candle can signal again. Otherwise an entry
+// its candle, so that the next candle can signal again. An entry signal of a
+// signal only announces itself. Otherwise an entry
 // signal outside the market cap range is skipped; otherwise it opens a trade, fixing its take profit and stop loss when the close
 // lies between them and skipping otherwise, or, for a strategy that never
 // sells, adds a buy; a strategy that exits skips signals while it holds a
@@ -137,6 +140,9 @@ func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, 
 	next.Entry = candle.Entry
 	if !signal {
 		return next, nil, true
+	}
+	if entry.Signal != "" {
+		return next, []TradeEvent{{Kind: TradeSignal, Close: candle.Close}}, true
 	}
 	if candle.OutOfRange {
 		return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true

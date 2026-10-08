@@ -150,9 +150,22 @@ func (c *cli) favoritesCommand() *cobra.Command {
 }
 
 func (c *cli) strategiesCommand() *cobra.Command {
-	command := &cobra.Command{
-		Use:   "strategies",
-		Short: "Saved strategies: ID, state, name with any problem and message, entry, exits, buys, market cap",
+	command := c.listCommand(strategiesKind, "Saved strategies: ID, state, name with any problem and message, entry, exits, buys, market cap")
+	command.AddCommand(c.createStrategyCommand(), c.updateStrategyCommand(), c.deleteCommand(strategiesKind))
+	return command
+}
+
+func (c *cli) signalsCommand() *cobra.Command {
+	command := c.listCommand(signalsKind, "Saved signals: ID, state, name with any problem and message, entry, expected move")
+	command.AddCommand(c.createSignalCommand(), c.updateSignalCommand(), c.deleteCommand(signalsKind))
+	return command
+}
+
+// listCommand lists the saved strategies of k.
+func (c *cli) listCommand(k kind, short string) *cobra.Command {
+	return &cobra.Command{
+		Use:   k.plural,
+		Short: short,
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			client, err := c.client()
@@ -166,18 +179,21 @@ func (c *cli) strategiesCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c.print(command, strategies.Body, func(w io.Writer) {
-				if len(strategies.JSON200.Items) == 0 {
-					fmt.Fprintln(w, "no strategies; create one with scanner strategies create")
+			items := slices.DeleteFunc(strategies.JSON200.Items, func(strategy apiclient.Strategy) bool { return !k.holds(strategy) })
+			raw, err := json.Marshal(apiclient.StrategyList{Items: items})
+			if err != nil {
+				return err
+			}
+			c.print(command, raw, func(w io.Writer) {
+				if len(items) == 0 {
+					fmt.Fprintf(w, "no %s; create one with scanner %s create\n", k.plural, k.plural)
 					return
 				}
-				renderStrategies(w, strategies.JSON200.Items)
+				renderStrategies(w, k, items)
 			})
 			return nil
 		},
 	}
-	command.AddCommand(c.createStrategyCommand(), c.updateStrategyCommand(), c.deleteStrategyCommand())
-	return command
 }
 
 // strategyID parses the ID argument of a saved strategy.
@@ -189,12 +205,12 @@ func strategyID(arg string) (int64, error) {
 	return id, nil
 }
 
-func (c *cli) deleteStrategyCommand() *cobra.Command {
+func (c *cli) deleteCommand(k kind) *cobra.Command {
 	return &cobra.Command{
 		Use:               "delete ID",
-		Short:             "Delete a saved strategy",
+		Short:             "Delete a saved " + k.noun,
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: c.completeStrategyArg,
+		ValidArgsFunction: c.completeArg(k),
 		RunE: func(command *cobra.Command, args []string) error {
 			id, err := strategyID(args[0])
 			if err != nil {
@@ -202,6 +218,9 @@ func (c *cli) deleteStrategyCommand() *cobra.Command {
 			}
 			client, err := c.client()
 			if err != nil {
+				return err
+			}
+			if _, err := c.saved(command, client, k, id); err != nil {
 				return err
 			}
 			deleted, err := client.DeleteStrategyWithResponse(command.Context(), id)
@@ -214,7 +233,7 @@ func (c *cli) deleteStrategyCommand() *cobra.Command {
 			if c.json {
 				return printJSON(command, map[string]int{"deleted": 1})
 			}
-			command.Printf("deleted strategy %d\n", id)
+			command.Printf("deleted %s %d\n", k.noun, id)
 			return nil
 		},
 	}
@@ -259,7 +278,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			c.print(command, created.Body, func(w io.Writer) { renderStrategies(w, []apiclient.Strategy{*created.JSON201}) })
+			c.print(command, created.Body, func(w io.Writer) { renderStrategies(w, strategiesKind, []apiclient.Strategy{*created.JSON201}) })
 			return nil
 		},
 	}
@@ -352,7 +371,7 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 		Use:               "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
 		Short:             "Edit a disabled saved strategy, preserving unspecified fields",
 		Args:              cobra.ExactArgs(1),
-		ValidArgsFunction: c.completeStrategyArg,
+		ValidArgsFunction: c.completeArg(strategiesKind),
 		RunE: func(command *cobra.Command, args []string) error {
 			id, err := strategyID(args[0])
 			if err != nil {
@@ -376,29 +395,12 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			listed, err := client.ListStrategiesWithResponse(command.Context())
-			if err == nil {
-				err = c.check(listed, listed.JSON200 != nil)
-			}
+			current, err := c.editable(command, client, strategiesKind, id)
 			if err != nil {
 				return err
 			}
-			var current *apiclient.Strategy
-			for _, entry := range listed.JSON200.Items {
-				if entry.Id == id {
-					current = &entry
-					break
-				}
-			}
-			if current == nil {
-				return failure("strategy_not_found", "no strategy %d; see scanner strategies", id)
-			}
-			// Enabled strategies alert; only the Mini App edits them.
-			if current.Enabled {
-				return failure("strategy_enabled", "strategy %d is enabled; edit it in the Mini App", id)
-			}
 			body := apiclient.StrategyUpdate{
-				Name: current.Name, Expression: current.Expression, ExitExpression: current.ExitExpression,
+				Name: current.Name, Signal: current.Signal, Expression: current.Expression, ExitExpression: current.ExitExpression,
 				TakeProfitExpression: current.TakeProfitExpression, StopLossExpression: current.StopLossExpression,
 				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
 			}
@@ -434,32 +436,7 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 				change.rule.expression = *change.target
 				rules = append(rules, change.rule)
 			}
-			missing, err := c.prepareStrategyRules(command, client, rules, addIndicators)
-			if err != nil {
-				return err
-			}
-			// Adding nothing changes nothing, so nothing is sent, and the
-			// strategy is printed as it is.
-			if len(missing) == 0 && !slices.ContainsFunc(edits, flags.Changed) {
-				if !c.json {
-					command.PrintErrln("no indicators to add")
-				}
-				raw, err := json.Marshal(current)
-				if err != nil {
-					return err
-				}
-				c.print(command, raw, func(w io.Writer) { renderStrategies(w, []apiclient.Strategy{*current}) })
-				return nil
-			}
-			updated, err := client.UpdateStrategyWithResponse(command.Context(), id, body)
-			if err == nil {
-				err = c.check(updated, updated.JSON200 != nil, updated.JSON400, updated.JSON404, updated.JSON409)
-			}
-			if err != nil {
-				return err
-			}
-			c.print(command, updated.Body, func(w io.Writer) { renderStrategies(w, []apiclient.Strategy{*updated.JSON200}) })
-			return nil
+			return c.update(command, client, strategiesKind, *current, body, rules, addIndicators, slices.ContainsFunc(edits, flags.Changed))
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")

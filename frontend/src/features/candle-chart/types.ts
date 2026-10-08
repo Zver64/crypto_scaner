@@ -78,10 +78,12 @@ export interface ChartIndicatorPane {
 	indicators: readonly ChartPaneIndicatorOptions[];
 	scale: ChartIndicatorScale;
 }
-// Entry and exit times of trades.
+// Entry and exit times of trades, arrows under and over their candles, and
+// other marked times, circles over their candles.
 export interface ChartTradeMarkers {
 	entries: readonly string[];
 	exits: readonly string[];
+	marks?: readonly string[];
 }
 export interface ChartReadoutOptions {
 	label: string;

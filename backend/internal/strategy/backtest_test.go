@@ -556,3 +556,82 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 		}
 	}
 }
+
+// Signal windows measure the moves after the signal candles beside those
+// after every evaluated candle, leaving out candles without a whole window,
+// and count hits by the expected move.
+func TestSignalWindowsCompareSignalsWithEveryCandle(t *testing.T) {
+	// Close, high, and low of each candle.
+	prices := [][3]float64{{10, 10, 10}, {10, 12, 9}, {10, 11, 7}, {10, 10, 10}, {10, 11, 10}, {10, 10, 10}}
+	history := make([]market.Candle, len(prices))
+	for index, price := range prices {
+		history[index] = market.Candle{OpenTime: backtestHour(index), Open: price[0], Close: price[0], High: price[1], Low: price[2]}
+	}
+	approx := func(value *float64, want float64) bool { return value != nil && math.Abs(*value-want) < 1e-9 }
+	for _, test := range []struct {
+		direction Signal
+		hits      float64
+		all       float64
+	}{
+		{direction: SignalShort, hits: 1, all: 2.0 / 3},
+		{direction: SignalLong, hits: 0, all: 1.0 / 3},
+		{direction: SignalSideways, hits: 0, all: 1.0 / 3},
+	} {
+		t.Run(string(test.direction), func(t *testing.T) {
+			// The signal at candle 3 has no 3 later candles.
+			windows := signalWindows(test.direction, market.IntervalHour, history, []int{0, 3}, 0, len(history)-1)
+			if len(windows) != len(SignalWindows) || windows[0].Candles != 3 {
+				t.Fatalf("windows %+v", windows)
+			}
+			signals, all := windows[0].Signals, windows[0].All
+			if signals.Count != 1 || !approx(signals.Rise, 0.2) || !approx(signals.Fall, -0.3) || !approx(signals.Range, 0.5) || !approx(signals.Hits, test.hits) {
+				t.Fatalf("signals %+v", signals)
+			}
+			if all.Count != 3 || !approx(all.Rise, 0.1) || !approx(all.Fall, -0.3) || !approx(all.Range, 0.4) || !approx(all.Hits, test.all) {
+				t.Fatalf("all %+v", all)
+			}
+			for _, window := range windows[1:] {
+				if window.Signals.Count != 0 || window.All.Count != 0 || window.All.Hits != nil {
+					t.Fatalf("window %+v", window)
+				}
+			}
+		})
+	}
+}
+
+// A signal's changes run from its close to the closes each window later,
+// unknown past the stored history.
+func TestSignalChangesCompareLaterCloses(t *testing.T) {
+	history := make([]market.Candle, 8)
+	for index := range history {
+		history[index] = market.Candle{OpenTime: backtestHour(index), Close: float64(10 + index)}
+	}
+	changes := signalChanges(market.IntervalHour, history, 1)
+	if len(changes) != len(SignalWindows) || changes[0] == nil || math.Abs(*changes[0]-3.0/11) > 1e-9 || changes[1] == nil || math.Abs(*changes[1]-6.0/11) > 1e-9 {
+		t.Fatalf("changes %v", changes)
+	}
+	for _, change := range changes[2:] {
+		if change != nil {
+			t.Fatalf("change past the history %v", *change)
+		}
+	}
+}
+
+// A window across a gap in the stored history spans more time than its
+// candles, so it is left out.
+func TestSignalWindowsSkipGaps(t *testing.T) {
+	history := make([]market.Candle, 6)
+	for index := range history {
+		open := backtestHour(index)
+		if index >= 3 {
+			open = backtestHour(index + 48)
+		}
+		history[index] = market.Candle{OpenTime: open, Open: 10, Close: 10, High: 11, Low: 9}
+	}
+	if changes := signalChanges(market.IntervalHour, history, 2); changes[0] != nil {
+		t.Fatalf("change across the gap %v", *changes[0])
+	}
+	if windows := signalWindows(SignalLong, market.IntervalHour, history, []int{0}, 0, len(history)-1); windows[0].All.Count != 0 {
+		t.Fatalf("windows %+v", windows[0])
+	}
+}

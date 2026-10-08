@@ -19,12 +19,13 @@
  */
 import type { BacktestBaselines } from './backtestBaselines.ts';
 import type { BacktestEquityPoint } from './backtestEquityPoint.ts';
+import type { BacktestSignal } from './backtestSignal.ts';
 import type { BacktestSummary } from './backtestSummary.ts';
 import type { BacktestTrade } from './backtestTrade.ts';
 import type { CandleInterval } from './candleInterval.ts';
 
 /**
- * Returns, drawdowns, and fees are fractions, such as 0.012 for 1.2%.
+ * Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
  */
 export interface StrategyBacktest {
   interval: CandleInterval;
@@ -49,4 +50,6 @@ export interface StrategyBacktest {
   /** Equity after each trade, the open one included, compounded from 1, oldest first. */
   equity: BacktestEquityPoint[];
   baselines: BacktestBaselines;
+  /** The entry signals of a signal and the price moves after them; null for a trading strategy, whose signal has no trades. */
+  signal: BacktestSignal | null;
 }

@@ -18,11 +18,11 @@
  * OpenAPI spec version: 1.0.0
  */
 
-/**
- * Telegram alert text that follows the strategy name, the coin symbol,
- * and the buy, the sell, or the signal in place of the rule and the
- * values it read;
- * empty keeps the generated text.
- * @maxLength 1000
- */
-export type StrategyMessage = string;
+export type SignalDirection = typeof SignalDirection[keyof typeof SignalDirection];
+
+
+export const SignalDirection = {
+  long: 'long',
+  short: 'short',
+  sideways: 'sideways',
+} as const;

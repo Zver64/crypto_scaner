@@ -143,7 +143,7 @@ API error shape {"error":{"code","message","details"},"request_id"}.`,
 	root.PersistentFlags().BoolVar(&c.json, "json", false, "print the result as JSON, and errors as JSON on stderr")
 	_ = root.RegisterFlagCompletionFunc("profile", completeProfiles)
 	root.AddCommand(c.loginCommand(), c.profilesCommand(), c.useCommand(),
-		c.varsCommand(), c.validateCommand(), c.favoritesCommand(), c.strategiesCommand(), c.indicatorsCommand(), c.backtestCommand())
+		c.varsCommand(), c.validateCommand(), c.favoritesCommand(), c.strategiesCommand(), c.signalsCommand(), c.indicatorsCommand(), c.backtestCommand())
 	return root
 }
 
@@ -156,9 +156,15 @@ func completeProfiles(*cobra.Command, []string, string) ([]cobra.Completion, cob
 	return slices.Sorted(maps.Keys(loaded.Profiles)), cobra.ShellCompDirectiveNoFileComp
 }
 
-// completeStrategies completes the IDs of the saved strategies, each with its
-// name.
+// completeStrategies completes the IDs of the saved strategies and signals,
+// each with its name.
 func (c *cli) completeStrategies(command *cobra.Command, _ []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+	return c.completeKind(command, func(apiclient.Strategy) bool { return true })
+}
+
+// completeKind completes the IDs of the saved strategies keep accepts, each
+// with its name.
+func (c *cli) completeKind(command *cobra.Command, keep func(apiclient.Strategy) bool) ([]cobra.Completion, cobra.ShellCompDirective) {
 	client, err := c.client()
 	if err != nil {
 		return nil, cobra.ShellCompDirectiveError
@@ -167,20 +173,24 @@ func (c *cli) completeStrategies(command *cobra.Command, _ []string, _ string) (
 	if err != nil || strategies.JSON200 == nil {
 		return nil, cobra.ShellCompDirectiveError
 	}
-	completions := make([]cobra.Completion, len(strategies.JSON200.Items))
-	for i, strategy := range strategies.JSON200.Items {
-		completions[i] = cobra.CompletionWithDesc(strconv.FormatInt(strategy.Id, 10), strategy.Name)
+	var completions []cobra.Completion
+	for _, strategy := range strategies.JSON200.Items {
+		if keep(strategy) {
+			completions = append(completions, cobra.CompletionWithDesc(strconv.FormatInt(strategy.Id, 10), strategy.Name))
+		}
 	}
 	return completions, cobra.ShellCompDirectiveNoFileComp
 }
 
-// completeStrategyArg completes the strategy ID argument of update and
-// delete.
-func (c *cli) completeStrategyArg(command *cobra.Command, args []string, toComplete string) ([]cobra.Completion, cobra.ShellCompDirective) {
-	if len(args) > 0 {
-		return nil, cobra.ShellCompDirectiveNoFileComp
+// completeArg completes the ID argument of update and delete with the saved
+// strategies of k.
+func (c *cli) completeArg(k kind) cobra.CompletionFunc {
+	return func(command *cobra.Command, args []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
+		if len(args) > 0 {
+			return nil, cobra.ShellCompDirectiveNoFileComp
+		}
+		return c.completeKind(command, func(strategy apiclient.Strategy) bool { return k.holds(strategy) })
 	}
-	return c.completeStrategies(command, args, toComplete)
 }
 
 // completeFavorites completes the administrator's favorites, the coins

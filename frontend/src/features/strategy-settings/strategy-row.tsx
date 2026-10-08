@@ -50,6 +50,9 @@ export function StrategyRow({
 			<Stack gap={6}>
 				<Group justify="space-between" wrap="nowrap">
 					<Group gap="xs" miw={0} wrap="nowrap">
+						<Text c="dimmed" ff="monospace" size="sm">
+							#{strategy.id}
+						</Text>
 						<Text fw={700} truncate>
 							{strategy.name}
 						</Text>

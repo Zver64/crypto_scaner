@@ -17,12 +17,12 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { SignalDirection } from './signalDirection.ts';
 
 /**
- * Telegram alert text that follows the strategy name, the coin symbol,
- * and the buy, the sell, or the signal in place of the rule and the
- * values it read;
- * empty keeps the generated text.
- * @maxLength 1000
+ * The price move a signal expects after its entry signals: up, down, or
+ * sideways. A signal buys nothing and only announces its entry signals,
+ * so its exit rule, take profit, and stop loss are empty and its market
+ * cap bounds null. Null for a strategy that trades long.
  */
-export type StrategyMessage = string;
+export type StrategySignal = SignalDirection | null;

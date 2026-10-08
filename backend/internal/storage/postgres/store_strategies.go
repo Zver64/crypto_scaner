@@ -24,7 +24,7 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 	items := make([]strategy.Strategy, len(rows))
 	for i, row := range rows {
 		items[i] = strategy.Strategy{
-			ID: row.ID, Name: row.Name, Expression: row.Expression, ExitExpression: row.ExitExpression,
+			ID: row.ID, Name: row.Name, Signal: strategy.Signal(row.Signal.String), Expression: row.Expression, ExitExpression: row.ExitExpression,
 			TakeProfitExpression: row.TakeProfitExpression, StopLossExpression: row.StopLossExpression,
 			MarketCap: strategy.MarketCapRange{MinUSD: float8Pointer(row.MinMarketCapUsd), MaxUSD: float8Pointer(row.MaxMarketCapUsd)},
 			Message:   row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
@@ -41,7 +41,7 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
 	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{
-		Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
+		Name: item.Name, Signal: pgtype.Text{String: string(item.Signal), Valid: item.Signal != ""}, Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
 		MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
 		Message: item.Message, Enabled: item.Enabled,
@@ -58,7 +58,7 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	return id, tx.Commit(ctx)
 }
 
-// UpdateStrategy replaces the name, expressions, trading settings, message,
+// UpdateStrategy replaces the name, signal, expressions, trading settings, message,
 // indicators, and instruments and returns the revision; baseline requests a
 // fresh start of the trading states.
 func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64, baseline bool) (int64, error) {
@@ -69,7 +69,7 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
 	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{
-		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
+		ID: item.ID, Name: item.Name, Signal: pgtype.Text{String: string(item.Signal), Valid: item.Signal != ""}, Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
 		MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
 		Message: item.Message, Baseline: baseline,

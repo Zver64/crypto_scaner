@@ -44,4 +44,13 @@ describe("parseStrategyBacktestSearch", () => {
 	it.each(["true", false, 1])("drops the invalid all_coins %s", (allCoins) => {
 		expect(parseStrategyBacktestSearch({ all_coins: allCoins })).toEqual({});
 	});
+
+	it("keeps the period days and drops other values", () => {
+		expect(
+			parseStrategyBacktestSearch({ from: "2026-01-01", to: "2026-03-31" }),
+		).toEqual({ from: "2026-01-01", to: "2026-03-31" });
+		expect(
+			parseStrategyBacktestSearch({ from: "2026-02-30", to: 20260331 }),
+		).toEqual({});
+	});
 });

@@ -7,6 +7,7 @@ import { theme } from "@/app/theme";
 import { getRouter } from "@/router";
 
 import "@mantine/core/styles.css";
+import "@mantine/dates/styles.css";
 import "@mantine/notifications/styles.css";
 import "@microcharts/react/styles.css";
 import "@/styles.css";

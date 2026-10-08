@@ -365,6 +365,27 @@ func (e ScannerIndicatorPlacement) Valid() bool {
 	}
 }
 
+// Defines values for SignalDirection.
+const (
+	Long     SignalDirection = "long"
+	Short    SignalDirection = "short"
+	Sideways SignalDirection = "sideways"
+)
+
+// Valid indicates whether the value is a known member of the SignalDirection enum.
+func (e SignalDirection) Valid() bool {
+	switch e {
+	case Long:
+		return true
+	case Short:
+		return true
+	case Sideways:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StrategyValidationInputKind.
 const (
 	StrategyValidationInputKindEntry StrategyValidationInputKind = "entry"
@@ -509,6 +530,69 @@ type BacktestFill struct {
 
 	// Values What the entry rule read at the signal.
 	Values BacktestValues `json:"values"`
+}
+
+// BacktestSignal defines model for BacktestSignal.
+type BacktestSignal struct {
+	Direction SignalDirection `json:"direction"`
+
+	// Occurrences Entry signals, oldest first.
+	Occurrences []BacktestSignalOccurrence `json:"occurrences"`
+
+	// Windows The moves over 3, 6, 12, and 24 candles after the close of each
+	// signal candle beside those after every evaluated candle. Moves may
+	// read stored candles after the evaluated period; a candle without
+	// enough later stored candles is left out of a window.
+	Windows []BacktestSignalWindow `json:"windows"`
+}
+
+// BacktestSignalChange defines model for BacktestSignalChange.
+type BacktestSignalChange struct {
+	// Candles Candles after the signal candle.
+	Candles int `json:"candles"`
+
+	// Change The change of the close; null when the stored history ends before that candle.
+	Change *float64 `json:"change"`
+}
+
+// BacktestSignalOccurrence defines model for BacktestSignalOccurrence.
+type BacktestSignalOccurrence struct {
+	// Changes Changes from the close of the signal candle to the close 3, 6, 12, and 24 candles later, in the order of the windows.
+	Changes []BacktestSignalChange `json:"changes"`
+	Close   float64                `json:"close"`
+
+	// Time Open time of the candle whose close signaled.
+	Time time.Time `json:"time"`
+
+	// Values What the entry rule read at the signal.
+	Values BacktestValues `json:"values"`
+}
+
+// BacktestSignalStats Medians of the moves from a candle's close: the rise to the highest
+// high and the fall to the lowest low over the window, and the range
+// between them. Hits is the share of moves the signal expected: a rise
+// above the fall for long, a fall deeper than the rise for short, and,
+// for sideways, a range below the median range after every evaluated
+// candle. All are null without moves.
+type BacktestSignalStats struct {
+	// Count Moves measured.
+	Count int      `json:"count"`
+	Fall  *float64 `json:"fall"`
+	Hits  *float64 `json:"hits"`
+	Range *float64 `json:"range"`
+	Rise  *float64 `json:"rise"`
+}
+
+// BacktestSignalWindow defines model for BacktestSignalWindow.
+type BacktestSignalWindow struct {
+	// All Moves after every evaluated candle.
+	All BacktestSignalStats `json:"all"`
+
+	// Candles Candles after the signal candle the moves span.
+	Candles int `json:"candles"`
+
+	// Signals Moves after the signal candles.
+	Signals BacktestSignalStats `json:"signals"`
 }
 
 // BacktestSummary Results of the strategy's trades.
@@ -1061,6 +1145,9 @@ type Session struct {
 	Token string `json:"token"`
 }
 
+// SignalDirection defines model for SignalDirection.
+type SignalDirection string
+
 // Strategy defines model for Strategy.
 type Strategy struct {
 	Enabled bool `json:"enabled"`
@@ -1083,7 +1170,8 @@ type Strategy struct {
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
-	// and the buy or the sell in place of the rule and the values it read;
+	// and the buy, the sell, or the signal in place of the rule and the
+	// values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 
@@ -1103,6 +1191,12 @@ type Strategy struct {
 	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
 
+	// Signal The price move a signal expects after its entry signals: up, down, or
+	// sideways. A signal buys nothing and only announces its entry signals,
+	// so its exit rule, take profit, and stop loss are empty and its market
+	// cap bounds null. Null for a strategy that trades long.
+	Signal *StrategySignal `json:"signal"`
+
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
@@ -1120,7 +1214,7 @@ type Strategy struct {
 	Valid bool `json:"valid"`
 }
 
-// StrategyBacktest Returns, drawdowns, and fees are fractions, such as 0.012 for 1.2%.
+// StrategyBacktest Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
 type StrategyBacktest struct {
 	// Baselines References over the same evaluated period, net of the same fees.
 	Baselines BacktestBaselines `json:"baselines"`
@@ -1134,6 +1228,9 @@ type StrategyBacktest struct {
 	// From Open time of the first evaluated candle of the interval; null when none is evaluated.
 	From     *time.Time     `json:"from"`
 	Interval CandleInterval `json:"interval"`
+
+	// Signal The entry signals of a signal and the price moves after them; null for a trading strategy, whose signal has no trades.
+	Signal *BacktestSignal `json:"signal"`
 
 	// SkippedAlerts Entry signals that bought nothing, since a strategy that exits held a trade, or the take profit or stop loss was not on its side of the close.
 	SkippedAlerts int `json:"skipped_alerts"`
@@ -1179,7 +1276,8 @@ type StrategyInput struct {
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
-	// and the buy or the sell in place of the rule and the values it read;
+	// and the buy, the sell, or the signal in place of the rule and the
+	// values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 
@@ -1190,6 +1288,12 @@ type StrategyInput struct {
 	// minimum must not exceed the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 	Name            string                  `json:"name"`
+
+	// Signal The price move a signal expects after its entry signals: up, down, or
+	// sideways. A signal buys nothing and only announces its entry signals,
+	// so its exit rule, take profit, and stop loss are empty and its market
+	// cap bounds null. Null for a strategy that trades long.
+	Signal *StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
@@ -1218,7 +1322,8 @@ type StrategyList struct {
 type StrategyMarketCapBound = float64
 
 // StrategyMessage Telegram alert text that follows the strategy name, the coin symbol,
-// and the buy or the sell in place of the rule and the values it read;
+// and the buy, the sell, or the signal in place of the rule and the
+// values it read;
 // empty keeps the generated text.
 type StrategyMessage = string
 
@@ -1233,6 +1338,12 @@ type StrategyMissingIndicator struct {
 	Title string `json:"title"`
 	Type  string `json:"type"`
 }
+
+// StrategySignal The price move a signal expects after its entry signals: up, down, or
+// sideways. A signal buys nothing and only announces its entry signals,
+// so its exit rule, take profit, and stop loss are empty and its market
+// cap bounds null. Null for a strategy that trades long.
+type StrategySignal = SignalDirection
 
 // StrategyStopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 // `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
@@ -1279,7 +1390,8 @@ type StrategyUpdate struct {
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
-	// and the buy or the sell in place of the rule and the values it read;
+	// and the buy, the sell, or the signal in place of the rule and the
+	// values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 
@@ -1290,6 +1402,12 @@ type StrategyUpdate struct {
 	// minimum must not exceed the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 	Name            string                  `json:"name"`
+
+	// Signal The price move a signal expects after its entry signals: up, down, or
+	// sideways. A signal buys nothing and only announces its entry signals,
+	// so its exit rule, take profit, and stop loss are empty and its market
+	// cap bounds null. Null for a strategy that trades long.
+	Signal *StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
@@ -1831,8 +1949,11 @@ type ClientInterface interface {
 	// sells. A candle reaching the stop loss or the take profit sells the
 	// trade there, the stop loss first when it reaches both; the exit rule
 	// being true sells it at the next open. A sell counts the entry as
-	// false on its candle. The administrator and users with strategy alerts
-	// get a Telegram message for every buy and sell.
+	// false on its candle. A strategy with a `signal` is a signal instead:
+	// it has no exits or market cap range, buys nothing, and only announces
+	// its entry signals with the move it expects. The administrator and
+	// users with strategy alerts get a Telegram message for every buy, sell,
+	// and signal.
 	//
 	// Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
 	ListStrategies(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1918,6 +2039,10 @@ type ClientInterface interface {
 	// cover the same evaluated period: buying and holding, and buying the
 	// same amount at every candle (DCA). A backtest that does not finish
 	// within its time limit fails with `backtest_too_heavy`.
+	//
+	// A signal trades nothing: its backtest has no trades and no baselines,
+	// and `signal` lists its entry signals and how the price moved after
+	// them.
 	//
 	// Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
 	BacktestStrategy(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2387,8 +2512,11 @@ func (c *Client) UpdateScannerIndicator(ctx context.Context, indicatorId Scanner
 // sells. A candle reaching the stop loss or the take profit sells the
 // trade there, the stop loss first when it reaches both; the exit rule
 // being true sells it at the next open. A sell counts the entry as
-// false on its candle. The administrator and users with strategy alerts
-// get a Telegram message for every buy and sell.
+// false on its candle. A strategy with a `signal` is a signal instead:
+// it has no exits or market cap range, buys nothing, and only announces
+// its entry signals with the move it expects. The administrator and
+// users with strategy alerts get a Telegram message for every buy, sell,
+// and signal.
 //
 // Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
 func (c *Client) ListStrategies(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2554,6 +2682,10 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 // cover the same evaluated period: buying and holding, and buying the
 // same amount at every candle (DCA). A backtest that does not finish
 // within its time limit fails with `backtest_too_heavy`.
+//
+// A signal trades nothing: its backtest has no trades and no baselines,
+// and `signal` lists its entry signals and how the price moved after
+// them.
 //
 // Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
 func (c *Client) BacktestStrategy(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -4921,8 +5053,11 @@ type ClientWithResponsesInterface interface {
 	// sells. A candle reaching the stop loss or the take profit sells the
 	// trade there, the stop loss first when it reaches both; the exit rule
 	// being true sells it at the next open. A sell counts the entry as
-	// false on its candle. The administrator and users with strategy alerts
-	// get a Telegram message for every buy and sell.
+	// false on its candle. A strategy with a `signal` is a signal instead:
+	// it has no exits or market cap range, buys nothing, and only announces
+	// its entry signals with the move it expects. The administrator and
+	// users with strategy alerts get a Telegram message for every buy, sell,
+	// and signal.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -5012,6 +5147,10 @@ type ClientWithResponsesInterface interface {
 	// cover the same evaluated period: buying and holding, and buying the
 	// same amount at every candle (DCA). A backtest that does not finish
 	// within its time limit fails with `backtest_too_heavy`.
+	//
+	// A signal trades nothing: its backtest has no trades and no baselines,
+	// and `signal` lists its entry signals and how the price moved after
+	// them.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9151,8 +9290,11 @@ func (c *ClientWithResponses) UpdateScannerIndicatorWithResponse(ctx context.Con
 // sells. A candle reaching the stop loss or the take profit sells the
 // trade there, the stop loss first when it reaches both; the exit rule
 // being true sells it at the next open. A sell counts the entry as
-// false on its candle. The administrator and users with strategy alerts
-// get a Telegram message for every buy and sell.
+// false on its candle. A strategy with a `signal` is a signal instead:
+// it has no exits or market cap range, buys nothing, and only announces
+// its entry signals with the move it expects. The administrator and
+// users with strategy alerts get a Telegram message for every buy, sell,
+// and signal.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -9290,6 +9432,10 @@ func (c *ClientWithResponses) UpdateStrategyWithResponse(ctx context.Context, st
 // cover the same evaluated period: buying and holding, and buying the
 // same amount at every candle (DCA). A backtest that does not finish
 // within its time limit fails with `backtest_too_heavy`.
+//
+// A signal trades nothing: its backtest has no trades and no baselines,
+// and `signal` lists its entry signals and how the price moved after
+// them.
 //
 // Returns a wrapper object for the known response body format(s).
 //

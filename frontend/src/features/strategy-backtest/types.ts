@@ -1,4 +1,7 @@
-import type { BacktestTradeStats } from "@/api/generated/models";
+import type {
+	BacktestSignalStats,
+	BacktestTradeStats,
+} from "@/api/generated/models";
 
 // One average of the strategy's closed trades.
 export interface SummaryRow {
@@ -9,4 +12,15 @@ export interface SummaryRow {
 	>;
 	label: string;
 	strategy: number | null;
+}
+
+// The moves of one signal window, after the signals or after every candle.
+export interface SignalWindowRow {
+	// The window's candle count, shown on its first row only.
+	candles: number | undefined;
+	key: string;
+	label: string;
+	// Whether the row measures the signals rather than every candle.
+	signals: boolean;
+	stats: BacktestSignalStats;
 }

@@ -12,6 +12,12 @@ import type { StrategyUpdate, StrategyVariable } from "@/api/generated/models";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import { StrategyMarketCapFields } from "@/features/strategy-settings/strategy-market-cap-fields";
 import { StrategyPriceInput } from "@/features/strategy-settings/strategy-price-input";
+import {
+	parsePriceSetup,
+	priceSetupChanged,
+	priceSetupComplete,
+	priceSetupExpression,
+} from "@/features/strategy-settings/strategy-price-input/utils";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
 	emptyStrategyQuery,
@@ -48,8 +54,12 @@ export function StrategyFormContent({
 	const [message, setMessage] = useState(draft.message);
 	const [query, setQuery] = useState(draft.query);
 	const [exitQuery, setExitQuery] = useState(draft.exitQuery);
-	const [takeProfit, setTakeProfit] = useState(draft.takeProfit);
-	const [stopLoss, setStopLoss] = useState(draft.stopLoss);
+	const [takeProfit, setTakeProfit] = useState(() =>
+		parsePriceSetup(draft.takeProfit),
+	);
+	const [stopLoss, setStopLoss] = useState(() =>
+		parsePriceSetup(draft.stopLoss),
+	);
 	const [minMarketCap, setMinMarketCap] = useState<number | string>(
 		draft.minMarketCap,
 	);
@@ -64,8 +74,8 @@ export function StrategyFormContent({
 		message: message.trim(),
 		min_market_cap_usd: marketCapUsd(minMarketCap),
 		name: name.trim(),
-		stop_loss_expression: stopLoss.trim(),
-		take_profit_expression: takeProfit.trim(),
+		stop_loss_expression: priceSetupExpression(stopLoss),
+		take_profit_expression: priceSetupExpression(takeProfit),
 	};
 	const named = input.name !== "";
 	const boundErrors = marketCapErrors(
@@ -75,15 +85,17 @@ export function StrategyFormContent({
 	const marketCapValid = !boundErrors.minimum && !boundErrors.maximum;
 	const complete =
 		strategyQueryComplete(query) &&
-		(exitQuery === undefined || strategyQueryComplete(exitQuery));
+		(exitQuery === undefined || strategyQueryComplete(exitQuery)) &&
+		priceSetupComplete(takeProfit) &&
+		priceSetupComplete(stopLoss);
 	const dirty =
 		name !== draft.name ||
 		message !== draft.message ||
 		input.expression !== strategyExpression(draft.query) ||
 		exitExpression !==
 			(draft.exitQuery ? strategyExpression(draft.exitQuery) : "") ||
-		input.take_profit_expression !== draft.takeProfit ||
-		input.stop_loss_expression !== draft.stopLoss ||
+		priceSetupChanged(takeProfit, parsePriceSetup(draft.takeProfit)) ||
+		priceSetupChanged(stopLoss, parsePriceSetup(draft.stopLoss)) ||
 		input.min_market_cap_usd !== marketCapUsd(draft.minMarketCap) ||
 		input.max_market_cap_usd !== marketCapUsd(draft.maxMarketCap);
 	useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
@@ -160,18 +172,18 @@ export function StrategyFormContent({
 				</Stack>
 			)}
 			<StrategyPriceInput
-				description="Sells the trade when a candle reaches this price, fixed when the entry signals, such as h_close * 1.05. Leave empty for none."
 				disabled={isSaving}
 				label="Take profit"
 				onChange={setTakeProfit}
 				value={takeProfit}
+				variables={entryVariables}
 			/>
 			<StrategyPriceInput
-				description="Sells the trade when a candle falls to this price, fixed when the entry signals, such as h_close - 2 * h_atr_14. Leave empty for none."
 				disabled={isSaving}
 				label="Stop loss"
 				onChange={setStopLoss}
 				value={stopLoss}
+				variables={entryVariables}
 			/>
 			<StrategyMarketCapFields
 				disabled={isSaving}

@@ -38,13 +38,18 @@ export function BacktestMetricCards({
 						<BacktestReturn value={baselines.dca} />
 					</>
 				}
-				hint={`Compounded result of all trades, an open one valued at the last close, after a ${formatFractionPercent(fee)} fee on each buy and sell. Every buy spends the same amount.`}
+				hint={`Compounded result of all trades, an open one valued at the last close, after a ${formatFractionPercent(fee)} fee on each buy and sell. Every buy spends the same amount; a strategy with an exit holds one buy per trade.`}
 				label="Net profit"
 				paperPadding={paperPadding}
 				value={<BacktestReturn value={summary.net_profit} />}
 			/>
 			<MetricCard
-				hint={`Closed trades, one at a time; an open trade counts only in Net profit. Entry signals that bought nothing, without accumulation or past max buys: ${formatNumber(skipped_alerts)}.`}
+				comparison={
+					stats.trade_count > 0
+						? `TP ${formatNumber(stats.take_profit_exits)} · SL ${formatNumber(stats.stop_loss_exits)} · Rule ${formatNumber(stats.exit_rule_exits)}`
+						: undefined
+				}
+				hint={`Closed trades, one at a time, by what sold them: take profit, stop loss, or exit rule; an open trade counts only in Net profit. Average candles held: ${stats.average_bars === null ? "—" : formatNumber(stats.average_bars, 1)}. Entry signals that bought nothing, during a trade or with the take profit or stop loss on the wrong side of the close: ${formatNumber(skipped_alerts)}.`}
 				label="Trades"
 				paperPadding={paperPadding}
 				value={formatNumber(stats.trade_count)}
@@ -62,7 +67,7 @@ export function BacktestMetricCards({
 				value={formatProfitFactor(stats.profit_factor)}
 			/>
 			<MetricCard
-				hint="Largest drop of equity from its peak."
+				hint="Largest drop of equity from its peak, checked at every candle close with an open trade valued there."
 				label="Max drawdown"
 				paperPadding={paperPadding}
 				value={formatFractionPercent(summary.max_drawdown)}

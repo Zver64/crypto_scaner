@@ -1,23 +1,24 @@
 -- name: ListStrategies :many
-SELECT id, name, expression, exit_expression, accumulate, max_buys, message, enabled, baseline_pending, revision
+SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id;
 
 -- name: InsertStrategy :one
-INSERT INTO app.strategies (name, expression, exit_expression, accumulate, max_buys, message, enabled, baseline_pending)
-VALUES (@name, @expression, @exit_expression, @accumulate, @max_buys, @message, @enabled, @enabled)
+INSERT INTO app.strategies (name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, baseline_pending)
+VALUES (@name, @expression, @exit_expression, @take_profit_expression, @stop_loss_expression, @message, @enabled, @enabled)
 RETURNING id;
 
 -- name: UpdateStrategy :one
 -- A change of how the strategy trades starts a new revision.
 UPDATE app.strategies
 SET name = @name, expression = @expression, exit_expression = @exit_expression,
-    accumulate = @accumulate, max_buys = @max_buys, message = @message, updated_at = now(),
+    take_profit_expression = @take_profit_expression, stop_loss_expression = @stop_loss_expression,
+    message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
     revision = revision + (expression IS DISTINCT FROM @expression
         OR exit_expression IS DISTINCT FROM @exit_expression
-        OR accumulate IS DISTINCT FROM @accumulate
-        OR max_buys IS DISTINCT FROM @max_buys)::INTEGER
+        OR take_profit_expression IS DISTINCT FROM @take_profit_expression
+        OR stop_loss_expression IS DISTINCT FROM @stop_loss_expression)::INTEGER
 WHERE id = @id
 RETURNING revision;
 
@@ -39,7 +40,7 @@ RETURNING revision;
 DELETE FROM app.strategies WHERE id = $1;
 
 -- name: ListStrategyStates :many
-SELECT strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at
+SELECT strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at, take_profit, stop_loss
 FROM app.strategy_states
 ORDER BY strategy_id, instrument_id;
 
@@ -66,20 +67,22 @@ FROM (
 -- Stores states of later candles only while the evaluated revision is
 -- current and announced, and returns the instruments stored. The row lock
 -- orders it with a concurrent change.
-INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at)
-SELECT s.id, v.instrument_id, v.open_time, v.entry, v.buys, v.filled, v.quantity, v.opened_at
+INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at, take_profit, stop_loss)
+SELECT s.id, v.instrument_id, v.open_time, v.entry, v.buys, v.filled, v.quantity, v.opened_at, v.take_profit, v.stop_loss
 FROM app.strategies s
 CROSS JOIN (
     SELECT unnest(@instrument_ids::BIGINT[]) AS instrument_id, unnest(@open_times::TIMESTAMPTZ[]) AS open_time,
            unnest(@entries::BOOLEAN[]) AS entry, unnest(@buys::INTEGER[]) AS buys,
            unnest(@filled::INTEGER[]) AS filled, unnest(@quantities::DOUBLE PRECISION[]) AS quantity,
-           unnest(@opened_at::TIMESTAMPTZ[]) AS opened_at
+           unnest(@opened_at::TIMESTAMPTZ[]) AS opened_at, unnest(@take_profits::DOUBLE PRECISION[]) AS take_profit,
+           unnest(@stop_losses::DOUBLE PRECISION[]) AS stop_loss
 ) AS v
 WHERE s.id = @strategy_id AND s.enabled AND NOT s.baseline_pending AND s.revision = @revision
 FOR SHARE OF s
 ON CONFLICT (strategy_id, instrument_id) DO UPDATE
 SET open_time = EXCLUDED.open_time, entry = EXCLUDED.entry, buys = EXCLUDED.buys,
-    filled = EXCLUDED.filled, quantity = EXCLUDED.quantity, opened_at = EXCLUDED.opened_at
+    filled = EXCLUDED.filled, quantity = EXCLUDED.quantity, opened_at = EXCLUDED.opened_at,
+    take_profit = EXCLUDED.take_profit, stop_loss = EXCLUDED.stop_loss
 WHERE app.strategy_states.open_time < EXCLUDED.open_time
 RETURNING instrument_id;
 

@@ -51,37 +51,48 @@ func renderStrategies(w io.Writer, strategies []apiclient.Strategy) {
 		if !strategy.Valid {
 			state = "invalid"
 		}
-		exit := "-"
-		if strategy.ExitExpression != "" {
-			exit = strings.Join(strings.Fields(strategy.ExitExpression), " ")
-		}
-		t.AppendRow(table.Row{strategy.Id, state, strategy.Name, strings.Join(strings.Fields(strategy.Expression), " "), exit, buys(strategy)})
+		t.AppendRow(table.Row{strategy.Id, state, strategy.Name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy)})
 	}
 	fmt.Fprintln(w, t.Render())
 }
 
-// buys tells how a strategy buys: once per trade, accumulating until the
-// exit, or at every signal without one, with its max buys.
-func buys(strategy apiclient.Strategy) string {
-	switch {
-	case strategy.ExitExpression != "" && !strategy.Accumulate:
-		return "one per trade"
-	case strategy.MaxBuys > 0 && strategy.ExitExpression != "":
-		return fmt.Sprintf("accumulate, max %d", strategy.MaxBuys)
-	case strategy.ExitExpression != "":
-		return "accumulate"
-	case strategy.MaxBuys > 0:
-		return fmt.Sprintf("every signal, max %d", strategy.MaxBuys)
-	default:
-		return "every signal"
+// exits lists the exit rule, take profit, and stop loss of a strategy, one
+// per line.
+func exits(strategy apiclient.Strategy) string {
+	var lines []string
+	for _, exit := range []struct{ label, expression string }{
+		{"", strategy.ExitExpression}, {"TP ", strategy.TakeProfitExpression}, {"SL ", strategy.StopLossExpression},
+	} {
+		if exit.expression != "" {
+			lines = append(lines, exit.label+strings.Join(strings.Fields(exit.expression), " "))
+		}
 	}
+	if len(lines) == 0 {
+		return "-"
+	}
+	return strings.Join(lines, "\n")
+}
+
+// buys tells how a strategy buys: once per trade with an exit, at every
+// signal without one.
+func buys(strategy apiclient.Strategy) string {
+	if strategy.ExitExpression != "" || strategy.TakeProfitExpression != "" || strategy.StopLossExpression != "" {
+		return "one per trade"
+	}
+	return "every signal"
 }
 
 // maxTradeRows caps the trade list; --json prints every trade.
 const maxTradeRows = 50
 
-func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest) {
+// renderBacktest prints the backtest; period tells that --from or --to
+// limited it.
+func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period bool) {
 	if backtest.From == nil || backtest.To == nil {
+		if period {
+			fmt.Fprintf(w, "%s: no stored candles of this interval in the requested period.\n", backtest.Symbol)
+			return
+		}
 		// The Mini App's empty state.
 		fmt.Fprintf(w, "%s: no stored candles of this interval yet; synchronization fills them first.\n", backtest.Symbol)
 		return
@@ -91,7 +102,7 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest) {
 		{"Coin", backtest.Symbol},
 		{"Period", fmt.Sprintf("%s → %s (%s candles)", day(*backtest.From), day(*backtest.To), backtest.Interval)},
 		{"Fee", fmt.Sprintf("%g%% per buy and per sell", backtest.Fee*100)},
-		{"Skipped signals", fmt.Sprintf("%d (bought nothing: no accumulation or max buys)", backtest.SkippedAlerts)},
+		{"Skipped signals", fmt.Sprintf("%d (bought nothing: a trade was open, or TP/SL on the wrong side)", backtest.SkippedAlerts)},
 	})
 	fmt.Fprintln(w, t.Render())
 	if len(backtest.Trades) == 0 {
@@ -119,6 +130,8 @@ func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines api
 		{"Avg trade %", percent(stats.AverageTrade), "-"},
 		{"Avg win %", percent(stats.AverageWin), "-"},
 		{"Avg loss %", percent(stats.AverageLoss), "-"},
+		{"Avg candles held", factor(stats.AverageBars), "-"},
+		{"Exits TP / SL / rule", fmt.Sprintf("%d / %d / %d", stats.TakeProfitExits, stats.StopLossExits, stats.ExitRuleExits), "-"},
 	})
 	fmt.Fprintln(w, t.Render())
 }
@@ -132,19 +145,25 @@ func renderTrades(w io.Writer, interval apiclient.CandleInterval, trades []apicl
 	}
 	// A title would wrap mid-sentence on the narrow tables of daily and
 	// coarser intervals.
-	fmt.Fprintln(w, "Trades: buys and sells fill at the open after their signal; an open trade is valued at the last close; returns are after fees.")
+	fmt.Fprintln(w, "Trades: buys and exit rule sells fill at the open after their signal, TP and SL on the candle reaching them; an open trade is valued at the last close; returns are after fees.")
 	t := newTable()
 	t.SetAutoIndex(true)
-	t.AppendHeader(table.Row{"Entry", "Avg price", "Buys", "Exit", "Price", "Net %"})
-	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 6, Align: text.AlignRight}})
+	t.AppendHeader(table.Row{"Entry", "Avg price", "Buys", "Exit", "Price", "By", "Net %"})
+	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 7, Align: text.AlignRight}})
+	reasons := map[apiclient.BacktestTradeExitReason]string{
+		apiclient.BacktestTradeExitReasonTakeProfit: "TP", apiclient.BacktestTradeExitReasonStopLoss: "SL", apiclient.BacktestTradeExitReasonExit: "rule",
+	}
 	for _, trade := range slices.Backward(trades[max(0, len(trades)-maxTradeRows):]) {
-		exit := trade.ExitTime.UTC().Format(layout)
+		exit, by := trade.ExitTime.UTC().Format(layout), "-"
 		if trade.Open {
 			exit = "open"
 		}
+		if trade.ExitReason != nil {
+			by = reasons[*trade.ExitReason]
+		}
 		t.AppendRow(table.Row{
 			trade.EntryTime.UTC().Format(layout), averagePrice(trade.EntryPrice), trade.Buys,
-			exit, price(trade.ExitPrice), percent(&trade.NetReturn),
+			exit, averagePrice(trade.ExitPrice), by, percent(&trade.NetReturn),
 		})
 	}
 	fmt.Fprintln(w, t.Render())
@@ -162,7 +181,8 @@ func factor(value *float64) string {
 
 func price(value float64) string { return strconv.FormatFloat(value, 'f', -1, 64) }
 
-// averagePrice formats an average of prices with 8 significant digits.
+// averagePrice formats a calculated price, such as an average or a take
+// profit, with 8 significant digits.
 func averagePrice(value float64) string {
 	rounded, _ := strconv.ParseFloat(strconv.FormatFloat(value, 'g', 8, 64), 64)
 	return price(rounded)

@@ -24,4 +24,12 @@ export type BacktestStrategyParams = {
  * Market symbol of the replayed coin.
  */
 symbol: BacktestSymbolName;
+/**
+ * Earliest open time of an evaluated candle; the start of the stored history when absent.
+ */
+from?: string;
+/**
+ * Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
+ */
+to?: string;
 };

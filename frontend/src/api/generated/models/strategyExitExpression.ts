@@ -21,7 +21,8 @@
 /**
  * Exit rule, a CEL expression like the entry rule that may also read the
  * position variables, such as `pnl >= 5 || bars_held >= 24`; empty
- * for a strategy that never sells and buys at every entry signal.
+ * without an exit rule. A strategy without an exit rule, take profit,
+ * or stop loss never sells and buys at every entry signal.
  * @maxLength 2000
  */
 export type StrategyExitExpression = string;

@@ -1,6 +1,8 @@
 import type { BacktestTrade, StrategyBacktest } from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { BacktestReturn } from "@/features/strategy-backtest/backtest-return";
+import { exitReasonLabels } from "@/features/strategy-backtest/constants";
+import { formatPriceLevels } from "@/features/strategy-backtest/utils";
 import { formatDateTime } from "@/utils/date-time-format";
 import { formatNumber } from "@/utils/number-format";
 
@@ -39,6 +41,20 @@ const columns: DataTableColumn<BacktestTrade>[] = [
 		textAlign: "right",
 	},
 	{
+		cell: (trade) =>
+			trade.exit_reason === undefined
+				? "—"
+				: exitReasonLabels[trade.exit_reason],
+		header: "By",
+		key: "exit-reason",
+	},
+	{
+		cell: (trade) => formatPriceLevels(trade.take_profit, trade.stop_loss),
+		header: "TP / SL",
+		key: "levels",
+		textAlign: "right",
+	},
+	{
 		cell: (trade) => <BacktestReturn value={trade.net_return} />,
 		header: "Net return",
 		key: "net-return",
@@ -46,9 +62,11 @@ const columns: DataTableColumn<BacktestTrade>[] = [
 	},
 ];
 
-// Trades, newest first. Buys fill at the open after their signal and are
-// averaged; sells fill at the open after the exit signal. An open trade is
-// valued at the last close.
+// Trades, newest first, with what sold them and the take profit and stop
+// loss fixed at their entry. Buys fill at the open after their signal and
+// are averaged; a take profit or stop loss sells on the candle reaching it,
+// an exit rule at the open after its signal. An open trade is valued at the
+// last close.
 export function BacktestTradesTable({
 	backtest: { trades },
 }: BacktestTradesTableProps) {

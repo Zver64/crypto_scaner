@@ -40,7 +40,6 @@ import type {
 	Token,
 } from "@/features/strategy-settings/types";
 import { describeApiError } from "@/utils/api-error";
-import { formatNumber } from "@/utils/number-format";
 
 export function isRangeOperator(operator: string): boolean {
 	return operator === "between" || operator === "notBetween";
@@ -372,8 +371,8 @@ export function newStrategyDraft(): Omit<StrategyDraft, "revision"> {
 		message: "",
 		query: emptyStrategyQuery(),
 		exitQuery: undefined,
-		accumulate: false,
-		maxBuys: 0,
+		takeProfit: "",
+		stopLoss: "",
 		incomplete: false,
 	};
 }
@@ -393,8 +392,8 @@ export function strategyDraft(
 		message: strategy.message,
 		query,
 		exitQuery,
-		accumulate: strategy.accumulate,
-		maxBuys: strategy.max_buys,
+		takeProfit: strategy.take_profit_expression,
+		stopLoss: strategy.stop_loss_expression,
 		incomplete:
 			strategyQueryDropped(strategy.expression, query) ||
 			(exitQuery !== undefined &&
@@ -402,22 +401,29 @@ export function strategyDraft(
 	};
 }
 
-// How a strategy buys: once per trade, adding buys until its exit, or at
-// every entry signal without one, with its limit of buys.
+// Whether a strategy sells, through an exit rule, take profit, or stop loss;
+// such a strategy holds one buy per trade.
+export function strategyExits(
+	strategy: Pick<
+		Strategy,
+		"exit_expression" | "stop_loss_expression" | "take_profit_expression"
+	>,
+): boolean {
+	return (
+		strategy.exit_expression !== "" ||
+		strategy.take_profit_expression !== "" ||
+		strategy.stop_loss_expression !== ""
+	);
+}
+
+// How a strategy buys: once per trade when it exits, or at every entry
+// signal without any exit.
 export function strategyBuysLabel(
-	strategy: Pick<Strategy, "accumulate" | "exit_expression" | "max_buys">,
+	strategy: Parameters<typeof strategyExits>[0],
 ): string {
-	const limit =
-		strategy.max_buys > 0
-			? `, at most ${formatNumber(strategy.max_buys)} per trade`
-			: "";
-	if (strategy.exit_expression === "") {
-		return `Buys at every entry signal and never sells${limit}`;
-	}
-	if (strategy.accumulate) {
-		return `Adds a buy at every entry signal until the exit${limit}`;
-	}
-	return "One buy per trade";
+	return strategyExits(strategy)
+		? "One buy per trade"
+		: "Buys at every entry signal and never sells";
 }
 
 // The title of the form editing draft.

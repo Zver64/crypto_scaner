@@ -24,7 +24,8 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 	items := make([]strategy.Strategy, len(rows))
 	for i, row := range rows {
 		items[i] = strategy.Strategy{
-			ID: row.ID, Name: row.Name, Expression: row.Expression, ExitExpression: row.ExitExpression, Accumulate: row.Accumulate, MaxBuys: int(row.MaxBuys),
+			ID: row.ID, Name: row.Name, Expression: row.Expression, ExitExpression: row.ExitExpression,
+			TakeProfitExpression: row.TakeProfitExpression, StopLossExpression: row.StopLossExpression,
 			Message: row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
 		}
 	}
@@ -39,7 +40,8 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
 	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{
-		Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression, Accumulate: item.Accumulate, MaxBuys: int32(item.MaxBuys),
+		Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
+		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
 		Message: item.Message, Enabled: item.Enabled,
 	})
 	if err != nil {
@@ -65,7 +67,8 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
 	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{
-		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression, Accumulate: item.Accumulate, MaxBuys: int32(item.MaxBuys),
+		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
+		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
 		Message: item.Message, Baseline: baseline,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -198,7 +201,9 @@ func (store *Store) ListStrategyStates(ctx context.Context) (map[int64]map[int64
 		if result[row.StrategyID] == nil {
 			result[row.StrategyID] = map[int64]strategy.TradeState{}
 		}
-		state := strategy.TradeState{OpenTime: row.OpenTime.Time.UTC(), Entry: row.Entry, Buys: int(row.Buys), Filled: int(row.Filled), Quantity: row.Quantity}
+		state := strategy.TradeState{OpenTime: row.OpenTime.Time.UTC(), Entry: row.Entry, Buys: int(row.Buys), Filled: int(row.Filled), Quantity: row.Quantity,
+			TakeProfit: row.TakeProfit, StopLoss: row.StopLoss,
+		}
 		if row.OpenedAt.Valid {
 			state.OpenedAt = row.OpenedAt.Time.UTC()
 		}
@@ -250,6 +255,8 @@ func (store *Store) SaveStrategyStates(ctx context.Context, strategyID, revision
 		params.Filled = append(params.Filled, int32(state.Filled))
 		params.Quantities = append(params.Quantities, state.Quantity)
 		params.OpenedAt = append(params.OpenedAt, pgtype.Timestamptz{Time: state.OpenedAt, Valid: !state.OpenedAt.IsZero()})
+		params.TakeProfits = append(params.TakeProfits, state.TakeProfit)
+		params.StopLosses = append(params.StopLosses, state.StopLoss)
 	}
 	return store.queries.SaveStrategyStates(ctx, params)
 }

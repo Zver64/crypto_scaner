@@ -2,7 +2,6 @@ package strategy
 
 import (
 	"testing"
-	"time"
 
 	"crypto-scanner/internal/market"
 )
@@ -11,27 +10,66 @@ import (
 // its first buy fills at, even when that is not the candle after the signal.
 func TestStepWaitsForEveryRuleAndStartsTheTradeAtTheFill(t *testing.T) {
 	entry := Entry{Strategy: Strategy{ExitExpression: "x"}, Exit: &Expression{}, Interval: market.IntervalHour}
-	hour := func(index int) time.Time { return backtestStart.Add(time.Duration(index) * time.Hour) }
 	exit := func(result, known bool) func(map[string]float64) (bool, bool) {
 		return func(map[string]float64) (bool, bool) { return result, known }
 	}
-	signaled := TradeState{OpenTime: hour(0), Entry: true, Buys: 1}
+	signaled := TradeState{OpenTime: backtestHour(0), Entry: true, Buys: 1}
 
 	// Unknown entry: the pending buy does not fill and nothing is processed.
-	if next, _, processed := entry.step(signaled, TradeCandle{OpenTime: hour(1), Open: 10, Close: 10, Exit: exit(false, true)}); processed || next != signaled {
+	if next, _, processed := entry.step(signaled, flatCandle(1, 10, false, false, exit(false, true))); processed || next != signaled {
 		t.Fatalf("unknown entry processed %v, state %+v", processed, next)
 	}
 	// The buy fills at hour 2, which starts the trade.
-	filled, _, processed := entry.step(signaled, TradeCandle{OpenTime: hour(2), Open: 20, Close: 20, Entry: true, EntryKnown: true, Exit: exit(false, true)})
-	if !processed || !filled.OpenedAt.Equal(hour(2)) || filled.Filled != 1 || filled.EntryPrice() != 20 {
+	filled, _, processed := entry.step(signaled, flatCandle(2, 20, true, true, exit(false, true)))
+	if !processed || !filled.OpenedAt.Equal(backtestHour(2)) || filled.Filled != 1 || filled.EntryPrice() != 20 {
 		t.Fatalf("fill processed %v, state %+v", processed, filled)
 	}
 	// Unknown exit during the trade: the candle waits even with a known entry.
-	if next, _, processed := entry.step(filled, TradeCandle{OpenTime: hour(3), Open: 20, Close: 20, Entry: true, EntryKnown: true, Exit: exit(false, false)}); processed || next != filled {
+	if next, _, processed := entry.step(filled, flatCandle(3, 20, true, true, exit(false, false))); processed || next != filled {
 		t.Fatalf("unknown exit processed %v, state %+v", processed, next)
 	}
 	// A true exit sells without the entry.
-	if next, events, processed := entry.step(filled, TradeCandle{OpenTime: hour(3), Open: 20, Close: 22, Exit: exit(true, true)}); !processed || next.Buys != 0 || len(events) != 1 || events[0].Kind != TradeSell {
+	if next, events, processed := entry.step(filled, flatCandle(3, 22, false, false, exit(true, true))); !processed || next.Buys != 0 || len(events) != 1 || events[0].Kind != TradeSell {
 		t.Fatalf("exit processed %v, state %+v, events %+v", processed, next, events)
+	}
+}
+
+// A signal waits for unknown levels, skips levels on the wrong side of the
+// close, and otherwise fixes them in the trade it opens.
+func TestStepFixesTheLevelsOfTheTradeItOpens(t *testing.T) {
+	entry := Entry{TakeProfit: &Expression{}, StopLoss: &Expression{}, Interval: market.IntervalHour}
+	idle := TradeState{OpenTime: backtestHour(0)}
+	for _, test := range []struct {
+		name                 string
+		takeProfit, stopLoss float64
+		known                bool
+		processed            bool
+		kind                 TradeEventKind
+	}{
+		{name: "unknown", takeProfit: 12, stopLoss: 9, known: false, processed: false},
+		{name: "take profit below the close", takeProfit: 9, stopLoss: 8, known: true, processed: true, kind: TradeSkip},
+		{name: "stop loss above the close", takeProfit: 12, stopLoss: 11, known: true, processed: true, kind: TradeSkip},
+		{name: "valid", takeProfit: 12, stopLoss: 9, known: true, processed: true, kind: TradeBuy},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			candle := flatCandle(1, 10, true, true, nil)
+			candle.Levels = func() (float64, float64, bool) { return test.takeProfit, test.stopLoss, test.known }
+			next, events, processed := entry.step(idle, candle)
+			if processed != test.processed || test.processed && (len(events) != 1 || events[0].Kind != test.kind) {
+				t.Fatalf("processed %v, events %+v", processed, events)
+			}
+			bought := test.kind == TradeBuy
+			if bought != (next.Buys == 1) || bought && (next.TakeProfit != test.takeProfit || next.StopLoss != test.stopLoss) {
+				t.Fatalf("state %+v", next)
+			}
+		})
+	}
+}
+
+// flatCandle is the candle of backtestHour(index) at price throughout.
+func flatCandle(index int, price float64, entry, known bool, exit func(map[string]float64) (bool, bool)) TradeCandle {
+	return TradeCandle{
+		OpenTime: backtestHour(index), Open: price, High: price, Low: price, Close: price, Entry: entry, EntryKnown: known, Exit: exit,
+		Levels: func() (float64, float64, bool) { return 0, 0, true },
 	}
 }

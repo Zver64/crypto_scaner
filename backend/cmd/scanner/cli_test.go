@@ -144,7 +144,8 @@ func TestLoginRejectsTokensThatCannotServeTheCLI(t *testing.T) {
 
 func TestBacktestRendersTheTradesOfASavedStrategy(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT": backtestResponse,
+		"GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT":                                                           backtestResponse,
+		"GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT&from=2024-01-01T00%3A00%3A00Z&to=2024-06-30T23%3A59%3A59Z": backtestResponse,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -154,40 +155,51 @@ func TestBacktestRendersTheTradesOfASavedStrategy(t *testing.T) {
 	if raw := runCLI(t, home, "", "--json", "backtest", "--strategy", "3", "--symbol", "BTCUSDT"); raw.stdout != backtestResponse+"\n" {
 		t.Errorf("--json output = %q", raw.stdout)
 	}
+	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT", "--from", "2024-01-01", "--to", "2024-06-30"); got.code != 0 {
+		t.Errorf("backtest of a period = %+v", got)
+	}
+	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT", "--from", "January"); got.code != 1 || !strings.Contains(got.stderr, "--from") {
+		t.Errorf("backtest of an invalid period = %+v", got)
+	}
 }
 
 const backtestResponse = `{"baselines":{"buy_and_hold":0.25,"dca":0.18},` +
 	`"equity":[{"equity":1.03,"time":"2024-02-01T07:00:00Z"},{"equity":1.0094,"time":"2024-06-30T23:00:00Z"}],"fee":0.001,"from":"2024-01-01T00:00:00Z","interval":"1h",` +
-	`"skipped_alerts":1,"summary":{"max_drawdown":0.02,"net_profit":0.0094,"stats":{"average_loss":null,"average_trade":0.03,"average_win":0.03,"profit_factor":null,"trade_count":1,"win_rate":1}},` +
+	`"skipped_alerts":1,"summary":{"max_drawdown":0.02,"net_profit":0.0094,"stats":{"average_bars":2,"average_loss":null,"average_trade":0.03,"average_win":0.03,` +
+	`"exit_rule_exits":0,"profit_factor":null,"stop_loss_exits":0,"take_profit_exits":1,"trade_count":1,"win_rate":1}},` +
 	`"symbol":"BTCUSDT","to":"2024-06-30T23:00:00Z","trades":[` +
-	`{"buys":3,"entry_price":42000.123456789,"entry_time":"2024-02-01T06:00:00Z","exit_price":43303.15,"exit_time":"2024-02-01T07:00:00Z","net_return":0.03,"open":false},` +
-	`{"buys":1,"entry_price":0.00001234,"entry_time":"2024-06-30T21:00:00Z","exit_price":0.0000121,"exit_time":"2024-06-30T23:00:00Z","net_return":-0.02,"open":true}]}`
+	`{"buys":3,"entry_price":42000.123456789,"entry_time":"2024-02-01T06:00:00Z","exit_price":43303.15,"exit_reason":"take_profit",` +
+	`"exit_signal_time":"2024-02-01T07:00:00Z","exit_time":"2024-02-01T07:00:00Z","exit_values":{},"fills":[],"net_return":0.03,"open":false,"stop_loss":null,"take_profit":43303.15},` +
+	`{"buys":1,"entry_price":0.00001234,"entry_time":"2024-06-30T21:00:00Z","exit_price":0.0000121,"exit_signal_time":null,"exit_time":"2024-06-30T23:00:00Z",` +
+	`"exit_values":{},"fills":[],"net_return":-0.02,"open":true,"stop_loss":null,"take_profit":null}]}`
 
-const backtestText = `┌─────────────────┬─────────────────────────────────────────────────┐
-│ Coin            │ BTCUSDT                                         │
-│ Period          │ 2024-01-01 → 2024-06-30 (1h candles)            │
-│ Fee             │ 0.1% per buy and per sell                       │
-│ Skipped signals │ 1 (bought nothing: no accumulation or max buys) │
-└─────────────────┴─────────────────────────────────────────────────┘
-┌────────────────┬──────────┬───────────────────────────────┐
-│ METRIC         │ STRATEGY │ COMPARED WITH                 │
-├────────────────┼──────────┼───────────────────────────────┤
-│ Net profit %   │    +0.94 │ Buy & Hold +25.00, DCA +18.00 │
-│ Max drawdown % │     2.00 │ -                             │
-│ Closed trades  │        1 │ -                             │
-│ Win rate %     │      100 │ -                             │
-│ Profit factor  │        - │ -                             │
-│ Avg trade %    │    +3.00 │ -                             │
-│ Avg win %      │    +3.00 │ -                             │
-│ Avg loss %     │        - │ -                             │
-└────────────────┴──────────┴───────────────────────────────┘
-Trades: buys and sells fill at the open after their signal; an open trade is valued at the last close; returns are after fees.
-┌───┬──────────────────┬────────────┬──────┬──────────────────┬───────────┬───────┐
-│   │ ENTRY            │ AVG PRICE  │ BUYS │ EXIT             │ PRICE     │ NET % │
-├───┼──────────────────┼────────────┼──────┼──────────────────┼───────────┼───────┤
-│ 1 │ 2024-06-30 21:00 │ 0.00001234 │    1 │ open             │ 0.0000121 │ -2.00 │
-│ 2 │ 2024-02-01 06:00 │  42000.123 │    3 │ 2024-02-01 07:00 │  43303.15 │ +3.00 │
-└───┴──────────────────┴────────────┴──────┴──────────────────┴───────────┴───────┘
+const backtestText = `┌─────────────────┬──────────────────────────────────────────────────────────────────┐
+│ Coin            │ BTCUSDT                                                          │
+│ Period          │ 2024-01-01 → 2024-06-30 (1h candles)                             │
+│ Fee             │ 0.1% per buy and per sell                                        │
+│ Skipped signals │ 1 (bought nothing: a trade was open, or TP/SL on the wrong side) │
+└─────────────────┴──────────────────────────────────────────────────────────────────┘
+┌──────────────────────┬───────────┬───────────────────────────────┐
+│ METRIC               │ STRATEGY  │ COMPARED WITH                 │
+├──────────────────────┼───────────┼───────────────────────────────┤
+│ Net profit %         │     +0.94 │ Buy & Hold +25.00, DCA +18.00 │
+│ Max drawdown %       │      2.00 │ -                             │
+│ Closed trades        │         1 │ -                             │
+│ Win rate %           │       100 │ -                             │
+│ Profit factor        │         - │ -                             │
+│ Avg trade %          │     +3.00 │ -                             │
+│ Avg win %            │     +3.00 │ -                             │
+│ Avg loss %           │         - │ -                             │
+│ Avg candles held     │      2.00 │ -                             │
+│ Exits TP / SL / rule │ 1 / 0 / 0 │ -                             │
+└──────────────────────┴───────────┴───────────────────────────────┘
+Trades: buys and exit rule sells fill at the open after their signal, TP and SL on the candle reaching them; an open trade is valued at the last close; returns are after fees.
+┌───┬──────────────────┬────────────┬──────┬──────────────────┬───────────┬────┬───────┐
+│   │ ENTRY            │ AVG PRICE  │ BUYS │ EXIT             │ PRICE     │ BY │ NET % │
+├───┼──────────────────┼────────────┼──────┼──────────────────┼───────────┼────┼───────┤
+│ 1 │ 2024-06-30 21:00 │ 0.00001234 │    1 │ open             │ 0.0000121 │ -  │ -2.00 │
+│ 2 │ 2024-02-01 06:00 │  42000.123 │    3 │ 2024-02-01 07:00 │  43303.15 │ TP │ +3.00 │
+└───┴──────────────────┴────────────┴──────┴──────────────────┴───────────┴────┴───────┘
 `
 
 // The trade list shows the newest maxTradeRows trades, newest first.
@@ -229,7 +241,7 @@ func TestStrategiesCreateAddsMissingIndicatorsAndSavesADisabledStrategy(t *testi
 	}
 	for key, want := range map[string]string{
 		"POST /api/v1/admin/scanner-indicator-batches": `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`,
-		"POST /api/v1/admin/strategies":                `{"accumulate":false,"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_buys":0,"message":"","name":"ATR"}`,
+		"POST /api/v1/admin/strategies":                `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","message":"","name":"ATR","stop_loss_expression":"","take_profit_expression":""}`,
 	} {
 		var sent, expected any
 		if json.Unmarshal([]byte(api.bodies[key]), &sent) != nil || json.Unmarshal([]byte(want), &expected) != nil || !reflect.DeepEqual(sent, expected) {
@@ -243,7 +255,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","accumulate":true,"max_buys":3,"message":"","enabled":true,"valid":true},{"id":4,"name":"Old","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","message":"","enabled":true,"valid":true},{"id":4,"name":"Old","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -254,12 +266,13 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		{args: []string{"vars", "--filter", "RSI"}, want: "d_rsi\n"},
 		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; indicators will be added when saving: h-atr-100\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
-		{args: []string{"strategies"}, want: `┌────┬─────────┬─────────┬───────────────────────────┬─────────┬───────────────────┐
-│ ID │ STATE   │ NAME    │ ENTRY                     │ EXIT    │ BUYS              │
-├────┼─────────┼─────────┼───────────────────────────┼─────────┼───────────────────┤
-│  3 │ on      │ Dip buy │ d_rsi < 30 && h_close > 1 │ pnl > 5 │ accumulate, max 3 │
-│  4 │ invalid │ Old     │ x                         │ -       │ every signal      │
-└────┴─────────┴─────────┴───────────────────────────┴─────────┴───────────────────┘
+		{args: []string{"strategies"}, want: `┌────┬─────────┬─────────┬───────────────────────────┬──────────────────┬───────────────┐
+│ ID │ STATE   │ NAME    │ ENTRY                     │ EXIT             │ BUYS          │
+├────┼─────────┼─────────┼───────────────────────────┼──────────────────┼───────────────┤
+│  3 │ on      │ Dip buy │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade │
+│    │         │         │                           │ TP h_close * 1.1 │               │
+│  4 │ invalid │ Old     │ x                         │ -                │ every signal  │
+└────┴─────────┴─────────┴───────────────────────────┴──────────────────┴───────────────┘
 `},
 	} {
 		if got := runCLI(t, home, "", test.args...); got.code != 0 || got.stdout != test.want {
@@ -422,28 +435,30 @@ func TestBacktestWithoutTradesSaysWhy(t *testing.T) {
 	backtest := apiclient.StrategyBacktest{Interval: "1d", Symbol: "UNIUSDT", Fee: 0.001, From: &from, To: &to}
 	var output strings.Builder
 
-	renderBacktest(&output, backtest)
+	renderBacktest(&output, backtest, false)
 
 	if output.String() != noTradesText {
 		t.Fatalf("output:\n%s\nwant:\n%s", output.String(), noTradesText)
 	}
 }
 
-const noTradesText = `┌─────────────────┬─────────────────────────────────────────────────┐
-│ Coin            │ UNIUSDT                                         │
-│ Period          │ 2026-07-20 → 2026-10-07 (1d candles)            │
-│ Fee             │ 0.1% per buy and per sell                       │
-│ Skipped signals │ 0 (bought nothing: no accumulation or max buys) │
-└─────────────────┴─────────────────────────────────────────────────┘
+const noTradesText = `┌─────────────────┬──────────────────────────────────────────────────────────────────┐
+│ Coin            │ UNIUSDT                                                          │
+│ Period          │ 2026-07-20 → 2026-10-07 (1d candles)                             │
+│ Fee             │ 0.1% per buy and per sell                                        │
+│ Skipped signals │ 0 (bought nothing: a trade was open, or TP/SL on the wrong side) │
+└─────────────────┴──────────────────────────────────────────────────────────────────┘
 No trades: the strategy did not buy on this coin in the stored history.
 `
 
 func TestBacktestWithoutEvaluatedCandlesSaysWhy(t *testing.T) {
 	var output strings.Builder
 
-	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"})
+	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"}, false)
+	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"}, true)
 
-	if output.String() != "ETHUSDT: no stored candles of this interval yet; synchronization fills them first.\n" {
+	if output.String() != "ETHUSDT: no stored candles of this interval yet; synchronization fills them first.\n"+
+		"ETHUSDT: no stored candles of this interval in the requested period.\n" {
 		t.Fatalf("output = %q", output.String())
 	}
 }

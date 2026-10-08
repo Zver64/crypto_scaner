@@ -17,10 +17,11 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyValidationInputKind } from './strategyValidationInputKind.ts';
 
-export interface StrategyValidationInput {
-  expression: string;
-  /** Checks the expression as the entry rule, as the exit rule, which may read the position variables, or as a take profit or stop loss price. */
-  kind?: StrategyValidationInputKind;
-}
+/**
+ * Stop loss price, a CEL price expression like the take profit, such as
+ * `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+ * and its close buys nothing. Empty without a stop loss.
+ * @maxLength 2000
+ */
+export type StrategyStopLossExpression = string;

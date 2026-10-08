@@ -44,7 +44,7 @@ export interface StrategyBacktest {
   summary: BacktestSummary;
   /** Trades, oldest first; the last one is open when the history ends before its sell. */
   trades: BacktestTrade[];
-  /** Entry signals that bought nothing, since the trade does not accumulate or holds `max_buys`. */
+  /** Entry signals that bought nothing, since a strategy that exits held a trade, or the take profit or stop loss was not on its side of the close. */
   skipped_alerts: number;
   /** Equity after each trade, the open one included, compounded from 1, oldest first. */
   equity: BacktestEquityPoint[];

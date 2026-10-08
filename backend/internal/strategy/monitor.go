@@ -422,7 +422,13 @@ type snapshot struct {
 // match evaluates expression, a rule of entry, over the fresh values of one
 // instrument, the instruments it reads through of, and positions.
 func (current snapshot) match(expression *Expression, entry Entry, instrumentID int64, positions map[string]float64) (bool, bool) {
-	return expression.Evaluate(func(read Read) (float64, bool) {
+	return expression.Evaluate(current.resolver(entry, instrumentID, positions))
+}
+
+// resolver reads the values of entry on the evaluated instrument, and the
+// position variables from positions.
+func (current snapshot) resolver(entry Entry, instrumentID int64, positions map[string]float64) func(Read) (float64, bool) {
+	return func(read Read) (float64, bool) {
 		if read.Variable.Position {
 			value, ok := positions[read.Variable.Name]
 			return value, ok
@@ -432,7 +438,7 @@ func (current snapshot) match(expression *Expression, entry Entry, instrumentID 
 			return 0, false
 		}
 		return output.At(read.Shift)
-	})
+	}
 }
 
 // advance processes the latest closed candle of the interval of entry on
@@ -444,22 +450,40 @@ func (current snapshot) advance(entry Entry, instrumentID int64, state TradeStat
 	if !ok || !current.values[position].OpenTime.Equal(at) {
 		return state, nil, false
 	}
-	var open, close float64
-	for _, output := range current.values[position].Outputs {
-		switch output.Name {
-		case "open":
-			open = output.Value
-		case "close":
-			close = output.Value
-		}
-	}
-	result, known := current.match(entry.Compiled, entry, instrumentID, nil)
-	return entry.step(state, TradeCandle{
-		OpenTime: at, Open: open, Close: close, Entry: result, EntryKnown: known,
+	candle := TradeCandle{
+		OpenTime: at,
 		Exit: func(positions map[string]float64) (bool, bool) {
 			return current.match(entry.Exit, entry, instrumentID, positions)
 		},
-	})
+		Levels: func() (float64, float64, bool) {
+			takeProfit, knownTakeProfit := current.price(entry.TakeProfit, entry, instrumentID)
+			stopLoss, knownStopLoss := current.price(entry.StopLoss, entry, instrumentID)
+			return takeProfit, stopLoss, knownTakeProfit && knownStopLoss
+		},
+	}
+	for _, output := range current.values[position].Outputs {
+		switch output.Name {
+		case "open":
+			candle.Open = output.Value
+		case "high":
+			candle.High = output.Value
+		case "low":
+			candle.Low = output.Value
+		case "close":
+			candle.Close = output.Value
+		}
+	}
+	candle.Entry, candle.EntryKnown = current.match(entry.Compiled, entry, instrumentID, nil)
+	return entry.step(state, candle)
+}
+
+// price evaluates the price expression, which may be nil for a price the
+// strategy lacks, 0 and known then, on the evaluated instrument.
+func (current snapshot) price(expression *Expression, entry Entry, instrumentID int64) (float64, bool) {
+	if expression == nil {
+		return 0, true
+	}
+	return expression.Price(current.resolver(entry, instrumentID, nil))
 }
 
 // output returns the fresh output read reads of the evaluated instrument or
@@ -601,7 +625,14 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	text := "🎯 " + entry.Name + " is active\nEntry: " + entry.Expression + "\n"
 	if entry.Exit != nil {
 		text += "Exit: " + entry.ExitExpression + "\n"
-	} else {
+	}
+	if entry.TakeProfit != nil {
+		text += "Take profit: " + entry.TakeProfitExpression + "\n"
+	}
+	if entry.StopLoss != nil {
+		text += "Stop loss: " + entry.StopLossExpression + "\n"
+	}
+	if !entry.Exits() {
 		text += "No exit: every entry signal buys.\n"
 	}
 	var absent []string
@@ -632,36 +663,48 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	return strings.TrimSuffix(text, ", ")
 }
 
-// alertText names the strategy, the instrument, and the buy or the sell of
-// event, then the rule that signaled it and the latest values that rule
-// read, those of other instruments after their symbol. A strategy message
-// replaces the rule and the values.
+// alertText names the strategy, the instrument, and the buy, with the take
+// profit and stop loss of the trade it opens, or the sell of event and what
+// sold it, then the rule that signaled it and the values that rule read,
+// named as it writes them. A sell at a take
+// profit or stop loss has no rule. A strategy message replaces the rule and
+// the values.
 func alertText(entry Entry, instrument Instrument, event TradeEvent, current snapshot) string {
 	title := "🟢 " + entry.Name + ": " + instrument.Symbol + " buy #" + strconv.Itoa(event.Buy) + " at " + formatNumber(event.Close)
+	if event.Trade.TakeProfit > 0 {
+		title += ", take profit " + formatNumber(event.Trade.TakeProfit)
+	}
+	if event.Trade.StopLoss > 0 {
+		title += ", stop loss " + formatNumber(event.Trade.StopLoss)
+	}
 	rule, source := entry.Compiled, entry.Expression
 	if event.Kind == TradeSell {
-		title = fmt.Sprintf("🔴 %s: %s sell %d buys at %s, entry %s, pnl %+.2f%%",
-			entry.Name, instrument.Symbol, event.Trade.Buys, formatNumber(event.Close), formatNumber(event.Trade.EntryPrice()), 100*event.Return)
+		price, reason := event.Close, "exit rule"
+		switch event.Reason {
+		case ExitTakeProfit:
+			price, reason = event.Price, "take profit"
+		case ExitStopLoss:
+			price, reason = event.Price, "stop loss"
+		}
+		title = fmt.Sprintf("🔴 %s: %s sell %d buys at %s by %s, entry %s, pnl %+.2f%%",
+			entry.Name, instrument.Symbol, event.Trade.Buys, formatNumber(price), reason, formatNumber(event.Trade.EntryPrice()), 100*event.Return)
 		rule, source = entry.Exit, entry.ExitExpression
 	}
 	if entry.Message != "" {
 		return title + "\n" + entry.Message
 	}
+	if event.Kind == TradeSell && event.Reason != ExitRuleSignal {
+		return title
+	}
 	lines := []string{title, source}
-	var readings []string
-	shown := map[string]struct{}{}
-	for _, read := range rule.Reads() {
-		name := read.Variable.Name
-		if read.Symbol != "" {
-			name = read.Symbol + " " + name
-		}
-		if _, ok := shown[name]; ok {
-			continue
-		}
-		shown[name] = struct{}{}
-		if output, ok := current.output(entry, read, instrument.ID); ok {
-			readings = append(readings, name+" "+formatNumber(output.Value))
-		}
+	var positions map[string]float64
+	if event.Kind == TradeSell {
+		positions = entry.positions(event.Trade, entry.Interval.LastClosedOpenTime(current.now), event.Close)
+	}
+	values := rule.Values(current.resolver(entry, instrument.ID, positions))
+	readings := make([]string, 0, len(values))
+	for _, label := range slices.Sorted(maps.Keys(values)) {
+		readings = append(readings, label+" "+formatNumber(values[label]))
 	}
 	if len(readings) > 0 {
 		lines = append(lines, strings.Join(readings, " · "))

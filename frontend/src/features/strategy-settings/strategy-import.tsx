@@ -68,7 +68,7 @@ export function StrategyImport({
 	};
 	const check = () =>
 		validation.mutate(
-			{ data: { exit, expression } },
+			{ data: { expression, kind: exit ? "exit" : "entry" } },
 			{
 				onError: () => setProblems(["The expression could not be checked."]),
 				onSuccess: (response) => {

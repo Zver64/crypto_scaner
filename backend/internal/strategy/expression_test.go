@@ -2,6 +2,7 @@ package strategy
 
 import (
 	"errors"
+	"maps"
 	"slices"
 	"testing"
 )
@@ -79,5 +80,43 @@ func TestCompileReadsPositionVariablesOnlyInExitRules(t *testing.T) {
 		if !errors.As(err, &invalid) || !slices.Equal(invalid.Problems, []string{test.problem}) {
 			t.Fatalf("Compile(%q) error = %v, want %q", test.source, err, test.problem)
 		}
+	}
+}
+
+// A price is arithmetic over values that reads the evaluated coin, and its
+// values are reported as the source writes them, outside percentile windows.
+func TestCompilePrice(t *testing.T) {
+	variables := Variables(nil)
+	for source, problem := range map[string]string{
+		"h_close > 1":                  "the price must be calculated from indicators, candle fields, and numbers",
+		"5":                            "the price reads an indicator or a candle field",
+		`of("BTCUSDT", h_close) * 0.9`: "the expression must also read the evaluated coin, not only coins read through of",
+		"pnl * 2":                      "pnl is available only in the exit rule",
+	} {
+		_, err := CompilePrice(source, variables)
+		var invalid *InvalidExpressionError
+		if !errors.As(err, &invalid) || !slices.Equal(invalid.Problems, []string{problem}) {
+			t.Fatalf("CompilePrice(%q) error = %v, want %q", source, err, problem)
+		}
+	}
+	compiled, err := CompilePrice(`min(h_low, prev(h_low, 2), prev(h_low)) - percentile(h_high - h_low, 3, 50) + of("ETHUSDT", h_close) * 0`, variables)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Lows fall by one per candle back and highs stay 2 above them.
+	price, known := compiled.Price(func(read Read) (float64, bool) {
+		value := 10 - float64(read.Shift)
+		if read.Variable.Name == "h_high" {
+			value += 2
+		}
+		return value, true
+	})
+	if !known || price != 8-2 {
+		t.Fatalf("Price() = %v (%v), want 6", price, known)
+	}
+	got := compiled.Values(func(read Read) (float64, bool) { return float64(read.Shift), true })
+	want := map[string]float64{"h_low": 0, "prev(h_low)": 1, "prev(h_low, 2)": 2, `of("ETHUSDT", h_close)`: 0}
+	if !maps.Equal(got, want) {
+		t.Fatalf("Values() = %v, want %v", got, want)
 	}
 }

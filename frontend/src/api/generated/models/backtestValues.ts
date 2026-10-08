@@ -17,10 +17,10 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyValidationInputKind } from './strategyValidationInputKind.ts';
 
-export interface StrategyValidationInput {
-  expression: string;
-  /** Checks the expression as the entry rule, as the exit rule, which may read the position variables, or as a take profit or stop loss price. */
-  kind?: StrategyValidationInputKind;
-}
+/**
+ * Values a rule read, named as its source writes them, such as `h_rsi`,
+ * `prev(h_rsi, 2)`, or `of("BTCUSDT", h_close)`; reads inside
+ * percentile windows and unknown values are left out.
+ */
+export interface BacktestValues {[key: string]: number}

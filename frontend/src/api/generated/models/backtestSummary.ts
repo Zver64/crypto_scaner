@@ -25,7 +25,7 @@ import type { BacktestTradeStats } from './backtestTradeStats.ts';
 export interface BacktestSummary {
   /** Compounded net return of the trades, the open one included; 0 without trades. */
   net_profit: number;
-  /** Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at trade exits; 0 without falls. */
+  /** Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at the close of every evaluated candle with an open trade valued there; 0 without falls. */
   max_drawdown: number;
   /** Statistics of the closed trades. */
   stats: BacktestTradeStats;

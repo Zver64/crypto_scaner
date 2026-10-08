@@ -23,6 +23,17 @@
  */
 export interface BacktestTradeStats {
   trade_count: number;
+  /** Trades the take profit sold. */
+  take_profit_exits: number;
+  /** Trades the stop loss sold. */
+  stop_loss_exits: number;
+  /** Trades the exit rule sold, including those the history ends with on their signal's candle. */
+  exit_rule_exits: number;
+  /**
+     * Mean count of candles from the one the first buy filled at through the one the trade sold at; null without trades.
+     * @nullable
+     */
+  average_bars: number | null;
   /**
      * Share of positive returns, from 0 to 1; null without trades.
      * @nullable

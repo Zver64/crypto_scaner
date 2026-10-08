@@ -17,10 +17,10 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyAccumulate } from './strategyAccumulate.ts';
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
-import type { StrategyMaxBuys } from './strategyMaxBuys.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
+import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
+import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
 
 export interface Strategy {
   id: number;
@@ -28,8 +28,8 @@ export interface Strategy {
   /** Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`. */
   expression: string;
   exit_expression: StrategyExitExpression;
-  accumulate: StrategyAccumulate;
-  max_buys: StrategyMaxBuys;
+  take_profit_expression: StrategyTakeProfitExpression;
+  stop_loss_expression: StrategyStopLossExpression;
   message: StrategyMessage;
   enabled: boolean;
   /** False when a stored rule no longer compiles; such a strategy is not evaluated. */

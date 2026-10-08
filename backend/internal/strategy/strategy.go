@@ -22,8 +22,6 @@ import (
 
 const (
 	maxNameLength = 64
-	// MaxBuys bounds the max buys of a trade a strategy may set.
-	MaxBuys = 1000
 	// maxMessageLength keeps alerts well below Telegram's 4096-character
 	// message limit.
 	maxMessageLength = 1000
@@ -63,17 +61,17 @@ func (err *InstrumentsInUseError) Error() string {
 func (err *InstrumentsInUseError) Is(target error) bool { return target == ErrInstrumentsInUse }
 
 // Strategy is one stored strategy. Expression is the entry rule;
-// ExitExpression, when not empty, the exit rule. Accumulate lets entry
-// signals add buys to an open trade, which only a strategy with an exit has;
-// one without an exit buys at every entry signal and never sells. MaxBuys
-// caps the buys of a trade, 0 meaning no cap.
+// ExitExpression, when not empty, the exit rule; TakeProfitExpression and
+// StopLossExpression, when not empty, the prices a trade sells at, evaluated
+// when its entry signals. A strategy with any of these exits holds one buy
+// per trade; one without buys at every entry signal and never sells.
 type Strategy struct {
-	ID             int64
-	Name           string
-	Expression     string
-	ExitExpression string
-	Accumulate     bool
-	MaxBuys        int
+	ID                   int64
+	Name                 string
+	Expression           string
+	ExitExpression       string
+	TakeProfitExpression string
+	StopLossExpression   string
 	// Message replaces the generated alert text when it is not empty.
 	Message string
 	Enabled bool
@@ -89,29 +87,37 @@ type Strategy struct {
 // trades reports whether other differs from strategy in how it trades.
 func (strategy Strategy) trades(other Strategy) bool {
 	return strategy.Expression != other.Expression || strategy.ExitExpression != other.ExitExpression ||
-		strategy.Accumulate != other.Accumulate || strategy.MaxBuys != other.MaxBuys
+		strategy.TakeProfitExpression != other.TakeProfitExpression || strategy.StopLossExpression != other.StopLossExpression
 }
 
 // Entry is a strategy with its compiled expressions. Compiled, the entry
 // rule, is nil when a stored source no longer compiles, and such a strategy
-// is not evaluated; Exit is nil without an exit rule.
+// is not evaluated; Exit, TakeProfit, and StopLoss are nil without their
+// source.
 type Entry struct {
 	Strategy
-	Compiled *Expression
-	Exit     *Expression
+	Compiled             *Expression
+	Exit                 *Expression
+	TakeProfit, StopLoss *Expression
 	// Interval is the finest interval the expressions read, whose candles
 	// the strategy trades on.
 	Interval market.CandleInterval
 	// Problem explains why a stored source no longer compiles.
 	Problem string
-	// reads lists what the entry and the exit rules read, each read once,
-	// and symbols the other instruments they read through of, ascending.
+	// reads lists what the expressions read, each read once, and symbols
+	// the other instruments they read through of, ascending.
 	reads   []Read
 	symbols []string
 }
 
 // evaluated reports whether the monitor evaluates the strategy.
 func (entry Entry) evaluated() bool { return entry.Enabled && entry.Compiled != nil }
+
+// Exits reports whether the strategy sells: through its exit rule, take
+// profit, or stop loss.
+func (entry Entry) Exits() bool {
+	return entry.Exit != nil || entry.TakeProfit != nil || entry.StopLoss != nil
+}
 
 // indicatorIDs lists the indicators the rules read, ascending.
 func (entry Entry) indicatorIDs() []int64 {
@@ -192,10 +198,33 @@ func NewService(store Store, indicators Indicators, registry *indicator.Registry
 	return &Service{store: store, indicators: indicators, registry: registry, administratorID: administratorID, logger: logger.With("module", "strategy"), changed: changed}, nil
 }
 
-// compile compiles source and checks that the synchronized history covers its
-// deepest reads, so a strategy never waits for values that cannot exist.
-func (service *Service) compile(source string, variables []Variable) (*Expression, error) {
-	compiled, err := Compile(source, variables)
+// RuleKind tells what an expression is to a strategy.
+type RuleKind int
+
+const (
+	// EntryRule is the entry rule, a condition.
+	EntryRule RuleKind = iota
+	// ExitRule is the exit rule, a condition that may also read the position
+	// variables.
+	ExitRule
+	// PriceRule is a take profit or stop loss price.
+	PriceRule
+)
+
+// compile compiles source as a rule of kind and checks that the synchronized
+// history covers its deepest reads, so a strategy never waits for values that
+// cannot exist.
+func (service *Service) compile(source string, variables []Variable, kind RuleKind) (*Expression, error) {
+	var compiled *Expression
+	var err error
+	switch kind {
+	case PriceRule:
+		compiled, err = CompilePrice(source, variables)
+	case ExitRule:
+		compiled, err = Compile(source, append(slices.Clone(variables), PositionVariables()...))
+	default:
+		compiled, err = Compile(source, variables)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -234,14 +263,13 @@ type Validation struct {
 	Missing []scannerindicator.Entry
 }
 
-// Validate lists every problem that would reject expression as the entry
-// rule of a strategy, or as its exit rule when exit is set: the problems of
-// compiling it, and the coins it reads through of that are not the
-// administrator's active favorites. Names of indicators that are not
-// configured yet are resolved into Missing, and the problems assume they
+// Validate lists every problem that would reject expression as a rule of
+// kind: the problems of compiling it, and the coins it reads through of that
+// are not the administrator's active favorites. Names of indicators that are
+// not configured yet are resolved into Missing, and the problems assume they
 // were added.
-func (service *Service) Validate(ctx context.Context, expression string, exit bool) (Validation, error) {
-	compiled, missing, err := service.compileResolving(expression, exit)
+func (service *Service) Validate(ctx context.Context, expression string, kind RuleKind) (Validation, error) {
+	compiled, missing, err := service.compileResolving(expression, kind)
 	var invalid *InvalidExpressionError
 	if errors.As(err, &invalid) {
 		return Validation{Problems: append(invalid.Problems, service.indicators.CapacityProblems(missing)...), Missing: missing}, nil
@@ -262,55 +290,57 @@ func (service *Service) Validate(ctx context.Context, expression string, exit bo
 	return Validation{Problems: problems, Missing: missing}, nil
 }
 
-// compileResolving compiles expression, an entry rule or, when exit is set,
-// an exit rule, over the configured indicators and, for the names of
-// indicators that are not configured, over the indicators missingIndicators
-// resolves them into, which it returns.
-func (service *Service) compileResolving(expression string, exit bool) (*Expression, []scannerindicator.Entry, error) {
+// compileResolving compiles expression, a rule of kind, over the configured
+// indicators and, for the names of indicators that are not configured, over
+// the indicators missingIndicators resolves them into, which it returns.
+func (service *Service) compileResolving(expression string, kind RuleKind) (*Expression, []scannerindicator.Entry, error) {
 	expression = strings.TrimSpace(expression)
 	configured := service.indicators.List()
-	compiled, err := service.compile(expression, ruleVariables(Variables(configured), exit))
+	compiled, err := service.compile(expression, Variables(configured), kind)
 	var invalid *InvalidExpressionError
 	if !errors.As(err, &invalid) || len(invalid.Unknown) == 0 {
 		return compiled, nil, err
 	}
 	missing := service.missingIndicators(configured, invalid.Unknown)
 	if len(missing) > 0 {
-		compiled, err = service.compile(expression, ruleVariables(Variables(append(slices.Clone(configured), missing...)), exit))
+		compiled, err = service.compile(expression, Variables(append(slices.Clone(configured), missing...)), kind)
 	}
 	return compiled, missing, err
 }
 
-// ruleVariables adds the position variables to variables for an exit rule.
-func ruleVariables(variables []Variable, exit bool) []Variable {
-	if !exit {
-		return variables
-	}
-	return append(slices.Clone(variables), PositionVariables()...)
-}
-
-// compileEntry compiles the rules of item over variables and finds the
-// interval it trades on. Problems of the exit rule name it.
+// compileEntry compiles the expressions of item over variables and finds the
+// interval it trades on. Problems of the other expressions than the entry
+// rule name them.
 func (service *Service) compileEntry(item Strategy, variables []Variable) (Entry, error) {
 	entry := Entry{Strategy: item}
-	compiled, err := service.compile(item.Expression, variables)
+	compiled, err := service.compile(item.Expression, variables, EntryRule)
 	if err != nil {
 		return entry, err
 	}
-	var exit *Expression
-	if item.ExitExpression != "" {
-		if exit, err = service.compile(item.ExitExpression, ruleVariables(variables, true)); err != nil {
-			var invalid *InvalidExpressionError
-			if errors.As(err, &invalid) {
-				for index, problem := range invalid.Problems {
-					invalid.Problems[index] = "exit rule: " + problem
-				}
-			}
-			return entry, err
+	optional := func(source, name string, kind RuleKind) (*Expression, error) {
+		if source == "" {
+			return nil, nil
 		}
+		expression, err := service.compile(source, variables, kind)
+		var invalid *InvalidExpressionError
+		if errors.As(err, &invalid) {
+			for index, problem := range invalid.Problems {
+				invalid.Problems[index] = name + ": " + problem
+			}
+		}
+		return expression, err
 	}
-	entry.Compiled, entry.Exit = compiled, exit
-	entry.reads = mergeReads(compiled, exit)
+	if entry.Exit, err = optional(item.ExitExpression, "exit rule", ExitRule); err != nil {
+		return entry, err
+	}
+	if entry.TakeProfit, err = optional(item.TakeProfitExpression, "take profit", PriceRule); err != nil {
+		return entry, err
+	}
+	if entry.StopLoss, err = optional(item.StopLossExpression, "stop loss", PriceRule); err != nil {
+		return entry, err
+	}
+	entry.Compiled = compiled
+	entry.reads = mergeReads(compiled, entry.Exit, entry.TakeProfit, entry.StopLoss)
 	for _, read := range entry.reads {
 		if read.Symbol != "" && !slices.Contains(entry.symbols, read.Symbol) {
 			entry.symbols = append(entry.symbols, read.Symbol)
@@ -327,13 +357,10 @@ func (service *Service) compileEntry(item Strategy, variables []Variable) (Entry
 	return entry, nil
 }
 
-// mergeReads lists what the entry rule and the exit rule, which may be nil,
-// read, each read once.
-func mergeReads(compiled, exit *Expression) []Read {
+// mergeReads lists what the entry rule and the other expressions, which may
+// be nil, read, each read once.
+func mergeReads(compiled *Expression, others ...*Expression) []Read {
 	reads := compiled.Reads()
-	if exit == nil {
-		return reads
-	}
 	type key struct {
 		name, symbol string
 		shift        int
@@ -342,9 +369,15 @@ func mergeReads(compiled, exit *Expression) []Read {
 	for _, read := range reads {
 		seen[key{read.Variable.Name, read.Symbol, read.Shift}] = struct{}{}
 	}
-	for _, read := range exit.Reads() {
-		if _, ok := seen[key{read.Variable.Name, read.Symbol, read.Shift}]; !ok {
-			reads = append(reads, read)
+	for _, other := range others {
+		if other == nil {
+			continue
+		}
+		for _, read := range other.Reads() {
+			if _, ok := seen[key{read.Variable.Name, read.Symbol, read.Shift}]; !ok {
+				seen[key{read.Variable.Name, read.Symbol, read.Shift}] = struct{}{}
+				reads = append(reads, read)
+			}
 		}
 	}
 	return reads
@@ -547,18 +580,10 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	if utf8.RuneCountInString(item.Message) > maxMessageLength {
 		return Entry{}, fmt.Errorf("%w: the message must have at most %d characters", ErrInvalidArgument, maxMessageLength)
 	}
-	if item.MaxBuys < 0 || item.MaxBuys > MaxBuys {
-		return Entry{}, fmt.Errorf("%w: max buys must be from 0 to %d", ErrInvalidArgument, MaxBuys)
-	}
 	item.Expression = strings.TrimSpace(item.Expression)
 	item.ExitExpression = strings.TrimSpace(item.ExitExpression)
-	// Without an exit every entry signal buys anyway, and a trade of one buy
-	// has no max buys to keep.
-	if item.ExitExpression == "" {
-		item.Accumulate = false
-	} else if !item.Accumulate {
-		item.MaxBuys = 0
-	}
+	item.TakeProfitExpression = strings.TrimSpace(item.TakeProfitExpression)
+	item.StopLossExpression = strings.TrimSpace(item.StopLossExpression)
 	entry, err := service.compileEntry(item, service.Variables())
 	if err != nil {
 		return Entry{}, err

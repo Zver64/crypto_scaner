@@ -87,19 +87,19 @@ func (q *Queries) DeleteStrategySymbols(ctx context.Context, strategyID int64) e
 }
 
 const insertStrategy = `-- name: InsertStrategy :one
-INSERT INTO app.strategies (name, expression, exit_expression, accumulate, max_buys, message, enabled, baseline_pending)
+INSERT INTO app.strategies (name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, baseline_pending)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $7)
 RETURNING id
 `
 
 type InsertStrategyParams struct {
-	Name           string
-	Expression     string
-	ExitExpression string
-	Accumulate     bool
-	MaxBuys        int32
-	Message        string
-	Enabled        bool
+	Name                 string
+	Expression           string
+	ExitExpression       string
+	TakeProfitExpression string
+	StopLossExpression   string
+	Message              string
+	Enabled              bool
 }
 
 func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) (int64, error) {
@@ -107,8 +107,8 @@ func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) 
 		arg.Name,
 		arg.Expression,
 		arg.ExitExpression,
-		arg.Accumulate,
-		arg.MaxBuys,
+		arg.TakeProfitExpression,
+		arg.StopLossExpression,
 		arg.Message,
 		arg.Enabled,
 	)
@@ -177,22 +177,22 @@ func (q *Queries) InsertStrategySymbols(ctx context.Context, arg InsertStrategyS
 }
 
 const listStrategies = `-- name: ListStrategies :many
-SELECT id, name, expression, exit_expression, accumulate, max_buys, message, enabled, baseline_pending, revision
+SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id
 `
 
 type ListStrategiesRow struct {
-	ID              int64
-	Name            string
-	Expression      string
-	ExitExpression  string
-	Accumulate      bool
-	MaxBuys         int32
-	Message         string
-	Enabled         bool
-	BaselinePending bool
-	Revision        int64
+	ID                   int64
+	Name                 string
+	Expression           string
+	ExitExpression       string
+	TakeProfitExpression string
+	StopLossExpression   string
+	Message              string
+	Enabled              bool
+	BaselinePending      bool
+	Revision             int64
 }
 
 func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, error) {
@@ -209,8 +209,8 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			&i.Name,
 			&i.Expression,
 			&i.ExitExpression,
-			&i.Accumulate,
-			&i.MaxBuys,
+			&i.TakeProfitExpression,
+			&i.StopLossExpression,
 			&i.Message,
 			&i.Enabled,
 			&i.BaselinePending,
@@ -358,7 +358,7 @@ func (q *Queries) ListStrategyRecipients(ctx context.Context, administratorTeleg
 }
 
 const listStrategyStates = `-- name: ListStrategyStates :many
-SELECT strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at
+SELECT strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at, take_profit, stop_loss
 FROM app.strategy_states
 ORDER BY strategy_id, instrument_id
 `
@@ -381,6 +381,8 @@ func (q *Queries) ListStrategyStates(ctx context.Context) ([]AppStrategyState, e
 			&i.Filled,
 			&i.Quantity,
 			&i.OpenedAt,
+			&i.TakeProfit,
+			&i.StopLoss,
 		); err != nil {
 			return nil, err
 		}
@@ -464,20 +466,22 @@ func (q *Queries) LockStrategySymbols(ctx context.Context, symbols []string) ([]
 }
 
 const saveStrategyStates = `-- name: SaveStrategyStates :many
-INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at)
-SELECT s.id, v.instrument_id, v.open_time, v.entry, v.buys, v.filled, v.quantity, v.opened_at
+INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at, take_profit, stop_loss)
+SELECT s.id, v.instrument_id, v.open_time, v.entry, v.buys, v.filled, v.quantity, v.opened_at, v.take_profit, v.stop_loss
 FROM app.strategies s
 CROSS JOIN (
     SELECT unnest($1::BIGINT[]) AS instrument_id, unnest($2::TIMESTAMPTZ[]) AS open_time,
            unnest($3::BOOLEAN[]) AS entry, unnest($4::INTEGER[]) AS buys,
            unnest($5::INTEGER[]) AS filled, unnest($6::DOUBLE PRECISION[]) AS quantity,
-           unnest($7::TIMESTAMPTZ[]) AS opened_at
+           unnest($7::TIMESTAMPTZ[]) AS opened_at, unnest($8::DOUBLE PRECISION[]) AS take_profit,
+           unnest($9::DOUBLE PRECISION[]) AS stop_loss
 ) AS v
-WHERE s.id = $8 AND s.enabled AND NOT s.baseline_pending AND s.revision = $9
+WHERE s.id = $10 AND s.enabled AND NOT s.baseline_pending AND s.revision = $11
 FOR SHARE OF s
 ON CONFLICT (strategy_id, instrument_id) DO UPDATE
 SET open_time = EXCLUDED.open_time, entry = EXCLUDED.entry, buys = EXCLUDED.buys,
-    filled = EXCLUDED.filled, quantity = EXCLUDED.quantity, opened_at = EXCLUDED.opened_at
+    filled = EXCLUDED.filled, quantity = EXCLUDED.quantity, opened_at = EXCLUDED.opened_at,
+    take_profit = EXCLUDED.take_profit, stop_loss = EXCLUDED.stop_loss
 WHERE app.strategy_states.open_time < EXCLUDED.open_time
 RETURNING instrument_id
 `
@@ -490,6 +494,8 @@ type SaveStrategyStatesParams struct {
 	Filled        []int32
 	Quantities    []float64
 	OpenedAt      []pgtype.Timestamptz
+	TakeProfits   []float64
+	StopLosses    []float64
 	StrategyID    int64
 	Revision      int64
 }
@@ -506,6 +512,8 @@ func (q *Queries) SaveStrategyStates(ctx context.Context, arg SaveStrategyStates
 		arg.Filled,
 		arg.Quantities,
 		arg.OpenedAt,
+		arg.TakeProfits,
+		arg.StopLosses,
 		arg.StrategyID,
 		arg.Revision,
 	)
@@ -549,25 +557,26 @@ func (q *Queries) SetStrategyEnabled(ctx context.Context, arg SetStrategyEnabled
 const updateStrategy = `-- name: UpdateStrategy :one
 UPDATE app.strategies
 SET name = $1, expression = $2, exit_expression = $3,
-    accumulate = $4, max_buys = $5, message = $6, updated_at = now(),
+    take_profit_expression = $4, stop_loss_expression = $5,
+    message = $6, updated_at = now(),
     baseline_pending = baseline_pending OR $7::BOOLEAN,
     revision = revision + (expression IS DISTINCT FROM $2
         OR exit_expression IS DISTINCT FROM $3
-        OR accumulate IS DISTINCT FROM $4
-        OR max_buys IS DISTINCT FROM $5)::INTEGER
+        OR take_profit_expression IS DISTINCT FROM $4
+        OR stop_loss_expression IS DISTINCT FROM $5)::INTEGER
 WHERE id = $8
 RETURNING revision
 `
 
 type UpdateStrategyParams struct {
-	Name           string
-	Expression     string
-	ExitExpression string
-	Accumulate     bool
-	MaxBuys        int32
-	Message        string
-	Baseline       bool
-	ID             int64
+	Name                 string
+	Expression           string
+	ExitExpression       string
+	TakeProfitExpression string
+	StopLossExpression   string
+	Message              string
+	Baseline             bool
+	ID                   int64
 }
 
 // A change of how the strategy trades starts a new revision.
@@ -576,8 +585,8 @@ func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) 
 		arg.Name,
 		arg.Expression,
 		arg.ExitExpression,
-		arg.Accumulate,
-		arg.MaxBuys,
+		arg.TakeProfitExpression,
+		arg.StopLossExpression,
 		arg.Message,
 		arg.Baseline,
 		arg.ID,

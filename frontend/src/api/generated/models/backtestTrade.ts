@@ -17,6 +17,9 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { BacktestFill } from './backtestFill.ts';
+import type { BacktestTradeExitReason } from './backtestTradeExitReason.ts';
+import type { BacktestValues } from './backtestValues.ts';
 
 export interface BacktestTrade {
   /** Open time of the candle the first buy filled at, at its open. */
@@ -35,4 +38,25 @@ export interface BacktestTrade {
   open: boolean;
   /** Return net of the fees on both sides. */
   net_return: number;
+  /** The filled buys, oldest first. */
+  fills: BacktestFill[];
+  /**
+     * Take profit price fixed at the entry signal; null without one.
+     * @nullable
+     */
+  take_profit: number | null;
+  /**
+     * Stop loss price fixed at the entry signal; null without one.
+     * @nullable
+     */
+  stop_loss: number | null;
+  /** What sold the trade; absent for an open trade. */
+  exit_reason?: BacktestTradeExitReason;
+  /**
+     * Open time of the candle whose take profit, stop loss, or exit rule close signaled the sell; null for an open trade.
+     * @nullable
+     */
+  exit_signal_time: string | null;
+  /** What the exit rule read at its signal; empty for other sells and open trades. */
+  exit_values: BacktestValues;
 }

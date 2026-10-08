@@ -14,6 +14,7 @@ import (
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/indicator/candle"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/numeric"
 	"crypto-scanner/internal/scannerindicator"
 
 	"cel.dev/cel-go/cel"
@@ -181,8 +182,10 @@ func Variables(entries []scannerindicator.Entry) []Variable {
 // Expression is a compiled strategy expression.
 type Expression struct {
 	program cel.Program
-	// reads maps the identifiers of the expression to what they read.
+	// reads maps the identifiers of the expression to what they read, and
+	// shown those of them the source reads outside percentile windows.
 	reads map[string]Read
+	shown map[string]struct{}
 }
 
 // IndicatorIDs lists the indicators the expression reads, ascending. Candle
@@ -233,6 +236,26 @@ func (expression *Expression) Reads() []Read {
 // need them; known is false when the result depends on a missing value or a
 // division by zero.
 func (expression *Expression) Evaluate(value func(Read) (float64, bool)) (result bool, known bool) {
+	output, ok := expression.eval(value)
+	if !ok {
+		return false, false
+	}
+	matched, ok := output.(bool)
+	return matched, ok
+}
+
+// Price runs a price expression like Evaluate; known is false when the
+// result depends on a missing value or a division by zero, or is not finite.
+func (expression *Expression) Price(value func(Read) (float64, bool)) (price float64, known bool) {
+	output, ok := expression.eval(value)
+	if !ok {
+		return 0, false
+	}
+	price, ok = output.(float64)
+	return price, ok && numeric.Finite(price)
+}
+
+func (expression *Expression) eval(value func(Read) (float64, bool)) (any, bool) {
 	activation := make(map[string]any, len(expression.reads))
 	for name, read := range expression.reads {
 		if number, ok := value(read); ok {
@@ -241,10 +264,39 @@ func (expression *Expression) Evaluate(value func(Read) (float64, bool)) (result
 	}
 	output, _, err := expression.program.Eval(activation)
 	if err != nil {
-		return false, false
+		return nil, false
 	}
-	matched, ok := output.Value().(bool)
-	return matched, ok
+	return output.Value(), true
+}
+
+// Values maps what the source reads outside percentile windows, position
+// variables included, to the values value reports, named as the source
+// writes them, such as h_rsi, prev(h_rsi, 2), or of("BTCUSDT", h_rsi).
+// Missing values are left out.
+func (expression *Expression) Values(value func(Read) (float64, bool)) map[string]float64 {
+	values := make(map[string]float64, len(expression.shown))
+	for name := range expression.shown {
+		read := expression.reads[name]
+		if number, ok := value(read); ok {
+			values[read.label()] = number
+		}
+	}
+	return values
+}
+
+// label names the read as the source writes it.
+func (read Read) label() string {
+	label := read.Variable.Name
+	switch {
+	case read.Shift == 1:
+		label = "prev(" + label + ")"
+	case read.Shift > 1:
+		label = fmt.Sprintf("prev(%s, %d)", label, read.Shift)
+	}
+	if read.Symbol != "" {
+		label = fmt.Sprintf("of(%q, %s)", read.Symbol, label)
+	}
+	return label
 }
 
 // Compile checks source against the variables and prepares it for
@@ -256,6 +308,19 @@ func (expression *Expression) Evaluate(value func(Read) (float64, bool)) (result
 // An invalid source fails with an *InvalidExpressionError listing every
 // problem found.
 func Compile(source string, variables []Variable) (*Expression, error) {
+	return compileExpression(source, variables, false)
+}
+
+// CompilePrice compiles a price expression, such as h_close - 2 * h_atr:
+// arithmetic, abs, mod, min, and max over variables and numbers, with the
+// macros of Compile, that reads the evaluated instrument. It fails like
+// Compile.
+func CompilePrice(source string, variables []Variable) (*Expression, error) {
+	return compileExpression(source, variables, true)
+}
+
+// compileExpression compiles a condition or, when price is set, a price.
+func compileExpression(source string, variables []Variable, price bool) (*Expression, error) {
 	source = strings.TrimSpace(source)
 	if source == "" {
 		return nil, invalidExpression("the expression is empty")
@@ -322,19 +387,28 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 	if issues.Err() != nil {
 		return nil, invalidExpression(issueMessages(issues)...)
 	}
-	if !checked.OutputType().IsExactType(cel.BoolType) {
-		return nil, invalidExpression("the expression must be a condition")
-	}
-	walker := expressionWalker{info: checked.NativeRep().SourceInfo(), identifiers: identifiers, reads: map[string]Read{}}
-	if err := walker.condition(checked.NativeRep().Expr(), true); err != nil {
-		return nil, invalidExpression(err.Error())
+	walker := expressionWalker{info: checked.NativeRep().SourceInfo(), identifiers: identifiers, reads: map[string]Read{}, shown: map[string]struct{}{}}
+	if price {
+		if !checked.OutputType().IsExactType(cel.DoubleType) {
+			return nil, invalidExpression("the price must be calculated from indicators, candle fields, and numbers")
+		}
+		if err := walker.value(checked.NativeRep().Expr(), false); err != nil {
+			return nil, invalidExpression(err.Error())
+		}
+	} else {
+		if !checked.OutputType().IsExactType(cel.BoolType) {
+			return nil, invalidExpression("the expression must be a condition")
+		}
+		if err := walker.condition(checked.NativeRep().Expr(), true); err != nil {
+			return nil, invalidExpression(err.Error())
+		}
 	}
 	problems := walker.problems
 	if walker.comparisons > maxComparisons {
 		problems = append(problems, "the expression has too many comparisons")
 	}
 	if len(walker.problems) == 0 {
-		if walker.comparisons == 0 {
+		if !price && walker.comparisons == 0 {
 			problems = append(problems, "the expression has no comparison")
 		}
 		// An expression that reads only other coins has the same result for
@@ -344,7 +418,9 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 		for _, read := range walker.reads {
 			evaluated = evaluated || read.Symbol == ""
 		}
-		if !evaluated {
+		if price && len(walker.reads) == 0 {
+			problems = append(problems, "the price reads an indicator or a candle field")
+		} else if !evaluated {
 			problems = append(problems, "the expression must also read the evaluated coin, not only coins read through of")
 		}
 	}
@@ -357,7 +433,7 @@ func Compile(source string, variables []Variable) (*Expression, error) {
 	if err != nil {
 		return nil, invalidExpression(err.Error())
 	}
-	return &Expression{program: program, reads: walker.reads}, nil
+	return &Expression{program: program, reads: walker.reads, shown: walker.shown}, nil
 }
 
 // InvalidExpressionError lists the problems of an expression that does not
@@ -687,6 +763,8 @@ type expressionWalker struct {
 	info        *ast.SourceInfo
 	identifiers map[string]Read
 	reads       map[string]Read
+	// shown are the identifiers read outside percentile windows.
+	shown       map[string]struct{}
 	problems    []string
 	comparisons int
 	nodes       int
@@ -791,6 +869,9 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 			walker.report("%s cannot be read through prev, percentile, crossings, or of", read.Variable.Name)
 		}
 		walker.reads[expr.AsIdent()] = read
+		if !inWindow {
+			walker.shown[expr.AsIdent()] = struct{}{}
+		}
 		walker.variables++
 		return nil
 	case ast.LiteralKind:

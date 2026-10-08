@@ -4343,12 +4343,16 @@ export const getListStrategiesUrl = () => {
 /**
  * Enabled strategies trade the administrator's favorites on the closed
  * candles of the finest interval their rules read. An entry signal is
- * the entry rule turning from false to true; it buys, opening a trade
- * or, for a strategy that accumulates or has no exit rule, adding a buy
- * up to `max_buys`. An exit signal, the exit rule being true after the
- * first buy, sells every buy of the trade, and the entry counts as false
- * on its candle. The administrator and users with strategy alerts get a
- * Telegram message for every buy and sell.
+ * the entry rule turning from false to true. A strategy that exits,
+ * through an exit rule, a take profit, or a stop loss, holds one buy per
+ * trade: a signal opens a trade, fixing its take profit and stop loss
+ * prices at the signal's close, and signals during the trade buy
+ * nothing. A strategy without exits buys at every signal and never
+ * sells. A candle reaching the stop loss or the take profit sells the
+ * trade there, the stop loss first when it reaches both; the exit rule
+ * being true sells it at the next open. A sell counts the entry as
+ * false on its candle. The administrator and users with strategy alerts
+ * get a Telegram message for every buy and sell.
  * @summary List the strategies
  */
 export const listStrategies = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listStrategiesResponseSuccess> => {
@@ -4997,9 +5001,12 @@ export const getBacktestStrategyUrl = (strategyId: number,
  * before the full indicator warm-up are not evaluated.
  *
  * Every buy spends the same amount at the open of the candle after its
- * signal, and a sell sells every buy of the trade at the open of the
- * candle after its signal, paying `fee` on each side. A trade still
- * open when the history ends is valued at the last close. Two baselines
+ * signal. A take profit or stop loss sells every buy of the trade at its
+ * price on the candle that reaches it, or at that candle's open when it
+ * opens past it; an exit rule sells at the open of the candle after its
+ * signal. Both sides pay `fee`. A trade still open when the history
+ * ends is valued at the last close. `from` and `to` limit the evaluated
+ * candles by open time; older candles still warm the indicators up. Two baselines
  * cover the same evaluated period: buying and holding, and buying the
  * same amount at every candle (DCA). A backtest that does not finish
  * within its time limit fails with `backtest_too_heavy`.

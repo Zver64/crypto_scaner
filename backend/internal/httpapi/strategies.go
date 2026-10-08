@@ -15,12 +15,12 @@ type Strategies interface {
 	List() []strategy.Entry
 	Variables() []strategy.Variable
 	Symbols(context.Context) ([]string, error)
-	Validate(ctx context.Context, expression string, exit bool) (strategy.Validation, error)
+	Validate(ctx context.Context, expression string, kind strategy.RuleKind) (strategy.Validation, error)
 	Create(context.Context, strategy.Strategy) (strategy.Entry, error)
 	Update(context.Context, strategy.Strategy) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
 	Delete(context.Context, int64) error
-	Backtest(ctx context.Context, id int64, symbol string) (strategy.Backtest, error)
+	Backtest(ctx context.Context, id int64, symbol string, from, to time.Time) (strategy.Backtest, error)
 }
 
 func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequestObject) (ListStrategyVariablesResponseObject, error) {
@@ -47,7 +47,16 @@ func (api *api) ListStrategySymbols(ctx context.Context, _ ListStrategySymbolsRe
 }
 
 func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRequestObject) (ValidateStrategyResponseObject, error) {
-	validation, err := api.strategies.Validate(ctx, request.Body.Expression, request.Body.Exit != nil && *request.Body.Exit)
+	kind := strategy.EntryRule
+	if request.Body.Kind != nil {
+		switch *request.Body.Kind {
+		case StrategyValidationInputKindExit:
+			kind = strategy.ExitRule
+		case StrategyValidationInputKindPrice:
+			kind = strategy.PriceRule
+		}
+	}
+	validation, err := api.strategies.Validate(ctx, request.Body.Expression, kind)
 	if err != nil {
 		return ValidateStrategy500JSONResponse{api.internalError(ctx, "validate_strategy", err)}, nil
 	}
@@ -70,7 +79,8 @@ func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (Li
 func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyRequestObject) (CreateStrategyResponseObject, error) {
 	body := request.Body
 	entry, err := api.strategies.Create(ctx, strategy.Strategy{
-		Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression, Accumulate: body.Accumulate, MaxBuys: body.MaxBuys,
+		Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression,
+		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
 		Message: body.Message, Enabled: body.Enabled,
 	})
 	switch {
@@ -89,7 +99,7 @@ func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyReques
 	body := request.Body
 	entry, err := api.strategies.Update(ctx, strategy.Strategy{
 		ID: request.StrategyId, Name: body.Name, Expression: body.Expression, ExitExpression: body.ExitExpression,
-		Accumulate: body.Accumulate, MaxBuys: body.MaxBuys, Message: body.Message,
+		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression, Message: body.Message,
 	})
 	switch {
 	case err == nil:
@@ -132,7 +142,14 @@ func (api *api) DeleteStrategy(ctx context.Context, request DeleteStrategyReques
 func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRequestObject) (BacktestStrategyResponseObject, error) {
 	timed, cancel := context.WithTimeout(ctx, backtestTimeout)
 	defer cancel()
-	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol)
+	var from, to time.Time
+	if request.Params.From != nil {
+		from = request.Params.From.UTC()
+	}
+	if request.Params.To != nil {
+		to = request.Params.To.UTC()
+	}
+	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol, from, to)
 	switch {
 	case err == nil:
 	case backtestExpired(timed, err):
@@ -148,10 +165,7 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	}
 	trades := make([]BacktestTrade, len(backtest.Trades))
 	for i, trade := range backtest.Trades {
-		trades[i] = BacktestTrade{
-			EntryTime: trade.EntryTime, EntryPrice: trade.EntryPrice, ExitTime: trade.ExitTime, ExitPrice: trade.ExitPrice,
-			Buys: trade.Buys, Open: trade.Open, NetReturn: trade.Return,
-		}
+		trades[i] = backtestTradeDTO(trade)
 	}
 	equity := make([]BacktestEquityPoint, len(backtest.Equity))
 	for i, point := range backtest.Equity {
@@ -169,10 +183,41 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	return BacktestStrategy200JSONResponse(dto), nil
 }
 
+func backtestTradeDTO(trade strategy.Trade) BacktestTrade {
+	fills := make([]BacktestFill, len(trade.Fills))
+	for i, fill := range trade.Fills {
+		fills[i] = BacktestFill{SignalTime: fill.Signal, Time: fill.Time, Price: fill.Price, Values: backtestValues(fill.Values)}
+	}
+	dto := BacktestTrade{
+		EntryTime: trade.EntryTime, EntryPrice: trade.EntryPrice, ExitTime: trade.ExitTime, ExitPrice: trade.ExitPrice,
+		Buys: trade.Buys, Open: trade.Open, NetReturn: trade.Return, Fills: fills, ExitValues: backtestValues(trade.ExitValues),
+	}
+	if trade.TakeProfit > 0 {
+		dto.TakeProfit = &trade.TakeProfit
+	}
+	if trade.StopLoss > 0 {
+		dto.StopLoss = &trade.StopLoss
+	}
+	if !trade.Open {
+		dto.ExitReason = new(BacktestTradeExitReason(trade.Reason))
+		dto.ExitSignalTime = &trade.ExitSignal
+	}
+	return dto
+}
+
+// backtestValues serializes missing values as an empty object.
+func backtestValues(values map[string]float64) BacktestValues {
+	if values == nil {
+		return BacktestValues{}
+	}
+	return values
+}
+
 func tradeStatsDTO(stats strategy.TradeStats) BacktestTradeStats {
 	return BacktestTradeStats{
 		TradeCount: stats.Count, WinRate: stats.WinRate, ProfitFactor: stats.ProfitFactor,
 		AverageTrade: stats.AverageTrade, AverageWin: stats.AverageWin, AverageLoss: stats.AverageLoss,
+		AverageBars: stats.AverageBars, TakeProfitExits: stats.TakeProfits, StopLossExits: stats.StopLosses, ExitRuleExits: stats.ExitRules,
 	}
 }
 
@@ -206,8 +251,9 @@ func strategyConflict(ctx context.Context) StrategyConflictJSONResponse {
 
 func strategyDTO(entry strategy.Entry) Strategy {
 	dto := Strategy{
-		Id: entry.ID, Name: entry.Name, Expression: entry.Expression, ExitExpression: entry.ExitExpression, Accumulate: entry.Accumulate,
-		MaxBuys: entry.MaxBuys, Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,
+		Id: entry.ID, Name: entry.Name, Expression: entry.Expression, ExitExpression: entry.ExitExpression,
+		TakeProfitExpression: entry.TakeProfitExpression, StopLossExpression: entry.StopLossExpression,
+		Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,
 	}
 	if entry.Problem != "" {
 		dto.Problem = &entry.Problem

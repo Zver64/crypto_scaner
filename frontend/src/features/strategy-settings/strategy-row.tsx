@@ -69,13 +69,19 @@ export function StrategyRow({
 					</Text>
 				)}
 				<Code block>{strategy.expression}</Code>
-				{strategy.exit_expression === "" ? null : (
-					<>
-						<Text c="dimmed" size="xs">
-							Exit
-						</Text>
-						<Code block>{strategy.exit_expression}</Code>
-					</>
+				{[
+					{ expression: strategy.exit_expression, title: "Exit" },
+					{ expression: strategy.take_profit_expression, title: "Take profit" },
+					{ expression: strategy.stop_loss_expression, title: "Stop loss" },
+				].map(({ expression, title }) =>
+					expression === "" ? null : (
+						<Stack gap={2} key={title}>
+							<Text c="dimmed" size="xs">
+								{title}
+							</Text>
+							<Code block>{expression}</Code>
+						</Stack>
+					),
 				)}
 				<Text c="dimmed" size="xs">
 					{strategyBuysLabel(strategy)}

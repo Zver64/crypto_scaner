@@ -17,10 +17,14 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { BacktestValues } from './backtestValues.ts';
 
-/**
- * Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
- * @minimum 0
- * @maximum 1000
- */
-export type StrategyMaxBuys = number;
+export interface BacktestFill {
+  /** Open time of the candle whose close signaled the buy. */
+  signal_time: string;
+  /** Open time of the candle the buy filled at, at its open. */
+  time: string;
+  price: number;
+  /** What the entry rule read at the signal. */
+  values: BacktestValues;
+}

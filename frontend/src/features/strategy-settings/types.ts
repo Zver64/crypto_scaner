@@ -26,12 +26,11 @@ export interface StrategyDraft {
 	// Telegram alert text; empty keeps the generated one.
 	message: string;
 	query: StrategyQuery;
-	// The exit rule; undefined for a strategy that never sells.
+	// The exit rule; undefined without one.
 	exitQuery: StrategyQuery | undefined;
-	// Whether entry signals add buys to an open trade; needs an exit rule.
-	accumulate: boolean;
-	// Most buys of one trade; 0 for no limit.
-	maxBuys: number;
+	// The take profit and stop loss price expressions; empty without them.
+	takeProfit: string;
+	stopLoss: string;
 	// Whether the builder dropped parts of a stored rule it cannot show,
 	// which saving would remove.
 	incomplete: boolean;

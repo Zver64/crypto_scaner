@@ -1,9 +1,7 @@
 import {
 	Alert,
 	Button,
-	Checkbox,
 	Group,
-	NumberInput,
 	Stack,
 	Text,
 	Textarea,
@@ -12,9 +10,12 @@ import {
 import { useEffect, useState } from "react";
 import type { StrategyUpdate, StrategyVariable } from "@/api/generated/models";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
+import { StrategyPriceInput } from "@/features/strategy-settings/strategy-price-input";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
 	emptyStrategyQuery,
+	strategyBuysLabel,
+	strategyExits,
 	strategyExpression,
 	strategyQueryComplete,
 	withoutPositionVariables,
@@ -44,20 +45,16 @@ export function StrategyFormContent({
 	const [message, setMessage] = useState(draft.message);
 	const [query, setQuery] = useState(draft.query);
 	const [exitQuery, setExitQuery] = useState(draft.exitQuery);
-	const [accumulate, setAccumulate] = useState(draft.accumulate);
-	const [maxBuys, setMaxBuys] = useState(draft.maxBuys);
+	const [takeProfit, setTakeProfit] = useState(draft.takeProfit);
+	const [stopLoss, setStopLoss] = useState(draft.stopLoss);
 	const exitExpression = exitQuery ? strategyExpression(exitQuery) : "";
-	// Only a strategy with an exit rule accumulates.
-	const accumulates = exitQuery !== undefined && accumulate;
-	// Max buys bound trades that can hold several buys.
-	const buysMany = exitQuery === undefined || accumulates;
 	const input: StrategyUpdate = {
-		accumulate: accumulates,
 		exit_expression: exitExpression,
 		expression: strategyExpression(query),
-		max_buys: buysMany ? maxBuys : 0,
 		message: message.trim(),
 		name: name.trim(),
+		stop_loss_expression: stopLoss.trim(),
+		take_profit_expression: takeProfit.trim(),
 	};
 	const named = input.name !== "";
 	const complete =
@@ -69,8 +66,8 @@ export function StrategyFormContent({
 		input.expression !== strategyExpression(draft.query) ||
 		exitExpression !==
 			(draft.exitQuery ? strategyExpression(draft.exitQuery) : "") ||
-		input.accumulate !== draft.accumulate ||
-		input.max_buys !== draft.maxBuys;
+		input.take_profit_expression !== draft.takeProfit ||
+		input.stop_loss_expression !== draft.stopLoss;
 	useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
 	const entryVariables = withoutPositionVariables(variables);
 	return (
@@ -142,36 +139,28 @@ export function StrategyFormContent({
 							Add exit rule
 						</Button>
 					</Group>
-					<Text c="dimmed" size="xs">
-						Without an exit rule the strategy never sells and buys every time
-						its entry turns true.
-					</Text>
 				</Stack>
 			)}
-			{exitQuery ? (
-				<Checkbox
-					checked={accumulate}
-					description="Each time the entry turns true during a trade, buy again; the exit sells every buy."
-					disabled={isSaving}
-					label="Accumulate"
-					onChange={(event) => setAccumulate(event.currentTarget.checked)}
-				/>
-			) : null}
-			{buysMany ? (
-				<NumberInput
-					allowDecimal={false}
-					allowNegative={false}
-					description="Most buys of one trade; 0 for no limit."
-					disabled={isSaving}
-					label="Max buys"
-					max={1000}
-					min={0}
-					onChange={(value) =>
-						setMaxBuys(typeof value === "number" ? value : 0)
-					}
-					value={maxBuys}
-				/>
-			) : null}
+			<StrategyPriceInput
+				description="Sells the trade when a candle reaches this price, fixed when the entry signals, such as h_close * 1.05. Leave empty for none."
+				disabled={isSaving}
+				label="Take profit"
+				onChange={setTakeProfit}
+				value={takeProfit}
+			/>
+			<StrategyPriceInput
+				description="Sells the trade when a candle falls to this price, fixed when the entry signals, such as h_close - 2 * h_atr_14. Leave empty for none."
+				disabled={isSaving}
+				label="Stop loss"
+				onChange={setStopLoss}
+				value={stopLoss}
+			/>
+			<Text c="dimmed" size="xs">
+				{strategyBuysLabel(input)}.{" "}
+				{strategyExits(input)
+					? "Entry signals during a trade buy nothing."
+					: "Without an exit rule, take profit, or stop loss, every time the entry turns true buys."}
+			</Text>
 			{named ? null : (
 				<Text c="dimmed" size="xs">
 					Enter a name to save the strategy.

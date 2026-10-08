@@ -20,8 +20,10 @@ func TestUpdateStrategyPreservesUnspecifiedFields(t *testing.T) {
 		{"name", []string{"--name", "New"}, apiclient.StrategyUpdate{Name: "New", Expression: "m_rsi < 40", Message: "custom"}, false},
 		{"clear message", []string{"--message", ""}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: ""}, false},
 		{
-			"exit", []string{"--exit", "pnl > 5 || w_rsi > 70", "--accumulate", "--max-buys", "3"},
-			apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", ExitExpression: "pnl > 5 || w_rsi > 70", Accumulate: true, MaxBuys: 3, Message: "custom"}, true,
+			"exits", []string{"--exit", "pnl > 5 || w_rsi > 70", "--take-profit", "h_close * 1.1", "--stop-loss", "w_low"},
+			apiclient.StrategyUpdate{
+				Name: "Test", Expression: "m_rsi < 40", ExitExpression: "pnl > 5 || w_rsi > 70", TakeProfitExpression: "h_close * 1.1", StopLossExpression: "w_low", Message: "custom",
+			}, true,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {

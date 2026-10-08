@@ -87,18 +87,18 @@ type AppSession struct {
 }
 
 type AppStrategy struct {
-	ID              int64
-	Name            string
-	Expression      string
-	Enabled         bool
-	BaselinePending bool
-	Revision        int64
-	CreatedAt       pgtype.Timestamptz
-	UpdatedAt       pgtype.Timestamptz
-	Message         string
-	ExitExpression  string
-	Accumulate      bool
-	MaxBuys         int32
+	ID                   int64
+	Name                 string
+	Expression           string
+	Enabled              bool
+	BaselinePending      bool
+	Revision             int64
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	Message              string
+	ExitExpression       string
+	TakeProfitExpression string
+	StopLossExpression   string
 }
 
 type AppStrategyIndicator struct {
@@ -115,6 +115,8 @@ type AppStrategyState struct {
 	Filled       int32
 	Quantity     float64
 	OpenedAt     pgtype.Timestamptz
+	TakeProfit   float64
+	StopLoss     float64
 }
 
 type AppStrategySymbol struct {

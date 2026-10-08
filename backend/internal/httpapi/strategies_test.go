@@ -19,13 +19,17 @@ import (
 )
 
 // emptyStats are the statistics of no trades.
-const emptyStats = `{"average_loss":null,"average_trade":null,"average_win":null,"profit_factor":null,"trade_count":0,"win_rate":null}`
+const emptyStats = `{"average_bars":null,"average_loss":null,"average_trade":null,"average_win":null,"exit_rule_exits":0,"profit_factor":null,"stop_loss_exits":0,"take_profit_exits":0,"trade_count":0,"win_rate":null}`
 
 func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T) {
 	alert := time.Date(2026, 3, 2, 5, 0, 0, 0, time.UTC)
 	strategies := &backtestStrategies{result: strategy.Backtest{
 		Interval: market.IntervalHour, Symbol: "BTCUSDT", From: alert.Add(-5 * time.Hour), To: alert.Add(5 * time.Hour),
-		Trades:  []strategy.Trade{{EntryTime: alert.Add(time.Hour), EntryPrice: 100, ExitTime: alert.Add(2 * time.Hour), ExitPrice: 110, Buys: 2, Return: 0.098}},
+		Trades: []strategy.Trade{{
+			EntryTime: alert.Add(time.Hour), EntryPrice: 100, ExitTime: alert.Add(2 * time.Hour), ExitPrice: 110, Buys: 1, Return: 0.098,
+			Fills:      []strategy.Fill{{Signal: alert, Time: alert.Add(time.Hour), Price: 100, Values: map[string]float64{"h_close": 99}}},
+			TakeProfit: 110, Reason: strategy.ExitTakeProfit, ExitSignal: alert.Add(2 * time.Hour),
+		}},
 		Skipped: 2, NetProfit: 0.098, Equity: []strategy.EquityPoint{{Time: alert.Add(2 * time.Hour), Equity: 1.098}},
 		Stats:      strategy.TradeStats{Count: 1, WinRate: new(1.0), AverageTrade: new(0.098), AverageWin: new(0.098)},
 		BuyAndHold: new(0.05), DCA: new(0.03),
@@ -46,7 +50,7 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		{name: "unknown strategy", token: "admin", target: "/api/v1/admin/strategies/2/backtest?symbol=BTCUSDT", status: http.StatusNotFound, code: "strategy_not_found"},
 		{name: "unknown symbol", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=ETHUSDT", status: http.StatusNotFound, code: "symbol_not_found"},
 		{name: "too heavy", token: "admin", target: "/api/v1/admin/strategies/5/backtest?symbol=BTCUSDT", status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
-		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt", status: http.StatusOK},
+		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt&from=2026-03-02T03:00:00%2B02:00", status: http.StatusOK},
 		{
 			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/3/backtest?symbol=BTCUSDT", status: http.StatusOK,
 			body: `{"baselines":{"buy_and_hold":null,"dca":null},"equity":[],"fee":0.001,"from":null,"interval":"1h",` +
@@ -78,7 +82,10 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 			replayed := strategies.result
 			if body.Interval != httpapi.CandleInterval(market.IntervalHour) || body.From == nil || !body.From.Equal(replayed.From) || body.To == nil || !body.To.Equal(replayed.To) ||
 				strategies.symbol != "BTCUSDT" || body.Fee != strategy.BacktestFee || body.SkippedAlerts != 2 ||
-				len(body.Trades) != 1 || body.Trades[0].ExitPrice != 110 || body.Trades[0].Buys != 2 || body.Trades[0].Open || body.Trades[0].NetReturn != 0.098 ||
+				!strategies.from.Equal(alert.Add(-4*time.Hour)) || strategies.from.Location() != time.UTC || !strategies.to.IsZero() ||
+				len(body.Trades) != 1 || body.Trades[0].ExitPrice != 110 || body.Trades[0].Buys != 1 || body.Trades[0].Open || body.Trades[0].NetReturn != 0.098 ||
+				*body.Trades[0].TakeProfit != 110 || body.Trades[0].StopLoss != nil || *body.Trades[0].ExitReason != httpapi.BacktestTradeExitReasonTakeProfit ||
+				len(body.Trades[0].Fills) != 1 || body.Trades[0].Fills[0].Values["h_close"] != 99 || len(body.Trades[0].ExitValues) != 0 ||
 				len(body.Equity) != 1 || body.Equity[0].Equity != 1.098 ||
 				body.Summary.NetProfit != 0.098 || body.Summary.Stats.TradeCount != 1 || body.Summary.Stats.AverageLoss != nil || *body.Summary.Stats.WinRate != 1 ||
 				*body.Baselines.BuyAndHold != 0.05 || *body.Baselines.Dca != 0.03 {
@@ -92,13 +99,14 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 // history, and strategy 5 runs out of time.
 type backtestStrategies struct {
 	httpapi.Strategies
-	result strategy.Backtest
-	symbol string
+	result   strategy.Backtest
+	symbol   string
+	from, to time.Time
 }
 
-func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string) (strategy.Backtest, error) {
+func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string, from, to time.Time) (strategy.Backtest, error) {
 	symbol = market.NormalizeSymbol(symbol)
-	strategies.symbol = symbol
+	strategies.symbol, strategies.from, strategies.to = symbol, from, to
 	switch {
 	case id == 5:
 		return strategy.Backtest{}, fmt.Errorf("replay: %w", context.DeadlineExceeded)

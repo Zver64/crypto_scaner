@@ -122,6 +122,27 @@ func (e APIErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for BacktestTradeExitReason.
+const (
+	BacktestTradeExitReasonExit       BacktestTradeExitReason = "exit"
+	BacktestTradeExitReasonStopLoss   BacktestTradeExitReason = "stop_loss"
+	BacktestTradeExitReasonTakeProfit BacktestTradeExitReason = "take_profit"
+)
+
+// Valid indicates whether the value is a known member of the BacktestTradeExitReason enum.
+func (e BacktestTradeExitReason) Valid() bool {
+	switch e {
+	case BacktestTradeExitReasonExit:
+		return true
+	case BacktestTradeExitReasonStopLoss:
+		return true
+	case BacktestTradeExitReasonTakeProfit:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for CandleHistoryLoadJobStatus.
 const (
 	Done    CandleHistoryLoadJobStatus = "done"
@@ -344,6 +365,27 @@ func (e ScannerIndicatorPlacement) Valid() bool {
 	}
 }
 
+// Defines values for StrategyValidationInputKind.
+const (
+	StrategyValidationInputKindEntry StrategyValidationInputKind = "entry"
+	StrategyValidationInputKindExit  StrategyValidationInputKind = "exit"
+	StrategyValidationInputKindPrice StrategyValidationInputKind = "price"
+)
+
+// Valid indicates whether the value is a known member of the StrategyValidationInputKind enum.
+func (e StrategyValidationInputKind) Valid() bool {
+	switch e {
+	case StrategyValidationInputKindEntry:
+		return true
+	case StrategyValidationInputKindExit:
+		return true
+	case StrategyValidationInputKindPrice:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for TableColumnKind.
 const (
 	TableColumnKindCount         TableColumnKind = "count"
@@ -455,9 +497,23 @@ type BacktestEquityPoint struct {
 	Time time.Time `json:"time"`
 }
 
+// BacktestFill defines model for BacktestFill.
+type BacktestFill struct {
+	Price float64 `json:"price"`
+
+	// SignalTime Open time of the candle whose close signaled the buy.
+	SignalTime time.Time `json:"signal_time"`
+
+	// Time Open time of the candle the buy filled at, at its open.
+	Time time.Time `json:"time"`
+
+	// Values What the entry rule read at the signal.
+	Values BacktestValues `json:"values"`
+}
+
 // BacktestSummary Results of the strategy's trades.
 type BacktestSummary struct {
-	// MaxDrawdown Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at trade exits; 0 without falls.
+	// MaxDrawdown Largest fall of the equity from an earlier peak, as a fraction of that peak, measured at the close of every evaluated candle with an open trade valued there; 0 without falls.
 	MaxDrawdown float64 `json:"max_drawdown"`
 
 	// NetProfit Compounded net return of the trades, the open one included; 0 without trades.
@@ -482,18 +538,42 @@ type BacktestTrade struct {
 	EntryTime time.Time `json:"entry_time"`
 	ExitPrice float64   `json:"exit_price"`
 
+	// ExitReason What sold the trade; absent for an open trade.
+	ExitReason *BacktestTradeExitReason `json:"exit_reason,omitempty"`
+
+	// ExitSignalTime Open time of the candle whose take profit, stop loss, or exit rule close signaled the sell; null for an open trade.
+	ExitSignalTime *time.Time `json:"exit_signal_time"`
+
 	// ExitTime Open time of the candle the trade sold at, at its open; for an open trade, of the last candle, whose close values it.
 	ExitTime time.Time `json:"exit_time"`
+
+	// ExitValues What the exit rule read at its signal; empty for other sells and open trades.
+	ExitValues BacktestValues `json:"exit_values"`
+
+	// Fills The filled buys, oldest first.
+	Fills []BacktestFill `json:"fills"`
 
 	// NetReturn Return net of the fees on both sides.
 	NetReturn float64 `json:"net_return"`
 
 	// Open True for a trade the history ends before it sells.
 	Open bool `json:"open"`
+
+	// StopLoss Stop loss price fixed at the entry signal; null without one.
+	StopLoss *float64 `json:"stop_loss"`
+
+	// TakeProfit Take profit price fixed at the entry signal; null without one.
+	TakeProfit *float64 `json:"take_profit"`
 }
+
+// BacktestTradeExitReason What sold the trade; absent for an open trade.
+type BacktestTradeExitReason string
 
 // BacktestTradeStats Statistics of net trade returns.
 type BacktestTradeStats struct {
+	// AverageBars Mean count of candles from the one the first buy filled at through the one the trade sold at; null without trades.
+	AverageBars *float64 `json:"average_bars"`
+
 	// AverageLoss Mean negative return; null without losses.
 	AverageLoss *float64 `json:"average_loss"`
 
@@ -503,13 +583,27 @@ type BacktestTradeStats struct {
 	// AverageWin Mean positive return; null without wins.
 	AverageWin *float64 `json:"average_win"`
 
+	// ExitRuleExits Trades the exit rule sold, including those the history ends with on their signal's candle.
+	ExitRuleExits int `json:"exit_rule_exits"`
+
 	// ProfitFactor Sum of positive returns over the sum of negative ones, as a positive number; null without losses.
 	ProfitFactor *float64 `json:"profit_factor"`
-	TradeCount   int      `json:"trade_count"`
+
+	// StopLossExits Trades the stop loss sold.
+	StopLossExits int `json:"stop_loss_exits"`
+
+	// TakeProfitExits Trades the take profit sold.
+	TakeProfitExits int `json:"take_profit_exits"`
+	TradeCount      int `json:"trade_count"`
 
 	// WinRate Share of positive returns, from 0 to 1; null without trades.
 	WinRate *float64 `json:"win_rate"`
 }
+
+// BacktestValues Values a rule read, named as its source writes them, such as `h_rsi`,
+// `prev(h_rsi, 2)`, or `of("BTCUSDT", h_close)`; reads inside
+// percentile windows and unknown values are left out.
+type BacktestValues map[string]float64
 
 // Candle defines model for Candle.
 type Candle struct {
@@ -969,21 +1063,17 @@ type Session struct {
 
 // Strategy defines model for Strategy.
 type Strategy struct {
-	// Accumulate Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
-	Accumulate StrategyAccumulate `json:"accumulate"`
-	Enabled    bool               `json:"enabled"`
+	Enabled bool `json:"enabled"`
 
 	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// for a strategy that never sells and buys at every entry signal.
+	// without an exit rule. A strategy without an exit rule, take profit,
+	// or stop loss never sells and buys at every entry signal.
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 
 	// Expression Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
 	Expression string `json:"expression"`
 	Id         int64  `json:"id"`
-
-	// MaxBuys Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
-	MaxBuys StrategyMaxBuys `json:"max_buys"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
 	// and the buy or the sell in place of the rule and the values it read;
@@ -994,12 +1084,22 @@ type Strategy struct {
 	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
 
+	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
+	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// and its close buys nothing. Empty without a stop loss.
+	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+
+	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
+	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
+	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
+	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// reading the evaluated coin. A signal whose take profit is not above
+	// its close buys nothing. Empty without a take profit.
+	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
+
 	// Valid False when a stored rule no longer compiles; such a strategy is not evaluated.
 	Valid bool `json:"valid"`
 }
-
-// StrategyAccumulate Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
-type StrategyAccumulate = bool
 
 // StrategyBacktest Returns, drawdowns, and fees are fractions, such as 0.012 for 1.2%.
 type StrategyBacktest struct {
@@ -1016,7 +1116,7 @@ type StrategyBacktest struct {
 	From     *time.Time     `json:"from"`
 	Interval CandleInterval `json:"interval"`
 
-	// SkippedAlerts Entry signals that bought nothing, since the trade does not accumulate or holds `max_buys`.
+	// SkippedAlerts Entry signals that bought nothing, since a strategy that exits held a trade, or the take profit or stop loss was not on its side of the close.
 	SkippedAlerts int `json:"skipped_alerts"`
 
 	// Summary Results of the strategy's trades.
@@ -1037,38 +1137,45 @@ type StrategyEnabled struct {
 
 // StrategyExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 // position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-// for a strategy that never sells and buys at every entry signal.
+// without an exit rule. A strategy without an exit rule, take profit,
+// or stop loss never sells and buys at every entry signal.
 type StrategyExitExpression = string
 
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
-	// Accumulate Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
-	Accumulate StrategyAccumulate `json:"accumulate"`
-	Enabled    bool               `json:"enabled"`
+	Enabled bool `json:"enabled"`
 
 	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// for a strategy that never sells and buys at every entry signal.
+	// without an exit rule. A strategy without an exit rule, take profit,
+	// or stop loss never sells and buys at every entry signal.
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 	Expression     string                 `json:"expression"`
-
-	// MaxBuys Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
-	MaxBuys StrategyMaxBuys `json:"max_buys"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
 	// and the buy or the sell in place of the rule and the values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 	Name    string          `json:"name"`
+
+	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
+	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// and its close buys nothing. Empty without a stop loss.
+	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+
+	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
+	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
+	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
+	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// reading the evaluated coin. A signal whose take profit is not above
+	// its close buys nothing. Empty without a take profit.
+	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
 }
 
 // StrategyList defines model for StrategyList.
 type StrategyList struct {
 	Items []Strategy `json:"items"`
 }
-
-// StrategyMaxBuys Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
-type StrategyMaxBuys = int
 
 // StrategyMessage Telegram alert text that follows the strategy name, the coin symbol,
 // and the buy or the sell in place of the rule and the values it read;
@@ -1087,19 +1194,30 @@ type StrategyMissingIndicator struct {
 	Type  string `json:"type"`
 }
 
+// StrategyStopLossExpression Stop loss price, a CEL price expression like the take profit, such as
+// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+// and its close buys nothing. Empty without a stop loss.
+type StrategyStopLossExpression = string
+
 // StrategySymbolList defines model for StrategySymbolList.
 type StrategySymbolList struct {
 	Items []string `json:"items"`
 }
 
+// StrategyTakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
+// the entry signal and fixed for the trade, such as `h_close * 1.05` or
+// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
+// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+// reading the evaluated coin. A signal whose take profit is not above
+// its close buys nothing. Empty without a take profit.
+type StrategyTakeProfitExpression = string
+
 // StrategyUpdate defines model for StrategyUpdate.
 type StrategyUpdate struct {
-	// Accumulate Whether entry signals add buys to an open trade; stored as false without an exit rule, where every entry signal buys anyway.
-	Accumulate StrategyAccumulate `json:"accumulate"`
-
 	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
-	// for a strategy that never sells and buys at every entry signal.
+	// without an exit rule. A strategy without an exit rule, take profit,
+	// or stop loss never sells and buys at every entry signal.
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 
 	// Expression CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
@@ -1113,14 +1231,24 @@ type StrategyUpdate struct {
 	// which must be in the administrator's favorites.
 	Expression string `json:"expression"`
 
-	// MaxBuys Most buys of one trade of a strategy that accumulates or has no exit rule; 0 for no limit.
-	MaxBuys StrategyMaxBuys `json:"max_buys"`
-
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
 	// and the buy or the sell in place of the rule and the values it read;
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 	Name    string          `json:"name"`
+
+	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
+	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// and its close buys nothing. Empty without a stop loss.
+	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+
+	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
+	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
+	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
+	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// reading the evaluated coin. A signal whose take profit is not above
+	// its close buys nothing. Empty without a take profit.
+	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
 }
 
 // StrategyValidation defines model for StrategyValidation.
@@ -1133,10 +1261,14 @@ type StrategyValidation struct {
 
 // StrategyValidationInput defines model for StrategyValidationInput.
 type StrategyValidationInput struct {
-	// Exit Checks the expression as an exit rule, which may read the position variables.
-	Exit       *bool  `json:"exit,omitempty"`
 	Expression string `json:"expression"`
+
+	// Kind Checks the expression as the entry rule, as the exit rule, which may read the position variables, or as a take profit or stop loss price.
+	Kind *StrategyValidationInputKind `json:"kind,omitempty"`
 }
+
+// StrategyValidationInputKind Checks the expression as the entry rule, as the exit rule, which may read the position variables, or as a take profit or stop loss price.
+type StrategyValidationInputKind string
 
 // StrategyVariable defines model for StrategyVariable.
 type StrategyVariable struct {
@@ -1332,6 +1464,12 @@ type UserNotFound = ErrorResponse
 type BacktestStrategyParams struct {
 	// Symbol Market symbol of the replayed coin.
 	Symbol BacktestSymbolName `form:"symbol" json:"symbol"`
+
+	// From Earliest open time of an evaluated candle; the start of the stored history when absent.
+	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
+
+	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
+	To *time.Time `form:"to,omitempty" json:"to,omitempty"`
 }
 
 // AnalyzeInstrumentParams defines parameters for AnalyzeInstrument.
@@ -1631,12 +1769,16 @@ type ClientInterface interface {
 	//
 	// Enabled strategies trade the administrator's favorites on the closed
 	// candles of the finest interval their rules read. An entry signal is
-	// the entry rule turning from false to true; it buys, opening a trade
-	// or, for a strategy that accumulates or has no exit rule, adding a buy
-	// up to `max_buys`. An exit signal, the exit rule being true after the
-	// first buy, sells every buy of the trade, and the entry counts as false
-	// on its candle. The administrator and users with strategy alerts get a
-	// Telegram message for every buy and sell.
+	// the entry rule turning from false to true. A strategy that exits,
+	// through an exit rule, a take profit, or a stop loss, holds one buy per
+	// trade: a signal opens a trade, fixing its take profit and stop loss
+	// prices at the signal's close, and signals during the trade buy
+	// nothing. A strategy without exits buys at every signal and never
+	// sells. A candle reaching the stop loss or the take profit sells the
+	// trade there, the stop loss first when it reaches both; the exit rule
+	// being true sells it at the next open. A sell counts the entry as
+	// false on its candle. The administrator and users with strategy alerts
+	// get a Telegram message for every buy and sell.
 	//
 	// Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
 	ListStrategies(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1713,9 +1855,12 @@ type ClientInterface interface {
 	// before the full indicator warm-up are not evaluated.
 	//
 	// Every buy spends the same amount at the open of the candle after its
-	// signal, and a sell sells every buy of the trade at the open of the
-	// candle after its signal, paying `fee` on each side. A trade still
-	// open when the history ends is valued at the last close. Two baselines
+	// signal. A take profit or stop loss sells every buy of the trade at its
+	// price on the candle that reaches it, or at that candle's open when it
+	// opens past it; an exit rule sells at the open of the candle after its
+	// signal. Both sides pay `fee`. A trade still open when the history
+	// ends is valued at the last close. `from` and `to` limit the evaluated
+	// candles by open time; older candles still warm the indicators up. Two baselines
 	// cover the same evaluated period: buying and holding, and buying the
 	// same amount at every candle (DCA). A backtest that does not finish
 	// within its time limit fails with `backtest_too_heavy`.
@@ -2182,12 +2327,16 @@ func (c *Client) UpdateScannerIndicator(ctx context.Context, indicatorId Scanner
 //
 // Enabled strategies trade the administrator's favorites on the closed
 // candles of the finest interval their rules read. An entry signal is
-// the entry rule turning from false to true; it buys, opening a trade
-// or, for a strategy that accumulates or has no exit rule, adding a buy
-// up to `max_buys`. An exit signal, the exit rule being true after the
-// first buy, sells every buy of the trade, and the entry counts as false
-// on its candle. The administrator and users with strategy alerts get a
-// Telegram message for every buy and sell.
+// the entry rule turning from false to true. A strategy that exits,
+// through an exit rule, a take profit, or a stop loss, holds one buy per
+// trade: a signal opens a trade, fixing its take profit and stop loss
+// prices at the signal's close, and signals during the trade buy
+// nothing. A strategy without exits buys at every signal and never
+// sells. A candle reaching the stop loss or the take profit sells the
+// trade there, the stop loss first when it reaches both; the exit rule
+// being true sells it at the next open. A sell counts the entry as
+// false on its candle. The administrator and users with strategy alerts
+// get a Telegram message for every buy and sell.
 //
 // Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
 func (c *Client) ListStrategies(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2344,9 +2493,12 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 // before the full indicator warm-up are not evaluated.
 //
 // Every buy spends the same amount at the open of the candle after its
-// signal, and a sell sells every buy of the trade at the open of the
-// candle after its signal, paying `fee` on each side. A trade still
-// open when the history ends is valued at the last close. Two baselines
+// signal. A take profit or stop loss sells every buy of the trade at its
+// price on the candle that reaches it, or at that candle's open when it
+// opens past it; an exit rule sells at the open of the candle after its
+// signal. Both sides pay `fee`. A trade still open when the history
+// ends is valued at the last close. `from` and `to` limit the evaluated
+// candles by open time; older candles still warm the indicators up. Two baselines
 // cover the same evaluated period: buying and holding, and buying the
 // same amount at every candle (DCA). A backtest that does not finish
 // within its time limit fails with `backtest_too_heavy`.
@@ -3443,6 +3595,30 @@ func NewBacktestStrategyRequest(server string, strategyId StrategyID, params *Ba
 			for _, qp := range strings.Split(queryFrag, "&") {
 				rawQueryFragments = append(rawQueryFragments, qp)
 			}
+		}
+
+		if params.From != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "from", *params.From, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.To != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
 		}
 
 		if encoded := queryValues.Encode(); encoded != "" {
@@ -4687,12 +4863,16 @@ type ClientWithResponsesInterface interface {
 	//
 	// Enabled strategies trade the administrator's favorites on the closed
 	// candles of the finest interval their rules read. An entry signal is
-	// the entry rule turning from false to true; it buys, opening a trade
-	// or, for a strategy that accumulates or has no exit rule, adding a buy
-	// up to `max_buys`. An exit signal, the exit rule being true after the
-	// first buy, sells every buy of the trade, and the entry counts as false
-	// on its candle. The administrator and users with strategy alerts get a
-	// Telegram message for every buy and sell.
+	// the entry rule turning from false to true. A strategy that exits,
+	// through an exit rule, a take profit, or a stop loss, holds one buy per
+	// trade: a signal opens a trade, fixing its take profit and stop loss
+	// prices at the signal's close, and signals during the trade buy
+	// nothing. A strategy without exits buys at every signal and never
+	// sells. A candle reaching the stop loss or the take profit sells the
+	// trade there, the stop loss first when it reaches both; the exit rule
+	// being true sells it at the next open. A sell counts the entry as
+	// false on its candle. The administrator and users with strategy alerts
+	// get a Telegram message for every buy and sell.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -4773,9 +4953,12 @@ type ClientWithResponsesInterface interface {
 	// before the full indicator warm-up are not evaluated.
 	//
 	// Every buy spends the same amount at the open of the candle after its
-	// signal, and a sell sells every buy of the trade at the open of the
-	// candle after its signal, paying `fee` on each side. A trade still
-	// open when the history ends is valued at the last close. Two baselines
+	// signal. A take profit or stop loss sells every buy of the trade at its
+	// price on the candle that reaches it, or at that candle's open when it
+	// opens past it; an exit rule sells at the open of the candle after its
+	// signal. Both sides pay `fee`. A trade still open when the history
+	// ends is valued at the last close. `from` and `to` limit the evaluated
+	// candles by open time; older candles still warm the indicators up. Two baselines
 	// cover the same evaluated period: buying and holding, and buying the
 	// same amount at every candle (DCA). A backtest that does not finish
 	// within its time limit fails with `backtest_too_heavy`.
@@ -8912,12 +9095,16 @@ func (c *ClientWithResponses) UpdateScannerIndicatorWithResponse(ctx context.Con
 //
 // Enabled strategies trade the administrator's favorites on the closed
 // candles of the finest interval their rules read. An entry signal is
-// the entry rule turning from false to true; it buys, opening a trade
-// or, for a strategy that accumulates or has no exit rule, adding a buy
-// up to `max_buys`. An exit signal, the exit rule being true after the
-// first buy, sells every buy of the trade, and the entry counts as false
-// on its candle. The administrator and users with strategy alerts get a
-// Telegram message for every buy and sell.
+// the entry rule turning from false to true. A strategy that exits,
+// through an exit rule, a take profit, or a stop loss, holds one buy per
+// trade: a signal opens a trade, fixing its take profit and stop loss
+// prices at the signal's close, and signals during the trade buy
+// nothing. A strategy without exits buys at every signal and never
+// sells. A candle reaching the stop loss or the take profit sells the
+// trade there, the stop loss first when it reaches both; the exit rule
+// being true sells it at the next open. A sell counts the entry as
+// false on its candle. The administrator and users with strategy alerts
+// get a Telegram message for every buy and sell.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -9046,9 +9233,12 @@ func (c *ClientWithResponses) UpdateStrategyWithResponse(ctx context.Context, st
 // before the full indicator warm-up are not evaluated.
 //
 // Every buy spends the same amount at the open of the candle after its
-// signal, and a sell sells every buy of the trade at the open of the
-// candle after its signal, paying `fee` on each side. A trade still
-// open when the history ends is valued at the last close. Two baselines
+// signal. A take profit or stop loss sells every buy of the trade at its
+// price on the candle that reaches it, or at that candle's open when it
+// opens past it; an exit rule sells at the open of the candle after its
+// signal. Both sides pay `fee`. A trade still open when the history
+// ends is valued at the last close. `from` and `to` limit the evaluated
+// candles by open time; older candles still warm the indicators up. Two baselines
 // cover the same evaluated period: buying and holding, and buying the
 // same amount at every candle (DCA). A backtest that does not finish
 // within its time limit fails with `backtest_too_heavy`.

@@ -17,10 +17,15 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyValidationInputKind } from './strategyValidationInputKind.ts';
 
-export interface StrategyValidationInput {
-  expression: string;
-  /** Checks the expression as the entry rule, as the exit rule, which may read the position variables, or as a take profit or stop loss price. */
-  kind?: StrategyValidationInputKind;
-}
+/**
+ * What sold the trade; absent for an open trade.
+ */
+export type BacktestTradeExitReason = typeof BacktestTradeExitReason[keyof typeof BacktestTradeExitReason];
+
+
+export const BacktestTradeExitReason = {
+  take_profit: 'take_profit',
+  stop_loss: 'stop_loss',
+  exit: 'exit',
+} as const;

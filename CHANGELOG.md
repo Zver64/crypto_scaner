@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.0.0](https://github.com/Zver64/crypto_scaner/compare/v1.1.0...v2.0.0) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* `signal` in Strategy, StrategyInput, and StrategyUpdate is now a boolean, and `direction` (long, short, or sideways) is required. BacktestSignal no longer carries `direction`; StrategyBacktest does. Older scanner CLIs and cached Mini App builds can no longer create or update strategies.
+
+### Features
+
+* add short strategies and separate signal and strategy pages ([c32c690](https://github.com/Zver64/crypto_scaner/commit/c32c69005b94a1e4ca053f1a9fee6dfb88005964))
+* add signals with direction and signal backtests ([d6ccb2c](https://github.com/Zver64/crypto_scaner/commit/d6ccb2ca202fbd62f3edee98ee726c0a339231da))
+
 ## [1.1.0](https://github.com/Zver64/crypto_scaner/compare/v1.0.0...v1.1.0) (2026-10-08)
 
 

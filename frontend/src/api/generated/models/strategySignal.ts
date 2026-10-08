@@ -17,12 +17,11 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { SignalDirection } from './signalDirection.ts';
 
 /**
- * The price move a signal expects after its entry signals: up, down, or
- * sideways. A signal buys nothing and only announces its entry signals,
- * so its exit rule, take profit, and stop loss are empty and its market
- * cap bounds null. Null for a strategy that trades long.
+ * Whether the strategy is a signal, which buys nothing and only
+ * announces its entry signals, so its exit rule, take profit, and stop
+ * loss are empty and its market cap bounds null. Fixed at creation:
+ * an update that changes it is refused.
  */
-export type StrategySignal = SignalDirection | null;
+export type StrategySignal = boolean;

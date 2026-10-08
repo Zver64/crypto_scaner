@@ -700,11 +700,15 @@ paths:
         sells. A candle reaching the stop loss or the take profit sells the
         trade there, the stop loss first when it reaches both; the exit rule
         being true sells it at the next open. A sell counts the entry as
-        false on its candle. A strategy with a `signal` is a signal instead:
-        it has no exits or market cap range, buys nothing, and only announces
-        its entry signals with the move it expects. The administrator and
-        users with strategy alerts get a Telegram message for every buy, sell,
-        and signal.
+        false on its candle. A strategy trades in its `direction`, long or
+        short; a short strategy opens a short position instead of buying,
+        always has a take profit below and a stop loss above the close, and
+        closes when the price rises to the stop loss or falls to the take
+        profit. A strategy with `signal` true is a signal instead: it has no
+        exits or market cap range, buys nothing, and only announces its entry
+        signals with the move its `direction` expects, which may also be
+        sideways. The administrator and users with strategy alerts get a
+        Telegram message for every buy, sell, short, cover, and signal.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       responses:
@@ -805,8 +809,11 @@ paths:
         signal. Both sides pay `fee`. A trade still open when the history
         ends is valued at the last close. `from` and `to` limit the evaluated
         candles by open time; older candles still warm the indicators up. Two baselines
-        cover the same evaluated period: buying and holding, and buying the
-        same amount at every candle (DCA). A backtest that does not finish
+        cover the same evaluated period of a long strategy: buying and
+        holding, and buying the same amount at every candle (DCA). A short
+        strategy sells at entry and buys back at exit, gaining as the price
+        falls; funding, leverage, and liquidation are not modeled, and it has
+        no baselines. A backtest that does not finish
         within its time limit fails with `backtest_too_heavy`.
 
         A signal trades nothing: its backtest has no trades and no baselines,
@@ -2036,11 +2043,12 @@ components:
     Strategy:
       type: object
       additionalProperties: false
-      required: [id, name, signal, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message, enabled, valid, missing_indicators]
+      required: [id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message, enabled, valid, missing_indicators]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
         signal: { $ref: "#/components/schemas/StrategySignal" }
+        direction: { $ref: "#/components/schemas/Direction" }
         expression:
           type: string
           description: Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
@@ -2067,12 +2075,13 @@ components:
     StrategyBacktest:
       type: object
       additionalProperties: false
-      required: [interval, symbol, fee, from, to, summary, trades, skipped_alerts, equity, baselines, signal]
+      required: [interval, symbol, direction, fee, from, to, summary, trades, skipped_alerts, equity, baselines, signal]
       description: Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
       properties:
         interval:
           $ref: "#/components/schemas/CandleInterval"
         symbol: { type: string }
+        direction: { $ref: "#/components/schemas/Direction" }
         fee:
           type: number
           format: double
@@ -2106,9 +2115,8 @@ components:
     BacktestSignal:
       type: object
       additionalProperties: false
-      required: [direction, occurrences, windows]
+      required: [occurrences, windows]
       properties:
-        direction: { $ref: "#/components/schemas/SignalDirection" }
         occurrences:
           type: array
           description: Entry signals, oldest first.
@@ -2339,7 +2347,7 @@ components:
       type: object
       additionalProperties: false
       required: [buy_and_hold, dca]
-      description: References over the same evaluated period, net of the same fees.
+      description: References over the same evaluated period, net of the same fees; null for a signal and for a short strategy.
       properties:
         buy_and_hold:
           type: [number, "null"]
@@ -2425,10 +2433,11 @@ components:
     StrategyUpdate:
       type: object
       additionalProperties: false
-      required: [name, signal, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message]
+      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         signal: { $ref: "#/components/schemas/StrategySignal" }
+        direction: { $ref: "#/components/schemas/Direction" }
         message: { $ref: "#/components/schemas/StrategyMessage" }
         exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
@@ -2452,10 +2461,11 @@ components:
     StrategyInput:
       type: object
       additionalProperties: false
-      required: [name, signal, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message, enabled]
+      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message, enabled]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         signal: { $ref: "#/components/schemas/StrategySignal" }
+        direction: { $ref: "#/components/schemas/Direction" }
         expression: { type: string, minLength: 1, maxLength: 2000 }
         exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
@@ -2465,17 +2475,20 @@ components:
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
     StrategySignal:
-      oneOf:
-        - $ref: "#/components/schemas/SignalDirection"
-        - type: "null"
+      type: boolean
       description: |
-        The price move a signal expects after its entry signals: up, down, or
-        sideways. A signal buys nothing and only announces its entry signals,
-        so its exit rule, take profit, and stop loss are empty and its market
-        cap bounds null. Null for a strategy that trades long.
-    SignalDirection:
+        Whether the strategy is a signal, which buys nothing and only
+        announces its entry signals, so its exit rule, take profit, and stop
+        loss are empty and its market cap bounds null. Fixed at creation:
+        an update that changes it is refused.
+    Direction:
       type: string
       enum: [long, short, sideways]
+      description: |
+        How a strategy trades, long or short, or the price move a signal
+        expects after its entry signals: up, down, or sideways. A short
+        strategy always has a take profit and a stop loss. Fixed at creation:
+        an update that changes it is refused.
     StrategyMarketCapBound:
       type: [number, "null"]
       format: double

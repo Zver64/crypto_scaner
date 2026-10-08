@@ -1,4 +1,5 @@
-import { SignalDirection } from "@/api/generated/models";
+import { Direction } from "@/api/generated/models";
+import type { StrategyKind } from "@/features/strategy-settings/types";
 
 // Tokens of a strategy expression, for parenthesizeOperands.
 export const tokenPattern =
@@ -18,12 +19,29 @@ export const operandBoundaries = [
 // Lets the expression parser accept every field; the backend validates them.
 export const anyField = { fieldExists: () => true };
 
-// Names of the moves signals expect.
-export const signalDirectionLabels = {
+// Names of the directions strategies trade and the moves signals expect.
+export const directionLabels = {
 	long: "Long",
 	short: "Short",
 	sideways: "Sideways",
-} as const satisfies Record<SignalDirection, string>;
+} as const satisfies Record<Direction, string>;
 
-// The direction a signal starts with when a strategy becomes one.
-export const defaultSignalDirection = SignalDirection.long;
+// The direction a new strategy or signal starts with.
+export const defaultDirection = Direction.long;
+
+// How each kind is named in its page and form.
+export const kindNouns = {
+	signal: { name: "Signal", one: "signal", many: "signals", title: "Signals" },
+	strategy: {
+		name: "Strategy",
+		one: "strategy",
+		many: "strategies",
+		title: "Strategies",
+	},
+} as const satisfies Record<
+	StrategyKind,
+	{ name: string; one: string; many: string; title: string }
+>;
+
+// The directions a strategy trades; only a signal expects a sideways move.
+export const strategyDirections = [Direction.long, Direction.short] as const;

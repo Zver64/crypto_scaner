@@ -19,7 +19,7 @@
  */
 
 /**
- * References over the same evaluated period, net of the same fees.
+ * References over the same evaluated period, net of the same fees; null for a signal and for a short strategy.
  */
 export interface BacktestBaselines {
   /**

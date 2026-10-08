@@ -117,6 +117,31 @@ func TestBacktestRejectsUnknownAndInvalidStrategiesAndArguments(t *testing.T) {
 	}
 }
 
+// A short strategy gains as the price falls to its take profit and has no
+// baselines.
+func TestBacktestShortGainsOnAFall(t *testing.T) {
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 10, 10, 4)), Strategy{
+		ID: 1, Name: "Top", Direction: DirectionShort, Expression: "h_close > 5",
+		TakeProfitExpression: "h_close * 0.8", StopLossExpression: "h_close * 1.5",
+	})
+
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := Trade{EntryTime: backtestHour(2), EntryPrice: 10, ExitTime: backtestHour(2), ExitPrice: 8, Buys: 1, Return: 0.2 - BacktestFee*1.8}
+	if len(result.Trades) != 1 || !tradeNear(result.Trades[0], want) || result.Trades[0].Reason != ExitTakeProfit {
+		t.Fatalf("trades = %+v", result.Trades)
+	}
+	if result.Direction != DirectionShort || result.BuyAndHold != nil || result.DCA != nil {
+		t.Fatalf("direction %s, buy and hold %v, DCA %v", result.Direction, result.BuyAndHold, result.DCA)
+	}
+	// A short loses at most everything, however far the price rose.
+	if loss := netReturn(DirectionShort, 10, 25); loss != -1 {
+		t.Fatalf("loss after a rise to 2.5 times the entry = %v", loss)
+	}
+}
+
 // A strategy with an exit holds one buy per trade and skips the signals of
 // hours 4 and 6 meanwhile. It sells at the open after its exit signal; the
 // exit wins over a true entry on its candle, and the entry counts as false
@@ -131,7 +156,7 @@ func TestBacktestExitingStrategySkipsSignalsDuringATrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, second := netReturn(9, 30), netReturn(30, 30)
+	first, second := netReturn(DirectionLong, 9, 30), netReturn(DirectionLong, 30, 30)
 	wantTrades := []Trade{
 		{EntryTime: backtestHour(2), EntryPrice: 9, ExitTime: backtestHour(8), ExitPrice: 30, Buys: 1, Return: first},
 		{EntryTime: backtestHour(9), EntryPrice: 30, ExitTime: backtestHour(9), ExitPrice: 30, Buys: 1, Return: second},
@@ -145,7 +170,7 @@ func TestBacktestExitingStrategySkipsSignalsDuringATrade(t *testing.T) {
 		t.Fatalf("exit = %s at %v, values %v", exit.Reason, exit.ExitSignal, exit.ExitValues)
 	}
 	// The trade falls from 9 to 1 at the close of hour 3 before it profits.
-	if !near(result.NetProfit, (1+first)*(1+second)-1) || !near(result.MaxDrawdown, -netReturn(9, 1)) {
+	if !near(result.NetProfit, (1+first)*(1+second)-1) || !near(result.MaxDrawdown, -netReturn(DirectionLong, 9, 1)) {
 		t.Fatalf("net %v, drawdown %v", result.NetProfit, result.MaxDrawdown)
 	}
 	assertStats(t, "strategy", result.Stats, TradeStats{
@@ -184,9 +209,9 @@ func TestBacktestSellsAtTakeProfitAndStopLoss(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []Trade{
-		{EntryTime: backtestHour(2), EntryPrice: 10, ExitTime: backtestHour(3), ExitPrice: 12, Buys: 1, Return: netReturn(10, 12), TakeProfit: 12, StopLoss: 9, Reason: ExitTakeProfit},
-		{EntryTime: backtestHour(5), EntryPrice: 12, ExitTime: backtestHour(5), ExitPrice: 10.8, Buys: 1, Return: netReturn(12, 10.8), TakeProfit: 14.4, StopLoss: 10.8, Reason: ExitStopLoss},
-		{EntryTime: backtestHour(7), EntryPrice: 10, ExitTime: backtestHour(7), ExitPrice: 10, Buys: 1, Return: netReturn(10, 10), TakeProfit: 14.4, StopLoss: 10.8, Reason: ExitStopLoss},
+		{EntryTime: backtestHour(2), EntryPrice: 10, ExitTime: backtestHour(3), ExitPrice: 12, Buys: 1, Return: netReturn(DirectionLong, 10, 12), TakeProfit: 12, StopLoss: 9, Reason: ExitTakeProfit},
+		{EntryTime: backtestHour(5), EntryPrice: 12, ExitTime: backtestHour(5), ExitPrice: 10.8, Buys: 1, Return: netReturn(DirectionLong, 12, 10.8), TakeProfit: 14.4, StopLoss: 10.8, Reason: ExitStopLoss},
+		{EntryTime: backtestHour(7), EntryPrice: 10, ExitTime: backtestHour(7), ExitPrice: 10, Buys: 1, Return: netReturn(DirectionLong, 10, 10), TakeProfit: 14.4, StopLoss: 10.8, Reason: ExitStopLoss},
 	}
 	if !slices.EqualFunc(result.Trades, want, func(left, right Trade) bool {
 		return tradeNear(left, right) && near(left.TakeProfit, right.TakeProfit) && near(left.StopLoss, right.StopLoss) && left.Reason == right.Reason
@@ -215,12 +240,12 @@ func TestBacktestEvaluatesThePeriod(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Trade{{EntryTime: backtestHour(4), EntryPrice: 2, ExitTime: backtestHour(4), ExitPrice: 2, Buys: 1, Open: true, Return: netReturn(2, 2)}}
+	want := []Trade{{EntryTime: backtestHour(4), EntryPrice: 2, ExitTime: backtestHour(4), ExitPrice: 2, Buys: 1, Open: true, Return: netReturn(DirectionLong, 2, 2)}}
 	if !result.From.Equal(backtestHour(2)) || !result.To.Equal(backtestHour(4)) || !slices.EqualFunc(result.Trades, want, tradeNear) ||
 		!slices.EqualFunc(result.Alerts, []time.Time{backtestHour(3)}, time.Time.Equal) {
 		t.Fatalf("period %v to %v, trades %+v, alerts %v", result.From, result.To, result.Trades, result.Alerts)
 	}
-	if result.BuyAndHold == nil || !near(*result.BuyAndHold, netReturn(9, 2)) {
+	if result.BuyAndHold == nil || !near(*result.BuyAndHold, netReturn(DirectionLong, 9, 2)) {
 		t.Fatalf("buy and hold %v", result.BuyAndHold)
 	}
 }
@@ -238,7 +263,7 @@ func TestBacktestExitsOnPositionVariables(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Hour 4 signals again after the exit, but its buy never fills.
-	want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 9, ExitTime: backtestHour(4), ExitPrice: 9, Buys: 1, Return: netReturn(9, 9)}}
+	want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 9, ExitTime: backtestHour(4), ExitPrice: 9, Buys: 1, Return: netReturn(DirectionLong, 9, 9)}}
 	if !slices.EqualFunc(result.Trades, want, tradeNear) || !slices.EqualFunc(result.Alerts, []time.Time{backtestHour(1), backtestHour(4)}, time.Time.Equal) {
 		t.Fatalf("trades = %+v, alerts %v", result.Trades, result.Alerts)
 	}
@@ -263,7 +288,7 @@ func TestBacktestPnLExitUsesPercent(t *testing.T) {
 			}
 			// A 5% move must not exit; a 20% move signals the sell,
 			// which fills at the next open. Reported returns stay fractional.
-			want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 100, ExitTime: backtestHour(5), ExitPrice: test.closes[5], Buys: 1, Return: netReturn(100, test.closes[5])}}
+			want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 100, ExitTime: backtestHour(5), ExitPrice: test.closes[5], Buys: 1, Return: netReturn(DirectionLong, 100, test.closes[5])}}
 			if !slices.EqualFunc(result.Trades, want, tradeNear) {
 				t.Fatalf("trades = %+v, want %+v", result.Trades, want)
 			}
@@ -281,13 +306,13 @@ func TestBacktestWithoutExitHoldsAnOpenTrade(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 1, ExitTime: backtestHour(3), ExitPrice: 9, Buys: 1, Open: true, Return: netReturn(1, 9)}}
-	if !slices.EqualFunc(result.Trades, want, tradeNear) || result.Stats.Count != 0 || !near(result.NetProfit, netReturn(1, 9)) {
+	want := []Trade{{EntryTime: backtestHour(2), EntryPrice: 1, ExitTime: backtestHour(3), ExitPrice: 9, Buys: 1, Open: true, Return: netReturn(DirectionLong, 1, 9)}}
+	if !slices.EqualFunc(result.Trades, want, tradeNear) || result.Stats.Count != 0 || !near(result.NetProfit, netReturn(DirectionLong, 1, 9)) {
 		t.Fatalf("trades = %+v, stats %+v, net %v", result.Trades, result.Stats, result.NetProfit)
 	}
 	// Buying and holding enters at the open of hour 1; DCA buys at the
 	// opens of hours 1 to 3: 9, 1, and 9.
-	if result.BuyAndHold == nil || !near(*result.BuyAndHold, netReturn(9, 9)) || result.DCA == nil || !near(*result.DCA, netReturn(3/(1.0/9+1+1.0/9), 9)) {
+	if result.BuyAndHold == nil || !near(*result.BuyAndHold, netReturn(DirectionLong, 9, 9)) || result.DCA == nil || !near(*result.DCA, netReturn(DirectionLong, 3/(1.0/9+1+1.0/9), 9)) {
 		t.Fatalf("buy and hold %v, DCA %v", result.BuyAndHold, result.DCA)
 	}
 }
@@ -569,13 +594,13 @@ func TestSignalWindowsCompareSignalsWithEveryCandle(t *testing.T) {
 	}
 	approx := func(value *float64, want float64) bool { return value != nil && math.Abs(*value-want) < 1e-9 }
 	for _, test := range []struct {
-		direction Signal
+		direction Direction
 		hits      float64
 		all       float64
 	}{
-		{direction: SignalShort, hits: 1, all: 2.0 / 3},
-		{direction: SignalLong, hits: 0, all: 1.0 / 3},
-		{direction: SignalSideways, hits: 0, all: 1.0 / 3},
+		{direction: DirectionShort, hits: 1, all: 2.0 / 3},
+		{direction: DirectionLong, hits: 0, all: 1.0 / 3},
+		{direction: DirectionSideways, hits: 0, all: 1.0 / 3},
 	} {
 		t.Run(string(test.direction), func(t *testing.T) {
 			// The signal at candle 3 has no 3 later candles.
@@ -631,7 +656,7 @@ func TestSignalWindowsSkipGaps(t *testing.T) {
 	if changes := signalChanges(market.IntervalHour, history, 2); changes[0] != nil {
 		t.Fatalf("change across the gap %v", *changes[0])
 	}
-	if windows := signalWindows(SignalLong, market.IntervalHour, history, []int{0}, 0, len(history)-1); windows[0].All.Count != 0 {
+	if windows := signalWindows(DirectionLong, market.IntervalHour, history, []int{0}, 0, len(history)-1); windows[0].All.Count != 0 {
 		t.Fatalf("windows %+v", windows[0])
 	}
 }

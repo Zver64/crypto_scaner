@@ -23,6 +23,7 @@ import type { BacktestSignal } from './backtestSignal.ts';
 import type { BacktestSummary } from './backtestSummary.ts';
 import type { BacktestTrade } from './backtestTrade.ts';
 import type { CandleInterval } from './candleInterval.ts';
+import type { Direction } from './direction.ts';
 
 /**
  * Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
@@ -30,6 +31,7 @@ import type { CandleInterval } from './candleInterval.ts';
 export interface StrategyBacktest {
   interval: CandleInterval;
   symbol: string;
+  direction: Direction;
   /** Fee paid on entry and again on exit, as a fraction of the traded value. */
   fee: number;
   /**

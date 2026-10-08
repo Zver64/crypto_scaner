@@ -242,10 +242,10 @@ func (c *cli) deleteCommand(k kind) *cobra.Command {
 // createStrategyCommand saves a strategy the way the Mini App does, always
 // disabled: only the administrator turns alerts on, in the Mini App.
 func (c *cli) createStrategyCommand() *cobra.Command {
-	var expression, exit, takeProfit, stopLoss, minMarketCap, maxMarketCap, message string
+	var expression, direction, exit, takeProfit, stopLoss, minMarketCap, maxMarketCap, message string
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR [--direction long|short] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled strategy; it reads indicators that are not configured without adding them",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -253,6 +253,9 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 				Name: args[0], Expression: expression, ExitExpression: exit, TakeProfitExpression: takeProfit, StopLossExpression: stopLoss, Message: message,
 			}
 			var err error
+			if body.Direction, err = strategiesKind.directionFlag(direction); err != nil {
+				return err
+			}
 			if body.MinMarketCapUsd, err = marketCapFlag("min-market-cap", minMarketCap); err != nil {
 				return err
 			}
@@ -284,6 +287,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 	}
 	flags := command.Flags()
 	flags.StringVar(&expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
+	flags.StringVar(&direction, "direction", string(apiclient.Long), "how the strategy trades, `long` or short, fixed once saved; a short one needs --take-profit and --stop-loss")
 	flags.StringVar(&exit, "exit", "", "the exit rule `EXPR`ession, which may also read entry_price, pnl, and bars_held")
 	flags.StringVar(&takeProfit, "take-profit", "", "the take profit price `EXPR`ession, fixed at the entry signal, such as h_close * 1.05")
 	flags.StringVar(&stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession, fixed at the entry signal, such as h_close * 0.97")
@@ -292,6 +296,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	_ = command.MarkFlagRequired("expr")
+	_ = command.RegisterFlagCompletionFunc("direction", strategiesKind.completeDirections())
 	return command
 }
 
@@ -400,7 +405,7 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 				return err
 			}
 			body := apiclient.StrategyUpdate{
-				Name: current.Name, Signal: current.Signal, Expression: current.Expression, ExitExpression: current.ExitExpression,
+				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression, ExitExpression: current.ExitExpression,
 				TakeProfitExpression: current.TakeProfitExpression, StopLossExpression: current.StopLossExpression,
 				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
 			}

@@ -115,7 +115,7 @@ func TestUpdateStrategyRejectsInvalidInputBeforeWrites(t *testing.T) {
 // strategies commands and a strategy by the signals ones, before any write.
 func TestGroupsRefuseTheOtherKind(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies": `{"items":[{"id":5,"name":"Trade","expression":"h_close > 1","valid":true},{"id":6,"name":"Crash","signal":"short","expression":"h_close > 1","valid":true}]}`,
+		"GET /api/v1/admin/strategies": `{"items":[{"id":5,"name":"Trade","direction":"long","expression":"h_close > 1","valid":true},{"id":6,"name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","valid":true}]}`,
 	})
 	home := writeProfile(t, server.URL)
 	for _, test := range []struct {
@@ -124,8 +124,9 @@ func TestGroupsRefuseTheOtherKind(t *testing.T) {
 	}{
 		{[]string{"strategies", "update", "6", "--name", "X"}, "scanner: 6 is a signal; use scanner signals\n"},
 		{[]string{"strategies", "delete", "6"}, "scanner: 6 is a signal; use scanner signals\n"},
-		{[]string{"signals", "update", "5", "--direction", "long"}, "scanner: 5 is a strategy; use scanner strategies\n"},
+		{[]string{"signals", "update", "5", "--name", "X"}, "scanner: 5 is a strategy; use scanner strategies\n"},
 		{[]string{"signals", "delete", "5"}, "scanner: 5 is a strategy; use scanner strategies\n"},
+		{[]string{"strategies", "create", "X", "--expr", "h_close > 1", "--direction", "sideways"}, "scanner: --direction: \"sideways\" is not long or short\n"},
 	} {
 		if got := runCLI(t, home, "", test.args...); got.code != 1 || got.stderr != test.want {
 			t.Errorf("scanner %v = %+v", test.args, got)
@@ -135,18 +136,18 @@ func TestGroupsRefuseTheOtherKind(t *testing.T) {
 
 // A signal update keeps its fields, changing only the flags given.
 func TestUpdateSignalPreservesUnspecifiedFields(t *testing.T) {
-	response := `{"id":6,"name":"Crash","signal":"long","expression":"h_close > 1","message":"m","enabled":false,"valid":true}`
+	response := `{"id":6,"name":"Crash Soon","signal":true,"direction":"short","expression":"h_close > 1","message":"m","enabled":false,"valid":true}`
 	api, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies":   `{"items":[{"id":6,"name":"Crash","signal":"short","expression":"h_close > 1","message":"m","enabled":false,"valid":true}]}`,
+		"GET /api/v1/admin/strategies":   `{"items":[{"id":6,"name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","message":"m","enabled":false,"valid":true}]}`,
 		"PUT /api/v1/admin/strategies/6": response,
 	})
-	got := runCLI(t, writeProfile(t, server.URL), "", "signals", "update", "6", "--direction", "long", "--json")
+	got := runCLI(t, writeProfile(t, server.URL), "", "signals", "update", "6", "--name", "Crash Soon", "--json")
 	if got.code != 0 || got.stdout != response+"\n" {
 		t.Fatalf("update = %+v", got)
 	}
 	var body apiclient.StrategyUpdate
 	raw := api.bodies["PUT /api/v1/admin/strategies/6"]
-	want := apiclient.StrategyUpdate{Name: "Crash", Signal: new(apiclient.Long), Expression: "h_close > 1", Message: "m"}
+	want := apiclient.StrategyUpdate{Name: "Crash Soon", Signal: true, Direction: apiclient.Short, Expression: "h_close > 1", Message: "m"}
 	if err := json.Unmarshal([]byte(raw), &body); err != nil || !reflect.DeepEqual(body, want) {
 		t.Fatalf("body = %s, want %+v", raw, want)
 	}

@@ -1,4 +1,8 @@
-import type { BacktestTrade, StrategyBacktest } from "@/api/generated/models";
+import {
+	type BacktestTrade,
+	Direction,
+	type StrategyBacktest,
+} from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { BacktestReturn } from "@/features/strategy-backtest/backtest-return";
 import { exitReasonLabels } from "@/features/strategy-backtest/constants";
@@ -68,12 +72,17 @@ const columns: DataTableColumn<BacktestTrade>[] = [
 // an exit rule at the open after its signal. An open trade is valued at the
 // last close.
 export function BacktestTradesTable({
-	backtest: { trades },
+	backtest: { direction, trades },
 }: BacktestTradesTableProps) {
 	const rows = [...trades].reverse();
 	return (
 		<DataTable
-			columns={columns}
+			columns={
+				// A short strategy holds one short per trade.
+				direction === Direction.short
+					? columns.filter(({ key }) => key !== "buys")
+					: columns
+			}
 			getRowKey={(trade) => trade.entry_time}
 			rows={rows}
 		/>

@@ -91,6 +91,11 @@ scanner strategies update 6 --min-market-cap '' --max-market-cap ''
 монеты из диапазона, а монеты без известной капитализации при любой границе не покупает; открытые сделки
 продаются как обычно. Бэктест диапазон игнорирует и работает на любой монете. Пустое значение у `update`
 снимает границу; `scanner strategies` показывает диапазон в колонке `MARKET CAP`.
+`strategies create --direction long|short` (по умолчанию `long`) задаёт направление торговли; после сохранения оно не меняется, для другой стороны создайте новую стратегию. Short-стратегия
+продаёт на входе и откупает на выходе, поэтому зарабатывает на падении; у неё обязательны `--take-profit`
+ниже закрытия и `--stop-loss` выше него, правило выхода необязательно. Бэктест short-стратегии не учитывает
+funding, плечо и ликвидацию и печатает `Net profit` без сравнения с `Buy & Hold` и `DCA`.
+`scanner strategies` показывает направление в колонке `DIRECTION`.
 Новые правила и цены проверяются перед записью (`scanner validate --exit` проверяет правило выхода, `scanner validate --price` — take profit или stop loss).
 Стратегия читает и ненастроенные индикаторы, например `h_atr_100`, не добавляя их в Mini App:
 она так же торгует и бэктестится, а `scanner strategies` показывает их под именем как `not configured`.
@@ -111,14 +116,14 @@ scanner strategies update 6 --min-market-cap '' --max-market-cap ''
 ```sh
 scanner signals
 scanner signals create 'Crash soon' --expr 'h_rsi > 80' --direction short
-scanner signals update 7 --direction sideways --expr 'h_rsi > 75'
+scanner signals update 7 --expr 'h_rsi > 75'
 scanner signals delete 7
 ```
 
-`signals update` принимает `--expr`, `--direction`, `--name`, `--message` и `--add-indicators` и, как
+Направление сигнала задаётся при создании и не меняется. `signals update` принимает `--expr`, `--name`, `--message` и `--add-indicators` и, как
 `strategies update`, сохраняет неуказанные поля и меняет только отключённый сигнал. Группы не пересекаются:
 `scanner strategies update` и `delete` отказываются работать с сигналом, а `scanner signals` — со стратегией.
-Превратить стратегию в сигнал или обратно можно только в Mini App. `scanner backtest --strategy ID`
+Стратегию нельзя превратить в сигнал и обратно: создайте новую. `scanner backtest --strategy ID`
 принимает ID и стратегии, и сигнала.
 
 ## Удаление сохранённой стратегии

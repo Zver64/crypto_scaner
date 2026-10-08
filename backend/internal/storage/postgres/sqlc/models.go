@@ -101,7 +101,8 @@ type AppStrategy struct {
 	StopLossExpression   string
 	MinMarketCapUsd      pgtype.Float8
 	MaxMarketCapUsd      pgtype.Float8
-	Signal               pgtype.Text
+	Signal               bool
+	Direction            string
 }
 
 type AppStrategyIndicator struct {

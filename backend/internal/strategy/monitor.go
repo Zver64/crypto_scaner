@@ -626,8 +626,11 @@ const maxSummaryLength = 4000
 // which leave its results unknown.
 func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	text := "🎯 " + entry.Name + " is active\n"
-	if entry.Signal != "" {
-		text += "Signal: " + string(entry.Signal) + "\n"
+	switch {
+	case entry.Signal:
+		text += "Signal: " + string(entry.Direction) + "\n"
+	case entry.Direction == DirectionShort:
+		text += "Direction: short\n"
 	}
 	text += "Entry: " + entry.Expression + "\n"
 	if entry.Exit != nil {
@@ -639,7 +642,7 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	if entry.StopLoss != nil {
 		text += "Stop loss: " + entry.StopLossExpression + "\n"
 	}
-	if entry.Signal == "" && !entry.Exits() {
+	if !entry.Signal && !entry.Exits() {
 		text += "No exit: every entry signal buys.\n"
 	}
 	if bounds := entry.MarketCap.String(); bounds != "" {
@@ -662,9 +665,12 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 		symbols[i] = instrument.Symbol
 	}
 	slices.Sort(symbols)
-	if entry.Signal != "" {
+	switch {
+	case entry.Signal:
 		text += "Entry true now, signaling once it turns true again: "
-	} else {
+	case entry.Direction == DirectionShort:
+		text += "Entry true now, shorting once it turns true again: "
+	default:
 		text += "Entry true now, buying once it turns true again: "
 	}
 	for i, symbol := range symbols {
@@ -689,7 +695,7 @@ func alertText(entry Entry, instrument Instrument, event TradeEvent, current sna
 	rule, source := entry.Compiled, entry.Expression
 	switch event.Kind {
 	case TradeSignal:
-		title = signalMarks[entry.Signal] + " " + entry.Name + ": " + instrument.Symbol + " " + string(entry.Signal) + " signal at " + formatNumber(event.Close)
+		title = signalMarks[entry.Direction] + " " + entry.Name + ": " + instrument.Symbol + " " + string(entry.Direction) + " signal at " + formatNumber(event.Close)
 	case TradeSell:
 		price, reason := event.Close, "exit rule"
 		switch event.Reason {
@@ -698,11 +704,21 @@ func alertText(entry Entry, instrument Instrument, event TradeEvent, current sna
 		case ExitStopLoss:
 			price, reason = event.Price, "stop loss"
 		}
-		title = fmt.Sprintf("🔴 %s: %s sell %d buys at %s by %s, entry %s, pnl %+.2f%%",
-			entry.Name, instrument.Symbol, event.Trade.Buys, formatNumber(price), reason, formatNumber(event.Trade.EntryPrice()), 100*event.Return)
+		if entry.Direction == DirectionShort {
+			title = fmt.Sprintf("🔺 %s: %s cover at %s by %s, entry %s, pnl %+.2f%%",
+				entry.Name, instrument.Symbol, formatNumber(price), reason, formatNumber(event.Trade.EntryPrice()), 100*event.Return)
+		} else {
+			title = fmt.Sprintf("🔴 %s: %s sell %d buys at %s by %s, entry %s, pnl %+.2f%%",
+				entry.Name, instrument.Symbol, event.Trade.Buys, formatNumber(price), reason, formatNumber(event.Trade.EntryPrice()), 100*event.Return)
+		}
 		rule, source = entry.Exit, entry.ExitExpression
 	default:
-		title = "🟢 " + entry.Name + ": " + instrument.Symbol + " buy #" + strconv.Itoa(event.Buy) + " at " + formatNumber(event.Close)
+		if entry.Direction == DirectionShort {
+			// A short strategy exits, so its trades open once.
+			title = "🔻 " + entry.Name + ": " + instrument.Symbol + " short at " + formatNumber(event.Close)
+		} else {
+			title = "🟢 " + entry.Name + ": " + instrument.Symbol + " buy #" + strconv.Itoa(event.Buy) + " at " + formatNumber(event.Close)
+		}
 		if event.Trade.TakeProfit > 0 {
 			title += ", take profit " + formatNumber(event.Trade.TakeProfit)
 		}
@@ -733,7 +749,7 @@ func alertText(entry Entry, instrument Instrument, event TradeEvent, current sna
 }
 
 // signalMarks start the alerts of signals by the move they expect.
-var signalMarks = map[Signal]string{SignalLong: "📈", SignalShort: "📉", SignalSideways: "↔️"}
+var signalMarks = map[Direction]string{DirectionLong: "📈", DirectionShort: "📉", DirectionSideways: "↔️"}
 
 func formatNumber(value float64) string {
 	return strconv.FormatFloat(value, 'g', 6, 64)

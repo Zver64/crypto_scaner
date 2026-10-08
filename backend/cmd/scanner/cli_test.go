@@ -172,7 +172,7 @@ func TestBacktestRendersTheTradesOfASavedStrategy(t *testing.T) {
 	}
 }
 
-const backtestResponse = `{"baselines":{"buy_and_hold":0.25,"dca":0.18},` +
+const backtestResponse = `{"baselines":{"buy_and_hold":0.25,"dca":0.18},"direction":"long",` +
 	`"equity":[{"equity":1.03,"time":"2024-02-01T07:00:00Z"},{"equity":1.0094,"time":"2024-06-30T23:00:00Z"}],"fee":0.001,"from":"2024-01-01T00:00:00Z","interval":"1h",` +
 	`"skipped_alerts":1,"summary":{"max_drawdown":0.02,"net_profit":0.0094,"stats":{"average_bars":2,"average_loss":null,"average_trade":0.03,"average_win":0.03,` +
 	`"exit_rule_exits":0,"profit_factor":null,"stop_loss_exits":0,"take_profit_exits":1,"trade_count":1,"win_rate":1}},` +
@@ -184,6 +184,7 @@ const backtestResponse = `{"baselines":{"buy_and_hold":0.25,"dca":0.18},` +
 
 const backtestText = `┌─────────────────┬──────────────────────────────────────────────────────────────────┐
 │ Coin            │ BTCUSDT                                                          │
+│ Direction       │ long                                                             │
 │ Period          │ 2024-01-01 → 2024-06-30 (1h candles)                             │
 │ Fee             │ 0.1% per buy and per sell                                        │
 │ Skipped signals │ 1 (bought nothing: a trade was open, or TP/SL on the wrong side) │
@@ -219,7 +220,7 @@ func TestBacktestCapsTheTradeList(t *testing.T) {
 	}
 	var output strings.Builder
 
-	renderTrades(&output, apiclient.N1d, trades)
+	renderTrades(&output, apiclient.N1d, trades, tradeWords(apiclient.Long))
 
 	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
 	if len(lines) != maxTradeRows+6 || !strings.Contains(lines[4], fmt.Sprintf(" %d │", maxTradeRows+2)) || lines[len(lines)-1] != "… 3 more (use --json)" {
@@ -237,18 +238,18 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 		api, server := newFakeAPI(t, map[string]string{
 			"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 			"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
-			"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","expression":"h_atr_100 > 1","message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
+			"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","direction":"long","expression":"h_atr_100 > 1","message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		})
 		home := writeProfile(t, server.URL)
 
 		got := runCLI(t, home, "", append([]string{"strategies", "create", "ATR", "--expr", "h_atr_100 > 1"}, test.args...)...)
 
-		want := `┌────┬───────┬───────────────────────────┬───────────────┬──────┬──────────────┬────────────┐
-│ ID │ STATE │ NAME                      │ ENTRY         │ EXIT │ BUYS         │ MARKET CAP │
-├────┼───────┼───────────────────────────┼───────────────┼──────┼──────────────┼────────────┤
-│  7 │ off   │ ATR                       │ h_atr_100 > 1 │ -    │ every signal │ -          │
-│    │       │ not configured: h-atr-100 │               │      │              │            │
-└────┴───────┴───────────────────────────┴───────────────┴──────┴──────────────┴────────────┘
+		want := `┌────┬───────┬───────────────────────────┬───────────┬───────────────┬──────┬──────────────┬────────────┐
+│ ID │ STATE │ NAME                      │ DIRECTION │ ENTRY         │ EXIT │ BUYS         │ MARKET CAP │
+├────┼───────┼───────────────────────────┼───────────┼───────────────┼──────┼──────────────┼────────────┤
+│  7 │ off   │ ATR                       │ long      │ h_atr_100 > 1 │ -    │ every signal │ -          │
+│    │       │ not configured: h-atr-100 │           │               │      │              │            │
+└────┴───────┴───────────────────────────┴───────────┴───────────────┴──────┴──────────────┴────────────┘
 `
 		wantNote := ""
 		if test.add {
@@ -258,7 +259,7 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 			t.Fatalf("strategies create %v = %+v", test.args, got)
 		}
 		wants := map[string]string{
-			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":null,"stop_loss_expression":"","take_profit_expression":""}`,
+			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":""}`,
 		}
 		if test.add {
 			wants["POST /api/v1/admin/scanner-indicator-batches"] = `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`
@@ -311,7 +312,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"},{"name":"pnl","label":"pnl","position":true}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","min_market_cap_usd":10000000,"max_market_cap_usd":1500000000,"message":"Dip!","enabled":true,"valid":true},{"id":4,"name":"Old","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","min_market_cap_usd":10000000,"max_market_cap_usd":1500000000,"message":"Dip!","enabled":true,"valid":true},{"id":4,"name":"Old","direction":"short","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -324,14 +325,14 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"items":[{"indicator_id":1,"interval":"1d","label":"d-rsi","name":"d_rsi","position":false}]}` + "\n"},
 		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; reads indicators that are not configured: h-atr-100\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
-		{args: []string{"strategies"}, want: `┌────┬──────────────┬─────────────────────┬───────────────────────────┬──────────────────┬───────────────┬──────────────┐
-│ ID │ STATE        │ NAME                │ ENTRY                     │ EXIT             │ BUYS          │ MARKET CAP   │
-├────┼──────────────┼─────────────────────┼───────────────────────────┼──────────────────┼───────────────┼──────────────┤
-│  3 │ on           │ Dip buy             │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade │ $10M – $1.5B │
-│    │              │ message: Dip!       │                           │ TP h_close * 1.1 │               │              │
-│  4 │ off, invalid │ Old                 │ x                         │ -                │ every signal  │ -            │
-│    │              │ problem: undeclared │                           │                  │               │              │
-└────┴──────────────┴─────────────────────┴───────────────────────────┴──────────────────┴───────────────┴──────────────┘
+		{args: []string{"strategies"}, want: `┌────┬──────────────┬─────────────────────┬───────────┬───────────────────────────┬──────────────────┬─────────────────────┬──────────────┐
+│ ID │ STATE        │ NAME                │ DIRECTION │ ENTRY                     │ EXIT             │ BUYS                │ MARKET CAP   │
+├────┼──────────────┼─────────────────────┼───────────┼───────────────────────────┼──────────────────┼─────────────────────┼──────────────┤
+│  3 │ on           │ Dip buy             │ long      │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade       │ $10M – $1.5B │
+│    │              │ message: Dip!       │           │                           │ TP h_close * 1.1 │                     │              │
+│  4 │ off, invalid │ Old                 │ short     │ x                         │ -                │ one short per trade │ -            │
+│    │              │ problem: undeclared │           │                           │                  │                     │              │
+└────┴──────────────┴─────────────────────┴───────────┴───────────────────────────┴──────────────────┴─────────────────────┴──────────────┘
 `},
 	} {
 		if got := runCLI(t, home, "", test.args...); got.code != 0 || got.stdout != test.want {
@@ -614,7 +615,7 @@ func TestCompletionOffersStrategiesAndFavorites(t *testing.T) {
 func TestBacktestWithoutTradesSaysWhy(t *testing.T) {
 	from := time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC)
 	to := time.Date(2026, 10, 7, 0, 0, 0, 0, time.UTC)
-	backtest := apiclient.StrategyBacktest{Interval: "1d", Symbol: "UNIUSDT", Fee: 0.001, From: &from, To: &to}
+	backtest := apiclient.StrategyBacktest{Interval: "1d", Symbol: "UNIUSDT", Direction: apiclient.Short, Fee: 0.001, From: &from, To: &to}
 	var output strings.Builder
 
 	renderBacktest(&output, backtest, false)
@@ -624,13 +625,14 @@ func TestBacktestWithoutTradesSaysWhy(t *testing.T) {
 	}
 }
 
-const noTradesText = `┌─────────────────┬──────────────────────────────────────────────────────────────────┐
-│ Coin            │ UNIUSDT                                                          │
-│ Period          │ 2026-07-20 → 2026-10-07 (1d candles)                             │
-│ Fee             │ 0.1% per buy and per sell                                        │
-│ Skipped signals │ 0 (bought nothing: a trade was open, or TP/SL on the wrong side) │
-└─────────────────┴──────────────────────────────────────────────────────────────────┘
-No trades: the strategy did not buy on this coin in the stored history.
+const noTradesText = `┌─────────────────┬───────────────────────────────────────────────────────────────────┐
+│ Coin            │ UNIUSDT                                                           │
+│ Direction       │ short                                                             │
+│ Period          │ 2026-07-20 → 2026-10-07 (1d candles)                              │
+│ Fee             │ 0.1% per short and per cover                                      │
+│ Skipped signals │ 0 (shorted nothing: a trade was open, or TP/SL on the wrong side) │
+└─────────────────┴───────────────────────────────────────────────────────────────────┘
+No trades: the strategy did not short on this coin in the stored history.
 `
 
 func TestBacktestWithoutEvaluatedCandlesSaysWhy(t *testing.T) {

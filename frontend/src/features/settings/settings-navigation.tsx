@@ -3,6 +3,7 @@ import { useMatchRoute, useNavigate } from "@tanstack/react-router";
 
 const pages = [
 	{ label: "Indicators", value: "/admin" },
+	{ label: "Signals", value: "/admin/signals" },
 	{ label: "Strategies", value: "/admin/strategies" },
 	{ label: "Backtest", value: "/admin/backtest" },
 	{ label: "Users", value: "/admin/users" },

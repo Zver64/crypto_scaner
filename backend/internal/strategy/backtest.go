@@ -27,6 +27,8 @@ type Backtest struct {
 	// and trades count candles.
 	Interval market.CandleInterval
 	Symbol   string
+	// Direction is the strategy's: how it trades or what a signal expects.
+	Direction Direction
 	// From and To are the open times of the first and the last evaluated
 	// candles; both are zero when none is evaluated.
 	From, To time.Time
@@ -50,7 +52,7 @@ type Backtest struct {
 	// first evaluated candle to the close of the last; DCA the net return of
 	// buying one quote unit at the open after every evaluated candle but the
 	// last, valued at the close of the last. Both are nil without such
-	// candles, and for a signal.
+	// candles, for a signal, and for a short strategy.
 	BuyAndHold, DCA *float64
 	// Signal describes the entry signals of a signal, which trades nothing;
 	// nil for a trading strategy.
@@ -65,7 +67,6 @@ var SignalWindows = []int{3, 6, 12, 24}
 // measured from the close of each signal candle over each of SignalWindows,
 // beside the same measure after every evaluated candle.
 type SignalReport struct {
-	Direction Signal
 	// Occurrences are the entry signals, oldest first.
 	Occurrences []SignalOccurrence
 	Windows     []SignalWindow
@@ -206,7 +207,7 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, f
 			return Backtest{}, fmt.Errorf("load backtest %s history: %w", read, err)
 		}
 	}
-	result := Backtest{Interval: entry.Interval, Symbol: instrument.Symbol}
+	result := Backtest{Interval: entry.Interval, Symbol: instrument.Symbol, Direction: entry.Direction}
 	if err := replay.run(ctx, entry, instrument, from, to, &result); err != nil {
 		return Backtest{}, err
 	}
@@ -241,7 +242,7 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 		result.MaxDrawdown = max(result.MaxDrawdown, 1-value/peak)
 	}
 	record := func(trade Trade) {
-		trade.Return = netReturn(trade.EntryPrice, trade.ExitPrice)
+		trade.Return = netReturn(entry.Direction, trade.EntryPrice, trade.ExitPrice)
 		trade.Fills = slices.DeleteFunc(fills, func(fill Fill) bool { return fill.Time.IsZero() })
 		fills = nil
 		result.Trades = append(result.Trades, trade)
@@ -316,7 +317,7 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 			}
 		}
 		if state.Filled > 0 {
-			drawdown(equity * (1 + netReturn(state.EntryPrice(), candle.Close)))
+			drawdown(equity * (1 + netReturn(entry.Direction, state.EntryPrice(), candle.Close)))
 		}
 	}
 	if state.Filled > 0 {
@@ -329,13 +330,15 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 	}
 	result.NetProfit = equity - 1
 	result.Stats = tradeStats(returns, bars, reasons)
-	if entry.Signal == "" {
-		result.baselines(candles, first)
+	if !entry.Signal {
+		if entry.Direction != DirectionShort {
+			result.baselines(candles, first)
+		}
 		return nil
 	}
-	result.Signal = &SignalReport{Direction: entry.Signal, Occurrences: occurrences}
+	result.Signal = &SignalReport{Occurrences: occurrences}
 	if first >= 0 {
-		result.Signal.Windows = signalWindows(entry.Signal, result.Interval, history, signals, first, len(candles)-1)
+		result.Signal.Windows = signalWindows(entry.Direction, result.Interval, history, signals, first, len(candles)-1)
 	}
 	return nil
 }
@@ -343,7 +346,7 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 // signalWindows measures the moves of history, candles of interval, after
 // the candles at signals and after every evaluated candle, from first through
 // last, over each of SignalWindows.
-func signalWindows(direction Signal, interval market.CandleInterval, history []market.Candle, signals []int, first, last int) []SignalWindow {
+func signalWindows(direction Direction, interval market.CandleInterval, history []market.Candle, signals []int, first, last int) []SignalWindow {
 	all, after := make([][]signalMove, len(SignalWindows)), make([][]signalMove, len(SignalWindows))
 	collect := func(moves [][]signalMove, at int) {
 		for index, move := range signalMovesAt(interval, history, at) {
@@ -416,7 +419,7 @@ func signalMovesAt(interval market.CandleInterval, history []market.Candle, at i
 // signalStats describes moves, counting hits by direction; a sideways move
 // hits when its range is below typical, or below the median range of moves
 // when typical is nil.
-func signalStats(direction Signal, moves []signalMove, typical *float64) SignalStats {
+func signalStats(direction Direction, moves []signalMove, typical *float64) SignalStats {
 	stats := SignalStats{Count: len(moves)}
 	if len(moves) == 0 {
 		return stats
@@ -432,9 +435,9 @@ func signalStats(direction Signal, moves []signalMove, typical *float64) SignalS
 	hits := 0
 	for _, move := range moves {
 		switch {
-		case direction == SignalLong && move.rise > -move.fall,
-			direction == SignalShort && -move.fall > move.rise,
-			direction == SignalSideways && typical != nil && move.size < *typical:
+		case direction == DirectionLong && move.rise > -move.fall,
+			direction == DirectionShort && -move.fall > move.rise,
+			direction == DirectionSideways && typical != nil && move.size < *typical:
 			hits++
 		}
 	}
@@ -463,7 +466,7 @@ func (result *Backtest) baselines(candles []market.Candle, first int) {
 		return
 	}
 	last := candles[len(candles)-1].Close
-	result.BuyAndHold = new(netReturn(candles[first+1].Open, last))
+	result.BuyAndHold = new(netReturn(DirectionLong, candles[first+1].Open, last))
 	var quantity float64
 	buys := 0
 	for _, candle := range candles[first+1:] {
@@ -472,12 +475,17 @@ func (result *Backtest) baselines(candles []market.Candle, first int) {
 			buys++
 		}
 	}
-	result.DCA = new(netReturn(float64(buys)/quantity, last))
+	result.DCA = new(netReturn(DirectionLong, float64(buys)/quantity, last))
 }
 
-// netReturn is the return of buying at entry and selling at exit, net of
-// BacktestFee on both sides.
-func netReturn(entry, exit float64) float64 {
+// netReturn is the return of a position in direction opened at entry and
+// closed at exit, net of BacktestFee on both sides: a long one buys at entry
+// and sells at exit, a short one the other way around. A short one loses at
+// most everything, as if liquidated, however far the price rose.
+func netReturn(direction Direction, entry, exit float64) float64 {
+	if direction == DirectionShort {
+		return max(direction.gross(entry, exit)-BacktestFee*(1+exit/entry), -1)
+	}
 	return exit/entry*(1-BacktestFee)*(1-BacktestFee) - 1
 }
 

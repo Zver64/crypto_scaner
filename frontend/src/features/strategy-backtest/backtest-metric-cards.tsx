@@ -1,5 +1,5 @@
 import { SimpleGrid } from "@mantine/core";
-import type { StrategyBacktest } from "@/api/generated/models";
+import { Direction, type StrategyBacktest } from "@/api/generated/models";
 import { BacktestReturn } from "@/features/strategy-backtest/backtest-return";
 import {
 	buyAndHoldHint,
@@ -10,6 +10,7 @@ import { MetricCard } from "@/features/strategy-backtest/metric-card";
 import {
 	formatFractionPercent,
 	formatProfitFactor,
+	tradeWords,
 } from "@/features/strategy-backtest/utils";
 import { formatNumber } from "@/utils/number-format";
 
@@ -22,23 +23,27 @@ interface BacktestMetricCardsProps {
 // The headline metrics of the strategy, compared with a baseline where one
 // applies, like TradingView's Strategy Report.
 export function BacktestMetricCards({
-	backtest: { baselines, fee, skipped_alerts, summary },
+	backtest: { baselines, direction, fee, skipped_alerts, summary },
 	gap,
 	paperPadding,
 }: BacktestMetricCardsProps) {
 	const { stats } = summary;
+	const words = tradeWords(direction);
 	return (
 		<SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing={gap}>
 			<MetricCard
 				comparison={
-					<>
-						<HintLabel hint={buyAndHoldHint}>Buy & Hold</HintLabel>{" "}
-						<BacktestReturn value={baselines.buy_and_hold} />{" "}
-						<HintLabel hint={dcaHint}>DCA</HintLabel>{" "}
-						<BacktestReturn value={baselines.dca} />
-					</>
+					// A short strategy has no baselines.
+					direction === Direction.short ? undefined : (
+						<>
+							<HintLabel hint={buyAndHoldHint}>Buy & Hold</HintLabel>{" "}
+							<BacktestReturn value={baselines.buy_and_hold} />{" "}
+							<HintLabel hint={dcaHint}>DCA</HintLabel>{" "}
+							<BacktestReturn value={baselines.dca} />
+						</>
+					)
 				}
-				hint={`Compounded result of all trades, an open one valued at the last close, after a ${formatFractionPercent(fee)} fee on each buy and sell. Every buy spends the same amount; a strategy with an exit holds one buy per trade.`}
+				hint={`Compounded result of all trades, an open one valued at the last close, after a ${formatFractionPercent(fee)} fee on each ${words.open} and ${words.close}. Every ${words.open} spends the same amount; a strategy with an exit holds one ${words.open} per trade.`}
 				label="Net profit"
 				paperPadding={paperPadding}
 				value={<BacktestReturn value={summary.net_profit} />}
@@ -49,7 +54,7 @@ export function BacktestMetricCards({
 						? `TP ${formatNumber(stats.take_profit_exits)} · SL ${formatNumber(stats.stop_loss_exits)} · Rule ${formatNumber(stats.exit_rule_exits)}`
 						: undefined
 				}
-				hint={`Closed trades, one at a time, by what sold them: take profit, stop loss, or exit rule; an open trade counts only in Net profit. Average candles held: ${stats.average_bars === null ? "—" : formatNumber(stats.average_bars, 1)}. Entry signals that bought nothing, during a trade or with the take profit or stop loss on the wrong side of the close: ${formatNumber(skipped_alerts)}.`}
+				hint={`Closed trades, one at a time, by what ${words.closed} them: take profit, stop loss, or exit rule; an open trade counts only in Net profit. Average candles held: ${stats.average_bars === null ? "—" : formatNumber(stats.average_bars, 1)}. Entry signals that ${words.opened} nothing, during a trade or with the take profit or stop loss on the wrong side of the close: ${formatNumber(skipped_alerts)}.`}
 				label="Trades"
 				paperPadding={paperPadding}
 				value={formatNumber(stats.trade_count)}

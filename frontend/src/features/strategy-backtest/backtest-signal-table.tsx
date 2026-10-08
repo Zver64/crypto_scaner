@@ -1,7 +1,7 @@
 import type {
 	BacktestSignalOccurrence,
 	BacktestSignalWindow,
-	SignalDirection,
+	Direction,
 } from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import { BacktestReturn } from "@/features/strategy-backtest/backtest-return";
@@ -10,7 +10,7 @@ import { formatDateTime } from "@/utils/date-time-format";
 import { formatNumber } from "@/utils/number-format";
 
 interface BacktestSignalTableProps {
-	direction: SignalDirection;
+	direction: Direction;
 	occurrences: readonly BacktestSignalOccurrence[];
 	windows: readonly BacktestSignalWindow[];
 }
@@ -32,7 +32,7 @@ const columns: DataTableColumn<BacktestSignalOccurrence>[] = [
 // The changes of the close in the order of the signal windows, colored by
 // whether they moved as direction expected.
 function changeColumns(
-	direction: SignalDirection,
+	direction: Direction,
 	windows: readonly BacktestSignalWindow[],
 ): DataTableColumn<BacktestSignalOccurrence>[] {
 	return windows.map(({ candles }, index) => ({

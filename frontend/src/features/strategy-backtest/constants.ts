@@ -2,9 +2,24 @@ import type { ManipulateType } from "dayjs";
 import type {
 	BacktestTradeExitReason,
 	CandleInterval,
-	SignalDirection,
+	Direction,
 } from "@/api/generated/models";
 import type { PercentChangeColors } from "@/components/percent-change";
+import type { TradeWords } from "@/features/strategy-backtest/types";
+
+// A long strategy buys and sells; a short one shorts and covers.
+export const longTradeWords = {
+	close: "sell",
+	closed: "sold",
+	open: "buy",
+	opened: "bought",
+} as const satisfies TradeWords;
+export const shortTradeWords = {
+	close: "cover",
+	closed: "covered",
+	open: "short",
+	opened: "shorted",
+} as const satisfies TradeWords;
 
 // Meanings of the backtest baselines, shown on hover or tap.
 export const buyAndHoldHint =
@@ -24,7 +39,7 @@ export const signalHitHints = {
 	long: "a rise above the fall",
 	short: "a fall deeper than the rise",
 	sideways: "a range narrower than the median range after every candle",
-} as const satisfies Record<SignalDirection, string>;
+} as const satisfies Record<Direction, string>;
 
 // The dayjs format of the period days, shared by the date pickers and the
 // evaluated period so both read alike.
@@ -44,4 +59,4 @@ export const signalChangeColors = {
 	long: "sign",
 	short: "inverted",
 	sideways: "none",
-} as const satisfies Record<SignalDirection, PercentChangeColors>;
+} as const satisfies Record<Direction, PercentChangeColors>;

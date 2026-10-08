@@ -17,6 +17,7 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { Direction } from './direction.ts';
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
@@ -29,6 +30,7 @@ export interface Strategy {
   id: number;
   name: string;
   signal: StrategySignal;
+  direction: Direction;
   /** Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`. */
   expression: string;
   exit_expression: StrategyExitExpression;

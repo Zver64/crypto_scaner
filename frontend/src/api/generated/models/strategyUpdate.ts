@@ -17,6 +17,7 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { Direction } from './direction.ts';
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
@@ -31,6 +32,7 @@ export interface StrategyUpdate {
      */
   name: string;
   signal: StrategySignal;
+  direction: Direction;
   message: StrategyMessage;
   exit_expression: StrategyExitExpression;
   take_profit_expression: StrategyTakeProfitExpression;

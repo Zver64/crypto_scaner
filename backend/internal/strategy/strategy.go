@@ -63,29 +63,40 @@ func (err *InstrumentsInUseError) Error() string {
 
 func (err *InstrumentsInUseError) Is(target error) bool { return target == ErrInstrumentsInUse }
 
-// Signal is the price move a signal expects after its entry signals: up,
-// down, or sideways. A signal buys nothing; it only announces its entry
-// signals.
-type Signal string
+// Direction is the price move a strategy trades or a signal expects after
+// its entry signals: up, down, or, for a signal only, sideways.
+type Direction string
 
 const (
-	SignalLong     Signal = "long"
-	SignalShort    Signal = "short"
-	SignalSideways Signal = "sideways"
+	DirectionLong     Direction = "long"
+	DirectionShort    Direction = "short"
+	DirectionSideways Direction = "sideways"
 )
 
-// Strategy is one stored strategy. Signal, when not empty, makes it a signal
-// that only announces its entry signals; otherwise it trades long.
-// Expression is the entry rule; ExitExpression, when not empty, the exit
-// rule; TakeProfitExpression and StopLossExpression, when not empty, the
-// prices a trade sells at, evaluated when its entry signals. A trading
-// strategy with any of these exits holds one buy per trade; one without buys
-// at every entry signal and never sells. A signal has none of them and no
-// market cap range.
+// gross is the fractional return of a position in direction opened at entry
+// and closed at exit, before fees. A short one loses at most everything, as
+// if liquidated, however far the price rose.
+func (direction Direction) gross(entry, exit float64) float64 {
+	if direction == DirectionShort {
+		return max(1-exit/entry, -1)
+	}
+	return exit/entry - 1
+}
+
+// Strategy is one stored strategy. Signal makes it a signal that only
+// announces its entry signals, expecting the move of Direction; otherwise it
+// trades in Direction, long or short. Expression is the entry rule;
+// ExitExpression, when not empty, the exit rule; TakeProfitExpression and
+// StopLossExpression, when not empty, the prices a trade closes at,
+// evaluated when its entry signals. A trading strategy with any of these
+// exits holds one buy per trade; one without buys at every entry signal and
+// never sells. A short strategy always has a take profit and a stop loss. A
+// signal has none of them and no market cap range.
 type Strategy struct {
 	ID                   int64
 	Name                 string
-	Signal               Signal
+	Signal               bool
+	Direction            Direction
 	Expression           string
 	ExitExpression       string
 	TakeProfitExpression string
@@ -162,10 +173,10 @@ func (bounds MarketCapRange) validate() error {
 	return nil
 }
 
-// trades reports whether other differs from strategy in how it trades or
-// signals: a signal's direction only names what its alerts expect.
+// trades reports whether other, of the same kind and direction, differs from
+// strategy in how it trades or signals.
 func (strategy Strategy) trades(other Strategy) bool {
-	return (strategy.Signal == "") != (other.Signal == "") || strategy.Expression != other.Expression || strategy.ExitExpression != other.ExitExpression ||
+	return strategy.Expression != other.Expression || strategy.ExitExpression != other.ExitExpression ||
 		strategy.TakeProfitExpression != other.TakeProfitExpression || strategy.StopLossExpression != other.StopLossExpression
 }
 
@@ -614,6 +625,9 @@ func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error
 		return Entry{}, ErrNotFound
 	}
 	previous := current[index]
+	if item.Signal != previous.Signal || item.Direction != previous.Direction {
+		return Entry{}, fmt.Errorf("%w: a saved strategy or signal keeps its kind and direction; create a new one", ErrInvalidArgument)
+	}
 	item.Enabled = previous.Enabled
 	entry, err := service.entry(item)
 	if err != nil {
@@ -700,15 +714,18 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	item.ExitExpression = strings.TrimSpace(item.ExitExpression)
 	item.TakeProfitExpression = strings.TrimSpace(item.TakeProfitExpression)
 	item.StopLossExpression = strings.TrimSpace(item.StopLossExpression)
-	switch item.Signal {
-	case "":
-	case SignalLong, SignalShort, SignalSideways:
+	switch {
+	case item.Direction != DirectionLong && item.Direction != DirectionShort && item.Direction != DirectionSideways:
+		return Entry{}, fmt.Errorf("%w: the direction must be long, short, or sideways", ErrInvalidArgument)
+	case item.Signal:
 		if item.ExitExpression != "" || item.TakeProfitExpression != "" || item.StopLossExpression != "" ||
 			item.MarketCap.MinUSD != nil || item.MarketCap.MaxUSD != nil {
 			return Entry{}, fmt.Errorf("%w: a signal has no exit rule, take profit, stop loss, or market cap range", ErrInvalidArgument)
 		}
-	default:
-		return Entry{}, fmt.Errorf("%w: the signal must be long, short, or sideways", ErrInvalidArgument)
+	case item.Direction == DirectionSideways:
+		return Entry{}, fmt.Errorf("%w: a strategy trades long or short; only a signal expects a sideways move", ErrInvalidArgument)
+	case item.Direction == DirectionShort && (item.TakeProfitExpression == "" || item.StopLossExpression == ""):
+		return Entry{}, fmt.Errorf("%w: a short strategy needs a take profit and a stop loss", ErrInvalidArgument)
 	}
 	entry, err := service.compileEntry(item)
 	if err != nil {

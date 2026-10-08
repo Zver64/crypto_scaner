@@ -7,7 +7,10 @@ import { BacktestMetricCards } from "@/features/strategy-backtest/backtest-metri
 import { BacktestSignalResults } from "@/features/strategy-backtest/backtest-signal-results";
 import { BacktestSummary } from "@/features/strategy-backtest/backtest-summary";
 import { BacktestTradesTable } from "@/features/strategy-backtest/backtest-trades-table";
-import { noCandlesMessage } from "@/features/strategy-backtest/utils";
+import {
+	noCandlesMessage,
+	tradeWords,
+} from "@/features/strategy-backtest/utils";
 
 interface BacktestResultsProps {
 	backtest: StrategyBacktest;
@@ -43,7 +46,7 @@ export const BacktestResults = memo(function BacktestResults({
 				description={
 					backtest.from === null
 						? noCandlesMessage(period)
-						: "The strategy did not buy on this coin in the stored history."
+						: `The strategy did not ${tradeWords(backtest.direction).open} on this coin in the stored history.`
 				}
 				title="No trades"
 			/>

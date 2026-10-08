@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"io"
 	"slices"
+	"strings"
 
 	"crypto-scanner/internal/apiclient"
 
@@ -17,15 +18,18 @@ type kind struct {
 	signals bool
 	// noun names one, plural the command group.
 	noun, plural string
+	// directions are those of --direction: how a strategy trades or what a
+	// signal expects.
+	directions []string
 }
 
 var (
-	strategiesKind = kind{noun: "strategy", plural: "strategies"}
-	signalsKind    = kind{signals: true, noun: "signal", plural: "signals"}
+	strategiesKind = kind{noun: "strategy", plural: "strategies", directions: []string{string(apiclient.Long), string(apiclient.Short)}}
+	signalsKind    = kind{signals: true, noun: "signal", plural: "signals", directions: []string{string(apiclient.Long), string(apiclient.Short), string(apiclient.Sideways)}}
 )
 
 // holds reports whether strategy belongs to k.
-func (k kind) holds(strategy apiclient.Strategy) bool { return (strategy.Signal != nil) == k.signals }
+func (k kind) holds(strategy apiclient.Strategy) bool { return strategy.Signal == k.signals }
 
 // other is the group of the saved strategies k does not hold.
 func (k kind) other() kind {
@@ -99,16 +103,23 @@ func (c *cli) update(command *cobra.Command, client *apiclient.ClientWithRespons
 	return nil
 }
 
-// directionFlag parses the move a signal expects.
-func directionFlag(value string) (apiclient.SignalDirection, error) {
-	if direction := apiclient.SignalDirection(value); direction.Valid() {
-		return direction, nil
+// directionFlag parses --direction among the directions of k.
+func (k kind) directionFlag(value string) (apiclient.Direction, error) {
+	if slices.Contains(k.directions, value) {
+		return apiclient.Direction(value), nil
 	}
-	return "", usageError("--direction: %q is not long, short, or sideways", value)
+	last := len(k.directions) - 1
+	list := strings.Join(k.directions[:last], ", ")
+	if last > 1 {
+		list += ","
+	}
+	return "", usageError("--direction: %q is not %s or %s", value, list, k.directions[last])
 }
 
-// completeDirections completes the moves of --direction.
-var completeDirections = cobra.FixedCompletions([]string{string(apiclient.Long), string(apiclient.Short), string(apiclient.Sideways)}, cobra.ShellCompDirectiveNoFileComp)
+// completeDirections completes --direction among the directions of k.
+func (k kind) completeDirections() cobra.CompletionFunc {
+	return cobra.FixedCompletions(k.directions, cobra.ShellCompDirectiveNoFileComp)
+}
 
 // createSignalCommand saves a signal, always disabled like strategies.
 func (c *cli) createSignalCommand() *cobra.Command {
@@ -119,7 +130,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 		Short: "Save a disabled signal, which buys nothing and announces the move it expects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			move, err := directionFlag(direction)
+			move, err := signalsKind.directionFlag(direction)
 			if err != nil {
 				return err
 			}
@@ -133,7 +144,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 				return err
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
-				Name: args[0], Signal: &move, Expression: expression, Message: message,
+				Name: args[0], Signal: true, Direction: move, Expression: expression, Message: message,
 			})
 			if err == nil {
 				err = c.check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
@@ -152,16 +163,16 @@ func (c *cli) createSignalCommand() *cobra.Command {
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	_ = command.MarkFlagRequired("expr")
 	_ = command.MarkFlagRequired("direction")
-	_ = command.RegisterFlagCompletionFunc("direction", completeDirections)
+	_ = command.RegisterFlagCompletionFunc("direction", signalsKind.completeDirections())
 	return command
 }
 
 func (c *cli) updateSignalCommand() *cobra.Command {
-	var name, expression, direction, message string
+	var name, expression, message string
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:               "update ID [--expr EXPR] [--direction long|short|sideways] [--name NAME] [--message TEXT] [--add-indicators]",
-		Short:             "Edit a disabled saved signal, preserving unspecified fields",
+		Use:               "update ID [--expr EXPR] [--name NAME] [--message TEXT] [--add-indicators]",
+		Short:             "Edit a disabled saved signal, preserving unspecified fields; its direction never changes",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: c.completeArg(signalsKind),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -171,15 +182,9 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			}
 			flags := command.Flags()
 			// edits are the flags that change the signal.
-			edits := []string{"expr", "direction", "name", "message"}
+			edits := []string{"expr", "name", "message"}
 			if !slices.ContainsFunc(append(edits, "add-indicators"), flags.Changed) {
-				return usageError("specify at least one of --expr, --direction, --name, --message, or --add-indicators")
-			}
-			var move apiclient.SignalDirection
-			if flags.Changed("direction") {
-				if move, err = directionFlag(direction); err != nil {
-					return err
-				}
+				return usageError("specify at least one of --expr, --name, --message, or --add-indicators")
 			}
 			client, err := c.client()
 			if err != nil {
@@ -189,10 +194,7 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			body := apiclient.StrategyUpdate{Name: current.Name, Signal: current.Signal, Expression: current.Expression, Message: current.Message}
-			if flags.Changed("direction") {
-				body.Signal = &move
-			}
+			body := apiclient.StrategyUpdate{Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression, Message: current.Message}
 			if flags.Changed("name") {
 				body.Name = name
 			}
@@ -211,10 +213,8 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")
-	command.Flags().StringVar(&direction, "direction", "", "the `MOVE` the signal expects: long, short, or sideways; omitted preserves it")
 	command.Flags().StringVar(&name, "name", "", "signal `NAME`; omitted preserves the current name")
 	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")
 	command.Flags().BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
-	_ = command.RegisterFlagCompletionFunc("direction", completeDirections)
 	return command
 }

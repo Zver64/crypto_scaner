@@ -41,11 +41,11 @@ export function BacktestSignalResults({
 				Median moves from the close of the signal candle over the next candles:
 				the rise to the highest high, the fall to the lowest low, and the range
 				between them. Hits are the share of moves with{" "}
-				{signalHitHints[signal.direction]}; All candles shows the same after
+				{signalHitHints[backtest.direction]}; All candles shows the same after
 				every evaluated candle.
 			</Text>
 			<BacktestSignalTable
-				direction={signal.direction}
+				direction={backtest.direction}
 				occurrences={signal.occurrences}
 				windows={signal.windows}
 			/>

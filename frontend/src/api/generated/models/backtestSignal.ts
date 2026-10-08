@@ -19,10 +19,8 @@
  */
 import type { BacktestSignalOccurrence } from './backtestSignalOccurrence.ts';
 import type { BacktestSignalWindow } from './backtestSignalWindow.ts';
-import type { SignalDirection } from './signalDirection.ts';
 
 export interface BacktestSignal {
-  direction: SignalDirection;
   /** Entry signals, oldest first. */
   occurrences: BacktestSignalOccurrence[];
   /**

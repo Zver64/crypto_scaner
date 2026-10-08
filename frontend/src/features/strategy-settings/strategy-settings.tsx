@@ -24,20 +24,32 @@ import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
 import { mutationErrorMessage } from "@/features/scanner-settings/utils";
+import { kindNouns } from "@/features/strategy-settings/constants";
 import { StrategyDiscardConfirmation } from "@/features/strategy-settings/strategy-discard-confirmation";
 import { StrategyForm } from "@/features/strategy-settings/strategy-form";
 import { StrategyFormContent } from "@/features/strategy-settings/strategy-form-content";
 import { StrategyIndicatorsConfirmation } from "@/features/strategy-settings/strategy-indicators-confirmation";
 import { StrategyRemovalConfirmation } from "@/features/strategy-settings/strategy-removal-confirmation";
 import { StrategyRow } from "@/features/strategy-settings/strategy-row";
-import type { StrategyDraft } from "@/features/strategy-settings/types";
+import type {
+	StrategyDraft,
+	StrategyKind,
+} from "@/features/strategy-settings/types";
 import {
 	newStrategyDraft,
 	strategyDraft,
 	strategyErrorMessage,
+	strategyKind,
 } from "@/features/strategy-settings/utils";
 
-export function StrategySettings() {
+interface StrategySettingsProps {
+	// Whether the page lists the strategies or the signals; each page creates
+	// and edits only its own kind.
+	kind: StrategyKind;
+}
+
+export function StrategySettings({ kind }: StrategySettingsProps) {
+	const nouns = kindNouns[kind];
 	const wide = useWideLayout();
 	const queryClient = useQueryClient();
 	const [draft, setDraft] = useState<StrategyDraft>();
@@ -50,7 +62,13 @@ export function StrategySettings() {
 	// A strategy to open once the indicators it reads are added.
 	const [adding, setAdding] = useState<Strategy>();
 	const strategies = useListStrategies({
-		query: { retry: false, select: (response) => response.data.items },
+		query: {
+			retry: false,
+			select: (response) =>
+				response.data.items.filter(
+					(strategy) => strategyKind(strategy) === kind,
+				),
+		},
 	});
 	const variables = useListStrategyVariables({
 		query: { retry: false, select: (response) => response.data.items },
@@ -68,7 +86,7 @@ export function StrategySettings() {
 		notifications.show({
 			color: "red",
 			message: strategyErrorMessage(error),
-			title: "Strategy change failed",
+			title: `${nouns.name} change failed`,
 		});
 	};
 	const createMutation = useCreateStrategy({
@@ -111,12 +129,12 @@ export function StrategySettings() {
 	});
 
 	if (strategies.isPending || variables.isPending) {
-		return <Loader aria-label="Loading strategies" />;
+		return <Loader aria-label={`Loading ${nouns.many}`} />;
 	}
 	if (strategies.isError || variables.isError) {
 		return (
 			<Text c="red" size="sm">
-				Strategies could not be loaded.
+				{`${nouns.title} could not be loaded.`}
 			</Text>
 		);
 	}
@@ -162,7 +180,7 @@ export function StrategySettings() {
 		<Stack gap="md">
 			{strategies.data.length === 0 ? (
 				<Text c="dimmed" size="sm">
-					No strategies yet.
+					{`No ${nouns.many} yet.`}
 				</Text>
 			) : null}
 			{variables.data.length === 0 ? (
@@ -174,9 +192,9 @@ export function StrategySettings() {
 			<Group grow>
 				<Button
 					disabled={variables.data.length === 0}
-					onClick={() => open(newStrategyDraft())}
+					onClick={() => open(newStrategyDraft(kind))}
 				>
-					Add strategy
+					{`Add ${nouns.one}`}
 				</Button>
 			</Group>
 			{strategies.data.length === 0 ? null : (
@@ -245,6 +263,7 @@ export function StrategySettings() {
 			<StrategyRemovalConfirmation
 				isPending={deleteMutation.isPending}
 				name={removing?.name}
+				noun={nouns.one}
 				onCancel={() => setRemoving(undefined)}
 				onConfirm={() => {
 					if (removing) deleteMutation.mutate({ strategyId: removing.id });
@@ -288,8 +307,9 @@ export function StrategySettings() {
 				</Paper>
 			) : (
 				<EmptyState
-					description="Choose a strategy to edit, or add one."
-					title="No strategy open"
+					description={`Choose a ${nouns.one} to edit, or add one.`}
+					fillHeight
+					title={`No ${nouns.one} open`}
 				/>
 			)}
 			{confirmations}

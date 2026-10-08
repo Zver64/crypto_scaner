@@ -87,16 +87,17 @@ func (q *Queries) DeleteStrategySymbols(ctx context.Context, strategyID int64) e
 }
 
 const insertStrategy = `-- name: InsertStrategy :one
-INSERT INTO app.strategies (name, signal, expression, exit_expression, take_profit_expression, stop_loss_expression,
+INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
                             min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending)
-VALUES ($1, $2, $3, $4, $5, $6,
-        $7, $8, $9, $10, $10)
+VALUES ($1, $2, $3, $4, $5, $6, $7,
+        $8, $9, $10, $11, $11)
 RETURNING id
 `
 
 type InsertStrategyParams struct {
 	Name                 string
-	Signal               pgtype.Text
+	Signal               bool
+	Direction            string
 	Expression           string
 	ExitExpression       string
 	TakeProfitExpression string
@@ -111,6 +112,7 @@ func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) 
 	row := q.db.QueryRow(ctx, insertStrategy,
 		arg.Name,
 		arg.Signal,
+		arg.Direction,
 		arg.Expression,
 		arg.ExitExpression,
 		arg.TakeProfitExpression,
@@ -185,7 +187,7 @@ func (q *Queries) InsertStrategySymbols(ctx context.Context, arg InsertStrategyS
 }
 
 const listStrategies = `-- name: ListStrategies :many
-SELECT id, name, signal, expression, exit_expression, take_profit_expression, stop_loss_expression,
+SELECT id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
        min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id
@@ -194,7 +196,8 @@ ORDER BY id
 type ListStrategiesRow struct {
 	ID                   int64
 	Name                 string
-	Signal               pgtype.Text
+	Signal               bool
+	Direction            string
 	Expression           string
 	ExitExpression       string
 	TakeProfitExpression string
@@ -220,6 +223,7 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			&i.ID,
 			&i.Name,
 			&i.Signal,
+			&i.Direction,
 			&i.Expression,
 			&i.ExitExpression,
 			&i.TakeProfitExpression,
@@ -582,23 +586,21 @@ func (q *Queries) SetStrategyEnabled(ctx context.Context, arg SetStrategyEnabled
 
 const updateStrategy = `-- name: UpdateStrategy :one
 UPDATE app.strategies
-SET name = $1, signal = $2, expression = $3, exit_expression = $4,
-    take_profit_expression = $5, stop_loss_expression = $6,
-    min_market_cap_usd = $7, max_market_cap_usd = $8,
-    message = $9, updated_at = now(),
-    baseline_pending = baseline_pending OR $10::BOOLEAN,
-    revision = revision + ((signal IS NULL) IS DISTINCT FROM ($2::TEXT IS NULL)
-        OR expression IS DISTINCT FROM $3
-        OR exit_expression IS DISTINCT FROM $4
-        OR take_profit_expression IS DISTINCT FROM $5
-        OR stop_loss_expression IS DISTINCT FROM $6)::INTEGER
-WHERE id = $11
+SET name = $1, expression = $2, exit_expression = $3,
+    take_profit_expression = $4, stop_loss_expression = $5,
+    min_market_cap_usd = $6, max_market_cap_usd = $7,
+    message = $8, updated_at = now(),
+    baseline_pending = baseline_pending OR $9::BOOLEAN,
+    revision = revision + (expression IS DISTINCT FROM $2
+        OR exit_expression IS DISTINCT FROM $3
+        OR take_profit_expression IS DISTINCT FROM $4
+        OR stop_loss_expression IS DISTINCT FROM $5)::INTEGER
+WHERE id = $10
 RETURNING revision
 `
 
 type UpdateStrategyParams struct {
 	Name                 string
-	Signal               pgtype.Text
 	Expression           string
 	ExitExpression       string
 	TakeProfitExpression string
@@ -611,12 +613,11 @@ type UpdateStrategyParams struct {
 }
 
 // A change of how the strategy trades starts a new revision; a market cap
-// range change only limits later buys, and a signal's direction only names
-// what its alerts expect.
+// range change only limits later buys. The kind and the direction never
+// change.
 func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, updateStrategy,
 		arg.Name,
-		arg.Signal,
 		arg.Expression,
 		arg.ExitExpression,
 		arg.TakeProfitExpression,

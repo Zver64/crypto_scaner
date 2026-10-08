@@ -8,18 +8,15 @@ import {
 	TextInput,
 } from "@mantine/core";
 import { useEffect, useState } from "react";
-import type {
-	SignalDirection,
-	StrategyUpdate,
-	StrategyVariable,
-} from "@/api/generated/models";
 import {
-	defaultSignalDirection,
-	signalDirectionLabels,
-} from "@/features/strategy-settings/constants";
+	Direction,
+	type StrategyUpdate,
+	type StrategyVariable,
+} from "@/api/generated/models";
+import { directionLabels } from "@/features/strategy-settings/constants";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
+import { StrategyDirectionControl } from "@/features/strategy-settings/strategy-direction-control";
 import { StrategyMarketCapFields } from "@/features/strategy-settings/strategy-market-cap-fields";
-import { StrategyModeControl } from "@/features/strategy-settings/strategy-mode-control";
 import { StrategyPriceInput } from "@/features/strategy-settings/strategy-price-input";
 import {
 	parsePriceSetup,
@@ -27,10 +24,7 @@ import {
 	priceSetupComplete,
 	priceSetupExpression,
 } from "@/features/strategy-settings/strategy-price-input/utils";
-import type {
-	StrategyDraft,
-	StrategyMode,
-} from "@/features/strategy-settings/types";
+import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
 	emptyStrategyQuery,
 	marketCapErrors,
@@ -38,6 +32,7 @@ import {
 	strategyBuysLabel,
 	strategyExits,
 	strategyExpression,
+	strategyKind,
 	strategyQueryComplete,
 	withoutPositionVariables,
 } from "@/features/strategy-settings/utils";
@@ -63,12 +58,7 @@ export function StrategyFormContent({
 	variables,
 }: StrategyFormContentProps) {
 	const [name, setName] = useState(draft.name);
-	const [mode, setMode] = useState<StrategyMode>(
-		draft.signal === null ? "strategy" : "signal",
-	);
-	const [direction, setDirection] = useState<SignalDirection>(
-		draft.signal ?? defaultSignalDirection,
-	);
+	const [direction, setDirection] = useState(draft.direction);
 	const [message, setMessage] = useState(draft.message);
 	const [query, setQuery] = useState(draft.query);
 	const [exitQuery, setExitQuery] = useState(draft.exitQuery);
@@ -84,9 +74,9 @@ export function StrategyFormContent({
 	const [maxMarketCap, setMaxMarketCap] = useState<number | string>(
 		draft.maxMarketCap,
 	);
-	// A signal trades nothing, so its trading fields are hidden and sent
-	// empty; they come back when the strategy trades again.
-	const trades = mode === "strategy";
+	// A signal trades nothing, so it has no trading fields and sends them
+	// empty.
+	const trades = !draft.signal;
 	const exitExpression = exitQuery ? strategyExpression(exitQuery) : "";
 	const input: StrategyUpdate = {
 		exit_expression: trades ? exitExpression : "",
@@ -95,7 +85,8 @@ export function StrategyFormContent({
 		message: message.trim(),
 		min_market_cap_usd: trades ? marketCapUsd(minMarketCap) : null,
 		name: name.trim(),
-		signal: trades ? null : direction,
+		signal: draft.signal,
+		direction,
 		stop_loss_expression: trades ? priceSetupExpression(stopLoss) : "",
 		take_profit_expression: trades ? priceSetupExpression(takeProfit) : "",
 	};
@@ -110,13 +101,16 @@ export function StrategyFormContent({
 		(!trades ||
 			((exitQuery === undefined || strategyQueryComplete(exitQuery)) &&
 				priceSetupComplete(takeProfit) &&
-				priceSetupComplete(stopLoss)));
-	// A stored signal has no trading fields, so they differ only when the
-	// signal does.
+				priceSetupComplete(stopLoss) &&
+				// A short strategy always has a take profit and a stop loss.
+				(direction !== Direction.short ||
+					(input.take_profit_expression !== "" &&
+						input.stop_loss_expression !== ""))));
+	// A signal has no trading fields to differ.
 	const dirty =
 		name !== draft.name ||
 		message !== draft.message ||
-		input.signal !== draft.signal ||
+		input.direction !== draft.direction ||
 		input.expression !== strategyExpression(draft.query) ||
 		(trades &&
 			(exitExpression !==
@@ -147,12 +141,17 @@ export function StrategyFormContent({
 				onChange={(event) => setMessage(event.currentTarget.value)}
 				value={message}
 			/>
-			<StrategyModeControl
+			{/* A saved strategy keeps its direction. */}
+			<StrategyDirectionControl
 				direction={direction}
-				disabled={isSaving}
-				mode={mode}
-				onDirectionChange={setDirection}
-				onModeChange={setMode}
+				disabled={isSaving || draft.id !== undefined}
+				kind={strategyKind(draft)}
+				onChange={(next) => {
+					setDirection(next);
+					// Take profit and stop loss are written for one side.
+					setTakeProfit({});
+					setStopLoss({});
+				}}
 			/>
 			{draft.incomplete ? (
 				<Alert color="yellow" variant="light">
@@ -234,9 +233,9 @@ export function StrategyFormContent({
 			<Text c="dimmed" size="xs">
 				{strategyBuysLabel(input)}.{" "}
 				{!trades
-					? `Every time the entry turns true sends a ${signalDirectionLabels[direction].toLowerCase()} signal alert.`
+					? `Every time the entry turns true sends a ${directionLabels[direction].toLowerCase()} signal alert.`
 					: strategyExits(input)
-						? "Entry signals during a trade buy nothing."
+						? `Entry signals during a trade ${direction === Direction.short ? "short" : "buy"} nothing.`
 						: "Without an exit rule, take profit, or stop loss, every time the entry turns true buys."}
 			</Text>
 			{named ? null : (

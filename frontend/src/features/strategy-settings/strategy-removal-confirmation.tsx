@@ -3,6 +3,8 @@ import { ConfirmationDialog } from "@/components/confirmation-dialog";
 interface StrategyRemovalConfirmationProps {
 	isPending: boolean;
 	name: string | undefined;
+	// The strategy or signal, as its page calls it.
+	noun: string;
 	onCancel(): void;
 	onConfirm(): void;
 }
@@ -10,6 +12,7 @@ interface StrategyRemovalConfirmationProps {
 export function StrategyRemovalConfirmation({
 	isPending,
 	name,
+	noun,
 	onCancel,
 	onConfirm,
 }: StrategyRemovalConfirmationProps) {
@@ -21,7 +24,7 @@ export function StrategyRemovalConfirmation({
 					? undefined
 					: {
 							title: `Delete ${name}?`,
-							description: "No more alerts will be sent for this strategy.",
+							description: `No more alerts will be sent for this ${noun}.`,
 						}
 			}
 			isPending={isPending}

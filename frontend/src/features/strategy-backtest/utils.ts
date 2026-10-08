@@ -1,9 +1,10 @@
 import type { LineData, UTCTimestamp } from "lightweight-charts";
-import type {
-	BacktestEquityPoint,
-	BacktestSignalWindow,
-	CandleInterval,
-	StrategyBacktest,
+import {
+	type BacktestEquityPoint,
+	type BacktestSignalWindow,
+	type CandleInterval,
+	Direction,
+	type StrategyBacktest,
 } from "@/api/generated/models";
 import type { ChartTradeMarkers } from "@/features/candle-chart/types";
 import { toUtcTimestamp } from "@/features/candle-chart/utils";
@@ -11,8 +12,15 @@ import {
 	hitsColorLightness,
 	hitsColorSaturation,
 } from "@/features/strategy-backtest/config";
-import { intervalUnits } from "@/features/strategy-backtest/constants";
-import type { SignalWindowRow } from "@/features/strategy-backtest/types";
+import {
+	intervalUnits,
+	longTradeWords,
+	shortTradeWords,
+} from "@/features/strategy-backtest/constants";
+import type {
+	SignalWindowRow,
+	TradeWords,
+} from "@/features/strategy-backtest/types";
 import { shiftedUtcTime } from "@/utils/date-time-format";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
@@ -61,26 +69,39 @@ export function createEquityData(
 	];
 }
 
-// The chart marks of a backtest: the first fills and the sells of trades,
-// or the signals of a signal, under their candles when it expects a rise,
-// over them for a fall, and as circles for sideways.
+// The chart marks of a backtest: the first fills and the closes of trades,
+// or the signals of a signal, under their candles for a rise, over them for
+// a fall, and as circles for sideways. A long trade opens on a rise mark and
+// closes on a fall mark, a short trade the other way around.
 export function backtestMarkers({
+	direction,
 	signal,
 	trades,
-}: Pick<StrategyBacktest, "signal" | "trades">): ChartTradeMarkers {
+}: Pick<
+	StrategyBacktest,
+	"direction" | "signal" | "trades"
+>): ChartTradeMarkers {
 	if (signal) {
 		const times = signal.occurrences.map(({ time }) => time);
 		return {
-			entries: signal.direction === "long" ? times : [],
-			exits: signal.direction === "short" ? times : [],
-			marks: signal.direction === "sideways" ? times : [],
+			entries: direction === Direction.long ? times : [],
+			exits: direction === Direction.short ? times : [],
+			marks: direction === Direction.sideways ? times : [],
 		};
 	}
-	return {
-		entries: trades.map(({ entry_time }) => entry_time),
-		// An open trade has not sold.
-		exits: trades.filter(({ open }) => !open).map(({ exit_time }) => exit_time),
-	};
+	const opens = trades.map(({ entry_time }) => entry_time);
+	// An open trade has not closed.
+	const closes = trades
+		.filter(({ open }) => !open)
+		.map(({ exit_time }) => exit_time);
+	return direction === Direction.short
+		? { entries: closes, exits: opens }
+		: { entries: opens, exits: closes };
+}
+
+// What a strategy trading in direction does in its trades.
+export function tradeWords(direction: Direction): TradeWords {
+	return direction === Direction.short ? shortTradeWords : longTradeWords;
 }
 
 // Two rows per window: the moves after the signals, then after every

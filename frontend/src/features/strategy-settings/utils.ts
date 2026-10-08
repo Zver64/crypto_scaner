@@ -12,18 +12,21 @@ import {
 	parseCEL,
 } from "react-querybuilder/parseCEL";
 import type { ErrorType } from "@/api/fetch";
-import type {
-	ErrorResponse,
-	Strategy,
-	StrategyVariable,
+import {
+	Direction,
+	type ErrorResponse,
+	type Strategy,
+	type StrategyVariable,
 } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import {
 	anyField,
 	arithmeticTokens,
 	comparisonTokens,
+	defaultDirection,
+	directionLabels,
+	kindNouns,
 	operandBoundaries,
-	signalDirectionLabels,
 	tokenPattern,
 } from "@/features/strategy-settings/constants";
 import {
@@ -36,6 +39,7 @@ import {
 } from "@/features/strategy-settings/expressions";
 import type {
 	StrategyDraft,
+	StrategyKind,
 	StrategyOperator,
 	StrategyQuery,
 	Token,
@@ -365,12 +369,15 @@ function ruleComplete(rule: RuleType): boolean {
 	);
 }
 
-// The draft of a new strategy.
-export function newStrategyDraft(): Omit<StrategyDraft, "revision"> {
+// The draft of a new strategy or signal.
+export function newStrategyDraft(
+	kind: StrategyKind,
+): Omit<StrategyDraft, "revision"> {
 	return {
 		id: undefined,
 		name: "",
-		signal: null,
+		signal: kind === "signal",
+		direction: defaultDirection,
 		message: "",
 		query: emptyStrategyQuery(),
 		exitQuery: undefined,
@@ -395,6 +402,7 @@ export function strategyDraft(
 		id: strategy.id,
 		name: strategy.name,
 		signal: strategy.signal,
+		direction: strategy.direction,
 		message: strategy.message,
 		query,
 		exitQuery,
@@ -473,13 +481,18 @@ export function strategyExits(
 	);
 }
 
-// How a strategy buys: never for a signal, once per trade when it exits, or
-// at every entry signal without any exit.
+// How a strategy buys: never for a signal, one short per trade for a short
+// strategy, once per trade when it exits, or at every entry signal without
+// any exit.
 export function strategyBuysLabel(
-	strategy: Parameters<typeof strategyExits>[0] & Pick<Strategy, "signal">,
+	strategy: Parameters<typeof strategyExits>[0] &
+		Pick<Strategy, "direction" | "signal">,
 ): string {
-	if (strategy.signal !== null) {
-		return `${signalDirectionLabels[strategy.signal]} signal, buys nothing`;
+	if (strategy.signal) {
+		return `${directionLabels[strategy.direction]} signal, buys nothing`;
+	}
+	if (strategy.direction === Direction.short) {
+		return "One short per trade";
 	}
 	return strategyExits(strategy)
 		? "One buy per trade"
@@ -488,7 +501,13 @@ export function strategyBuysLabel(
 
 // The title of the form editing draft.
 export function strategyFormTitle(draft: StrategyDraft): string {
-	return draft.id === undefined ? "New strategy" : `Edit strategy #${draft.id}`;
+	const noun = kindNouns[strategyKind(draft)].one;
+	return draft.id === undefined ? `New ${noun}` : `Edit ${noun} #${draft.id}`;
+}
+
+// The kind of a strategy or its draft.
+export function strategyKind({ signal }: { signal: boolean }): StrategyKind {
+	return signal ? "signal" : "strategy";
 }
 
 // Validation and conflict messages come from the backend.

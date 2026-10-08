@@ -17,6 +17,7 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { Direction } from './direction.ts';
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
@@ -31,6 +32,7 @@ export interface StrategyInput {
      */
   name: string;
   signal: StrategySignal;
+  direction: Direction;
   /**
      * @minLength 1
      * @maxLength 2000

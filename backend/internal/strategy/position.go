@@ -115,9 +115,9 @@ func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, 
 		next.Filled = next.Buys
 	}
 	if next.Buys > 0 {
-		if price, reason, ok := next.levelExit(candle); ok {
+		if price, reason, ok := next.levelExit(entry.Direction, candle); ok {
 			return TradeState{OpenTime: candle.OpenTime}, []TradeEvent{{
-				Kind: TradeSell, Trade: next, Close: candle.Close, Price: price, Return: price/next.EntryPrice() - 1, Reason: reason,
+				Kind: TradeSell, Trade: next, Close: candle.Close, Price: price, Return: entry.Direction.gross(next.EntryPrice(), price), Reason: reason,
 			}}, true
 		}
 	}
@@ -128,7 +128,7 @@ func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, 
 		}
 		if exit {
 			return TradeState{OpenTime: candle.OpenTime}, []TradeEvent{{
-				Kind: TradeSell, Trade: next, Close: candle.Close, Return: candle.Close/next.EntryPrice() - 1, Reason: ExitRuleSignal,
+				Kind: TradeSell, Trade: next, Close: candle.Close, Return: entry.Direction.gross(next.EntryPrice(), candle.Close), Reason: ExitRuleSignal,
 			}}, true
 		}
 	}
@@ -141,7 +141,7 @@ func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, 
 	if !signal {
 		return next, nil, true
 	}
-	if entry.Signal != "" {
+	if entry.Signal {
 		return next, []TradeEvent{{Kind: TradeSignal, Close: candle.Close}}, true
 	}
 	if candle.OutOfRange {
@@ -153,7 +153,7 @@ func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, 
 		if !known {
 			return state, nil, false
 		}
-		if entry.TakeProfit != nil && !(takeProfit > candle.Close) || entry.StopLoss != nil && !(stopLoss > 0 && stopLoss < candle.Close) {
+		if !entry.levelsAround(takeProfit, stopLoss, candle.Close) {
 			return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true
 		}
 		next.Buys, next.TakeProfit, next.StopLoss = 1, takeProfit, stopLoss
@@ -165,18 +165,35 @@ func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, 
 	return next, []TradeEvent{{Kind: TradeBuy, Buy: next.Buys, Trade: next, Close: candle.Close}}, true
 }
 
-// levelExit returns the price and the reason of the trade's sell at its stop
-// loss or take profit on candle, if the candle reaches one.
-func (state TradeState) levelExit(candle TradeCandle) (float64, ExitReason, bool) {
+// levelsAround reports whether the take profit and stop loss the strategy
+// has lie on their sides of close: a long strategy's take profit above it
+// and its stop loss between 0 and it, a short one's the other way around.
+func (entry Entry) levelsAround(takeProfit, stopLoss, close float64) bool {
+	if entry.Direction == DirectionShort {
+		return (entry.TakeProfit == nil || takeProfit > 0 && takeProfit < close) && (entry.StopLoss == nil || stopLoss > close)
+	}
+	return (entry.TakeProfit == nil || takeProfit > close) && (entry.StopLoss == nil || stopLoss > 0 && stopLoss < close)
+}
+
+// levelExit returns the price and the reason of the close of the trade in
+// direction at its stop loss or take profit on candle, if the candle reaches
+// one.
+func (state TradeState) levelExit(direction Direction, candle TradeCandle) (float64, ExitReason, bool) {
 	stopLoss, takeProfit := state.StopLoss > 0, state.TakeProfit > 0
+	// A short trade loses as the price rises, so its prices are mirrored
+	// for the comparisons of a long trade.
+	open, low, high, stopLossPrice, takeProfitPrice := candle.Open, candle.Low, candle.High, state.StopLoss, state.TakeProfit
+	if direction == DirectionShort {
+		open, low, high, stopLossPrice, takeProfitPrice = -open, -high, -low, -stopLossPrice, -takeProfitPrice
+	}
 	switch {
-	case stopLoss && candle.Open <= state.StopLoss:
+	case stopLoss && open <= stopLossPrice:
 		return candle.Open, ExitStopLoss, true
-	case takeProfit && candle.Open >= state.TakeProfit:
+	case takeProfit && open >= takeProfitPrice:
 		return candle.Open, ExitTakeProfit, true
-	case stopLoss && candle.Low <= state.StopLoss:
+	case stopLoss && low <= stopLossPrice:
 		return state.StopLoss, ExitStopLoss, true
-	case takeProfit && candle.High >= state.TakeProfit:
+	case takeProfit && high >= takeProfitPrice:
 		return state.TakeProfit, ExitTakeProfit, true
 	}
 	return 0, "", false
@@ -189,7 +206,7 @@ func (entry Entry) positions(trade TradeState, openTime time.Time, close float64
 	price := trade.EntryPrice()
 	return map[string]float64{
 		entryPriceVariable: price,
-		pnlVariable:        100 * (close/price - 1),
+		pnlVariable:        100 * entry.Direction.gross(price, close),
 		barsHeldVariable:   float64(entry.Interval.CandlesBetween(trade.OpenedAt, openTime)),
 	}
 }

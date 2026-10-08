@@ -1,28 +1,27 @@
 -- name: ListStrategies :many
-SELECT id, name, signal, expression, exit_expression, take_profit_expression, stop_loss_expression,
+SELECT id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
        min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id;
 
 -- name: InsertStrategy :one
-INSERT INTO app.strategies (name, signal, expression, exit_expression, take_profit_expression, stop_loss_expression,
+INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
                             min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending)
-VALUES (@name, sqlc.narg(signal), @expression, @exit_expression, @take_profit_expression, @stop_loss_expression,
+VALUES (@name, @signal, @direction, @expression, @exit_expression, @take_profit_expression, @stop_loss_expression,
         sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), @message, @enabled, @enabled)
 RETURNING id;
 
 -- name: UpdateStrategy :one
 -- A change of how the strategy trades starts a new revision; a market cap
--- range change only limits later buys, and a signal's direction only names
--- what its alerts expect.
+-- range change only limits later buys. The kind and the direction never
+-- change.
 UPDATE app.strategies
-SET name = @name, signal = sqlc.narg(signal), expression = @expression, exit_expression = @exit_expression,
+SET name = @name, expression = @expression, exit_expression = @exit_expression,
     take_profit_expression = @take_profit_expression, stop_loss_expression = @stop_loss_expression,
     min_market_cap_usd = sqlc.narg(min_market_cap_usd), max_market_cap_usd = sqlc.narg(max_market_cap_usd),
     message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
-    revision = revision + ((signal IS NULL) IS DISTINCT FROM (sqlc.narg(signal)::TEXT IS NULL)
-        OR expression IS DISTINCT FROM @expression
+    revision = revision + (expression IS DISTINCT FROM @expression
         OR exit_expression IS DISTINCT FROM @exit_expression
         OR take_profit_expression IS DISTINCT FROM @take_profit_expression
         OR stop_loss_expression IS DISTINCT FROM @stop_loss_expression)::INTEGER

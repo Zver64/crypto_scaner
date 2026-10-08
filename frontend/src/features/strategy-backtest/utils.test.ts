@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { SignalDirection } from "@/api/generated/models";
+import type { BacktestTrade, Direction } from "@/api/generated/models";
 import {
 	backtestMarkers,
 	backtestPeriod,
@@ -33,9 +33,9 @@ describe("createEquityData", () => {
 
 describe("backtestMarkers", () => {
 	const time = "2026-08-01T00:00:00Z";
-	const signal = (direction: SignalDirection) => ({
+	const signal = (direction: Direction) => ({
+		direction,
 		signal: {
-			direction,
 			occurrences: [{ changes: [], close: 1, time, values: {} }],
 			windows: [],
 		},
@@ -58,6 +58,27 @@ describe("backtestMarkers", () => {
 			exits: [],
 			marks: [time],
 		});
+	});
+
+	it("marks a short trade opening over its candle and closing under", () => {
+		const trade = {
+			buys: 1,
+			entry_price: 10,
+			entry_time: time,
+			exit_price: 8,
+			exit_reason: "take_profit",
+			exit_signal_time: null,
+			exit_time: "2026-08-02T00:00:00Z",
+			exit_values: {},
+			fills: [],
+			net_return: 0.2,
+			open: false,
+			stop_loss: 12,
+			take_profit: 8,
+		} satisfies BacktestTrade;
+		expect(
+			backtestMarkers({ direction: "short", signal: null, trades: [trade] }),
+		).toEqual({ entries: [trade.exit_time], exits: [time] });
 	});
 });
 

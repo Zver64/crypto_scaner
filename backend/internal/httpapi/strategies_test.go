@@ -24,7 +24,7 @@ const emptyStats = `{"average_bars":null,"average_loss":null,"average_trade":nul
 func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T) {
 	alert := time.Date(2026, 3, 2, 5, 0, 0, 0, time.UTC)
 	strategies := &backtestStrategies{result: strategy.Backtest{
-		Interval: market.IntervalHour, Symbol: "BTCUSDT", From: alert.Add(-5 * time.Hour), To: alert.Add(5 * time.Hour),
+		Interval: market.IntervalHour, Symbol: "BTCUSDT", Direction: strategy.DirectionLong, From: alert.Add(-5 * time.Hour), To: alert.Add(5 * time.Hour),
 		Trades: []strategy.Trade{{
 			EntryTime: alert.Add(time.Hour), EntryPrice: 100, ExitTime: alert.Add(2 * time.Hour), ExitPrice: 110, Buys: 1, Return: 0.098,
 			Fills:      []strategy.Fill{{Signal: alert, Time: alert.Add(time.Hour), Price: 100, Values: map[string]float64{"h_close": 99}}},
@@ -53,7 +53,7 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt&from=2026-03-02T03:00:00%2B02:00", status: http.StatusOK},
 		{
 			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/3/backtest?symbol=BTCUSDT", status: http.StatusOK,
-			body: `{"baselines":{"buy_and_hold":null,"dca":null},"equity":[],"fee":0.001,"from":null,"interval":"1h",` +
+			body: `{"baselines":{"buy_and_hold":null,"dca":null},"direction":"short","equity":[],"fee":0.001,"from":null,"interval":"1h",` +
 				`"signal":null,"skipped_alerts":0,"summary":{"max_drawdown":0,"net_profit":0,"stats":` + emptyStats + `},"symbol":"BTCUSDT","to":null,"trades":[]}`,
 		},
 	} {
@@ -111,7 +111,7 @@ func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symb
 	case id == 5:
 		return strategy.Backtest{}, fmt.Errorf("replay: %w", context.DeadlineExceeded)
 	case id == 3:
-		return strategy.Backtest{Interval: market.IntervalHour, Symbol: symbol}, nil
+		return strategy.Backtest{Interval: market.IntervalHour, Symbol: symbol, Direction: strategy.DirectionShort}, nil
 	case id != 1:
 		return strategy.Backtest{}, strategy.ErrNotFound
 	case symbol != "BTCUSDT":

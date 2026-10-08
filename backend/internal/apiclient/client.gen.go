@@ -206,6 +206,27 @@ func (e ChartIndicatorDefinitionPlacement) Valid() bool {
 	}
 }
 
+// Defines values for Direction.
+const (
+	Long     Direction = "long"
+	Short    Direction = "short"
+	Sideways Direction = "sideways"
+)
+
+// Valid indicates whether the value is a known member of the Direction enum.
+func (e Direction) Valid() bool {
+	switch e {
+	case Long:
+		return true
+	case Short:
+		return true
+	case Sideways:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for IndicatorParameterKind.
 const (
 	Choice  IndicatorParameterKind = "choice"
@@ -365,27 +386,6 @@ func (e ScannerIndicatorPlacement) Valid() bool {
 	}
 }
 
-// Defines values for SignalDirection.
-const (
-	Long     SignalDirection = "long"
-	Short    SignalDirection = "short"
-	Sideways SignalDirection = "sideways"
-)
-
-// Valid indicates whether the value is a known member of the SignalDirection enum.
-func (e SignalDirection) Valid() bool {
-	switch e {
-	case Long:
-		return true
-	case Short:
-		return true
-	case Sideways:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for StrategyValidationInputKind.
 const (
 	StrategyValidationInputKindEntry StrategyValidationInputKind = "entry"
@@ -501,7 +501,7 @@ type APIError struct {
 // APIErrorCode defines model for APIError.Code.
 type APIErrorCode string
 
-// BacktestBaselines References over the same evaluated period, net of the same fees.
+// BacktestBaselines References over the same evaluated period, net of the same fees; null for a signal and for a short strategy.
 type BacktestBaselines struct {
 	// BuyAndHold Return from the open of the candle after the first evaluated candle to the close of the last; null when fewer than two candles are evaluated.
 	BuyAndHold *float64 `json:"buy_and_hold"`
@@ -534,8 +534,6 @@ type BacktestFill struct {
 
 // BacktestSignal defines model for BacktestSignal.
 type BacktestSignal struct {
-	Direction SignalDirection `json:"direction"`
-
 	// Occurrences Entry signals, oldest first.
 	Occurrences []BacktestSignalOccurrence `json:"occurrences"`
 
@@ -816,6 +814,12 @@ type CurrentUser struct {
 	// Administrator Whether the user manages the global scanner settings.
 	Administrator bool `json:"administrator"`
 }
+
+// Direction How a strategy trades, long or short, or the price move a signal
+// expects after its entry signals: up, down, or sideways. A short
+// strategy always has a take profit and a stop loss. Fixed at creation:
+// an update that changes it is refused.
+type Direction string
 
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
@@ -1145,12 +1149,14 @@ type Session struct {
 	Token string `json:"token"`
 }
 
-// SignalDirection defines model for SignalDirection.
-type SignalDirection string
-
 // Strategy defines model for Strategy.
 type Strategy struct {
-	Enabled bool `json:"enabled"`
+	// Direction How a strategy trades, long or short, or the price move a signal
+	// expects after its entry signals: up, down, or sideways. A short
+	// strategy always has a take profit and a stop loss. Fixed at creation:
+	// an update that changes it is refused.
+	Direction Direction `json:"direction"`
+	Enabled   bool      `json:"enabled"`
 
 	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
@@ -1191,11 +1197,11 @@ type Strategy struct {
 	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
 
-	// Signal The price move a signal expects after its entry signals: up, down, or
-	// sideways. A signal buys nothing and only announces its entry signals,
-	// so its exit rule, take profit, and stop loss are empty and its market
-	// cap bounds null. Null for a strategy that trades long.
-	Signal *StrategySignal `json:"signal"`
+	// Signal Whether the strategy is a signal, which buys nothing and only
+	// announces its entry signals, so its exit rule, take profit, and stop
+	// loss are empty and its market cap bounds null. Fixed at creation:
+	// an update that changes it is refused.
+	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
@@ -1216,8 +1222,14 @@ type Strategy struct {
 
 // StrategyBacktest Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
 type StrategyBacktest struct {
-	// Baselines References over the same evaluated period, net of the same fees.
+	// Baselines References over the same evaluated period, net of the same fees; null for a signal and for a short strategy.
 	Baselines BacktestBaselines `json:"baselines"`
+
+	// Direction How a strategy trades, long or short, or the price move a signal
+	// expects after its entry signals: up, down, or sideways. A short
+	// strategy always has a take profit and a stop loss. Fixed at creation:
+	// an update that changes it is refused.
+	Direction Direction `json:"direction"`
 
 	// Equity Equity after each trade, the open one included, compounded from 1, oldest first.
 	Equity []BacktestEquityPoint `json:"equity"`
@@ -1259,7 +1271,12 @@ type StrategyExitExpression = string
 
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
-	Enabled bool `json:"enabled"`
+	// Direction How a strategy trades, long or short, or the price move a signal
+	// expects after its entry signals: up, down, or sideways. A short
+	// strategy always has a take profit and a stop loss. Fixed at creation:
+	// an update that changes it is refused.
+	Direction Direction `json:"direction"`
+	Enabled   bool      `json:"enabled"`
 
 	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
@@ -1289,11 +1306,11 @@ type StrategyInput struct {
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 	Name            string                  `json:"name"`
 
-	// Signal The price move a signal expects after its entry signals: up, down, or
-	// sideways. A signal buys nothing and only announces its entry signals,
-	// so its exit rule, take profit, and stop loss are empty and its market
-	// cap bounds null. Null for a strategy that trades long.
-	Signal *StrategySignal `json:"signal"`
+	// Signal Whether the strategy is a signal, which buys nothing and only
+	// announces its entry signals, so its exit rule, take profit, and stop
+	// loss are empty and its market cap bounds null. Fixed at creation:
+	// an update that changes it is refused.
+	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
@@ -1339,11 +1356,11 @@ type StrategyMissingIndicator struct {
 	Type  string `json:"type"`
 }
 
-// StrategySignal The price move a signal expects after its entry signals: up, down, or
-// sideways. A signal buys nothing and only announces its entry signals,
-// so its exit rule, take profit, and stop loss are empty and its market
-// cap bounds null. Null for a strategy that trades long.
-type StrategySignal = SignalDirection
+// StrategySignal Whether the strategy is a signal, which buys nothing and only
+// announces its entry signals, so its exit rule, take profit, and stop
+// loss are empty and its market cap bounds null. Fixed at creation:
+// an update that changes it is refused.
+type StrategySignal = bool
 
 // StrategyStopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 // `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
@@ -1365,6 +1382,12 @@ type StrategyTakeProfitExpression = string
 
 // StrategyUpdate defines model for StrategyUpdate.
 type StrategyUpdate struct {
+	// Direction How a strategy trades, long or short, or the price move a signal
+	// expects after its entry signals: up, down, or sideways. A short
+	// strategy always has a take profit and a stop loss. Fixed at creation:
+	// an update that changes it is refused.
+	Direction Direction `json:"direction"`
+
 	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
 	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
 	// without an exit rule. A strategy without an exit rule, take profit,
@@ -1403,11 +1426,11 @@ type StrategyUpdate struct {
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 	Name            string                  `json:"name"`
 
-	// Signal The price move a signal expects after its entry signals: up, down, or
-	// sideways. A signal buys nothing and only announces its entry signals,
-	// so its exit rule, take profit, and stop loss are empty and its market
-	// cap bounds null. Null for a strategy that trades long.
-	Signal *StrategySignal `json:"signal"`
+	// Signal Whether the strategy is a signal, which buys nothing and only
+	// announces its entry signals, so its exit rule, take profit, and stop
+	// loss are empty and its market cap bounds null. Fixed at creation:
+	// an update that changes it is refused.
+	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
 	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
@@ -1949,11 +1972,15 @@ type ClientInterface interface {
 	// sells. A candle reaching the stop loss or the take profit sells the
 	// trade there, the stop loss first when it reaches both; the exit rule
 	// being true sells it at the next open. A sell counts the entry as
-	// false on its candle. A strategy with a `signal` is a signal instead:
-	// it has no exits or market cap range, buys nothing, and only announces
-	// its entry signals with the move it expects. The administrator and
-	// users with strategy alerts get a Telegram message for every buy, sell,
-	// and signal.
+	// false on its candle. A strategy trades in its `direction`, long or
+	// short; a short strategy opens a short position instead of buying,
+	// always has a take profit below and a stop loss above the close, and
+	// closes when the price rises to the stop loss or falls to the take
+	// profit. A strategy with `signal` true is a signal instead: it has no
+	// exits or market cap range, buys nothing, and only announces its entry
+	// signals with the move its `direction` expects, which may also be
+	// sideways. The administrator and users with strategy alerts get a
+	// Telegram message for every buy, sell, short, cover, and signal.
 	//
 	// Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
 	ListStrategies(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2036,8 +2063,11 @@ type ClientInterface interface {
 	// signal. Both sides pay `fee`. A trade still open when the history
 	// ends is valued at the last close. `from` and `to` limit the evaluated
 	// candles by open time; older candles still warm the indicators up. Two baselines
-	// cover the same evaluated period: buying and holding, and buying the
-	// same amount at every candle (DCA). A backtest that does not finish
+	// cover the same evaluated period of a long strategy: buying and
+	// holding, and buying the same amount at every candle (DCA). A short
+	// strategy sells at entry and buys back at exit, gaining as the price
+	// falls; funding, leverage, and liquidation are not modeled, and it has
+	// no baselines. A backtest that does not finish
 	// within its time limit fails with `backtest_too_heavy`.
 	//
 	// A signal trades nothing: its backtest has no trades and no baselines,
@@ -2512,11 +2542,15 @@ func (c *Client) UpdateScannerIndicator(ctx context.Context, indicatorId Scanner
 // sells. A candle reaching the stop loss or the take profit sells the
 // trade there, the stop loss first when it reaches both; the exit rule
 // being true sells it at the next open. A sell counts the entry as
-// false on its candle. A strategy with a `signal` is a signal instead:
-// it has no exits or market cap range, buys nothing, and only announces
-// its entry signals with the move it expects. The administrator and
-// users with strategy alerts get a Telegram message for every buy, sell,
-// and signal.
+// false on its candle. A strategy trades in its `direction`, long or
+// short; a short strategy opens a short position instead of buying,
+// always has a take profit below and a stop loss above the close, and
+// closes when the price rises to the stop loss or falls to the take
+// profit. A strategy with `signal` true is a signal instead: it has no
+// exits or market cap range, buys nothing, and only announces its entry
+// signals with the move its `direction` expects, which may also be
+// sideways. The administrator and users with strategy alerts get a
+// Telegram message for every buy, sell, short, cover, and signal.
 //
 // Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
 func (c *Client) ListStrategies(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2679,8 +2713,11 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 // signal. Both sides pay `fee`. A trade still open when the history
 // ends is valued at the last close. `from` and `to` limit the evaluated
 // candles by open time; older candles still warm the indicators up. Two baselines
-// cover the same evaluated period: buying and holding, and buying the
-// same amount at every candle (DCA). A backtest that does not finish
+// cover the same evaluated period of a long strategy: buying and
+// holding, and buying the same amount at every candle (DCA). A short
+// strategy sells at entry and buys back at exit, gaining as the price
+// falls; funding, leverage, and liquidation are not modeled, and it has
+// no baselines. A backtest that does not finish
 // within its time limit fails with `backtest_too_heavy`.
 //
 // A signal trades nothing: its backtest has no trades and no baselines,
@@ -5053,11 +5090,15 @@ type ClientWithResponsesInterface interface {
 	// sells. A candle reaching the stop loss or the take profit sells the
 	// trade there, the stop loss first when it reaches both; the exit rule
 	// being true sells it at the next open. A sell counts the entry as
-	// false on its candle. A strategy with a `signal` is a signal instead:
-	// it has no exits or market cap range, buys nothing, and only announces
-	// its entry signals with the move it expects. The administrator and
-	// users with strategy alerts get a Telegram message for every buy, sell,
-	// and signal.
+	// false on its candle. A strategy trades in its `direction`, long or
+	// short; a short strategy opens a short position instead of buying,
+	// always has a take profit below and a stop loss above the close, and
+	// closes when the price rises to the stop loss or falls to the take
+	// profit. A strategy with `signal` true is a signal instead: it has no
+	// exits or market cap range, buys nothing, and only announces its entry
+	// signals with the move its `direction` expects, which may also be
+	// sideways. The administrator and users with strategy alerts get a
+	// Telegram message for every buy, sell, short, cover, and signal.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -5144,8 +5185,11 @@ type ClientWithResponsesInterface interface {
 	// signal. Both sides pay `fee`. A trade still open when the history
 	// ends is valued at the last close. `from` and `to` limit the evaluated
 	// candles by open time; older candles still warm the indicators up. Two baselines
-	// cover the same evaluated period: buying and holding, and buying the
-	// same amount at every candle (DCA). A backtest that does not finish
+	// cover the same evaluated period of a long strategy: buying and
+	// holding, and buying the same amount at every candle (DCA). A short
+	// strategy sells at entry and buys back at exit, gaining as the price
+	// falls; funding, leverage, and liquidation are not modeled, and it has
+	// no baselines. A backtest that does not finish
 	// within its time limit fails with `backtest_too_heavy`.
 	//
 	// A signal trades nothing: its backtest has no trades and no baselines,
@@ -9290,11 +9334,15 @@ func (c *ClientWithResponses) UpdateScannerIndicatorWithResponse(ctx context.Con
 // sells. A candle reaching the stop loss or the take profit sells the
 // trade there, the stop loss first when it reaches both; the exit rule
 // being true sells it at the next open. A sell counts the entry as
-// false on its candle. A strategy with a `signal` is a signal instead:
-// it has no exits or market cap range, buys nothing, and only announces
-// its entry signals with the move it expects. The administrator and
-// users with strategy alerts get a Telegram message for every buy, sell,
-// and signal.
+// false on its candle. A strategy trades in its `direction`, long or
+// short; a short strategy opens a short position instead of buying,
+// always has a take profit below and a stop loss above the close, and
+// closes when the price rises to the stop loss or falls to the take
+// profit. A strategy with `signal` true is a signal instead: it has no
+// exits or market cap range, buys nothing, and only announces its entry
+// signals with the move its `direction` expects, which may also be
+// sideways. The administrator and users with strategy alerts get a
+// Telegram message for every buy, sell, short, cover, and signal.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -9429,8 +9477,11 @@ func (c *ClientWithResponses) UpdateStrategyWithResponse(ctx context.Context, st
 // signal. Both sides pay `fee`. A trade still open when the history
 // ends is valued at the last close. `from` and `to` limit the evaluated
 // candles by open time; older candles still warm the indicators up. Two baselines
-// cover the same evaluated period: buying and holding, and buying the
-// same amount at every candle (DCA). A backtest that does not finish
+// cover the same evaluated period of a long strategy: buying and
+// holding, and buying the same amount at every candle (DCA). A short
+// strategy sells at entry and buys back at exit, gaining as the price
+// falls; funding, leverage, and liquidation are not modeled, and it has
+// no baselines. A backtest that does not finish
 // within its time limit fails with `backtest_too_heavy`.
 //
 // A signal trades nothing: its backtest has no trades and no baselines,

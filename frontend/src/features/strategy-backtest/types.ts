@@ -24,3 +24,12 @@ export interface SignalWindowRow {
 	signals: boolean;
 	stats: BacktestSignalStats;
 }
+
+// What a strategy does when it opens and closes a trade, as its backtest
+// names it.
+export interface TradeWords {
+	open: string;
+	opened: string;
+	close: string;
+	closed: string;
+}

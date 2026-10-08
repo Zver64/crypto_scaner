@@ -1,5 +1,5 @@
 import type { RuleGroupType, RuleType } from "react-querybuilder";
-import type { SignalDirection } from "@/api/generated/models";
+import type { Direction } from "@/api/generated/models";
 
 // Comparison operators of the strategy language. Range operators take two
 // numbers; crosses compare the latest and the previous closed candle.
@@ -24,8 +24,10 @@ export interface StrategyDraft {
 	// form and a finished save closes only the draft it saved.
 	revision: number;
 	name: string;
-	// The move a signal expects; null for a trading strategy.
-	signal: SignalDirection | null;
+	// Whether the strategy only signals.
+	signal: boolean;
+	// How the strategy trades or the move the signal expects.
+	direction: Direction;
 	// Telegram alert text; empty keeps the generated one.
 	message: string;
 	query: StrategyQuery;
@@ -49,5 +51,5 @@ export interface Token {
 	end: number;
 }
 
-// Whether a strategy only signals or trades.
-export type StrategyMode = "signal" | "strategy";
+// Whether a strategy only signals or trades, fixed when it is created.
+export type StrategyKind = "signal" | "strategy";

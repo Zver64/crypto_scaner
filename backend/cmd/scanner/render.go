@@ -58,15 +58,15 @@ func terminalWidth(w io.Writer) int {
 }
 
 // renderStrategies prints the strategies of k; on a terminal, the Name, Entry,
-// and Exit cells wrap to fit its width. Signals show the move they expect
-// instead of how they trade.
+// and Exit cells wrap to fit its width. Strategies show the direction they
+// trade, signals the move they expect instead of how they trade.
 func renderStrategies(w io.Writer, k kind, strategies []apiclient.Strategy) {
 	renderStrategiesWidth(w, k, strategies, terminalWidth(w))
 }
 
 // renderStrategiesWidth also accepts an explicit width for non-terminal tests.
 func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy, width int) {
-	header := table.Row{"ID", "State", "Name", "Entry", "Exit", "Buys", "Market cap"}
+	header := table.Row{"ID", "State", "Name", "Direction", "Entry", "Exit", "Buys", "Market cap"}
 	if k.signals {
 		header = table.Row{"ID", "State", "Name", "Entry", "Signal"}
 	}
@@ -98,9 +98,10 @@ func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy,
 		if strategy.Message != "" {
 			name += "\nmessage: " + strategy.Message
 		}
-		row := table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), exits(strategy), buys(strategy), marketCapRange(strategy)}
-		if k.signals && strategy.Signal != nil {
-			row = table.Row{strategy.Id, state, name, strings.Join(strings.Fields(strategy.Expression), " "), string(*strategy.Signal)}
+		expression := strings.Join(strings.Fields(strategy.Expression), " ")
+		row := table.Row{strategy.Id, state, name, string(strategy.Direction), expression, exits(strategy), buys(strategy), marketCapRange(strategy)}
+		if k.signals {
+			row = table.Row{strategy.Id, state, name, expression, string(strategy.Direction)}
 		}
 		rows = append(rows, row)
 		measure(row)
@@ -231,9 +232,12 @@ func exits(strategy apiclient.Strategy) string {
 	return strings.Join(lines, "\n")
 }
 
-// buys tells how a strategy buys: once per trade with an exit, at every
-// signal without one.
+// buys tells how a strategy buys: one short per trade for a short one, once
+// per trade with an exit, at every signal without one.
 func buys(strategy apiclient.Strategy) string {
+	if strategy.Direction == apiclient.Short {
+		return "one short per trade"
+	}
 	if strategy.ExitExpression != "" || strategy.TakeProfitExpression != "" || strategy.StopLossExpression != "" {
 		return "one per trade"
 	}
@@ -259,38 +263,45 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period boo
 		renderSignal(w, backtest, *backtest.Signal)
 		return
 	}
+	// A short strategy shorts and covers where a long one buys and sells.
+	words := tradeWords(backtest.Direction)
 	t := newTable()
 	t.AppendRows([]table.Row{
 		{"Coin", backtest.Symbol},
+		{"Direction", backtest.Direction},
 		{"Period", fmt.Sprintf("%s → %s (%s candles)", day(*backtest.From), day(*backtest.To), backtest.Interval)},
-		{"Fee", fmt.Sprintf("%g%% per buy and per sell", backtest.Fee*100)},
-		{"Skipped signals", fmt.Sprintf("%d (bought nothing: a trade was open, or TP/SL on the wrong side)", backtest.SkippedAlerts)},
+		{"Fee", fmt.Sprintf("%g%% per %s and per %s", backtest.Fee*100, words.open, words.close)},
+		{"Skipped signals", fmt.Sprintf("%d (%s nothing: a trade was open, or TP/SL on the wrong side)", backtest.SkippedAlerts, words.opened)},
 	})
 	fmt.Fprintln(w, t.Render())
 	if len(backtest.Trades) == 0 {
 		// The Mini App's empty state.
-		fmt.Fprintln(w, "No trades: the strategy did not buy on this coin in the stored history.")
+		fmt.Fprintf(w, "No trades: the strategy did not %s on this coin in the stored history.\n", words.open)
 		return
 	}
-	renderSummary(w, backtest.Summary, backtest.Baselines)
-	renderTrades(w, backtest.Interval, backtest.Trades)
+	renderSummary(w, backtest.Summary, backtest.Baselines, words.short)
+	renderTrades(w, backtest.Interval, backtest.Trades, words)
 }
 
 // renderSignal prints the backtest of a signal: the moves after its signals
 // beside those after every candle, then its newest maxTradeRows signals.
 func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apiclient.BacktestSignal) {
+	signals := "signals"
+	if len(signal.Occurrences) == 1 {
+		signals = "signal"
+	}
 	t := newTable()
 	t.AppendRows([]table.Row{
 		{"Coin", backtest.Symbol},
 		{"Period", fmt.Sprintf("%s → %s (%s candles)", day(*backtest.From), day(*backtest.To), backtest.Interval)},
-		{"Signal", fmt.Sprintf("%s, %d signals", signal.Direction, len(signal.Occurrences))},
+		{"Signal", fmt.Sprintf("%s, %d %s", backtest.Direction, len(signal.Occurrences), signals)},
 	})
 	fmt.Fprintln(w, t.Render())
 	if len(signal.Occurrences) == 0 {
 		fmt.Fprintln(w, "No signals: the entry did not turn true on this coin in the stored history.")
 		return
 	}
-	fmt.Fprintln(w, "Moves from the signal candle's close over the next candles, medians: rise to the highest high, fall to the lowest low, and the range between them. Hits: "+signalHits[signal.Direction]+". All: the same after every evaluated candle.")
+	fmt.Fprintln(w, "Moves from the signal candle's close over the next candles, medians: rise to the highest high, fall to the lowest low, and the range between them. Hits: "+signalHits[backtest.Direction]+". All: the same after every evaluated candle.")
 	t = newTable()
 	t.AppendHeader(table.Row{"Candles", "After", "Count", "Rise %", "Fall %", "Range %", "Hits %"})
 	t.SetColumnConfigs([]table.ColumnConfig{{Number: 3, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 6, Align: text.AlignRight}, {Number: 7, Align: text.AlignRight}})
@@ -337,21 +348,41 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 }
 
 // signalHits tells which moves a signal of each direction expected.
-var signalHits = map[apiclient.SignalDirection]string{
+var signalHits = map[apiclient.Direction]string{
 	apiclient.Long:     "rise above the fall",
 	apiclient.Short:    "fall deeper than the rise",
 	apiclient.Sideways: "range below the median range of all candles",
 }
 
+// tradeWording names what a strategy does when it opens and closes a trade.
+// A short strategy holds one short per trade and has no baselines.
+type tradeWording struct {
+	short                              bool
+	open, opened, close, opens, closes string
+}
+
+// tradeWords name what a strategy trading in direction does.
+func tradeWords(direction apiclient.Direction) tradeWording {
+	if direction == apiclient.Short {
+		return tradeWording{short: true, open: "short", opened: "shorted", close: "cover", opens: "shorts", closes: "covers"}
+	}
+	return tradeWording{open: "buy", opened: "bought", close: "sell", opens: "buys", closes: "sells"}
+}
+
 // renderSummary lists the Mini App's metric cards: the net profit with the
-// baselines it is compared with, then the statistics of the closed trades.
-func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines apiclient.BacktestBaselines) {
+// baselines it is compared with, none for a short strategy, then the
+// statistics of the closed trades.
+func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines apiclient.BacktestBaselines, short bool) {
 	t := newTable()
 	t.AppendHeader(table.Row{"Metric", "Strategy", "Compared with"})
 	t.SetColumnConfigs([]table.ColumnConfig{{Name: "Strategy", Align: text.AlignRight}})
 	stats := summary.Stats
+	compared := "-"
+	if !short {
+		compared = "Buy & Hold " + percent(baselines.BuyAndHold) + ", DCA " + percent(baselines.Dca)
+	}
 	t.AppendRows([]table.Row{
-		{"Net profit %", percent(&summary.NetProfit), "Buy & Hold " + percent(baselines.BuyAndHold) + ", DCA " + percent(baselines.Dca)},
+		{"Net profit %", percent(&summary.NetProfit), compared},
 		{"Max drawdown %", fmt.Sprintf("%.2f", summary.MaxDrawdown*100), "-"},
 		{"Closed trades", stats.TradeCount, "-"},
 		{"Win rate %", share(stats.WinRate), "-"},
@@ -367,15 +398,17 @@ func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines api
 
 // renderTrades lists the newest maxTradeRows trades, newest first like the
 // Mini App.
-func renderTrades(w io.Writer, interval apiclient.CandleInterval, trades []apiclient.BacktestTrade) {
+// A short strategy's trades hold one short each, so they have no Buys
+// column.
+func renderTrades(w io.Writer, interval apiclient.CandleInterval, trades []apiclient.BacktestTrade, words tradeWording) {
 	layout := candleTimeLayout(interval)
 	// A title would wrap mid-sentence on the narrow tables of daily and
 	// coarser intervals.
-	fmt.Fprintln(w, "Trades: buys and exit rule sells fill at the open after their signal, TP and SL on the candle reaching them; an open trade is valued at the last close; returns are after fees.")
+	fmt.Fprintf(w, "Trades: %s and exit rule %s fill at the open after their signal, TP and SL on the candle reaching them; an open trade is valued at the last close; returns are after fees.\n", words.opens, words.closes)
 	t := newTable()
 	t.SetAutoIndex(true)
 	t.AppendHeader(table.Row{"Entry", "Avg price", "Buys", "Exit", "Price", "By", "Net %"})
-	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 7, Align: text.AlignRight}})
+	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight, Hidden: words.short}, {Number: 5, Align: text.AlignRight}, {Number: 7, Align: text.AlignRight}})
 	reasons := map[apiclient.BacktestTradeExitReason]string{
 		apiclient.BacktestTradeExitReasonTakeProfit: "TP", apiclient.BacktestTradeExitReasonStopLoss: "SL", apiclient.BacktestTradeExitReasonExit: "rule",
 	}

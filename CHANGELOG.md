@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.0.0](https://github.com/Zver64/crypto_scaner/compare/v0.39.0...v1.0.0) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* strategies drop accumulate and max_buys, and strategy validation takes kind (entry, exit, price) instead of exit.
+
+### Features
+
+* compact the strategy builder for phones ([c3f4a4d](https://github.com/Zver64/crypto_scaner/commit/c3f4a4da4773b192e062e52188714afd6b442cf5))
+* drop redundant settings headings and filter labels ([f5e221f](https://github.com/Zver64/crypto_scaner/commit/f5e221faa319869b89c9b002f074582973511ced))
+* edit strategies beside the list on wide screens ([7478acf](https://github.com/Zver64/crypto_scaner/commit/7478acfd0d60f674cf5e895f12d01837cb76e005))
+* exit strategies at take profit and stop loss prices ([311c7ab](https://github.com/Zver64/crypto_scaner/commit/311c7ab629ed8cea6a2470d42550785950b54d4d))
+* give strategies their own exit rules and accumulation ([39d87b3](https://github.com/Zver64/crypto_scaner/commit/39d87b3d58bc9401dab18f0df6656e4764c246f0))
+* let strategies read indicators that are not configured ([5a586c6](https://github.com/Zver64/crypto_scaner/commit/5a586c6f8c86670bca66c1377bff045ccbd0682c))
+* limit strategy buys to a market cap range ([1adbd43](https://github.com/Zver64/crypto_scaner/commit/1adbd4340c9dff7b19927eeb938a025dbd6cadc4))
+
+
+### Bug Fixes
+
+* apply the vars filter to JSON output ([481ce74](https://github.com/Zver64/crypto_scaner/commit/481ce7416fedfa1abc84f671c02c953d7aa8b129))
+* improve scanner CLI output and error handling ([cc8ed73](https://github.com/Zver64/crypto_scaner/commit/cc8ed73c8c89e48a9c5a6c737e76dfceccf73d02))
+
 ## [0.39.0](https://github.com/Zver64/crypto_scaner/compare/v0.38.0...v0.39.0) (2026-10-07)
 
 

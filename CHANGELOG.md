@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.1.0](https://github.com/Zver64/crypto_scaner/compare/v1.0.0...v1.1.0) (2026-10-08)
+
+
+### Features
+
+* edit take profit and stop loss with expression builder ([b5a3715](https://github.com/Zver64/crypto_scaner/commit/b5a3715d64b429ab844be967b5efca03cea9deeb))
+
+
+### Bug Fixes
+
+* update scanner indicators without refreshing the entire list ([395a05b](https://github.com/Zver64/crypto_scaner/commit/395a05b28c83c3e0ab05ec615c48427829a96296))
+
 ## [1.0.0](https://github.com/Zver64/crypto_scaner/compare/v0.39.0...v1.0.0) (2026-10-08)
 
 

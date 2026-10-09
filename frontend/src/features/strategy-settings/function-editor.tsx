@@ -28,9 +28,7 @@ export function FunctionEditor({
 }: FunctionEditorProps) {
 	const definition = strategyFunctions[node.fn];
 	const titles = definition?.args ?? [];
-	const argVariables = definition?.earlier
-		? withoutPositionVariables(variables)
-		: variables;
+	const earlierVariables = withoutPositionVariables(variables);
 	const replaceArg = (index: number, arg: ExpressionNode) =>
 		onChange({
 			...node,
@@ -70,7 +68,11 @@ export function FunctionEditor({
 							label={title}
 							node={arg}
 							onChange={(next) => replaceArg(index, next)}
-							variables={argVariables}
+							variables={
+								definition?.earlier && index === 0
+									? earlierVariables
+									: variables
+							}
 							withoutCoin={withoutCoin}
 						/>
 					</Stack>

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -104,7 +105,7 @@ func TestCompilePrice(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Lows fall by one per candle back and highs stay 2 above them.
-	price, known := compiled.Price(func(read Read) (float64, bool) {
+	price, known, _ := compiled.Price(func(read Read) (float64, bool) {
 		value := 10 - float64(read.Shift)
 		if read.Variable.Name == "h_high" {
 			value += 2
@@ -118,5 +119,87 @@ func TestCompilePrice(t *testing.T) {
 	want := map[string]float64{"h_low": 0, "prev(h_low)": 1, "prev(h_low, 2)": 2, `of("ETHUSDT", h_close)`: 0}
 	if !maps.Equal(got, want) {
 		t.Fatalf("Values() = %v, want %v", got, want)
+	}
+}
+
+// A calculated prev shift is read at the latest candle and picks the operand
+// that many candles back, reading only that candle. A shift outside 1 to 500
+// is a rule error where it decides the result.
+func TestCompileCalculatedPrevShift(t *testing.T) {
+	exit := append(Variables(nil), PositionVariables()...)
+	for _, test := range []struct {
+		name, source string
+		barsHeld     float64
+		missing      int
+		result       bool
+		known        bool
+		shiftError   bool
+	}{
+		{name: "picks the shift", source: "prev(h_close, bars_held - 1) > h_open", barsHeld: 4, missing: 7, result: true, known: true},
+		{name: "picked value missing", source: "prev(h_close, bars_held - 1) > h_open", barsHeld: 4, missing: 3},
+		{name: "zero shift", source: "prev(h_close, bars_held - 1) > h_open", barsHeld: 1, shiftError: true},
+		{name: "beyond 500", source: "prev(h_close, bars_held - 1) > h_open", barsHeld: 502, shiftError: true},
+		{name: "decided without it", source: "h_open < 0 && prev(h_close, bars_held - 1) > h_open", barsHeld: 1, known: true},
+		{name: "unknown before it", source: "h_low > 0 && prev(h_close, bars_held - 1) > h_open", barsHeld: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			compiled, err := Compile(test.source, exit)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Closes fall by one per candle back; the open lies between the
+			// closes three and four candles back.
+			var shifts []int
+			value := func(read Read) (float64, bool) {
+				switch read.Variable.Name {
+				case "bars_held":
+					return test.barsHeld, true
+				case "h_open":
+					return 96.5, true
+				case "h_low":
+					return 0, false
+				}
+				shifts = append(shifts, read.Shift)
+				return 100 - float64(read.Shift), read.Shift != test.missing
+			}
+			result, known, err := compiled.Evaluate(value)
+			var shiftError *ShiftError
+			if result != test.result || known != test.known || errors.As(err, &shiftError) != test.shiftError {
+				t.Fatalf("Evaluate() = %v (%v), %v", result, known, err)
+			}
+			if test.name == "picks the shift" {
+				if !slices.Equal(shifts, []int{3}) {
+					t.Fatalf("read h_close at shifts %v, want only the picked one", shifts)
+				}
+				got := compiled.Values(value)
+				if want := map[string]float64{"bars_held": 4, "h_open": 96.5, "prev(h_close, 3)": 97}; !maps.Equal(got, want) {
+					t.Fatalf("Values() = %v, want %v", got, want)
+				}
+				if !slices.ContainsFunc(compiled.Reads(), func(read Read) bool { return read.Variable.Name == "h_close" && read.Shift == maxShift }) {
+					t.Fatalf("Reads() = %v, want h_close at shift %d", compiled.Reads(), maxShift)
+				}
+			}
+		})
+	}
+
+	if _, err := Compile("prev(h_close, 500) > 1", Variables(nil)); err != nil {
+		t.Fatalf("Compile(prev 500) error = %v", err)
+	}
+	for source, problem := range map[string]string{
+		"prev(prev(h_close, bars_held), bars_held) > 1":   "prev with a calculated shift cannot contain prev with a calculated shift",
+		"prev(h_close, prev(bars_held)) > 1":              shiftProblem,
+		"prev(h_close, bars_held * 2) > 1":                shiftProblem,
+		"prev(pnl, bars_held) > 1":                        "pnl cannot be read through prev, percentile, crossings, or of",
+		"prev(h_close, h_open) > 1":                       "h_open does not count candles, so it cannot be a prev shift",
+		"prev(percentile(h_close, 5, 50), bars_held) > 1": "prev with a calculated shift cannot contain percentile",
+		"percentile(prev(h_close, bars_held), 5, 50) > 1": "percentile cannot contain prev with a calculated shift",
+		"prev(h_close, 2.5) > 1":                          "the prev shift must be a whole number from 1 to 500",
+		"prev(h_close, 501) > 1":                          "the prev shift must be a whole number from 1 to 500",
+	} {
+		_, err := Compile(source, exit)
+		var invalid *InvalidExpressionError
+		if !errors.As(err, &invalid) || len(invalid.Problems) != 1 || !strings.HasSuffix(invalid.Problems[0], problem) {
+			t.Errorf("Compile(%q) error = %v, want %q", source, err, problem)
+		}
 	}
 }

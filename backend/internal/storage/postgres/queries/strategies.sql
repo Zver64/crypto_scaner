@@ -45,6 +45,12 @@ SET enabled = $2, baseline_pending = $2, revision = revision + 1, updated_at = n
 WHERE id = $1
 RETURNING revision;
 
+-- name: DisableStrategyAtRevision :one
+UPDATE app.strategies
+SET enabled = false, baseline_pending = false, revision = revision + 1, updated_at = now()
+WHERE id = $1 AND revision = $2 AND enabled
+RETURNING revision;
+
 -- name: DeleteStrategy :execrows
 DELETE FROM app.strategies WHERE id = $1;
 

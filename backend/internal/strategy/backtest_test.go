@@ -324,6 +324,20 @@ func TestBacktestExitsOnPositionVariables(t *testing.T) {
 	}
 }
 
+// A calculated prev shift outside 1 to 500 fails the backtest at the first
+// candle whose rule it decides: bars_held is 1 at the fill of hour 2.
+func TestBacktestFailsOnAnInvalidPrevShift(t *testing.T) {
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 9, 9, 9)), Strategy{
+		ID: 1, Name: "Hold", Expression: "h_close > 5", ExitExpression: "prev(h_close, bars_held - 1) > 100",
+	})
+	_, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	var shift *ShiftError
+	want := "invalid strategy: at the candle opening 2026-03-02 02:00 UTC, the exit rule: the prev shift is 0, not a whole number from 1 to 500"
+	if !errors.Is(err, ErrInvalidArgument) || !errors.As(err, &shift) || err.Error() != want {
+		t.Fatalf("Backtest() error = %v, want %q", err, want)
+	}
+}
+
 func TestBacktestPnLExitUsesPercent(t *testing.T) {
 	for _, test := range []struct {
 		name   string
@@ -449,8 +463,8 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 			t.Fatalf("%s shift %d of %q = %v (%v), tracked %v (%v)", read.Variable.Name, read.Shift, read.Symbol, gotValue, gotKnown, wantValue, wantKnown)
 		}
 	}
-	wantResult, wantKnown := tracked.match(compiled, entry, 1, nil)
-	gotResult, gotKnown := replayed.match(compiled, entry, 1, nil)
+	wantResult, wantKnown, _ := tracked.match(compiled, entry, 1, nil)
+	gotResult, gotKnown, _ := replayed.match(compiled, entry, 1, nil)
 	if gotResult != wantResult || gotKnown != wantKnown || !wantKnown {
 		t.Fatalf("replayed match = %v (%v), tracked %v (%v)", gotResult, gotKnown, wantResult, wantKnown)
 	}

@@ -62,9 +62,12 @@ type Values interface {
 }
 
 // Strategies supplies the current strategies. A change requests its
-// baseline before List can return the changed strategy.
+// baseline before List can return the changed strategy. DisableAtRevision
+// disables a strategy that a rule error halts, only while it still has the
+// revision that failed, and reports whether it did.
 type Strategies interface {
 	List() []Entry
+	DisableAtRevision(ctx context.Context, id, revision int64) (bool, error)
 }
 
 type Sender interface {
@@ -337,12 +340,21 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 
 		changes := map[int64]TradeState{}
 		signals := map[int64][]TradeEvent{}
+		var failure error
 		for _, instrument := range candidatesOf(entry) {
-			next, events, processed := current.advance(entry, instrument.ID, states[instrument.ID], !entry.MarketCap.Contains(instrument.MarketCapUSD))
+			next, events, processed, err := current.advance(entry, instrument.ID, states[instrument.ID], !entry.MarketCap.Contains(instrument.MarketCapUSD))
+			if err != nil {
+				failure = fmt.Errorf("%s %w", instrument.Symbol, err)
+				break
+			}
 			if processed {
 				changes[instrument.ID] = next
 				signals[instrument.ID] = events
 			}
+		}
+		if failure != nil {
+			monitor.halt(ctx, entry, failure)
+			continue
 		}
 		if len(changes) == 0 {
 			continue
@@ -383,7 +395,11 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 	states := map[int64]TradeState{}
 	var matching []Instrument
 	for _, instrument := range instruments {
-		result, known := current.match(entry.Compiled, entry, instrument.ID, nil)
+		result, known, err := current.match(entry.Compiled, entry, instrument.ID, nil)
+		if err != nil {
+			monitor.halt(ctx, entry, fmt.Errorf("%s %w", instrument.Symbol, ruleError(at, "the entry rule", err)))
+			return
+		}
 		if !known {
 			continue
 		}
@@ -411,6 +427,31 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 	monitor.send(ctx, recipients, summaryText(entry, matching, current))
 }
 
+// halt disables entry after the rule error err and tells the administrator.
+// A disabled strategy is no longer evaluated, so the message goes once; a
+// failed disable is retried by the next round, which meets the error again.
+// A strategy changed since entry was listed stays enabled and is evaluated
+// afresh. Its trading states go as a manual disable removes them.
+func (monitor *Monitor) halt(ctx context.Context, entry Entry, err error) {
+	disabled, disableErr := monitor.strategies.DisableAtRevision(ctx, entry.ID, entry.Revision)
+	if disableErr != nil {
+		monitor.logger.WarnContext(ctx, "disable strategy after a rule error failed", "strategy_id", entry.ID, "rule_error", err, "error", disableErr)
+		return
+	}
+	if !disabled {
+		return
+	}
+	monitor.logger.InfoContext(ctx, "strategy disabled after a rule error", "strategy_id", entry.ID, "error", err)
+	monitor.send(ctx, []int64{monitor.administratorID}, "⛔ "+entry.Name+" is disabled: "+err.Error())
+}
+
+// ruleError names the rule and the candle, opening at at, of the rule error
+// err, such as "at the candle opening 2026-03-02 10:00 UTC, the entry rule:
+// the prev shift is 0, …".
+func ruleError(at time.Time, rule string, err error) error {
+	return fmt.Errorf("at the candle opening %s, %s: %w", at.UTC().Format("2006-01-02 15:04 UTC"), rule, err)
+}
+
 // snapshot is the tracked values of one evaluation round.
 type snapshot struct {
 	reads reads
@@ -423,7 +464,7 @@ type snapshot struct {
 
 // match evaluates expression, a rule of entry, over the fresh values of one
 // instrument, the instruments it reads through of, and positions.
-func (current snapshot) match(expression *Expression, entry Entry, instrumentID int64, positions map[string]float64) (bool, bool) {
+func (current snapshot) match(expression *Expression, entry Entry, instrumentID int64, positions map[string]float64) (bool, bool, error) {
 	return expression.Evaluate(current.resolver(entry, instrumentID, positions))
 }
 
@@ -445,23 +486,34 @@ func (current snapshot) resolver(entry Entry, instrumentID int64, positions map[
 
 // advance processes the latest closed candle of the interval of entry on
 // one instrument after state; see Entry.step. outOfRange skips its entry
-// signal. Without the fresh candle nothing is processed.
-func (current snapshot) advance(entry Entry, instrumentID int64, state TradeState, outOfRange bool) (TradeState, []TradeEvent, bool) {
+// signal. Without the fresh candle nothing is processed. A rule error names
+// the rule and the candle (ruleError).
+func (current snapshot) advance(entry Entry, instrumentID int64, state TradeState, outOfRange bool) (TradeState, []TradeEvent, bool, error) {
 	at := entry.Interval.LastClosedOpenTime(current.now)
 	position, ok := current.reads.positions[pair{instrumentID, CandleTarget(entry.Interval).Key()}]
 	if !ok || !current.values[position].OpenTime.Equal(at) {
-		return state, nil, false
+		return state, nil, false, nil
 	}
 	candle := TradeCandle{
 		OpenTime:   at,
 		OutOfRange: outOfRange,
-		Exit: func(positions map[string]float64) (bool, bool) {
-			return current.match(entry.Exit, entry, instrumentID, positions)
+		Exit: func(positions map[string]float64) (bool, bool, error) {
+			result, known, err := current.match(entry.Exit, entry, instrumentID, positions)
+			if err != nil {
+				return false, false, ruleError(at, "the exit rule", err)
+			}
+			return result, known, nil
 		},
-		Levels: func() (float64, float64, bool) {
-			takeProfit, knownTakeProfit := current.price(entry.TakeProfit, entry, instrumentID)
-			stopLoss, knownStopLoss := current.price(entry.StopLoss, entry, instrumentID)
-			return takeProfit, stopLoss, knownTakeProfit && knownStopLoss
+		Levels: func() (float64, float64, bool, error) {
+			takeProfit, knownTakeProfit, err := current.price(entry.TakeProfit, entry, instrumentID)
+			if err != nil {
+				return 0, 0, false, ruleError(at, "the take profit", err)
+			}
+			stopLoss, knownStopLoss, err := current.price(entry.StopLoss, entry, instrumentID)
+			if err != nil {
+				return 0, 0, false, ruleError(at, "the stop loss", err)
+			}
+			return takeProfit, stopLoss, knownTakeProfit && knownStopLoss, nil
 		},
 	}
 	for _, output := range current.values[position].Outputs {
@@ -476,15 +528,18 @@ func (current snapshot) advance(entry Entry, instrumentID int64, state TradeStat
 			candle.Close = output.Value
 		}
 	}
-	candle.Entry, candle.EntryKnown = current.match(entry.Compiled, entry, instrumentID, nil)
+	var err error
+	if candle.Entry, candle.EntryKnown, err = current.match(entry.Compiled, entry, instrumentID, nil); err != nil {
+		candle.EntryErr = ruleError(at, "the entry rule", err)
+	}
 	return entry.step(state, candle)
 }
 
 // price evaluates the price expression, which may be nil for a price the
 // strategy lacks, 0 and known then, on the evaluated instrument.
-func (current snapshot) price(expression *Expression, entry Entry, instrumentID int64) (float64, bool) {
+func (current snapshot) price(expression *Expression, entry Entry, instrumentID int64) (float64, bool, error) {
 	if expression == nil {
-		return 0, true
+		return 0, true, nil
 	}
 	return expression.Price(current.resolver(entry, instrumentID, nil))
 }

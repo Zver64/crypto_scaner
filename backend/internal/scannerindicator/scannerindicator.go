@@ -62,6 +62,11 @@ type Entry struct {
 	Title     string
 	Placement chart.Placement
 	Outputs   []string
+	// Counts are the outputs that count candles.
+	Counts []string
+	// lines are the outputs charts draw, in output order: those not
+	// indicator.OutputHidden.
+	lines []string
 	// lineTitle names the chart lines, such as "RSI 14".
 	lineTitle string
 	// pane is the key of the chart pane shared with other indicators, empty
@@ -384,6 +389,12 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 	entry := Entry{Indicator: item, Placement: chart.PlacementPane, Outputs: make([]string, len(descriptor.Outputs))}
 	for i, output := range descriptor.Outputs {
 		entry.Outputs[i] = output.Name
+		if output.Count {
+			entry.Counts = append(entry.Counts, output.Name)
+		}
+		if output.Style != indicator.OutputHidden {
+			entry.lines = append(entry.lines, output.Name)
+		}
 	}
 	// An overlay of volumes or trade counts would not fit the price scale.
 	if descriptor.Overlay && !slices.ContainsFunc(fields, func(field string) bool { return !indicator.PriceField(field) }) {
@@ -446,16 +457,16 @@ func validateScale(placement chart.Placement, scale Scale) error {
 	return nil
 }
 
-// catalogIndicator draws the entry, coloring its lines from palette position
-// firstLine on.
+// catalogIndicator draws the entry's lines, coloring them from palette
+// position firstLine on.
 func (service *Service) catalogIndicator(entry Entry, firstLine int) chart.CatalogIndicator {
 	item := chart.CatalogIndicator{
 		ID:        fmt.Sprintf("indicator-%d", entry.ID),
 		Selection: entry.Selection,
 		Placement: entry.Placement,
-		Lines:     make([]chart.IndicatorLine, len(entry.Outputs)),
+		Lines:     make([]chart.IndicatorLine, len(entry.lines)),
 	}
-	for i, output := range entry.Outputs {
+	for i, output := range entry.lines {
 		title := entry.lineTitle
 		if len(entry.Outputs) > 1 {
 			title += " " + output

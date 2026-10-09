@@ -44,6 +44,10 @@ describe("importedStrategyQuery", () => {
 			"crosses_above(h_close + 1, min(h_open * 2, h_low)) && abs(h_close - h_open) > 1",
 			"crosses_above(h_close + 1, min(h_open * 2, h_low)) && abs(h_close - h_open) > 1",
 		],
+		[
+			"h_divergence_bull > 0 && prev(h_sma_3_volume, h_divergence_previous_low_bars - 1) > prev(h_sma_3_volume, 4)",
+			"h_divergence_bull > 0 && prev(h_sma_3_volume, h_divergence_previous_low_bars - 1) > prev(h_sma_3_volume, 4)",
+		],
 	])("imports %s", (expression, expected) => {
 		const query = importedStrategyQuery(expression);
 		expect(query && strategyExpression(query)).toBe(expected);

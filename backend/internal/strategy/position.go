@@ -77,14 +77,17 @@ type TradeEvent struct {
 // and stop loss prices at the close, 0 for those the strategy lacks; it is
 // only asked for on a signal that opens a trade. OutOfRange skips entry
 // signals, of signals too, as for a coin outside the market cap range.
+// EntryErr and the errors of Exit and Levels are rule errors that decide
+// their result, such as a *ShiftError, naming the rule.
 type TradeCandle struct {
 	OpenTime               time.Time
 	Open, High, Low, Close float64
 	Entry                  bool
 	EntryKnown             bool
+	EntryErr               error
 	OutOfRange             bool
-	Exit                   func(positions map[string]float64) (result, known bool)
-	Levels                 func() (takeProfit, stopLoss float64, known bool)
+	Exit                   func(positions map[string]float64) (result, known bool, err error)
+	Levels                 func() (takeProfit, stopLoss float64, known bool, err error)
 }
 
 // step processes candle after state. Buys pending since earlier signals fill
@@ -101,10 +104,12 @@ type TradeCandle struct {
 // trade. A candle waits, changing nothing and processed false, until every
 // rule it needs is known: the exit rule while a trade is open, and the entry
 // and the levels of a trade it opens unless the trade sells. Nothing changes
-// either for a candle not after the last processed one.
-func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, events []TradeEvent, processed bool) {
+// either for a candle not after the last processed one. A rule error of a
+// rule the candle needs processes nothing and is returned: it halts the
+// strategy.
+func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, events []TradeEvent, processed bool, err error) {
 	if !candle.OpenTime.After(state.OpenTime) || !(candle.Open > 0) || !(candle.High > 0) || !(candle.Low > 0) || !(candle.Close > 0) {
-		return state, nil, false
+		return state, nil, false, nil
 	}
 	next = state
 	if pending := next.Buys - next.Filled; pending > 0 {
@@ -118,51 +123,51 @@ func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, 
 		if price, reason, ok := next.levelExit(entry.Direction, candle); ok {
 			return TradeState{OpenTime: candle.OpenTime}, []TradeEvent{{
 				Kind: TradeSell, Trade: next, Close: candle.Close, Price: price, Return: entry.Direction.gross(next.EntryPrice(), price), Reason: reason,
-			}}, true
+			}}, true, nil
 		}
 	}
 	if next.Buys > 0 && entry.Exit != nil {
-		exit, known := candle.Exit(entry.positions(next, candle.OpenTime, candle.Close))
-		if !known {
-			return state, nil, false
+		exit, known, err := candle.Exit(entry.positions(next, candle.OpenTime, candle.Close))
+		if err != nil || !known {
+			return state, nil, false, err
 		}
 		if exit {
 			return TradeState{OpenTime: candle.OpenTime}, []TradeEvent{{
 				Kind: TradeSell, Trade: next, Close: candle.Close, Return: entry.Direction.gross(next.EntryPrice(), candle.Close), Reason: ExitRuleSignal,
-			}}, true
+			}}, true, nil
 		}
 	}
-	if !candle.EntryKnown {
-		return state, nil, false
+	if candle.EntryErr != nil || !candle.EntryKnown {
+		return state, nil, false, candle.EntryErr
 	}
 	next.OpenTime = candle.OpenTime
 	signal := candle.Entry && !next.Entry
 	next.Entry = candle.Entry
 	if !signal {
-		return next, nil, true
+		return next, nil, true, nil
 	}
 	if candle.OutOfRange {
-		return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true
+		return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true, nil
 	}
 	if entry.Signal {
-		return next, []TradeEvent{{Kind: TradeSignal, Close: candle.Close}}, true
+		return next, []TradeEvent{{Kind: TradeSignal, Close: candle.Close}}, true, nil
 	}
 	switch {
 	case next.Buys == 0:
-		takeProfit, stopLoss, known := candle.Levels()
-		if !known {
-			return state, nil, false
+		takeProfit, stopLoss, known, err := candle.Levels()
+		if err != nil || !known {
+			return state, nil, false, err
 		}
 		if !entry.levelsAround(takeProfit, stopLoss, candle.Close) {
-			return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true
+			return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true, nil
 		}
 		next.Buys, next.TakeProfit, next.StopLoss = 1, takeProfit, stopLoss
 	case !entry.Exits():
 		next.Buys++
 	default:
-		return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true
+		return next, []TradeEvent{{Kind: TradeSkip, Close: candle.Close}}, true, nil
 	}
-	return next, []TradeEvent{{Kind: TradeBuy, Buy: next.Buys, Trade: next, Close: candle.Close}}, true
+	return next, []TradeEvent{{Kind: TradeBuy, Buy: next.Buys, Trade: next, Close: candle.Close}}, true, nil
 }
 
 // levelsAround reports whether the take profit and stop loss the strategy

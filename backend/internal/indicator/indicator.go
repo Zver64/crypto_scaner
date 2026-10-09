@@ -86,12 +86,18 @@ const (
 	OutputHistogram  OutputStyle = "histogram"
 	OutputUpperLimit OutputStyle = "upper_limit"
 	OutputLowerLimit OutputStyle = "lower_limit"
+	// OutputHidden is an output that charts do not draw, such as a distance
+	// in candles that strategies read.
+	OutputHidden OutputStyle = "hidden"
 )
 
 // OutputDescriptor describes one output series returned by Calculate.
 type OutputDescriptor struct {
 	Name  string
 	Style OutputStyle
+	// Count marks an output that counts candles, a whole number that
+	// strategies may use as a prev shift.
+	Count bool
 }
 
 // Descriptor is the self-description of an implementation. Registries use it

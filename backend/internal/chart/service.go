@@ -155,11 +155,16 @@ func (service *Service) warmup(configs []indicator.Selection) (int, error) {
 
 // calculate runs each indicator over its own Window of warm-up before the
 // visible candles, so its points do not depend on the other indicators, and
-// keeps only the points of visible candles.
+// keeps only the points of visible candles of the outputs charts draw, those
+// not indicator.OutputHidden.
 func (service *Service) calculate(interval market.CandleInterval, warmup, candles []market.Candle, configs []indicator.Selection) ([]indicator.Calculation, error) {
 	results := make([]indicator.Calculation, len(configs))
 	for index, config := range configs {
 		window, err := Window(service.indicators, config)
+		if err != nil {
+			return nil, err
+		}
+		descriptor, err := service.indicators.Describe(config.Type)
 		if err != nil {
 			return nil, err
 		}
@@ -170,6 +175,11 @@ func (service *Service) calculate(interval market.CandleInterval, warmup, candle
 			return nil, err
 		}
 		results[index] = calculated[0]
+		results[index].Series = slices.DeleteFunc(results[index].Series, func(series indicator.NamedSeries) bool {
+			return slices.ContainsFunc(descriptor.Outputs, func(output indicator.OutputDescriptor) bool {
+				return output.Name == series.Name && output.Style == indicator.OutputHidden
+			})
+		})
 		if len(own) == 0 {
 			continue
 		}

@@ -35,11 +35,13 @@ func NewDivergence(rsi indicator.Implementation) indicator.Implementation {
 }
 
 // divergence marks with 1 the candles confirming a divergence of the price
-// from the RSI and is 0 elsewhere. Like TradingView, it finds pivots of the
-// RSI, and compares the lows (or highs) of the price at those candles: a pivot
-// is confirmed right candles after it, and divergences are only found between
-// a pivot and the previous one with range_lower to range_upper candles
-// between them.
+// from the RSI and is 0 elsewhere; on those candles, the previous bars output
+// of their side (lows for bull and hidden_bull, highs for bear and
+// hidden_bear) counts the candles back to the earlier pivot, also 0
+// elsewhere. The later pivot always lies right candles back. Like TradingView, it finds pivots of the RSI, and compares the
+// lows (or highs) of the price at those candles: a pivot is confirmed right
+// candles after it, and divergences are only found between a pivot and the
+// previous one with range_lower to range_upper candles between them.
 type divergence struct {
 	rsi indicator.Implementation
 }
@@ -54,6 +56,8 @@ func (divergence) Describe() indicator.Descriptor {
 			{Name: "hidden_bull", Style: indicator.OutputHistogram},
 			{Name: "bear", Style: indicator.OutputHistogram},
 			{Name: "hidden_bear", Style: indicator.OutputHistogram},
+			{Name: "previous_low_bars", Style: indicator.OutputHidden, Count: true},
+			{Name: "previous_high_bars", Style: indicator.OutputHidden, Count: true},
 		},
 	}
 }
@@ -121,9 +125,9 @@ func (m divergence) Calculate(parameters indicator.Parameters, inputs indicator.
 		return indicator.Result{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
 	closes, highs, lows := series[0], series[1], series[2]
-	flags := map[string][]float64{}
-	for _, output := range []string{"bull", "hidden_bull", "bear", "hidden_bear"} {
-		flags[output] = make([]float64, len(closes))
+	marks := map[string][]float64{}
+	for _, output := range []string{"bull", "hidden_bull", "bear", "hidden_bear", "previous_low_bars", "previous_high_bars"} {
+		marks[output] = make([]float64, len(closes))
 	}
 	if len(closes) > s.lookback {
 		rsi, err := m.rsi.Calculate(rsiParameters(s), indicator.Inputs{"close": closes})
@@ -135,7 +139,7 @@ func (m divergence) Calculate(parameters indicator.Parameters, inputs indicator.
 		// when the price makes the extreme the RSI does not, hidden when the
 		// RSI makes the one the price does not. beyond reports that a lies
 		// past b in the direction of the pivots.
-		mark := func(pivots []int, prices []float64, regular, hidden string, beyond func(a, b float64) bool) {
+		mark := func(pivots []int, prices []float64, side, regular, hidden string, beyond func(a, b float64) bool) {
 			for index := 1; index < len(pivots); index++ {
 				previous, current := pivots[index-1], pivots[index]
 				// TradingView's _inRange(plFound[1]): the candles strictly
@@ -146,21 +150,26 @@ func (m divergence) Calculate(parameters indicator.Parameters, inputs indicator.
 				rsiNow, rsiThen := oscillator.Values[current], oscillator.Values[previous]
 				priceNow, priceThen := prices[oscillator.Offset+current], prices[oscillator.Offset+previous]
 				confirmation := oscillator.Offset + current + s.right
+				marked := ""
 				if beyond(priceNow, priceThen) && beyond(rsiThen, rsiNow) {
-					flags[regular][confirmation] = 1
+					marked = regular
 				}
 				if beyond(priceThen, priceNow) && beyond(rsiNow, rsiThen) {
-					flags[hidden][confirmation] = 1
+					marked = hidden
+				}
+				if marked != "" {
+					marks[marked][confirmation] = 1
+					marks["previous_"+side+"_bars"][confirmation] = float64(current - previous + s.right)
 				}
 			}
 		}
 		below := func(a, b float64) bool { return a < b }
 		above := func(a, b float64) bool { return a > b }
-		mark(confirmed(oscillator.Values, s.left, s.right, isLow), lows, "bull", "hidden_bull", below)
-		mark(confirmed(oscillator.Values, s.left, s.right, isHigh), highs, "bear", "hidden_bear", above)
+		mark(confirmed(oscillator.Values, s.left, s.right, isLow), lows, "low", "bull", "hidden_bull", below)
+		mark(confirmed(oscillator.Values, s.left, s.right, isHigh), highs, "high", "bear", "hidden_bear", above)
 	}
 	outputs := indicator.Outputs{}
-	for output, values := range flags {
+	for output, values := range marks {
 		series := indicator.Series{Offset: s.offset(), Values: []float64{}}
 		if len(values) > series.Offset {
 			series.Values = values[series.Offset:]

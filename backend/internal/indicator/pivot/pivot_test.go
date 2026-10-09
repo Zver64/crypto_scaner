@@ -1,6 +1,7 @@
 package pivot_test
 
 import (
+	"maps"
 	"slices"
 	"testing"
 
@@ -22,6 +23,11 @@ func TestPivotsCarryTheLatestAndPreviousConfirmedPivots(t *testing.T) {
 		"previous_high": {Offset: 6, Values: []float64{5, 5, 5}},
 		"low":           {Offset: 4, Values: []float64{1, 1, 1, 1, 2}},
 		"previous_low":  {Offset: 8, Values: []float64{1}},
+		// The distances run exactly where the levels do.
+		"high_bars":          {Offset: 2, Values: []float64{1, 2, 3, 4, 1, 2, 3}},
+		"previous_high_bars": {Offset: 6, Values: []float64{5, 6, 7}},
+		"low_bars":           {Offset: 4, Values: []float64{1, 2, 3, 4, 1}},
+		"previous_low_bars":  {Offset: 8, Values: []float64{5}},
 	}
 	for name, series := range want {
 		got := result.Outputs[name]
@@ -84,19 +90,28 @@ func TestDivergenceComparesThePriceAtConsecutiveRSIPivots(t *testing.T) {
 	// The first value has a previous pivot up to range_upper candles back.
 	const offset = 5
 	want := map[string][]int{"bull": {5}, "hidden_bull": {8}, "bear": {14}, "hidden_bear": nil}
+	// On those candles, the earlier pivot of their side lies the distance
+	// between the pivots plus right candles back.
+	bars := map[string]map[int]float64{"previous_low_bars": {5: 4, 8: 4}, "previous_high_bars": {14: 4}}
 	for name, candles := range want {
+		bars[name] = map[int]float64{}
+		for _, candle := range candles {
+			bars[name][candle] = 1
+		}
+	}
+	for name, values := range bars {
 		series := result.Outputs[name]
 		if series.Offset != offset {
 			t.Fatalf("%s offset = %d, want %d", name, series.Offset, offset)
 		}
-		var marked []int
+		marked := map[int]float64{}
 		for index, value := range series.Values {
 			if value != 0 {
-				marked = append(marked, offset+index)
+				marked[offset+index] = value
 			}
 		}
-		if !slices.Equal(marked, candles) {
-			t.Errorf("%s marks candles %v, want %v", name, marked, candles)
+		if !maps.Equal(marked, values) {
+			t.Errorf("%s = %v at candles, want %v", name, marked, values)
 		}
 	}
 

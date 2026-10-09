@@ -86,6 +86,25 @@ func (q *Queries) DeleteStrategySymbols(ctx context.Context, strategyID int64) e
 	return err
 }
 
+const disableStrategyAtRevision = `-- name: DisableStrategyAtRevision :one
+UPDATE app.strategies
+SET enabled = false, baseline_pending = false, revision = revision + 1, updated_at = now()
+WHERE id = $1 AND revision = $2 AND enabled
+RETURNING revision
+`
+
+type DisableStrategyAtRevisionParams struct {
+	ID       int64
+	Revision int64
+}
+
+func (q *Queries) DisableStrategyAtRevision(ctx context.Context, arg DisableStrategyAtRevisionParams) (int64, error) {
+	row := q.db.QueryRow(ctx, disableStrategyAtRevision, arg.ID, arg.Revision)
+	var revision int64
+	err := row.Scan(&revision)
+	return revision, err
+}
+
 const insertStrategy = `-- name: InsertStrategy :one
 INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
                             min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)

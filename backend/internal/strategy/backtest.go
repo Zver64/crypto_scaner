@@ -328,7 +328,10 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 		}
 		result.To = candle.OpenTime.UTC()
 		pending := state.Buys > state.Filled
-		next, events, processed := current.advance(entry, instrument.ID, state, false)
+		next, events, processed, err := current.advance(entry, instrument.ID, state, false)
+		if err != nil {
+			return fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+		}
 		if processed && pending {
 			for i := range fills {
 				if fills[i].Time.IsZero() {

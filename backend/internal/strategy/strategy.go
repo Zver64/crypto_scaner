@@ -252,6 +252,10 @@ type Store interface {
 	// Enabling marks the trading states for a fresh start; disabling
 	// forgets them.
 	SetStrategyEnabled(context.Context, int64, bool) (int64, error)
+	// DisableStrategyAtRevision disables the strategy like
+	// SetStrategyEnabled only while it is enabled at revision and returns
+	// the new revision; otherwise disabled is false and nothing changes.
+	DisableStrategyAtRevision(ctx context.Context, id, revision int64) (next int64, disabled bool, err error)
 	DeleteStrategy(context.Context, int64) error
 	// ListStrategyInstruments returns the active favorites of the
 	// administrator.
@@ -687,6 +691,26 @@ func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) 
 	current[index].Enabled = enabled
 	service.replace(current, baselines)
 	return current[index], nil
+}
+
+// DisableAtRevision disables the strategy only while it is enabled at
+// revision, which the writes lock and the store both check, so a strategy
+// changed meanwhile stays as it is. It reports whether it disabled it.
+func (service *Service) DisableAtRevision(ctx context.Context, id, revision int64) (bool, error) {
+	service.writes.Lock()
+	defer service.writes.Unlock()
+	current := service.List()
+	index := slices.IndexFunc(current, func(entry Entry) bool { return entry.ID == id })
+	if index < 0 || !current[index].Enabled || current[index].Revision != revision {
+		return false, nil
+	}
+	next, disabled, err := service.store.DisableStrategyAtRevision(ctx, id, revision)
+	if err != nil || !disabled {
+		return false, err
+	}
+	current[index].Revision, current[index].Enabled = next, false
+	service.replace(current, nil)
+	return true, nil
 }
 
 // Delete removes the strategy and its trading states.

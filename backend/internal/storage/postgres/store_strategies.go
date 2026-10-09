@@ -169,16 +169,39 @@ func strategiesReading(ctx context.Context, queries *generated.Queries, instrume
 // enabled strategy awaits its baseline; a disabled one forgets its trading
 // states.
 func (store *Store) SetStrategyEnabled(ctx context.Context, id int64, enabled bool) (int64, error) {
+	revision, err := store.setStrategyEnabled(ctx, id, enabled, func(queries *generated.Queries) (int64, error) {
+		return queries.SetStrategyEnabled(ctx, generated.SetStrategyEnabledParams{ID: id, Enabled: enabled})
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, strategy.ErrNotFound
+	}
+	return revision, err
+}
+
+// DisableStrategyAtRevision disables the strategy like SetStrategyEnabled,
+// but only while it is enabled at revision, and returns the new revision;
+// otherwise disabled is false and nothing changes.
+func (store *Store) DisableStrategyAtRevision(ctx context.Context, id, revision int64) (next int64, disabled bool, err error) {
+	next, err = store.setStrategyEnabled(ctx, id, false, func(queries *generated.Queries) (int64, error) {
+		return queries.DisableStrategyAtRevision(ctx, generated.DisableStrategyAtRevisionParams{ID: id, Revision: revision})
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return 0, false, nil
+	}
+	return next, err == nil, err
+}
+
+// setStrategyEnabled runs update, which returns the new revision or
+// pgx.ErrNoRows, in a transaction that forgets the trading states of a
+// disabled strategy.
+func (store *Store) setStrategyEnabled(ctx context.Context, id int64, enabled bool, update func(*generated.Queries) (int64, error)) (int64, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	revision, err := queries.SetStrategyEnabled(ctx, generated.SetStrategyEnabledParams{ID: id, Enabled: enabled})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, strategy.ErrNotFound
-	}
+	revision, err := update(queries)
 	if err != nil {
 		return 0, err
 	}

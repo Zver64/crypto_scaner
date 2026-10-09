@@ -24,6 +24,7 @@ import (
 	"cel.dev/cel-go/common/types"
 	"cel.dev/cel-go/common/types/ref"
 	"cel.dev/cel-go/common/types/traits"
+	"cel.dev/cel-go/interpreter"
 	"cel.dev/cel-go/parser"
 )
 
@@ -35,9 +36,9 @@ const (
 	// maxNodes bounds the expanded expression, which repeats the expression
 	// of a percentile window once per candle.
 	maxNodes = 20000
-	// maxShift is the largest prev shift and maxWindow the largest
-	// percentile window, both in closed candles.
-	maxShift  = 200
+	// maxShift is the largest prev shift, written or calculated, and
+	// maxWindow the largest percentile window, both in closed candles.
+	maxShift  = 500
 	maxWindow = 500
 	// shiftMarker joins a variable name and its shift in the hidden
 	// variables holding earlier values, such as h_rsi__shift1.
@@ -46,10 +47,15 @@ const (
 	// hidden variables of another instrument, such as
 	// h_rsi__of_BTCUSDT__shift1; the shift comes last.
 	symbolMarker = "__of_"
-	// divideFunction and percentileFunction are the internal functions that
-	// division and percentile windows compile into.
+	// divideFunction, percentileFunction, and prevFunction are the internal
+	// functions that division, percentile windows, and prev with a
+	// calculated shift compile into.
 	divideFunction     = "__divide__"
 	percentileFunction = "__percentile__"
+	prevFunction       = "__prev__"
+	// prevMarker starts the hidden identifiers that replace the calls of
+	// prevFunction in the program, such as __prev0.
+	prevMarker = "__prev"
 	// maxArguments bounds the arguments of min and max.
 	maxArguments = 10
 )
@@ -66,6 +72,9 @@ type Variable struct {
 	Target      closedindicator.Target
 	Output      string
 	Position    bool
+	// Count marks a count of candles, which a calculated prev shift may
+	// read.
+	Count bool
 }
 
 // Position variable names.
@@ -82,7 +91,7 @@ func PositionVariables() []Variable {
 	return []Variable{
 		{Name: entryPriceVariable, Label: "entry price", Position: true},
 		{Name: pnlVariable, Label: "pnl", Position: true},
-		{Name: barsHeldVariable, Label: "bars held", Position: true},
+		{Name: barsHeldVariable, Label: "bars held", Position: true, Count: true},
 	}
 }
 
@@ -187,7 +196,7 @@ func variables(configured, unconfigured []scannerindicator.Entry) []Variable {
 			if len(entry.Outputs) > 1 {
 				label += " " + output
 			}
-			variable := Variable{Name: name, Label: label, Target: entry.Target(), Output: output}
+			variable := Variable{Name: name, Label: label, Target: entry.Target(), Output: output, Count: slices.Contains(entry.Counts, output)}
 			if index < len(configured) {
 				variable.IndicatorID = entry.ID
 			}
@@ -201,9 +210,31 @@ func variables(configured, unconfigured []scannerindicator.Entry) []Variable {
 type Expression struct {
 	program cel.Program
 	// reads maps the identifiers of the expression to what they read, and
-	// shown those of them the source reads outside percentile windows.
+	// shown those of them the source reads outside percentile windows and
+	// the operands of calculated prev shifts.
 	reads map[string]Read
 	shown map[string]struct{}
+	// prevs are the calculated prevs, by the identifiers that replace them
+	// in the program.
+	prevs map[string]calculatedPrev
+}
+
+// calculatedPrev is a prev with a calculated shift, evaluated on demand: the
+// shift at the latest candle, then the operand that many candles earlier.
+// operands are the identifiers of the operand.
+type calculatedPrev struct {
+	shift, operand cel.Program
+	operands       []string
+}
+
+// ShiftError is a calculated prev shift that is not a whole number from 1 to
+// maxShift at a candle: an error of the rule, unlike a value not known yet.
+type ShiftError struct {
+	Shift float64
+}
+
+func (err *ShiftError) Error() string {
+	return fmt.Sprintf("the prev shift is %s, not a whole number from 1 to %d", strconv.FormatFloat(err.Shift, 'g', -1, 64), maxShift)
 }
 
 // IndicatorIDs lists the indicators the expression reads, ascending. Candle
@@ -233,13 +264,22 @@ func (expression *Expression) Symbols() []string {
 }
 
 // Reads lists every variable, instrument, and shift the expression reads, by
-// name, symbol, and shift; position variables are left out, since they read
-// no calculated value.
+// name, symbol, and shift, the operands of calculated prevs also at their
+// deepest shift; position variables are left out, since they read no
+// calculated value.
 func (expression *Expression) Reads() []Read {
 	result := make([]Read, 0, len(expression.reads))
 	for _, read := range expression.reads {
 		if !read.Variable.Position {
 			result = append(result, read)
+		}
+	}
+	for _, prev := range expression.prevs {
+		for _, name := range prev.operands {
+			if read := expression.reads[name]; !read.Variable.Position {
+				read.Shift += maxShift
+				result = append(result, read)
+			}
 		}
 	}
 	slices.SortFunc(result, func(left, right Read) int {
@@ -249,54 +289,112 @@ func (expression *Expression) Reads() []Read {
 }
 
 // Evaluate runs the expression over the values value reports, position
-// variables included. Missing values
-// stay unbound, so CEL's commutative logic still decides branches that do not
-// need them; known is false when the result depends on a missing value or a
-// division by zero.
-func (expression *Expression) Evaluate(value func(Read) (float64, bool)) (result bool, known bool) {
-	output, ok := expression.eval(value)
-	if !ok {
-		return false, false
-	}
-	matched, ok := output.(bool)
-	return matched, ok
+// variables included. Missing values are unknown, so CEL's commutative logic
+// still decides branches that do not need them; known is false when the
+// result depends on a missing value or a division by zero. err is a
+// *ShiftError when the result depends on an invalid calculated prev shift.
+func (expression *Expression) Evaluate(value func(Read) (float64, bool)) (result, known bool, err error) {
+	output, err := expression.eval(value)
+	result, known = output.(bool)
+	return result, known, err
 }
 
-// Price runs a price expression like Evaluate; known is false when the
-// result depends on a missing value or a division by zero, or is not finite.
-func (expression *Expression) Price(value func(Read) (float64, bool)) (price float64, known bool) {
-	output, ok := expression.eval(value)
-	if !ok {
-		return 0, false
-	}
-	price, ok = output.(float64)
-	return price, ok && numeric.Finite(price)
+// Price runs a price expression like Evaluate; known is also false when the
+// price is not finite.
+func (expression *Expression) Price(value func(Read) (float64, bool)) (price float64, known bool, err error) {
+	output, err := expression.eval(value)
+	price, known = output.(float64)
+	return price, known && numeric.Finite(price), err
 }
 
-func (expression *Expression) eval(value func(Read) (float64, bool)) (any, bool) {
-	activation := make(map[string]any, len(expression.reads))
-	for name, read := range expression.reads {
-		if number, ok := value(read); ok {
-			activation[name] = number
+// eval returns the result, nil when it is not known.
+func (expression *Expression) eval(value func(Read) (float64, bool)) (any, error) {
+	output, _, _ := expression.program.Eval(activation{expression: expression, value: value})
+	switch {
+	case output == nil || types.IsUnknown(output):
+		return nil, nil
+	case types.IsError(output):
+		var shift *ShiftError
+		if errors.As(output.(*types.Err), &shift) {
+			return nil, shift
 		}
+		return nil, nil
 	}
-	output, _, err := expression.program.Eval(activation)
-	if err != nil {
+	return output.Value(), nil
+}
+
+// activation resolves the identifiers of one evaluation on demand, offset
+// candles earlier for the operand of a calculated prev. Values that value
+// does not report are unknown.
+type activation struct {
+	expression *Expression
+	value      func(Read) (float64, bool)
+	offset     int
+}
+
+func (current activation) ResolveName(name string) (any, bool) {
+	if prev, ok := current.expression.prevs[name]; ok {
+		shift, failed := current.shift(prev)
+		if failed != nil {
+			return failed, true
+		}
+		output, _, _ := prev.operand.Eval(activation{expression: current.expression, value: current.value, offset: current.offset + shift})
+		if output == nil {
+			return types.NewUnknown(0, nil), true
+		}
+		return output, true
+	}
+	read, ok := current.expression.reads[name]
+	if !ok {
 		return nil, false
 	}
-	return output.Value(), true
+	read.Shift += current.offset
+	if number, ok := current.value(read); ok {
+		return types.Double(number), true
+	}
+	return types.NewUnknown(0, nil), true
+}
+
+func (activation) Parent() interpreter.Activation { return nil }
+
+// shift returns the shift of prev, or the unknown value or the *ShiftError
+// instead.
+func (current activation) shift(prev calculatedPrev) (int, ref.Val) {
+	output, _, _ := prev.shift.Eval(current)
+	shift, ok := output.(types.Double)
+	if !ok {
+		return 0, types.NewUnknown(0, nil)
+	}
+	if math.Trunc(float64(shift)) != float64(shift) || shift < 1 || shift > maxShift {
+		return 0, types.WrapErr(&ShiftError{Shift: float64(shift)})
+	}
+	return int(shift), nil
 }
 
 // Values maps what the source reads outside percentile windows, position
 // variables included, to the values value reports, named as the source
-// writes them, such as h_rsi, prev(h_rsi, 2), or of("BTCUSDT", h_rsi).
-// Missing values are left out.
+// writes them, such as h_rsi, prev(h_rsi, 2), or of("BTCUSDT", h_rsi). The
+// operands of calculated prevs are named at the shift they read, such as
+// prev(h_rsi, 4). Missing values are left out.
 func (expression *Expression) Values(value func(Read) (float64, bool)) map[string]float64 {
 	values := make(map[string]float64, len(expression.shown))
-	for name := range expression.shown {
-		read := expression.reads[name]
+	add := func(read Read) {
 		if number, ok := value(read); ok {
 			values[read.label()] = number
+		}
+	}
+	for name := range expression.shown {
+		add(expression.reads[name])
+	}
+	for _, prev := range expression.prevs {
+		shift, failed := activation{expression: expression, value: value}.shift(prev)
+		if failed != nil {
+			continue
+		}
+		for _, name := range prev.operands {
+			read := expression.reads[name]
+			read.Shift += shift
+			add(read)
 		}
 	}
 	return values
@@ -376,6 +474,9 @@ func compileExpression(source string, variables []Variable, price bool) (*Expres
 		cel.ParserExpressionSizeLimit(maxExpressionLength),
 		cel.Function(divideFunction, cel.Overload("divide_double_double", []*cel.Type{cel.DoubleType, cel.DoubleType}, cel.DoubleType, cel.BinaryBinding(divide))),
 		cel.Function(percentileFunction, cel.Overload("percentile_double_list", []*cel.Type{cel.DoubleType, cel.ListType(cel.DoubleType)}, cel.DoubleType, cel.BinaryBinding(percentile))),
+		// Checked only: the program evaluates the shift and the operand on
+		// demand (planPrevs).
+		cel.Function(prevFunction, cel.Overload("prev_double_double", []*cel.Type{cel.DoubleType, cel.DoubleType}, cel.DoubleType)),
 		cel.Function("abs", cel.Overload("abs_double", []*cel.Type{cel.DoubleType}, cel.DoubleType, cel.UnaryBinding(func(value ref.Val) ref.Val {
 			return types.Double(math.Abs(float64(value.(types.Double))))
 		}))),
@@ -410,7 +511,7 @@ func compileExpression(source string, variables []Variable, price bool) (*Expres
 		if !checked.OutputType().IsExactType(cel.DoubleType) {
 			return nil, invalidExpression("the price must be calculated from indicators, candle fields, and numbers")
 		}
-		if err := walker.value(checked.NativeRep().Expr(), false); err != nil {
+		if err := walker.value(checked.NativeRep().Expr(), ""); err != nil {
 			return nil, invalidExpression(err.Error())
 		}
 	} else {
@@ -447,11 +548,52 @@ func compileExpression(source string, variables []Variable, price bool) (*Expres
 		invalid.Unknown = walker.unknownNames
 		return nil, invalid
 	}
+	prevs, err := planPrevs(env, checked.NativeRep())
+	if err != nil {
+		return nil, invalidExpression(err.Error())
+	}
 	program, err := env.Program(checked)
 	if err != nil {
 		return nil, invalidExpression(err.Error())
 	}
-	return &Expression{program: program, reads: walker.reads, shown: walker.shown}, nil
+	return &Expression{program: program, reads: walker.reads, shown: walker.shown, prevs: prevs}, nil
+}
+
+// planPrevs replaces every calculated prev of checked with a hidden
+// identifier, which evaluation resolves on demand, and plans its shift and
+// its operand as programs of their own.
+func planPrevs(env *cel.Env, checked *ast.AST) (map[string]calculatedPrev, error) {
+	var calls []ast.Expr
+	ast.PreOrderVisit(checked.Expr(), ast.NewExprVisitor(func(node ast.Expr) {
+		if node.Kind() == ast.CallKind && node.AsCall().FunctionName() == prevFunction {
+			calls = append(calls, node)
+		}
+	}))
+	plan := func(expr ast.Expr) (cel.Program, error) {
+		return env.PlanProgram(ast.NewCheckedAST(ast.NewAST(expr, checked.SourceInfo()), checked.TypeMap(), checked.ReferenceMap()))
+	}
+	prevs := make(map[string]calculatedPrev, len(calls))
+	for _, call := range calls {
+		var prev calculatedPrev
+		var err error
+		args := call.AsCall().Args()
+		if prev.shift, err = plan(args[0]); err != nil {
+			return nil, err
+		}
+		if prev.operand, err = plan(args[1]); err != nil {
+			return nil, err
+		}
+		ast.PreOrderVisit(args[1], ast.NewExprVisitor(func(node ast.Expr) {
+			if node.Kind() == ast.IdentKind && !slices.Contains(prev.operands, node.AsIdent()) {
+				prev.operands = append(prev.operands, node.AsIdent())
+			}
+		}))
+		name := prevMarker + strconv.Itoa(len(prevs))
+		prevs[name] = prev
+		call.SetKindCase(ast.NewExprFactory().NewIdent(call.ID(), name))
+		checked.SetReference(call.ID(), ast.NewIdentReference(name, nil))
+	}
+	return prevs, nil
 }
 
 // InvalidExpressionError lists the problems of an expression that does not
@@ -690,10 +832,14 @@ func integerLiteral(helper parser.ExprHelper, expr ast.Expr, what string, limit 
 }
 
 // prevMacro expands prev(x) and prev(x, n) into x read one or n closed
-// candles earlier.
+// candles earlier. A shift that is not a number is calculated at the latest
+// candle.
 func prevMacro(helper parser.ExprHelper, _ ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
 	by := 1
 	if len(args) == 2 {
+		if args[1].Kind() != ast.LiteralKind {
+			return calculatedPrevMacro(helper, args[0], args[1])
+		}
 		var err *common.Error
 		if by, err = integerLiteral(helper, args[1], "the prev shift", maxShift); err != nil {
 			return nil, err
@@ -701,6 +847,22 @@ func prevMacro(helper parser.ExprHelper, _ ast.Expr, args []ast.Expr) (ast.Expr,
 	}
 	return shifted(helper, args[0], by), nil
 }
+
+// calculatedPrevMacro expands prev(x, n) with a calculated shift n into
+// prevFunction over n and x, which the walker checks and planPrevs plans.
+// The shift reads no earlier candle or other coin of its own; a prev or of
+// around the whole call still shifts and moves both.
+func calculatedPrevMacro(helper parser.ExprHelper, operand, shift ast.Expr) (ast.Expr, *common.Error) {
+	if containsIdentifier(shift, shiftMarker) || containsIdentifier(shift, symbolMarker) {
+		return nil, helper.NewError(shift.ID(), shiftProblem)
+	}
+	return helper.NewCall(prevFunction, shift, operand), nil
+}
+
+// shiftProblem rejects a calculated prev shift that is not whole numbers
+// and counts of candles added and subtracted, so it is a whole number by
+// construction.
+const shiftProblem = "a calculated prev shift may only add and subtract whole numbers and candle counts, such as bars_held or h_pivot_low_bars"
 
 // percentileMacro expands percentile(x, n, p) into the p-th percentile of x
 // over the n closed candles before the latest one.
@@ -717,6 +879,9 @@ func percentileMacro(helper parser.ExprHelper, _ ast.Expr, args []ast.Expr) (ast
 	// before copying anything.
 	if containsCall(args[0], percentileFunction) {
 		return nil, helper.NewError(args[0].ID(), "percentile cannot contain percentile")
+	}
+	if containsCall(args[0], prevFunction) {
+		return nil, helper.NewError(args[0].ID(), "percentile cannot contain prev with a calculated shift")
 	}
 	if nodeCount(args[0])*window > maxNodes {
 		return nil, helper.NewError(args[0].ID(), "the percentile window is too large")
@@ -781,9 +946,12 @@ type expressionWalker struct {
 	info        *ast.SourceInfo
 	identifiers map[string]Read
 	reads       map[string]Read
-	// shown are the identifiers read outside percentile windows.
-	shown       map[string]struct{}
-	problems    []string
+	// shown are the identifiers read outside percentile windows and the
+	// operands of calculated prevs.
+	shown    map[string]struct{}
+	problems []string
+	// shift is set while walking a calculated prev shift.
+	shift       bool
 	comparisons int
 	nodes       int
 	// variables counts the variables read by the current comparison.
@@ -842,7 +1010,7 @@ func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
 		walker.variables = 0
 		walker.unknown = false
 		for _, arg := range call.Args() {
-			if err := walker.value(arg, false); err != nil {
+			if err := walker.value(arg, ""); err != nil {
 				return err
 			}
 		}
@@ -851,7 +1019,7 @@ func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
 			walker.report("each comparison reads an indicator or a candle field")
 		}
 		return nil
-	case slices.Contains(arithmeticOperators, name) || name == operators.Negate || name == percentileFunction:
+	case slices.Contains(arithmeticOperators, name) || name == operators.Negate || name == percentileFunction || name == prevFunction:
 		walker.report("compare values with >, >=, < or <=")
 		return nil
 	default:
@@ -861,8 +1029,11 @@ func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
 }
 
 // value accepts arithmetic and abs, mod, min, and max over variables,
-// numbers, and percentile windows, which cannot nest.
-func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
+// numbers, percentile windows, and prev with a calculated shift. window
+// names the percentile or calculated prev whose operand expr is part of,
+// empty outside; they cannot nest. A calculated prev shift is walked outside
+// its window.
+func (walker *expressionWalker) value(expr ast.Expr, window string) error {
 	if err := walker.visit(); err != nil {
 		return err
 	}
@@ -883,17 +1054,25 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 			}
 			return nil
 		}
-		if read.Variable.Position && (read.Shift > 0 || read.Symbol != "") {
+		// Position variables exist only at the latest candle, so not in the
+		// operand of a calculated prev either, which is read earlier.
+		if read.Variable.Position && (read.Shift > 0 || read.Symbol != "" || window != "") {
 			walker.report("%s cannot be read through prev, percentile, crossings, or of", read.Variable.Name)
 		}
+		if walker.shift && !read.Variable.Count {
+			walker.report("%s does not count candles, so it cannot be a prev shift", read.Variable.Name)
+		}
 		walker.reads[expr.AsIdent()] = read
-		if !inWindow {
+		if window == "" {
 			walker.shown[expr.AsIdent()] = struct{}{}
 		}
 		walker.variables++
 		return nil
 	case ast.LiteralKind:
-		if _, ok := expr.AsLiteral().(types.Double); ok {
+		if number, ok := expr.AsLiteral().(types.Double); ok {
+			if walker.shift && math.Trunc(float64(number)) != float64(number) {
+				walker.report(shiftProblem)
+			}
 			return nil
 		}
 	case ast.CallKind:
@@ -903,25 +1082,41 @@ func (walker *expressionWalker) value(expr ast.Expr, inWindow bool) error {
 			return nil
 		}
 		name := call.FunctionName()
+		if walker.shift && name != operators.Add && name != operators.Subtract && name != operators.Negate {
+			walker.report(shiftProblem)
+			return nil
+		}
 		switch {
 		case slices.Contains(arithmeticOperators, name) || name == operators.Negate:
 			for _, arg := range call.Args() {
-				if err := walker.value(arg, inWindow); err != nil {
+				if err := walker.value(arg, window); err != nil {
 					return err
 				}
 			}
 			return nil
 		case name == percentileFunction:
-			if inWindow {
-				walker.report("percentile cannot contain percentile")
+			if window != "" {
+				walker.report("%s cannot contain percentile", window)
 				return nil
 			}
 			for _, element := range call.Args()[1].AsList().Elements() {
-				if err := walker.value(element, true); err != nil {
+				if err := walker.value(element, "percentile"); err != nil {
 					return err
 				}
 			}
 			return nil
+		case name == prevFunction:
+			if window != "" {
+				walker.report("%s cannot contain prev with a calculated shift", window)
+				return nil
+			}
+			walker.shift = true
+			err := walker.value(call.Args()[0], "")
+			walker.shift = false
+			if err != nil {
+				return err
+			}
+			return walker.value(call.Args()[1], "prev with a calculated shift")
 		case slices.Contains(comparisonOperators, name), name == operators.LogicalAnd, name == operators.LogicalOr, name == operators.LogicalNot:
 			walker.report("comparisons cannot be compared or calculated with")
 			return nil

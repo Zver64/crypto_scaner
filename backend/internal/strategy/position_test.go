@@ -13,26 +13,26 @@ import (
 // its first buy fills at, even when that is not the candle after the signal.
 func TestStepWaitsForEveryRuleAndStartsTheTradeAtTheFill(t *testing.T) {
 	entry := Entry{Strategy: Strategy{ExitExpression: "x"}, Exit: &Expression{}, Interval: market.IntervalHour}
-	exit := func(result, known bool) func(map[string]float64) (bool, bool) {
-		return func(map[string]float64) (bool, bool) { return result, known }
+	exit := func(result, known bool) func(map[string]float64) (bool, bool, error) {
+		return func(map[string]float64) (bool, bool, error) { return result, known, nil }
 	}
 	signaled := TradeState{OpenTime: backtestHour(0), Entry: true, Buys: 1}
 
 	// Unknown entry: the pending buy does not fill and nothing is processed.
-	if next, _, processed := entry.step(signaled, flatCandle(1, 10, false, false, exit(false, true))); processed || next != signaled {
+	if next, _, processed, _ := entry.step(signaled, flatCandle(1, 10, false, false, exit(false, true))); processed || next != signaled {
 		t.Fatalf("unknown entry processed %v, state %+v", processed, next)
 	}
 	// The buy fills at hour 2, which starts the trade.
-	filled, _, processed := entry.step(signaled, flatCandle(2, 20, true, true, exit(false, true)))
+	filled, _, processed, _ := entry.step(signaled, flatCandle(2, 20, true, true, exit(false, true)))
 	if !processed || !filled.OpenedAt.Equal(backtestHour(2)) || filled.Filled != 1 || filled.EntryPrice() != 20 {
 		t.Fatalf("fill processed %v, state %+v", processed, filled)
 	}
 	// Unknown exit during the trade: the candle waits even with a known entry.
-	if next, _, processed := entry.step(filled, flatCandle(3, 20, true, true, exit(false, false))); processed || next != filled {
+	if next, _, processed, _ := entry.step(filled, flatCandle(3, 20, true, true, exit(false, false))); processed || next != filled {
 		t.Fatalf("unknown exit processed %v, state %+v", processed, next)
 	}
 	// A true exit sells without the entry.
-	if next, events, processed := entry.step(filled, flatCandle(3, 22, false, false, exit(true, true))); !processed || next.Buys != 0 || len(events) != 1 || events[0].Kind != TradeSell {
+	if next, events, processed, _ := entry.step(filled, flatCandle(3, 22, false, false, exit(true, true))); !processed || next.Buys != 0 || len(events) != 1 || events[0].Kind != TradeSell {
 		t.Fatalf("exit processed %v, state %+v, events %+v", processed, next, events)
 	}
 }
@@ -56,8 +56,8 @@ func TestStepFixesTheLevelsOfTheTradeItOpens(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			candle := flatCandle(1, 10, true, true, nil)
-			candle.Levels = func() (float64, float64, bool) { return test.takeProfit, test.stopLoss, test.known }
-			next, events, processed := entry.step(idle, candle)
+			candle.Levels = func() (float64, float64, bool, error) { return test.takeProfit, test.stopLoss, test.known, nil }
+			next, events, processed, _ := entry.step(idle, candle)
 			if processed != test.processed || test.processed && (len(events) != 1 || events[0].Kind != test.kind) {
 				t.Fatalf("processed %v, events %+v", processed, events)
 			}
@@ -80,8 +80,8 @@ func TestStepTradesShort(t *testing.T) {
 		kind                 TradeEventKind
 	}{{takeProfit: 11, stopLoss: 12, kind: TradeSkip}, {takeProfit: 8, stopLoss: 9, kind: TradeSkip}, {takeProfit: 8, stopLoss: 12, kind: TradeBuy}} {
 		candle := flatCandle(1, 10, true, true, nil)
-		candle.Levels = func() (float64, float64, bool) { return test.takeProfit, test.stopLoss, true }
-		if _, events, _ := entry.step(TradeState{OpenTime: backtestHour(0)}, candle); len(events) != 1 || events[0].Kind != test.kind {
+		candle.Levels = func() (float64, float64, bool, error) { return test.takeProfit, test.stopLoss, true, nil }
+		if _, events, _, _ := entry.step(TradeState{OpenTime: backtestHour(0)}, candle); len(events) != 1 || events[0].Kind != test.kind {
 			t.Fatalf("levels %v/%v: events %+v", test.takeProfit, test.stopLoss, events)
 		}
 	}
@@ -101,7 +101,7 @@ func TestStepTradesShort(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			candle := flatCandle(2, test.open, false, true, nil)
 			candle.High, candle.Low = test.high, test.low
-			_, events, processed := entry.step(trade, candle)
+			_, events, processed, _ := entry.step(trade, candle)
 			if !processed || len(events) != 1 || events[0].Reason != test.reason || events[0].Price != test.price ||
 				math.Abs(events[0].Return-test.want) > 1e-9 {
 				t.Fatalf("processed %v, events %+v", processed, events)
@@ -114,10 +114,10 @@ func TestStepTradesShort(t *testing.T) {
 }
 
 // flatCandle is the candle of backtestHour(index) at price throughout.
-func flatCandle(index int, price float64, entry, known bool, exit func(map[string]float64) (bool, bool)) TradeCandle {
+func flatCandle(index int, price float64, entry, known bool, exit func(map[string]float64) (bool, bool, error)) TradeCandle {
 	return TradeCandle{
 		OpenTime: backtestHour(index), Open: price, High: price, Low: price, Close: price, Entry: entry, EntryKnown: known, Exit: exit,
-		Levels: func() (float64, float64, bool) { return 0, 0, true },
+		Levels: func() (float64, float64, bool, error) { return 0, 0, true, nil },
 	}
 }
 
@@ -130,7 +130,7 @@ func TestStepSkipsSignalsOutOfRange(t *testing.T) {
 	} {
 		candle := flatCandle(1, 10, true, true, nil)
 		candle.OutOfRange = true
-		next, events, processed := entry.step(TradeState{OpenTime: backtestHour(0)}, candle)
+		next, events, processed, _ := entry.step(TradeState{OpenTime: backtestHour(0)}, candle)
 		if !processed || next.Buys != 0 || !next.Entry || len(events) != 1 || events[0].Kind != TradeSkip {
 			t.Fatalf("signal %v: processed %v, state %+v, events %+v", entry.Signal, processed, next, events)
 		}
@@ -140,7 +140,7 @@ func TestStepSkipsSignalsOutOfRange(t *testing.T) {
 	trade := TradeState{OpenTime: backtestHour(1), Entry: true, Buys: 1, Filled: 1, Quantity: 0.1, OpenedAt: backtestHour(1), StopLoss: 9}
 	candle := flatCandle(2, 8, false, true, nil)
 	candle.OutOfRange = true
-	if next, events, processed := exiting.step(trade, candle); !processed || next.Buys != 0 || len(events) != 1 || events[0].Reason != ExitStopLoss {
+	if next, events, processed, _ := exiting.step(trade, candle); !processed || next.Buys != 0 || len(events) != 1 || events[0].Reason != ExitStopLoss {
 		t.Fatalf("processed %v, state %+v, events %+v", processed, next, events)
 	}
 }
@@ -152,7 +152,7 @@ func TestStepSignalsWithoutBuying(t *testing.T) {
 	state := TradeState{OpenTime: backtestHour(0)}
 	var kinds []TradeEventKind
 	for index, value := range []bool{true, true, false, true} {
-		next, events, processed := entry.step(state, flatCandle(index+1, 10, value, true, nil))
+		next, events, processed, _ := entry.step(state, flatCandle(index+1, 10, value, true, nil))
 		if !processed || next.Buys != 0 || next.Entry != value {
 			t.Fatalf("candle %d processed %v, state %+v", index+1, processed, next)
 		}

@@ -19,8 +19,8 @@ interface StrategyFunction {
 	defaults: ExpressionNode[];
 	variadic?: boolean;
 	minArgs?: number;
-	// Reads its value at earlier candles, where position variables do not
-	// exist.
+	// Reads its first argument, the value, at earlier candles, where
+	// position variables do not exist; the others at the latest candle.
 	earlier?: true;
 }
 

@@ -8,7 +8,6 @@ import (
 
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
-	"crypto-scanner/internal/platform/numeric"
 
 	ta "github.com/TA-Lib/ta-lib-cgo"
 )
@@ -200,23 +199,11 @@ func (f *function) Calculate(parameters indicator.Parameters, inputs indicator.I
 	if err != nil {
 		return indicator.Result{}, err
 	}
-	series := make([][]float64, len(f.spec.inputs))
-	length := 0
-	for index, name := range f.fields(values) {
-		input, exists := inputs[name]
-		if !exists {
-			return indicator.Result{}, fmt.Errorf("%w: %s input is required", ErrInvalidRequest, name)
-		}
-		if index > 0 && len(input) != length {
-			return indicator.Result{}, fmt.Errorf("%w: %s has %d values, want %d", ErrInvalidRequest, name, len(input), length)
-		}
-		for position, value := range input {
-			if !numeric.Finite(value) {
-				return indicator.Result{}, fmt.Errorf("%w: %s value %d is not finite", ErrInvalidRequest, name, position)
-			}
-		}
-		series[index], length = input, len(input)
+	series, err := indicator.ReadInputs(inputs, f.fields(values))
+	if err != nil {
+		return indicator.Result{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
 	}
+	length := len(series[0])
 
 	offset, err := f.lookback(values)
 	if err != nil {
@@ -272,7 +259,7 @@ func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 			values[index] = p.defaultValue
 			continue
 		}
-		value, err := parseNumber(raw)
+		value, err := indicator.ParseNumber(raw)
 		if err != nil {
 			return nil, fmt.Errorf("%w: %s %w", ErrInvalidRequest, p.key, err)
 		}
@@ -303,26 +290,6 @@ func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 // integerMaximum caps TA-Lib's period limits (up to 100000) at the stored
 // history depth, which no calculation can exceed.
 func integerMaximum(p param) float64 { return min(p.maximum, market.SyncDepth) }
-
-func parseNumber(raw any) (float64, error) {
-	var value float64
-	switch typed := raw.(type) {
-	case int:
-		value = float64(typed)
-	case int32:
-		value = float64(typed)
-	case int64:
-		value = float64(typed)
-	case float64:
-		value = typed
-	default:
-		return 0, errors.New("must be a number")
-	}
-	if !numeric.Finite(value) {
-		return 0, errors.New("must be finite")
-	}
-	return value, nil
-}
 
 func integers(values []int32) []float64 {
 	result := make([]float64, len(values))

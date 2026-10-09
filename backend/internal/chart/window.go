@@ -6,11 +6,11 @@ import (
 )
 
 const (
-	// settleFactor scales the lookback into the warm-up of every indicator.
+	// SettleFactor scales the lookback into the warm-up of every indicator.
 	// The lookback is only the minimum: recursive indicators (EMA, RSI, ADX,
 	// MACD, and so on) start from a seed such as an SMA and need many more
 	// candles before the seed stops mattering.
-	settleFactor = 10
+	SettleFactor = 10
 	// maxWindow bounds the warm-up so that half of the synchronized history
 	// remains for scroll-back and earlier points.
 	maxWindow = market.SyncDepth / 2
@@ -27,5 +27,5 @@ func Window(registry *indicator.Registry, selection indicator.Selection) (int, e
 	if err != nil {
 		return 0, err
 	}
-	return max(lookback+1, min(maxWindow, (lookback+1)*settleFactor)), nil
+	return max(lookback+1, min(maxWindow, (lookback+1)*SettleFactor)), nil
 }

@@ -55,7 +55,11 @@ func (l *listeners) notify() {
 }
 
 func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger, store *postgres.Store, queue *opsnotify.Queue, notifierLogger *slog.Logger) (app, error) {
-	indicatorRegistry, err := indicator.NewRegistry(indicatorModules()...)
+	modules, err := indicatorModules()
+	if err != nil {
+		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
+	}
+	indicatorRegistry, err := indicator.NewRegistry(modules...)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
 	}

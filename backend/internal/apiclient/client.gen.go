@@ -585,9 +585,10 @@ type BacktestFill struct {
 
 // BacktestSignal Judges each signal candle's close, and every evaluated candle's
 // alike, by a stop and a target over the window candles after it. The
-// stop lies the usual price move over the window away against the
-// expected move: the sample standard deviation of the 100 one-candle
-// returns up to the candle times the square root of the window. The
+// stop lies one ATR(14) from the close against the expected move.
+// ATR uses Wilder-smoothed true ranges through the signal candle,
+// including shadows and price gaps. The distance does not depend on
+// the window, which only limits evaluation time. The
 // target lies target_ratio stops away in the expected direction; a
 // sideways signal has a target on both sides and no stop. Outcomes may
 // read stored candles after the evaluated period.
@@ -612,8 +613,12 @@ type BacktestSignal struct {
 }
 
 // BacktestSignalOccurrence An entry signal. counted, stop, target, move, and success are null
-// together when the stored history lacks the 100 earlier returns or the
-// window after the signal, without gaps.
+// together when history lacks a positive ATR(14), the full consecutive
+// future window, or valid positive-price levels. ATR needs at least
+// 14 preceding consecutive candles and restarts after missing candles.
+// Histories of at least 2,000 candles may have lost older seed candles:
+// their initial evaluations also wait for the shared indicator warm-up
+// (150 candles including the signal for ATR(14)).
 type BacktestSignalOccurrence struct {
 	Close float64 `json:"close"`
 
@@ -625,13 +630,13 @@ type BacktestSignalOccurrence struct {
 	// sideways the largest move in either direction.
 	Move *float64 `json:"move"`
 
-	// Stop Stop distance from the close; null for sideways.
+	// Stop One ATR(14) divided by the signal close, as a fraction; null for sideways or an unevaluated signal.
 	Stop *float64 `json:"stop"`
 
 	// Success The target was reached before the stop; for sideways, neither target was touched.
 	Success *bool `json:"success"`
 
-	// Target Target distance from the close, on both sides for sideways.
+	// Target target_ratio times ATR(14) divided by the signal close, as a fraction; on both sides for sideways, null for an unevaluated signal.
 	Target *float64 `json:"target"`
 
 	// Time Open time of the candle whose close signaled.
@@ -1208,9 +1213,9 @@ type Session struct {
 }
 
 // SignalTargetRatio A signal's target distance in stops, which its backtest judges each
-// signal by: the stop lies the usual price move over the window against
-// the expected move, and the target this many stops away in its
-// direction. Required for a signal, null for a trading strategy.
+// signal by: the stop lies one ATR(14) against the expected move,
+// independent of the window, and the target this many stops away in
+// its direction. Required for a signal, null for a trading strategy.
 type SignalTargetRatio int
 
 // SignalWindow The candles of its interval after each signal over which a signal's

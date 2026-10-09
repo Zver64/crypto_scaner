@@ -2164,9 +2164,10 @@ components:
       description: |
         Judges each signal candle's close, and every evaluated candle's
         alike, by a stop and a target over the window candles after it. The
-        stop lies the usual price move over the window away against the
-        expected move: the sample standard deviation of the 100 one-candle
-        returns up to the candle times the square root of the window. The
+        stop lies one ATR(14) from the close against the expected move.
+        ATR uses Wilder-smoothed true ranges through the signal candle,
+        including shadows and price gaps. The distance does not depend on
+        the window, which only limits evaluation time. The
         target lies target_ratio stops away in the expected direction; a
         sideways signal has a target on both sides and no stop. Outcomes may
         read stored candles after the evaluated period.
@@ -2199,8 +2200,12 @@ components:
       required: [time, close, values, counted, stop, target, move, success]
       description: |
         An entry signal. counted, stop, target, move, and success are null
-        together when the stored history lacks the 100 earlier returns or the
-        window after the signal, without gaps.
+        together when history lacks a positive ATR(14), the full consecutive
+        future window, or valid positive-price levels. ATR needs at least
+        14 preceding consecutive candles and restarts after missing candles.
+        Histories of at least 2,000 candles may have lost older seed candles:
+        their initial evaluations also wait for the shared indicator warm-up
+        (150 candles including the signal for ATR(14)).
       properties:
         time:
           type: string
@@ -2216,11 +2221,11 @@ components:
         stop:
           type: [number, "null"]
           format: double
-          description: Stop distance from the close; null for sideways.
+          description: One ATR(14) divided by the signal close, as a fraction; null for sideways or an unevaluated signal.
         target:
           type: [number, "null"]
           format: double
-          description: Target distance from the close, on both sides for sideways.
+          description: target_ratio times ATR(14) divided by the signal close, as a fraction; on both sides for sideways, null for an unevaluated signal.
         move:
           type: [number, "null"]
           format: double
@@ -2594,9 +2599,9 @@ components:
       enum: [2, 3, 4, 5]
       description: |
         A signal's target distance in stops, which its backtest judges each
-        signal by: the stop lies the usual price move over the window against
-        the expected move, and the target this many stops away in its
-        direction. Required for a signal, null for a trading strategy.
+        signal by: the stop lies one ATR(14) against the expected move,
+        independent of the window, and the target this many stops away in
+        its direction. Required for a signal, null for a trading strategy.
     SignalWindow:
       type: integer
       enum: [3, 6, 12, 24]

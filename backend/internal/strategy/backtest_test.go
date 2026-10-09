@@ -651,18 +651,19 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 	}
 }
 
+const signalHistoryCandles = 100
+
 // signalHistory is hourly history whose first 101 closes alternate between
-// 100 and 101, a volatility of about 1% and a stop of about 2.45% over 6
-// candles, followed by the candles of future; the signal candle, index 100,
-// closes at 100.
+// 100 and 101, each true range 1, followed by the candles of future;
+// the signal candle, index 100, closes at 100.
 func signalHistory(future ...market.Candle) []market.Candle {
-	history := make([]market.Candle, 0, signalVolatilityCandles+1+len(future))
-	for index := range signalVolatilityCandles + 1 {
+	history := make([]market.Candle, 0, signalHistoryCandles+1+len(future))
+	for index := range signalHistoryCandles + 1 {
 		price := 100.0 + float64(index%2)
 		history = append(history, market.Candle{OpenTime: backtestHour(index), Open: price, Close: price, High: price, Low: price})
 	}
 	for index, candle := range future {
-		candle.OpenTime = backtestHour(signalVolatilityCandles + 1 + index)
+		candle.OpenTime = backtestHour(signalHistoryCandles + 1 + index)
 		history = append(history, candle)
 	}
 	return history
@@ -678,17 +679,7 @@ func ohlc(open, high, low, closing float64) market.Candle {
 // the move counts only the stop candle's open. A sideways signal fails on any
 // touch of a target.
 func TestEvaluateSignal(t *testing.T) {
-	stop := standardDeviation(func() []float64 {
-		returns := make([]float64, signalVolatilityCandles)
-		for index := range returns {
-			if index%2 == 0 {
-				returns[index] = 0.01
-			} else {
-				returns[index] = 100.0/101 - 1
-			}
-		}
-		return returns
-	}()) * math.Sqrt(6)
+	stop := 0.01 // Each preceding true range is 1 at a signal close of 100.
 	quiet := ohlc(100, 100.1, 99.9, 100)
 	for _, test := range []struct {
 		name      string
@@ -703,12 +694,12 @@ func TestEvaluateSignal(t *testing.T) {
 		{"open past the target", DirectionLong, []market.Candle{quiet, ohlc(105, 106, 97, 100), quiet, quiet, quiet, quiet}, true, 0.05},
 		{"open past the stop", DirectionShort, []market.Candle{quiet, ohlc(103, 104, 94, 100), quiet, quiet, quiet, quiet}, false, 0.001},
 		{"short target first", DirectionShort, []market.Candle{ohlc(100, 100.5, 95, 98), quiet, quiet, quiet, quiet, quiet}, true, 0.05},
-		{"sideways quiet", DirectionSideways, []market.Candle{quiet, ohlc(100, 103, 98, 100), quiet, quiet, quiet, quiet}, true, 0.03},
+		{"sideways quiet", DirectionSideways, []market.Candle{quiet, ohlc(100, 101.5, 99, 100), quiet, quiet, quiet, quiet}, true, 0.015},
 		{"sideways touch", DirectionSideways, []market.Candle{quiet, quiet, ohlc(100, 100.5, 95, 99), quiet, quiet, quiet}, false, 0.05},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			// The target lies 2 stops away, about 4.9%.
-			evaluation := evaluateSignal(test.direction, market.IntervalHour, signalHistory(test.future...), signalVolatilityCandles, 6, 2)
+			// The target lies 2 stops away, 2%.
+			evaluation := evaluateTestSignal(t, test.direction, market.IntervalHour, signalHistory(test.future...), signalHistoryCandles, 6, 2)
 			if evaluation == nil || evaluation.Success != test.success || math.Abs(evaluation.Move-test.move) > 1e-9 ||
 				math.Abs(evaluation.Target-2*stop) > 1e-12 || (evaluation.Stop == nil) != (test.direction == DirectionSideways) {
 				t.Fatalf("evaluation %+v, want success %v and move %v", evaluation, test.success, test.move)
@@ -717,25 +708,95 @@ func TestEvaluateSignal(t *testing.T) {
 	}
 }
 
-// A candle without 100 earlier returns or the whole window after it, or with
-// a gap in either, has no evaluation.
+// A candle without enough preceding ranges for ATR or the whole window
+// after it, or with a recent gap in either, has no evaluation.
 func TestEvaluateSignalNeedsConsecutiveCandles(t *testing.T) {
 	quiet := ohlc(100, 100.1, 99.9, 100)
 	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
-	if evaluateSignal(DirectionLong, market.IntervalHour, history, signalVolatilityCandles-1, 6, 2) != nil {
-		t.Fatal("evaluated without 100 returns")
+	if evaluateTestSignal(t, DirectionLong, market.IntervalHour, history, 13, 6, 2) != nil {
+		t.Fatal("evaluated without enough ranges for ATR")
 	}
-	if evaluateSignal(DirectionLong, market.IntervalHour, history[:len(history)-1], signalVolatilityCandles, 6, 2) != nil {
+	if evaluateTestSignal(t, DirectionLong, market.IntervalHour, history[:len(history)-1], signalHistoryCandles, 6, 2) != nil {
 		t.Fatal("evaluated without the whole window")
 	}
-	for _, at := range []int{50, signalVolatilityCandles + 3} {
+	for _, at := range []int{signalHistoryCandles - 5, signalHistoryCandles + 3} {
 		gapped := slices.Clone(history)
 		for index := at; index < len(gapped); index++ {
 			gapped[index].OpenTime = gapped[index].OpenTime.Add(time.Hour)
 		}
-		if evaluateSignal(DirectionLong, market.IntervalHour, gapped, signalVolatilityCandles, 6, 2) != nil {
+		if evaluateTestSignal(t, DirectionLong, market.IntervalHour, gapped, signalHistoryCandles, 6, 2) != nil {
 			t.Fatalf("evaluated across a gap at %d", at)
 		}
+	}
+}
+
+// evaluateTestSignal exercises ATR calculation and the outcome together.
+func evaluateTestSignal(t *testing.T, direction Direction, interval market.CandleInterval, history []market.Candle, at, window, ratio int) *SignalEvaluation {
+	t.Helper()
+	report, err := signalReport(testRegistry(t), Strategy{Direction: direction, Window: window, TargetRatio: ratio}, interval, history, []SignalOccurrence{{}}, []int{at}, -1, -1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return report.Occurrences[0].Evaluation
+}
+
+// Neither future OHLC nor the window changes the stop fixed at the signal.
+func TestSignalATRUsesPastRangesOnly(t *testing.T) {
+	quiet := ohlc(100, 100.1, 99.9, 100)
+	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
+	baseline := evaluateTestSignal(t, DirectionLong, market.IntervalHour, history, signalHistoryCandles, 3, 2)
+	history[signalHistoryCandles+1].High = 500
+	longer := evaluateTestSignal(t, DirectionLong, market.IntervalHour, history, signalHistoryCandles, 6, 2)
+	if baseline == nil || longer == nil || *baseline.Stop != *longer.Stop || baseline.Target != longer.Target {
+		t.Fatalf("future or window changed levels: %+v, %+v", baseline, longer)
+	}
+	// A shadow on the signal candle increases ATR with unchanged closes.
+	history[signalHistoryCandles].High = 110
+	wider := evaluateTestSignal(t, DirectionLong, market.IntervalHour, history, signalHistoryCandles, 6, 2)
+	if wider == nil || *wider.Stop <= *baseline.Stop {
+		t.Fatalf("ignored signal shadow: %+v, %+v", baseline, wider)
+	}
+}
+
+// Retained history may have lost the volatility before its artificial seed.
+// Both signal and all-candle outcomes must wait for the shared warm-up.
+func TestSignalATRWarmsUpPrunedHistory(t *testing.T) {
+	registry := testRegistry(t)
+	depth, err := closedindicator.Depth(registry, closedindicator.Target{
+		Interval:  market.IntervalHour,
+		Selection: indicator.Selection{Type: "atr", Parameters: indicator.Parameters{"period": signalATRPeriod}},
+	}, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	history := make([]market.Candle, market.SyncDepth+1000)
+	for index := range history {
+		spread := 1.0
+		if index < 10 {
+			spread = 20
+		}
+		history[index] = ohlc(100, 100+spread, 100-spread, 100)
+		history[index].OpenTime = backtestHour(index)
+	}
+	signal := Strategy{Direction: DirectionLong, Window: 6, TargetRatio: 2}
+	signals := []int{14, depth - 2, depth - 1}
+	report, err := signalReport(registry, signal, market.IntervalHour, history, make([]SignalOccurrence, len(signals)), signals, 0, len(history)-1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Occurrences[0].Evaluation != nil || report.Occurrences[1].Evaluation != nil {
+		t.Fatal("evaluated a signal before its retained-history ATR warm-up")
+	}
+	last := report.Occurrences[2].Evaluation
+	if last == nil || !last.Counted || *last.Stop >= 0.03 || report.Evaluated != 1 {
+		t.Fatalf("settled signal evaluation %+v, evaluated %d", last, report.Evaluated)
+	}
+	if want := len(history) - signal.Window - (depth - 1); report.All.Count != want {
+		t.Fatalf("all-candle count %d, want %d warmed outcomes", report.All.Count, want)
+	}
+	// A newly listed instrument has no missing older history to settle from.
+	if evaluateTestSignal(t, signal.Direction, market.IntervalHour, history[:depth-1], signals[0], signal.Window, signal.TargetRatio) == nil {
+		t.Fatal("required retained-history warm-up for complete short history")
 	}
 }
 
@@ -749,7 +810,10 @@ func TestSignalReportCountsSignalsAWindowApart(t *testing.T) {
 	history := signalHistory(future...)
 	signals := []int{100, 103, 106, 107, 112}
 	occurrences := make([]SignalOccurrence, len(signals))
-	report := signalReport(Strategy{Direction: DirectionSideways, TargetRatio: 2, Window: 6}, market.IntervalHour, history, occurrences, signals, 100, 105)
+	report, err := signalReport(testRegistry(t), Strategy{Direction: DirectionSideways, TargetRatio: 2, Window: 6}, market.IntervalHour, history, occurrences, signals, 100, 105)
+	if err != nil {
+		t.Fatal(err)
+	}
 	var counted []bool
 	for _, occurrence := range report.Occurrences {
 		counted = append(counted, occurrence.Evaluation != nil && occurrence.Evaluation.Counted)

@@ -350,9 +350,9 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 // App.
 func signalExplanation(sideways bool, window, ratio int) string {
 	if sideways {
-		return fmt.Sprintf("Targets: %d times the usual price move over %d candles (from the last 100 candles) on both sides. Success: the price touches neither target. Move to target: how far the price moved away from the signal price in either direction. The Signals median covers every counted signal, successful or not.", ratio, window)
+		return fmt.Sprintf("Targets: %d times ATR(14) on both sides. Window: %d candles. Success: the price touches neither target. Move to target: how far the price moved away from the signal price in either direction. The Signals median covers every counted signal, successful or not.", ratio, window)
 	}
-	return fmt.Sprintf("Stop: the usual price move over %d candles (from the last 100 candles) against the signal; target: %d times farther in the signal's direction. Success: the target is reached before the stop. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.", window, ratio)
+	return fmt.Sprintf("Stop: one ATR(14) against the signal; target: %d times farther in the signal's direction. Window: %d candles. Success: the target is reached before the stop. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.", ratio, window)
 }
 
 // successful writes the successes of stats as k/N (x%).

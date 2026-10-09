@@ -23,9 +23,10 @@ import type { BacktestSignalStats } from './backtestSignalStats.ts';
 /**
  * Judges each signal candle's close, and every evaluated candle's
  * alike, by a stop and a target over the window candles after it. The
- * stop lies the usual price move over the window away against the
- * expected move: the sample standard deviation of the 100 one-candle
- * returns up to the candle times the square root of the window. The
+ * stop lies one ATR(14) from the close against the expected move.
+ * ATR uses Wilder-smoothed true ranges through the signal candle,
+ * including shadows and price gaps. The distance does not depend on
+ * the window, which only limits evaluation time. The
  * target lies target_ratio stops away in the expected direction; a
  * sideways signal has a target on both sides and no stop. Outcomes may
  * read stored candles after the evaluated period.

@@ -3,7 +3,6 @@ package strategy
 import (
 	"context"
 	"fmt"
-	"math"
 	"slices"
 	"strings"
 	"time"
@@ -60,17 +59,14 @@ type Backtest struct {
 	Signal *SignalReport
 }
 
-// signalVolatilityCandles is how many one-candle returns before a candle,
-// its own included, measure the volatility its stop comes from.
-const signalVolatilityCandles = 100
+// signalATRPeriod is the common ATR period used to judge every signal.
+const signalATRPeriod = 14
 
 // SignalReport judges the entry signals of a signal by a target and a stop
 // over the Window candles after each, beside the same judgment after every
-// evaluated candle. A candle's stop lies the usual move over Window candles
-// away from its close, against the expected move: its volatility, the sample
-// standard deviation of the signalVolatilityCandles one-candle returns up to
-// it, times the square root of Window. The target lies TargetRatio stops away
-// in the expected direction; a sideways signal has a target on both sides and
+// evaluated candle. A candle's stop lies one ATR(14) away from its close,
+// against the expected move, independent of Window. The target lies TargetRatio
+// stops away in the expected direction; a sideways signal has targets on both sides and
 // no stop. Outcomes may read stored candles after the evaluated period.
 type SignalReport struct {
 	Window, TargetRatio int
@@ -391,19 +387,46 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 		}
 		return nil
 	}
-	result.Signal = signalReport(entry.Strategy, result.Interval, history, occurrences, signals, first, len(candles)-1)
-	return nil
+	var err error
+	result.Signal, err = signalReport(replay.registry, entry.Strategy, result.Interval, history, occurrences, signals, first, len(candles)-1)
+	return err
 }
 
 // signalReport judges the occurrences of signal, at the indexes signals of
 // history, candles of interval, and every evaluated candle, from first
 // through last (none when first is negative).
-func signalReport(signal Strategy, interval market.CandleInterval, history []market.Candle, occurrences []SignalOccurrence, signals []int, first, last int) *SignalReport {
+func signalReport(registry *indicator.Registry, signal Strategy, interval market.CandleInterval, history []market.Candle, occurrences []SignalOccurrence, signals []int, first, last int) (*SignalReport, error) {
+	// Use the existing TA-Lib module, once over each contiguous history run.
+	// ATR at a candle reads only that candle and its preceding history.
+	selection := indicator.Selection{Type: "atr", Parameters: indicator.Parameters{"period": signalATRPeriod}}
+	depth, err := closedindicator.Depth(registry, closedindicator.Target{Interval: interval, Selection: selection}, 1)
+	if err != nil {
+		return nil, fmt.Errorf("signal ATR warm-up: %w", err)
+	}
+	calculated, err := registry.CalculateCandles(interval, history, []indicator.Selection{selection})
+	if err != nil {
+		return nil, fmt.Errorf("calculate signal ATR: %w", err)
+	}
+	atr := make(map[time.Time]float64, len(history))
+	for _, series := range calculated[0].Series {
+		for _, point := range series.Points {
+			atr[point.Time] = point.Value
+		}
+	}
+	// Match replay.at: a retained history may lack older seed candles;
+	// a short history is the instrument's complete history and needs only
+	// the indicator's minimum lookback. Apply this to both statistics alike.
+	evaluate := func(at int) *SignalEvaluation {
+		if len(history) >= market.SyncDepth && at+1 < depth {
+			return nil
+		}
+		return evaluateSignal(signal.Direction, interval, history, at, signal.Window, signal.TargetRatio, atr[history[at].OpenTime.UTC()])
+	}
 	report := &SignalReport{Window: signal.Window, TargetRatio: signal.TargetRatio, Occurrences: occurrences}
 	var moves []float64
 	next := 0
 	for index, at := range signals {
-		evaluation := evaluateSignal(signal.Direction, interval, history, at, signal.Window, signal.TargetRatio)
+		evaluation := evaluate(at)
 		if evaluation == nil {
 			continue
 		}
@@ -421,11 +444,11 @@ func signalReport(signal Strategy, interval market.CandleInterval, history []mar
 	}
 	report.Signals.MedianMove = median(moves)
 	if first < 0 {
-		return report
+		return report, nil
 	}
 	moves = nil
 	for at := first; at <= last; at++ {
-		if evaluation := evaluateSignal(signal.Direction, interval, history, at, signal.Window, signal.TargetRatio); evaluation != nil {
+		if evaluation := evaluate(at); evaluation != nil {
 			report.All.Count++
 			if evaluation.Success {
 				report.All.Successes++
@@ -434,29 +457,20 @@ func signalReport(signal Strategy, interval market.CandleInterval, history []mar
 		}
 	}
 	report.All.MedianMove = median(moves)
-	return report
+	return report, nil
 }
 
 // evaluateSignal judges the close of the candle of history, candles of
 // interval, at at by a target ratio stops away in direction over the window
-// candles after it. It is nil when history lacks the candles, consecutive and
-// with positive closes, to measure the volatility or to cover the window, or
-// when a level would not be a positive price.
-func evaluateSignal(direction Direction, interval market.CandleInterval, history []market.Candle, at, window, ratio int) *SignalEvaluation {
-	if at < signalVolatilityCandles || at+window >= len(history) ||
-		!consecutive(interval, history[at-signalVolatilityCandles:at+window+1]) {
+// candles after it. It is nil without a positive ATR or the consecutive future
+// window, or when a level would not be a positive price.
+func evaluateSignal(direction Direction, interval market.CandleInterval, history []market.Candle, at, window, ratio int, atr float64) *SignalEvaluation {
+	if at < signalATRPeriod || at+window >= len(history) ||
+		!consecutive(interval, history[at:at+window+1]) {
 		return nil
 	}
-	returns := make([]float64, signalVolatilityCandles)
-	for index := range returns {
-		previous, current := history[at-signalVolatilityCandles+index].Close, history[at-signalVolatilityCandles+index+1].Close
-		if !(previous > 0) {
-			return nil
-		}
-		returns[index] = current/previous - 1
-	}
 	price := history[at].Close
-	stop := standardDeviation(returns) * math.Sqrt(float64(window))
+	stop := atr / price
 	target := float64(ratio) * stop
 	if !(price > 0) || !(stop > 0 && stop < 1) || (direction != DirectionLong && target >= 1) {
 		return nil
@@ -538,21 +552,6 @@ func consecutive(interval market.CandleInterval, candles []market.Candle) bool {
 		}
 	}
 	return true
-}
-
-// standardDeviation is the sample standard deviation of values, of which
-// there are at least two.
-func standardDeviation(values []float64) float64 {
-	var mean float64
-	for _, value := range values {
-		mean += value
-	}
-	mean /= float64(len(values))
-	var squares float64
-	for _, value := range values {
-		squares += (value - mean) * (value - mean)
-	}
-	return math.Sqrt(squares / float64(len(values)-1))
 }
 
 // median is the median of values, nil without values; it sorts values.

@@ -21,8 +21,12 @@ import type { BacktestValues } from './backtestValues.ts';
 
 /**
  * An entry signal. counted, stop, target, move, and success are null
- * together when the stored history lacks the 100 earlier returns or the
- * window after the signal, without gaps.
+ * together when history lacks a positive ATR(14), the full consecutive
+ * future window, or valid positive-price levels. ATR needs at least
+ * 14 preceding consecutive candles and restarts after missing candles.
+ * Histories of at least 2,000 candles may have lost older seed candles:
+ * their initial evaluations also wait for the shared indicator warm-up
+ * (150 candles including the signal for ATR(14)).
  */
 export interface BacktestSignalOccurrence {
   /** Open time of the candle whose close signaled. */
@@ -36,12 +40,12 @@ export interface BacktestSignalOccurrence {
      */
   counted: boolean | null;
   /**
-     * Stop distance from the close; null for sideways.
+     * One ATR(14) divided by the signal close, as a fraction; null for sideways or an unevaluated signal.
      * @nullable
      */
   stop: number | null;
   /**
-     * Target distance from the close, on both sides for sideways.
+     * target_ratio times ATR(14) divided by the signal close, as a fraction; on both sides for sideways, null for an unevaluated signal.
      * @nullable
      */
   target: number | null;

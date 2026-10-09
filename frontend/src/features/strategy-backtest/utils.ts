@@ -157,8 +157,8 @@ export function signalExplanation(
 	const candles = formatNumber(window);
 	const ratio = formatNumber(targetRatio);
 	return direction === Direction.sideways
-		? `Targets: ${ratio} times the usual price move over ${candles} candles (from the last 100 candles) on both sides. Success: the price touches neither target. Move to target: how far the price moved away from the signal price in either direction. The Signals median covers every counted signal, successful or not.`
-		: `Stop: the usual price move over ${candles} candles (from the last 100 candles) against the signal; target: ${ratio} times farther in the signal's direction. Success: the target is reached before the stop. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.`;
+		? `Targets: ${ratio} times ATR(14) on both sides. Window: ${candles} candles. Success: the price touches neither target. Move to target: how far the price moved away from the signal price in either direction. The Signals median covers every counted signal, successful or not.`
+		: `Stop: one ATR(14) against the signal; target: ${ratio} times farther in the signal's direction. Window: ${candles} candles. Success: the target is reached before the stop. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.`;
 }
 
 // The period of a backtest request from its first and last UTC days, the

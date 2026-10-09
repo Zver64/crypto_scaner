@@ -31,7 +31,7 @@ export function HistoryLoadCommand() {
 	const queryClient = useQueryClient();
 	const [coins, setCoins] = useState<string[]>([]);
 	const [intervals, setIntervals] = useState<CandleInterval[]>(["1h"]);
-	const [depth, setDepth] = useState<number>(historyLoadDepth.default);
+	const [depth, setDepth] = useState<number | string>(historyLoadDepth.default);
 	const job = useHistoryLoadJob();
 	const start = useStartCandleHistoryLoad({
 		mutation: {
@@ -56,7 +56,9 @@ export function HistoryLoadCommand() {
 	});
 	const running = job.data?.status === "running";
 	const validDepth =
-		depth >= historyLoadDepth.min && depth <= historyLoadDepth.max;
+		typeof depth === "number" &&
+		depth >= historyLoadDepth.min &&
+		depth <= historyLoadDepth.max;
 	return (
 		<Paper p="md">
 			<Stack gap="sm">
@@ -91,13 +93,12 @@ export function HistoryLoadCommand() {
 				/>
 				<NumberInput
 					allowDecimal={false}
-					clampBehavior="strict"
 					description={`Closed candles to keep per coin and interval, ${formatNumber(historyLoadDepth.min)}–${formatNumber(historyLoadDepth.max)}.`}
 					disabled={running}
 					label="Depth"
 					max={historyLoadDepth.max}
 					min={historyLoadDepth.min}
-					onChange={(value) => setDepth(Number(value))}
+					onChange={setDepth}
 					thousandSeparator=","
 					value={depth}
 				/>
@@ -111,6 +112,7 @@ export function HistoryLoadCommand() {
 						}
 						loading={start.isPending}
 						onClick={() =>
+							typeof depth === "number" &&
 							start.mutate({
 								data: { depth, intervals, symbols: coins },
 							})

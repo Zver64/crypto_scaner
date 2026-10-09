@@ -1169,10 +1169,11 @@ type Strategy struct {
 	Id         int64  `json:"id"`
 
 	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys; null leaves that side open. With either
-	// bound, coins of an unknown market cap buy nothing. The range limits
-	// only buys: open trades sell as usual, and backtests ignore it. The
-	// minimum must not exceed the maximum.
+	// the enabled strategy buys or the enabled signal announces; null leaves
+	// that side open. With either bound, coins of an unknown market cap buy
+	// or signal nothing. The range limits only buys and signals: open trades
+	// sell as usual, and backtests ignore it. The minimum must not exceed
+	// the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
@@ -1182,10 +1183,11 @@ type Strategy struct {
 	Message StrategyMessage `json:"message"`
 
 	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys; null leaves that side open. With either
-	// bound, coins of an unknown market cap buy nothing. The range limits
-	// only buys: open trades sell as usual, and backtests ignore it. The
-	// minimum must not exceed the maximum.
+	// the enabled strategy buys or the enabled signal announces; null leaves
+	// that side open. With either bound, coins of an unknown market cap buy
+	// or signal nothing. The range limits only buys and signals: open trades
+	// sell as usual, and backtests ignore it. The minimum must not exceed
+	// the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 
 	// MissingIndicators Indicators the rules read that are not configured, in reading
@@ -1199,7 +1201,7 @@ type Strategy struct {
 
 	// Signal Whether the strategy is a signal, which buys nothing and only
 	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty and its market cap bounds null. Fixed at creation:
+	// loss are empty. Fixed at creation:
 	// an update that changes it is refused.
 	Signal StrategySignal `json:"signal"`
 
@@ -1286,10 +1288,11 @@ type StrategyInput struct {
 	Expression     string                 `json:"expression"`
 
 	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys; null leaves that side open. With either
-	// bound, coins of an unknown market cap buy nothing. The range limits
-	// only buys: open trades sell as usual, and backtests ignore it. The
-	// minimum must not exceed the maximum.
+	// the enabled strategy buys or the enabled signal announces; null leaves
+	// that side open. With either bound, coins of an unknown market cap buy
+	// or signal nothing. The range limits only buys and signals: open trades
+	// sell as usual, and backtests ignore it. The minimum must not exceed
+	// the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
@@ -1299,16 +1302,17 @@ type StrategyInput struct {
 	Message StrategyMessage `json:"message"`
 
 	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys; null leaves that side open. With either
-	// bound, coins of an unknown market cap buy nothing. The range limits
-	// only buys: open trades sell as usual, and backtests ignore it. The
-	// minimum must not exceed the maximum.
+	// the enabled strategy buys or the enabled signal announces; null leaves
+	// that side open. With either bound, coins of an unknown market cap buy
+	// or signal nothing. The range limits only buys and signals: open trades
+	// sell as usual, and backtests ignore it. The minimum must not exceed
+	// the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 	Name            string                  `json:"name"`
 
 	// Signal Whether the strategy is a signal, which buys nothing and only
 	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty and its market cap bounds null. Fixed at creation:
+	// loss are empty. Fixed at creation:
 	// an update that changes it is refused.
 	Signal StrategySignal `json:"signal"`
 
@@ -1332,10 +1336,11 @@ type StrategyList struct {
 }
 
 // StrategyMarketCapBound A bound, in USD and inclusive, of the current market caps of the coins
-// the enabled strategy buys; null leaves that side open. With either
-// bound, coins of an unknown market cap buy nothing. The range limits
-// only buys: open trades sell as usual, and backtests ignore it. The
-// minimum must not exceed the maximum.
+// the enabled strategy buys or the enabled signal announces; null leaves
+// that side open. With either bound, coins of an unknown market cap buy
+// or signal nothing. The range limits only buys and signals: open trades
+// sell as usual, and backtests ignore it. The minimum must not exceed
+// the maximum.
 type StrategyMarketCapBound = float64
 
 // StrategyMessage Telegram alert text that follows the strategy name, the coin symbol,
@@ -1358,7 +1363,7 @@ type StrategyMissingIndicator struct {
 
 // StrategySignal Whether the strategy is a signal, which buys nothing and only
 // announces its entry signals, so its exit rule, take profit, and stop
-// loss are empty and its market cap bounds null. Fixed at creation:
+// loss are empty. Fixed at creation:
 // an update that changes it is refused.
 type StrategySignal = bool
 
@@ -1406,10 +1411,11 @@ type StrategyUpdate struct {
 	Expression string `json:"expression"`
 
 	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys; null leaves that side open. With either
-	// bound, coins of an unknown market cap buy nothing. The range limits
-	// only buys: open trades sell as usual, and backtests ignore it. The
-	// minimum must not exceed the maximum.
+	// the enabled strategy buys or the enabled signal announces; null leaves
+	// that side open. With either bound, coins of an unknown market cap buy
+	// or signal nothing. The range limits only buys and signals: open trades
+	// sell as usual, and backtests ignore it. The minimum must not exceed
+	// the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
@@ -1419,16 +1425,17 @@ type StrategyUpdate struct {
 	Message StrategyMessage `json:"message"`
 
 	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys; null leaves that side open. With either
-	// bound, coins of an unknown market cap buy nothing. The range limits
-	// only buys: open trades sell as usual, and backtests ignore it. The
-	// minimum must not exceed the maximum.
+	// the enabled strategy buys or the enabled signal announces; null leaves
+	// that side open. With either bound, coins of an unknown market cap buy
+	// or signal nothing. The range limits only buys and signals: open trades
+	// sell as usual, and backtests ignore it. The minimum must not exceed
+	// the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 	Name            string                  `json:"name"`
 
 	// Signal Whether the strategy is a signal, which buys nothing and only
 	// announces its entry signals, so its exit rule, take profit, and stop
-	// loss are empty and its market cap bounds null. Fixed at creation:
+	// loss are empty. Fixed at creation:
 	// an update that changes it is refused.
 	Signal StrategySignal `json:"signal"`
 
@@ -1977,9 +1984,9 @@ type ClientInterface interface {
 	// always has a take profit below and a stop loss above the close, and
 	// closes when the price rises to the stop loss or falls to the take
 	// profit. A strategy with `signal` true is a signal instead: it has no
-	// exits or market cap range, buys nothing, and only announces its entry
-	// signals with the move its `direction` expects, which may also be
-	// sideways. The administrator and users with strategy alerts get a
+	// exits, buys nothing, and only announces its entry signals with the
+	// move its `direction` expects, which may also be sideways, on the
+	// coins within its market cap range. The administrator and users with strategy alerts get a
 	// Telegram message for every buy, sell, short, cover, and signal.
 	//
 	// Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
@@ -2547,9 +2554,9 @@ func (c *Client) UpdateScannerIndicator(ctx context.Context, indicatorId Scanner
 // always has a take profit below and a stop loss above the close, and
 // closes when the price rises to the stop loss or falls to the take
 // profit. A strategy with `signal` true is a signal instead: it has no
-// exits or market cap range, buys nothing, and only announces its entry
-// signals with the move its `direction` expects, which may also be
-// sideways. The administrator and users with strategy alerts get a
+// exits, buys nothing, and only announces its entry signals with the
+// move its `direction` expects, which may also be sideways, on the
+// coins within its market cap range. The administrator and users with strategy alerts get a
 // Telegram message for every buy, sell, short, cover, and signal.
 //
 // Corresponds with GET /api/v1/admin/strategies (the `ListStrategies` operationId).
@@ -5095,9 +5102,9 @@ type ClientWithResponsesInterface interface {
 	// always has a take profit below and a stop loss above the close, and
 	// closes when the price rises to the stop loss or falls to the take
 	// profit. A strategy with `signal` true is a signal instead: it has no
-	// exits or market cap range, buys nothing, and only announces its entry
-	// signals with the move its `direction` expects, which may also be
-	// sideways. The administrator and users with strategy alerts get a
+	// exits, buys nothing, and only announces its entry signals with the
+	// move its `direction` expects, which may also be sideways, on the
+	// coins within its market cap range. The administrator and users with strategy alerts get a
 	// Telegram message for every buy, sell, short, cover, and signal.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -9339,9 +9346,9 @@ func (c *ClientWithResponses) UpdateScannerIndicatorWithResponse(ctx context.Con
 // always has a take profit below and a stop loss above the close, and
 // closes when the price rises to the stop loss or falls to the take
 // profit. A strategy with `signal` true is a signal instead: it has no
-// exits or market cap range, buys nothing, and only announces its entry
-// signals with the move its `direction` expects, which may also be
-// sideways. The administrator and users with strategy alerts get a
+// exits, buys nothing, and only announces its entry signals with the
+// move its `direction` expects, which may also be sideways, on the
+// coins within its market cap range. The administrator and users with strategy alerts get a
 // Telegram message for every buy, sell, short, cover, and signal.
 //
 // Returns a wrapper object for the known response body format(s).

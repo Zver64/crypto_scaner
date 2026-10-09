@@ -613,7 +613,7 @@ type UpdateStrategyParams struct {
 }
 
 // A change of how the strategy trades starts a new revision; a market cap
-// range change only limits later buys. The kind and the direction never
+// range change only limits later buys and signals. The kind and the direction never
 // change.
 func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, updateStrategy,

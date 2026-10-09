@@ -121,20 +121,24 @@ func flatCandle(index int, price float64, entry, known bool, exit func(map[strin
 	}
 }
 
-// A signal outside the market cap range buys nothing but still counts as the
-// entry, while an open trade sells as usual.
+// A signal outside the market cap range buys or announces nothing but still
+// counts as the entry, while an open trade sells as usual.
 func TestStepSkipsSignalsOutOfRange(t *testing.T) {
-	entry := Entry{Interval: market.IntervalHour}
-	candle := flatCandle(1, 10, true, true, nil)
-	candle.OutOfRange = true
-	next, events, processed := entry.step(TradeState{OpenTime: backtestHour(0)}, candle)
-	if !processed || next.Buys != 0 || !next.Entry || len(events) != 1 || events[0].Kind != TradeSkip {
-		t.Fatalf("processed %v, state %+v, events %+v", processed, next, events)
+	for _, entry := range []Entry{
+		{Interval: market.IntervalHour},
+		{Strategy: Strategy{Signal: true, Direction: DirectionLong}, Interval: market.IntervalHour},
+	} {
+		candle := flatCandle(1, 10, true, true, nil)
+		candle.OutOfRange = true
+		next, events, processed := entry.step(TradeState{OpenTime: backtestHour(0)}, candle)
+		if !processed || next.Buys != 0 || !next.Entry || len(events) != 1 || events[0].Kind != TradeSkip {
+			t.Fatalf("signal %v: processed %v, state %+v, events %+v", entry.Signal, processed, next, events)
+		}
 	}
 
 	exiting := Entry{StopLoss: &Expression{}, Interval: market.IntervalHour}
 	trade := TradeState{OpenTime: backtestHour(1), Entry: true, Buys: 1, Filled: 1, Quantity: 0.1, OpenedAt: backtestHour(1), StopLoss: 9}
-	candle = flatCandle(2, 8, false, true, nil)
+	candle := flatCandle(2, 8, false, true, nil)
 	candle.OutOfRange = true
 	if next, events, processed := exiting.step(trade, candle); !processed || next.Buys != 0 || len(events) != 1 || events[0].Reason != ExitStopLoss {
 		t.Fatalf("processed %v, state %+v, events %+v", processed, next, events)
@@ -162,9 +166,9 @@ func TestStepSignalsWithoutBuying(t *testing.T) {
 	}
 }
 
-// A signal is long, short, or sideways and has no trading settings; a
-// strategy trades long or short, and a short one always has a take profit
-// and a stop loss.
+// A signal is long, short, or sideways and has no trading settings but may
+// have a market cap range; a strategy trades long or short, and a short one
+// always has a take profit and a stop loss.
 func TestDirectionRules(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil))
 	usd := 1e9
@@ -173,7 +177,6 @@ func TestDirectionRules(t *testing.T) {
 		{Signal: true, Direction: DirectionShort, ExitExpression: "h_close > 1"},
 		{Signal: true, Direction: DirectionShort, TakeProfitExpression: "h_close * 2"},
 		{Signal: true, Direction: DirectionShort, StopLossExpression: "h_close / 2"},
-		{Signal: true, Direction: DirectionShort, MarketCap: MarketCapRange{MaxUSD: &usd}},
 		{Direction: DirectionSideways},
 		{Direction: DirectionShort, StopLossExpression: "h_close * 2"},
 		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", ExitExpression: "h_close > 1"},
@@ -185,6 +188,7 @@ func TestDirectionRules(t *testing.T) {
 	}
 	for _, item := range []Strategy{
 		{Signal: true, Direction: DirectionSideways},
+		{Signal: true, Direction: DirectionShort, MarketCap: MarketCapRange{MaxUSD: &usd}},
 		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", StopLossExpression: "h_close * 2"},
 	} {
 		item.Name, item.Expression = "Strategy", "h_close > 5"

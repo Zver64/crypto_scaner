@@ -13,7 +13,7 @@ RETURNING id;
 
 -- name: UpdateStrategy :one
 -- A change of how the strategy trades starts a new revision; a market cap
--- range change only limits later buys. The kind and the direction never
+-- range change only limits later buys and signals. The kind and the direction never
 -- change.
 UPDATE app.strategies
 SET name = @name, expression = @expression, exit_expression = @exit_expression,

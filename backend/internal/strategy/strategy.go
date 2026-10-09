@@ -91,7 +91,7 @@ func (direction Direction) gross(entry, exit float64) float64 {
 // evaluated when its entry signals. A trading strategy with any of these
 // exits holds one buy per trade; one without buys at every entry signal and
 // never sells. A short strategy always has a take profit and a stop loss. A
-// signal has none of them and no market cap range.
+// signal has none of them.
 type Strategy struct {
 	ID                   int64
 	Name                 string
@@ -101,8 +101,8 @@ type Strategy struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
-	// MarketCap limits the coins the running strategy buys; backtests
-	// ignore it.
+	// MarketCap limits the coins the running strategy buys or a running
+	// signal announces; backtests ignore it.
 	MarketCap MarketCapRange
 	// Message replaces the generated alert text when it is not empty.
 	Message string
@@ -718,9 +718,8 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	case item.Direction != DirectionLong && item.Direction != DirectionShort && item.Direction != DirectionSideways:
 		return Entry{}, fmt.Errorf("%w: the direction must be long, short, or sideways", ErrInvalidArgument)
 	case item.Signal:
-		if item.ExitExpression != "" || item.TakeProfitExpression != "" || item.StopLossExpression != "" ||
-			item.MarketCap.MinUSD != nil || item.MarketCap.MaxUSD != nil {
-			return Entry{}, fmt.Errorf("%w: a signal has no exit rule, take profit, stop loss, or market cap range", ErrInvalidArgument)
+		if item.ExitExpression != "" || item.TakeProfitExpression != "" || item.StopLossExpression != "" {
+			return Entry{}, fmt.Errorf("%w: a signal has no exit rule, take profit, or stop loss", ErrInvalidArgument)
 		}
 	case item.Direction == DirectionSideways:
 		return Entry{}, fmt.Errorf("%w: a strategy trades long or short; only a signal expects a sideways move", ErrInvalidArgument)

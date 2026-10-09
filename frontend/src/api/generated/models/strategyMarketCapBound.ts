@@ -20,10 +20,11 @@
 
 /**
  * A bound, in USD and inclusive, of the current market caps of the coins
- * the enabled strategy buys; null leaves that side open. With either
- * bound, coins of an unknown market cap buy nothing. The range limits
- * only buys: open trades sell as usual, and backtests ignore it. The
- * minimum must not exceed the maximum.
+ * the enabled strategy buys or the enabled signal announces; null leaves
+ * that side open. With either bound, coins of an unknown market cap buy
+ * or signal nothing. The range limits only buys and signals: open trades
+ * sell as usual, and backtests ignore it. The minimum must not exceed
+ * the maximum.
  * @exclusiveMinimum 0
  * @nullable
  */

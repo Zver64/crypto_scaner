@@ -11,7 +11,8 @@ interface StrategyMarketCapFieldsProps {
 	onMinimumChange(value: number | string): void;
 }
 
-// The market cap range, in millions of USD, of the coins the strategy buys.
+// The market cap range, in millions of USD, of the coins the strategy buys or
+// the signal announces.
 export function StrategyMarketCapFields({
 	disabled,
 	errors,
@@ -51,9 +52,9 @@ export function StrategyMarketCapFields({
 				title="Market cap"
 			/>
 			<Text c="dimmed" size="xs">
-				Buys only coins whose current market cap lies in this range; coins
-				without a known market cap then buy nothing. Open trades still sell, and
-				backtests ignore the range. Leave empty for no limit.
+				Buys or signals only coins whose current market cap lies in this range;
+				coins without a known market cap then buy or signal nothing. Backtests
+				ignore the range. Leave empty for no limit.
 			</Text>
 		</Stack>
 	);

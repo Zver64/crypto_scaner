@@ -68,7 +68,7 @@ func renderStrategies(w io.Writer, k kind, strategies []apiclient.Strategy) {
 func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy, width int) {
 	header := table.Row{"ID", "State", "Name", "Direction", "Entry", "Exit", "Buys", "Market cap"}
 	if k.signals {
-		header = table.Row{"ID", "State", "Name", "Entry", "Signal"}
+		header = table.Row{"ID", "State", "Name", "Entry", "Signal", "Market cap"}
 	}
 	var rows []table.Row
 	widths := make([]int, len(header))
@@ -101,7 +101,7 @@ func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy,
 		expression := strings.Join(strings.Fields(strategy.Expression), " ")
 		row := table.Row{strategy.Id, state, name, string(strategy.Direction), expression, exits(strategy), buys(strategy), marketCapRange(strategy)}
 		if k.signals {
-			row = table.Row{strategy.Id, state, name, expression, string(strategy.Direction)}
+			row = table.Row{strategy.Id, state, name, expression, string(strategy.Direction), marketCapRange(strategy)}
 		}
 		rows = append(rows, row)
 		measure(row)

@@ -124,13 +124,18 @@ func (k kind) completeDirections() cobra.CompletionFunc {
 // createSignalCommand saves a signal, always disabled like strategies.
 func (c *cli) createSignalCommand() *cobra.Command {
 	var expression, direction, message string
+	var marketCap marketCapFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR --direction long|short|sideways [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR --direction long|short|sideways [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled signal, which buys nothing and announces the move it expects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			move, err := signalsKind.directionFlag(direction)
+			if err != nil {
+				return err
+			}
+			minimum, maximum, err := marketCap.parse()
 			if err != nil {
 				return err
 			}
@@ -144,7 +149,8 @@ func (c *cli) createSignalCommand() *cobra.Command {
 				return err
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
-				Name: args[0], Signal: true, Direction: move, Expression: expression, Message: message,
+				Name: args[0], Signal: true, Direction: move, Expression: expression,
+				MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum, Message: message,
 			})
 			if err == nil {
 				err = c.check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
@@ -159,6 +165,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 	flags := command.Flags()
 	flags.StringVar(&expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
 	flags.StringVar(&direction, "direction", "", "the `MOVE` the signal expects: long, short, or sideways")
+	marketCap.addCreate(flags, "signal")
 	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	_ = command.MarkFlagRequired("expr")
@@ -169,9 +176,10 @@ func (c *cli) createSignalCommand() *cobra.Command {
 
 func (c *cli) updateSignalCommand() *cobra.Command {
 	var name, expression, message string
+	var marketCap marketCapFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:               "update ID [--expr EXPR] [--name NAME] [--message TEXT] [--add-indicators]",
+		Use:               "update ID [--expr EXPR] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
 		Short:             "Edit a disabled saved signal, preserving unspecified fields; its direction never changes",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: c.completeArg(signalsKind),
@@ -182,9 +190,13 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			}
 			flags := command.Flags()
 			// edits are the flags that change the signal.
-			edits := []string{"expr", "name", "message"}
+			edits := []string{"expr", "min-market-cap", "max-market-cap", "name", "message"}
 			if !slices.ContainsFunc(append(edits, "add-indicators"), flags.Changed) {
-				return usageError("specify at least one of --expr, --name, --message, or --add-indicators")
+				return usageError("specify at least one of --expr, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
+			}
+			minimum, maximum, err := marketCap.parse()
+			if err != nil {
+				return err
 			}
 			client, err := c.client()
 			if err != nil {
@@ -194,7 +206,11 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			body := apiclient.StrategyUpdate{Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression, Message: current.Message}
+			body := apiclient.StrategyUpdate{
+				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression,
+				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
+			}
+			marketCap.update(flags, &body, minimum, maximum)
 			if flags.Changed("name") {
 				body.Name = name
 			}
@@ -213,6 +229,7 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")
+	marketCap.addUpdate(command.Flags())
 	command.Flags().StringVar(&name, "name", "", "signal `NAME`; omitted preserves the current name")
 	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")
 	command.Flags().BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)

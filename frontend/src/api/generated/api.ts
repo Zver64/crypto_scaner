@@ -4355,9 +4355,9 @@ export const getListStrategiesUrl = () => {
  * always has a take profit below and a stop loss above the close, and
  * closes when the price rises to the stop loss or falls to the take
  * profit. A strategy with `signal` true is a signal instead: it has no
- * exits or market cap range, buys nothing, and only announces its entry
- * signals with the move its `direction` expects, which may also be
- * sideways. The administrator and users with strategy alerts get a
+ * exits, buys nothing, and only announces its entry signals with the
+ * move its `direction` expects, which may also be sideways, on the
+ * coins within its market cap range. The administrator and users with strategy alerts get a
  * Telegram message for every buy, sell, short, cover, and signal.
  * @summary List the strategies
  */

@@ -21,7 +21,7 @@
 /**
  * Whether the strategy is a signal, which buys nothing and only
  * announces its entry signals, so its exit rule, take profit, and stop
- * loss are empty and its market cap bounds null. Fixed at creation:
+ * loss are empty. Fixed at creation:
  * an update that changes it is refused.
  */
 export type StrategySignal = boolean;

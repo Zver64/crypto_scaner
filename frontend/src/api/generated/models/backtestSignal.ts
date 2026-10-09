@@ -18,16 +18,38 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { BacktestSignalOccurrence } from './backtestSignalOccurrence.ts';
-import type { BacktestSignalWindow } from './backtestSignalWindow.ts';
+import type { BacktestSignalStats } from './backtestSignalStats.ts';
 
+/**
+ * Judges each signal candle's close, and every evaluated candle's
+ * alike, by a stop and a target over the window candles after it. The
+ * stop lies the usual price move over the window away against the
+ * expected move: the sample standard deviation of the 100 one-candle
+ * returns up to the candle times the square root of the window. The
+ * target lies target_ratio stops away in the expected direction; a
+ * sideways signal has a target on both sides and no stop. Outcomes may
+ * read stored candles after the evaluated period.
+ */
 export interface BacktestSignal {
+  /**
+     * Candles after the signal candle that are judged.
+     * @minimum 1
+     */
+  window: number;
+  /**
+     * Target distance in stops.
+     * @minimum 1
+     */
+  target_ratio: number;
   /** Entry signals, oldest first. */
   occurrences: BacktestSignalOccurrence[];
   /**
-     * The moves over 3, 6, 12, and 24 candles after the close of each
-     * signal candle beside those after every evaluated candle. Moves may
-     * read stored candles after the evaluated period; a candle without
-     * enough later stored candles is left out of a window.
+     * Entry signals with an evaluation.
+     * @minimum 0
      */
-  windows: BacktestSignalWindow[];
+  evaluated: number;
+  /** The counted entry signals, each at least a window after the previous counted one. */
+  signals: BacktestSignalStats;
+  /** Every evaluated candle with an evaluation. */
+  all: BacktestSignalStats;
 }

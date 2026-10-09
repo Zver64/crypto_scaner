@@ -21,7 +21,7 @@ export const equitySeriesOptions = {
 	priceLineVisible: false,
 } satisfies LineSeriesPartialOptions;
 
-// Saturation and lightness, in percent, of the hits gradient of signal
-// windows.
-export const hitsColorSaturation = 70;
-export const hitsColorLightness = 50;
+// Saturation and lightness, in percent, of the success share gradient of signal
+// backtests.
+export const successColorSaturation = 70;
+export const successColorLightness = 50;

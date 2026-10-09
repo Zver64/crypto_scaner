@@ -5,14 +5,22 @@ import {
 	backtestPeriod,
 	createEquityData,
 	formatFractionPercent,
-	hitsColor,
 	shortenedPeriod,
+	successColor,
 } from "@/features/strategy-backtest/utils";
 
 describe("formatFractionPercent", () => {
 	it("formats fractions as percentages and a missing value as a dash", () => {
 		expect(formatFractionPercent(-0.0123)).toBe("-1.23%");
 		expect(formatFractionPercent(null)).toBe("—");
+	});
+});
+
+describe("successColor", () => {
+	it("runs from red at no successes through yellow to green at every success", () => {
+		expect(successColor(0)).toMatch(/^hsl\(0 /);
+		expect(successColor(0.5)).toMatch(/^hsl\(60 /);
+		expect(successColor(1)).toMatch(/^hsl\(120 /);
 	});
 });
 
@@ -36,8 +44,23 @@ describe("backtestMarkers", () => {
 	const signal = (direction: Direction) => ({
 		direction,
 		signal: {
-			occurrences: [{ changes: [], close: 1, time, values: {} }],
-			windows: [],
+			all: { count: 0, median_move: null, successes: 0 },
+			evaluated: 0,
+			occurrences: [
+				{
+					close: 1,
+					counted: null,
+					move: null,
+					stop: null,
+					success: null,
+					target: null,
+					time,
+					values: {},
+				},
+			],
+			signals: { count: 0, median_move: null, successes: 0 },
+			target_ratio: 2,
+			window: 6,
 		},
 		trades: [],
 	});
@@ -79,14 +102,6 @@ describe("backtestMarkers", () => {
 		expect(
 			backtestMarkers({ direction: "short", signal: null, trades: [trade] }),
 		).toEqual({ entries: [trade.exit_time], exits: [time] });
-	});
-});
-
-describe("hitsColor", () => {
-	it("runs from red at no hits through yellow to green at every hit", () => {
-		expect(hitsColor(0)).toMatch(/^hsl\(0 /);
-		expect(hitsColor(0.5)).toMatch(/^hsl\(60 /);
-		expect(hitsColor(1)).toMatch(/^hsl\(120 /);
 	});
 });
 

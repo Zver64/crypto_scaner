@@ -24,6 +24,7 @@ import {
 	priceSetupComplete,
 	priceSetupExpression,
 } from "@/features/strategy-settings/strategy-price-input/utils";
+import { StrategySignalEvaluationFields } from "@/features/strategy-settings/strategy-signal-evaluation-fields";
 import type { StrategyDraft } from "@/features/strategy-settings/types";
 import {
 	emptyStrategyQuery,
@@ -74,8 +75,10 @@ export function StrategyFormContent({
 	const [maxMarketCap, setMaxMarketCap] = useState<number | string>(
 		draft.maxMarketCap,
 	);
+	const [targetRatio, setTargetRatio] = useState(draft.targetRatio);
+	const [window, setWindow] = useState(draft.window);
 	// A signal trades nothing, so it has no exit or price fields and sends
-	// them empty.
+	// them empty; only a signal has a target ratio and a window.
 	const trades = !draft.signal;
 	const exitExpression = exitQuery ? strategyExpression(exitQuery) : "";
 	const input: StrategyUpdate = {
@@ -89,6 +92,8 @@ export function StrategyFormContent({
 		direction,
 		stop_loss_expression: trades ? priceSetupExpression(stopLoss) : "",
 		take_profit_expression: trades ? priceSetupExpression(takeProfit) : "",
+		target_ratio: trades ? null : targetRatio,
+		window: trades ? null : window,
 	};
 	const named = input.name !== "";
 	const boundErrors = marketCapErrors(
@@ -119,6 +124,8 @@ export function StrategyFormContent({
 		input.expression !== strategyExpression(draft.query) ||
 		input.min_market_cap_usd !== marketCapUsd(draft.minMarketCap) ||
 		input.max_market_cap_usd !== marketCapUsd(draft.maxMarketCap) ||
+		(!trades &&
+			(targetRatio !== draft.targetRatio || window !== draft.window)) ||
 		(trades &&
 			(exitExpression !==
 				(draft.exitQuery ? strategyExpression(draft.exitQuery) : "") ||
@@ -226,7 +233,15 @@ export function StrategyFormContent({
 						variables={entryVariables}
 					/>
 				</>
-			) : null}
+			) : (
+				<StrategySignalEvaluationFields
+					disabled={isSaving}
+					onTargetRatioChange={setTargetRatio}
+					onWindowChange={setWindow}
+					targetRatio={targetRatio}
+					window={window}
+				/>
+			)}
 			<StrategyMarketCapFields
 				disabled={isSaving}
 				errors={boundErrors}

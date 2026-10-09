@@ -582,81 +582,113 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 	}
 }
 
-// Signal windows measure the moves after the signal candles beside those
-// after every evaluated candle, leaving out candles without a whole window,
-// and count hits by the expected move.
-func TestSignalWindowsCompareSignalsWithEveryCandle(t *testing.T) {
-	// Close, high, and low of each candle.
-	prices := [][3]float64{{10, 10, 10}, {10, 12, 9}, {10, 11, 7}, {10, 10, 10}, {10, 11, 10}, {10, 10, 10}}
-	history := make([]market.Candle, len(prices))
-	for index, price := range prices {
-		history[index] = market.Candle{OpenTime: backtestHour(index), Open: price[0], Close: price[0], High: price[1], Low: price[2]}
+// signalHistory is hourly history whose first 101 closes alternate between
+// 100 and 101, a volatility of about 1% and a stop of about 2.45% over 6
+// candles, followed by the candles of future; the signal candle, index 100,
+// closes at 100.
+func signalHistory(future ...market.Candle) []market.Candle {
+	history := make([]market.Candle, 0, signalVolatilityCandles+1+len(future))
+	for index := range signalVolatilityCandles + 1 {
+		price := 100.0 + float64(index%2)
+		history = append(history, market.Candle{OpenTime: backtestHour(index), Open: price, Close: price, High: price, Low: price})
 	}
-	approx := func(value *float64, want float64) bool { return value != nil && math.Abs(*value-want) < 1e-9 }
+	for index, candle := range future {
+		candle.OpenTime = backtestHour(signalVolatilityCandles + 1 + index)
+		history = append(history, candle)
+	}
+	return history
+}
+
+// ohlc is a candle without its open time.
+func ohlc(open, high, low, closing float64) market.Candle {
+	return market.Candle{Open: open, High: high, Low: low, Close: closing}
+}
+
+// A long or short signal succeeds when its target comes before its stop; a
+// candle reaching both fails unless its open already is at one of them, and
+// the move counts only the stop candle's open. A sideways signal fails on any
+// touch of a target.
+func TestEvaluateSignal(t *testing.T) {
+	stop := standardDeviation(func() []float64 {
+		returns := make([]float64, signalVolatilityCandles)
+		for index := range returns {
+			if index%2 == 0 {
+				returns[index] = 0.01
+			} else {
+				returns[index] = 100.0/101 - 1
+			}
+		}
+		return returns
+	}()) * math.Sqrt(6)
+	quiet := ohlc(100, 100.1, 99.9, 100)
 	for _, test := range []struct {
+		name      string
 		direction Direction
-		hits      float64
-		all       float64
+		future    []market.Candle
+		success   bool
+		move      float64
 	}{
-		{direction: DirectionShort, hits: 1, all: 2.0 / 3},
-		{direction: DirectionLong, hits: 0, all: 1.0 / 3},
-		{direction: DirectionSideways, hits: 0, all: 1.0 / 3},
+		{"target first", DirectionLong, []market.Candle{ohlc(100, 105, 99.5, 102), ohlc(102, 106, 95, 96), quiet, quiet, quiet, quiet}, true, 0.05},
+		{"stop first", DirectionLong, []market.Candle{ohlc(100, 100.5, 97, 98), ohlc(98, 110, 98, 109), quiet, quiet, quiet, quiet}, false, 0},
+		{"both in one candle", DirectionLong, []market.Candle{ohlc(100.5, 106, 97, 100), quiet, quiet, quiet, quiet, quiet}, false, 0.005},
+		{"open past the target", DirectionLong, []market.Candle{quiet, ohlc(105, 106, 97, 100), quiet, quiet, quiet, quiet}, true, 0.05},
+		{"open past the stop", DirectionShort, []market.Candle{quiet, ohlc(103, 104, 94, 100), quiet, quiet, quiet, quiet}, false, 0.001},
+		{"short target first", DirectionShort, []market.Candle{ohlc(100, 100.5, 95, 98), quiet, quiet, quiet, quiet, quiet}, true, 0.05},
+		{"sideways quiet", DirectionSideways, []market.Candle{quiet, ohlc(100, 103, 98, 100), quiet, quiet, quiet, quiet}, true, 0.03},
+		{"sideways touch", DirectionSideways, []market.Candle{quiet, quiet, ohlc(100, 100.5, 95, 99), quiet, quiet, quiet}, false, 0.05},
 	} {
-		t.Run(string(test.direction), func(t *testing.T) {
-			// The signal at candle 3 has no 3 later candles.
-			windows := signalWindows(test.direction, market.IntervalHour, history, []int{0, 3}, 0, len(history)-1)
-			if len(windows) != len(SignalWindows) || windows[0].Candles != 3 {
-				t.Fatalf("windows %+v", windows)
-			}
-			signals, all := windows[0].Signals, windows[0].All
-			if signals.Count != 1 || !approx(signals.Rise, 0.2) || !approx(signals.Fall, -0.3) || !approx(signals.Range, 0.5) || !approx(signals.Hits, test.hits) {
-				t.Fatalf("signals %+v", signals)
-			}
-			if all.Count != 3 || !approx(all.Rise, 0.1) || !approx(all.Fall, -0.3) || !approx(all.Range, 0.4) || !approx(all.Hits, test.all) {
-				t.Fatalf("all %+v", all)
-			}
-			for _, window := range windows[1:] {
-				if window.Signals.Count != 0 || window.All.Count != 0 || window.All.Hits != nil {
-					t.Fatalf("window %+v", window)
-				}
+		t.Run(test.name, func(t *testing.T) {
+			// The target lies 2 stops away, about 4.9%.
+			evaluation := evaluateSignal(test.direction, market.IntervalHour, signalHistory(test.future...), signalVolatilityCandles, 6, 2)
+			if evaluation == nil || evaluation.Success != test.success || math.Abs(evaluation.Move-test.move) > 1e-9 ||
+				math.Abs(evaluation.Target-2*stop) > 1e-12 || (evaluation.Stop == nil) != (test.direction == DirectionSideways) {
+				t.Fatalf("evaluation %+v, want success %v and move %v", evaluation, test.success, test.move)
 			}
 		})
 	}
 }
 
-// A signal's changes run from its close to the closes each window later,
-// unknown past the stored history.
-func TestSignalChangesCompareLaterCloses(t *testing.T) {
-	history := make([]market.Candle, 8)
-	for index := range history {
-		history[index] = market.Candle{OpenTime: backtestHour(index), Close: float64(10 + index)}
+// A candle without 100 earlier returns or the whole window after it, or with
+// a gap in either, has no evaluation.
+func TestEvaluateSignalNeedsConsecutiveCandles(t *testing.T) {
+	quiet := ohlc(100, 100.1, 99.9, 100)
+	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
+	if evaluateSignal(DirectionLong, market.IntervalHour, history, signalVolatilityCandles-1, 6, 2) != nil {
+		t.Fatal("evaluated without 100 returns")
 	}
-	changes := signalChanges(market.IntervalHour, history, 1)
-	if len(changes) != len(SignalWindows) || changes[0] == nil || math.Abs(*changes[0]-3.0/11) > 1e-9 || changes[1] == nil || math.Abs(*changes[1]-6.0/11) > 1e-9 {
-		t.Fatalf("changes %v", changes)
+	if evaluateSignal(DirectionLong, market.IntervalHour, history[:len(history)-1], signalVolatilityCandles, 6, 2) != nil {
+		t.Fatal("evaluated without the whole window")
 	}
-	for _, change := range changes[2:] {
-		if change != nil {
-			t.Fatalf("change past the history %v", *change)
+	for _, at := range []int{50, signalVolatilityCandles + 3} {
+		gapped := slices.Clone(history)
+		for index := at; index < len(gapped); index++ {
+			gapped[index].OpenTime = gapped[index].OpenTime.Add(time.Hour)
+		}
+		if evaluateSignal(DirectionLong, market.IntervalHour, gapped, signalVolatilityCandles, 6, 2) != nil {
+			t.Fatalf("evaluated across a gap at %d", at)
 		}
 	}
 }
 
-// A window across a gap in the stored history spans more time than its
-// candles, so it is left out.
-func TestSignalWindowsSkipGaps(t *testing.T) {
-	history := make([]market.Candle, 6)
-	for index := range history {
-		open := backtestHour(index)
-		if index >= 3 {
-			open = backtestHour(index + 48)
-		}
-		history[index] = market.Candle{OpenTime: open, Open: 10, Close: 10, High: 11, Low: 9}
+// Counted signals are at least a window apart; the others are repeats.
+func TestSignalReportCountsSignalsAWindowApart(t *testing.T) {
+	quiet := ohlc(100, 100.1, 99.9, 100)
+	future := make([]market.Candle, 20)
+	for index := range future {
+		future[index] = quiet
 	}
-	if changes := signalChanges(market.IntervalHour, history, 2); changes[0] != nil {
-		t.Fatalf("change across the gap %v", *changes[0])
+	history := signalHistory(future...)
+	signals := []int{100, 103, 106, 107, 112}
+	occurrences := make([]SignalOccurrence, len(signals))
+	report := signalReport(Strategy{Direction: DirectionSideways, TargetRatio: 2, Window: 6}, market.IntervalHour, history, occurrences, signals, 100, 105)
+	var counted []bool
+	for _, occurrence := range report.Occurrences {
+		counted = append(counted, occurrence.Evaluation != nil && occurrence.Evaluation.Counted)
 	}
-	if windows := signalWindows(DirectionLong, market.IntervalHour, history, []int{0}, 0, len(history)-1); windows[0].All.Count != 0 {
-		t.Fatalf("windows %+v", windows[0])
+	if !slices.Equal(counted, []bool{true, false, true, false, true}) || report.Evaluated != 5 || report.Signals.Count != 3 || report.Signals.Successes != 3 {
+		t.Fatalf("counted %v, report %+v", counted, report)
+	}
+	if report.All.Count != 6 || report.All.MedianMove == nil || math.Abs(*report.All.MedianMove-0.001) > 1e-9 {
+		t.Fatalf("all %+v", report.All)
 	}
 }

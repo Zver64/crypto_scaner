@@ -1,7 +1,8 @@
 import type { LineData, UTCTimestamp } from "lightweight-charts";
 import {
 	type BacktestEquityPoint,
-	type BacktestSignalWindow,
+	type BacktestSignal,
+	type BacktestSignalStats,
 	type CandleInterval,
 	Direction,
 	type StrategyBacktest,
@@ -9,8 +10,8 @@ import {
 import type { ChartTradeMarkers } from "@/features/candle-chart/types";
 import { toUtcTimestamp } from "@/features/candle-chart/utils";
 import {
-	hitsColorLightness,
-	hitsColorSaturation,
+	successColorLightness,
+	successColorSaturation,
 } from "@/features/strategy-backtest/config";
 import {
 	intervalUnits,
@@ -18,7 +19,7 @@ import {
 	shortTradeWords,
 } from "@/features/strategy-backtest/constants";
 import type {
-	SignalWindowRow,
+	SignalSummaryRow,
 	TradeWords,
 } from "@/features/strategy-backtest/types";
 import { shiftedUtcTime } from "@/utils/date-time-format";
@@ -104,34 +105,60 @@ export function tradeWords(direction: Direction): TradeWords {
 	return direction === Direction.short ? shortTradeWords : longTradeWords;
 }
 
-// Two rows per window: the moves after the signals, then after every
-// candle.
-export function signalWindowRows(
-	windows: readonly BacktestSignalWindow[],
-): SignalWindowRow[] {
-	return windows.flatMap(({ all, candles, signals }) => [
+// The counted signals beside every candle of a signal's backtest; the
+// signals row also counts every evaluated signal.
+export function signalSummaryRows(signal: BacktestSignal): SignalSummaryRow[] {
+	return [
 		{
-			candles,
-			key: `${candles}-signals`,
+			count: `${formatNumber(signal.evaluated)} / ${formatNumber(signal.signals.count)}`,
+			key: "signals",
 			label: "Signals",
-			signals: true,
-			stats: signals,
+			stats: signal.signals,
 		},
 		{
-			candles: undefined,
-			key: `${candles}-all`,
+			count: formatNumber(signal.all.count),
+			key: "all",
 			label: "All candles",
-			signals: false,
-			stats: all,
+			stats: signal.all,
 		},
-	]);
+	];
 }
 
-// The color of a share of hits, 0 to 1: its hue runs from red at 0 through
+// The share of judged candles that succeeded, or null without any.
+export function signalSuccessShare({
+	count,
+	successes,
+}: BacktestSignalStats): number | null {
+	return count === 0 ? null : successes / count;
+}
+
+// The color of a success share, 0 to 1: its hue runs from red at 0 through
 // yellow to green at 1.
-export function hitsColor(hits: number): string {
-	const hue = Math.min(Math.max(hits, 0), 1) * 120;
-	return `hsl(${hue} ${hitsColorSaturation}% ${hitsColorLightness}%)`;
+export function successColor(share: number): string {
+	const hue = Math.min(Math.max(share, 0), 1) * 120;
+	return `hsl(${hue} ${successColorSaturation}% ${successColorLightness}%)`;
+}
+
+// The successes of judged candles as k/N (x%).
+export function formatSignalSuccesses(stats: BacktestSignalStats): string {
+	const { count, successes } = stats;
+	const rate = signalSuccessShare(stats);
+	const share = rate === null ? "" : ` (${formatFractionPercent(rate)})`;
+	return `${formatNumber(successes)}/${formatNumber(count)}${share}`;
+}
+
+// How a signal's backtest judges its signals, by its direction, window, and
+// target ratio.
+export function signalExplanation(
+	direction: Direction,
+	window: number,
+	targetRatio: number,
+): string {
+	const candles = formatNumber(window);
+	const ratio = formatNumber(targetRatio);
+	return direction === Direction.sideways
+		? `Targets: ${ratio} times the usual price move over ${candles} candles (from the last 100 candles) on both sides. Success: the price touches neither target. Move to target: how far the price moved away from the signal price in either direction. The Signals median covers every counted signal, successful or not.`
+		: `Stop: the usual price move over ${candles} candles (from the last 100 candles) against the signal; target: ${ratio} times farther in the signal's direction. Success: the target is reached before the stop. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.`;
 }
 
 // The period of a backtest request from its first and last UTC days, the

@@ -24,6 +24,8 @@ import {
 	arithmeticTokens,
 	comparisonTokens,
 	defaultDirection,
+	defaultSignalTargetRatio,
+	defaultSignalWindow,
 	directionLabels,
 	kindNouns,
 	operandBoundaries,
@@ -385,6 +387,8 @@ export function newStrategyDraft(
 		stopLoss: "",
 		minMarketCap: "",
 		maxMarketCap: "",
+		targetRatio: defaultSignalTargetRatio,
+		window: defaultSignalWindow,
 		incomplete: false,
 	};
 }
@@ -410,6 +414,8 @@ export function strategyDraft(
 		stopLoss: strategy.stop_loss_expression,
 		minMarketCap: marketCapMillions(strategy.min_market_cap_usd),
 		maxMarketCap: marketCapMillions(strategy.max_market_cap_usd),
+		targetRatio: strategy.target_ratio ?? defaultSignalTargetRatio,
+		window: strategy.window ?? defaultSignalWindow,
 		incomplete:
 			strategyQueryDropped(strategy.expression, query) ||
 			(exitQuery !== undefined &&

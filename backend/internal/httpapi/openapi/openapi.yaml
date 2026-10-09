@@ -2043,7 +2043,7 @@ components:
     Strategy:
       type: object
       additionalProperties: false
-      required: [id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message, enabled, valid, missing_indicators]
+      required: [id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled, valid, missing_indicators]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -2057,6 +2057,14 @@ components:
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
         min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
+        target_ratio:
+          oneOf:
+            - $ref: "#/components/schemas/SignalTargetRatio"
+            - type: "null"
+        window:
+          oneOf:
+            - $ref: "#/components/schemas/SignalWindow"
+            - type: "null"
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
         valid:
@@ -2111,28 +2119,51 @@ components:
           oneOf:
             - $ref: "#/components/schemas/BacktestSignal"
             - type: "null"
-          description: The entry signals of a signal and the price moves after them; null for a trading strategy, whose signal has no trades.
+          description: The entry signals of a signal judged by a target and a stop; null for a trading strategy.
     BacktestSignal:
       type: object
       additionalProperties: false
-      required: [occurrences, windows]
+      required: [window, target_ratio, occurrences, evaluated, signals, all]
+      description: |
+        Judges each signal candle's close, and every evaluated candle's
+        alike, by a stop and a target over the window candles after it. The
+        stop lies the usual price move over the window away against the
+        expected move: the sample standard deviation of the 100 one-candle
+        returns up to the candle times the square root of the window. The
+        target lies target_ratio stops away in the expected direction; a
+        sideways signal has a target on both sides and no stop. Outcomes may
+        read stored candles after the evaluated period.
       properties:
+        window:
+          type: integer
+          minimum: 1
+          description: Candles after the signal candle that are judged.
+        target_ratio:
+          type: integer
+          minimum: 1
+          description: Target distance in stops.
         occurrences:
           type: array
           description: Entry signals, oldest first.
           items: { $ref: "#/components/schemas/BacktestSignalOccurrence" }
-        windows:
-          type: array
-          description: |
-            The moves over 3, 6, 12, and 24 candles after the close of each
-            signal candle beside those after every evaluated candle. Moves may
-            read stored candles after the evaluated period; a candle without
-            enough later stored candles is left out of a window.
-          items: { $ref: "#/components/schemas/BacktestSignalWindow" }
+        evaluated:
+          type: integer
+          minimum: 0
+          description: Entry signals with an evaluation.
+        signals:
+          $ref: "#/components/schemas/BacktestSignalStats"
+          description: The counted entry signals, each at least a window after the previous counted one.
+        all:
+          $ref: "#/components/schemas/BacktestSignalStats"
+          description: Every evaluated candle with an evaluation.
     BacktestSignalOccurrence:
       type: object
       additionalProperties: false
-      required: [time, close, values, changes]
+      required: [time, close, values, counted, stop, target, move, success]
+      description: |
+        An entry signal. counted, stop, target, move, and success are null
+        together when the stored history lacks the 100 earlier returns or the
+        window after the signal, without gaps.
       properties:
         time:
           type: string
@@ -2142,58 +2173,43 @@ components:
         values:
           $ref: "#/components/schemas/BacktestValues"
           description: What the entry rule read at the signal.
-        changes:
-          type: array
-          description: Changes from the close of the signal candle to the close 3, 6, 12, and 24 candles later, in the order of the windows.
-          items: { $ref: "#/components/schemas/BacktestSignalChange" }
-    BacktestSignalChange:
-      type: object
-      additionalProperties: false
-      required: [candles, change]
-      properties:
-        candles:
-          type: integer
-          minimum: 1
-          description: Candles after the signal candle.
-        change:
+        counted:
+          type: [boolean, "null"]
+          description: Whether the statistics count the signal; a signal within a window after the previous counted one is a repeat.
+        stop:
           type: [number, "null"]
           format: double
-          description: The change of the close; null when the stored history ends before that candle.
-    BacktestSignalWindow:
-      type: object
-      additionalProperties: false
-      required: [candles, signals, all]
-      properties:
-        candles:
-          type: integer
-          minimum: 1
-          description: Candles after the signal candle the moves span.
-        signals:
-          $ref: "#/components/schemas/BacktestSignalStats"
-          description: Moves after the signal candles.
-        all:
-          $ref: "#/components/schemas/BacktestSignalStats"
-          description: Moves after every evaluated candle.
+          description: Stop distance from the close; null for sideways.
+        target:
+          type: [number, "null"]
+          format: double
+          description: Target distance from the close, on both sides for sideways.
+        move:
+          type: [number, "null"]
+          format: double
+          description: |
+            Largest move from the close in the expected direction, also after
+            the target, until the stop is reached or the window ends; for
+            sideways the largest move in either direction.
+        success:
+          type: [boolean, "null"]
+          description: The target was reached before the stop; for sideways, neither target was touched.
     BacktestSignalStats:
       type: object
       additionalProperties: false
-      required: [count, rise, fall, range, hits]
-      description: |
-        Medians of the moves from a candle's close: the rise to the highest
-        high and the fall to the lowest low over the window, and the range
-        between them. Hits is the share of moves the signal expected: a rise
-        above the fall for long, a fall deeper than the rise for short, and,
-        for sideways, a range below the median range after every evaluated
-        candle. All are null without moves.
+      required: [count, successes, median_move]
       properties:
         count:
           type: integer
           minimum: 0
-          description: Moves measured.
-        rise: { type: [number, "null"], format: double }
-        fall: { type: [number, "null"], format: double }
-        range: { type: [number, "null"], format: double }
-        hits: { type: [number, "null"], format: double }
+          description: Candles judged.
+        successes:
+          type: integer
+          minimum: 0
+        median_move:
+          type: [number, "null"]
+          format: double
+          description: Median move to target over every judged candle, successful or not; null without candles.
     BacktestSymbolName:
       type: string
       minLength: 1
@@ -2433,7 +2449,7 @@ components:
     StrategyUpdate:
       type: object
       additionalProperties: false
-      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message]
+      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         signal: { $ref: "#/components/schemas/StrategySignal" }
@@ -2444,6 +2460,14 @@ components:
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
         min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
+        target_ratio:
+          oneOf:
+            - $ref: "#/components/schemas/SignalTargetRatio"
+            - type: "null"
+        window:
+          oneOf:
+            - $ref: "#/components/schemas/SignalWindow"
+            - type: "null"
         expression:
           type: string
           minLength: 1
@@ -2461,7 +2485,7 @@ components:
     StrategyInput:
       type: object
       additionalProperties: false
-      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, message, enabled]
+      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         signal: { $ref: "#/components/schemas/StrategySignal" }
@@ -2472,6 +2496,14 @@ components:
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
         min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
+        target_ratio:
+          oneOf:
+            - $ref: "#/components/schemas/SignalTargetRatio"
+            - type: "null"
+        window:
+          oneOf:
+            - $ref: "#/components/schemas/SignalWindow"
+            - type: "null"
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
     StrategySignal:
@@ -2489,6 +2521,21 @@ components:
         expects after its entry signals: up, down, or sideways. A short
         strategy always has a take profit and a stop loss. Fixed at creation:
         an update that changes it is refused.
+    SignalTargetRatio:
+      type: integer
+      enum: [2, 3, 4, 5]
+      description: |
+        A signal's target distance in stops, which its backtest judges each
+        signal by: the stop lies the usual price move over the window against
+        the expected move, and the target this many stops away in its
+        direction. Required for a signal, null for a trading strategy.
+    SignalWindow:
+      type: integer
+      enum: [3, 6, 12, 24]
+      description: |
+        The candles of its interval after each signal over which a signal's
+        backtest judges it. Required for a signal, null for a trading
+        strategy.
     StrategyMarketCapBound:
       type: [number, "null"]
       format: double

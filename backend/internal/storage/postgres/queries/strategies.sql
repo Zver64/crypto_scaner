@@ -1,24 +1,27 @@
 -- name: ListStrategies :many
 SELECT id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-       min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending, revision
+       min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id;
 
 -- name: InsertStrategy :one
 INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-                            min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending)
+                            min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
 VALUES (@name, @signal, @direction, @expression, @exit_expression, @take_profit_expression, @stop_loss_expression,
-        sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), @message, @enabled, @enabled)
+        sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), sqlc.narg(target_ratio), sqlc.narg(window_candles),
+        @message, @enabled, @enabled)
 RETURNING id;
 
 -- name: UpdateStrategy :one
 -- A change of how the strategy trades starts a new revision; a market cap
--- range change only limits later buys and signals. The kind and the direction never
+-- range change only limits later buys and signals, and a target ratio or window
+-- change only how backtests judge a signal. The kind and the direction never
 -- change.
 UPDATE app.strategies
 SET name = @name, expression = @expression, exit_expression = @exit_expression,
     take_profit_expression = @take_profit_expression, stop_loss_expression = @stop_loss_expression,
     min_market_cap_usd = sqlc.narg(min_market_cap_usd), max_market_cap_usd = sqlc.narg(max_market_cap_usd),
+    target_ratio = sqlc.narg(target_ratio), window_candles = sqlc.narg(window_candles),
     message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
     revision = revision + (expression IS DISTINCT FROM @expression

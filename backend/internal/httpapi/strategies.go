@@ -80,8 +80,9 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 	entry, err := api.strategies.Create(ctx, strategy.Strategy{
 		Name: body.Name, Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
-		MarketCap: strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
-		Message:   body.Message, Enabled: body.Enabled,
+		MarketCap:   strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
+		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
+		Message: body.Message, Enabled: body.Enabled,
 	})
 	switch {
 	case err == nil:
@@ -100,8 +101,9 @@ func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyReques
 	entry, err := api.strategies.Update(ctx, strategy.Strategy{
 		ID: request.StrategyId, Name: body.Name, Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
-		MarketCap: strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
-		Message:   body.Message,
+		MarketCap:   strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
+		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
+		Message: body.Message,
 	})
 	switch {
 	case err == nil:
@@ -185,23 +187,38 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	if report := backtest.Signal; report != nil {
 		occurrences := make([]BacktestSignalOccurrence, len(report.Occurrences))
 		for i, occurrence := range report.Occurrences {
-			changes := make([]BacktestSignalChange, len(occurrence.Changes))
-			for j, change := range occurrence.Changes {
-				changes[j] = BacktestSignalChange{Candles: strategy.SignalWindows[j], Change: change}
+			occurrences[i] = BacktestSignalOccurrence{Time: occurrence.Time, Close: occurrence.Close, Values: backtestValues(occurrence.Values)}
+			if evaluation := occurrence.Evaluation; evaluation != nil {
+				occurrences[i].Counted, occurrences[i].Success = &evaluation.Counted, &evaluation.Success
+				occurrences[i].Stop, occurrences[i].Target, occurrences[i].Move = evaluation.Stop, &evaluation.Target, &evaluation.Move
 			}
-			occurrences[i] = BacktestSignalOccurrence{Time: occurrence.Time, Close: occurrence.Close, Values: backtestValues(occurrence.Values), Changes: changes}
 		}
-		windows := make([]BacktestSignalWindow, len(report.Windows))
-		for i, window := range report.Windows {
-			windows[i] = BacktestSignalWindow{Candles: window.Candles, Signals: signalStatsDTO(window.Signals), All: signalStatsDTO(window.All)}
+		dto.Signal = &BacktestSignal{
+			Window: report.Window, TargetRatio: report.TargetRatio, Occurrences: occurrences, Evaluated: report.Evaluated,
+			Signals: signalStatsDTO(report.Signals), All: signalStatsDTO(report.All),
 		}
-		dto.Signal = &BacktestSignal{Occurrences: occurrences, Windows: windows}
 	}
 	return BacktestStrategy200JSONResponse(dto), nil
 }
 
 func signalStatsDTO(stats strategy.SignalStats) BacktestSignalStats {
-	return BacktestSignalStats{Count: stats.Count, Rise: stats.Rise, Fall: stats.Fall, Range: stats.Range, Hits: stats.Hits}
+	return BacktestSignalStats{Count: stats.Count, Successes: stats.Successes, MedianMove: stats.MedianMove}
+}
+
+// fromNullable reads a nullable enum of the contract as an int, 0 for null.
+func fromNullable[T ~int](value *T) int {
+	if value == nil {
+		return 0
+	}
+	return int(*value)
+}
+
+// toNullable writes an int as a nullable enum of the contract, null for 0.
+func toNullable[T ~int](value int) *T {
+	if value == 0 {
+		return nil
+	}
+	return new(T(value))
 }
 
 func backtestTradeDTO(trade strategy.Trade) BacktestTrade {
@@ -275,6 +292,7 @@ func (api *api) strategyDTO(entry strategy.Entry) Strategy {
 		Id: entry.ID, Name: entry.Name, Signal: StrategySignal(entry.Signal), Direction: Direction(entry.Direction), Expression: entry.Expression, ExitExpression: entry.ExitExpression,
 		TakeProfitExpression: entry.TakeProfitExpression, StopLossExpression: entry.StopLossExpression,
 		MinMarketCapUsd: entry.MarketCap.MinUSD, MaxMarketCapUsd: entry.MarketCap.MaxUSD,
+		TargetRatio: toNullable[SignalTargetRatio](entry.TargetRatio), Window: toNullable[SignalWindow](entry.Window),
 		Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,
 		MissingIndicators: missingIndicatorDTOs(api.strategies.Unconfigured(entry)),
 	}

@@ -17,15 +17,44 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { BacktestSignalChange } from './backtestSignalChange.ts';
 import type { BacktestValues } from './backtestValues.ts';
 
+/**
+ * An entry signal. counted, stop, target, move, and success are null
+ * together when the stored history lacks the 100 earlier returns or the
+ * window after the signal, without gaps.
+ */
 export interface BacktestSignalOccurrence {
   /** Open time of the candle whose close signaled. */
   time: string;
   close: number;
   /** What the entry rule read at the signal. */
   values: BacktestValues;
-  /** Changes from the close of the signal candle to the close 3, 6, 12, and 24 candles later, in the order of the windows. */
-  changes: BacktestSignalChange[];
+  /**
+     * Whether the statistics count the signal; a signal within a window after the previous counted one is a repeat.
+     * @nullable
+     */
+  counted: boolean | null;
+  /**
+     * Stop distance from the close; null for sideways.
+     * @nullable
+     */
+  stop: number | null;
+  /**
+     * Target distance from the close, on both sides for sideways.
+     * @nullable
+     */
+  target: number | null;
+  /**
+     * Largest move from the close in the expected direction, also after
+     * the target, until the stop is reached or the window ends; for
+     * sideways the largest move in either direction.
+     * @nullable
+     */
+  move: number | null;
+  /**
+     * The target was reached before the stop; for sideways, neither target was touched.
+     * @nullable
+     */
+  success: boolean | null;
 }

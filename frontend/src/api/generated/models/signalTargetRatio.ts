@@ -17,16 +17,19 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { BacktestSignalStats } from './backtestSignalStats.ts';
 
-export interface BacktestSignalWindow {
-  /**
-     * Candles after the signal candle the moves span.
-     * @minimum 1
-     */
-  candles: number;
-  /** Moves after the signal candles. */
-  signals: BacktestSignalStats;
-  /** Moves after every evaluated candle. */
-  all: BacktestSignalStats;
-}
+/**
+ * A signal's target distance in stops, which its backtest judges each
+ * signal by: the stop lies the usual price move over the window against
+ * the expected move, and the target this many stops away in its
+ * direction. Required for a signal, null for a trading strategy.
+ */
+export type SignalTargetRatio = typeof SignalTargetRatio[keyof typeof SignalTargetRatio];
+
+
+export const SignalTargetRatio = {
+  NUMBER_2: 2,
+  NUMBER_3: 3,
+  NUMBER_4: 4,
+  NUMBER_5: 5,
+} as const;

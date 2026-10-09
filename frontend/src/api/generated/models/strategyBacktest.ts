@@ -52,6 +52,6 @@ export interface StrategyBacktest {
   /** Equity after each trade, the open one included, compounded from 1, oldest first. */
   equity: BacktestEquityPoint[];
   baselines: BacktestBaselines;
-  /** The entry signals of a signal and the price moves after them; null for a trading strategy, whose signal has no trades. */
+  /** The entry signals of a signal judged by a target and a stop; null for a trading strategy. */
   signal: BacktestSignal | null;
 }

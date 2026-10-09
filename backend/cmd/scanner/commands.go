@@ -156,7 +156,7 @@ func (c *cli) strategiesCommand() *cobra.Command {
 }
 
 func (c *cli) signalsCommand() *cobra.Command {
-	command := c.listCommand(signalsKind, "Saved signals: ID, state, name with any problem and message, entry, expected move, market cap")
+	command := c.listCommand(signalsKind, "Saved signals: ID, state, name with any problem and message, entry, expected move, window, target, market cap")
 	command.AddCommand(c.createSignalCommand(), c.updateSignalCommand(), c.deleteCommand(signalsKind))
 	return command
 }

@@ -386,6 +386,54 @@ func (e ScannerIndicatorPlacement) Valid() bool {
 	}
 }
 
+// Defines values for SignalTargetRatio.
+const (
+	SignalTargetRatioN2 SignalTargetRatio = 2
+	SignalTargetRatioN3 SignalTargetRatio = 3
+	SignalTargetRatioN4 SignalTargetRatio = 4
+	SignalTargetRatioN5 SignalTargetRatio = 5
+)
+
+// Valid indicates whether the value is a known member of the SignalTargetRatio enum.
+func (e SignalTargetRatio) Valid() bool {
+	switch e {
+	case SignalTargetRatioN2:
+		return true
+	case SignalTargetRatioN3:
+		return true
+	case SignalTargetRatioN4:
+		return true
+	case SignalTargetRatioN5:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SignalWindow.
+const (
+	SignalWindowN12 SignalWindow = 12
+	SignalWindowN24 SignalWindow = 24
+	SignalWindowN3  SignalWindow = 3
+	SignalWindowN6  SignalWindow = 6
+)
+
+// Valid indicates whether the value is a known member of the SignalWindow enum.
+func (e SignalWindow) Valid() bool {
+	switch e {
+	case SignalWindowN12:
+		return true
+	case SignalWindowN24:
+		return true
+	case SignalWindowN3:
+		return true
+	case SignalWindowN6:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StrategyValidationInputKind.
 const (
 	StrategyValidationInputKindEntry StrategyValidationInputKind = "entry"
@@ -532,32 +580,56 @@ type BacktestFill struct {
 	Values BacktestValues `json:"values"`
 }
 
-// BacktestSignal defines model for BacktestSignal.
+// BacktestSignal Judges each signal candle's close, and every evaluated candle's
+// alike, by a stop and a target over the window candles after it. The
+// stop lies the usual price move over the window away against the
+// expected move: the sample standard deviation of the 100 one-candle
+// returns up to the candle times the square root of the window. The
+// target lies target_ratio stops away in the expected direction; a
+// sideways signal has a target on both sides and no stop. Outcomes may
+// read stored candles after the evaluated period.
 type BacktestSignal struct {
+	// All Every evaluated candle with an evaluation.
+	All BacktestSignalStats `json:"all"`
+
+	// Evaluated Entry signals with an evaluation.
+	Evaluated int `json:"evaluated"`
+
 	// Occurrences Entry signals, oldest first.
 	Occurrences []BacktestSignalOccurrence `json:"occurrences"`
 
-	// Windows The moves over 3, 6, 12, and 24 candles after the close of each
-	// signal candle beside those after every evaluated candle. Moves may
-	// read stored candles after the evaluated period; a candle without
-	// enough later stored candles is left out of a window.
-	Windows []BacktestSignalWindow `json:"windows"`
+	// Signals The counted entry signals, each at least a window after the previous counted one.
+	Signals BacktestSignalStats `json:"signals"`
+
+	// TargetRatio Target distance in stops.
+	TargetRatio int `json:"target_ratio"`
+
+	// Window Candles after the signal candle that are judged.
+	Window int `json:"window"`
 }
 
-// BacktestSignalChange defines model for BacktestSignalChange.
-type BacktestSignalChange struct {
-	// Candles Candles after the signal candle.
-	Candles int `json:"candles"`
-
-	// Change The change of the close; null when the stored history ends before that candle.
-	Change *float64 `json:"change"`
-}
-
-// BacktestSignalOccurrence defines model for BacktestSignalOccurrence.
+// BacktestSignalOccurrence An entry signal. counted, stop, target, move, and success are null
+// together when the stored history lacks the 100 earlier returns or the
+// window after the signal, without gaps.
 type BacktestSignalOccurrence struct {
-	// Changes Changes from the close of the signal candle to the close 3, 6, 12, and 24 candles later, in the order of the windows.
-	Changes []BacktestSignalChange `json:"changes"`
-	Close   float64                `json:"close"`
+	Close float64 `json:"close"`
+
+	// Counted Whether the statistics count the signal; a signal within a window after the previous counted one is a repeat.
+	Counted *bool `json:"counted"`
+
+	// Move Largest move from the close in the expected direction, also after
+	// the target, until the stop is reached or the window ends; for
+	// sideways the largest move in either direction.
+	Move *float64 `json:"move"`
+
+	// Stop Stop distance from the close; null for sideways.
+	Stop *float64 `json:"stop"`
+
+	// Success The target was reached before the stop; for sideways, neither target was touched.
+	Success *bool `json:"success"`
+
+	// Target Target distance from the close, on both sides for sideways.
+	Target *float64 `json:"target"`
 
 	// Time Open time of the candle whose close signaled.
 	Time time.Time `json:"time"`
@@ -566,31 +638,14 @@ type BacktestSignalOccurrence struct {
 	Values BacktestValues `json:"values"`
 }
 
-// BacktestSignalStats Medians of the moves from a candle's close: the rise to the highest
-// high and the fall to the lowest low over the window, and the range
-// between them. Hits is the share of moves the signal expected: a rise
-// above the fall for long, a fall deeper than the rise for short, and,
-// for sideways, a range below the median range after every evaluated
-// candle. All are null without moves.
+// BacktestSignalStats defines model for BacktestSignalStats.
 type BacktestSignalStats struct {
-	// Count Moves measured.
-	Count int      `json:"count"`
-	Fall  *float64 `json:"fall"`
-	Hits  *float64 `json:"hits"`
-	Range *float64 `json:"range"`
-	Rise  *float64 `json:"rise"`
-}
+	// Count Candles judged.
+	Count int `json:"count"`
 
-// BacktestSignalWindow defines model for BacktestSignalWindow.
-type BacktestSignalWindow struct {
-	// All Moves after every evaluated candle.
-	All BacktestSignalStats `json:"all"`
-
-	// Candles Candles after the signal candle the moves span.
-	Candles int `json:"candles"`
-
-	// Signals Moves after the signal candles.
-	Signals BacktestSignalStats `json:"signals"`
+	// MedianMove Median move to target over every judged candle, successful or not; null without candles.
+	MedianMove *float64 `json:"median_move"`
+	Successes  int      `json:"successes"`
 }
 
 // BacktestSummary Results of the strategy's trades.
@@ -1149,6 +1204,17 @@ type Session struct {
 	Token string `json:"token"`
 }
 
+// SignalTargetRatio A signal's target distance in stops, which its backtest judges each
+// signal by: the stop lies the usual price move over the window against
+// the expected move, and the target this many stops away in its
+// direction. Required for a signal, null for a trading strategy.
+type SignalTargetRatio int
+
+// SignalWindow The candles of its interval after each signal over which a signal's
+// backtest judges it. Required for a signal, null for a trading
+// strategy.
+type SignalWindow int
+
 // Strategy defines model for Strategy.
 type Strategy struct {
 	// Direction How a strategy trades, long or short, or the price move a signal
@@ -1217,9 +1283,11 @@ type Strategy struct {
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
+	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
 
 	// Valid False when a stored rule no longer compiles; such a strategy is not evaluated.
-	Valid bool `json:"valid"`
+	Valid  bool          `json:"valid"`
+	Window *SignalWindow `json:"window"`
 }
 
 // StrategyBacktest Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
@@ -1243,7 +1311,7 @@ type StrategyBacktest struct {
 	From     *time.Time     `json:"from"`
 	Interval CandleInterval `json:"interval"`
 
-	// Signal The entry signals of a signal and the price moves after them; null for a trading strategy, whose signal has no trades.
+	// Signal The entry signals of a signal judged by a target and a stop; null for a trading strategy.
 	Signal *BacktestSignal `json:"signal"`
 
 	// SkippedAlerts Entry signals that bought nothing, since a strategy that exits held a trade, or the take profit or stop loss was not on its side of the close.
@@ -1328,6 +1396,8 @@ type StrategyInput struct {
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
+	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
+	Window               *SignalWindow                `json:"window"`
 }
 
 // StrategyList defines model for StrategyList.
@@ -1451,6 +1521,8 @@ type StrategyUpdate struct {
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
+	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
+	Window               *SignalWindow                `json:"window"`
 }
 
 // StrategyValidation defines model for StrategyValidation.

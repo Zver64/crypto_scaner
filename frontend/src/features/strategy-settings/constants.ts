@@ -1,4 +1,8 @@
-import { Direction } from "@/api/generated/models";
+import {
+	Direction,
+	SignalTargetRatio,
+	SignalWindow,
+} from "@/api/generated/models";
 import type { StrategyKind } from "@/features/strategy-settings/types";
 
 // Tokens of a strategy expression, for parenthesizeOperands.
@@ -28,6 +32,14 @@ export const directionLabels = {
 
 // The direction a new strategy or signal starts with.
 export const defaultDirection = Direction.long;
+
+// The target ratio and window a new signal starts with.
+export const defaultSignalTargetRatio = SignalTargetRatio.NUMBER_2;
+export const defaultSignalWindow = SignalWindow.NUMBER_6;
+
+// The target ratios and windows a signal may have.
+export const signalTargetRatios = Object.values(SignalTargetRatio);
+export const signalWindows = Object.values(SignalWindow);
 
 // How each kind is named in its page and form.
 export const kindNouns = {

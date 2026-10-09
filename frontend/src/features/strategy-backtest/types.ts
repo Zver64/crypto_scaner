@@ -14,14 +14,12 @@ export interface SummaryRow {
 	strategy: number | null;
 }
 
-// The moves of one signal window, after the signals or after every candle.
-export interface SignalWindowRow {
-	// The window's candle count, shown on its first row only.
-	candles: number | undefined;
-	key: string;
+// One row of a signal's backtest summary: the counted signals or every
+// candle.
+export interface SignalSummaryRow {
+	count: string;
+	key: "all" | "signals";
 	label: string;
-	// Whether the row measures the signals rather than every candle.
-	signals: boolean;
 	stats: BacktestSignalStats;
 }
 

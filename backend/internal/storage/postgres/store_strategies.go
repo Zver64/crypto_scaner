@@ -26,8 +26,9 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 		items[i] = strategy.Strategy{
 			ID: row.ID, Name: row.Name, Signal: row.Signal, Direction: strategy.Direction(row.Direction), Expression: row.Expression, ExitExpression: row.ExitExpression,
 			TakeProfitExpression: row.TakeProfitExpression, StopLossExpression: row.StopLossExpression,
-			MarketCap: strategy.MarketCapRange{MinUSD: float8Pointer(row.MinMarketCapUsd), MaxUSD: float8Pointer(row.MaxMarketCapUsd)},
-			Message:   row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
+			MarketCap:   strategy.MarketCapRange{MinUSD: float8Pointer(row.MinMarketCapUsd), MaxUSD: float8Pointer(row.MaxMarketCapUsd)},
+			TargetRatio: int(row.TargetRatio.Int16), Window: int(row.WindowCandles.Int16),
+			Message: row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
 		}
 	}
 	return items, nil
@@ -44,6 +45,7 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 		Name: item.Name, Signal: item.Signal, Direction: string(item.Direction), Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
 		MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
+		TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
 		Message: item.Message, Enabled: item.Enabled,
 	})
 	if err != nil {
@@ -72,6 +74,7 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
 		MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
+		TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
 		Message: item.Message, Baseline: baseline,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -90,6 +93,12 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 		return 0, err
 	}
 	return revision, tx.Commit(ctx)
+}
+
+// optionalInt2 stores 0, which a trading strategy has for the settings of
+// signals, as NULL.
+func optionalInt2(value int) pgtype.Int2 {
+	return pgtype.Int2{Int16: int16(value), Valid: value != 0}
 }
 
 // replaceStrategySymbols records the instruments a strategy reads through

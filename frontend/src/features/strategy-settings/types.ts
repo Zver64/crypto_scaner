@@ -1,5 +1,9 @@
 import type { RuleGroupType, RuleType } from "react-querybuilder";
-import type { Direction } from "@/api/generated/models";
+import type {
+	Direction,
+	SignalTargetRatio,
+	SignalWindow,
+} from "@/api/generated/models";
 
 // Comparison operators of the strategy language. Range operators take two
 // numbers; crosses compare the latest and the previous closed candle.
@@ -39,6 +43,10 @@ export interface StrategyDraft {
 	// The market cap bounds in millions of USD; empty without a bound.
 	minMarketCap: number | "";
 	maxMarketCap: number | "";
+	// How backtests judge a signal: the target distance in stops and the
+	// candles after each signal; a trading strategy ignores them.
+	targetRatio: SignalTargetRatio;
+	window: SignalWindow;
 	// Whether the builder dropped parts of a stored rule it cannot show,
 	// which saving would remove.
 	incomplete: boolean;

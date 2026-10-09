@@ -68,7 +68,7 @@ func renderStrategies(w io.Writer, k kind, strategies []apiclient.Strategy) {
 func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy, width int) {
 	header := table.Row{"ID", "State", "Name", "Direction", "Entry", "Exit", "Buys", "Market cap"}
 	if k.signals {
-		header = table.Row{"ID", "State", "Name", "Entry", "Signal", "Market cap"}
+		header = table.Row{"ID", "State", "Name", "Entry", "Signal", "Window", "Target", "Market cap"}
 	}
 	var rows []table.Row
 	widths := make([]int, len(header))
@@ -101,7 +101,7 @@ func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy,
 		expression := strings.Join(strings.Fields(strategy.Expression), " ")
 		row := table.Row{strategy.Id, state, name, string(strategy.Direction), expression, exits(strategy), buys(strategy), marketCapRange(strategy)}
 		if k.signals {
-			row = table.Row{strategy.Id, state, name, expression, string(strategy.Direction), marketCapRange(strategy)}
+			row = table.Row{strategy.Id, state, name, expression, string(strategy.Direction), signalSetting(strategy.Window, "candles"), signalSetting(strategy.TargetRatio, "stops"), marketCapRange(strategy)}
 		}
 		rows = append(rows, row)
 		measure(row)
@@ -215,6 +215,14 @@ func sumWidths(widths []int) int {
 	return total
 }
 
+// signalSetting writes a setting of a signal with its unit, "-" without it.
+func signalSetting[T ~int](value *T, unit string) string {
+	if value == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d %s", *value, unit)
+}
+
 // exits lists the exit rule, take profit, and stop loss of a strategy, one
 // per line.
 func exits(strategy apiclient.Strategy) string {
@@ -283,8 +291,8 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period boo
 	renderTrades(w, backtest.Interval, backtest.Trades, words)
 }
 
-// renderSignal prints the backtest of a signal: the moves after its signals
-// beside those after every candle, then its newest maxTradeRows signals.
+// renderSignal prints the backtest of a signal: how often its counted
+// signals succeeded beside every candle, then its newest maxTradeRows signals.
 func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apiclient.BacktestSignal) {
 	signals := "signals"
 	if len(signal.Occurrences) == 1 {
@@ -295,51 +303,42 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 		{"Coin", backtest.Symbol},
 		{"Period", fmt.Sprintf("%s → %s (%s candles)", day(*backtest.From), day(*backtest.To), backtest.Interval)},
 		{"Signal", fmt.Sprintf("%s, %d %s", backtest.Direction, len(signal.Occurrences), signals)},
+		{"Window", fmt.Sprintf("%d candles", signal.Window)},
+		{"Target", fmt.Sprintf("%d stops", signal.TargetRatio)},
 	})
 	fmt.Fprintln(w, t.Render())
 	if len(signal.Occurrences) == 0 {
 		fmt.Fprintln(w, "No signals: the entry did not turn true on this coin in the stored history.")
 		return
 	}
-	fmt.Fprintln(w, "Moves from the signal candle's close over the next candles, medians: rise to the highest high, fall to the lowest low, and the range between them. Hits: "+signalHits[backtest.Direction]+". All: the same after every evaluated candle.")
+	sideways := backtest.Direction == apiclient.Sideways
+	fmt.Fprintln(w, signalExplanation(sideways, signal.Window, signal.TargetRatio))
 	t = newTable()
-	t.AppendHeader(table.Row{"Candles", "After", "Count", "Rise %", "Fall %", "Range %", "Hits %"})
-	t.SetColumnConfigs([]table.ColumnConfig{{Number: 3, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 6, Align: text.AlignRight}, {Number: 7, Align: text.AlignRight}})
-	for index, window := range signal.Windows {
-		if index > 0 {
-			t.AppendSeparator()
-		}
-		for _, row := range []struct {
-			label string
-			stats apiclient.BacktestSignalStats
-		}{{"signals", window.Signals}, {"all", window.All}} {
-			candles := ""
-			if row.label == "signals" {
-				candles = strconv.Itoa(window.Candles)
-			}
-			t.AppendRow(table.Row{candles, row.label, row.stats.Count, percent(row.stats.Rise), percent(row.stats.Fall), percent(row.stats.Range), share(row.stats.Hits)})
-		}
-	}
+	t.AppendHeader(table.Row{"", "Count (all / counted)", "Median move to target %", "Successful"})
+	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}})
+	t.AppendRows([]table.Row{
+		{"Signals", fmt.Sprintf("%d / %d", signal.Evaluated, signal.Signals.Count), share(signal.Signals.MedianMove), successful(signal.Signals)},
+		{"All candles", signal.All.Count, share(signal.All.MedianMove), successful(signal.All)},
+	})
 	fmt.Fprintln(w, t.Render())
 	layout := candleTimeLayout(backtest.Interval)
-	fmt.Fprintln(w, "Signals, newest first, with the change of the close N candles later; --json adds the values the entry read.")
+	fmt.Fprintln(w, "Signals, newest first; --json adds the values the entry read.")
 	t = newTable()
 	t.SetAutoIndex(true)
-	header := table.Row{"Candle", "Close"}
-	configs := []table.ColumnConfig{{Number: 2, Align: text.AlignRight}}
-	for index, window := range signal.Windows {
-		header = append(header, fmt.Sprintf("+%d %%", window.Candles))
-		configs = append(configs, table.ColumnConfig{Number: 3 + index, Align: text.AlignRight})
+	if sideways {
+		t.AppendHeader(table.Row{"Candle", "Close", "Counted", "Targets ±%", "Move to target %", "Success"})
+		t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}})
+	} else {
+		t.AppendHeader(table.Row{"Candle", "Close", "Counted", "Stop %", "Target %", "Move to target %", "Success"})
+		t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 6, Align: text.AlignRight}})
 	}
-	t.AppendHeader(header)
-	t.SetColumnConfigs(configs)
 	occurrences := signal.Occurrences
 	for _, occurrence := range slices.Backward(occurrences[max(0, len(occurrences)-maxTradeRows):]) {
-		row := table.Row{occurrence.Time.UTC().Format(layout), price(occurrence.Close)}
-		for _, change := range occurrence.Changes {
-			row = append(row, percent(change.Change))
+		row := table.Row{occurrence.Time.UTC().Format(layout), price(occurrence.Close), yesNo(occurrence.Counted)}
+		if !sideways {
+			row = append(row, evaluated(occurrence.Stop))
 		}
-		t.AppendRow(row)
+		t.AppendRow(append(row, evaluated(occurrence.Target), evaluated(occurrence.Move), yesNo(occurrence.Success)))
 	}
 	fmt.Fprintln(w, t.Render())
 	if more := len(occurrences) - maxTradeRows; more > 0 {
@@ -347,11 +346,42 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 	}
 }
 
-// signalHits tells which moves a signal of each direction expected.
-var signalHits = map[apiclient.Direction]string{
-	apiclient.Long:     "rise above the fall",
-	apiclient.Short:    "fall deeper than the rise",
-	apiclient.Sideways: "range below the median range of all candles",
+// signalExplanation tells how a signal's backtest judges it, like the Mini
+// App.
+func signalExplanation(sideways bool, window, ratio int) string {
+	if sideways {
+		return fmt.Sprintf("Targets: %d times the usual price move over %d candles (from the last 100 candles) on both sides. Success: the price touches neither target. Move to target: how far the price moved away from the signal price in either direction. The Signals median covers every counted signal, successful or not.", ratio, window)
+	}
+	return fmt.Sprintf("Stop: the usual price move over %d candles (from the last 100 candles) against the signal; target: %d times farther in the signal's direction. Success: the target is reached before the stop. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.", window, ratio)
+}
+
+// successful writes the successes of stats as k/N (x%).
+func successful(stats apiclient.BacktestSignalStats) string {
+	if stats.Count == 0 {
+		return "0/0"
+	}
+	rate := float64(stats.Successes) / float64(stats.Count)
+	return fmt.Sprintf("%d/%d (%s%%)", stats.Successes, stats.Count, share(&rate))
+}
+
+// evaluated formats a distance of an evaluated signal as a percentage, empty
+// without an evaluation.
+func evaluated(value *float64) string {
+	if value == nil {
+		return ""
+	}
+	return share(value)
+}
+
+// yesNo writes a flag of an evaluated signal, empty without an evaluation.
+func yesNo(value *bool) string {
+	switch {
+	case value == nil:
+		return ""
+	case *value:
+		return "yes"
+	}
+	return "no"
 }
 
 // tradeWording names what a strategy does when it opens and closes a trade.

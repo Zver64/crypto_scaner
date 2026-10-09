@@ -88,9 +88,10 @@ func (q *Queries) DeleteStrategySymbols(ctx context.Context, strategyID int64) e
 
 const insertStrategy = `-- name: InsertStrategy :one
 INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-                            min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending)
+                            min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
 VALUES ($1, $2, $3, $4, $5, $6, $7,
-        $8, $9, $10, $11, $11)
+        $8, $9, $10, $11,
+        $12, $13, $13)
 RETURNING id
 `
 
@@ -104,6 +105,8 @@ type InsertStrategyParams struct {
 	StopLossExpression   string
 	MinMarketCapUsd      pgtype.Float8
 	MaxMarketCapUsd      pgtype.Float8
+	TargetRatio          pgtype.Int2
+	WindowCandles        pgtype.Int2
 	Message              string
 	Enabled              bool
 }
@@ -119,6 +122,8 @@ func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) 
 		arg.StopLossExpression,
 		arg.MinMarketCapUsd,
 		arg.MaxMarketCapUsd,
+		arg.TargetRatio,
+		arg.WindowCandles,
 		arg.Message,
 		arg.Enabled,
 	)
@@ -188,7 +193,7 @@ func (q *Queries) InsertStrategySymbols(ctx context.Context, arg InsertStrategyS
 
 const listStrategies = `-- name: ListStrategies :many
 SELECT id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-       min_market_cap_usd, max_market_cap_usd, message, enabled, baseline_pending, revision
+       min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending, revision
 FROM app.strategies
 ORDER BY id
 `
@@ -204,6 +209,8 @@ type ListStrategiesRow struct {
 	StopLossExpression   string
 	MinMarketCapUsd      pgtype.Float8
 	MaxMarketCapUsd      pgtype.Float8
+	TargetRatio          pgtype.Int2
+	WindowCandles        pgtype.Int2
 	Message              string
 	Enabled              bool
 	BaselinePending      bool
@@ -230,6 +237,8 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			&i.StopLossExpression,
 			&i.MinMarketCapUsd,
 			&i.MaxMarketCapUsd,
+			&i.TargetRatio,
+			&i.WindowCandles,
 			&i.Message,
 			&i.Enabled,
 			&i.BaselinePending,
@@ -589,13 +598,14 @@ UPDATE app.strategies
 SET name = $1, expression = $2, exit_expression = $3,
     take_profit_expression = $4, stop_loss_expression = $5,
     min_market_cap_usd = $6, max_market_cap_usd = $7,
-    message = $8, updated_at = now(),
-    baseline_pending = baseline_pending OR $9::BOOLEAN,
+    target_ratio = $8, window_candles = $9,
+    message = $10, updated_at = now(),
+    baseline_pending = baseline_pending OR $11::BOOLEAN,
     revision = revision + (expression IS DISTINCT FROM $2
         OR exit_expression IS DISTINCT FROM $3
         OR take_profit_expression IS DISTINCT FROM $4
         OR stop_loss_expression IS DISTINCT FROM $5)::INTEGER
-WHERE id = $10
+WHERE id = $12
 RETURNING revision
 `
 
@@ -607,13 +617,16 @@ type UpdateStrategyParams struct {
 	StopLossExpression   string
 	MinMarketCapUsd      pgtype.Float8
 	MaxMarketCapUsd      pgtype.Float8
+	TargetRatio          pgtype.Int2
+	WindowCandles        pgtype.Int2
 	Message              string
 	Baseline             bool
 	ID                   int64
 }
 
 // A change of how the strategy trades starts a new revision; a market cap
-// range change only limits later buys and signals. The kind and the direction never
+// range change only limits later buys and signals, and a target ratio or window
+// change only how backtests judge a signal. The kind and the direction never
 // change.
 func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, updateStrategy,
@@ -624,6 +637,8 @@ func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) 
 		arg.StopLossExpression,
 		arg.MinMarketCapUsd,
 		arg.MaxMarketCapUsd,
+		arg.TargetRatio,
+		arg.WindowCandles,
 		arg.Message,
 		arg.Baseline,
 		arg.ID,

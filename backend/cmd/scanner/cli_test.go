@@ -259,7 +259,7 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 			t.Fatalf("strategies create %v = %+v", test.args, got)
 		}
 		wants := map[string]string{
-			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":""}`,
+			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":"","target_ratio":null,"window":null}`,
 		}
 		if test.add {
 			wants["POST /api/v1/admin/scanner-indicator-batches"] = `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`

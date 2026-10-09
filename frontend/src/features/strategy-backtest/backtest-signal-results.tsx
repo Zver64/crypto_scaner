@@ -1,10 +1,12 @@
 import { Stack, Text } from "@mantine/core";
 import type { BacktestSignal, StrategyBacktest } from "@/api/generated/models";
 import { EmptyState } from "@/components/empty-state";
+import { BacktestSignalSummary } from "@/features/strategy-backtest/backtest-signal-summary";
 import { BacktestSignalTable } from "@/features/strategy-backtest/backtest-signal-table";
-import { BacktestSignalWindows } from "@/features/strategy-backtest/backtest-signal-windows";
-import { signalHitHints } from "@/features/strategy-backtest/constants";
-import { noCandlesMessage } from "@/features/strategy-backtest/utils";
+import {
+	noCandlesMessage,
+	signalExplanation,
+} from "@/features/strategy-backtest/utils";
 
 interface BacktestSignalResultsProps {
 	backtest: StrategyBacktest;
@@ -36,18 +38,17 @@ export function BacktestSignalResults({
 	}
 	return (
 		<Stack gap={gap}>
-			<BacktestSignalWindows windows={signal.windows} />
 			<Text c="dimmed" size="sm">
-				Median moves from the close of the signal candle over the next candles:
-				the rise to the highest high, the fall to the lowest low, and the range
-				between them. Hits are the share of moves with{" "}
-				{signalHitHints[backtest.direction]}; All candles shows the same after
-				every evaluated candle.
+				{signalExplanation(
+					backtest.direction,
+					signal.window,
+					signal.target_ratio,
+				)}
 			</Text>
+			<BacktestSignalSummary signal={signal} />
 			<BacktestSignalTable
 				direction={backtest.direction}
 				occurrences={signal.occurrences}
-				windows={signal.windows}
 			/>
 		</Stack>
 	);

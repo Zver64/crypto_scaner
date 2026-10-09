@@ -18,6 +18,8 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { Direction } from './direction.ts';
+import type { SignalTargetRatio } from './signalTargetRatio.ts';
+import type { SignalWindow } from './signalWindow.ts';
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
@@ -39,6 +41,8 @@ export interface StrategyUpdate {
   stop_loss_expression: StrategyStopLossExpression;
   min_market_cap_usd: StrategyMarketCapBound | null;
   max_market_cap_usd: StrategyMarketCapBound | null;
+  target_ratio: SignalTargetRatio | null;
+  window: SignalWindow | null;
   /**
      * CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
      * arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and

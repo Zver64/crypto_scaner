@@ -134,22 +134,26 @@ func TestGroupsRefuseTheOtherKind(t *testing.T) {
 	}
 }
 
-// A signal update keeps its fields, market cap range included, changing only
-// the flags given.
+// A signal update keeps its fields, market cap range and target ratio
+// included, changing only the flags given.
 func TestUpdateSignalPreservesUnspecifiedFields(t *testing.T) {
 	response := `{"id":6,"name":"Crash Soon","signal":true,"direction":"short","expression":"h_close > 1","message":"m","enabled":false,"valid":true}`
 	api, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies":   `{"items":[{"id":6,"name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","min_market_cap_usd":10000000,"max_market_cap_usd":2000000000,"message":"m","enabled":false,"valid":true}]}`,
+		"GET /api/v1/admin/strategies":   `{"items":[{"id":6,"name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","min_market_cap_usd":10000000,"max_market_cap_usd":2000000000,"target_ratio":3,"window":12,"message":"m","enabled":false,"valid":true}]}`,
 		"PUT /api/v1/admin/strategies/6": response,
 	})
-	got := runCLI(t, writeProfile(t, server.URL), "", "signals", "update", "6", "--name", "Crash Soon", "--max-market-cap", "1B", "--json")
+	got := runCLI(t, writeProfile(t, server.URL), "", "signals", "update", "6", "--name", "Crash Soon", "--max-market-cap", "1B", "--window", "24", "--json")
 	if got.code != 0 || got.stdout != response+"\n" {
 		t.Fatalf("update = %+v", got)
 	}
 	var body apiclient.StrategyUpdate
 	raw := api.bodies["PUT /api/v1/admin/strategies/6"]
 	minimum, maximum := 10e6, 1e9
-	want := apiclient.StrategyUpdate{Name: "Crash Soon", Signal: true, Direction: apiclient.Short, Expression: "h_close > 1", MinMarketCapUsd: &minimum, MaxMarketCapUsd: &maximum, Message: "m"}
+	ratio, window := apiclient.SignalTargetRatioN3, apiclient.SignalWindowN24
+	want := apiclient.StrategyUpdate{
+		Name: "Crash Soon", Signal: true, Direction: apiclient.Short, Expression: "h_close > 1", MinMarketCapUsd: &minimum, MaxMarketCapUsd: &maximum,
+		TargetRatio: &ratio, Window: &window, Message: "m",
+	}
 	if err := json.Unmarshal([]byte(raw), &body); err != nil || !reflect.DeepEqual(body, want) {
 		t.Fatalf("body = %s, want %+v", raw, want)
 	}

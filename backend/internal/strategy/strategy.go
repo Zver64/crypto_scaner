@@ -104,6 +104,11 @@ type Strategy struct {
 	// MarketCap limits the coins the running strategy buys or a running
 	// signal announces; backtests ignore it.
 	MarketCap MarketCapRange
+	// TargetRatio and Window, a signal's only, tell how backtests judge its
+	// signals: the target lies TargetRatio stops away, and both are watched
+	// over the Window candles after the signal. A trading strategy has 0 for
+	// both.
+	TargetRatio, Window int
 	// Message replaces the generated alert text when it is not empty.
 	Message string
 	Enabled bool
@@ -115,6 +120,13 @@ type Strategy struct {
 	// evaluated.
 	Revision int64
 }
+
+// SignalTargetRatios are the target distances, in stops, a signal may have.
+var SignalTargetRatios = []int{2, 3, 4, 5}
+
+// SignalWindows are the windows, in candles of its interval, a signal may
+// have.
+var SignalWindows = []int{3, 6, 12, 24}
 
 // MarketCapRange is a range of market caps in USD; a nil bound is open.
 type MarketCapRange struct {
@@ -721,6 +733,14 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 		if item.ExitExpression != "" || item.TakeProfitExpression != "" || item.StopLossExpression != "" {
 			return Entry{}, fmt.Errorf("%w: a signal has no exit rule, take profit, or stop loss", ErrInvalidArgument)
 		}
+		if !slices.Contains(SignalTargetRatios, item.TargetRatio) {
+			return Entry{}, fmt.Errorf("%w: a signal's target ratio must be 2, 3, 4, or 5", ErrInvalidArgument)
+		}
+		if !slices.Contains(SignalWindows, item.Window) {
+			return Entry{}, fmt.Errorf("%w: a signal's window must be 3, 6, 12, or 24 candles", ErrInvalidArgument)
+		}
+	case item.TargetRatio != 0 || item.Window != 0:
+		return Entry{}, fmt.Errorf("%w: only a signal has a target ratio and a window", ErrInvalidArgument)
 	case item.Direction == DirectionSideways:
 		return Entry{}, fmt.Errorf("%w: a strategy trades long or short; only a signal expects a sideways move", ErrInvalidArgument)
 	case item.Direction == DirectionShort && (item.TakeProfitExpression == "" || item.StopLossExpression == ""):

@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 
 	"crypto-scanner/internal/apiclient"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // kind tells the strategies command group from the signals one: both are
@@ -121,18 +123,82 @@ func (k kind) completeDirections() cobra.CompletionFunc {
 	return cobra.FixedCompletions(k.directions, cobra.ShellCompDirectiveNoFileComp)
 }
 
+// signalFlags are the --target-ratio and --window flags of signals, which
+// tell how backtests judge them.
+type signalFlags struct{ ratio, window int }
+
+var (
+	signalTargetRatios = []int{2, 3, 4, 5}
+	signalWindows      = []int{3, 6, 12, 24}
+)
+
+// add registers the flags; a create command defaults them to 2 stops and 6
+// candles, an update command preserves the current values when they are
+// omitted.
+func (f *signalFlags) add(command *cobra.Command, create bool) {
+	flags := command.Flags()
+	ratio, window, suffix := 2, 6, ""
+	if !create {
+		ratio, window, suffix = 0, 0, "; omitted preserves it"
+	}
+	flags.IntVar(&f.ratio, "target-ratio", ratio, "the target distance in `STOPS` that backtests judge signals by: "+choices(signalTargetRatios)+suffix)
+	flags.IntVar(&f.window, "window", window, "the `CANDLES` after a signal that backtests judge it over: "+choices(signalWindows)+suffix)
+	_ = command.RegisterFlagCompletionFunc("target-ratio", cobra.FixedCompletions(texts(signalTargetRatios), cobra.ShellCompDirectiveNoFileComp))
+	_ = command.RegisterFlagCompletionFunc("window", cobra.FixedCompletions(texts(signalWindows), cobra.ShellCompDirectiveNoFileComp))
+}
+
+// check refuses given or defaulted values outside the allowed ones.
+func (f signalFlags) check(flags *pflag.FlagSet) error {
+	if (f.ratio != 0 || flags.Changed("target-ratio")) && !slices.Contains(signalTargetRatios, f.ratio) {
+		return usageError("--target-ratio: %d is not %s", f.ratio, choices(signalTargetRatios))
+	}
+	if (f.window != 0 || flags.Changed("window")) && !slices.Contains(signalWindows, f.window) {
+		return usageError("--window: %d is not %s", f.window, choices(signalWindows))
+	}
+	return nil
+}
+
+// update replaces the settings of body whose flags were given, preserving
+// the others.
+func (f signalFlags) update(flags *pflag.FlagSet, body *apiclient.StrategyUpdate) {
+	if flags.Changed("target-ratio") {
+		body.TargetRatio = new(apiclient.SignalTargetRatio(f.ratio))
+	}
+	if flags.Changed("window") {
+		body.Window = new(apiclient.SignalWindow(f.window))
+	}
+}
+
+// choices lists values as "2, 3, 4, or 5".
+func choices(values []int) string {
+	list := texts(values)
+	return strings.Join(list[:len(list)-1], ", ") + ", or " + list[len(list)-1]
+}
+
+func texts(values []int) []string {
+	list := make([]string, len(values))
+	for i, value := range values {
+		list[i] = strconv.Itoa(value)
+	}
+	return list
+}
+
 // createSignalCommand saves a signal, always disabled like strategies.
 func (c *cli) createSignalCommand() *cobra.Command {
 	var expression, direction, message string
 	var marketCap marketCapFlags
+	var settings signalFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR --direction long|short|sideways [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR --direction long|short|sideways [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled signal, which buys nothing and announces the move it expects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			move, err := signalsKind.directionFlag(direction)
 			if err != nil {
+				return err
+			}
+			if err := settings.check(command.Flags()); err != nil {
 				return err
 			}
 			minimum, maximum, err := marketCap.parse()
@@ -150,6 +216,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
 				Name: args[0], Signal: true, Direction: move, Expression: expression,
+				TargetRatio: new(apiclient.SignalTargetRatio(settings.ratio)), Window: new(apiclient.SignalWindow(settings.window)),
 				MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum, Message: message,
 			})
 			if err == nil {
@@ -165,6 +232,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 	flags := command.Flags()
 	flags.StringVar(&expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
 	flags.StringVar(&direction, "direction", "", "the `MOVE` the signal expects: long, short, or sideways")
+	settings.add(command, true)
 	marketCap.addCreate(flags, "signal")
 	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
@@ -177,9 +245,10 @@ func (c *cli) createSignalCommand() *cobra.Command {
 func (c *cli) updateSignalCommand() *cobra.Command {
 	var name, expression, message string
 	var marketCap marketCapFlags
+	var settings signalFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:               "update ID [--expr EXPR] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
+		Use:               "update ID [--expr EXPR] [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
 		Short:             "Edit a disabled saved signal, preserving unspecified fields; its direction never changes",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: c.completeArg(signalsKind),
@@ -190,9 +259,12 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			}
 			flags := command.Flags()
 			// edits are the flags that change the signal.
-			edits := []string{"expr", "min-market-cap", "max-market-cap", "name", "message"}
+			edits := []string{"expr", "target-ratio", "window", "min-market-cap", "max-market-cap", "name", "message"}
 			if !slices.ContainsFunc(append(edits, "add-indicators"), flags.Changed) {
-				return usageError("specify at least one of --expr, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
+				return usageError("specify at least one of --expr, --target-ratio, --window, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
+			}
+			if err := settings.check(flags); err != nil {
+				return err
 			}
 			minimum, maximum, err := marketCap.parse()
 			if err != nil {
@@ -208,8 +280,10 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			}
 			body := apiclient.StrategyUpdate{
 				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression,
+				TargetRatio: current.TargetRatio, Window: current.Window,
 				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
 			}
+			settings.update(flags, &body)
 			marketCap.update(flags, &body, minimum, maximum)
 			if flags.Changed("name") {
 				body.Name = name
@@ -229,6 +303,7 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")
+	settings.add(command, false)
 	marketCap.addUpdate(command.Flags())
 	command.Flags().StringVar(&name, "name", "", "signal `NAME`; omitted preserves the current name")
 	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")

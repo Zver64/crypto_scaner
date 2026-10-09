@@ -103,6 +103,8 @@ type AppStrategy struct {
 	MaxMarketCapUsd      pgtype.Float8
 	Signal               bool
 	Direction            string
+	TargetRatio          pgtype.Int2
+	WindowCandles        pgtype.Int2
 }
 
 type AppStrategyIndicator struct {

@@ -18,15 +18,17 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export interface BacktestSignalChange {
-  /**
-     * Candles after the signal candle.
-     * @minimum 1
-     */
-  candles: number;
-  /**
-     * The change of the close; null when the stored history ends before that candle.
-     * @nullable
-     */
-  change: number | null;
-}
+/**
+ * The candles of its interval after each signal over which a signal's
+ * backtest judges it. Required for a signal, null for a trading
+ * strategy.
+ */
+export type SignalWindow = typeof SignalWindow[keyof typeof SignalWindow];
+
+
+export const SignalWindow = {
+  NUMBER_3: 3,
+  NUMBER_6: 6,
+  NUMBER_12: 12,
+  NUMBER_24: 24,
+} as const;

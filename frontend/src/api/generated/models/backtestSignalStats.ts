@@ -18,26 +18,17 @@
  * OpenAPI spec version: 1.0.0
  */
 
-/**
- * Medians of the moves from a candle's close: the rise to the highest
- * high and the fall to the lowest low over the window, and the range
- * between them. Hits is the share of moves the signal expected: a rise
- * above the fall for long, a fall deeper than the rise for short, and,
- * for sideways, a range below the median range after every evaluated
- * candle. All are null without moves.
- */
 export interface BacktestSignalStats {
   /**
-     * Moves measured.
+     * Candles judged.
      * @minimum 0
      */
   count: number;
-  /** @nullable */
-  rise: number | null;
-  /** @nullable */
-  fall: number | null;
-  /** @nullable */
-  range: number | null;
-  /** @nullable */
-  hits: number | null;
+  /** @minimum 0 */
+  successes: number;
+  /**
+     * Median move to target over every judged candle, successful or not; null without candles.
+     * @nullable
+     */
+  median_move: number | null;
 }

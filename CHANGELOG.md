@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.1.0](https://github.com/Zver64/crypto_scaner/compare/v2.0.0...v2.1.0) (2026-10-09)
+
+
+### Features
+
+* add pivot and RSI divergence indicators ([bba7570](https://github.com/Zver64/crypto_scaner/commit/bba757073a855de405efc73a419870dda0726683))
+* backtest unsaved strategies and signals ([4f92c62](https://github.com/Zver64/crypto_scaner/commit/4f92c62b197aeb5f7f8cb14e509db4cc4626329e))
+* judge signals by a target before a volatility stop ([5877a77](https://github.com/Zver64/crypto_scaner/commit/5877a77af69cad81270db3c7d99ee38da7b219f8))
+* limit signals to a market cap range ([289ba0e](https://github.com/Zver64/crypto_scaner/commit/289ba0ee061703442b16cf83efd4bf562766e6e6))
+* support calculated history shifts and pivot offsets ([02ad290](https://github.com/Zver64/crypto_scaner/commit/02ad29067f63c0e943c7c61bb1a8e3090c3d9cc0))
+
+
+### Bug Fixes
+
+* allow typing the history load depth ([f924466](https://github.com/Zver64/crypto_scaner/commit/f924466a65c647a94b91ef117474ac1e9aea60fd))
+* use ATR for signal backtest evaluation ([3d0daad](https://github.com/Zver64/crypto_scaner/commit/3d0daadca98388c71b794cdaab32e2fabb6c42d7))
+
 ## [2.0.0](https://github.com/Zver64/crypto_scaner/compare/v1.1.0...v2.0.0) (2026-10-08)
 
 

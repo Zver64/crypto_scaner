@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"crypto-scanner/internal/apiclient"
+
+	"github.com/gofrs/flock"
 )
 
 const testToken = "cst_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -59,7 +61,7 @@ func (api *fakeAPI) ServeHTTP(response http.ResponseWriter, request *http.Reques
 	if !ok {
 		status = api.status
 	}
-	if status == http.StatusOK && request.Method == http.MethodPost && !strings.HasSuffix(request.URL.Path, "-validations") {
+	if status == http.StatusOK && request.Method == http.MethodPost && !strings.HasSuffix(request.URL.Path, "-validations") && !strings.HasSuffix(request.URL.Path, "-backtests") {
 		status = http.StatusCreated
 	}
 	response.WriteHeader(status)
@@ -169,6 +171,75 @@ func TestBacktestRendersTheTradesOfASavedStrategy(t *testing.T) {
 	}
 	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT", "--from", "January"); got.code != 1 || !strings.Contains(got.stderr, "--from") {
 		t.Errorf("backtest of an invalid period = %+v", got)
+	}
+}
+
+// Drafts send their rules as they are, with the period, and print the
+// backtest like a saved strategy's.
+func TestBacktestDraftsSendTheirRules(t *testing.T) {
+	api, server := newFakeAPI(t, map[string]string{
+		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[]}`,
+		"POST /api/v1/admin/strategy-backtests":   backtestResponse,
+	})
+	home := writeProfile(t, server.URL)
+
+	got := runCLI(t, home, "", "strategies", "backtest", "--expr", "h_close > 1", "--direction", "short", "--take-profit", "h_close * 0.9", "--stop-loss", "h_close * 1.1", "--symbol", "BTCUSDT", "--from", "2024-01-01")
+	if got.code != 0 || got.stdout != backtestText {
+		t.Errorf("strategies backtest = %+v\nwant:\n%s", got, backtestText)
+	}
+	want := `{"direction":"short","exit_expression":"","expression":"h_close \u003e 1","from":"2024-01-01T00:00:00Z","signal":false,` +
+		`"stop_loss_expression":"h_close * 1.1","symbol":"BTCUSDT","take_profit_expression":"h_close * 0.9","target_ratio":null,"window":null}`
+	if body := api.bodies["POST /api/v1/admin/strategy-backtests"]; body != want {
+		t.Errorf("strategy draft = %s\nwant %s", body, want)
+	}
+	if got := runCLI(t, home, "", "signals", "backtest", "--expr", "h_close > 1", "--direction", "sideways", "--window", "12", "--symbol", "BTCUSDT"); got.code != 0 {
+		t.Errorf("signals backtest = %+v", got)
+	}
+	want = `{"direction":"sideways","exit_expression":"","expression":"h_close \u003e 1","signal":true,` +
+		`"stop_loss_expression":"","symbol":"BTCUSDT","take_profit_expression":"","target_ratio":2,"window":12}`
+	if body := api.bodies["POST /api/v1/admin/strategy-backtests"]; body != want {
+		t.Errorf("signal draft = %s\nwant %s", body, want)
+	}
+}
+
+// An invalid draft reports its rules like create and is not backtested.
+func TestBacktestDraftWithAnInvalidRuleSendsNothing(t *testing.T) {
+	_, server := newFakeAPI(t, map[string]string{"POST /api/v1/admin/strategy-validations": `{"errors":["undeclared reference to 'x'"],"missing_indicators":[]}`})
+	home := writeProfile(t, server.URL)
+
+	got := runCLI(t, home, "", "strategies", "backtest", "--expr", "x > 1", "--exit", "x < 1", "--symbol", "BTCUSDT")
+	if want := "scanner: invalid rules; nothing was sent\n  the entry rule: undeclared reference to 'x'\n  the exit rule: undeclared reference to 'x'\n"; got.code != 1 || got.stderr != want {
+		t.Errorf("strategies backtest = %+v, want %q", got, want)
+	}
+}
+
+// While a backtest runs on this machine, another fails before its backtest
+// request.
+func TestBacktestRefusesWhileAnotherRuns(t *testing.T) {
+	_, server := newFakeAPI(t, map[string]string{
+		"GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT": backtestResponse,
+		"POST /api/v1/admin/strategy-validations":                `{"errors":[],"missing_indicators":[]}`,
+	})
+	home := writeProfile(t, server.URL)
+	running := flock.New(filepath.Join(home, "scanner", "backtest.lock"))
+	if locked, err := running.TryLock(); err != nil || !locked {
+		t.Fatalf("TryLock() = %v, %v", locked, err)
+	}
+
+	for _, args := range [][]string{
+		{"backtest", "--strategy", "3", "--symbol", "BTCUSDT"},
+		{"strategies", "backtest", "--expr", "h_close > 1", "--symbol", "BTCUSDT"},
+		{"signals", "backtest", "--expr", "h_close > 1", "--direction", "long", "--symbol", "BTCUSDT"},
+	} {
+		if got := runCLI(t, home, "", args...); got.code != 1 || got.stderr != "scanner: another backtest runs on this machine; retry once it ends\n" {
+			t.Errorf("%v while another runs = %+v", args, got)
+		}
+	}
+	if err := running.Unlock(); err != nil {
+		t.Fatal(err)
+	}
+	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT"); got.code != 0 {
+		t.Errorf("backtest after the other ended = %+v", got)
 	}
 }
 
@@ -298,10 +369,10 @@ func TestStrategiesCreateWithAnInvalidRuleAddsNothing(t *testing.T) {
 	args := []string{"strategies", "create", "X", "--expr", "h_ema_3 > 0", "--exit", "bad(", "--stop-loss", "bad(", "--add-indicators"}
 
 	if got := runCLI(t, home, "", args...); got.code != 1 || got.stdout != "" ||
-		got.stderr != "scanner: invalid rules; nothing was saved\n  the exit rule: syntax error\n  the stop loss: syntax error\n" {
+		got.stderr != "scanner: invalid rules; nothing was sent\n  the exit rule: syntax error\n  the stop loss: syntax error\n" {
 		t.Fatalf("create = %+v", got)
 	}
-	want := `{"error":{"code":"invalid_expression","details":["the exit rule: syntax error","the stop loss: syntax error"],"message":"invalid rules; nothing was saved"},"request_id":""}` + "\n"
+	want := `{"error":{"code":"invalid_expression","details":["the exit rule: syntax error","the stop loss: syntax error"],"message":"invalid rules; nothing was sent"},"request_id":""}` + "\n"
 	if got := runCLI(t, home, "", append(args, "--json")...); got.code != 1 || got.stdout != "" || got.stderr != want {
 		t.Fatalf("create --json = %+v, want stderr %s", got, want)
 	}

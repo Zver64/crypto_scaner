@@ -5,33 +5,41 @@ description: Create and backtest Crypto Scanner strategies (CEL expressions) aga
 
 # Backtesting strategies with `scanner`
 
-## Prerequisites
+## Read first
 
-- The user installs the CLI with `make install-cli` and logs in with `scanner login dev --server http://localhost:8080`, pasting an API token from the Mini App settings into stdin. Never ask for, read, or print the token or `~/.config/scanner/config.json`.
-- `scanner profiles` shows the servers; add `--profile prod` to any command for production. `scanner help` lists the commands, `scanner help <command>` its flags.
+- `backend/cmd/scanner/README.md`: the commands, how backtests trade and judge signals, and what they print.
+- `docs/strategy-language.md`: the expression language, variable names, limits, signals, and exits.
+- `docs/buy-strategies.md`: the existing strategies.
+- `scanner help <command>` for the exact flags; never guess them.
 
-## Signals
+## Rules
 
-When the user asks for an indicator, warning, or buy/sell signal rather than simulated trading, create a signal: `scanner signals create '<name>' --expr '<expr>' --direction long|short|sideways [--target-ratio 2|3|4|5] [--window 3|6|12|24] [--min-market-cap <usd>] [--max-market-cap <usd>]`. A bearish warning such as “a drop may follow” is `--direction short`; it buys and sells nothing and has no exit rule, take profit, or stop loss; its market cap range, like a strategy's, limits only the live alerts and backtests ignore it. `--window` (candles after each signal, default 6) and `--target-ratio` (target distance in stops, default 2) only set how its backtest judges it; pick the window that matches the horizon the signal claims. `scanner signals` lists the signals, `scanner signals update <id> [--expr …] [--target-ratio …] [--window …] [--min-market-cap …] [--max-market-cap …] [--name …] [--message …]` edits a disabled one (its direction is fixed once saved), `scanner signals delete <id>` deletes one. The strategies and signals commands refuse each other's IDs; a strategy never becomes a signal or back; create a new one instead.
-
-A signal fires only when the entry rule turns from false to true at a closed candle, not on every candle it stays true. Its backtest judges each signal candle's close by a stop, the usual move over the window from the last 100 one-candle returns, against the expected move, and a target `--target-ratio` stops away in its direction (`sideways`: a target on both sides, no stop) over the window candles after it: success is the target before the stop (`sideways`: neither target touched). It prints the window and target ratio, a summary of the counted signals (each at least a window after the previous counted one; `Count` shows all / counted) beside `All candles`, every evaluated candle judged the same way, with the median move to target and `Successful` (k/N and the share), then the newest signals with their stop, target, move to target, and success; `--json` adds the entry values at each signal. Judge a signal by how far the `Successful` share of `Signals` exceeds that of `All candles`, with the median move to target as support, with enough counted signals per coin, consistently across coins and across `--to`/`--from` halves, never by one event. Respect an explicitly requested recent-event scope; do not require deeper history or claim general predictive reliability from that event alone.
+- The user installs the CLI (`make install-cli`) and logs in with an API token from the Mini App. Never ask for, read, or print the token or `~/.config/scanner/config.json`. Add `--profile prod` for production.
+- Create a signal (`scanner signals`) when the user asks for an indicator, warning, or buy/sell signal; a bearish warning such as “a drop may follow” is `--direction short`. Pick the `--window` that matches the horizon the signal claims. Write exits, take profit, and stop loss only for explicitly requested trading; for a trading bot with a range, the take profit is its upper and the stop loss its lower bound.
+- A coin read through `of` must be in `scanner favorites`; otherwise ask the user to add it, never work around it.
+- Never pass `--add-indicators` unless the user asks. Only the user enables strategies, in the Mini App.
+- Backtests ignore the market cap range, so backtest any coin regardless of it.
+- If the evaluated period is too short (about 2,000 candles, roughly 83 days of 1h), ask the user to load deeper history from the Mini App's Commands section; the CLI cannot.
+- Backtests run one at a time per machine; never start them in parallel.
 
 ## Workflow
 
-Creating and backtesting are separate steps: only saved strategies are backtested.
+1. Write the rules; `scanner vars --filter <text>` lists the variables, `scanner validate` checks an expression.
+2. Backtest them unsaved with `scanner strategies backtest` or `scanner signals backtest` on several coins, one after another. `--json` shows the values each rule read at its signals; use them to check that signals fire on the pattern you meant.
+3. Save only what works with `create` (always disabled), and tell the user what you saved so they can delete what does not work. `scanner backtest --strategy <id>` backtests a saved one.
 
-1. `scanner favorites`: the coins `of("SYM", x)` can read. A coin read through `of` that is not a favorite has unknown values, so the strategy never fires. Ask the user to add it to favorites; do not work around it.
-2. Choose a signal or a trading strategy first. Write the entry rule and, only for explicitly requested trading usage, exits per `docs/strategy-language.md` (names, `prev`, `percentile`, `of`, limits, signals, and the exit-only position variables `entry_price`, `pnl`, `bars_held`); `docs/buy-strategies.md` has the existing strategies. `scanner vars --filter rsi` lists configured variables. When the user explicitly requests a trading bot with a range, the take profit is its upper and the stop loss its lower bound, both price expressions fixed at the signal (`h_close * 1.05`, `h_close - 2 * h_atr_14`). An exit rule sells on a condition instead. With any exit the strategy holds one buy per trade; without any it only accumulates, buying at every entry signal. A trading strategy is long by default; `scanner strategies create … --direction short` makes it short, fixed once saved (create a new strategy for the other side): it sells at the entry and buys back at the exit, gaining as the price falls, and needs both `--take-profit` below the close and `--stop-loss` above it (the exit rule stays optional, `pnl` is positive when the price fell).
-3. `scanner validate '<expr>'` (with `--exit` for an exit rule, `--price` for a take profit or stop loss) until it prints `ok`.
-4. For a trading strategy, `scanner strategies create '<name>' --expr '<expr>' [--exit '<exit>'] [--take-profit '<price>'] [--stop-loss '<price>'] [--min-market-cap <usd>] [--max-market-cap <usd>]` saves it disabled and prints the new id. It reads indicators that are not configured, such as `h_atr_100`, without adding them, so nothing needs cleaning up afterwards; never pass `--add-indicators` unless the user asks. `scanner strategies` lists every saved strategy with its id, rules, and how it buys. `scanner strategies update <id> [--expr …] [--exit …] [--take-profit …] [--stop-loss …] [--min-market-cap …] [--max-market-cap …] [--name …] [--message …]` edits only a disabled strategy and refuses an enabled one (edit it in the Mini App); an empty value removes an exit or a market cap bound. The market cap range (such as `50M` to `2B`) limits only the buys of the enabled strategy; backtests ignore it, so backtest any coin regardless of the range. Only the user enables strategies, in the Mini App.
-5. `scanner backtest --strategy <id> --symbol BTCUSDT [--from DATE] [--to DATE]` on any active coin, one coin per run. A signal's backtest prints the signal report above instead of trades. For a trading strategy, it replays the strategy's own trades exactly as live signals trade: buys and exit rule sells fill at the open after their signal, a take profit or stop loss sells at its price on the candle reaching it (the stop loss first when a candle reaches both), every buy spends the same amount, 0.1% fee on each side, and a trade the history ends before selling stays open, valued at the last close. It prints a header table (coin, period and interval, fee, entry signals that bought nothing), the metrics (net profit compared with `Buy & Hold` and `DCA`, buying the same amount on every candle; max drawdown at every candle close; closed-trade statistics, average candles held, and exits by take profit, stop loss, and exit rule), and the newest 50 trades with their buys, average entry, and what sold them, newest first; without trades, only the header and a `No trades: …` reason. `--json` prints the raw response with the equity curve and every trade: its fills (signal time, fill time and price, and the values the entry rule read at the signal), take profit and stop loss, exit reason, and the values the exit rule read at its signal. Use them to check that signals fire on the pattern you meant.
-6. Backtests use only the history stored on the server and never load more. If the evaluated period is too short (about 2,000 candles, roughly 83 days of 1h), ask the user to load deeper history for those coins and that interval from the admin Commands section of the Mini App, then backtest again.
-7. For trading strategies, judge their edge over the baselines, not their own net profit (for signals, use the criteria above):
-   - Net profit must beat `Buy & Hold`, and for accumulating strategies `DCA`; otherwise holding or buying blindly was better, which is common in uptrends. Check the max drawdown as well. A short strategy has no baselines, and its backtest ignores funding, leverage, and liquidation, so judge it by its own net profit, drawdown, and trade statistics, and say that these costs are left out.
-   - For bot ranges, the share of trades the take profit closes against the stop loss, and the candles held, tell whether entry and range fit together.
-   - Develop on one part of the history (`--to`) and confirm on the rest (`--from`) without changing anything in between.
-   - A profit factor above 1 and a win rate that holds across coins; a single open trade is not a result.
-   - Only with enough closed trades (a few dozen per coin; a handful proves nothing) and consistently across several coins, backtested one after another (never in parallel). One coin or one lucky trade proves nothing.
-   - Never fit exit thresholds such as `pnl` targets or `bars_held` to one coin or period.
+## Judging results
 
-Keep parameters universal: never tune thresholds per coin or fit them to one period. Reject ideas that need a visual chart check; strategies must be algorithmic. Tell the user which strategies you created, so they can delete the ones that do not work.
+Keep parameters universal: never tune thresholds per coin or fit them to one period, `pnl` and `bars_held` exits included. Reject ideas that need a visual chart check; strategies must be algorithmic. Develop on one part of the history (`--to`) and confirm on the rest (`--from`) without changing anything in between. One coin, one event, or one lucky trade proves nothing.
+
+Trading strategies:
+
+- Judge the edge over the baselines, not the net profit alone: it must beat `Buy & Hold`, and for accumulating strategies `DCA`; otherwise holding or buying blindly was better, which is common in uptrends. Check the max drawdown too.
+- A short strategy has no baselines and its backtest ignores funding, leverage, and liquidation: judge it by its own net profit, drawdown, and trade statistics, and say that these costs are left out.
+- Require a profit factor above 1 and a win rate that holds across coins, over enough closed trades (a few dozen per coin); a single open trade is not a result.
+- For bot ranges, the share of take profit against stop loss exits and the candles held tell whether entry and range fit together.
+
+Signals:
+
+- Judge by how far the `Successful` share of `Signals` exceeds that of `All candles`, with the median move to target as support, over enough counted signals per coin, consistently across coins and across `--to`/`--from` halves.
+- Respect an explicitly requested recent-event scope: do not require deeper history, and do not claim general predictive reliability from that event alone.

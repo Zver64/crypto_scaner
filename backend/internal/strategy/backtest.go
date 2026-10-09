@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 	"time"
 
 	"crypto-scanner/internal/closedindicator"
@@ -164,6 +165,10 @@ type TradeStats struct {
 	TakeProfits, StopLosses, ExitRules                           int
 }
 
+// maxBacktests bounds the backtests that run at once, saved or drafts; each
+// keeps a core busy for up to the server's time limit.
+const maxBacktests = 2
+
 // Backtest replays the trades of a saved strategy, enabled or not, on the
 // instrument symbol over its stored closed history, the way the monitor
 // trades: the same values at the close of every candle of its interval, the
@@ -175,11 +180,9 @@ type TradeStats struct {
 // from from to to are evaluated, a zero bound leaving that side open; older
 // candles still warm the indicators up. It fails with ErrNotFound,
 // ErrInvalidArgument for a strategy that no longer compiles, an empty
-// symbol, or from after to, and market.ErrInstrumentNotFound.
+// symbol, or from after to, market.ErrInstrumentNotFound, and
+// ErrBacktestBusy while maxBacktests others run.
 func (service *Service) Backtest(ctx context.Context, id int64, symbol string, from, to time.Time) (Backtest, error) {
-	if !from.IsZero() && !to.IsZero() && from.After(to) {
-		return Backtest{}, fmt.Errorf("%w: the period starts after it ends", ErrInvalidArgument)
-	}
 	entries := service.List()
 	index := slices.IndexFunc(entries, func(entry Entry) bool { return entry.ID == id })
 	if index < 0 {
@@ -189,8 +192,48 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, f
 	if entry.Compiled == nil {
 		return Backtest{}, fmt.Errorf("%w: %s", ErrInvalidArgument, entry.Problem)
 	}
+	return service.backtest(ctx, entry, symbol, from, to)
+}
+
+// BacktestDraft replays item like Backtest replays a saved strategy, without
+// saving it: its rules and trading settings are checked and compiled as a
+// save checks them, including that every coin read through of is an active
+// favorite of the administrator, while its name, message, and market cap
+// range, which backtests ignore, are not. It fails like Backtest, with
+// ErrInvalidArgument for an invalid item.
+func (service *Service) BacktestDraft(ctx context.Context, item Strategy, symbol string, from, to time.Time) (Backtest, error) {
+	entry, err := service.trading(item)
+	if err != nil {
+		return Backtest{}, err
+	}
+	if len(entry.symbols) > 0 {
+		favorites, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
+		if err != nil {
+			return Backtest{}, fmt.Errorf("load backtest favorites: %w", err)
+		}
+		absent := slices.DeleteFunc(slices.Clone(entry.symbols), func(read string) bool {
+			return slices.ContainsFunc(favorites, func(favorite Instrument) bool { return favorite.Symbol == read })
+		})
+		if len(absent) > 0 {
+			return Backtest{}, fmt.Errorf("%w: not an active coin in the administrator's favorites: %s", ErrInvalidArgument, strings.Join(absent, ", "))
+		}
+	}
+	return service.backtest(ctx, entry, symbol, from, to)
+}
+
+// backtest replays the compiled entry for Backtest and BacktestDraft.
+func (service *Service) backtest(ctx context.Context, entry Entry, symbol string, from, to time.Time) (Backtest, error) {
+	if !from.IsZero() && !to.IsZero() && from.After(to) {
+		return Backtest{}, fmt.Errorf("%w: the period starts after it ends", ErrInvalidArgument)
+	}
 	if symbol = market.NormalizeSymbol(symbol); symbol == "" {
 		return Backtest{}, fmt.Errorf("%w: the symbol is empty", ErrInvalidArgument)
+	}
+	select {
+	case service.backtests <- struct{}{}:
+		defer func() { <-service.backtests }()
+	default:
+		return Backtest{}, ErrBacktestBusy
 	}
 	found, err := service.store.GetActiveInstrumentBySymbol(ctx, symbol)
 	if err != nil {

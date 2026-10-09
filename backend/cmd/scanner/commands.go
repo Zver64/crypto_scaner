@@ -8,7 +8,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"time"
 
 	"crypto-scanner/internal/apiclient"
 
@@ -151,13 +150,13 @@ func (c *cli) favoritesCommand() *cobra.Command {
 
 func (c *cli) strategiesCommand() *cobra.Command {
 	command := c.listCommand(strategiesKind, "Saved strategies: ID, state, name with any problem and message, entry, exits, buys, market cap")
-	command.AddCommand(c.createStrategyCommand(), c.updateStrategyCommand(), c.deleteCommand(strategiesKind))
+	command.AddCommand(c.createStrategyCommand(), c.updateStrategyCommand(), c.deleteCommand(strategiesKind), c.backtestStrategyDraftCommand())
 	return command
 }
 
 func (c *cli) signalsCommand() *cobra.Command {
 	command := c.listCommand(signalsKind, "Saved signals: ID, state, name with any problem and message, entry, expected move, window, target, market cap")
-	command.AddCommand(c.createSignalCommand(), c.updateSignalCommand(), c.deleteCommand(signalsKind))
+	command.AddCommand(c.createSignalCommand(), c.updateSignalCommand(), c.deleteCommand(signalsKind), c.backtestSignalDraftCommand())
 	return command
 }
 
@@ -242,7 +241,8 @@ func (c *cli) deleteCommand(k kind) *cobra.Command {
 // createStrategyCommand saves a strategy the way the Mini App does, always
 // disabled: only the administrator turns alerts on, in the Mini App.
 func (c *cli) createStrategyCommand() *cobra.Command {
-	var expression, direction, exit, takeProfit, stopLoss, message string
+	var rules strategyRuleFlags
+	var message string
 	var marketCap marketCapFlags
 	var addIndicators bool
 	command := &cobra.Command{
@@ -251,10 +251,10 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
 			body := apiclient.StrategyInput{
-				Name: args[0], Expression: expression, ExitExpression: exit, TakeProfitExpression: takeProfit, StopLossExpression: stopLoss, Message: message,
+				Name: args[0], Expression: rules.expression, ExitExpression: rules.exit, TakeProfitExpression: rules.takeProfit, StopLossExpression: rules.stopLoss, Message: message,
 			}
 			var err error
-			if body.Direction, err = strategiesKind.directionFlag(direction); err != nil {
+			if body.Direction, err = strategiesKind.directionFlag(rules.direction); err != nil {
 				return err
 			}
 			if body.MinMarketCapUsd, body.MaxMarketCapUsd, err = marketCap.parse(); err != nil {
@@ -264,12 +264,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := c.prepareStrategyRules(command, client, []strategyRule{
-				{expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"},
-				{exit, apiclient.StrategyValidationInputKindExit, "the exit rule"},
-				{takeProfit, apiclient.StrategyValidationInputKindPrice, "the take profit"},
-				{stopLoss, apiclient.StrategyValidationInputKindPrice, "the stop loss"},
-			}, addIndicators); err != nil {
+			if _, err := c.prepareStrategyRules(command, client, rules.rules(), addIndicators); err != nil {
 				return err
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), body)
@@ -283,18 +278,37 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			return nil
 		},
 	}
+	rules.add(command)
 	flags := command.Flags()
-	flags.StringVar(&expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
-	flags.StringVar(&direction, "direction", string(apiclient.Long), "how the strategy trades, `long` or short, fixed once saved; a short one needs --take-profit and --stop-loss")
-	flags.StringVar(&exit, "exit", "", "the exit rule `EXPR`ession, which may also read entry_price, pnl, and bars_held")
-	flags.StringVar(&takeProfit, "take-profit", "", "the take profit price `EXPR`ession, fixed at the entry signal, such as h_close * 1.05")
-	flags.StringVar(&stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession, fixed at the entry signal, such as h_close * 0.97")
 	marketCap.addCreate(flags, "buy")
 	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
+	return command
+}
+
+// strategyRuleFlags are the rules and the direction of a new strategy, which
+// strategies create saves and strategies backtest tries unsaved.
+type strategyRuleFlags struct{ expression, direction, exit, takeProfit, stopLoss string }
+
+func (f *strategyRuleFlags) add(command *cobra.Command) {
+	flags := command.Flags()
+	flags.StringVar(&f.expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
+	flags.StringVar(&f.direction, "direction", string(apiclient.Long), "how the strategy trades, `long` or short, fixed once saved; a short one needs --take-profit and --stop-loss")
+	flags.StringVar(&f.exit, "exit", "", "the exit rule `EXPR`ession, which may also read entry_price, pnl, and bars_held")
+	flags.StringVar(&f.takeProfit, "take-profit", "", "the take profit price `EXPR`ession, fixed at the entry signal, such as h_close * 1.05")
+	flags.StringVar(&f.stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession, fixed at the entry signal, such as h_close * 0.97")
 	_ = command.MarkFlagRequired("expr")
 	_ = command.RegisterFlagCompletionFunc("direction", strategiesKind.completeDirections())
-	return command
+}
+
+// rules lists the expressions for prepareStrategyRules.
+func (f strategyRuleFlags) rules() []strategyRule {
+	return []strategyRule{
+		{f.expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"},
+		{f.exit, apiclient.StrategyValidationInputKindExit, "the exit rule"},
+		{f.takeProfit, apiclient.StrategyValidationInputKindPrice, "the take profit"},
+		{f.stopLoss, apiclient.StrategyValidationInputKindPrice, "the stop loss"},
+	}
 }
 
 // strategyRule is an expression of a strategy, of kind, that name names in
@@ -339,7 +353,7 @@ func (c *cli) prepareStrategyRules(command *cobra.Command, client *apiclient.Cli
 		}
 	}
 	if len(problems) > 0 {
-		return nil, &cliError{code: "invalid_expression", message: "invalid rules; nothing was saved", details: problems}
+		return nil, &cliError{code: "invalid_expression", message: "invalid rules; nothing was sent", details: problems}
 	}
 	if !add || len(items) == 0 {
 		return titles, nil
@@ -433,74 +447,4 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")
 	command.Flags().BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
-}
-
-func (c *cli) backtestCommand() *cobra.Command {
-	var strategy, symbol, from, to string
-	command := &cobra.Command{
-		Use:   "backtest --strategy ID --symbol SYM [--from TIME] [--to TIME]",
-		Short: "Simulate the trades of a saved strategy on one coin against its baselines",
-		Args:  cobra.NoArgs,
-		RunE: func(command *cobra.Command, _ []string) error {
-			id, err := strategyID(strategy)
-			if err != nil {
-				return err
-			}
-			params := apiclient.BacktestStrategyParams{Symbol: symbol}
-			for _, bound := range []struct {
-				flag, value string
-				end         bool
-				target      **time.Time
-			}{{"from", from, false, &params.From}, {"to", to, true, &params.To}} {
-				if bound.value == "" {
-					continue
-				}
-				parsed, err := parseTime(bound.value, bound.end)
-				if err != nil {
-					return usageError("--%s: %v", bound.flag, err)
-				}
-				*bound.target = &parsed
-			}
-			client, err := c.client()
-			if err != nil {
-				return err
-			}
-			backtest, err := client.BacktestStrategyWithResponse(command.Context(), id, &params)
-			if err == nil {
-				err = c.check(backtest, backtest.JSON200 != nil, backtest.JSON400, backtest.JSON404, backtest.JSON503)
-			}
-			if err != nil {
-				return err
-			}
-			period := params.From != nil || params.To != nil
-			c.print(command, backtest.Body, func(w io.Writer) { renderBacktest(w, *backtest.JSON200, period) })
-			return nil
-		},
-	}
-	flags := command.Flags()
-	flags.StringVar(&strategy, "strategy", "", "the saved strategy `ID` (see scanner strategies)")
-	flags.StringVar(&symbol, "symbol", "", "any coin `SYM`, such as BTCUSDT")
-	flags.StringVar(&from, "from", "", "evaluate candles opening at or after `TIME`: a UTC date such as 2026-01-31, or RFC 3339")
-	flags.StringVar(&to, "to", "", "evaluate candles opening at or before `TIME`: a UTC date, the whole day included, or RFC 3339")
-	_ = command.MarkFlagRequired("strategy")
-	_ = command.MarkFlagRequired("symbol")
-	_ = command.RegisterFlagCompletionFunc("strategy", c.completeStrategies)
-	_ = command.RegisterFlagCompletionFunc("symbol", c.completeFavorites)
-	return command
-}
-
-// parseTime reads a UTC date, its start or, with end, the last second of
-// that day, or an RFC 3339 time.
-func parseTime(value string, end bool) (time.Time, error) {
-	if parsed, err := time.Parse(time.DateOnly, value); err == nil {
-		if end {
-			parsed = parsed.AddDate(0, 0, 1).Add(-time.Second)
-		}
-		return parsed, nil
-	}
-	parsed, err := time.Parse(time.RFC3339, value)
-	if err != nil {
-		return time.Time{}, fmt.Errorf("%q is neither a date such as 2026-01-31 nor an RFC 3339 time", value)
-	}
-	return parsed.UTC(), nil
 }

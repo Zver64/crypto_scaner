@@ -185,20 +185,17 @@ func texts(values []int) []string {
 
 // createSignalCommand saves a signal, always disabled like strategies.
 func (c *cli) createSignalCommand() *cobra.Command {
-	var expression, direction, message string
+	var rules signalRuleFlags
+	var message string
 	var marketCap marketCapFlags
-	var settings signalFlags
 	var addIndicators bool
 	command := &cobra.Command{
 		Use:   "create NAME --expr EXPR --direction long|short|sideways [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled signal, which buys nothing and announces the move it expects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
-			move, err := signalsKind.directionFlag(direction)
+			move, err := rules.parse(command)
 			if err != nil {
-				return err
-			}
-			if err := settings.check(command.Flags()); err != nil {
 				return err
 			}
 			minimum, maximum, err := marketCap.parse()
@@ -209,14 +206,12 @@ func (c *cli) createSignalCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if _, err := c.prepareStrategyRules(command, client, []strategyRule{
-				{expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"},
-			}, addIndicators); err != nil {
+			if _, err := c.prepareStrategyRules(command, client, rules.rules(), addIndicators); err != nil {
 				return err
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
-				Name: args[0], Signal: true, Direction: move, Expression: expression,
-				TargetRatio: new(apiclient.SignalTargetRatio(settings.ratio)), Window: new(apiclient.SignalWindow(settings.window)),
+				Name: args[0], Signal: true, Direction: move, Expression: rules.expression,
+				TargetRatio: new(apiclient.SignalTargetRatio(rules.settings.ratio)), Window: new(apiclient.SignalWindow(rules.settings.window)),
 				MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum, Message: message,
 			})
 			if err == nil {
@@ -229,17 +224,43 @@ func (c *cli) createSignalCommand() *cobra.Command {
 			return nil
 		},
 	}
+	rules.add(command)
 	flags := command.Flags()
-	flags.StringVar(&expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
-	flags.StringVar(&direction, "direction", "", "the `MOVE` the signal expects: long, short, or sideways")
-	settings.add(command, true)
 	marketCap.addCreate(flags, "signal")
 	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
+	return command
+}
+
+// signalRuleFlags are the rule, the move, and the backtest settings of a new
+// signal, which signals create saves and signals backtest tries unsaved.
+type signalRuleFlags struct {
+	expression, direction string
+	settings              signalFlags
+}
+
+func (f *signalRuleFlags) add(command *cobra.Command) {
+	flags := command.Flags()
+	flags.StringVar(&f.expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
+	flags.StringVar(&f.direction, "direction", "", "the `MOVE` the signal expects: long, short, or sideways")
+	f.settings.add(command, true)
 	_ = command.MarkFlagRequired("expr")
 	_ = command.MarkFlagRequired("direction")
 	_ = command.RegisterFlagCompletionFunc("direction", signalsKind.completeDirections())
-	return command
+}
+
+// parse checks the move and the settings and returns the move.
+func (f signalRuleFlags) parse(command *cobra.Command) (apiclient.Direction, error) {
+	move, err := signalsKind.directionFlag(f.direction)
+	if err != nil {
+		return "", err
+	}
+	return move, f.settings.check(command.Flags())
+}
+
+// rules lists the expression for prepareStrategyRules.
+func (f signalRuleFlags) rules() []strategyRule {
+	return []strategyRule{{f.expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"}}
 }
 
 func (c *cli) updateSignalCommand() *cobra.Command {

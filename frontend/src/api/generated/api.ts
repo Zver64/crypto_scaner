@@ -51,6 +51,7 @@ import type {
   ApiTokenInput,
   ApiTokenList,
   ApiTokenNotFoundResponse,
+  BacktestBusyResponse,
   BacktestStrategyParams,
   BacktestTooHeavyResponse,
   BadRequestResponse,
@@ -96,6 +97,7 @@ import type {
   SessionRequiredResponse,
   Strategy,
   StrategyBacktest,
+  StrategyBacktestInput,
   StrategyConflictResponse,
   StrategyEnabled,
   StrategyInput,
@@ -4962,6 +4964,11 @@ export type backtestStrategyResponse404 = {
   status: 404
 }
 
+export type backtestStrategyResponse429 = {
+  data: BacktestBusyResponse
+  status: 429
+}
+
 export type backtestStrategyResponse500 = {
   data: InternalErrorResponse
   status: 500
@@ -4975,7 +4982,7 @@ export type backtestStrategyResponse503 = {
 export type backtestStrategyResponseSuccess = (backtestStrategyResponse200) & {
   headers: Headers;
 };
-export type backtestStrategyResponseError = (backtestStrategyResponse400 | backtestStrategyResponse401 | backtestStrategyResponse403 | backtestStrategyResponse404 | backtestStrategyResponse500 | backtestStrategyResponse503) & {
+export type backtestStrategyResponseError = (backtestStrategyResponse400 | backtestStrategyResponse401 | backtestStrategyResponse403 | backtestStrategyResponse404 | backtestStrategyResponse429 | backtestStrategyResponse500 | backtestStrategyResponse503) & {
   headers: Headers;
 };
 
@@ -5018,7 +5025,9 @@ export const getBacktestStrategyUrl = (strategyId: number,
  * strategy sells at entry and buys back at exit, gaining as the price
  * falls; funding, leverage, and liquidation are not modeled, and it has
  * no baselines. A backtest that does not finish
- * within its time limit fails with `backtest_too_heavy`.
+ * within its time limit fails with `backtest_too_heavy`. At most two
+ * backtests, saved or not, run at once; another fails at once with
+ * `backtest_busy`.
  *
  * A signal trades nothing: its backtest has no trades and no baselines,
  * and `signal` lists its entry signals and how the price moved after
@@ -5049,7 +5058,7 @@ export const getBacktestStrategyQueryKey = (strategyId: number,
     }
 
 
-export const getBacktestStrategyQueryOptions = <TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(strategyId: number,
+export const getBacktestStrategyQueryOptions = <TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(strategyId: number,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
@@ -5069,10 +5078,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type BacktestStrategyQueryResult = NonNullable<Awaited<ReturnType<typeof backtestStrategy>>>
-export type BacktestStrategyQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>
+export type BacktestStrategyQueryError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>
 
 
-export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
  strategyId: number,
     params: BacktestStrategyParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
@@ -5083,7 +5092,7 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
  strategyId: number,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
@@ -5094,7 +5103,7 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
  strategyId: number,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
@@ -5103,7 +5112,7 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
  * @summary Backtest a saved strategy on one coin
  */
 
-export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
+export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
  strategyId: number,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
@@ -5121,6 +5130,147 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
 
 
 
+
+export type backtestStrategyDraftResponse200 = {
+  data: StrategyBacktest
+  status: 200
+}
+
+export type backtestStrategyDraftResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
+export type backtestStrategyDraftResponse401 = {
+  data: UnauthenticatedResponse
+  status: 401
+}
+
+export type backtestStrategyDraftResponse403 = {
+  data: AdministratorRequiredResponse
+  status: 403
+}
+
+export type backtestStrategyDraftResponse404 = {
+  data: SymbolNotFoundResponse
+  status: 404
+}
+
+export type backtestStrategyDraftResponse429 = {
+  data: BacktestBusyResponse
+  status: 429
+}
+
+export type backtestStrategyDraftResponse500 = {
+  data: InternalErrorResponse
+  status: 500
+}
+
+export type backtestStrategyDraftResponse503 = {
+  data: BacktestTooHeavyResponse
+  status: 503
+}
+
+export type backtestStrategyDraftResponseSuccess = (backtestStrategyDraftResponse200) & {
+  headers: Headers;
+};
+export type backtestStrategyDraftResponseError = (backtestStrategyDraftResponse400 | backtestStrategyDraftResponse401 | backtestStrategyDraftResponse403 | backtestStrategyDraftResponse404 | backtestStrategyDraftResponse429 | backtestStrategyDraftResponse500 | backtestStrategyDraftResponse503) & {
+  headers: Headers;
+};
+
+export const getBacktestStrategyDraftUrl = () => {
+
+
+
+
+  return `/api/v1/admin/strategy-backtests`
+}
+
+/**
+ * Backtests the strategy or signal of the body without saving it,
+ * exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+ * backtests a saved one with the same rules. The rules and trading
+ * settings are checked as a save checks them and fail with
+ * `invalid_argument`. At most two backtests, saved or not, run at once;
+ * another fails at once with `backtest_busy`.
+ * @summary Backtest an unsaved strategy on one coin
+ */
+export const backtestStrategyDraft = async (strategyBacktestInput: StrategyBacktestInput, options?: Parameters<typeof apiFetch>[1]): Promise<backtestStrategyDraftResponseSuccess> => {
+
+    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+return apiFetch<backtestStrategyDraftResponseSuccess>(getBacktestStrategyDraftUrl(),
+  {
+    ...options,
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
+    body: JSON.stringify(strategyBacktestInput)
+  }
+);}
+
+
+
+
+
+export const getBacktestStrategyDraftMutationKey = () => ['backtestStrategyDraft'] as const;
+
+export const getBacktestStrategyDraftMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | SymbolNotFoundResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof backtestStrategyDraft>>, TError,BacktestStrategyDraftMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+): UseMutationOptions<Awaited<ReturnType<typeof backtestStrategyDraft>>, TError,BacktestStrategyDraftMutationVariables, TContext> => {
+
+const mutationKey = getBacktestStrategyDraftMutationKey();
+const {mutation: mutationOptions, request: requestOptions} = options ?
+      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
+      options
+      : {...options, mutation: {...options.mutation, mutationKey}}
+      : {mutation: { mutationKey, }, request: undefined};
+
+
+
+
+      const mutationFn: MutationFunction<Awaited<ReturnType<typeof backtestStrategyDraft>>, BacktestStrategyDraftMutationVariables> = (props) => {
+          const {data} = props ?? {};
+
+          return  backtestStrategyDraft(data,requestOptions)
+        }
+
+
+
+
+
+
+  return  { mutationFn, ...mutationOptions }}
+
+    export type BacktestStrategyDraftMutationResult = NonNullable<Awaited<ReturnType<typeof backtestStrategyDraft>>>
+    export type BacktestStrategyDraftMutationBody = StrategyBacktestInput
+    export type BacktestStrategyDraftMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | SymbolNotFoundResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>
+    export type BacktestStrategyDraftMutationVariables = {data: StrategyBacktestInput}
+
+    /**
+ * @summary Backtest an unsaved strategy on one coin
+ */
+export const useBacktestStrategyDraft = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | SymbolNotFoundResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>,
+    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof backtestStrategyDraft>>, TError,BacktestStrategyDraftMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
+ , queryClient?: QueryClient): UseMutationResult<
+        Awaited<ReturnType<typeof backtestStrategyDraft>>,
+        TError,
+        BacktestStrategyDraftMutationVariables,
+        TContext
+      > => {
+      return useMutation(getBacktestStrategyDraftMutationOptions(options), queryClient);
+    }
 
 export type startCandleHistoryLoadResponse202 = {
   data: CandleHistoryLoadJob

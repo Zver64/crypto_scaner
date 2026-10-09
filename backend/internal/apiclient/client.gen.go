@@ -25,6 +25,7 @@ const (
 	APIErrorCodeAlertLimit                 APIErrorCode = "alert_limit"
 	APIErrorCodeAlertNotFound              APIErrorCode = "alert_not_found"
 	APIErrorCodeApiTokenNotFound           APIErrorCode = "api_token_not_found"
+	APIErrorCodeBacktestBusy               APIErrorCode = "backtest_busy"
 	APIErrorCodeBacktestTooHeavy           APIErrorCode = "backtest_too_heavy"
 	APIErrorCodeDuplicateTarget            APIErrorCode = "duplicate_target"
 	APIErrorCodeFavoriteHasAlerts          APIErrorCode = "favorite_has_alerts"
@@ -66,6 +67,8 @@ func (e APIErrorCode) Valid() bool {
 	case APIErrorCodeAlertNotFound:
 		return true
 	case APIErrorCodeApiTokenNotFound:
+		return true
+	case APIErrorCodeBacktestBusy:
 		return true
 	case APIErrorCodeBacktestTooHeavy:
 		return true
@@ -1328,6 +1331,53 @@ type StrategyBacktest struct {
 	Trades []BacktestTrade `json:"trades"`
 }
 
+// StrategyBacktestInput The rules and trading settings of an unsaved strategy or signal, as
+// in `StrategyInput`, and the backtested coin and period.
+type StrategyBacktestInput struct {
+	// Direction How a strategy trades, long or short, or the price move a signal
+	// expects after its entry signals: up, down, or sideways. A short
+	// strategy always has a take profit and a stop loss. Fixed at creation:
+	// an update that changes it is refused.
+	Direction Direction `json:"direction"`
+
+	// ExitExpression Exit rule, a CEL expression like the entry rule that may also read the
+	// position variables, such as `pnl >= 5 || bars_held >= 24`; empty
+	// without an exit rule. A strategy without an exit rule, take profit,
+	// or stop loss never sells and buys at every entry signal.
+	ExitExpression StrategyExitExpression `json:"exit_expression"`
+	Expression     string                 `json:"expression"`
+
+	// From Earliest open time of an evaluated candle; the start of the stored history when absent.
+	From *time.Time `json:"from,omitempty"`
+
+	// Signal Whether the strategy is a signal, which buys nothing and only
+	// announces its entry signals, so its exit rule, take profit, and stop
+	// loss are empty. Fixed at creation:
+	// an update that changes it is refused.
+	Signal StrategySignal `json:"signal"`
+
+	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
+	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// and its close buys nothing. Empty without a stop loss.
+	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
+
+	// Symbol Market symbol, such as `BTCUSDT`.
+	Symbol BacktestSymbolName `json:"symbol"`
+
+	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
+	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
+	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
+	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// reading the evaluated coin. A signal whose take profit is not above
+	// its close buys nothing. Empty without a take profit.
+	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
+	TargetRatio          *SignalTargetRatio           `json:"target_ratio"`
+
+	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
+	To     *time.Time    `json:"to,omitempty"`
+	Window *SignalWindow `json:"window"`
+}
+
 // StrategyEnabled defines model for StrategyEnabled.
 type StrategyEnabled struct {
 	Enabled bool `json:"enabled"`
@@ -1689,6 +1739,9 @@ type AlertNotFound = ErrorResponse
 // AnalysisUnavailable defines model for AnalysisUnavailable.
 type AnalysisUnavailable = ErrorResponse
 
+// BacktestBusy defines model for BacktestBusy.
+type BacktestBusy = ErrorResponse
+
 // BacktestTooHeavy defines model for BacktestTooHeavy.
 type BacktestTooHeavy = ErrorResponse
 
@@ -1833,6 +1886,9 @@ type SetStrategyEnabledJSONRequestBody = StrategyEnabled
 
 // UpdateStrategyJSONRequestBody defines body for UpdateStrategy for application/json ContentType.
 type UpdateStrategyJSONRequestBody = StrategyUpdate
+
+// BacktestStrategyDraftJSONRequestBody defines body for BacktestStrategyDraft for application/json ContentType.
+type BacktestStrategyDraftJSONRequestBody = StrategyBacktestInput
 
 // ValidateStrategyJSONRequestBody defines body for ValidateStrategy for application/json ContentType.
 type ValidateStrategyJSONRequestBody = StrategyValidationInput
@@ -2147,7 +2203,9 @@ type ClientInterface interface {
 	// strategy sells at entry and buys back at exit, gaining as the price
 	// falls; funding, leverage, and liquidation are not modeled, and it has
 	// no baselines. A backtest that does not finish
-	// within its time limit fails with `backtest_too_heavy`.
+	// within its time limit fails with `backtest_too_heavy`. At most two
+	// backtests, saved or not, run at once; another fails at once with
+	// `backtest_busy`.
 	//
 	// A signal trades nothing: its backtest has no trades and no baselines,
 	// and `signal` lists its entry signals and how the price moved after
@@ -2155,6 +2213,34 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
 	BacktestStrategy(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BacktestStrategyDraftWithBody Backtest an unsaved strategy on one coin
+	//
+	// Backtests the strategy or signal of the body without saving it,
+	// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+	// backtests a saved one with the same rules. The rules and trading
+	// settings are checked as a save checks them and fail with
+	// `invalid_argument`. At most two backtests, saved or not, run at once;
+	// another fails at once with `backtest_busy`.
+	//
+	// Takes any type of body and a specified content type.
+	//
+	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
+	BacktestStrategyDraftWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// BacktestStrategyDraft Backtest an unsaved strategy on one coin
+	//
+	// Backtests the strategy or signal of the body without saving it,
+	// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+	// backtests a saved one with the same rules. The rules and trading
+	// settings are checked as a save checks them and fail with
+	// `invalid_argument`. At most two backtests, saved or not, run at once;
+	// another fails at once with `backtest_busy`.
+	//
+	// Takes a body of the `application/json` content type.
+	//
+	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
+	BacktestStrategyDraft(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListStrategySymbols List the coins strategy expressions can read through of
 	//
@@ -2797,7 +2883,9 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 // strategy sells at entry and buys back at exit, gaining as the price
 // falls; funding, leverage, and liquidation are not modeled, and it has
 // no baselines. A backtest that does not finish
-// within its time limit fails with `backtest_too_heavy`.
+// within its time limit fails with `backtest_too_heavy`. At most two
+// backtests, saved or not, run at once; another fails at once with
+// `backtest_busy`.
 //
 // A signal trades nothing: its backtest has no trades and no baselines,
 // and `signal` lists its entry signals and how the price moved after
@@ -2806,6 +2894,54 @@ func (c *Client) UpdateStrategy(ctx context.Context, strategyId StrategyID, body
 // Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
 func (c *Client) BacktestStrategy(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewBacktestStrategyRequest(c.Server, strategyId, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BacktestStrategyDraftWithBody Backtest an unsaved strategy on one coin
+//
+// Backtests the strategy or signal of the body without saving it,
+// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+// backtests a saved one with the same rules. The rules and trading
+// settings are checked as a save checks them and fail with
+// `invalid_argument`. At most two backtests, saved or not, run at once;
+// another fails at once with `backtest_busy`.
+//
+// Takes any type of body and a specified content type.
+//
+// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
+func (c *Client) BacktestStrategyDraftWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBacktestStrategyDraftRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// BacktestStrategyDraft Backtest an unsaved strategy on one coin
+//
+// Backtests the strategy or signal of the body without saving it,
+// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+// backtests a saved one with the same rules. The rules and trading
+// settings are checked as a save checks them and fail with
+// `invalid_argument`. At most two backtests, saved or not, run at once;
+// another fails at once with `backtest_busy`.
+//
+// Takes a body of the `application/json` content type.
+//
+// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
+func (c *Client) BacktestStrategyDraft(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewBacktestStrategyDraftRequest(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3929,6 +4065,46 @@ func NewBacktestStrategyRequest(server string, strategyId StrategyID, params *Ba
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewBacktestStrategyDraftRequest calls the generic BacktestStrategyDraft builder with application/json body
+func NewBacktestStrategyDraftRequest(server string, body BacktestStrategyDraftJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewBacktestStrategyDraftRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewBacktestStrategyDraftRequestWithBody constructs an http.Request for the BacktestStrategyDraft method, with any body, and a specified content type
+func NewBacktestStrategyDraftRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/admin/strategy-backtests")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -5269,7 +5445,9 @@ type ClientWithResponsesInterface interface {
 	// strategy sells at entry and buys back at exit, gaining as the price
 	// falls; funding, leverage, and liquidation are not modeled, and it has
 	// no baselines. A backtest that does not finish
-	// within its time limit fails with `backtest_too_heavy`.
+	// within its time limit fails with `backtest_too_heavy`. At most two
+	// backtests, saved or not, run at once; another fails at once with
+	// `backtest_busy`.
 	//
 	// A signal trades nothing: its backtest has no trades and no baselines,
 	// and `signal` lists its entry signals and how the price moved after
@@ -5279,6 +5457,34 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /api/v1/admin/strategies/{strategy_id}/backtest (the `BacktestStrategy` operationId).
 	BacktestStrategyWithResponse(ctx context.Context, strategyId StrategyID, params *BacktestStrategyParams, reqEditors ...RequestEditorFn) (*BacktestStrategyResponse, error)
+
+	// BacktestStrategyDraftWithBodyWithResponse Backtest an unsaved strategy on one coin
+	//
+	// Backtests the strategy or signal of the body without saving it,
+	// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+	// backtests a saved one with the same rules. The rules and trading
+	// settings are checked as a save checks them and fail with
+	// `invalid_argument`. At most two backtests, saved or not, run at once;
+	// another fails at once with `backtest_busy`.
+	//
+	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
+	BacktestStrategyDraftWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error)
+
+	// BacktestStrategyDraftWithResponse Backtest an unsaved strategy on one coin
+	//
+	// Backtests the strategy or signal of the body without saving it,
+	// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+	// backtests a saved one with the same rules. The rules and trading
+	// settings are checked as a save checks them and fail with
+	// `invalid_argument`. At most two backtests, saved or not, run at once;
+	// another fails at once with `backtest_busy`.
+	//
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
+	BacktestStrategyDraftWithResponse(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error)
 
 	// ListStrategySymbolsWithResponse List the coins strategy expressions can read through of
 	//
@@ -6759,6 +6965,11 @@ type BacktestStrategyResponse404Headers struct {
 	XRequestID string
 }
 
+// BacktestStrategyResponse429Headers the declared response headers of an HTTP 429 response for BacktestStrategy
+type BacktestStrategyResponse429Headers struct {
+	XRequestID string
+}
+
 // BacktestStrategyResponse500Headers the declared response headers of an HTTP 500 response for BacktestStrategy
 type BacktestStrategyResponse500Headers struct {
 	XRequestID string
@@ -6782,6 +6993,8 @@ type BacktestStrategyResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *ErrorResponse
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *BacktestBusy
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
 	// JSON503 the response for an HTTP 503 `application/json` response
@@ -6792,6 +7005,8 @@ type BacktestStrategyResponse struct {
 	Headers401 *BacktestStrategyResponse401Headers
 	// Headers404 the parsed response headers for an HTTP 404 response
 	Headers404 *BacktestStrategyResponse404Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *BacktestStrategyResponse429Headers
 	// Headers500 the parsed response headers for an HTTP 500 response
 	Headers500 *BacktestStrategyResponse500Headers
 	// Headers503 the parsed response headers for an HTTP 503 response
@@ -6821,6 +7036,11 @@ func (r BacktestStrategyResponse) GetJSON403() *AdministratorRequired {
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
 func (r BacktestStrategyResponse) GetJSON404() *ErrorResponse {
 	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r BacktestStrategyResponse) GetJSON429() *BacktestBusy {
+	return r.JSON429
 }
 
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
@@ -6856,6 +7076,138 @@ func (r BacktestStrategyResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r BacktestStrategyResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+// BacktestStrategyDraftResponse400Headers the declared response headers of an HTTP 400 response for BacktestStrategyDraft
+type BacktestStrategyDraftResponse400Headers struct {
+	XRequestID string
+}
+
+// BacktestStrategyDraftResponse401Headers the declared response headers of an HTTP 401 response for BacktestStrategyDraft
+type BacktestStrategyDraftResponse401Headers struct {
+	XRequestID string
+}
+
+// BacktestStrategyDraftResponse404Headers the declared response headers of an HTTP 404 response for BacktestStrategyDraft
+type BacktestStrategyDraftResponse404Headers struct {
+	XRequestID string
+}
+
+// BacktestStrategyDraftResponse429Headers the declared response headers of an HTTP 429 response for BacktestStrategyDraft
+type BacktestStrategyDraftResponse429Headers struct {
+	XRequestID string
+}
+
+// BacktestStrategyDraftResponse500Headers the declared response headers of an HTTP 500 response for BacktestStrategyDraft
+type BacktestStrategyDraftResponse500Headers struct {
+	XRequestID string
+}
+
+// BacktestStrategyDraftResponse503Headers the declared response headers of an HTTP 503 response for BacktestStrategyDraft
+type BacktestStrategyDraftResponse503Headers struct {
+	XRequestID string
+}
+
+type BacktestStrategyDraftResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *StrategyBacktest
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *AdministratorRequired
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *SymbolNotFound
+	// JSON429 the response for an HTTP 429 `application/json` response
+	JSON429 *BacktestBusy
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *BacktestTooHeavy
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *BacktestStrategyDraftResponse400Headers
+	// Headers401 the parsed response headers for an HTTP 401 response
+	Headers401 *BacktestStrategyDraftResponse401Headers
+	// Headers404 the parsed response headers for an HTTP 404 response
+	Headers404 *BacktestStrategyDraftResponse404Headers
+	// Headers429 the parsed response headers for an HTTP 429 response
+	Headers429 *BacktestStrategyDraftResponse429Headers
+	// Headers500 the parsed response headers for an HTTP 500 response
+	Headers500 *BacktestStrategyDraftResponse500Headers
+	// Headers503 the parsed response headers for an HTTP 503 response
+	Headers503 *BacktestStrategyDraftResponse503Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r BacktestStrategyDraftResponse) GetJSON200() *StrategyBacktest {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r BacktestStrategyDraftResponse) GetJSON400() *BadRequest {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r BacktestStrategyDraftResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r BacktestStrategyDraftResponse) GetJSON403() *AdministratorRequired {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r BacktestStrategyDraftResponse) GetJSON404() *SymbolNotFound {
+	return r.JSON404
+}
+
+// GetJSON429 returns the response for an HTTP 429 `application/json` response
+func (r BacktestStrategyDraftResponse) GetJSON429() *BacktestBusy {
+	return r.JSON429
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r BacktestStrategyDraftResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r BacktestStrategyDraftResponse) GetJSON503() *BacktestTooHeavy {
+	return r.JSON503
+}
+
+// GetBody returns the raw response body bytes
+func (r BacktestStrategyDraftResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r BacktestStrategyDraftResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r BacktestStrategyDraftResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r BacktestStrategyDraftResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9561,7 +9913,9 @@ func (c *ClientWithResponses) UpdateStrategyWithResponse(ctx context.Context, st
 // strategy sells at entry and buys back at exit, gaining as the price
 // falls; funding, leverage, and liquidation are not modeled, and it has
 // no baselines. A backtest that does not finish
-// within its time limit fails with `backtest_too_heavy`.
+// within its time limit fails with `backtest_too_heavy`. At most two
+// backtests, saved or not, run at once; another fails at once with
+// `backtest_busy`.
 //
 // A signal trades nothing: its backtest has no trades and no baselines,
 // and `signal` lists its entry signals and how the price moved after
@@ -9576,6 +9930,46 @@ func (c *ClientWithResponses) BacktestStrategyWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseBacktestStrategyResponse(rsp)
+}
+
+// BacktestStrategyDraftWithBodyWithResponse Backtest an unsaved strategy on one coin
+//
+// Backtests the strategy or signal of the body without saving it,
+// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+// backtests a saved one with the same rules. The rules and trading
+// settings are checked as a save checks them and fail with
+// `invalid_argument`. At most two backtests, saved or not, run at once;
+// another fails at once with `backtest_busy`.
+//
+// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
+func (c *ClientWithResponses) BacktestStrategyDraftWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error) {
+	rsp, err := c.BacktestStrategyDraftWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBacktestStrategyDraftResponse(rsp)
+}
+
+// BacktestStrategyDraftWithResponse Backtest an unsaved strategy on one coin
+//
+// Backtests the strategy or signal of the body without saving it,
+// exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+// backtests a saved one with the same rules. The rules and trading
+// settings are checked as a save checks them and fail with
+// `invalid_argument`. At most two backtests, saved or not, run at once;
+// another fails at once with `backtest_busy`.
+//
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
+func (c *ClientWithResponses) BacktestStrategyDraftWithResponse(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error) {
+	rsp, err := c.BacktestStrategyDraft(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseBacktestStrategyDraftResponse(rsp)
 }
 
 // ListStrategySymbolsWithResponse List the coins strategy expressions can read through of
@@ -11228,6 +11622,13 @@ func ParseBacktestStrategyResponse(rsp *http.Response) (*BacktestStrategyRespons
 		}
 		response.JSON404 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest BacktestBusy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -11275,6 +11676,16 @@ func ParseBacktestStrategyResponse(rsp *http.Response) (*BacktestStrategyRespons
 			headers.XRequestID = value
 		}
 		response.Headers404 = &headers
+	case rsp.StatusCode == 429:
+		var headers BacktestStrategyResponse429Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers429 = &headers
 	case rsp.StatusCode == 500:
 		var headers BacktestStrategyResponse500Headers
 		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
@@ -11287,6 +11698,144 @@ func ParseBacktestStrategyResponse(rsp *http.Response) (*BacktestStrategyRespons
 		response.Headers500 = &headers
 	case rsp.StatusCode == 503:
 		var headers BacktestStrategyResponse503Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers503 = &headers
+	}
+
+	return response, nil
+}
+
+// ParseBacktestStrategyDraftResponse parses an HTTP response from a BacktestStrategyDraftWithResponse call
+func ParseBacktestStrategyDraftResponse(rsp *http.Response) (*BacktestStrategyDraftResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &BacktestStrategyDraftResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StrategyBacktest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest AdministratorRequired
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest SymbolNotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 429:
+		var dest BacktestBusy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON429 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest BacktestTooHeavy
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 400:
+		var headers BacktestStrategyDraftResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers400 = &headers
+	case rsp.StatusCode == 401:
+		var headers BacktestStrategyDraftResponse401Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers401 = &headers
+	case rsp.StatusCode == 404:
+		var headers BacktestStrategyDraftResponse404Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers404 = &headers
+	case rsp.StatusCode == 429:
+		var headers BacktestStrategyDraftResponse429Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers429 = &headers
+	case rsp.StatusCode == 500:
+		var headers BacktestStrategyDraftResponse500Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers500 = &headers
+	case rsp.StatusCode == 503:
+		var headers BacktestStrategyDraftResponse503Headers
 		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {

@@ -28,6 +28,7 @@ export const APIErrorCode = {
   alert_limit: 'alert_limit',
   alert_not_found: 'alert_not_found',
   api_token_not_found: 'api_token_not_found',
+  backtest_busy: 'backtest_busy',
   backtest_too_heavy: 'backtest_too_heavy',
   duplicate_target: 'duplicate_target',
   favorite_has_alerts: 'favorite_has_alerts',

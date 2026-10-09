@@ -50,6 +50,7 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		{name: "unknown strategy", token: "admin", target: "/api/v1/admin/strategies/2/backtest?symbol=BTCUSDT", status: http.StatusNotFound, code: "strategy_not_found"},
 		{name: "unknown symbol", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=ETHUSDT", status: http.StatusNotFound, code: "symbol_not_found"},
 		{name: "too heavy", token: "admin", target: "/api/v1/admin/strategies/5/backtest?symbol=BTCUSDT", status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
+		{name: "busy", token: "admin", target: "/api/v1/admin/strategies/6/backtest?symbol=BTCUSDT", status: http.StatusTooManyRequests, code: "backtest_busy"},
 		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt&from=2026-03-02T03:00:00%2B02:00", status: http.StatusOK},
 		{
 			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/3/backtest?symbol=BTCUSDT", status: http.StatusOK,
@@ -95,13 +96,71 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 	}
 }
 
+// A draft is backtested from its body as it is, also with an API token.
+func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
+	strategies := &backtestStrategies{result: strategy.Backtest{Interval: market.IntervalHour, Symbol: "BTCUSDT", Direction: strategy.DirectionSideways}}
+	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: strategies,
+	}, httpapi.Options{})
+	signal := `"signal":true,"direction":"sideways","exit_expression":"","take_profit_expression":"","stop_loss_expression":"","target_ratio":3,"window":12,"symbol":"btcusdt"`
+	for _, test := range []struct {
+		name   string
+		token  string
+		body   string
+		status int
+		code   string
+	}{
+		{name: "user", token: "user", body: `{"expression":"h_close > 1",` + signal + `}`, status: http.StatusForbidden, code: "administrator_required"},
+		{name: "unknown field", token: "admin", body: `{"expression":"h_close > 1","name":"Draft",` + signal + `}`, status: http.StatusBadRequest, code: "invalid_argument"},
+		{name: "invalid", token: "admin", body: `{"expression":"invalid",` + signal + `}`, status: http.StatusBadRequest, code: "invalid_argument"},
+		{name: "busy", token: "admin", body: `{"expression":"busy",` + signal + `}`, status: http.StatusTooManyRequests, code: "backtest_busy"},
+		{name: "too heavy", token: "admin", body: `{"expression":"heavy",` + signal + `}`, status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
+		{name: "api token", token: "program", body: `{"expression":"h_close > 1","to":"2026-03-02T03:00:00+02:00",` + signal + `}`, status: http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/strategy-backtests", strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer "+test.token)
+			request.Header.Set("Content-Type", "application/json")
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+			}
+			if test.code != "" {
+				assertErrorCode(t, response, test.code)
+				return
+			}
+			want := strategy.Strategy{Signal: true, Direction: strategy.DirectionSideways, Expression: "h_close > 1", TargetRatio: 3, Window: 12}
+			if strategies.draft != want || strategies.symbol != "BTCUSDT" || !strategies.from.IsZero() ||
+				!strategies.to.Equal(time.Date(2026, 3, 2, 1, 0, 0, 0, time.UTC)) || strategies.to.Location() != time.UTC {
+				t.Fatalf("draft = %+v, symbol %s, from %v, to %v", strategies.draft, strategies.symbol, strategies.from, strategies.to)
+			}
+		})
+	}
+}
+
 // backtestStrategies knows strategy 1 and the coin BTCUSDT; strategy 3 has no
-// history, and strategy 5 runs out of time.
+// history, strategy 5 runs out of time, and strategy 6 finds no free slot.
+// Drafts fail by their expression: invalid, heavy, or busy.
 type backtestStrategies struct {
 	httpapi.Strategies
 	result   strategy.Backtest
+	draft    strategy.Strategy
 	symbol   string
 	from, to time.Time
+}
+
+func (strategies *backtestStrategies) BacktestDraft(_ context.Context, item strategy.Strategy, symbol string, from, to time.Time) (strategy.Backtest, error) {
+	strategies.draft, strategies.symbol, strategies.from, strategies.to = item, market.NormalizeSymbol(symbol), from, to
+	switch item.Expression {
+	case "invalid":
+		return strategy.Backtest{}, fmt.Errorf("%w: unknown variable", strategy.ErrInvalidArgument)
+	case "heavy":
+		return strategy.Backtest{}, fmt.Errorf("replay: %w", context.DeadlineExceeded)
+	case "busy":
+		return strategy.Backtest{}, strategy.ErrBacktestBusy
+	}
+	return strategies.result, nil
 }
 
 func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string, from, to time.Time) (strategy.Backtest, error) {
@@ -110,6 +169,8 @@ func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symb
 	switch {
 	case id == 5:
 		return strategy.Backtest{}, fmt.Errorf("replay: %w", context.DeadlineExceeded)
+	case id == 6:
+		return strategy.Backtest{}, strategy.ErrBacktestBusy
 	case id == 3:
 		return strategy.Backtest{Interval: market.IntervalHour, Symbol: symbol, Direction: strategy.DirectionShort}, nil
 	case id != 1:

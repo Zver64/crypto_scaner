@@ -39,6 +39,8 @@ var (
 	// strategies read out of the administrator's favorites;
 	// InstrumentsInUseError names them.
 	ErrInstrumentsInUse = errors.New("strategies read the instruments")
+	// ErrBacktestBusy means that maxBacktests backtests already run.
+	ErrBacktestBusy = errors.New("too many backtests run")
 )
 
 // InstrumentUse names the strategies that read one instrument.
@@ -284,6 +286,8 @@ type Service struct {
 	writes  sync.Mutex
 	mu      sync.RWMutex
 	entries []Entry
+	// backtests holds a slot per running backtest.
+	backtests chan struct{}
 }
 
 // NewService creates an empty service; Load reads the stored strategies.
@@ -294,7 +298,7 @@ func NewService(store Store, indicators Indicators, registry *indicator.Registry
 	if store == nil || indicators == nil || registry == nil || logger == nil || changed == nil {
 		return nil, errors.New("strategy store, indicators, registry, logger, and change listener are required")
 	}
-	return &Service{store: store, indicators: indicators, registry: registry, administratorID: administratorID, logger: logger.With("module", "strategy"), changed: changed}, nil
+	return &Service{store: store, indicators: indicators, registry: registry, administratorID: administratorID, logger: logger.With("module", "strategy"), changed: changed, backtests: make(chan struct{}, maxBacktests)}, nil
 }
 
 // RuleKind tells what an expression is to a strategy.
@@ -722,6 +726,12 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	if err := item.MarketCap.validate(); err != nil {
 		return Entry{}, err
 	}
+	return service.trading(item)
+}
+
+// trading checks how item trades or what it signals and compiles its rules,
+// all that a backtest reads.
+func (service *Service) trading(item Strategy) (Entry, error) {
 	item.Expression = strings.TrimSpace(item.Expression)
 	item.ExitExpression = strings.TrimSpace(item.ExitExpression)
 	item.TakeProfitExpression = strings.TrimSpace(item.TakeProfitExpression)
@@ -746,9 +756,5 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	case item.Direction == DirectionShort && (item.TakeProfitExpression == "" || item.StopLossExpression == ""):
 		return Entry{}, fmt.Errorf("%w: a short strategy needs a take profit and a stop loss", ErrInvalidArgument)
 	}
-	entry, err := service.compileEntry(item)
-	if err != nil {
-		return Entry{}, err
-	}
-	return entry, nil
+	return service.compileEntry(item)
 }

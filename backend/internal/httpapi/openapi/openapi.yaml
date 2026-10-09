@@ -814,7 +814,9 @@ paths:
         strategy sells at entry and buys back at exit, gaining as the price
         falls; funding, leverage, and liquidation are not modeled, and it has
         no baselines. A backtest that does not finish
-        within its time limit fails with `backtest_too_heavy`.
+        within its time limit fails with `backtest_too_heavy`. At most two
+        backtests, saved or not, run at once; another fails at once with
+        `backtest_busy`.
 
         A signal trades nothing: its backtest has no trades and no baselines,
         and `signal` lists its entry signals and how the price moved after
@@ -851,6 +853,34 @@ paths:
             X-Request-ID:
               $ref: "#/components/headers/RequestID"
           content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+        "429": { $ref: "#/components/responses/BacktestBusy" }
+        "500": { $ref: "#/components/responses/InternalError" }
+        "503": { $ref: "#/components/responses/BacktestTooHeavy" }
+  /api/v1/admin/strategy-backtests:
+    post:
+      operationId: backtestStrategyDraft
+      summary: Backtest an unsaved strategy on one coin
+      description: |
+        Backtests the strategy or signal of the body without saving it,
+        exactly as `GET /api/v1/admin/strategies/{strategy_id}/backtest`
+        backtests a saved one with the same rules. The rules and trading
+        settings are checked as a save checks them and fail with
+        `invalid_argument`. At most two backtests, saved or not, run at once;
+        another fails at once with `backtest_busy`.
+      tags: [Administration]
+      security: [{ sessionToken: [] }]
+      requestBody:
+        required: true
+        content: { application/json: { schema: { $ref: "#/components/schemas/StrategyBacktestInput" } } }
+      responses:
+        "200":
+          description: Simulated trades and their metrics.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StrategyBacktest" } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthenticated" }
+        "403": { $ref: "#/components/responses/AdministratorRequired" }
+        "404": { $ref: "#/components/responses/SymbolNotFound" }
+        "429": { $ref: "#/components/responses/BacktestBusy" }
         "500": { $ref: "#/components/responses/InternalError" }
         "503": { $ref: "#/components/responses/BacktestTooHeavy" }
   /api/v1/admin/candle-history-loads:
@@ -1140,6 +1170,12 @@ components:
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     BacktestTooHeavy:
       description: The backtest did not finish within its time limit (`backtest_too_heavy`).
+      headers:
+        X-Request-ID:
+          $ref: "#/components/headers/RequestID"
+      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
+    BacktestBusy:
+      description: Two backtests already run (`backtest_busy`); retry once one ends.
       headers:
         X-Request-ID:
           $ref: "#/components/headers/RequestID"
@@ -1898,6 +1934,7 @@ components:
             - alert_limit
             - alert_not_found
             - api_token_not_found
+            - backtest_busy
             - backtest_too_heavy
             - duplicate_target
             - favorite_has_alerts
@@ -2506,6 +2543,37 @@ components:
             - type: "null"
         message: { $ref: "#/components/schemas/StrategyMessage" }
         enabled: { type: boolean }
+    StrategyBacktestInput:
+      type: object
+      additionalProperties: false
+      description: |
+        The rules and trading settings of an unsaved strategy or signal, as
+        in `StrategyInput`, and the backtested coin and period.
+      required: [signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, target_ratio, window, symbol]
+      properties:
+        signal: { $ref: "#/components/schemas/StrategySignal" }
+        direction: { $ref: "#/components/schemas/Direction" }
+        expression: { type: string, minLength: 1, maxLength: 2000 }
+        exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
+        take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
+        stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
+        target_ratio:
+          oneOf:
+            - $ref: "#/components/schemas/SignalTargetRatio"
+            - type: "null"
+        window:
+          oneOf:
+            - $ref: "#/components/schemas/SignalWindow"
+            - type: "null"
+        symbol: { $ref: "#/components/schemas/BacktestSymbolName" }
+        from:
+          type: string
+          format: date-time
+          description: Earliest open time of an evaluated candle; the start of the stored history when absent.
+        to:
+          type: string
+          format: date-time
+          description: Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
     StrategySignal:
       type: boolean
       description: |

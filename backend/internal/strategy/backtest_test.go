@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"math"
+	"reflect"
 	"slices"
 	"strconv"
 	"testing"
@@ -114,6 +115,60 @@ func TestBacktestRejectsUnknownAndInvalidStrategiesAndArguments(t *testing.T) {
 		if _, err := service.Backtest(context.Background(), test.id, test.symbol, test.from, test.to); !errors.Is(err, test.want) {
 			t.Fatalf("Backtest(%d, %q, %v, %v) error = %v, want %v", test.id, test.symbol, test.from, test.to, err, test.want)
 		}
+	}
+}
+
+// A draft replays exactly like the saved strategy with the same rules, and is
+// checked like a save.
+func TestBacktestDraftReplaysLikeASavedStrategy(t *testing.T) {
+	saved := Strategy{
+		ID: 1, Name: "Top", Direction: DirectionShort, Expression: "h_close > 5",
+		TakeProfitExpression: "h_close * 0.8", StopLossExpression: "h_close * 1.5",
+	}
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 10, 10, 4)), saved)
+
+	want, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := service.BacktestDraft(context.Background(), Strategy{
+		Direction: saved.Direction, Expression: saved.Expression,
+		TakeProfitExpression: saved.TakeProfitExpression, StopLossExpression: saved.StopLossExpression,
+	}, "BTCUSDT", time.Time{}, time.Time{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) || len(got.Trades) != 1 {
+		t.Fatalf("BacktestDraft() = %+v, want %+v", got, want)
+	}
+	if _, err := service.BacktestDraft(context.Background(), Strategy{Direction: DirectionLong, Expression: `h_close > 1 && of("BTCUSDT", h_close) > 5`}, "BTCUSDT", time.Time{}, time.Time{}); err != nil {
+		t.Fatalf("BacktestDraft() reading a favorite: %v", err)
+	}
+	for _, draft := range []Strategy{
+		{Expression: "h_close > 5"},
+		{Direction: DirectionLong, Expression: "h_unknown > 5"},
+		{Direction: DirectionShort, Expression: "h_close > 5"},
+		{Signal: true, Direction: DirectionSideways, Expression: "h_close > 5"},
+		{Direction: DirectionLong, Expression: `h_close > 1 && of("ETHUSDT", h_close) > 5`},
+	} {
+		if _, err := service.BacktestDraft(context.Background(), draft, "BTCUSDT", time.Time{}, time.Time{}); !errors.Is(err, ErrInvalidArgument) {
+			t.Fatalf("BacktestDraft(%+v) error = %v, want %v", draft, err, ErrInvalidArgument)
+		}
+	}
+}
+
+func TestBacktestRefusesBeyondTheRunningLimit(t *testing.T) {
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 10)), Strategy{ID: 1, Name: "Close", Expression: "h_close > 5"})
+	for range maxBacktests {
+		service.backtests <- struct{}{}
+	}
+
+	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}); !errors.Is(err, ErrBacktestBusy) {
+		t.Fatalf("Backtest() error = %v, want %v", err, ErrBacktestBusy)
+	}
+	<-service.backtests
+	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}); err != nil {
+		t.Fatalf("Backtest() with a free slot: %v", err)
 	}
 }
 

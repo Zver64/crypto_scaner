@@ -152,6 +152,7 @@ var administratorRoutes = []string{
 	"PATCH /api/v1/admin/strategies/{strategy_id}",
 	"DELETE /api/v1/admin/strategies/{strategy_id}",
 	"GET /api/v1/admin/strategies/{strategy_id}/backtest",
+	"POST /api/v1/admin/strategy-backtests",
 	"POST /api/v1/admin/candle-history-loads",
 	"GET /api/v1/admin/candle-history-loads",
 	"GET /api/v1/admin/api-tokens",

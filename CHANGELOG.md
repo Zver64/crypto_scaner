@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.0](https://github.com/Zver64/crypto_scaner/compare/v2.2.0...v2.3.0) (2026-10-10)
+
+
+### Features
+
+* show server execution time for backtests ([a53ccf1](https://github.com/Zver64/crypto_scaner/commit/a53ccf17a14afacf7497d5d8f12d91d23d48d525))
+
 ## [2.2.0](https://github.com/Zver64/crypto_scaner/compare/v2.1.0...v2.2.0) (2026-10-10)
 
 

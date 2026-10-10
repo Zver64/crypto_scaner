@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/Zver64/crypto_scaner/compare/v2.1.0...v2.2.0) (2026-10-10)
+
+
+### Features
+
+* show strategy indicators in backtest snapshots ([b7d98e2](https://github.com/Zver64/crypto_scaner/commit/b7d98e2701ebd0af363b5fcd097398d0fe10fc92))
+
 ## [2.1.0](https://github.com/Zver64/crypto_scaner/compare/v2.0.0...v2.1.0) (2026-10-09)
 
 

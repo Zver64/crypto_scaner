@@ -258,6 +258,7 @@ const maxTradeRows = 100
 // renderBacktest prints the backtest; period tells that --from or --to
 // limited it.
 func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period, indicators bool) {
+	fmt.Fprintf(w, "Execution time: %.2f s\n", backtest.DurationMs/1000)
 	if backtest.From == nil || backtest.To == nil {
 		if period {
 			fmt.Fprintf(w, "%s: no stored candles of this interval in the requested period.\n", backtest.Symbol)

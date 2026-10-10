@@ -2124,9 +2124,14 @@ components:
     StrategyBacktest:
       type: object
       additionalProperties: false
-      required: [interval, symbol, direction, fee, from, to, summary, trades, skipped_alerts, equity, baselines, signal, indicator_columns, charts]
+      required: [interval, symbol, direction, fee, from, to, summary, trades, skipped_alerts, equity, baselines, signal, indicator_columns, charts, duration_ms]
       description: Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
       properties:
+        duration_ms:
+          type: number
+          format: double
+          minimum: 0
+          description: Server execution time in milliseconds, including service validation, database reads, calculations, requested chart snapshots, and response preparation. Excludes authentication, HTTP request validation, JSON serialization, and network transfer.
         interval:
           $ref: "#/components/schemas/CandleInterval"
         symbol: { type: string }

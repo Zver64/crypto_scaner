@@ -70,8 +70,18 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 				assertErrorCode(t, response, test.code)
 				return
 			}
+			assertBacktestDuration(t, response)
 			if test.body != "" {
-				if got := strings.TrimSpace(response.Body.String()); got != test.body {
+				var fields map[string]json.RawMessage
+				if err := json.Unmarshal(response.Body.Bytes(), &fields); err != nil {
+					t.Fatal(err)
+				}
+				delete(fields, "duration_ms")
+				withoutDuration, err := json.Marshal(fields)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got := string(withoutDuration); got != test.body {
 					t.Fatalf("body = %s, want %s", got, test.body)
 				}
 				return
@@ -130,6 +140,7 @@ func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
 				assertErrorCode(t, response, test.code)
 				return
 			}
+			assertBacktestDuration(t, response)
 			want := strategy.Strategy{Signal: true, Direction: strategy.DirectionSideways, Expression: "h_close > 1", TargetRatio: 3, Window: 12}
 			if strategies.draft != want || !strategies.withChart || strategies.symbol != "BTCUSDT" || !strategies.from.IsZero() ||
 				!strategies.to.Equal(time.Date(2026, 3, 2, 1, 0, 0, 0, time.UTC)) || strategies.to.Location() != time.UTC {
@@ -205,6 +216,20 @@ func (roleSessions) Authenticate(_ context.Context, token string) (auth.User, er
 }
 
 func (roleSessions) Revoke(context.Context, string) error { return nil }
+
+// Both endpoints report server execution time, even for empty history.
+func assertBacktestDuration(t *testing.T, response *httptest.ResponseRecorder) {
+	t.Helper()
+	var body struct {
+		DurationMs *float64 `json:"duration_ms"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body.DurationMs == nil || *body.DurationMs < 0 {
+		t.Fatalf("missing or negative execution time: %s", response.Body.String())
+	}
+}
 
 func assertErrorCode(t *testing.T, response *httptest.ResponseRecorder, code string) {
 	t.Helper()

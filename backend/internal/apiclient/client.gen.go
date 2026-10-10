@@ -1356,6 +1356,9 @@ type StrategyBacktest struct {
 	// an update that changes it is refused.
 	Direction Direction `json:"direction"`
 
+	// DurationMs Server execution time in milliseconds, including service validation, database reads, calculations, requested chart snapshots, and response preparation. Excludes authentication, HTTP request validation, JSON serialization, and network transfer.
+	DurationMs float64 `json:"duration_ms"`
+
 	// Equity Equity after each trade, the open one included, compounded from 1, oldest first.
 	Equity []BacktestEquityPoint `json:"equity"`
 

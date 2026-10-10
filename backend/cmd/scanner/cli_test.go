@@ -243,7 +243,7 @@ func TestBacktestRefusesWhileAnotherRuns(t *testing.T) {
 	}
 }
 
-const backtestResponse = `{"baselines":{"buy_and_hold":0.25,"dca":0.18},"direction":"long",` +
+const backtestResponse = `{"baselines":{"buy_and_hold":0.25,"dca":0.18},"direction":"long","duration_ms":1234.5,` +
 	`"equity":[{"equity":1.03,"time":"2024-02-01T07:00:00Z"},{"equity":1.0094,"time":"2024-06-30T23:00:00Z"}],"fee":0.001,"from":"2024-01-01T00:00:00Z","interval":"1h",` +
 	`"skipped_alerts":1,"summary":{"max_drawdown":0.02,"net_profit":0.0094,"stats":{"average_bars":2,"average_loss":null,"average_trade":0.03,"average_win":0.03,` +
 	`"exit_rule_exits":0,"profit_factor":null,"stop_loss_exits":0,"take_profit_exits":1,"trade_count":1,"win_rate":1}},` +
@@ -253,7 +253,8 @@ const backtestResponse = `{"baselines":{"buy_and_hold":0.25,"dca":0.18},"directi
 	`{"buys":1,"entry_price":0.00001234,"entry_time":"2024-06-30T21:00:00Z","exit_price":0.0000121,"exit_signal_time":null,"exit_time":"2024-06-30T23:00:00Z",` +
 	`"exit_values":{},"fills":[],"net_return":-0.02,"open":true,"stop_loss":null,"take_profit":null}]}`
 
-const backtestText = `┌─────────────────┬──────────────────────────────────────────────────────────────────┐
+const backtestText = `Execution time: 1.23 s
+┌─────────────────┬──────────────────────────────────────────────────────────────────┐
 │ Coin            │ BTCUSDT                                                          │
 │ Direction       │ long                                                             │
 │ Period          │ 2024-01-01 → 2024-06-30 (1h candles)                             │
@@ -696,7 +697,8 @@ func TestBacktestWithoutTradesSaysWhy(t *testing.T) {
 	}
 }
 
-const noTradesText = `┌─────────────────┬───────────────────────────────────────────────────────────────────┐
+const noTradesText = `Execution time: 0.00 s
+┌─────────────────┬───────────────────────────────────────────────────────────────────┐
 │ Coin            │ UNIUSDT                                                           │
 │ Direction       │ short                                                             │
 │ Period          │ 2026-07-20 → 2026-10-07 (1d candles)                              │
@@ -712,8 +714,8 @@ func TestBacktestWithoutEvaluatedCandlesSaysWhy(t *testing.T) {
 	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"}, false, false)
 	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"}, true, false)
 
-	if output.String() != "ETHUSDT: no stored candles of this interval yet; synchronization fills them first.\n"+
-		"ETHUSDT: no stored candles of this interval in the requested period.\n" {
+	if output.String() != "Execution time: 0.00 s\nETHUSDT: no stored candles of this interval yet; synchronization fills them first.\n"+
+		"Execution time: 0.00 s\nETHUSDT: no stored candles of this interval in the requested period.\n" {
 		t.Fatalf("output = %q", output.String())
 	}
 }

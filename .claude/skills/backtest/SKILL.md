@@ -21,6 +21,7 @@ description: Create and backtest Crypto Scanner strategies (CEL expressions) aga
 - Backtests ignore the market cap range, so backtest any coin regardless of it.
 - If the evaluated period is too short (about 2,000 candles, roughly 83 days of 1h), ask the user to load deeper history from the Mini App's Commands section; the CLI cannot.
 - Backtests run one at a time per machine; never start them in parallel.
+- Monitor server execution time after every backtest (`Execution time` in text output, `duration_ms` in JSON). Compare runs over comparable stored history and periods, with the same chart options and similar server load. A sharp increase in execution time as the formula grows is a sign that it needs simplification: remove redundant conditions and unnecessarily expensive nested calculations while preserving the intended signal or trading logic, then backtest again to verify both the results and the runtime.
 
 ## Workflow
 

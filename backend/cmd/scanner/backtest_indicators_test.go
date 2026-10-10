@@ -17,7 +17,8 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 			IndicatorValues: map[string]float64{"h_rsi": float64(i), "h_pivot_low_bars": 0}}
 	}
 	backtest := apiclient.StrategyBacktest{
-		From: &from, To: &occurrences[len(occurrences)-1].Time, Symbol: "BTCUSDT", Interval: apiclient.N1h, Direction: apiclient.Long,
+		DurationMs: 1234.5,
+		From:       &from, To: &occurrences[len(occurrences)-1].Time, Symbol: "BTCUSDT", Interval: apiclient.N1h, Direction: apiclient.Long,
 		IndicatorColumns: []apiclient.BacktestIndicatorColumn{{Key: "h_rsi", Title: "h_rsi"}, {Key: "h_pivot_low_bars", Title: "h_pivot_low_bars"}, {Key: "h_pivot_high_bars", Title: "h_pivot_high_bars"}},
 		Signal:           &apiclient.BacktestSignal{Window: 6, TargetRatio: 2, Occurrences: occurrences},
 	}
@@ -35,6 +36,9 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 		got := runCLI(t, home, "", args...)
 		if got.code != 0 || got.stderr != "" {
 			t.Fatalf("run: %+v", got)
+		}
+		if !strings.HasPrefix(got.stdout, "Execution time: 1.23 s\n") || strings.Count(got.stdout, "Execution time:") != 1 {
+			t.Fatalf("execution time missing or repeated: %s", got.stdout)
 		}
 		if strings.Contains(got.stdout, "H_RSI") != indicators || strings.Contains(got.stdout, "H_PIVOT_LOW_BARS") != indicators {
 			t.Fatalf("indicator columns: %s", got.stdout)
@@ -61,7 +65,7 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 	}
 	got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT", "--json")
 	var full apiclient.StrategyBacktest
-	if got.code != 0 || json.Unmarshal([]byte(got.stdout), &full) != nil || full.Signal == nil || len(full.Signal.Occurrences) != len(occurrences) {
+	if got.code != 0 || json.Unmarshal([]byte(got.stdout), &full) != nil || full.DurationMs != backtest.DurationMs || full.Signal == nil || len(full.Signal.Occurrences) != len(occurrences) {
 		t.Fatalf("JSON must retain all signals: %+v", got)
 	}
 }

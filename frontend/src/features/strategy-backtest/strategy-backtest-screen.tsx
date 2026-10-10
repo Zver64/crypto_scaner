@@ -15,6 +15,7 @@ import { BacktestResults } from "@/features/strategy-backtest/backtest-results";
 import { CoinSelect } from "@/features/strategy-backtest/coin-select";
 import { StrategySelect } from "@/features/strategy-backtest/strategy-select";
 import { backtestPeriod } from "@/features/strategy-backtest/utils";
+import { formatNumber } from "@/utils/number-format";
 
 const runHint = "Select a coin and a strategy, then click Run backtest.";
 const runFailed = "The backtest could not be run.";
@@ -120,7 +121,14 @@ export function StrategyBacktestScreen({
 				Run backtest
 			</Button>
 			{result ? (
-				<BacktestEvaluatedPeriod backtest={result} from={from} to={to} />
+				<Stack gap={4}>
+					<BacktestEvaluatedPeriod backtest={result} from={from} to={to} />
+					<Text c="dimmed" size="xs">
+						Execution time:{" "}
+						{formatNumber(result.duration_ms / 1000, 2, "halfExpand", false, 2)}{" "}
+						s
+					</Text>
+				</Stack>
 			) : null}
 		</Stack>
 	);

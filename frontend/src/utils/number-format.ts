@@ -39,30 +39,37 @@ function cachedFormatter<K>(
 // or "four significant digits" shows more, so 5785.4 formats as 5,785 and
 // 0.012345 as 0.01235. An optional fraction digit limit then drops values below
 // that resolution (such as floating-point noise) to zero. Pass useGrouping
-// false for input values, which must not contain group separators.
+// false for input values, which must not contain group separators. A minimum
+// fraction digit count opts into fixed fractional formatting without the adaptive
+// significant-digit rounding, and pads trailing zeros.
 export function formatNumber(
 	value: NumericValue,
 	maximumFractionDigits = defaultMaximumFractionDigits,
 	roundingMode: RoundingMode = "halfExpand",
 	useGrouping = true,
+	minimumFractionDigits = 0,
 ): string {
-	const adaptive = cachedFormatter(adaptiveNumberFormatters, roundingMode, {
-		maximumFractionDigits: 0,
-		maximumSignificantDigits: 4,
-		roundingMode,
-		roundingPriority: "morePrecision",
-		useGrouping: false,
-	}).format(toNumeric(value));
+	const formattedValue =
+		minimumFractionDigits > 0
+			? toNumeric(value)
+			: (cachedFormatter(adaptiveNumberFormatters, roundingMode, {
+					maximumFractionDigits: 0,
+					maximumSignificantDigits: 4,
+					roundingMode,
+					roundingPriority: "morePrecision",
+					useGrouping: false,
+				}).format(toNumeric(value)) as Intl.StringNumericLiteral);
 	return cachedFormatter(
 		fractionLimitFormatters,
-		`${maximumFractionDigits}:${roundingMode}:${useGrouping}`,
+		`${maximumFractionDigits}:${roundingMode}:${useGrouping}:${minimumFractionDigits}`,
 		{
 			maximumFractionDigits,
+			minimumFractionDigits,
 			roundingMode,
 			signDisplay: "negative",
 			useGrouping,
 		},
-	).format(adaptive as Intl.StringNumericLiteral);
+	).format(formattedValue);
 }
 
 export function formatCompactNumber(value: NumericValue): string {

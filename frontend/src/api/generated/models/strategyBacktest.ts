@@ -31,6 +31,11 @@ import type { Direction } from './direction.ts';
  * Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
  */
 export interface StrategyBacktest {
+  /**
+     * Server execution time in milliseconds, including service validation, database reads, calculations, requested chart snapshots, and response preparation. Excludes authentication, HTTP request validation, JSON serialization, and network transfer.
+     * @minimum 0
+     */
+  duration_ms: number;
   interval: CandleInterval;
   symbol: string;
   direction: Direction;

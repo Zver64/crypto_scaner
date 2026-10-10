@@ -30,6 +30,15 @@ describe("formatNumber", () => {
 		expect(formatNumber(input, maximumFractionDigits)).toBe(expected);
 	});
 
+	it.each([
+		[0, "0.00"],
+		[1.2345, "1.23"],
+		[123.456, "123.46"],
+		[1234.567, "1234.57"],
+	])("preserves fixed fractional precision for %s", (input, expected) => {
+		expect(formatNumber(input, 2, "halfExpand", false, 2)).toBe(expected);
+	});
+
 	it("rounds in the requested direction", () => {
 		expect(formatNumber("1597.9", undefined, "floor")).toBe("1,597");
 		expect(formatNumber("1.09999", undefined, "floor")).toBe("1.099");

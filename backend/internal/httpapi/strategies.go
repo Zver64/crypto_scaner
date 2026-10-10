@@ -149,10 +149,13 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	timed, cancel := context.WithTimeout(ctx, backtestTimeout)
 	defer cancel()
 	from, to := backtestPeriod(request.Params.From, request.Params.To)
+	started := time.Now()
 	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol, from, to, request.Params.Chart != nil && *request.Params.Chart)
 	switch {
 	case err == nil:
-		return BacktestStrategy200JSONResponse(backtestDTO(backtest)), nil
+		dto := backtestDTO(backtest)
+		dto.DurationMs = float64(time.Since(started)) / float64(time.Millisecond)
+		return BacktestStrategy200JSONResponse(dto), nil
 	case backtestExpired(timed, err):
 		return BacktestStrategy503JSONResponse{backtestTooHeavy(ctx)}, nil
 	case errors.Is(err, strategy.ErrBacktestBusy):
@@ -173,6 +176,7 @@ func (api *api) BacktestStrategyDraft(ctx context.Context, request BacktestStrat
 	defer cancel()
 	body := request.Body
 	from, to := backtestPeriod(body.From, body.To)
+	started := time.Now()
 	backtest, err := api.strategies.BacktestDraft(timed, strategy.Strategy{
 		Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
@@ -180,7 +184,9 @@ func (api *api) BacktestStrategyDraft(ctx context.Context, request BacktestStrat
 	}, body.Symbol, from, to, body.Chart != nil && *body.Chart)
 	switch {
 	case err == nil:
-		return BacktestStrategyDraft200JSONResponse(backtestDTO(backtest)), nil
+		dto := backtestDTO(backtest)
+		dto.DurationMs = float64(time.Since(started)) / float64(time.Millisecond)
+		return BacktestStrategyDraft200JSONResponse(dto), nil
 	case backtestExpired(timed, err):
 		return BacktestStrategyDraft503JSONResponse{backtestTooHeavy(ctx)}, nil
 	case errors.Is(err, strategy.ErrBacktestBusy):

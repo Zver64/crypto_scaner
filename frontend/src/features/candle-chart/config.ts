@@ -96,23 +96,26 @@ export const candlePriceScaleOptions = {
 	scaleMargins: { bottom: 0.05, top: 0.05 },
 } satisfies DeepPartial<PriceScaleOptions>;
 
-// Trade arrows: entries under their candles, exits over them.
+// Prominent rise/fall arrows and sideways circles, using the app palette.
 export const entryMarkerOptions = {
-	color: colors.blue[5],
+	color: colors.green[6],
 	position: "belowBar",
 	shape: "arrowUp",
+	size: 2,
 } satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
 export const exitMarkerOptions = {
-	color: colors.orange[5],
+	color: colors.red[6],
 	position: "aboveBar",
 	shape: "arrowDown",
+	size: 2,
 } satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
 export const markMarkerOptions = {
-	color: colors.gray[5],
+	color: colors.yellow[6],
 	position: "aboveBar",
 	shape: "circle",
+	size: 2,
 } satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
 export const volumeSeriesOptions = {

@@ -13,6 +13,7 @@ docs/plans
 *.swo
 *~
 
-# Local agent settings; project skills are shared.
+# Local Claude settings; shared skills live in .agents/skills/.
+# Keep the .claude/skills symlink tracked for Claude Code discovery.
 .claude/*
-!.claude/skills/
+!.claude/skills

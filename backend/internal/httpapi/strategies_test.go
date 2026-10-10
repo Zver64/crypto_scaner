@@ -51,10 +51,10 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		{name: "unknown symbol", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=ETHUSDT", status: http.StatusNotFound, code: "symbol_not_found"},
 		{name: "too heavy", token: "admin", target: "/api/v1/admin/strategies/5/backtest?symbol=BTCUSDT", status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
 		{name: "busy", token: "admin", target: "/api/v1/admin/strategies/6/backtest?symbol=BTCUSDT", status: http.StatusTooManyRequests, code: "backtest_busy"},
-		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt&from=2026-03-02T03:00:00%2B02:00", status: http.StatusOK},
+		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt&chart=true&from=2026-03-02T03:00:00%2B02:00", status: http.StatusOK},
 		{
 			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/3/backtest?symbol=BTCUSDT", status: http.StatusOK,
-			body: `{"baselines":{"buy_and_hold":null,"dca":null},"direction":"short","equity":[],"fee":0.001,"from":null,"interval":"1h",` +
+			body: `{"baselines":{"buy_and_hold":null,"dca":null},"charts":[],"direction":"short","equity":[],"fee":0.001,"from":null,"indicator_columns":[],"interval":"1h",` +
 				`"signal":null,"skipped_alerts":0,"summary":{"max_drawdown":0,"net_profit":0,"stats":` + emptyStats + `},"symbol":"BTCUSDT","to":null,"trades":[]}`,
 		},
 	} {
@@ -82,7 +82,7 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 			}
 			replayed := strategies.result
 			if body.Interval != httpapi.CandleInterval(market.IntervalHour) || body.From == nil || !body.From.Equal(replayed.From) || body.To == nil || !body.To.Equal(replayed.To) ||
-				strategies.symbol != "BTCUSDT" || body.Fee != strategy.BacktestFee || body.SkippedAlerts != 2 ||
+				strategies.symbol != "BTCUSDT" || !strategies.withChart || body.Fee != strategy.BacktestFee || body.SkippedAlerts != 2 ||
 				!strategies.from.Equal(alert.Add(-4*time.Hour)) || strategies.from.Location() != time.UTC || !strategies.to.IsZero() ||
 				len(body.Trades) != 1 || body.Trades[0].ExitPrice != 110 || body.Trades[0].Buys != 1 || body.Trades[0].Open || body.Trades[0].NetReturn != 0.098 ||
 				*body.Trades[0].TakeProfit != 110 || body.Trades[0].StopLoss != nil || *body.Trades[0].ExitReason != httpapi.BacktestTradeExitReasonTakeProfit ||
@@ -115,7 +115,7 @@ func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
 		{name: "invalid", token: "admin", body: `{"expression":"invalid",` + signal + `}`, status: http.StatusBadRequest, code: "invalid_argument"},
 		{name: "busy", token: "admin", body: `{"expression":"busy",` + signal + `}`, status: http.StatusTooManyRequests, code: "backtest_busy"},
 		{name: "too heavy", token: "admin", body: `{"expression":"heavy",` + signal + `}`, status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
-		{name: "api token", token: "program", body: `{"expression":"h_close > 1","to":"2026-03-02T03:00:00+02:00",` + signal + `}`, status: http.StatusOK},
+		{name: "api token", token: "program", body: `{"expression":"h_close > 1","chart":true,"to":"2026-03-02T03:00:00+02:00",` + signal + `}`, status: http.StatusOK},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			request := httptest.NewRequest(http.MethodPost, "/api/v1/admin/strategy-backtests", strings.NewReader(test.body))
@@ -131,7 +131,7 @@ func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
 				return
 			}
 			want := strategy.Strategy{Signal: true, Direction: strategy.DirectionSideways, Expression: "h_close > 1", TargetRatio: 3, Window: 12}
-			if strategies.draft != want || strategies.symbol != "BTCUSDT" || !strategies.from.IsZero() ||
+			if strategies.draft != want || !strategies.withChart || strategies.symbol != "BTCUSDT" || !strategies.from.IsZero() ||
 				!strategies.to.Equal(time.Date(2026, 3, 2, 1, 0, 0, 0, time.UTC)) || strategies.to.Location() != time.UTC {
 				t.Fatalf("draft = %+v, symbol %s, from %v, to %v", strategies.draft, strategies.symbol, strategies.from, strategies.to)
 			}
@@ -144,13 +144,15 @@ func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
 // Drafts fail by their expression: invalid, heavy, or busy.
 type backtestStrategies struct {
 	httpapi.Strategies
-	result   strategy.Backtest
-	draft    strategy.Strategy
-	symbol   string
-	from, to time.Time
+	result    strategy.Backtest
+	draft     strategy.Strategy
+	symbol    string
+	from, to  time.Time
+	withChart bool
 }
 
-func (strategies *backtestStrategies) BacktestDraft(_ context.Context, item strategy.Strategy, symbol string, from, to time.Time) (strategy.Backtest, error) {
+func (strategies *backtestStrategies) BacktestDraft(_ context.Context, item strategy.Strategy, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error) {
+	strategies.withChart = withChart
 	strategies.draft, strategies.symbol, strategies.from, strategies.to = item, market.NormalizeSymbol(symbol), from, to
 	switch item.Expression {
 	case "invalid":
@@ -163,8 +165,9 @@ func (strategies *backtestStrategies) BacktestDraft(_ context.Context, item stra
 	return strategies.result, nil
 }
 
-func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string, from, to time.Time) (strategy.Backtest, error) {
+func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error) {
 	symbol = market.NormalizeSymbol(symbol)
+	strategies.withChart = withChart
 	strategies.symbol, strategies.from, strategies.to = symbol, from, to
 	switch {
 	case id == 5:

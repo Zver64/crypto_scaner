@@ -1,4 +1,9 @@
+import { type MantineTheme, parseThemeColor } from "@mantine/core";
 import type { AutoscaleInfo, IRange, UTCTimestamp } from "lightweight-charts";
+import type {
+	ChartIndicatorDefinition,
+	ChartPageResponse,
+} from "@/api/generated/models";
 import {
 	entryMarkerOptions,
 	exitMarkerOptions,
@@ -14,6 +19,7 @@ import type {
 	ChartCandleSlot,
 	ChartIndicatorOptions,
 	ChartIndicatorPane,
+	ChartIndicatorPoints,
 	ChartIndicatorScale,
 	ChartIndicatorSlot,
 	ChartInterval,
@@ -26,6 +32,50 @@ import type {
 	PriceCandle,
 } from "@/features/candle-chart/types";
 import { formatNumber } from "@/utils/number-format";
+
+// Results arrive in catalog order. Both chart sources use the same id/output
+// mapping; a snapshot can restrict the points to its revealed candle range.
+export function chartIndicatorPoints(
+	chart: Pick<ChartPageResponse, "indicators"> | undefined,
+	catalog: readonly Pick<ChartIndicatorDefinition, "id">[],
+	from?: string,
+): ChartIndicatorPoints {
+	if (!chart) return {};
+	return Object.fromEntries(
+		catalog.map(({ id }, index) => [
+			id,
+			Object.fromEntries(
+				(chart.indicators[index]?.series ?? []).map(({ name, points }) => [
+					name,
+					from === undefined
+						? points
+						: points.filter(({ time }) => time >= from),
+				]),
+			),
+		]),
+	);
+}
+
+// Catalog presentation is shared by live charts and immutable backtest charts.
+export function toChartIndicatorOptions(
+	{ id, lines, pane, placement, scale }: ChartIndicatorDefinition,
+	theme: MantineTheme,
+	colorScheme: "light" | "dark",
+): ChartIndicatorOptions {
+	const resolvedLines = lines.map((line) => ({
+		...line,
+		color: parseThemeColor({ color: line.color, colorScheme, theme }).value,
+	}));
+	return placement === "overlay"
+		? { id, lines: resolvedLines, placement }
+		: {
+				id,
+				lines: resolvedLines,
+				placement,
+				pane: pane ?? id,
+				scale: scale ?? { levels: [] },
+			};
+}
 
 export function toUtcTimestamp(value: string): UTCTimestamp {
 	return (Date.parse(value) / 1_000) as UTCTimestamp;

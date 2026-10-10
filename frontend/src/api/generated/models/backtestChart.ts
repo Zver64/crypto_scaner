@@ -17,23 +17,10 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { BacktestSymbolName } from './backtestSymbolName.ts';
+import type { ChartIndicatorDefinition } from './chartIndicatorDefinition.ts';
+import type { ChartPageResponse } from './chartPageResponse.ts';
 
-export type BacktestStrategyParams = {
-/**
- * Market symbol of the replayed coin.
- */
-symbol: BacktestSymbolName;
-/**
- * Earliest open time of an evaluated candle; the start of the stored history when absent.
- */
-from?: string;
-/**
- * Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
- */
-to?: string;
-/**
- * Include an immutable chart snapshot of the entire evaluated period.
- */
-chart?: boolean;
-};
+export interface BacktestChart {
+  catalog: ChartIndicatorDefinition[];
+  page: ChartPageResponse;
+}

@@ -10,6 +10,7 @@ import (
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/scannerindicator"
 )
 
 // BacktestFee is the fee of each side of a simulated trade, as a fraction of
@@ -56,7 +57,9 @@ type Backtest struct {
 	BuyAndHold, DCA *float64
 	// Signal describes the entry signals of a signal, which trades nothing;
 	// nil for a trading strategy.
-	Signal *SignalReport
+	Signal           *SignalReport
+	IndicatorColumns []IndicatorColumn
+	Charts           []BacktestChart
 }
 
 // signalATRPeriod is the common ATR period used to judge every signal.
@@ -84,10 +87,11 @@ type SignalReport struct {
 // read there. Evaluation is nil when the stored history lacks the candles to
 // judge it.
 type SignalOccurrence struct {
-	Time       time.Time
-	Close      float64
-	Values     map[string]float64
-	Evaluation *SignalEvaluation
+	Time            time.Time
+	Close           float64
+	Values          map[string]float64
+	IndicatorValues map[string]float64
+	Evaluation      *SignalEvaluation
 }
 
 // SignalEvaluation judges a candle's close by its target and stop. Stop and
@@ -178,7 +182,7 @@ const maxBacktests = 2
 // ErrInvalidArgument for a strategy that no longer compiles, an empty
 // symbol, or from after to, market.ErrInstrumentNotFound, and
 // ErrBacktestBusy while maxBacktests others run.
-func (service *Service) Backtest(ctx context.Context, id int64, symbol string, from, to time.Time) (Backtest, error) {
+func (service *Service) Backtest(ctx context.Context, id int64, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
 	entries := service.List()
 	index := slices.IndexFunc(entries, func(entry Entry) bool { return entry.ID == id })
 	if index < 0 {
@@ -188,7 +192,7 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, f
 	if entry.Compiled == nil {
 		return Backtest{}, fmt.Errorf("%w: %s", ErrInvalidArgument, entry.Problem)
 	}
-	return service.backtest(ctx, entry, symbol, from, to)
+	return service.backtest(ctx, entry, symbol, from, to, withChart)
 }
 
 // BacktestDraft replays item like Backtest replays a saved strategy, without
@@ -197,7 +201,7 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, f
 // favorite of the administrator, while its name, message, and market cap
 // range, which backtests ignore, are not. It fails like Backtest, with
 // ErrInvalidArgument for an invalid item.
-func (service *Service) BacktestDraft(ctx context.Context, item Strategy, symbol string, from, to time.Time) (Backtest, error) {
+func (service *Service) BacktestDraft(ctx context.Context, item Strategy, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
 	entry, err := service.trading(item)
 	if err != nil {
 		return Backtest{}, err
@@ -214,11 +218,11 @@ func (service *Service) BacktestDraft(ctx context.Context, item Strategy, symbol
 			return Backtest{}, fmt.Errorf("%w: not an active coin in the administrator's favorites: %s", ErrInvalidArgument, strings.Join(absent, ", "))
 		}
 	}
-	return service.backtest(ctx, entry, symbol, from, to)
+	return service.backtest(ctx, entry, symbol, from, to, withChart)
 }
 
 // backtest replays the compiled entry for Backtest and BacktestDraft.
-func (service *Service) backtest(ctx context.Context, entry Entry, symbol string, from, to time.Time) (Backtest, error) {
+func (service *Service) backtest(ctx context.Context, entry Entry, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
 	if !from.IsZero() && !to.IsZero() && from.After(to) {
 		return Backtest{}, fmt.Errorf("%w: the period starts after it ends", ErrInvalidArgument)
 	}
@@ -256,9 +260,40 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 			return Backtest{}, fmt.Errorf("load backtest %s history: %w", read, err)
 		}
 	}
-	result := Backtest{Interval: entry.Interval, Symbol: instrument.Symbol, Direction: entry.Direction}
+	displayed, err := service.displayedIndicators(entry)
+	if err != nil {
+		return Backtest{}, err
+	}
+	replay.displayed = displayed
+	if withChart {
+		replay.chartInstrumentID = instrument.ID
+		replay.chartValues = make(map[string]map[time.Time][]closedindicator.Output)
+		for _, interval := range market.CandleIntervals() {
+			if slices.Index(market.CandleIntervals(), interval) < slices.Index(market.CandleIntervals(), entry.Interval) {
+				continue
+			}
+			if replay.histories[interval] == nil {
+				replay.histories[interval] = map[int64][]market.Candle{}
+			}
+			if _, loaded := replay.histories[interval][instrument.ID]; loaded {
+				continue
+			}
+			stored, err := service.store.ListLatestCandles(ctx, []int64{instrument.ID}, interval, market.RetentionDepth)
+			if err != nil {
+				return Backtest{}, fmt.Errorf("load backtest chart history: %w", err)
+			}
+			replay.histories[interval][instrument.ID] = stored[instrument.ID]
+		}
+	}
+	result := Backtest{Interval: entry.Interval, Symbol: instrument.Symbol, Direction: entry.Direction, IndicatorColumns: indicatorColumns(displayed)}
 	if err := replay.run(ctx, entry, instrument, from, to, &result); err != nil {
 		return Backtest{}, err
+	}
+	if withChart {
+		result.Charts, err = replay.chartSnapshot(ctx, instrument.ID, result)
+		if err != nil {
+			return Backtest{}, err
+		}
 	}
 	return result, nil
 }
@@ -347,6 +382,7 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 				signals = append(signals, index)
 				occurrences = append(occurrences, SignalOccurrence{
 					Time: candle.OpenTime.UTC(), Close: candle.Close, Values: entry.Compiled.Values(current.resolver(entry, instrument.ID, nil)),
+					IndicatorValues: current.indicatorValues(instrument.ID, replay.displayed),
 				})
 			case TradeSell:
 				trade := Trade{
@@ -654,8 +690,11 @@ type replay struct {
 	// opens are the open times the values were calculated at, so a coarser
 	// interval is calculated once per its candle; cut marks values left
 	// unknown because the stored history ends inside their window.
-	opens []time.Time
-	cut   []bool
+	opens             []time.Time
+	cut               []bool
+	displayed         []scannerindicator.Entry
+	chartValues       map[string]map[time.Time][]closedindicator.Output
+	chartInstrumentID int64
 }
 
 // newReplay reads entry, its candles included, on instrument and on the
@@ -679,6 +718,19 @@ func newReplay(registry *indicator.Registry, entry Entry, instrument Instrument,
 	}, nil
 }
 
+// calculateAt applies the replay window and retained-history warm-up policy
+// to one subscription at an exclusive end index. Snapshots use the same policy.
+func (replay *replay) calculateAt(index, end int) (closedindicator.Value, bool, error) {
+	subscription := replay.current.reads.subscriptions[index]
+	candles := replay.histories[subscription.Target.Interval][subscription.InstrumentID]
+	depth := replay.depths[index]
+	if end < depth && len(candles) >= market.SyncDepth {
+		return closedindicator.Value{Target: subscription.Target}, false, nil
+	}
+	value, err := closedindicator.Calculate(replay.registry, subscription.Target, candles[max(0, end-depth):end], subscription.Points)
+	return value, true, err
+}
+
 // at returns the values the monitor would have evaluated at now, valid until
 // the next call. A window that reaches before the stored history leaves its
 // value unknown and warm false when the history holds at least
@@ -698,15 +750,26 @@ func (replay *replay) at(now time.Time) (snapshot, bool, error) {
 		if found {
 			end++
 		}
-		if replay.cut[index] = end < replay.depths[index] && len(candles) >= market.SyncDepth; replay.cut[index] {
-			replay.current.values[index] = closedindicator.Value{Target: subscription.Target}
-			continue
-		}
-		value, err := closedindicator.Calculate(replay.registry, subscription.Target, candles[max(0, end-replay.depths[index]):end], subscription.Points)
+		value, warm, err := replay.calculateAt(index, end)
 		if err != nil {
 			return snapshot{}, false, err
 		}
+		replay.cut[index] = !warm
 		replay.current.values[index] = value
+		if !warm {
+			continue
+		}
+		if replay.chartValues != nil && subscription.InstrumentID == replay.chartInstrumentID && slices.ContainsFunc(replay.displayed, func(item scannerindicator.Entry) bool { return item.Target().Equal(subscription.Target) }) {
+			key := fmt.Sprintf("%d|%s", subscription.InstrumentID, subscription.Target.Key())
+			if replay.chartValues[key] == nil {
+				replay.chartValues[key] = map[time.Time][]closedindicator.Output{}
+			}
+			outputs := make([]closedindicator.Output, len(value.Outputs))
+			for i, output := range value.Outputs {
+				outputs[i] = closedindicator.Output{Name: output.Name, Value: output.Value}
+			}
+			replay.chartValues[key][value.OpenTime] = outputs
+		}
 	}
 	replay.current.now = now
 	return replay.current, !slices.Contains(replay.cut, true), nil

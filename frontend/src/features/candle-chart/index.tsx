@@ -71,6 +71,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	extraReadout,
 	fillHeight = false,
 	intervals,
+	live = true,
 	markers,
 	paperPadding,
 	source,
@@ -193,11 +194,13 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 					value={interval}
 				/>
 				<Box pos="relative" style={fillStyle}>
-					<LiveStatus
-						connection={connection}
-						error={error}
-						freshness={freshness}
-					/>
+					{live ? (
+						<LiveStatus
+							connection={connection}
+							error={error}
+							freshness={freshness}
+						/>
+					) : null}
 					{readoutCandle ? (
 						<ChartReadout candle={readoutCandle} extra={extraReadout} />
 					) : null}
@@ -207,7 +210,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 					) : null}
 					<ChartCanvas
 						key={`${symbol}:${interval}`}
-						aria-label={`${symbol}: ${interval} candlestick history with the current live candle. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
+						aria-label={`${symbol}: ${interval} candlestick history${live ? " with the current live candle" : " of the completed backtest"}. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
 						onVisibleLogicalRangeChange={onVisibleLogicalRangeChange}
 						options={chartOptions}
 						paneStretchFactors={[

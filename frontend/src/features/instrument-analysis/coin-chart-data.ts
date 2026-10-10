@@ -1,15 +1,11 @@
-import type {
-	CandleInterval,
-	ChartIndicatorDefinition,
-	ChartPageResponse,
-} from "@/api/generated/models";
+import type { CandleInterval } from "@/api/generated/models";
 import { LiveCandlesClient } from "@/api/live-candles";
 import { getSessionToken, invalidateSessionToken } from "@/api/session";
 import type {
-	ChartIndicatorPoints,
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart";
+import { chartIndicatorPoints } from "@/features/candle-chart/utils";
 import {
 	type ChartCatalogs,
 	chartIntervals,
@@ -82,7 +78,7 @@ export function createCoinChartData(
 			current.loadingMore = false;
 		current.snapshot = {
 			candles: state.chart?.candles ?? [],
-			indicators: indicatorPoints(state.chart, catalogs[interval]),
+			indicators: chartIndicatorPoints(state.chart, catalogs[interval]),
 			connection: state.connection,
 			freshness: state.freshness,
 			error: state.error,
@@ -169,23 +165,3 @@ const emptySnapshot: PriceHistorySnapshot = {
 	isLoadingMore: false,
 	hasMore: false,
 };
-
-// Keys each result's series by catalog id and output name; results arrive in
-// catalog order.
-function indicatorPoints(
-	chart: ChartPageResponse | undefined,
-	catalog: readonly ChartIndicatorDefinition[],
-): ChartIndicatorPoints {
-	if (!chart) return {};
-	return Object.fromEntries(
-		catalog.map(({ id }, index) => [
-			id,
-			Object.fromEntries(
-				(chart.indicators[index]?.series ?? []).map(({ name, points }) => [
-					name,
-					points,
-				]),
-			),
-		]),
-	);
-}

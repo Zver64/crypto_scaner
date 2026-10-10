@@ -31,6 +31,8 @@ import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpressio
  * in `StrategyInput`, and the backtested coin and period.
  */
 export interface StrategyBacktestInput {
+  /** Include an immutable chart snapshot of the entire evaluated period. */
+  chart?: boolean;
   signal: StrategySignal;
   direction: Direction;
   /**

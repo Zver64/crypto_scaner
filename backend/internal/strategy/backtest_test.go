@@ -112,7 +112,7 @@ func TestBacktestRejectsUnknownAndInvalidStrategiesAndArguments(t *testing.T) {
 		{id: 2, symbol: " ", want: ErrInvalidArgument},
 		{id: 2, symbol: "BTCUSDT", from: backtestHour(2), to: backtestHour(1), want: ErrInvalidArgument},
 	} {
-		if _, err := service.Backtest(context.Background(), test.id, test.symbol, test.from, test.to); !errors.Is(err, test.want) {
+		if _, err := service.Backtest(context.Background(), test.id, test.symbol, test.from, test.to, false); !errors.Is(err, test.want) {
 			t.Fatalf("Backtest(%d, %q, %v, %v) error = %v, want %v", test.id, test.symbol, test.from, test.to, err, test.want)
 		}
 	}
@@ -127,21 +127,21 @@ func TestBacktestDraftReplaysLikeASavedStrategy(t *testing.T) {
 	}
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 10, 10, 4)), saved)
 
-	want, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	want, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	got, err := service.BacktestDraft(context.Background(), Strategy{
 		Direction: saved.Direction, Expression: saved.Expression,
 		TakeProfitExpression: saved.TakeProfitExpression, StopLossExpression: saved.StopLossExpression,
-	}, "BTCUSDT", time.Time{}, time.Time{})
+	}, "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(got, want) || len(got.Trades) != 1 {
 		t.Fatalf("BacktestDraft() = %+v, want %+v", got, want)
 	}
-	if _, err := service.BacktestDraft(context.Background(), Strategy{Direction: DirectionLong, Expression: `h_close > 1 && of("BTCUSDT", h_close) > 5`}, "BTCUSDT", time.Time{}, time.Time{}); err != nil {
+	if _, err := service.BacktestDraft(context.Background(), Strategy{Direction: DirectionLong, Expression: `h_close > 1 && of("BTCUSDT", h_close) > 5`}, "BTCUSDT", time.Time{}, time.Time{}, false); err != nil {
 		t.Fatalf("BacktestDraft() reading a favorite: %v", err)
 	}
 	for _, draft := range []Strategy{
@@ -151,7 +151,7 @@ func TestBacktestDraftReplaysLikeASavedStrategy(t *testing.T) {
 		{Signal: true, Direction: DirectionSideways, Expression: "h_close > 5"},
 		{Direction: DirectionLong, Expression: `h_close > 1 && of("ETHUSDT", h_close) > 5`},
 	} {
-		if _, err := service.BacktestDraft(context.Background(), draft, "BTCUSDT", time.Time{}, time.Time{}); !errors.Is(err, ErrInvalidArgument) {
+		if _, err := service.BacktestDraft(context.Background(), draft, "BTCUSDT", time.Time{}, time.Time{}, false); !errors.Is(err, ErrInvalidArgument) {
 			t.Fatalf("BacktestDraft(%+v) error = %v, want %v", draft, err, ErrInvalidArgument)
 		}
 	}
@@ -163,11 +163,11 @@ func TestBacktestRefusesBeyondTheRunningLimit(t *testing.T) {
 		service.backtests <- struct{}{}
 	}
 
-	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}); !errors.Is(err, ErrBacktestBusy) {
+	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false); !errors.Is(err, ErrBacktestBusy) {
 		t.Fatalf("Backtest() error = %v, want %v", err, ErrBacktestBusy)
 	}
 	<-service.backtests
-	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}); err != nil {
+	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false); err != nil {
 		t.Fatalf("Backtest() with a free slot: %v", err)
 	}
 }
@@ -180,7 +180,7 @@ func TestBacktestShortGainsOnAFall(t *testing.T) {
 		TakeProfitExpression: "h_close * 0.8", StopLossExpression: "h_close * 1.5",
 	})
 
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestBacktestExitingStrategySkipsSignalsDuringATrade(t *testing.T) {
 		ID: 1, Name: "Dip", Expression: "h_close > 5", ExitExpression: "h_close > 20",
 	})
 
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,7 +259,7 @@ func TestBacktestSellsAtTakeProfitAndStopLoss(t *testing.T) {
 		ID: 1, Name: "Range", Expression: "h_close > 5", TakeProfitExpression: "h_close * 1.2", StopLossExpression: "h_close * 0.9",
 	})
 
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -291,7 +291,7 @@ func TestBacktestEvaluatesThePeriod(t *testing.T) {
 		ID: 1, Name: "Stack", Expression: "h_close > 5 && prev(h_close) > 0",
 	})
 
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", backtestHour(2), backtestHour(4))
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", backtestHour(2), backtestHour(4), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -313,7 +313,7 @@ func TestBacktestExitsOnPositionVariables(t *testing.T) {
 		ID: 1, Name: "Hold", Expression: "h_close > 5", ExitExpression: "bars_held >= 2 && pnl > -1",
 	})
 
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,7 +330,7 @@ func TestBacktestFailsOnAnInvalidPrevShift(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 9, 9, 9)), Strategy{
 		ID: 1, Name: "Hold", Expression: "h_close > 5", ExitExpression: "prev(h_close, bars_held - 1) > 100",
 	})
-	_, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	_, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false)
 	var shift *ShiftError
 	want := "invalid strategy: at the candle opening 2026-03-02 02:00 UTC, the exit rule: the prev shift is 0, not a whole number from 1 to 500"
 	if !errors.Is(err, ErrInvalidArgument) || !errors.As(err, &shift) || err.Error() != want {
@@ -351,7 +351,7 @@ func TestBacktestPnLExitUsesPercent(t *testing.T) {
 			service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(test.closes...)), Strategy{
 				ID: 1, Name: "Percent", Expression: "h_close > 5", ExitExpression: test.exit,
 			})
-			result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+			result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -371,7 +371,7 @@ func TestBacktestPnLExitUsesPercent(t *testing.T) {
 func TestBacktestWithoutExitHoldsAnOpenTrade(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 1, 9)), Strategy{ID: 1, Name: "Stack", Expression: "h_close > 5"})
 
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{})
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -472,7 +472,7 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 
 func assertReplay(t *testing.T, service *Service, id int64, interval market.CandleInterval, want Backtest) {
 	t.Helper()
-	got, err := service.Backtest(context.Background(), id, "BTCUSDT", time.Time{}, time.Time{})
+	got, err := service.Backtest(context.Background(), id, "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -570,7 +570,12 @@ func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *
 type testIndicators struct{ entries []scannerindicator.Entry }
 
 func (indicators testIndicators) List() []scannerindicator.Entry { return indicators.entries }
-func (testIndicators) Preview(scannerindicator.Indicator) (scannerindicator.Entry, error) {
+func (indicators testIndicators) Preview(item scannerindicator.Indicator) (scannerindicator.Entry, error) {
+	for _, entry := range indicators.entries {
+		if entry.Target().Equal(item.Target()) {
+			return entry, nil
+		}
+	}
 	return scannerindicator.Entry{}, errors.New("not configured")
 }
 
@@ -645,7 +650,7 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 		b.Fatal(err)
 	}
 	for b.Loop() {
-		if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}); err != nil {
+		if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false); err != nil {
 			b.Fatal(err)
 		}
 	}

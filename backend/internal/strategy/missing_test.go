@@ -37,7 +37,7 @@ func TestStrategyReadsIndicatorsThatAreNotConfigured(t *testing.T) {
 	if ids := entry.indicatorIDs(); len(ids) != 0 {
 		t.Fatalf("indicator ids = %v, want none linked", ids)
 	}
-	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", backtestStart, backtestStart); err != nil {
+	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", backtestStart, backtestStart, false); err != nil {
 		t.Fatalf("backtest: %v", err)
 	}
 

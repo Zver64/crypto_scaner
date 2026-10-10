@@ -283,7 +283,7 @@ Trades: buys and exit rule sells fill at the open after their signal, TP and SL 
 └───┴──────────────────┴────────────┴──────┴──────────────────┴───────────┴────┴───────┘
 `
 
-// The trade list shows the newest maxTradeRows trades, newest first.
+// Text output retains the newest trades and reports omitted older ones.
 func TestBacktestCapsTheTradeList(t *testing.T) {
 	trades := make([]apiclient.BacktestTrade, maxTradeRows+3)
 	for i := range trades {
@@ -294,7 +294,7 @@ func TestBacktestCapsTheTradeList(t *testing.T) {
 	renderTrades(&output, apiclient.N1d, trades, tradeWords(apiclient.Long))
 
 	lines := strings.Split(strings.TrimSuffix(output.String(), "\n"), "\n")
-	if len(lines) != maxTradeRows+6 || !strings.Contains(lines[4], fmt.Sprintf(" %d │", maxTradeRows+2)) || lines[len(lines)-1] != "… 3 more (use --json)" {
+	if len(lines) != maxTradeRows+6 || !strings.Contains(lines[4], fmt.Sprintf(" %d │", len(trades)-1)) || !strings.Contains(lines[len(lines)-3], " 3 │") || lines[len(lines)-1] != "… 3 more (use --json)" {
 		t.Fatalf("output = %q", output.String())
 	}
 }
@@ -689,7 +689,7 @@ func TestBacktestWithoutTradesSaysWhy(t *testing.T) {
 	backtest := apiclient.StrategyBacktest{Interval: "1d", Symbol: "UNIUSDT", Direction: apiclient.Short, Fee: 0.001, From: &from, To: &to}
 	var output strings.Builder
 
-	renderBacktest(&output, backtest, false)
+	renderBacktest(&output, backtest, false, false)
 
 	if output.String() != noTradesText {
 		t.Fatalf("output:\n%s\nwant:\n%s", output.String(), noTradesText)
@@ -709,8 +709,8 @@ No trades: the strategy did not short on this coin in the stored history.
 func TestBacktestWithoutEvaluatedCandlesSaysWhy(t *testing.T) {
 	var output strings.Builder
 
-	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"}, false)
-	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"}, true)
+	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"}, false, false)
+	renderBacktest(&output, apiclient.StrategyBacktest{Interval: "1h", Symbol: "ETHUSDT"}, true, false)
 
 	if output.String() != "ETHUSDT: no stored candles of this interval yet; synchronization fills them first.\n"+
 		"ETHUSDT: no stored candles of this interval in the requested period.\n" {

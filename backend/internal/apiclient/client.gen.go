@@ -561,6 +561,12 @@ type BacktestBaselines struct {
 	Dca *float64 `json:"dca"`
 }
 
+// BacktestChart defines model for BacktestChart.
+type BacktestChart struct {
+	Catalog []ChartIndicatorDefinition `json:"catalog"`
+	Page    ChartPageResponse          `json:"page"`
+}
+
 // BacktestEquityPoint defines model for BacktestEquityPoint.
 type BacktestEquityPoint struct {
 	Equity float64 `json:"equity"`
@@ -581,6 +587,12 @@ type BacktestFill struct {
 
 	// Values What the entry rule read at the signal.
 	Values BacktestValues `json:"values"`
+}
+
+// BacktestIndicatorColumn defines model for BacktestIndicatorColumn.
+type BacktestIndicatorColumn struct {
+	Key   string `json:"key"`
+	Title string `json:"title"`
 }
 
 // BacktestSignal Judges each signal candle's close, and every evaluated candle's
@@ -624,6 +636,9 @@ type BacktestSignalOccurrence struct {
 
 	// Counted Whether the statistics count the signal; a signal within a window after the previous counted one is a repeat.
 	Counted *bool `json:"counted"`
+
+	// IndicatorValues Current local indicator outputs at signal close, keyed by indicator_columns; unknown outputs are omitted.
+	IndicatorValues map[string]float64 `json:"indicator_values"`
 
 	// Move Largest move from the close in the expected direction, also after
 	// the target, until the stop is reached or the window ends; for
@@ -857,11 +872,28 @@ type ChartIndicatorLine struct {
 	Title  string `json:"title"`
 }
 
+// ChartIndicatorResult defines model for ChartIndicatorResult.
+type ChartIndicatorResult struct {
+	Parameters map[string]interface{} `json:"parameters"`
+	Series     []IndicatorSeries      `json:"series"`
+	Type       string                 `json:"type"`
+}
+
 // ChartIndicatorScale Value axis of a pane indicator; clients derive the value precision from the values.
 type ChartIndicatorScale struct {
 	Levels []ChartIndicatorLevel `json:"levels"`
 	Max    *float64              `json:"max,omitempty"`
 	Min    *float64              `json:"min,omitempty"`
+}
+
+// ChartPageResponse defines model for ChartPageResponse.
+type ChartPageResponse struct {
+	Candles    []Candle               `json:"candles"`
+	HasMore    bool                   `json:"has_more"`
+	Indicators []ChartIndicatorResult `json:"indicators"`
+	Interval   CandleInterval         `json:"interval"`
+	NextBefore *time.Time             `json:"next_before,omitempty"`
+	Symbol     string                 `json:"symbol"`
 }
 
 // CriterionRequest defines model for CriterionRequest.
@@ -950,6 +982,18 @@ type IndicatorParameter struct {
 
 // IndicatorParameterKind `choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds.
 type IndicatorParameterKind string
+
+// IndicatorPoint defines model for IndicatorPoint.
+type IndicatorPoint struct {
+	Time  time.Time `json:"time"`
+	Value float64   `json:"value"`
+}
+
+// IndicatorSeries defines model for IndicatorSeries.
+type IndicatorSeries struct {
+	Name   string           `json:"name"`
+	Points []IndicatorPoint `json:"points"`
+}
 
 // IndicatorType defines model for IndicatorType.
 type IndicatorType struct {
@@ -1303,6 +1347,9 @@ type StrategyBacktest struct {
 	// Baselines References over the same evaluated period, net of the same fees; null for a signal and for a short strategy.
 	Baselines BacktestBaselines `json:"baselines"`
 
+	// Charts Immutable closed history over the evaluated period, finest interval first. Empty unless chart was requested. No live updates or 2000-candle display limit.
+	Charts []BacktestChart `json:"charts"`
+
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: up, down, or sideways. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
@@ -1316,8 +1363,11 @@ type StrategyBacktest struct {
 	Fee float64 `json:"fee"`
 
 	// From Open time of the first evaluated candle of the interval; null when none is evaluated.
-	From     *time.Time     `json:"from"`
-	Interval CandleInterval `json:"interval"`
+	From *time.Time `json:"from"`
+
+	// IndicatorColumns Current outputs of all local indicator dependencies, including hidden outputs; excludes candle fields, functions, and of reads.
+	IndicatorColumns []BacktestIndicatorColumn `json:"indicator_columns"`
+	Interval         CandleInterval            `json:"interval"`
 
 	// Signal The entry signals of a signal judged by a target and a stop; null for a trading strategy.
 	Signal *BacktestSignal `json:"signal"`
@@ -1339,6 +1389,9 @@ type StrategyBacktest struct {
 // StrategyBacktestInput The rules and trading settings of an unsaved strategy or signal, as
 // in `StrategyInput`, and the backtested coin and period.
 type StrategyBacktestInput struct {
+	// Chart Include an immutable chart snapshot of the entire evaluated period.
+	Chart *bool `json:"chart,omitempty"`
+
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: up, down, or sideways. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
@@ -1802,6 +1855,9 @@ type BacktestStrategyParams struct {
 
 	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
 	To *time.Time `form:"to,omitempty" json:"to,omitempty"`
+
+	// Chart Include an immutable chart snapshot of the entire evaluated period.
+	Chart *bool `form:"chart,omitempty" json:"chart,omitempty"`
 }
 
 // AnalyzeInstrumentParams defines parameters for AnalyzeInstrument.
@@ -4051,6 +4107,18 @@ func NewBacktestStrategyRequest(server string, strategyId StrategyID, params *Ba
 		if params.To != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "to", *params.To, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Chart != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "chart", *params.Chart, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/strategy"
@@ -23,8 +24,8 @@ type Strategies interface {
 	Update(context.Context, strategy.Strategy) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
 	Delete(context.Context, int64) error
-	Backtest(ctx context.Context, id int64, symbol string, from, to time.Time) (strategy.Backtest, error)
-	BacktestDraft(ctx context.Context, item strategy.Strategy, symbol string, from, to time.Time) (strategy.Backtest, error)
+	Backtest(ctx context.Context, id int64, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error)
+	BacktestDraft(ctx context.Context, item strategy.Strategy, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error)
 }
 
 func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequestObject) (ListStrategyVariablesResponseObject, error) {
@@ -148,7 +149,7 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	timed, cancel := context.WithTimeout(ctx, backtestTimeout)
 	defer cancel()
 	from, to := backtestPeriod(request.Params.From, request.Params.To)
-	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol, from, to)
+	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol, from, to, request.Params.Chart != nil && *request.Params.Chart)
 	switch {
 	case err == nil:
 		return BacktestStrategy200JSONResponse(backtestDTO(backtest)), nil
@@ -176,7 +177,7 @@ func (api *api) BacktestStrategyDraft(ctx context.Context, request BacktestStrat
 		Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
 		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
-	}, body.Symbol, from, to)
+	}, body.Symbol, from, to, body.Chart != nil && *body.Chart)
 	switch {
 	case err == nil:
 		return BacktestStrategyDraft200JSONResponse(backtestDTO(backtest)), nil
@@ -214,7 +215,21 @@ func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
 	for i, point := range backtest.Equity {
 		equity[i] = BacktestEquityPoint{Time: point.Time, Equity: point.Equity}
 	}
+	columns := make([]BacktestIndicatorColumn, len(backtest.IndicatorColumns))
+	for i, column := range backtest.IndicatorColumns {
+		columns[i] = BacktestIndicatorColumn{Key: column.Key, Title: column.Title}
+	}
+	charts := make([]BacktestChart, len(backtest.Charts))
+	for i, snapshot := range backtest.Charts {
+		catalog := make([]ChartIndicatorDefinition, len(snapshot.Definitions))
+		for j, definition := range snapshot.Definitions {
+			catalog[j] = chartIndicatorDTO(definition)
+		}
+		page := chartWirePage(chart.Page{Symbol: backtest.Symbol, Candles: snapshot.Candles, Indicators: snapshot.Indicators}, snapshot.Interval, time.Time{})
+		charts[i] = BacktestChart{Catalog: catalog, Page: *page}
+	}
 	dto := StrategyBacktest{
+		IndicatorColumns: columns, Charts: charts,
 		Interval: CandleInterval(backtest.Interval), Symbol: backtest.Symbol, Direction: Direction(backtest.Direction), Fee: strategy.BacktestFee,
 		Trades: trades, SkippedAlerts: backtest.Skipped, Equity: equity,
 		Summary:   BacktestSummary{NetProfit: backtest.NetProfit, MaxDrawdown: backtest.MaxDrawdown, Stats: tradeStatsDTO(backtest.Stats)},
@@ -226,7 +241,7 @@ func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
 	if report := backtest.Signal; report != nil {
 		occurrences := make([]BacktestSignalOccurrence, len(report.Occurrences))
 		for i, occurrence := range report.Occurrences {
-			occurrences[i] = BacktestSignalOccurrence{Time: occurrence.Time, Close: occurrence.Close, Values: backtestValues(occurrence.Values)}
+			occurrences[i] = BacktestSignalOccurrence{Time: occurrence.Time, Close: occurrence.Close, Values: backtestValues(occurrence.Values), IndicatorValues: backtestValues(occurrence.IndicatorValues)}
 			if evaluation := occurrence.Evaluation; evaluation != nil {
 				occurrences[i].Counted, occurrences[i].Success = &evaluation.Counted, &evaluation.Success
 				occurrences[i].Stop, occurrences[i].Target, occurrences[i].Move = evaluation.Stop, &evaluation.Target, &evaluation.Move

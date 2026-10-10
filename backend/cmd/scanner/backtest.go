@@ -136,14 +136,18 @@ func (c *cli) backtestDraft(command *cobra.Command, body apiclient.StrategyBackt
 
 func (c *cli) printBacktest(command *cobra.Command, raw []byte, backtest apiclient.StrategyBacktest, target backtestFlags) {
 	period := target.from != "" || target.to != ""
-	c.print(command, raw, func(w io.Writer) { renderBacktest(w, backtest, period) })
+	c.print(command, raw, func(w io.Writer) { renderBacktest(w, backtest, period, target.indicators) })
 }
 
 // backtestFlags are the coin and the optional period of a backtest.
-type backtestFlags struct{ symbol, from, to string }
+type backtestFlags struct {
+	symbol, from, to string
+	indicators       bool
+}
 
 func (f *backtestFlags) add(c *cli, command *cobra.Command) {
 	flags := command.Flags()
+	flags.BoolVar(&f.indicators, "indicators", false, "show all current indicator outputs in the signal table")
 	flags.StringVar(&f.symbol, "symbol", "", "any coin `SYM`, such as BTCUSDT")
 	flags.StringVar(&f.from, "from", "", "evaluate candles opening at or after `TIME`: a UTC date such as 2026-01-31, or RFC 3339")
 	flags.StringVar(&f.to, "to", "", "evaluate candles opening at or before `TIME`: a UTC date, the whole day included, or RFC 3339")

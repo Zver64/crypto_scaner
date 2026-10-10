@@ -56,6 +56,7 @@ describe("backtestMarkers", () => {
 					target: null,
 					time,
 					values: {},
+					indicator_values: {},
 				},
 			],
 			signals: { count: 0, median_move: null, successes: 0 },

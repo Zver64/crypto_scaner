@@ -71,7 +71,8 @@ type Entry struct {
 	lineTitle string
 	// pane is the key of the chart pane shared with other indicators, empty
 	// for an indicator drawn in a pane of its own.
-	pane string
+	pane    string
+	palette []string
 }
 
 type Store interface {
@@ -386,7 +387,7 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 	if err != nil {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
 	}
-	entry := Entry{Indicator: item, Placement: chart.PlacementPane, Outputs: make([]string, len(descriptor.Outputs))}
+	entry := Entry{Indicator: item, Placement: chart.PlacementPane, Outputs: make([]string, len(descriptor.Outputs)), palette: service.palette}
 	for i, output := range descriptor.Outputs {
 		entry.Outputs[i] = output.Name
 		if output.Count {
@@ -460,8 +461,14 @@ func validateScale(placement chart.Placement, scale Scale) error {
 // catalogIndicator draws the entry's lines, coloring them from palette
 // position firstLine on.
 func (service *Service) catalogIndicator(entry Entry, firstLine int) chart.CatalogIndicator {
+	return entry.ChartIndicator(fmt.Sprintf("indicator-%d", entry.ID), firstLine)
+}
+
+// ChartIndicator derives chart presentation without consulting display flags.
+// The caller supplies a unique id, including for indicators that are not stored.
+func (entry Entry) ChartIndicator(id string, firstLine int) chart.CatalogIndicator {
 	item := chart.CatalogIndicator{
-		ID:        fmt.Sprintf("indicator-%d", entry.ID),
+		ID:        id,
 		Selection: entry.Selection,
 		Placement: entry.Placement,
 		Lines:     make([]chart.IndicatorLine, len(entry.lines)),
@@ -471,7 +478,7 @@ func (service *Service) catalogIndicator(entry Entry, firstLine int) chart.Catal
 		if len(entry.Outputs) > 1 {
 			title += " " + output
 		}
-		item.Lines[i] = chart.IndicatorLine{Output: output, Title: title, Color: service.palette[(firstLine+i)%len(service.palette)]}
+		item.Lines[i] = chart.IndicatorLine{Output: output, Title: title, Color: entry.palette[(firstLine+i)%len(entry.palette)]}
 	}
 	if entry.Placement == chart.PlacementPane {
 		scale := &chart.IndicatorScale{Min: entry.Scale.Min, Max: entry.Scale.Max}

@@ -252,12 +252,12 @@ func buys(strategy apiclient.Strategy) string {
 	return "every signal"
 }
 
-// maxTradeRows caps the trade list; --json prints every trade.
-const maxTradeRows = 50
+// maxTradeRows limits text tables; --json returns the full backtest.
+const maxTradeRows = 100
 
 // renderBacktest prints the backtest; period tells that --from or --to
 // limited it.
-func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period bool) {
+func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period, indicators bool) {
 	if backtest.From == nil || backtest.To == nil {
 		if period {
 			fmt.Fprintf(w, "%s: no stored candles of this interval in the requested period.\n", backtest.Symbol)
@@ -268,7 +268,7 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period boo
 		return
 	}
 	if backtest.Signal != nil {
-		renderSignal(w, backtest, *backtest.Signal)
+		renderSignal(w, backtest, *backtest.Signal, indicators)
 		return
 	}
 	// A short strategy shorts and covers where a long one buys and sells.
@@ -292,8 +292,8 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period boo
 }
 
 // renderSignal prints the backtest of a signal: how often its counted
-// signals succeeded beside every candle, then its newest maxTradeRows signals.
-func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apiclient.BacktestSignal) {
+// signals succeeded beside every candle, then up to maxTradeRows signals, newest first.
+func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apiclient.BacktestSignal, indicators bool) {
 	signals := "signals"
 	if len(signal.Occurrences) == 1 {
 		signals = "signal"
@@ -322,23 +322,40 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 	})
 	fmt.Fprintln(w, t.Render())
 	layout := candleTimeLayout(backtest.Interval)
-	fmt.Fprintln(w, "Signals, newest first; --json adds the values the entry read.")
+	fmt.Fprintln(w, "Signals, newest first; --indicators adds current indicator outputs; --json adds the values the entry read.")
 	t = newTable()
 	t.SetAutoIndex(true)
+	var header table.Row
 	if sideways {
-		t.AppendHeader(table.Row{"Candle", "Close", "Counted", "Targets ±%", "Move to target %", "Success"})
+		header = table.Row{"Candle", "Close", "Counted", "Targets ±%", "Move to target %", "Success"}
 		t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}})
 	} else {
-		t.AppendHeader(table.Row{"Candle", "Close", "Counted", "Stop %", "Target %", "Move to target %", "Success"})
+		header = table.Row{"Candle", "Close", "Counted", "Stop %", "Target %", "Move to target %", "Success"}
 		t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 6, Align: text.AlignRight}})
 	}
+	if indicators {
+		for _, column := range backtest.IndicatorColumns {
+			header = append(header, column.Title)
+		}
+	}
+	t.AppendHeader(header)
 	occurrences := signal.Occurrences
 	for _, occurrence := range slices.Backward(occurrences[max(0, len(occurrences)-maxTradeRows):]) {
 		row := table.Row{occurrence.Time.UTC().Format(layout), price(occurrence.Close), yesNo(occurrence.Counted)}
 		if !sideways {
 			row = append(row, evaluated(occurrence.Stop))
 		}
-		t.AppendRow(append(row, evaluated(occurrence.Target), evaluated(occurrence.Move), yesNo(occurrence.Success)))
+		row = append(row, evaluated(occurrence.Target), evaluated(occurrence.Move), yesNo(occurrence.Success))
+		if indicators {
+			for _, column := range backtest.IndicatorColumns {
+				value := ""
+				if number, known := occurrence.IndicatorValues[column.Key]; known {
+					value = price(number)
+				}
+				row = append(row, value)
+			}
+		}
+		t.AppendRow(row)
 	}
 	fmt.Fprintln(w, t.Render())
 	if more := len(occurrences) - maxTradeRows; more > 0 {
@@ -426,7 +443,7 @@ func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines api
 	fmt.Fprintln(w, t.Render())
 }
 
-// renderTrades lists the newest maxTradeRows trades, newest first like the
+// renderTrades lists up to maxTradeRows trades, newest first like the
 // Mini App.
 // A short strategy's trades hold one short each, so they have no Buys
 // column.

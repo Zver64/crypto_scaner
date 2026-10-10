@@ -17,6 +17,7 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { BacktestSignalOccurrenceIndicatorValues } from './backtestSignalOccurrenceIndicatorValues.ts';
 import type { BacktestValues } from './backtestValues.ts';
 
 /**
@@ -34,6 +35,8 @@ export interface BacktestSignalOccurrence {
   close: number;
   /** What the entry rule read at the signal. */
   values: BacktestValues;
+  /** Current local indicator outputs at signal close, keyed by indicator_columns; unknown outputs are omitted. */
+  indicator_values: BacktestSignalOccurrenceIndicatorValues;
   /**
      * Whether the statistics count the signal; a signal within a window after the previous counted one is a repeat.
      * @nullable

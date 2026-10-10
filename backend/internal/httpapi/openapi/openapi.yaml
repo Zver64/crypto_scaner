@@ -840,6 +840,10 @@ paths:
           required: false
           description: Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
           schema: { type: string, format: date-time }
+        - name: chart
+          in: query
+          description: Include an immutable chart snapshot of the entire evaluated period.
+          schema: { type: boolean, default: false }
       responses:
         "200":
           description: Simulated trades and their metrics.
@@ -2120,7 +2124,7 @@ components:
     StrategyBacktest:
       type: object
       additionalProperties: false
-      required: [interval, symbol, direction, fee, from, to, summary, trades, skipped_alerts, equity, baselines, signal]
+      required: [interval, symbol, direction, fee, from, to, summary, trades, skipped_alerts, equity, baselines, signal, indicator_columns, charts]
       description: Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
       properties:
         interval:
@@ -2139,6 +2143,14 @@ components:
           type: [string, "null"]
           format: date-time
           description: Open time of the last evaluated candle of the interval; null when none is evaluated.
+        indicator_columns:
+          type: array
+          description: Current outputs of all local indicator dependencies, including hidden outputs; excludes candle fields, functions, and of reads.
+          items: { $ref: "#/components/schemas/BacktestIndicatorColumn" }
+        charts:
+          type: array
+          description: Immutable closed history over the evaluated period, finest interval first. Empty unless chart was requested. No live updates or 2000-candle display limit.
+          items: { $ref: "#/components/schemas/BacktestChart" }
         summary: { $ref: "#/components/schemas/BacktestSummary" }
         trades:
           type: array
@@ -2157,6 +2169,22 @@ components:
             - $ref: "#/components/schemas/BacktestSignal"
             - type: "null"
           description: The entry signals of a signal judged by a target and a stop; null for a trading strategy.
+    BacktestIndicatorColumn:
+      type: object
+      additionalProperties: false
+      required: [key, title]
+      properties:
+        key: { type: string }
+        title: { type: string }
+    BacktestChart:
+      type: object
+      additionalProperties: false
+      required: [catalog, page]
+      properties:
+        catalog:
+          type: array
+          items: { $ref: "#/components/schemas/ChartIndicatorDefinition" }
+        page: { $ref: "#/components/schemas/ChartPageResponse" }
     BacktestSignal:
       type: object
       additionalProperties: false
@@ -2197,7 +2225,7 @@ components:
     BacktestSignalOccurrence:
       type: object
       additionalProperties: false
-      required: [time, close, values, counted, stop, target, move, success]
+      required: [time, close, values, indicator_values, counted, stop, target, move, success]
       description: |
         An entry signal. counted, stop, target, move, and success are null
         together when history lacks a positive ATR(14), the full consecutive
@@ -2215,6 +2243,10 @@ components:
         values:
           $ref: "#/components/schemas/BacktestValues"
           description: What the entry rule read at the signal.
+        indicator_values:
+          type: object
+          description: Current local indicator outputs at signal close, keyed by indicator_columns; unknown outputs are omitted.
+          additionalProperties: { type: number, format: double }
         counted:
           type: [boolean, "null"]
           description: Whether the statistics count the signal; a signal within a window after the previous counted one is a repeat.
@@ -2556,6 +2588,10 @@ components:
         in `StrategyInput`, and the backtested coin and period.
       required: [signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, target_ratio, window, symbol]
       properties:
+        chart:
+          type: boolean
+          default: false
+          description: Include an immutable chart snapshot of the entire evaluated period.
         signal: { $ref: "#/components/schemas/StrategySignal" }
         direction: { $ref: "#/components/schemas/Direction" }
         expression: { type: string, minLength: 1, maxLength: 2000 }

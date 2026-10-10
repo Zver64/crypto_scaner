@@ -48,6 +48,7 @@ export function BacktestSignalResults({
 			<BacktestSignalSummary signal={signal} />
 			<BacktestSignalTable
 				direction={backtest.direction}
+				indicatorColumns={backtest.indicator_columns}
 				occurrences={signal.occurrences}
 			/>
 		</Stack>

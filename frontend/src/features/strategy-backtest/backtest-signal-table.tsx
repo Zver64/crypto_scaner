@@ -1,4 +1,5 @@
 import {
+	type BacktestIndicatorColumn,
 	type BacktestSignalOccurrence,
 	Direction,
 } from "@/api/generated/models";
@@ -9,6 +10,7 @@ import { formatDateTime } from "@/utils/date-time-format";
 import { formatNumber } from "@/utils/number-format";
 
 interface BacktestSignalTableProps {
+	indicatorColumns: readonly BacktestIndicatorColumn[];
 	direction: Direction;
 	occurrences: readonly BacktestSignalOccurrence[];
 }
@@ -80,6 +82,7 @@ const trailingColumns: DataTableColumn<BacktestSignalOccurrence>[] = [
 export function BacktestSignalTable({
 	direction,
 	occurrences,
+	indicatorColumns,
 }: BacktestSignalTableProps) {
 	return (
 		<DataTable
@@ -87,6 +90,17 @@ export function BacktestSignalTable({
 				...leadingColumns,
 				...(direction === Direction.sideways ? sidewaysColumns : levelColumns),
 				...trailingColumns,
+				...indicatorColumns.map(
+					({ key, title }): DataTableColumn<BacktestSignalOccurrence> => ({
+						key: `indicator:${key}`,
+						header: title,
+						textAlign: "right",
+						cell: ({ indicator_values }) =>
+							indicator_values[key] === undefined
+								? ""
+								: formatNumber(indicator_values[key]),
+					}),
+				),
 			]}
 			getRowKey={({ time }) => time}
 			rows={[...occurrences].reverse()}

@@ -90,6 +90,8 @@ export interface ChartReadoutOptions {
 	format(candle: Pick<PriceCandle, "open" | "high" | "low" | "close">): string;
 }
 export interface PriceHistoryChartProps {
+	// Immutable snapshots have no connection status or current live candle.
+	live?: boolean;
 	enabled: boolean;
 	// Indicators drawn on the chart of each interval.
 	indicators: Readonly<Record<ChartInterval, readonly ChartIndicatorOptions[]>>;

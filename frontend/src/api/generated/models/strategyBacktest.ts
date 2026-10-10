@@ -18,7 +18,9 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { BacktestBaselines } from './backtestBaselines.ts';
+import type { BacktestChart } from './backtestChart.ts';
 import type { BacktestEquityPoint } from './backtestEquityPoint.ts';
+import type { BacktestIndicatorColumn } from './backtestIndicatorColumn.ts';
 import type { BacktestSignal } from './backtestSignal.ts';
 import type { BacktestSummary } from './backtestSummary.ts';
 import type { BacktestTrade } from './backtestTrade.ts';
@@ -44,6 +46,10 @@ export interface StrategyBacktest {
      * @nullable
      */
   to: string | null;
+  /** Current outputs of all local indicator dependencies, including hidden outputs; excludes candle fields, functions, and of reads. */
+  indicator_columns: BacktestIndicatorColumn[];
+  /** Immutable closed history over the evaluated period, finest interval first. Empty unless chart was requested. No live updates or 2000-candle display limit. */
+  charts: BacktestChart[];
   summary: BacktestSummary;
   /** Trades, oldest first; the last one is open when the history ends before its sell. */
   trades: BacktestTrade[];

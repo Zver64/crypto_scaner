@@ -1,9 +1,4 @@
-import {
-	type MantineTheme,
-	parseThemeColor,
-	useComputedColorScheme,
-	useMantineTheme,
-} from "@mantine/core";
+import { useComputedColorScheme, useMantineTheme } from "@mantine/core";
 import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 import { getListChartIndicatorsQueryOptions } from "@/api/generated/api";
@@ -12,7 +7,7 @@ import type {
 	ChartIndicatorDefinition,
 } from "@/api/generated/models";
 import { unexpectedApiError } from "@/features/analysis/api-error";
-import type { ChartIndicatorOptions } from "@/features/candle-chart";
+import { toChartIndicatorOptions } from "@/features/candle-chart/utils";
 import {
 	type ChartCatalogs,
 	chartIntervals,
@@ -90,26 +85,4 @@ function validateCatalog(
 		throw unexpectedApiError();
 	}
 	return catalog;
-}
-
-function toChartIndicatorOptions(
-	{ id, lines, pane, placement, scale }: ChartIndicatorDefinition,
-	theme: MantineTheme,
-	colorScheme: "light" | "dark",
-): ChartIndicatorOptions {
-	// Colors arrive as theme tokens such as "yellow.5"; the canvas needs values.
-	const resolvedLines = lines.map((line) => ({
-		...line,
-		color: parseThemeColor({ color: line.color, colorScheme, theme }).value,
-	}));
-	return placement === "overlay"
-		? { id, lines: resolvedLines, placement }
-		: {
-				id,
-				lines: resolvedLines,
-				placement,
-				// validateCatalog guarantees a pane key and scale for every pane.
-				pane: pane ?? id,
-				scale: scale ?? { levels: [] },
-			};
 }

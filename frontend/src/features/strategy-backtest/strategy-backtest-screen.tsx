@@ -1,28 +1,21 @@
 import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useBacktestStrategy } from "@/api/generated/api";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { EmptyState } from "@/components/empty-state";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
-import { PriceHistoryChart } from "@/features/candle-chart";
-import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { CoinChartPlaceholder } from "@/features/instrument-analysis/coin-chart-placeholder";
-import { chartIntervals } from "@/features/instrument-analysis/live-candle-store";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
+import { BacktestChart } from "@/features/strategy-backtest/backtest-chart";
 import { BacktestEvaluatedPeriod } from "@/features/strategy-backtest/backtest-evaluated-period";
 import { BacktestPeriodFields } from "@/features/strategy-backtest/backtest-period-fields";
 import { BacktestResults } from "@/features/strategy-backtest/backtest-results";
 import { CoinSelect } from "@/features/strategy-backtest/coin-select";
 import { StrategySelect } from "@/features/strategy-backtest/strategy-select";
-import {
-	backtestMarkers,
-	backtestPeriod,
-} from "@/features/strategy-backtest/utils";
+import { backtestPeriod } from "@/features/strategy-backtest/utils";
 
-// The backtest chart draws candles, volume and trades only.
-const noIndicators = { "1h": [], "1d": [], "1w": [], "1M": [] } as const;
 const runHint = "Select a coin and a strategy, then click Run backtest.";
 const runFailed = "The backtest could not be run.";
 
@@ -76,7 +69,7 @@ export function StrategyBacktestScreen({
 			: undefined;
 	const backtest = useBacktestStrategy(
 		strategy ?? 0,
-		{ symbol: symbol ?? "", ...backtestPeriod(from, to) },
+		{ symbol: symbol ?? "", chart: true, ...backtestPeriod(from, to) },
 		{
 			query: {
 				// Only the Run button requests a backtest, including repeat runs.
@@ -85,21 +78,6 @@ export function StrategyBacktestScreen({
 				select: (response) => response.data,
 			},
 		},
-	);
-	const source = useMemo(
-		() => (symbol ? createCoinChartData(symbol, noIndicators) : undefined),
-		[symbol],
-	);
-	// The strategy's interval and every coarser one, finest first.
-	const intervals = useMemo(
-		() =>
-			backtest.data &&
-			chartIntervals.slice(chartIntervals.indexOf(backtest.data.interval)),
-		[backtest.data],
-	);
-	const tradeMarkers = useMemo(
-		() => backtest.data && backtestMarkers(backtest.data),
-		[backtest.data],
 	);
 	const canRun =
 		permission.allowed &&
@@ -191,7 +169,7 @@ export function StrategyBacktestScreen({
 							{backtest.error.info?.error.message ?? runFailed}
 						</Text>
 					)
-				) : result && source ? (
+				) : result ? (
 					<Stack
 						flex={wide ? 1 : undefined}
 						gap={0}
@@ -202,16 +180,12 @@ export function StrategyBacktestScreen({
 							label="Running the backtest"
 							visible={backtest.isFetching}
 						>
-							<PriceHistoryChart
+							<BacktestChart
+								backtest={result}
 								enabled={permission.allowed}
 								fillHeight={wide}
-								indicators={noIndicators}
-								intervals={intervals}
-								key={`${symbol}:${strategy}:${result.interval}`}
-								markers={tradeMarkers}
+								identity={backtest.dataUpdatedAt}
 								paperPadding={paperPadding}
-								source={source}
-								symbol={symbol}
 							/>
 						</RefreshingOverlay>
 					</Stack>

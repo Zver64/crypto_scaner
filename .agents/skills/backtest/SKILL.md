@@ -31,13 +31,13 @@ description: Create and backtest Crypto Scanner strategies (CEL expressions) aga
 
 ## Diagnosing signals
 
-- Analyze every backtest before choosing the next change; aggregate success rates alone are not a diagnosis. Rerun individual coins when more detailed diagnostics are needed. For false or missing signals, retrieve stored candles around the actual or expected occurrence through supported read-only interfaces (verify available commands/endpoints; never invent them). Inspect diagnostic values, pivot chronology, and preceding structure, especially the trend and first versus repeated structural break; identify why the formula fired or failed and correct that cause.
+- Analyze every backtest before choosing the next change; aggregate success rates alone are not a diagnosis. For false or missing signals, rerun the affected coin with `--from`/`--to` around the actual or expected occurrence when more detailed diagnostics are needed; no minimum candle count applies to these diagnostic segments. Retrieve stored candles around the actual or expected occurrence through supported read-only interfaces (verify available commands/endpoints; never invent them). Inspect diagnostic values, pivot chronology, and preceding structure, especially the trend and first versus repeated structural break; identify why the formula fired or failed and correct that cause.
 - On available history of 2,000 or more candles outside a user-selected segment, zero or only 1–2 signals indicate a problem in the agent's formula, not insufficient history or mere rarity. Investigate overcomplication, incorrect encoding, and filters suppressing valid setups; a low count is not an excuse to stop.
 - Keep every variant faithful to the requested setup. Never merely loosen thresholds to manufacture events or substitute an earlier or different signal to increase the count.
 
 ## Judging results
 
-Keep parameters universal: never tune thresholds per coin or fit one period, including `pnl` and `bars_held` exits. Reject ideas requiring a visual chart check; strategies must be algorithmic. Develop with `--to`, then validate with `--from` without changing rules between samples. One coin, event, or lucky trade proves nothing. Respect an explicitly requested recent-event scope without claiming general predictive reliability from it.
+Reject ideas requiring a visual chart check; strategies must be algorithmic. Use the full available history by default; do not split it into development and validation samples. Limit the period only to diagnose a specific actual or missing signal on one coin, or when the user explicitly requests a period. One coin, event, or lucky trade proves nothing. Respect an explicitly requested recent-event scope without claiming general predictive reliability from it.
 
 ### Trading strategies
 
@@ -49,5 +49,6 @@ Keep parameters universal: never tune thresholds per coin or fit one period, inc
 ### Signals
 
 - `--window` counts candles after the signal, not hours; `--target-ratio` sets target distance in ATR(14) stops. Long/short must reach the target before the stop; sideways must avoid both targets throughout the window. Unevaluable signals are not failures.
-- `--to` limits signal candles, not outcome candles, which may follow the bound. For independent samples, leave at least one evaluation window between the last development candle and first validation candle; date flags include the whole UTC day. Adjacent `--to`/`--from` periods are not outcome-independent.
-- Judge how far the `Successful` share of `Signals` exceeds `All candles`, supported by median move to target, over enough counted signals per coin and consistently across coins and development/validation samples.
+- For period-limited diagnostics, `--to` limits signal candles, not outcome candles, which may follow the bound; date flags include the whole UTC day.
+- A coin passes when the `Successful` share of counted `Signals` (hit rate) is strictly greater than that of `All candles` (noise baseline) for the same evaluated period and evaluation settings. Undefined rates or no counted signals do not constitute success. Report both rates, their difference, and the counted signal count; use median move to target as supporting context, not an additional pass threshold.
+- A signal passes a multi-coin test when at least 70% of the full tested coin list pass the per-coin criterion. Report passed/total and the percentage; do not exclude unsuccessful, unevaluable, or failed coins from the denominator. Diagnose execution failures separately.

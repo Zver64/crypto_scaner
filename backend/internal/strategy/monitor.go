@@ -372,6 +372,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		if len(stored) < len(changes) {
 			monitor.desync()
 		}
+		var alerts []string
 		for _, instrument := range instruments {
 			if !slices.Contains(stored, instrument.ID) {
 				continue
@@ -379,9 +380,12 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 			states[instrument.ID] = changes[instrument.ID]
 			for _, event := range signals[instrument.ID] {
 				if event.Kind != TradeSkip {
-					monitor.send(ctx, recipients, alertText(entry, instrument, event, current))
+					alerts = append(alerts, alertText(entry, instrument, event, current))
 				}
 			}
+		}
+		if len(alerts) > 0 {
+			monitor.send(ctx, recipients, strings.Join(alerts, "\n\n"))
 		}
 	}
 }

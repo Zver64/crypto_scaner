@@ -124,14 +124,6 @@ export function signalSummaryRows(signal: BacktestSignal): SignalSummaryRow[] {
 	];
 }
 
-// The share of judged candles that succeeded, or null without any.
-export function signalSuccessShare({
-	count,
-	successes,
-}: BacktestSignalStats): number | null {
-	return count === 0 ? null : successes / count;
-}
-
 // The color of a success share, 0 to 1: its hue runs from red at 0 through
 // yellow to green at 1.
 export function successColor(share: number): string {
@@ -139,12 +131,12 @@ export function successColor(share: number): string {
 	return `hsl(${hue} ${successColorSaturation}% ${successColorLightness}%)`;
 }
 
-// The successes of judged candles as k/N (x%).
+// Show successes over decisive outcomes; the backend supplies the rate.
 export function formatSignalSuccesses(stats: BacktestSignalStats): string {
-	const { count, successes } = stats;
-	const rate = signalSuccessShare(stats);
-	const share = rate === null ? "" : ` (${formatFractionPercent(rate)})`;
-	return `${formatNumber(successes)}/${formatNumber(count)}${share}`;
+	const { count, successes, neutrals } = stats;
+	const rate = stats.success_rate;
+	if (rate === null) return "—";
+	return `${formatNumber(successes)}/${formatNumber(count - neutrals)} (${formatFractionPercent(rate)})`;
 }
 
 // How a signal's backtest judges its signals, by its direction, window, and
@@ -158,7 +150,7 @@ export function signalExplanation(
 	const ratio = formatNumber(targetRatio);
 	return direction === Direction.sideways
 		? `Targets: ${ratio} times ATR(14) on both sides. Window: ${candles} candles. Success: the price touches neither target. Move to target: how far the price moved away from the signal price in either direction. The Signals median covers every counted signal, successful or not.`
-		: `Stop: one ATR(14) against the signal; target: ${ratio} times farther in the signal's direction. Window: ${candles} candles. Success: the target is reached before the stop. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.`;
+		: `Stop: one ATR(14) against the signal; target: ${ratio} times farther in the signal's direction. Window: ${candles} candles. Success: target before stop, or, without either touch, a final close at least one ATR(14) in the signal's direction. Neutral: without either touch, a final close from entry to less than one ATR(14) in that direction; neutrals are excluded from the success percentage. Otherwise failure. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.`;
 }
 
 // The period of a backtest request from its first and last UTC days, the

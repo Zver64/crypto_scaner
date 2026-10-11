@@ -1,20 +1,29 @@
 import { useMantineTheme } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
+import type { BacktestSignalOccurrence } from "@/api/generated/models";
 
 interface BacktestSignalSuccessProps {
-	success: boolean | null;
+	outcome: BacktestSignalOccurrence["outcome"];
 }
 
-// Whether a signal succeeded, green Yes or red No; empty without an
-// evaluation.
-export function BacktestSignalSuccess({ success }: BacktestSignalSuccessProps) {
+// Show the evaluated outcome; empty when history cannot judge it.
+export function BacktestSignalSuccess({ outcome }: BacktestSignalSuccessProps) {
 	const { colors } = themeToVars(useMantineTheme());
-	if (success === null) {
+	if (outcome === null) {
 		return null;
 	}
 	return (
-		<span style={{ color: success ? colors.green[6] : colors.red[6] }}>
-			{success ? "Yes" : "No"}
+		<span
+			style={{
+				color:
+					outcome === "neutral"
+						? undefined
+						: outcome === "success"
+							? colors.green[6]
+							: colors.red[6],
+			}}
+		>
+			{outcome === "neutral" ? "Neutral" : outcome === "success" ? "Yes" : "No"}
 		</span>
 	);
 }

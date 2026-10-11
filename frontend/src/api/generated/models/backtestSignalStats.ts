@@ -27,6 +27,18 @@ export interface BacktestSignalStats {
   /** @minimum 0 */
   successes: number;
   /**
+     * Neutral outcomes included in count but excluded from success_rate.
+     * @minimum 0
+     */
+  neutrals: number;
+  /**
+     * successes divided by (count - neutrals); null without decisive outcomes.
+     * @minimum 0
+     * @maximum 1
+     * @nullable
+     */
+  success_rate: number | null;
+  /**
      * Median move to target over every judged candle, successful or not; null without candles.
      * @nullable
      */

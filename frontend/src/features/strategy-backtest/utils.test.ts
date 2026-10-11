@@ -5,6 +5,7 @@ import {
 	backtestPeriod,
 	createEquityData,
 	formatFractionPercent,
+	formatSignalSuccesses,
 	shortenedPeriod,
 	successColor,
 } from "@/features/strategy-backtest/utils";
@@ -13,6 +14,31 @@ describe("formatFractionPercent", () => {
 	it("formats fractions as percentages and a missing value as a dash", () => {
 		expect(formatFractionPercent(-0.0123)).toBe("-1.23%");
 		expect(formatFractionPercent(null)).toBe("—");
+	});
+});
+
+describe("formatSignalSuccesses", () => {
+	it("excludes neutral outcomes from the displayed denominator", () => {
+		expect(
+			formatSignalSuccesses({
+				count: 7,
+				successes: 2,
+				neutrals: 4,
+				success_rate: 2 / 3,
+				median_move: null,
+			}),
+		).toBe("2/3 (66.67%)");
+	});
+	it("shows a dash when no decisive outcomes exist", () => {
+		expect(
+			formatSignalSuccesses({
+				count: 4,
+				successes: 0,
+				neutrals: 4,
+				success_rate: null,
+				median_move: null,
+			}),
+		).toBe("—");
 	});
 });
 
@@ -44,7 +70,13 @@ describe("backtestMarkers", () => {
 	const signal = (direction: Direction) => ({
 		direction,
 		signal: {
-			all: { count: 0, median_move: null, successes: 0 },
+			all: {
+				count: 0,
+				median_move: null,
+				successes: 0,
+				neutrals: 0,
+				success_rate: null,
+			},
 			evaluated: 0,
 			occurrences: [
 				{
@@ -52,14 +84,20 @@ describe("backtestMarkers", () => {
 					counted: null,
 					move: null,
 					stop: null,
-					success: null,
+					outcome: null,
 					target: null,
 					time,
 					values: {},
 					indicator_values: {},
 				},
 			],
-			signals: { count: 0, median_move: null, successes: 0 },
+			signals: {
+				count: 0,
+				median_move: null,
+				successes: 0,
+				neutrals: 0,
+				success_rate: null,
+			},
 			target_ratio: 2,
 			window: 6,
 		},

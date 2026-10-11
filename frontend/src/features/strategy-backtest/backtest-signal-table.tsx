@@ -71,7 +71,7 @@ const trailingColumns: DataTableColumn<BacktestSignalOccurrence>[] = [
 		textAlign: "right",
 	},
 	{
-		cell: ({ success }) => <BacktestSignalSuccess success={success} />,
+		cell: ({ outcome }) => <BacktestSignalSuccess outcome={outcome} />,
 		header: "Success",
 		key: "success",
 	},

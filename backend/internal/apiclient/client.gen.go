@@ -125,6 +125,27 @@ func (e APIErrorCode) Valid() bool {
 	}
 }
 
+// Defines values for BacktestSignalOutcome.
+const (
+	Failure BacktestSignalOutcome = "failure"
+	Neutral BacktestSignalOutcome = "neutral"
+	Success BacktestSignalOutcome = "success"
+)
+
+// Valid indicates whether the value is a known member of the BacktestSignalOutcome enum.
+func (e BacktestSignalOutcome) Valid() bool {
+	switch e {
+	case Failure:
+		return true
+	case Neutral:
+		return true
+	case Success:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BacktestTradeExitReason.
 const (
 	BacktestTradeExitReasonExit       BacktestTradeExitReason = "exit"
@@ -624,7 +645,7 @@ type BacktestSignal struct {
 	Window int `json:"window"`
 }
 
-// BacktestSignalOccurrence An entry signal. counted, stop, target, move, and success are null
+// BacktestSignalOccurrence An entry signal. counted, stop, target, move, and outcome are null
 // together when history lacks a positive ATR(14), the full consecutive
 // future window, or valid positive-price levels. ATR needs at least
 // 14 preceding consecutive candles and restarts after missing candles.
@@ -645,11 +666,15 @@ type BacktestSignalOccurrence struct {
 	// sideways the largest move in either direction.
 	Move *float64 `json:"move"`
 
+	// Outcome Target before stop is success; stop first is failure. Without either
+	// touch, the final close at least one ATR in the expected direction is
+	// success, from entry to less than one ATR is neutral, and against the
+	// direction is failure. Sideways keeps its target-touch rule without
+	// neutral outcomes. Null means insufficient history for evaluation.
+	Outcome *BacktestSignalOutcome `json:"outcome"`
+
 	// Stop One ATR(14) divided by the signal close, as a fraction; null for sideways or an unevaluated signal.
 	Stop *float64 `json:"stop"`
-
-	// Success The target was reached before the stop; for sideways, neither target was touched.
-	Success *bool `json:"success"`
 
 	// Target target_ratio times ATR(14) divided by the signal close, as a fraction; on both sides for sideways, null for an unevaluated signal.
 	Target *float64 `json:"target"`
@@ -661,6 +686,9 @@ type BacktestSignalOccurrence struct {
 	Values BacktestValues `json:"values"`
 }
 
+// BacktestSignalOutcome defines model for BacktestSignalOutcome.
+type BacktestSignalOutcome string
+
 // BacktestSignalStats defines model for BacktestSignalStats.
 type BacktestSignalStats struct {
 	// Count Candles judged.
@@ -668,7 +696,13 @@ type BacktestSignalStats struct {
 
 	// MedianMove Median move to target over every judged candle, successful or not; null without candles.
 	MedianMove *float64 `json:"median_move"`
-	Successes  int      `json:"successes"`
+
+	// Neutrals Neutral outcomes included in count but excluded from success_rate.
+	Neutrals int `json:"neutrals"`
+
+	// SuccessRate successes divided by (count - neutrals); null without decisive outcomes.
+	SuccessRate *float64 `json:"success_rate"`
+	Successes   int      `json:"successes"`
 }
 
 // BacktestSummary Results of the strategy's trades.

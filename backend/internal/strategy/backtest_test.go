@@ -705,7 +705,11 @@ func TestEvaluateSignal(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			// The target lies 2 stops away, 2%.
 			evaluation := evaluateTestSignal(t, test.direction, market.IntervalHour, signalHistory(test.future...), signalHistoryCandles, 6, 2)
-			if evaluation == nil || evaluation.Success != test.success || math.Abs(evaluation.Move-test.move) > 1e-9 ||
+			want := SignalFailure
+			if test.success {
+				want = SignalSuccess
+			}
+			if evaluation == nil || evaluation.Outcome != want || math.Abs(evaluation.Move-test.move) > 1e-9 ||
 				math.Abs(evaluation.Target-2*stop) > 1e-12 || (evaluation.Stop == nil) != (test.direction == DirectionSideways) {
 				t.Fatalf("evaluation %+v, want success %v and move %v", evaluation, test.success, test.move)
 			}

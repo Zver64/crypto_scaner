@@ -96,8 +96,10 @@ type SignalOccurrence struct {
 
 // SignalEvaluation judges a candle's close by its target and stop. Stop and
 // Target are their distances from the close as fractions of it, Stop nil for
-// sideways. A long or short one succeeds when the target is reached before
-// the stop; a sideways one when neither target is touched. Move is the
+// sideways. Long/short use the first touched level, or the final close when
+// neither level is touched: at least one ATR forward succeeds, a smaller
+// nonnegative move is neutral, and a backward move fails. Sideways succeeds
+// when neither target is touched. Move is the
 // largest move from the close in the expected direction until the stop is
 // reached or the window ends, and for sideways the largest move either way.
 // Counted tells a signal counted in the statistics: one at least Window
@@ -106,14 +108,42 @@ type SignalEvaluation struct {
 	Counted      bool
 	Stop         *float64
 	Target, Move float64
-	Success      bool
+	Outcome      SignalOutcome
 }
 
-// SignalStats counts evaluated candles and their successes, with the median
-// move, nil without candles.
+// SignalOutcome is the result of a fully evaluated signal window.
+type SignalOutcome string
+
+const (
+	SignalSuccess SignalOutcome = "success"
+	SignalFailure SignalOutcome = "failure"
+	SignalNeutral SignalOutcome = "neutral"
+)
+
+// SignalStats counts all evaluated outcomes, including neutrals. MedianMove
+// includes every counted outcome and is nil without candles.
 type SignalStats struct {
-	Count, Successes int
-	MedianMove       *float64
+	Count, Successes, Neutrals int
+	MedianMove                 *float64
+}
+
+func (stats *SignalStats) record(evaluation *SignalEvaluation) {
+	stats.Count++
+	switch evaluation.Outcome {
+	case SignalSuccess:
+		stats.Successes++
+	case SignalNeutral:
+		stats.Neutrals++
+	}
+}
+
+// SuccessRate excludes neutral outcomes; nil means no decisive outcomes.
+func (stats SignalStats) SuccessRate() *float64 {
+	decisive := stats.Count - stats.Neutrals
+	if decisive == 0 {
+		return nil
+	}
+	return new(float64(stats.Successes) / float64(decisive))
 }
 
 // Trade is a trade of one or more buys. EntryTime is the open time of the
@@ -470,10 +500,7 @@ func signalReport(registry *indicator.Registry, signal Strategy, interval market
 		if at >= next {
 			evaluation.Counted = true
 			next = at + signal.Window
-			report.Signals.Count++
-			if evaluation.Success {
-				report.Signals.Successes++
-			}
+			report.Signals.record(evaluation)
 			moves = append(moves, evaluation.Move)
 		}
 		report.Occurrences[index].Evaluation = evaluation
@@ -485,10 +512,7 @@ func signalReport(registry *indicator.Registry, signal Strategy, interval market
 	moves = nil
 	for at := first; at <= last; at++ {
 		if evaluation := evaluate(at); evaluation != nil {
-			report.All.Count++
-			if evaluation.Success {
-				report.All.Successes++
-			}
+			report.All.record(evaluation)
 			moves = append(moves, evaluation.Move)
 		}
 	}
@@ -516,24 +540,24 @@ func evaluateSignal(direction Direction, interval market.CandleInterval, history
 		return sidewaysEvaluation(price, target, future)
 	}
 	evaluation := &SignalEvaluation{Stop: new(stop), Target: target}
-	evaluation.Success, evaluation.Move = directionalOutcome(direction, price, stop, target, future)
+	evaluation.Outcome, evaluation.Move = directionalOutcome(direction, price, stop, target, future)
 	return evaluation
 }
 
 // directionalOutcome reports whether the price, from price, reached the
-// target, target times price away in direction, before the stop, stop times
-// price away against it, over future, and the largest move in direction until
+// target or stop over future, with the final close deciding untouched windows.
+// It also reports the largest move in direction until
 // the stop. A candle reaching both decides by its open when that is already
 // at one of them, and fails otherwise; the stop candle's move counts only its
 // open, since its high and low may come after the stop.
-func directionalOutcome(direction Direction, price, stop, target float64, future []market.Candle) (bool, float64) {
+func directionalOutcome(direction Direction, price, stop, target float64, future []market.Candle) (SignalOutcome, float64) {
 	sign := 1.0
 	if direction == DirectionShort {
 		sign = -1
 	}
 	// favorable is the move to value in direction, as a fraction of price.
 	favorable := func(value float64) float64 { return sign * (value - price) / price }
-	decided, success, move := false, false, 0.0
+	decided, outcome, move := false, SignalFailure, 0.0
 	for _, candle := range future {
 		best, worst := candle.High, candle.Low
 		if direction == DirectionShort {
@@ -544,11 +568,11 @@ func directionalOutcome(direction Direction, price, stop, target float64, future
 		if !decided {
 			switch {
 			case openAtTarget:
-				decided, success = true, true
+				decided, outcome = true, SignalSuccess
 			case openAtStop, reachesTarget && reachesStop:
 				decided = true
 			case reachesTarget:
-				decided, success = true, true
+				decided, outcome = true, SignalSuccess
 			case reachesStop:
 				decided = true
 			}
@@ -561,18 +585,28 @@ func directionalOutcome(direction Direction, price, stop, target float64, future
 		}
 		move = max(move, favorable(best))
 	}
-	return success, move
+	if !decided {
+		finalClose := future[len(future)-1].Close
+		oneATR := price + sign*price*stop
+		switch {
+		case sign*(finalClose-oneATR) >= 0:
+			outcome = SignalSuccess
+		case favorable(finalClose) >= 0:
+			outcome = SignalNeutral
+		}
+	}
+	return outcome, move
 }
 
 // sidewaysEvaluation judges a sideways signal at price with targets target
 // times price above and below it over future: it succeeds when no candle
 // touches either, and its move is the largest deviation either way.
 func sidewaysEvaluation(price, target float64, future []market.Candle) *SignalEvaluation {
-	evaluation := &SignalEvaluation{Target: target, Success: true}
+	evaluation := &SignalEvaluation{Target: target, Outcome: SignalSuccess}
 	for _, candle := range future {
 		up, down := (candle.High-price)/price, (price-candle.Low)/price
 		if up >= target || down >= target {
-			evaluation.Success = false
+			evaluation.Outcome = SignalFailure
 		}
 		evaluation.Move = max(evaluation.Move, up, down)
 	}

@@ -2230,9 +2230,9 @@ components:
     BacktestSignalOccurrence:
       type: object
       additionalProperties: false
-      required: [time, close, values, indicator_values, counted, stop, target, move, success]
+      required: [time, close, values, indicator_values, counted, stop, target, move, outcome]
       description: |
-        An entry signal. counted, stop, target, move, and success are null
+        An entry signal. counted, stop, target, move, and outcome are null
         together when history lacks a positive ATR(14), the full consecutive
         future window, or valid positive-price levels. ATR needs at least
         14 preceding consecutive candles and restarts after missing candles.
@@ -2270,13 +2270,23 @@ components:
             Largest move from the close in the expected direction, also after
             the target, until the stop is reached or the window ends; for
             sideways the largest move in either direction.
-        success:
-          type: [boolean, "null"]
-          description: The target was reached before the stop; for sideways, neither target was touched.
+        outcome:
+          anyOf:
+            - $ref: "#/components/schemas/BacktestSignalOutcome"
+            - type: "null"
+          description: |
+            Target before stop is success; stop first is failure. Without either
+            touch, the final close at least one ATR in the expected direction is
+            success, from entry to less than one ATR is neutral, and against the
+            direction is failure. Sideways keeps its target-touch rule without
+            neutral outcomes. Null means insufficient history for evaluation.
+    BacktestSignalOutcome:
+      type: string
+      enum: [success, failure, neutral]
     BacktestSignalStats:
       type: object
       additionalProperties: false
-      required: [count, successes, median_move]
+      required: [count, successes, neutrals, success_rate, median_move]
       properties:
         count:
           type: integer
@@ -2285,6 +2295,16 @@ components:
         successes:
           type: integer
           minimum: 0
+        neutrals:
+          type: integer
+          minimum: 0
+          description: Neutral outcomes included in count but excluded from success_rate.
+        success_rate:
+          type: [number, "null"]
+          format: double
+          minimum: 0
+          maximum: 1
+          description: successes divided by (count - neutrals); null without decisive outcomes.
         median_move:
           type: [number, "null"]
           format: double

@@ -4,10 +4,10 @@ import type { SignalSummaryRow } from "@/features/strategy-backtest/types";
 import {
 	formatFractionPercent,
 	formatSignalSuccesses,
-	signalSuccessShare,
 	signalSummaryRows,
 	successColor,
 } from "@/features/strategy-backtest/utils";
+import { formatNumber } from "@/utils/number-format";
 
 interface BacktestSignalSummaryProps {
 	signal: BacktestSignal;
@@ -29,7 +29,7 @@ const columns: DataTableColumn<SignalSummaryRow>[] = [
 	},
 	{
 		cell: ({ key, stats }) => {
-			const share = key === "signals" ? signalSuccessShare(stats) : null;
+			const share = key === "signals" ? stats.success_rate : null;
 			return (
 				<span
 					style={{ color: share === null ? undefined : successColor(share) }}
@@ -40,6 +40,12 @@ const columns: DataTableColumn<SignalSummaryRow>[] = [
 		},
 		header: "Successful",
 		key: "successful",
+		textAlign: "right",
+	},
+	{
+		cell: ({ stats }) => formatNumber(stats.neutrals),
+		header: "Neutral",
+		key: "neutral",
 		textAlign: "right",
 	},
 ];

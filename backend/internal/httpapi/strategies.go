@@ -249,7 +249,7 @@ func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
 		for i, occurrence := range report.Occurrences {
 			occurrences[i] = BacktestSignalOccurrence{Time: occurrence.Time, Close: occurrence.Close, Values: backtestValues(occurrence.Values), IndicatorValues: backtestValues(occurrence.IndicatorValues)}
 			if evaluation := occurrence.Evaluation; evaluation != nil {
-				occurrences[i].Counted, occurrences[i].Success = &evaluation.Counted, &evaluation.Success
+				occurrences[i].Counted, occurrences[i].Outcome = &evaluation.Counted, new(BacktestSignalOutcome(evaluation.Outcome))
 				occurrences[i].Stop, occurrences[i].Target, occurrences[i].Move = evaluation.Stop, &evaluation.Target, &evaluation.Move
 			}
 		}
@@ -262,7 +262,7 @@ func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
 }
 
 func signalStatsDTO(stats strategy.SignalStats) BacktestSignalStats {
-	return BacktestSignalStats{Count: stats.Count, Successes: stats.Successes, MedianMove: stats.MedianMove}
+	return BacktestSignalStats{Count: stats.Count, Successes: stats.Successes, Neutrals: stats.Neutrals, SuccessRate: stats.SuccessRate(), MedianMove: stats.MedianMove}
 }
 
 // fromNullable reads a nullable enum of the contract as an int, 0 for null.

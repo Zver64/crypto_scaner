@@ -315,11 +315,11 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 	sideways := backtest.Direction == apiclient.Sideways
 	fmt.Fprintln(w, signalExplanation(sideways, signal.Window, signal.TargetRatio))
 	t = newTable()
-	t.AppendHeader(table.Row{"", "Count (all / counted)", "Median move to target %", "Successful"})
+	t.AppendHeader(table.Row{"", "Count (all / counted)", "Median move to target %", "Successful", "Neutral"})
 	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}})
 	t.AppendRows([]table.Row{
-		{"Signals", fmt.Sprintf("%d / %d", signal.Evaluated, signal.Signals.Count), share(signal.Signals.MedianMove), successful(signal.Signals)},
-		{"All candles", signal.All.Count, share(signal.All.MedianMove), successful(signal.All)},
+		{"Signals", fmt.Sprintf("%d / %d", signal.Evaluated, signal.Signals.Count), share(signal.Signals.MedianMove), successful(signal.Signals), signal.Signals.Neutrals},
+		{"All candles", signal.All.Count, share(signal.All.MedianMove), successful(signal.All), signal.All.Neutrals},
 	})
 	fmt.Fprintln(w, t.Render())
 	layout := candleTimeLayout(backtest.Interval)
@@ -346,7 +346,7 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 		if !sideways {
 			row = append(row, evaluated(occurrence.Stop))
 		}
-		row = append(row, evaluated(occurrence.Target), evaluated(occurrence.Move), yesNo(occurrence.Success))
+		row = append(row, evaluated(occurrence.Target), evaluated(occurrence.Move), signalOutcome(occurrence.Outcome))
 		if indicators {
 			for _, column := range backtest.IndicatorColumns {
 				value := ""
@@ -370,16 +370,29 @@ func signalExplanation(sideways bool, window, ratio int) string {
 	if sideways {
 		return fmt.Sprintf("Targets: %d times ATR(14) on both sides. Window: %d candles. Success: the price touches neither target. Move to target: how far the price moved away from the signal price in either direction. The Signals median covers every counted signal, successful or not.", ratio, window)
 	}
-	return fmt.Sprintf("Stop: one ATR(14) against the signal; target: %d times farther in the signal's direction. Window: %d candles. Success: the target is reached before the stop. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.", ratio, window)
+	return fmt.Sprintf("Stop: one ATR(14) against the signal; target: %d times farther in the signal's direction. Window: %d candles. Success: target before stop, or, without either touch, a final close at least one ATR(14) in the signal's direction. Neutral: without either touch, a final close from entry to less than one ATR(14) in that direction; neutrals are excluded from the success percentage. Otherwise failure. Move to target: how far the price went in the signal's direction, also after the target, until the stop is hit or the window ends. The Signals median covers every counted signal, successful or not.", ratio, window)
 }
 
-// successful writes the successes of stats as k/N (x%).
-func successful(stats apiclient.BacktestSignalStats) string {
-	if stats.Count == 0 {
-		return "0/0"
+func signalOutcome(outcome *apiclient.BacktestSignalOutcome) string {
+	if outcome == nil {
+		return ""
 	}
-	rate := float64(stats.Successes) / float64(stats.Count)
-	return fmt.Sprintf("%d/%d (%s%%)", stats.Successes, stats.Count, share(&rate))
+	switch *outcome {
+	case apiclient.Success:
+		return "Yes"
+	case apiclient.Neutral:
+		return "Neutral"
+	default:
+		return "No"
+	}
+}
+
+// successful excludes neutral outcomes from its denominator.
+func successful(stats apiclient.BacktestSignalStats) string {
+	if stats.SuccessRate == nil {
+		return "-"
+	}
+	return fmt.Sprintf("%d/%d (%s%%)", stats.Successes, stats.Count-stats.Neutrals, share(stats.SuccessRate))
 }
 
 // evaluated formats a distance of an evaluated signal as a percentage, empty

@@ -39,6 +39,7 @@ export * from './backtestIndicatorColumn.ts';
 export * from './backtestSignal.ts';
 export * from './backtestSignalOccurrence.ts';
 export * from './backtestSignalOccurrenceIndicatorValues.ts';
+export * from './backtestSignalOutcome.ts';
 export * from './backtestSignalStats.ts';
 export * from './backtestStrategyParams.ts';
 export * from './backtestSummary.ts';

@@ -18,10 +18,11 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { BacktestSignalOccurrenceIndicatorValues } from './backtestSignalOccurrenceIndicatorValues.ts';
+import type { BacktestSignalOutcome } from './backtestSignalOutcome.ts';
 import type { BacktestValues } from './backtestValues.ts';
 
 /**
- * An entry signal. counted, stop, target, move, and success are null
+ * An entry signal. counted, stop, target, move, and outcome are null
  * together when history lacks a positive ATR(14), the full consecutive
  * future window, or valid positive-price levels. ATR needs at least
  * 14 preceding consecutive candles and restarts after missing candles.
@@ -60,8 +61,11 @@ export interface BacktestSignalOccurrence {
      */
   move: number | null;
   /**
-     * The target was reached before the stop; for sideways, neither target was touched.
-     * @nullable
+     * Target before stop is success; stop first is failure. Without either
+     * touch, the final close at least one ATR in the expected direction is
+     * success, from entry to less than one ATR is neutral, and against the
+     * direction is failure. Sideways keeps its target-touch rule without
+     * neutral outcomes. Null means insufficient history for evaluation.
      */
-  success: boolean | null;
+  outcome: BacktestSignalOutcome | null;
 }

@@ -1,4 +1,4 @@
-import { Button, Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { Button, Paper, Stack, Text, Title } from "@mantine/core";
 import { useState } from "react";
 import { useBacktestStrategy } from "@/api/generated/api";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
@@ -93,14 +93,8 @@ export function StrategyBacktestScreen({
 			<Title order={2} size="h4">
 				{symbol ?? "Backtest"}
 			</Title>
-			<Group align="flex-start" grow wrap="nowrap">
-				<StrategySelect onChange={onStrategyChange} strategy={strategy} />
-				<CoinSelect
-					allCoins={allCoins}
-					onChange={onCoinChange}
-					symbol={symbol}
-				/>
-			</Group>
+			<StrategySelect onChange={onStrategyChange} strategy={strategy} />
+			<CoinSelect allCoins={allCoins} onChange={onCoinChange} symbol={symbol} />
 			<BacktestPeriodFields
 				error={periodError}
 				from={from}

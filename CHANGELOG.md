@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.4.0](https://github.com/Zver64/crypto_scaner/compare/v2.3.0...v2.4.0) (2026-10-11)
+
+
+### Features
+
+* add neutral signal backtest outcomes ([00cbfca](https://github.com/Zver64/crypto_scaner/commit/00cbfca91b16ccc60687dd5c23b75d966869b09c))
+* add outcome-colored exits to signal backtest charts ([f47801e](https://github.com/Zver64/crypto_scaner/commit/f47801e7e7768f33a9eddd60fc9c9534b04b8602))
+
 ## [2.3.0](https://github.com/Zver64/crypto_scaner/compare/v2.2.0...v2.3.0) (2026-10-10)
 
 

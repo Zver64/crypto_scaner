@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.5.0](https://github.com/Zver64/crypto_scaner/compare/v2.4.1...v2.5.0) (2026-10-11)
+
+
+### Features
+
+* support multi-coin backtests in frontend and CLI ([5998d36](https://github.com/Zver64/crypto_scaner/commit/5998d368db6ee199f84b0c13344dda751d7ba034))
+
+
+### Bug Fixes
+
+* select all favorites with an additive button ([b5f9651](https://github.com/Zver64/crypto_scaner/commit/b5f965143bee08f15299e3e7b24450b4829d2dbf))
+
 ## [2.4.1](https://github.com/Zver64/crypto_scaner/compare/v2.4.0...v2.4.1) (2026-10-11)
 
 

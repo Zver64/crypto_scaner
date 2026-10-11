@@ -1,4 +1,4 @@
-import { Checkbox, MultiSelect, Stack } from "@mantine/core";
+import { Button, MultiSelect, Stack } from "@mantine/core";
 import { CoinPicker } from "@/app/coin-picker";
 import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
 
@@ -16,10 +16,6 @@ export function CoinSelect({
 	symbols,
 }: CoinSelectProps) {
 	const favorites = useFavoriteSymbols();
-	const selectedAll =
-		(favorites.data?.length ?? 0) > 0 &&
-		symbols.length === favorites.data?.length &&
-		favorites.data.every((symbol) => symbols.includes(symbol));
 	return (
 		<Stack gap="xs">
 			<CoinPicker
@@ -45,17 +41,19 @@ export function CoinSelect({
 					/>
 				)}
 			</CoinPicker>
-			<Checkbox
-				checked={selectedAll}
+			<Button
 				disabled={disabled || !favorites.data?.length}
-				label="Select all favorites"
-				onChange={(event) =>
+				onClick={() =>
 					onChange(
-						event.currentTarget.checked ? [...(favorites.data ?? [])] : [],
+						[...new Set([...symbols, ...(favorites.data ?? [])])],
 						allCoins,
 					)
 				}
-			/>
+				type="button"
+				variant="default"
+			>
+				Select all favorites
+			</Button>
 		</Stack>
 	);
 }

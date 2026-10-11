@@ -1,41 +1,31 @@
 import { Button, Paper, Stack, Text, Title } from "@mantine/core";
-import { useState } from "react";
-import { useBacktestStrategy } from "@/api/generated/api";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { EmptyState } from "@/components/empty-state";
-import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
-import { CoinChartPlaceholder } from "@/features/instrument-analysis/coin-chart-placeholder";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
-import { BacktestChart } from "@/features/strategy-backtest/backtest-chart";
 import { BacktestEvaluatedPeriod } from "@/features/strategy-backtest/backtest-evaluated-period";
+import { BacktestMultiResults } from "@/features/strategy-backtest/backtest-multi-results";
 import { BacktestPeriodFields } from "@/features/strategy-backtest/backtest-period-fields";
-import { BacktestResults } from "@/features/strategy-backtest/backtest-results";
+import { BacktestSingleResults } from "@/features/strategy-backtest/backtest-single-results";
 import { CoinSelect } from "@/features/strategy-backtest/coin-select";
 import { StrategySelect } from "@/features/strategy-backtest/strategy-select";
-import { backtestPeriod } from "@/features/strategy-backtest/utils";
+import { useBacktestRun } from "@/features/strategy-backtest/use-backtest-run";
 import { formatNumber } from "@/utils/number-format";
 
-const runHint = "Select a coin and a strategy, then click Run backtest.";
-const runFailed = "The backtest could not be run.";
+const runHint = "Select coins and a strategy, then click Run backtest.";
 
 interface StrategyBacktestScreenProps {
 	allCoins: boolean;
-	// The first and last UTC days of the period, YYYY-MM-DD; absent for the
-	// whole stored history on that side.
 	from: string | undefined;
-	onCoinChange(symbol: string | undefined, allCoins: boolean): void;
+	onCoinChange(symbols: string[], allCoins: boolean): void;
 	onPeriodChange(from: string | undefined, to: string | undefined): void;
 	onStrategyChange(strategy: number): void;
 	strategy: number | undefined;
-	symbol: string | undefined;
+	symbols: string[];
 	to: string | undefined;
 }
 
-// Replays a strategy over the stored history of the coin, simulates its trades
-// and marks them on the chart. The chart starts on the finest interval the strategy
-// reads and offers the coarser ones.
 export function StrategyBacktestScreen({
 	allCoins,
 	from,
@@ -43,59 +33,49 @@ export function StrategyBacktestScreen({
 	onPeriodChange,
 	onStrategyChange,
 	strategy,
-	symbol,
+	symbols,
 	to,
 }: StrategyBacktestScreenProps) {
 	const { contentSpacing, paperPadding } = useCoinPageLayout();
 	const permission = useBusinessRequestPermission();
 	const wide = useWideLayout();
-	const [requested, setRequested] = useState<
-		| {
-				from: string | undefined;
-				strategy: number;
-				symbol: string;
-				to: string | undefined;
-		  }
-		| undefined
-	>();
-	const hasRun =
-		requested !== undefined &&
-		requested.strategy === strategy &&
-		requested.symbol === symbol &&
-		requested.from === from &&
-		requested.to === to;
+	const { run, running, start, cancel } = useBacktestRun();
 	const periodError =
 		from !== undefined && to !== undefined && from > to
 			? "The period starts after it ends."
 			: undefined;
-	const backtest = useBacktestStrategy(
-		strategy ?? 0,
-		{ symbol: symbol ?? "", chart: true, ...backtestPeriod(from, to) },
-		{
-			query: {
-				// Only the Run button requests a backtest, including repeat runs.
-				enabled: false,
-				retry: false,
-				select: (response) => response.data,
-			},
-		},
-	);
 	const canRun =
 		permission.allowed &&
 		strategy !== undefined &&
-		symbol !== undefined &&
-		periodError === undefined;
-
-	const result = hasRun && !backtest.isError ? backtest.data : undefined;
+		symbols.length > 0 &&
+		periodError === undefined &&
+		!running;
+	const multi = run ? run.parameters.symbols.length > 1 : symbols.length > 1;
+	const singleResult =
+		run?.parameters.symbols.length === 1 ? run.items[0].result : undefined;
+	const finished =
+		run?.items.filter(
+			(item) => item.status === "completed" || item.status === "failed",
+		).length ?? 0;
 
 	const controls = (
 		<Stack gap={contentSpacing}>
 			<Title order={2} size="h4">
-				{symbol ?? "Backtest"}
+				{symbols.length === 1 ? symbols[0] : "Backtest"}
 			</Title>
-			<StrategySelect onChange={onStrategyChange} strategy={strategy} />
-			<CoinSelect allCoins={allCoins} onChange={onCoinChange} symbol={symbol} />
+			<StrategySelect
+				disabled={running}
+				onChange={onStrategyChange}
+				strategy={strategy}
+			/>
+			<CoinSelect
+				allCoins={allCoins}
+				disabled={running}
+				onChange={onCoinChange}
+				symbols={symbols}
+			/>
 			<BacktestPeriodFields
+				disabled={running}
 				error={periodError}
 				from={from}
 				onChange={onPeriodChange}
@@ -103,32 +83,47 @@ export function StrategyBacktestScreen({
 			/>
 			<Button
 				disabled={!canRun}
-				loading={backtest.isFetching}
+				loading={running}
 				onClick={() => {
-					if (!canRun) return;
-					setRequested({ from, strategy, symbol, to });
-					void backtest.refetch();
+					if (canRun) void start({ strategy, symbols, from, to });
 				}}
 				size="sm"
 				variant="light"
 			>
 				Run backtest
 			</Button>
-			{result ? (
+			{running ? (
+				<>
+					<Text c="dimmed" size="sm">
+						Completed {finished} / {run?.items.length ?? symbols.length}
+					</Text>
+					<Button onClick={cancel} size="sm" variant="default">
+						Cancel
+					</Button>
+				</>
+			) : null}
+			{singleResult && run ? (
 				<Stack gap={4}>
-					<BacktestEvaluatedPeriod backtest={result} from={from} to={to} />
+					<BacktestEvaluatedPeriod
+						backtest={singleResult}
+						from={run.parameters.from}
+						to={run.parameters.to}
+					/>
 					<Text c="dimmed" size="xs">
 						Execution time:{" "}
-						{formatNumber(result.duration_ms / 1000, 2, "halfExpand", false, 2)}{" "}
+						{formatNumber(
+							singleResult.duration_ms / 1000,
+							2,
+							"halfExpand",
+							false,
+							2,
+						)}{" "}
 						s
 					</Text>
 				</Stack>
 			) : null}
 		</Stack>
 	);
-
-	// Wide screens keep the controls in the sidebar; phones show them above
-	// the chart. Results follow the chart on both.
 	return (
 		<SidebarLayout
 			gap={contentSpacing}
@@ -137,76 +132,37 @@ export function StrategyBacktestScreen({
 		>
 			<Stack
 				gap={contentSpacing}
-				h={wide ? "100%" : undefined}
-				style={wide ? { flexShrink: 0 } : undefined}
+				h={wide && !multi ? "100%" : undefined}
+				style={wide && !multi ? { flexShrink: 0 } : undefined}
 			>
 				{wide ? null : controls}
-				{/* Wide screens keep the chart's place with a card; phones show
-				the plain hint under the controls. */}
-				{strategy === undefined ||
-				symbol === undefined ||
-				!hasRun ||
-				(backtest.isPending && !backtest.isFetching) ? (
-					wide ? (
-						<EmptyState
-							description={runHint}
-							fillHeight
-							title="Run a backtest"
-						/>
-					) : (
-						<Text c="dimmed" size="sm">
-							{runHint}
-						</Text>
-					)
-				) : backtest.isError ? (
-					wide ? (
-						<EmptyState
-							description={backtest.error.info?.error.message}
-							failed
-							fillHeight
-							title={runFailed}
-						/>
-					) : (
-						<Text c="red" size="sm">
-							{backtest.error.info?.error.message ?? runFailed}
-						</Text>
-					)
-				) : result ? (
-					<Stack
-						flex={wide ? 1 : undefined}
-						gap={0}
-						mih={wide ? "70%" : undefined}
-					>
-						<RefreshingOverlay
-							fillHeight={wide}
-							label="Running the backtest"
-							visible={backtest.isFetching}
-						>
-							<BacktestChart
-								backtest={result}
-								enabled={permission.allowed}
-								fillHeight={wide}
-								identity={backtest.dataUpdatedAt}
-								paperPadding={paperPadding}
-							/>
-						</RefreshingOverlay>
-					</Stack>
-				) : (
-					<CoinChartPlaceholder failed={false} paperPadding={paperPadding} />
-				)}
-				{result ? (
-					<RefreshingOverlay
-						label="Running the backtest"
-						visible={backtest.isFetching}
-					>
-						<BacktestResults
-							backtest={result}
+				{run ? (
+					multi ? (
+						<BacktestMultiResults
+							run={run}
 							gap={contentSpacing}
 							paperPadding={paperPadding}
-							period={from !== undefined || to !== undefined}
 						/>
-					</RefreshingOverlay>
-				) : null}
+					) : (
+						<BacktestSingleResults
+							run={run}
+							gap={contentSpacing}
+							paperPadding={paperPadding}
+							wide={wide}
+							enabled={permission.allowed}
+						/>
+					)
+				) : wide ? (
+					<EmptyState
+						description={runHint}
+						fillHeight={!multi}
+						title="Run a backtest"
+					/>
+				) : (
+					<Text c="dimmed" size="sm">
+						{runHint}
+					</Text>
+				)}
 			</Stack>
 		</SidebarLayout>
 	);

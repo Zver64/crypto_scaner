@@ -23,10 +23,52 @@ import {
 import type {
 	SignalSummaryRow,
 	TradeWords,
+	TradingSummaryRow,
 } from "@/features/strategy-backtest/types";
 import { shiftedUtcTime } from "@/utils/date-time-format";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
+
+export function tradingSummaryRows(
+	backtest: StrategyBacktest,
+): TradingSummaryRow[] {
+	const stats = backtest.summary.stats;
+	const count = (value: number) => formatNumber(value);
+	const metric = (label: string, value: string, compared = "—") => ({
+		label,
+		value,
+		compared,
+	});
+	return [
+		metric(
+			"Net profit",
+			formatFractionPercent(backtest.summary.net_profit),
+			backtest.direction === Direction.short
+				? "—"
+				: `Buy & Hold ${formatFractionPercent(backtest.baselines.buy_and_hold)}, DCA ${formatFractionPercent(backtest.baselines.dca)}`,
+		),
+		metric(
+			"Max drawdown",
+			formatFractionPercent(backtest.summary.max_drawdown),
+		),
+		metric("Closed trades", count(stats.trade_count)),
+		metric(
+			"Open trades",
+			count(backtest.trades.filter((trade) => trade.open).length),
+		),
+		metric("Skipped signals", count(backtest.skipped_alerts)),
+		metric("Win rate", formatFractionPercent(stats.win_rate)),
+		metric("Profit factor", formatProfitFactor(stats.profit_factor)),
+		metric("Avg trade", formatFractionPercent(stats.average_trade)),
+		metric("Avg win", formatFractionPercent(stats.average_win)),
+		metric("Avg loss", formatFractionPercent(stats.average_loss)),
+		metric("Avg candles held", formatProfitFactor(stats.average_bars)),
+		metric(
+			"Exits TP / SL / rule",
+			`${count(stats.take_profit_exits)} / ${count(stats.stop_loss_exits)} / ${count(stats.exit_rule_exits)}`,
+		),
+	];
+}
 
 // Backtest returns are fractions, 0.05 for 5%.
 export function fractionToPercent(value: number | null): number | null {

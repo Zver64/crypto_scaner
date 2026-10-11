@@ -18,14 +18,14 @@ func (c *cli) backtestCommand() *cobra.Command {
 	var target backtestFlags
 	command := &cobra.Command{
 		Use:   "backtest --strategy ID --symbol SYM [--from TIME] [--to TIME]",
-		Short: "Simulate the trades of a saved strategy on one coin against its baselines",
+		Short: "Backtest a saved strategy; multiple coins show one summary table each",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			id, err := strategyID(strategy)
 			if err != nil {
 				return err
 			}
-			params := apiclient.BacktestStrategyParams{Symbol: target.symbol}
+			params := apiclient.BacktestStrategyParams{}
 			if params.From, params.To, err = target.period(); err != nil {
 				return err
 			}
@@ -33,20 +33,15 @@ func (c *cli) backtestCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			unlock, err := lockBacktest()
-			if err != nil {
-				return err
-			}
-			defer unlock()
-			backtest, err := client.BacktestStrategyWithResponse(command.Context(), id, &params)
-			if err == nil {
+			return c.runBacktests(command, target, func(symbol string) ([]byte, *apiclient.StrategyBacktest, error) {
+				params.Symbol = symbol
+				backtest, err := client.BacktestStrategyWithResponse(command.Context(), id, &params)
+				if err != nil {
+					return nil, nil, err
+				}
 				err = c.check(backtest, backtest.JSON200 != nil, backtest.JSON400, backtest.JSON404, backtest.JSON429, backtest.JSON503)
-			}
-			if err != nil {
-				return err
-			}
-			c.printBacktest(command, backtest.Body, *backtest.JSON200, target)
-			return nil
+				return backtest.Body, backtest.JSON200, err
+			})
 		},
 	}
 	command.Flags().StringVar(&strategy, "strategy", "", "the saved strategy `ID` (see scanner strategies)")
@@ -62,11 +57,11 @@ func (c *cli) backtestStrategyDraftCommand() *cobra.Command {
 	var target backtestFlags
 	command := &cobra.Command{
 		Use:   "backtest --expr EXPR --symbol SYM [--direction long|short] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--from TIME] [--to TIME]",
-		Short: "Simulate the trades of an unsaved strategy on one coin, like scanner backtest a saved one",
+		Short: "Backtest an unsaved strategy on one or more coins",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			body := apiclient.StrategyBacktestInput{
-				Expression: rules.expression, ExitExpression: rules.exit, TakeProfitExpression: rules.takeProfit, StopLossExpression: rules.stopLoss, Symbol: target.symbol,
+				Expression: rules.expression, ExitExpression: rules.exit, TakeProfitExpression: rules.takeProfit, StopLossExpression: rules.stopLoss,
 			}
 			var err error
 			if body.Direction, err = strategiesKind.directionFlag(rules.direction); err != nil {
@@ -86,7 +81,7 @@ func (c *cli) backtestSignalDraftCommand() *cobra.Command {
 	var target backtestFlags
 	command := &cobra.Command{
 		Use:   "backtest --expr EXPR --direction long|short|sideways --symbol SYM [--target-ratio STOPS] [--window CANDLES] [--from TIME] [--to TIME]",
-		Short: "Judge the signals of an unsaved signal on one coin, like scanner backtest a saved one",
+		Short: "Backtest an unsaved signal on one or more coins",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			move, err := rules.parse(command)
@@ -94,7 +89,7 @@ func (c *cli) backtestSignalDraftCommand() *cobra.Command {
 				return err
 			}
 			return c.backtestDraft(command, apiclient.StrategyBacktestInput{
-				Signal: true, Direction: move, Expression: rules.expression, Symbol: target.symbol,
+				Signal: true, Direction: move, Expression: rules.expression,
 				TargetRatio: new(apiclient.SignalTargetRatio(rules.settings.ratio)), Window: new(apiclient.SignalWindow(rules.settings.window)),
 			}, rules.rules(), target)
 		},
@@ -118,20 +113,15 @@ func (c *cli) backtestDraft(command *cobra.Command, body apiclient.StrategyBackt
 	if _, err := c.prepareStrategyRules(command, client, rules, false); err != nil {
 		return err
 	}
-	unlock, err := lockBacktest()
-	if err != nil {
-		return err
-	}
-	defer unlock()
-	backtest, err := client.BacktestStrategyDraftWithResponse(command.Context(), body)
-	if err == nil {
+	return c.runBacktests(command, target, func(symbol string) ([]byte, *apiclient.StrategyBacktest, error) {
+		body.Symbol = symbol
+		backtest, err := client.BacktestStrategyDraftWithResponse(command.Context(), body)
+		if err != nil {
+			return nil, nil, err
+		}
 		err = c.check(backtest, backtest.JSON200 != nil, backtest.JSON400, backtest.JSON404, backtest.JSON429, backtest.JSON503)
-	}
-	if err != nil {
-		return err
-	}
-	c.printBacktest(command, backtest.Body, *backtest.JSON200, target)
-	return nil
+		return backtest.Body, backtest.JSON200, err
+	})
 }
 
 func (c *cli) printBacktest(command *cobra.Command, raw []byte, backtest apiclient.StrategyBacktest, target backtestFlags) {
@@ -141,18 +131,19 @@ func (c *cli) printBacktest(command *cobra.Command, raw []byte, backtest apiclie
 
 // backtestFlags are the coin and the optional period of a backtest.
 type backtestFlags struct {
-	symbol, from, to string
-	indicators       bool
+	symbols    []string
+	from, to   string
+	indicators bool
 }
 
 func (f *backtestFlags) add(c *cli, command *cobra.Command) {
 	flags := command.Flags()
-	flags.BoolVar(&f.indicators, "indicators", false, "show all current indicator outputs in the signal table")
-	flags.StringVar(&f.symbol, "symbol", "", "any coin `SYM`, such as BTCUSDT")
+	flags.BoolVar(&f.indicators, "indicators", false, "show current indicator outputs in the single-coin signal table (ignored for multiple coins)")
+	flags.StringSliceVar(&f.symbols, "symbol", nil, "coin `SYM`; repeat or comma-separate for summary-only multi-coin backtests")
 	flags.StringVar(&f.from, "from", "", "evaluate candles opening at or after `TIME`: a UTC date such as 2026-01-31, or RFC 3339")
 	flags.StringVar(&f.to, "to", "", "evaluate candles opening at or before `TIME`: a UTC date, the whole day included, or RFC 3339")
 	_ = command.MarkFlagRequired("symbol")
-	_ = command.RegisterFlagCompletionFunc("symbol", c.completeFavorites)
+	_ = command.RegisterFlagCompletionFunc("symbol", c.completeBacktestSymbols)
 }
 
 // period parses --from and --to, nil when absent.

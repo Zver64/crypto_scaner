@@ -13,13 +13,14 @@ function StrategyBacktestPage() {
 	return (
 		<StrategyBacktestScreen
 			allCoins={search.all_coins === true}
-			onCoinChange={(symbol, allCoins) =>
+			onCoinChange={(symbols, allCoins) =>
 				void navigate({
 					replace: true,
 					search: (previous) => ({
 						...previous,
 						all_coins: allCoins || undefined,
-						symbol,
+						symbol: symbols.length === 1 ? symbols[0] : undefined,
+						symbols: symbols.length > 1 ? symbols : undefined,
 					}),
 				})
 			}
@@ -37,7 +38,7 @@ function StrategyBacktestPage() {
 				})
 			}
 			strategy={search.strategy}
-			symbol={search.symbol}
+			symbols={search.symbols ?? (search.symbol ? [search.symbol] : [])}
 			to={search.to}
 		/>
 	);

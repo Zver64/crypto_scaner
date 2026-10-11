@@ -2,6 +2,18 @@ import { describe, expect, it } from "vitest";
 import { parseStrategyBacktestSearch } from "@/routes/-strategy-backtest-search";
 
 describe("parseStrategyBacktestSearch", () => {
+	it("normalizes multiple coins and gives them precedence over a legacy coin", () => {
+		expect(
+			parseStrategyBacktestSearch({
+				symbol: "ARBUSDT",
+				symbols: [" btcusdt ", "ETHUSDT", "BTCUSDT", null, ""],
+			}),
+		).toEqual({ symbols: ["BTCUSDT", "ETHUSDT"] });
+		expect(
+			parseStrategyBacktestSearch({ symbols: [" btcusdt ", "BTCUSDT"] }),
+		).toEqual({ symbol: "BTCUSDT" });
+	});
+
 	it("keeps the strategy, normalized coin and favorites filter, dropping old state", () => {
 		expect(
 			parseStrategyBacktestSearch({

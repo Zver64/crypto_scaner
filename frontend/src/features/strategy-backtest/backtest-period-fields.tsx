@@ -3,6 +3,7 @@ import { DatePickerInput } from "@mantine/dates";
 import { backtestDateFormat } from "@/features/strategy-backtest/constants";
 
 interface BacktestPeriodFieldsProps {
+	disabled?: boolean;
 	error: string | undefined;
 	from: string | undefined;
 	onChange(from: string | undefined, to: string | undefined): void;
@@ -12,6 +13,7 @@ interface BacktestPeriodFieldsProps {
 // The first and last UTC days of the evaluated period; an empty day leaves
 // that side of the stored history open.
 export function BacktestPeriodFields({
+	disabled = false,
 	error,
 	from,
 	onChange,
@@ -21,6 +23,7 @@ export function BacktestPeriodFields({
 		<Group align="flex-start" grow wrap="nowrap">
 			<DatePickerInput
 				clearable
+				disabled={disabled}
 				error={error}
 				label="From (UTC)"
 				maxDate={to}
@@ -31,6 +34,7 @@ export function BacktestPeriodFields({
 			/>
 			<DatePickerInput
 				clearable
+				disabled={disabled}
 				label="To (UTC)"
 				minDate={from}
 				onChange={(value) => onChange(from, value ?? undefined)}

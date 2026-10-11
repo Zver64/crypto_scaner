@@ -1,4 +1,6 @@
-// The single backtest page keeps its selected strategy, coin, coin filter
+import { normalizeBacktestSymbols } from "@/features/strategy-backtest/run-backtests";
+
+// The backtest page keeps its selected strategy, coins, coin filter
 // and period in the URL. Favorites only is the default.
 export interface StrategyBacktestSearch {
 	all_coins?: true;
@@ -6,6 +8,7 @@ export interface StrategyBacktestSearch {
 	from?: string;
 	strategy?: number;
 	symbol?: string;
+	symbols?: string[];
 	to?: string;
 }
 
@@ -27,8 +30,15 @@ export function parseStrategyBacktestSearch(
 	search: Record<string, unknown>,
 ): StrategyBacktestSearch {
 	const { strategy } = search;
-	const symbol =
-		typeof search.symbol === "string" ? search.symbol.trim().toUpperCase() : "";
+	const symbols = normalizeBacktestSymbols(
+		Array.isArray(search.symbols)
+			? search.symbols.filter(
+					(value): value is string => typeof value === "string",
+				)
+			: typeof search.symbol === "string"
+				? [search.symbol]
+				: [],
+	);
 	const from = searchDate(search.from);
 	const to = searchDate(search.to);
 	return {
@@ -40,6 +50,10 @@ export function parseStrategyBacktestSearch(
 		strategy >= 1
 			? { strategy }
 			: {}),
-		...(symbol ? { symbol } : {}),
+		...(symbols.length > 1
+			? { symbols }
+			: symbols.length === 1
+				? { symbol: symbols[0] }
+				: {}),
 	};
 }

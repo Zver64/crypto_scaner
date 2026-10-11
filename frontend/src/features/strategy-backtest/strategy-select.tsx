@@ -4,13 +4,18 @@ import { kindNouns } from "@/features/strategy-settings/constants";
 import { strategyKind } from "@/features/strategy-settings/utils";
 
 interface StrategySelectProps {
+	disabled?: boolean;
 	onChange(strategy: number): void;
 	strategy: number | undefined;
 }
 
 // Offers every signal, then every strategy, disabled ones included; one whose
 // expression no longer compiles cannot be backtested.
-export function StrategySelect({ onChange, strategy }: StrategySelectProps) {
+export function StrategySelect({
+	disabled = false,
+	onChange,
+	strategy,
+}: StrategySelectProps) {
 	const strategies = useListStrategies({
 		query: { retry: false, select: (response) => response.data.items },
 	});
@@ -33,7 +38,7 @@ export function StrategySelect({ onChange, strategy }: StrategySelectProps) {
 						})),
 				}))
 				.filter(({ items }) => items.length > 0)}
-			disabled={strategies.isPending}
+			disabled={disabled || strategies.isPending}
 			error={
 				strategies.isError
 					? "Signals and strategies could not be loaded."

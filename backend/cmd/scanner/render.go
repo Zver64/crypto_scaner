@@ -314,14 +314,7 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 	}
 	sideways := backtest.Direction == apiclient.Sideways
 	fmt.Fprintln(w, signalExplanation(sideways, signal.Window, signal.TargetRatio))
-	t = newTable()
-	t.AppendHeader(table.Row{"", "Count (all / counted)", "Median move to target %", "Successful", "Neutral"})
-	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}})
-	t.AppendRows([]table.Row{
-		{"Signals", fmt.Sprintf("%d / %d", signal.Evaluated, signal.Signals.Count), share(signal.Signals.MedianMove), successful(signal.Signals), signal.Signals.Neutrals},
-		{"All candles", signal.All.Count, share(signal.All.MedianMove), successful(signal.All), signal.All.Neutrals},
-	})
-	fmt.Fprintln(w, t.Render())
+	renderSignalSummary(w, signal)
 	layout := candleTimeLayout(backtest.Interval)
 	fmt.Fprintln(w, "Signals, newest first; --indicators adds current indicator outputs; --json adds the values the entry read.")
 	t = newTable()
@@ -433,7 +426,7 @@ func tradeWords(direction apiclient.Direction) tradeWording {
 // renderSummary lists the Mini App's metric cards: the net profit with the
 // baselines it is compared with, none for a short strategy, then the
 // statistics of the closed trades.
-func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines apiclient.BacktestBaselines, short bool) {
+func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines apiclient.BacktestBaselines, short bool, extra ...table.Row) {
 	t := newTable()
 	t.AppendHeader(table.Row{"Metric", "Strategy", "Compared with"})
 	t.SetColumnConfigs([]table.ColumnConfig{{Name: "Strategy", Align: text.AlignRight}})
@@ -454,6 +447,7 @@ func renderSummary(w io.Writer, summary apiclient.BacktestSummary, baselines api
 		{"Avg candles held", factor(stats.AverageBars), "-"},
 		{"Exits TP / SL / rule", fmt.Sprintf("%d / %d / %d", stats.TakeProfitExits, stats.StopLossExits, stats.ExitRuleExits), "-"},
 	})
+	t.AppendRows(extra)
 	fmt.Fprintln(w, t.Render())
 }
 

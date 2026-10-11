@@ -22,11 +22,15 @@ export function SettingsNavigation() {
 	// The switch fills the width and scrolls sideways on phones too narrow
 	// for every section.
 	return (
-		<ScrollArea scrollbarSize={4} type="auto">
+		<ScrollArea scrollbars="x" type="never">
 			<SegmentedControl
 				data={pages.map(({ label, value }) => ({ label, value }))}
 				fullWidth
 				miw="max-content"
+				p={4}
+				radius="md"
+				size="md"
+				withItemsBorders={false}
 				onChange={(value) => {
 					const page = pages.find((item) => item.value === value);
 					// Replacing keeps a single history entry, so closing the settings

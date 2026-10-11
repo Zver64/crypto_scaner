@@ -249,6 +249,7 @@ func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
 		for i, occurrence := range report.Occurrences {
 			occurrences[i] = BacktestSignalOccurrence{Time: occurrence.Time, Close: occurrence.Close, Values: backtestValues(occurrence.Values), IndicatorValues: backtestValues(occurrence.IndicatorValues)}
 			if evaluation := occurrence.Evaluation; evaluation != nil {
+				occurrences[i].ExitTime = &evaluation.ExitTime
 				occurrences[i].Counted, occurrences[i].Outcome = &evaluation.Counted, new(BacktestSignalOutcome(evaluation.Outcome))
 				occurrences[i].Stop, occurrences[i].Target, occurrences[i].Move = evaluation.Stop, &evaluation.Target, &evaluation.Move
 			}

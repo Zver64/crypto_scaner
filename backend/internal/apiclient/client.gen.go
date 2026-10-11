@@ -645,7 +645,7 @@ type BacktestSignal struct {
 	Window int `json:"window"`
 }
 
-// BacktestSignalOccurrence An entry signal. counted, stop, target, move, and outcome are null
+// BacktestSignalOccurrence An entry signal. counted, stop, target, move, outcome, and exit_time are null
 // together when history lacks a positive ATR(14), the full consecutive
 // future window, or valid positive-price levels. ATR needs at least
 // 14 preceding consecutive candles and restarts after missing candles.
@@ -657,6 +657,9 @@ type BacktestSignalOccurrence struct {
 
 	// Counted Whether the statistics count the signal; a signal within a window after the previous counted one is a repeat.
 	Counted *bool `json:"counted"`
+
+	// ExitTime Open time of the first candle deciding the outcome (target or stop), or the last candle of the window if no level is touched. Null without evaluation.
+	ExitTime *time.Time `json:"exit_time"`
 
 	// IndicatorValues Current local indicator outputs at signal close, keyed by indicator_columns; unknown outputs are omitted.
 	IndicatorValues map[string]float64 `json:"indicator_values"`

@@ -30,7 +30,7 @@ func TestSignalFinalCloseOutcome(t *testing.T) {
 				last := ohlc(100, max(100.1, close), min(99.9, close), close)
 				history := signalHistory(quiet, quiet, quiet, quiet, quiet, last)
 				got := evaluateTestSignal(t, direction, market.IntervalHour, history, signalHistoryCandles, 6, 2)
-				if got == nil || got.Outcome != test.want {
+				if got == nil || got.Outcome != test.want || !got.ExitTime.Equal(history[len(history)-1].OpenTime) {
 					t.Fatalf("got %+v, want %s", got, test.want)
 				}
 			})
@@ -54,7 +54,7 @@ func TestSignalFinalCloseFractionalATRBoundary(t *testing.T) {
 			{level, SignalSuccess}, {math.Nextafter(level, 100), SignalNeutral},
 		} {
 			future := []market.Candle{ohlc(100, max(100.1, test.close), min(99.9, test.close), test.close)}
-			got, _ := directionalOutcome(direction, 100, 0.023, 0.046, future)
+			got, _, _ := directionalOutcome(direction, 100, 0.023, 0.046, future)
 			if got != test.want {
 				t.Fatalf("%s close %.17g: got %s, want %s", direction, test.close, got, test.want)
 			}

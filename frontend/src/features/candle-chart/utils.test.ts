@@ -141,6 +141,39 @@ describe("price history chart data", () => {
 });
 
 describe("marker data selector", () => {
+	it("aggregates times within a group without merging different outcomes", () => {
+		const candles = [candle(0, 10), candle(1, 11)];
+		const times = candles.map(({ open_time }) => open_time);
+		const options = {
+			position: "aboveBar",
+			shape: "arrowDown",
+			size: 2,
+		} as const;
+		const select = createMarkerDataSelector(
+			{
+				entries: [],
+				exits: [],
+				groups: [
+					{
+						times: [times[1], times[0], times[0]],
+						options: { ...options, color: "green" },
+					},
+					{ times: [times[0]], options: { ...options, color: "red" } },
+				],
+			},
+			"1h",
+		);
+		const data = createCandlestickData(candles, "1h");
+		expect(
+			select(data).map(({ time, color, text }) => ({ time, color, text })),
+		).toEqual([
+			{ time: data[0].time, color: "green", text: "2" },
+			{ time: data[0].time, color: "red", text: undefined },
+			{ time: data[1].time, color: "green", text: undefined },
+		]);
+		expect(select([{ time: data[0].time }, data[1]])).toHaveLength(1);
+	});
+
 	it("reuses markers on OHLC updates and aggregates trades only once", () => {
 		const candles = [candle(0, 10), candle(1, 11)];
 		const entries = candles.map(({ open_time }) => open_time);

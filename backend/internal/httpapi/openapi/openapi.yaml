@@ -2230,9 +2230,9 @@ components:
     BacktestSignalOccurrence:
       type: object
       additionalProperties: false
-      required: [time, close, values, indicator_values, counted, stop, target, move, outcome]
+      required: [time, close, values, indicator_values, counted, stop, target, move, outcome, exit_time]
       description: |
-        An entry signal. counted, stop, target, move, and outcome are null
+        An entry signal. counted, stop, target, move, outcome, and exit_time are null
         together when history lacks a positive ATR(14), the full consecutive
         future window, or valid positive-price levels. ATR needs at least
         14 preceding consecutive candles and restarts after missing candles.
@@ -2244,6 +2244,10 @@ components:
           type: string
           format: date-time
           description: Open time of the candle whose close signaled.
+        exit_time:
+          type: [string, "null"]
+          format: date-time
+          description: Open time of the first candle deciding the outcome (target or stop), or the last candle of the window if no level is touched. Null without evaluation.
         close: { type: number, format: double }
         values:
           $ref: "#/components/schemas/BacktestValues"

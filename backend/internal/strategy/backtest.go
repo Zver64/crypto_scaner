@@ -105,6 +105,8 @@ type SignalOccurrence struct {
 // Counted tells a signal counted in the statistics: one at least Window
 // candles after the previous counted one.
 type SignalEvaluation struct {
+	// ExitTime is the open time of the first decisive candle, or the window's last candle.
+	ExitTime     time.Time
 	Counted      bool
 	Stop         *float64
 	Target, Move float64
@@ -540,7 +542,7 @@ func evaluateSignal(direction Direction, interval market.CandleInterval, history
 		return sidewaysEvaluation(price, target, future)
 	}
 	evaluation := &SignalEvaluation{Stop: new(stop), Target: target}
-	evaluation.Outcome, evaluation.Move = directionalOutcome(direction, price, stop, target, future)
+	evaluation.Outcome, evaluation.Move, evaluation.ExitTime = directionalOutcome(direction, price, stop, target, future)
 	return evaluation
 }
 
@@ -550,7 +552,7 @@ func evaluateSignal(direction Direction, interval market.CandleInterval, history
 // the stop. A candle reaching both decides by its open when that is already
 // at one of them, and fails otherwise; the stop candle's move counts only its
 // open, since its high and low may come after the stop.
-func directionalOutcome(direction Direction, price, stop, target float64, future []market.Candle) (SignalOutcome, float64) {
+func directionalOutcome(direction Direction, price, stop, target float64, future []market.Candle) (SignalOutcome, float64, time.Time) {
 	sign := 1.0
 	if direction == DirectionShort {
 		sign = -1
@@ -558,6 +560,7 @@ func directionalOutcome(direction Direction, price, stop, target float64, future
 	// favorable is the move to value in direction, as a fraction of price.
 	favorable := func(value float64) float64 { return sign * (value - price) / price }
 	decided, outcome, move := false, SignalFailure, 0.0
+	exitTime := future[len(future)-1].OpenTime.UTC()
 	for _, candle := range future {
 		best, worst := candle.High, candle.Low
 		if direction == DirectionShort {
@@ -575,6 +578,9 @@ func directionalOutcome(direction Direction, price, stop, target float64, future
 				decided, outcome = true, SignalSuccess
 			case reachesStop:
 				decided = true
+			}
+			if decided {
+				exitTime = candle.OpenTime.UTC()
 			}
 		}
 		if reachesStop || openAtStop {
@@ -595,17 +601,18 @@ func directionalOutcome(direction Direction, price, stop, target float64, future
 			outcome = SignalNeutral
 		}
 	}
-	return outcome, move
+	return outcome, move, exitTime
 }
 
 // sidewaysEvaluation judges a sideways signal at price with targets target
 // times price above and below it over future: it succeeds when no candle
 // touches either, and its move is the largest deviation either way.
 func sidewaysEvaluation(price, target float64, future []market.Candle) *SignalEvaluation {
-	evaluation := &SignalEvaluation{Target: target, Outcome: SignalSuccess}
+	evaluation := &SignalEvaluation{Target: target, Outcome: SignalSuccess, ExitTime: future[len(future)-1].OpenTime.UTC()}
 	for _, candle := range future {
 		up, down := (candle.High-price)/price, (price-candle.Low)/price
-		if up >= target || down >= target {
+		if (up >= target || down >= target) && evaluation.Outcome != SignalFailure {
+			evaluation.ExitTime = candle.OpenTime.UTC()
 			evaluation.Outcome = SignalFailure
 		}
 		evaluation.Move = max(evaluation.Move, up, down)

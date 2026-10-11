@@ -130,12 +130,16 @@ export function createIndicatorData(
 // Aggregate trades once per selection/interval. Each chart owns its selector;
 // immutable candle arrays with only OHLC changes reuse the marker array.
 export function createMarkerDataSelector(
-	{ entries, exits, marks = [] }: ChartTradeMarkers,
+	{ entries, exits, marks = [], groups = [] }: ChartTradeMarkers,
 	interval: ChartInterval,
 ) {
 	const entryCounts = countByCandle(entries, interval);
 	const exitCounts = countByCandle(exits, interval);
 	const markCounts = countByCandle(marks, interval);
+	const groupedCounts = groups.map(({ times, options }) => ({
+		counts: countByCandle(times, interval),
+		options,
+	}));
 	let previous: readonly ChartCandleSlot[] = [];
 	let result: ChartMarker[] = [];
 	return (data: readonly ChartCandleSlot[]): ChartMarker[] => {
@@ -170,6 +174,9 @@ export function createMarkerDataSelector(
 							markMarkerOptions,
 							markCounts.get(slot.time),
 							slot.time,
+						),
+						...groupedCounts.flatMap(({ counts, options }) =>
+							candleMarker(options, counts.get(slot.time), slot.time),
 						),
 					]
 				: [],

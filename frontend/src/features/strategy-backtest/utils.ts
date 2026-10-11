@@ -17,6 +17,8 @@ import {
 	intervalUnits,
 	longTradeWords,
 	shortTradeWords,
+	signalArrowOptions,
+	signalMarkerColors,
 } from "@/features/strategy-backtest/constants";
 import type {
 	SignalSummaryRow,
@@ -71,8 +73,8 @@ export function createEquityData(
 }
 
 // The chart marks of a backtest: the first fills and the closes of trades,
-// or the signals of a signal, under their candles for a rise, over them for
-// a fall, and as circles for sideways. A long trade opens on a rise mark and
+// or blue signal entries and outcome-colored closes, with circles for
+// sideways. A long trade opens on a rise mark and
 // closes on a fall mark, a short trade the other way around.
 export function backtestMarkers({
 	direction,
@@ -84,10 +86,33 @@ export function backtestMarkers({
 >): ChartTradeMarkers {
 	if (signal) {
 		const times = signal.occurrences.map(({ time }) => time);
+		if (direction === Direction.sideways) {
+			return { entries: [], exits: [], marks: times };
+		}
+		const short = direction === Direction.short;
 		return {
-			entries: direction === Direction.long ? times : [],
-			exits: direction === Direction.short ? times : [],
-			marks: direction === Direction.sideways ? times : [],
+			entries: [],
+			exits: [],
+			groups: [
+				{
+					times,
+					options: {
+						...signalArrowOptions[short ? "down" : "up"],
+						color: signalMarkerColors.entry,
+					},
+				},
+				...(["success", "failure", "neutral"] as const).map((outcome) => ({
+					times: signal.occurrences.flatMap((occurrence) =>
+						occurrence.outcome === outcome && occurrence.exit_time !== null
+							? [occurrence.exit_time]
+							: [],
+					),
+					options: {
+						...signalArrowOptions[short ? "up" : "down"],
+						color: signalMarkerColors[outcome],
+					},
+				})),
+			],
 		};
 	}
 	const opens = trades.map(({ entry_time }) => entry_time);

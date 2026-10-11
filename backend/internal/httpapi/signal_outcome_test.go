@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"crypto-scanner/internal/httpapi"
 	"crypto-scanner/internal/market"
@@ -14,6 +15,7 @@ import (
 )
 
 func TestSignalOutcomeResponseKeepsNeutralAndUnevaluatedDistinct(t *testing.T) {
+	exit := time.Date(2026, 8, 1, 0, 0, 0, 0, time.UTC)
 	result := strategy.Backtest{
 		Interval: market.IntervalHour, Symbol: "BTCUSDT", Direction: strategy.DirectionLong,
 		Signal: &strategy.SignalReport{
@@ -21,9 +23,9 @@ func TestSignalOutcomeResponseKeepsNeutralAndUnevaluatedDistinct(t *testing.T) {
 			Signals: strategy.SignalStats{Count: 3, Successes: 1, Neutrals: 1},
 			All:     strategy.SignalStats{Count: 2, Neutrals: 2},
 			Occurrences: []strategy.SignalOccurrence{
-				{Evaluation: &strategy.SignalEvaluation{Outcome: strategy.SignalSuccess}},
-				{Evaluation: &strategy.SignalEvaluation{Outcome: strategy.SignalFailure}},
-				{Evaluation: &strategy.SignalEvaluation{Outcome: strategy.SignalNeutral}},
+				{Evaluation: &strategy.SignalEvaluation{Outcome: strategy.SignalSuccess, ExitTime: exit}},
+				{Evaluation: &strategy.SignalEvaluation{Outcome: strategy.SignalFailure, ExitTime: exit}},
+				{Evaluation: &strategy.SignalEvaluation{Outcome: strategy.SignalNeutral, ExitTime: exit}},
 				{},
 			},
 		},
@@ -47,11 +49,11 @@ func TestSignalOutcomeResponseKeepsNeutralAndUnevaluatedDistinct(t *testing.T) {
 	}
 	report := body.Signal
 	for i, want := range []httpapi.BacktestSignalOutcome{httpapi.Success, httpapi.Failure, httpapi.Neutral} {
-		if report.Occurrences[i].Outcome == nil || *report.Occurrences[i].Outcome != want {
+		if report.Occurrences[i].Outcome == nil || *report.Occurrences[i].Outcome != want || report.Occurrences[i].ExitTime == nil || !report.Occurrences[i].ExitTime.Equal(exit) {
 			t.Fatalf("lost outcome at %d", i)
 		}
 	}
-	if report.Occurrences[3].Outcome != nil || report.Occurrences[3].Counted != nil {
+	if report.Occurrences[3].Outcome != nil || report.Occurrences[3].Counted != nil || report.Occurrences[3].ExitTime != nil {
 		t.Fatal("unevaluated outcome is not null")
 	}
 	if report.Signals.Neutrals != 1 || report.Signals.SuccessRate == nil || *report.Signals.SuccessRate != 0.5 ||

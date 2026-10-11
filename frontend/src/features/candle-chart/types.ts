@@ -80,7 +80,12 @@ export interface ChartIndicatorPane {
 }
 // Entry and exit times of trades, arrows under and over their candles, and
 // other marked times, circles over their candles.
+export interface ChartMarkerGroup {
+	times: readonly string[];
+	options: Omit<ChartMarker, "time">;
+}
 export interface ChartTradeMarkers {
+	groups?: readonly ChartMarkerGroup[];
 	entries: readonly string[];
 	exits: readonly string[];
 	marks?: readonly string[];

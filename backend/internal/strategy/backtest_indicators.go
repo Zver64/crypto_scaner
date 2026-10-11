@@ -89,7 +89,15 @@ func (replay *replay) chartSnapshot(ctx context.Context, instrumentID int64, res
 	if result.From.IsZero() {
 		return charts, nil
 	}
-	end := result.Interval.NextOpenTime(result.To)
+	lastExit := result.To
+	if result.Signal != nil && result.Direction != DirectionSideways {
+		for _, occurrence := range result.Signal.Occurrences {
+			if evaluation := occurrence.Evaluation; evaluation != nil && evaluation.ExitTime.After(lastExit) {
+				lastExit = evaluation.ExitTime
+			}
+		}
+	}
+	end := result.Interval.NextOpenTime(lastExit)
 	for _, interval := range market.CandleIntervals() {
 		if slices.Index(market.CandleIntervals(), interval) < slices.Index(market.CandleIntervals(), result.Interval) {
 			continue

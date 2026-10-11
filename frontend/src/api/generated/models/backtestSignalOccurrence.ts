@@ -22,7 +22,7 @@ import type { BacktestSignalOutcome } from './backtestSignalOutcome.ts';
 import type { BacktestValues } from './backtestValues.ts';
 
 /**
- * An entry signal. counted, stop, target, move, and outcome are null
+ * An entry signal. counted, stop, target, move, outcome, and exit_time are null
  * together when history lacks a positive ATR(14), the full consecutive
  * future window, or valid positive-price levels. ATR needs at least
  * 14 preceding consecutive candles and restarts after missing candles.
@@ -33,6 +33,11 @@ import type { BacktestValues } from './backtestValues.ts';
 export interface BacktestSignalOccurrence {
   /** Open time of the candle whose close signaled. */
   time: string;
+  /**
+     * Open time of the first candle deciding the outcome (target or stop), or the last candle of the window if no level is touched. Null without evaluation.
+     * @nullable
+     */
+  exit_time: string | null;
   close: number;
   /** What the entry rule read at the signal. */
   values: BacktestValues;

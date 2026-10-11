@@ -3,7 +3,21 @@ import type {
 	BacktestTradeExitReason,
 	CandleInterval,
 } from "@/api/generated/models";
+import { resolvedTheme } from "@/app/theme";
+import type { ChartMarker } from "@/features/candle-chart/types";
 import type { TradeWords } from "@/features/strategy-backtest/types";
+
+// Signal colors are independent of arrow direction.
+export const signalMarkerColors = {
+	entry: resolvedTheme.colors.blue[6],
+	success: resolvedTheme.colors.green[6],
+	failure: resolvedTheme.colors.red[6],
+	neutral: resolvedTheme.colors.gray[6],
+};
+export const signalArrowOptions = {
+	up: { position: "belowBar", shape: "arrowUp", size: 2 },
+	down: { position: "aboveBar", shape: "arrowDown", size: 2 },
+} satisfies Record<"up" | "down", Omit<ChartMarker, "time" | "color">>;
 
 // A long strategy buys and sells; a short one shorts and covers.
 export const longTradeWords = {

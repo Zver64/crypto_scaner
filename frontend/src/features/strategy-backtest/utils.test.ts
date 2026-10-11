@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import type { BacktestTrade, Direction } from "@/api/generated/models";
+import type {
+	BacktestSignalOutcome,
+	BacktestTrade,
+	Direction,
+} from "@/api/generated/models";
 import {
 	backtestMarkers,
 	backtestPeriod,
@@ -84,6 +88,7 @@ describe("backtestMarkers", () => {
 					counted: null,
 					move: null,
 					stop: null,
+					exit_time: null,
 					outcome: null,
 					target: null,
 					time,
@@ -104,22 +109,48 @@ describe("backtestMarkers", () => {
 		trades: [],
 	});
 
-	it("marks signals by the move they expect", () => {
-		expect(backtestMarkers(signal("long"))).toEqual({
-			entries: [time],
-			exits: [],
-			marks: [],
-		});
-		expect(backtestMarkers(signal("short"))).toEqual({
-			entries: [],
-			exits: [time],
-			marks: [],
-		});
+	it("keeps unevaluated directional signals as entries only", () => {
+		for (const direction of ["long", "short"] as const) {
+			const result = backtestMarkers(signal(direction));
+			expect(result.groups?.map(({ times }) => times)).toEqual([
+				[time],
+				[],
+				[],
+				[],
+			]);
+		}
+
 		expect(backtestMarkers(signal("sideways"))).toEqual({
 			entries: [],
 			exits: [],
 			marks: [time],
 		});
+	});
+
+	it("groups every evaluated exit by outcome, including uncounted repeats", () => {
+		for (const direction of ["long", "short"] as const) {
+			const draft = signal(direction);
+			const outcomes: BacktestSignalOutcome[] = [
+				"success",
+				"failure",
+				"neutral",
+			];
+			const exits = outcomes.map((_, i) => `2026-08-0${i + 2}T00:00:00Z`);
+			const occurrences = outcomes.map((outcome, i) => ({
+				...draft.signal.occurrences[0],
+				outcome,
+				exit_time: exits[i],
+				counted: false,
+			}));
+			const result = backtestMarkers({
+				...draft,
+				signal: { ...draft.signal, occurrences },
+			});
+			expect(result.groups?.map(({ times }) => times)).toEqual([
+				[time, time, time],
+				...exits.map((exit) => [exit]),
+			]);
+		}
 	});
 
 	it("marks a short trade opening over its candle and closing under", () => {

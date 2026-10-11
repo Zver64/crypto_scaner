@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.4.1](https://github.com/Zver64/crypto_scaner/compare/v2.4.0...v2.4.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* group coin alerts by strategy or signal ([4a2836a](https://github.com/Zver64/crypto_scaner/commit/4a2836abb7e4c6ec7cca45169eef33993cb0964d))
+
 ## [2.4.0](https://github.com/Zver64/crypto_scaner/compare/v2.3.0...v2.4.0) (2026-10-11)
 
 

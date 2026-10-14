@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
+import babel from "@rolldown/plugin-babel";
 import { devtools } from "@tanstack/devtools-vite";
 import { tanstackRouter } from "@tanstack/router-plugin/vite";
-import viteReact from "@vitejs/plugin-react";
+import viteReact, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig, loadEnv } from "vite";
 import { qrcode } from "vite-plugin-qrcode";
 
@@ -30,6 +31,7 @@ const config = defineConfig(({ mode }) => {
 				},
 			}),
 			viteReact(),
+			babel({ presets: [reactCompilerPreset()] }),
 			qrcode(),
 			mode === "development" && {
 				name: "telegram-development-init-data",

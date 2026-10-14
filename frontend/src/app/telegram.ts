@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useEffectEvent } from "react";
 
 interface TelegramBackButton {
 	hide(): void;
@@ -101,15 +101,14 @@ export function hasTelegramBackButton(): boolean {
 
 export function useTelegramBackButton(onBack: () => void) {
 	const backButton = telegramBackButton();
-	const onBackRef = useRef(onBack);
-	onBackRef.current = onBack;
+	const onBackEvent = useEffectEvent(onBack);
 
 	useEffect(() => {
 		if (!backButton) {
 			return;
 		}
 
-		const handleClick = () => onBackRef.current();
+		const handleClick = () => onBackEvent();
 		backButton.onClick(handleClick);
 		backButton.show();
 

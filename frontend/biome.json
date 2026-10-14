@@ -25,7 +25,13 @@
 	"linter": {
 		"enabled": true,
 		"rules": {
-			"recommended": true
+			"recommended": true,
+			"correctness": {
+				"useHookAtTopLevel": "error",
+				"useExhaustiveDependencies": "error",
+				"noReactPropAssignments": "error",
+				"noNestedComponentDefinitions": "error"
+			}
 		}
 	},
 	"javascript": {

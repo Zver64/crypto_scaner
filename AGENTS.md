@@ -27,7 +27,7 @@ Pass these references on to subagents that work in those directories.
 ## Technology
 
 - Backend: Go 1.26, PostgreSQL 18, pgx, sqlc, golang-migrate, Binance connector, and CoinGecko.
-- Frontend: React 19, TypeScript 6, Vite 8, TanStack Router and Query, Mantine, Biome, and Vitest.
+- Frontend: React 19 with React Compiler, TypeScript 6, Vite 8, TanStack Router and Query, Mantine, Biome, and Vitest.
 - Infrastructure: Docker Compose, GitHub Actions, GHCR, and Lefthook.
 
 ## Development

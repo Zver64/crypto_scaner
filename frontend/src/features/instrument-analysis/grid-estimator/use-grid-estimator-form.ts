@@ -1,5 +1,5 @@
 import { useForm } from "@mantine/form";
-import { type FocusEvent, type KeyboardEvent, useMemo, useState } from "react";
+import { type FocusEvent, type KeyboardEvent, useState } from "react";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import { DEFAULT_MARKUPS } from "@/features/instrument-analysis/grid-estimator/config";
 import type {
@@ -89,18 +89,11 @@ export function useGridEstimatorForm({
 		: null;
 	const priceUnit = priceAsset(market);
 	const { direction, gridType, leverage } = form.values;
-	// The controlled form renders on every keystroke, while the estimate changes
-	// only on commit; it is memoized because the Decimal calculation walks every
-	// grid level.
-	const estimate = useMemo(
-		() =>
-			gridMarketEstimate(
-				market,
-				committedInput,
-				{ currentPrice: anchor, direction, gridType, leverage },
-				baseAsset,
-			),
-		[anchor, baseAsset, committedInput, direction, gridType, leverage, market],
+	const estimate = gridMarketEstimate(
+		market,
+		committedInput,
+		{ currentPrice: anchor, direction, gridType, leverage },
+		baseAsset,
 	);
 
 	// Applies a new price range, step, or grid type and derives the largest grid

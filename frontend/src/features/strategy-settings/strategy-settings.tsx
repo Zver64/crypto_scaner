@@ -1,5 +1,4 @@
 import { Button, Group, Loader, Paper, Stack, Text } from "@mantine/core";
-import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -36,11 +35,13 @@ import type {
 	StrategyFormValues,
 	StrategyKind,
 } from "@/features/strategy-settings/types";
+import { useStrategyForm } from "@/features/strategy-settings/use-strategy-form";
 import {
 	newStrategyDraft,
 	strategyDraft,
 	strategyErrorMessage,
 	strategyFormDirty,
+	strategyFormValues,
 	strategyInput,
 	strategyKind,
 	strategyVariableSets,
@@ -72,12 +73,6 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	const wide = useWideLayout();
 	const queryClient = useQueryClient();
 	const [draft, setDraft] = useState<StrategyDraft>();
-	// The fields of the open draft, set when it opens. Uncontrolled, so most
-	// keystrokes render only the components that watch the edited field. When
-	// a field turns dirty or clean (its first change, or a return to its
-	// opening value), @mantine/form re-renders this whole page, the list and
-	// both rule builders included, though nothing remounts.
-	const form = useForm<StrategyFormValues>({ mode: "uncontrolled" });
 	// A strategy waiting to replace an open form with unsaved changes.
 	const [pending, setPending] = useState<Omit<StrategyDraft, "revision">>();
 	const revision = useRef(0);
@@ -151,6 +146,32 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 		},
 	});
 
+	const submit = (values: StrategyFormValues) => {
+		if (!draft) return;
+		const input = strategyInput(values, draft.signal);
+		if (!input) return;
+		// A finished save closes the form it came from, not one opened since.
+		const saved = draft.revision;
+		const close = () =>
+			setDraft((current) =>
+				current?.revision === saved ? undefined : current,
+			);
+		if (draft.id === undefined) {
+			createMutation.mutate(
+				{ data: { ...input, enabled: true } },
+				{ onSuccess: close },
+			);
+		} else {
+			updateMutation.mutate(
+				{ data: input, strategyId: draft.id },
+				{ onSuccess: close },
+			);
+		}
+	};
+	// The fields of the open draft, reset to its values when it opens. This
+	// page subscribes to none of them, so edits never render it.
+	const form = useStrategyForm(draft?.values, submit);
+
 	if (strategies.isPending || variables.isPending) {
 		return <Loader aria-label={`Loading ${nouns.many}`} />;
 	}
@@ -170,8 +191,7 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 		isSaving;
 	const show = (next: Omit<StrategyDraft, "revision">) => {
 		revision.current += 1;
-		form.setInitialValues(next.values);
-		form.reset();
+		form.reset(next.values);
 		setDraft({ ...next, revision: revision.current });
 	};
 	// Beside the list, opening another strategy would silently drop the
@@ -179,33 +199,15 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	const open = (next: Omit<StrategyDraft, "revision">) => {
 		if (
 			draft &&
-			strategyFormDirty(form.getInitialValues(), form.getValues(), draft.signal)
+			strategyFormDirty(
+				draft.values,
+				strategyFormValues(form.state.values),
+				draft.signal,
+			)
 		) {
 			setPending(next);
 		} else {
 			show(next);
-		}
-	};
-	const submit = () => {
-		if (!draft) return;
-		const input = strategyInput(form.getValues(), draft.signal);
-		if (!input) return;
-		// A finished save closes the form it came from, not one opened since.
-		const saved = draft.revision;
-		const close = () =>
-			setDraft((current) =>
-				current?.revision === saved ? undefined : current,
-			);
-		if (draft.id === undefined) {
-			createMutation.mutate(
-				{ data: { ...input, enabled: true } },
-				{ onSuccess: close },
-			);
-		} else {
-			updateMutation.mutate(
-				{ data: input, strategyId: draft.id },
-				{ onSuccess: close },
-			);
 		}
 	};
 	const list = (
@@ -314,7 +316,6 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 					isSaving={isSaving}
 					onCancel={() => setDraft(undefined)}
 					form={form}
-					onSubmit={submit}
 					variables={variables.data}
 				/>
 				{confirmations}
@@ -332,7 +333,6 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 							key={draft.revision}
 							onCancel={() => setDraft(undefined)}
 							form={form}
-							onSubmit={submit}
 							variables={variables.data}
 						/>
 					</Stack>

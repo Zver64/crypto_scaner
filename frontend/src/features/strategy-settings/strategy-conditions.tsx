@@ -1,5 +1,4 @@
 import { Group, Stack, Text } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
 import { type ReactNode, useState } from "react";
 
 import { StrategyConditionsReplaceButton } from "@/features/strategy-settings/strategy-conditions-replace-button";
@@ -7,12 +6,15 @@ import { StrategyExpressionPreview } from "@/features/strategy-settings/strategy
 import { StrategyImport } from "@/features/strategy-settings/strategy-import";
 import { StrategyRuleBuilder } from "@/features/strategy-settings/strategy-rule-builder";
 import type {
-	StrategyFormValues,
+	StrategyFormApi,
 	StrategyQuery,
 	StrategyRuleField,
 	StrategyRuleVariables,
 } from "@/features/strategy-settings/types";
-import { emptyStrategyQuery } from "@/features/strategy-settings/utils";
+import {
+	emptyStrategyQuery,
+	strategyFormValues,
+} from "@/features/strategy-settings/utils";
 
 interface StrategyConditionsProps {
 	// Extra header actions, such as removing an optional rule.
@@ -21,7 +23,7 @@ interface StrategyConditionsProps {
 	// Whether the rule is an exit rule, which may read position variables.
 	exit: boolean;
 	field: StrategyRuleField;
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 	title: string;
 	variables: StrategyRuleVariables;
 }
@@ -39,9 +41,17 @@ export function StrategyConditions({
 	variables,
 }: StrategyConditionsProps) {
 	const [importing, setImporting] = useState(false);
-	// A replaced query changes the field's key, which remounts the builder
-	// with it.
-	const replace = (query: StrategyQuery) => form.setFieldValue(field, query);
+	// The query the uncontrolled builder mounted with; a replaced query
+	// remounts it with the new one.
+	const [mounted, setMounted] = useState(() => ({
+		query: strategyFormValues(form.state.values)[field] ?? emptyStrategyQuery(),
+		revision: 0,
+	}));
+	const setQuery = (query: StrategyQuery) => form.setFieldValue(field, query);
+	const replace = (query: StrategyQuery) => {
+		setQuery(query);
+		setMounted((current) => ({ query, revision: current.revision + 1 }));
+	};
 	return (
 		<Stack gap={4}>
 			<Group justify="space-between">
@@ -60,12 +70,10 @@ export function StrategyConditions({
 				</Group>
 			</Group>
 			<StrategyRuleBuilder
-				defaultQuery={form.getValues()[field] ?? emptyStrategyQuery()}
+				defaultQuery={mounted.query}
 				disabled={disabled}
-				key={form.key(field)}
-				onQueryChange={(query) =>
-					form.setFieldValue(field, query, { forceUpdate: false })
-				}
+				key={mounted.revision}
+				onQueryChange={setQuery}
 				variables={variables}
 			/>
 			<StrategyExpressionPreview field={field} form={form} title={title} />

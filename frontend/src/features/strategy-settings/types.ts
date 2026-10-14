@@ -2,6 +2,7 @@ import type { Field, RuleGroupType, RuleType } from "react-querybuilder";
 
 import type { Direction, StrategyVariable } from "@/api/generated/models";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
+import type { useStrategyForm } from "@/features/strategy-settings/use-strategy-form";
 
 // Comparison operators of the strategy language. Range operators take two
 // numbers; crosses compare the latest and the previous closed candle.
@@ -43,6 +44,24 @@ export interface StrategyFormValues {
 }
 
 export type StrategyFormField = keyof StrategyFormValues;
+
+// The fields holding a rule or price expression tree.
+export type StrategyTreeField = Extract<
+	StrategyFormField,
+	"exitQuery" | "query" | "stopLoss" | "takeProfit"
+>;
+
+// The strategy form's values as TanStack Form holds them: the trees are
+// unknown, since its deep field paths cannot be computed for recursive types
+// (TS2589, https://github.com/TanStack/form/issues/1553). Read them through
+// strategyFormValues. Once the fix
+// (https://github.com/TanStack/form/pull/2422) is released, use
+// StrategyFormValues itself and drop this type and strategyFormValues.
+export type StrategyFormData = Omit<StrategyFormValues, StrategyTreeField> &
+	Record<StrategyTreeField, unknown>;
+
+// The form that holds a draft's fields.
+export type StrategyFormApi = ReturnType<typeof useStrategyForm>;
 
 // The fields holding a rule builder's query.
 export type StrategyRuleField = Extract<

@@ -1,17 +1,16 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
+import { useSelector } from "@tanstack/react-form";
 
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import type {
-	StrategyFormValues,
+	StrategyFormApi,
 	StrategyRuleVariables,
 } from "@/features/strategy-settings/types";
-import { useWatchedValue } from "@/features/strategy-settings/use-watched-value";
 import { emptyStrategyQuery } from "@/features/strategy-settings/utils";
 
 interface StrategyExitConditionsProps {
 	disabled: boolean;
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 	variables: StrategyRuleVariables;
 }
 
@@ -22,10 +21,9 @@ export function StrategyExitConditions({
 	form,
 	variables,
 }: StrategyExitConditionsProps) {
-	const exists = useWatchedValue(
-		form,
-		"exitQuery",
-		(query) => query !== undefined,
+	const exists = useSelector(
+		form.store,
+		({ values }) => values.exitQuery !== undefined,
 	);
 	if (exists) {
 		return (

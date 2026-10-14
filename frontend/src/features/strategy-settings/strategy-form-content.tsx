@@ -1,5 +1,4 @@
-import { Alert, Stack, Textarea, TextInput } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
+import { Alert, Stack } from "@mantine/core";
 
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import { StrategyDirectionControl } from "@/features/strategy-settings/strategy-direction-control";
@@ -10,54 +9,66 @@ import { StrategyPriceInput } from "@/features/strategy-settings/strategy-price-
 import { StrategySignalEvaluationFields } from "@/features/strategy-settings/strategy-signal-evaluation-fields";
 import type {
 	StrategyDraft,
-	StrategyFormValues,
+	StrategyFormApi,
 	StrategyVariableSets,
 } from "@/features/strategy-settings/types";
-import { strategyKind } from "@/features/strategy-settings/utils";
+import {
+	strategyKind,
+	strategyNameError,
+} from "@/features/strategy-settings/utils";
 
 interface StrategyFormContentProps {
 	draft: StrategyDraft;
 	// Holds the fields of the draft; the page owns it, so it can ask before
 	// another strategy replaces unsaved changes.
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 	isSaving: boolean;
 	onCancel(): void;
-	onSubmit(): void;
 	variables: StrategyVariableSets;
 }
 
-// The fields of an opened strategy form; remounted for every draft. The
-// inputs are uncontrolled, so most keystrokes render only the components that
-// watch the edited field; a field turning dirty or clean re-renders the whole
-// page that owns the form, without remounting the rule builders.
+// The fields of an opened strategy form; remounted for every draft. Not an
+// HTML form: Enter in a rule's input must not save the strategy. Each
+// field and each component that shows values subscribes to its own part of
+// the form, so a keystroke renders only those.
 export function StrategyFormContent({
 	draft,
 	form,
 	isSaving,
 	onCancel,
-	onSubmit,
 	variables,
 }: StrategyFormContentProps) {
 	return (
 		<Stack gap="md">
-			<TextInput
-				{...form.getInputProps("name")}
-				disabled={isSaving}
-				key={form.key("name")}
-				label="Name"
-				maxLength={64}
-				withAsterisk
-			/>
-			<Textarea
-				{...form.getInputProps("message")}
-				autosize
-				description="Sent in Telegram after the strategy name, coin, and the buy, sell, or signal instead of the rule and its values. Leave empty for the default text."
-				disabled={isSaving}
-				key={form.key("message")}
-				label="Message"
-				maxLength={1000}
-				minRows={2}
-			/>
+			<form.AppField
+				name="name"
+				validators={{
+					// Checked from the start, since Save stays disabled without a name.
+					onChange: ({ value }) => strategyNameError(value),
+					onMount: ({ value }) => strategyNameError(value),
+				}}
+			>
+				{(field) => (
+					<field.TextField
+						disabled={isSaving}
+						label="Name"
+						maxLength={64}
+						withAsterisk
+					/>
+				)}
+			</form.AppField>
+			<form.AppField name="message">
+				{(field) => (
+					<field.TextareaField
+						autosize
+						description="Sent in Telegram after the strategy name, coin, and the buy, sell, or signal instead of the rule and its values. Leave empty for the default text."
+						disabled={isSaving}
+						label="Message"
+						maxLength={1000}
+						minRows={2}
+					/>
+				)}
+			</form.AppField>
 			{/* A saved strategy keeps its direction. */}
 			<StrategyDirectionControl
 				disabled={isSaving || draft.id !== undefined}
@@ -110,7 +121,6 @@ export function StrategyFormContent({
 				form={form}
 				isSaving={isSaving}
 				onCancel={onCancel}
-				onSubmit={onSubmit}
 				signal={draft.signal}
 			/>
 		</Stack>

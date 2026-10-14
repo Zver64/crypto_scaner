@@ -1,10 +1,9 @@
 import { Modal } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
 
 import { StrategyFormContent } from "@/features/strategy-settings/strategy-form-content";
 import type {
 	StrategyDraft,
-	StrategyFormValues,
+	StrategyFormApi,
 	StrategyVariableSets,
 } from "@/features/strategy-settings/types";
 import { strategyFormTitle } from "@/features/strategy-settings/utils";
@@ -12,10 +11,9 @@ import { strategyFormTitle } from "@/features/strategy-settings/utils";
 interface StrategyFormProps {
 	// The strategy being edited or created; the form is open while it is set.
 	draft: StrategyDraft | undefined;
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 	isSaving: boolean;
 	onCancel(): void;
-	onSubmit(): void;
 	variables: StrategyVariableSets;
 }
 
@@ -24,7 +22,6 @@ export function StrategyForm({
 	form,
 	isSaving,
 	onCancel,
-	onSubmit,
 	variables,
 }: StrategyFormProps) {
 	return (
@@ -41,7 +38,6 @@ export function StrategyForm({
 					isSaving={isSaving}
 					key={draft.revision}
 					onCancel={onCancel}
-					onSubmit={onSubmit}
 					variables={variables}
 				/>
 			) : null}

@@ -52,6 +52,7 @@ import {
 } from "@/features/strategy-settings/strategy-price-input/utils";
 import type {
 	StrategyDraft,
+	StrategyFormData,
 	StrategyFormValues,
 	StrategyKind,
 	StrategyOperator,
@@ -439,6 +440,18 @@ export function strategyDraft(
 			window: String(strategy.window ?? defaultSignalWindow),
 		},
 	};
+}
+
+// Why a strategy name cannot be saved.
+export function strategyNameError(name: string): string | undefined {
+	return name.trim() === "" ? "Enter a name" : undefined;
+}
+
+// The strategy form's values with their trees typed; only the strategy form
+// writes them. Drop with StrategyFormData once TanStack Form types recursive
+// values.
+export function strategyFormValues(data: StrategyFormData): StrategyFormValues {
+	return data as StrategyFormValues;
 }
 
 // What the form's values send, whether or not they can be saved; the

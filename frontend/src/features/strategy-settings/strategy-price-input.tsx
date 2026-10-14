@@ -1,19 +1,19 @@
 import { Button, Group, Stack, Text, TextInput } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
+import { useSelector } from "@tanstack/react-form";
 
 import type { StrategyVariable } from "@/api/generated/models";
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
 import type {
-	StrategyFormValues,
+	StrategyFormApi,
 	StrategyPriceField,
 } from "@/features/strategy-settings/types";
-import { useWatchedValue } from "@/features/strategy-settings/use-watched-value";
+import { strategyFormValues } from "@/features/strategy-settings/utils";
 
 interface StrategyPriceInputProps {
 	disabled: boolean;
 	field: StrategyPriceField;
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 	label: string;
 	variables: readonly StrategyVariable[];
 }
@@ -27,9 +27,11 @@ export function StrategyPriceInput({
 	label,
 	variables,
 }: StrategyPriceInputProps) {
-	const value = useWatchedValue(form, field, (setup) => setup);
-	const onChange = (setup: PriceSetup) =>
-		form.setFieldValue(field, setup, { forceUpdate: false });
+	const value = useSelector(
+		form.store,
+		({ values }) => strategyFormValues(values)[field],
+	);
+	const onChange = (setup: PriceSetup) => form.setFieldValue(field, setup);
 	const enabled = value.node !== undefined || value.custom !== undefined;
 	const start = () => onChange({ node: { kind: "field", field: "" } });
 	return (

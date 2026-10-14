@@ -1,5 +1,4 @@
 import { SegmentedControl } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
 
 import { Direction } from "@/api/generated/models";
 import {
@@ -7,13 +6,13 @@ import {
 	strategyDirections,
 } from "@/features/strategy-settings/constants";
 import type {
-	StrategyFormValues,
+	StrategyFormApi,
 	StrategyKind,
 } from "@/features/strategy-settings/types";
 
 interface StrategyDirectionControlProps {
 	disabled: boolean;
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 	kind: StrategyKind;
 }
 
@@ -36,21 +35,27 @@ export function StrategyDirectionControl({
 	kind,
 }: StrategyDirectionControlProps) {
 	return (
-		<SegmentedControl<Direction>
-			data={directionOptions[kind]}
-			defaultValue={form.getValues().direction}
-			disabled={disabled}
-			fullWidth
-			// Not getInputProps: a direction change also clears the prices.
-			// @mantine/form has no field-change hook for this: onValuesChange
-			// also runs when an opened draft resets the form, and would clear
-			// its saved prices.
-			onChange={(direction) => {
-				form.setFieldValue("direction", direction, { forceUpdate: false });
-				// Take profit and stop loss are written for one side.
-				form.setFieldValue("takeProfit", {}, { forceUpdate: false });
-				form.setFieldValue("stopLoss", {}, { forceUpdate: false });
+		<form.Field
+			listeners={{
+				// Take profit and stop loss are written for one side. Listeners do
+				// not run when an opened draft resets the form, so its saved prices
+				// stay.
+				onChange: () => {
+					form.setFieldValue("takeProfit", {});
+					form.setFieldValue("stopLoss", {});
+				},
 			}}
-		/>
+			name="direction"
+		>
+			{(field) => (
+				<SegmentedControl<Direction>
+					data={directionOptions[kind]}
+					disabled={disabled}
+					fullWidth
+					onChange={field.handleChange}
+					value={field.state.value}
+				/>
+			)}
+		</form.Field>
 	);
 }

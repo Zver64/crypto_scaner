@@ -1,20 +1,20 @@
 import { Code, Text, Tooltip, UnstyledButton } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
 import { useClipboard } from "@mantine/hooks";
+import { useSelector } from "@tanstack/react-form";
 
 import type {
-	StrategyFormValues,
+	StrategyFormApi,
 	StrategyRuleField,
 } from "@/features/strategy-settings/types";
-import { useWatchedValue } from "@/features/strategy-settings/use-watched-value";
 import {
 	strategyExpression,
+	strategyFormValues,
 	strategyQueryComplete,
 } from "@/features/strategy-settings/utils";
 
 interface StrategyExpressionPreviewProps {
 	field: StrategyRuleField;
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 	title: string;
 }
 
@@ -25,9 +25,12 @@ export function StrategyExpressionPreview({
 	form,
 	title,
 }: StrategyExpressionPreviewProps) {
-	const expression = useWatchedValue(form, field, (query) =>
-		query && strategyQueryComplete(query) ? strategyExpression(query) : "",
+	const query = useSelector(
+		form.store,
+		({ values }) => strategyFormValues(values)[field],
 	);
+	const expression =
+		query && strategyQueryComplete(query) ? strategyExpression(query) : "";
 	const clipboard = useClipboard({ timeout: 1500 });
 	if (expression === "") {
 		return (

@@ -22,7 +22,6 @@
     "@hello-pangea/dnd": "^18.0.1",
     "@mantine/core": "^9.5.1",
     "@mantine/dates": "^9.5.1",
-    "@mantine/form": "^9.5.1",
     "@mantine/hooks": "^9.5.1",
     "@mantine/notifications": "^9.5.1",
     "@mantine/vanilla-extract": "^9.5.1",

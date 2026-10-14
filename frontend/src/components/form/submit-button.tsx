@@ -1,10 +1,14 @@
 import { Button, type ButtonProps } from "@mantine/core";
 import { useSelector } from "@tanstack/react-form";
-import type { ReactNode } from "react";
+import type { ComponentProps, ReactNode } from "react";
 
 import { useFormContext } from "@/components/form/form-context";
 
-interface SubmitButtonProps extends Omit<ButtonProps, "type"> {
+interface SubmitButtonProps
+	extends
+		Omit<ButtonProps, "type">,
+		// Submits a form rendered without an HTML form element.
+		Pick<ComponentProps<"button">, "onClick"> {
 	children: ReactNode;
 }
 

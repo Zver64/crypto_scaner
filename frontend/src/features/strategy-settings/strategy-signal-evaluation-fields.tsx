@@ -1,16 +1,15 @@
-import { Group, NativeSelect } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
+import { Group } from "@mantine/core";
 
 import {
 	signalTargetRatios,
 	signalWindows,
 } from "@/features/strategy-settings/constants";
-import type { StrategyFormValues } from "@/features/strategy-settings/types";
+import type { StrategyFormApi } from "@/features/strategy-settings/types";
 import { formatNumber } from "@/utils/number-format";
 
 interface StrategySignalEvaluationFieldsProps {
 	disabled: boolean;
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 }
 
 // The target distance in stops and the window in candles that backtests
@@ -21,26 +20,30 @@ export function StrategySignalEvaluationFields({
 }: StrategySignalEvaluationFieldsProps) {
 	return (
 		<Group grow>
-			<NativeSelect
-				data={signalTargetRatios.map((value) => ({
-					label: formatNumber(value),
-					value: String(value),
-				}))}
-				{...form.getInputProps("targetRatio")}
-				disabled={disabled}
-				key={form.key("targetRatio")}
-				label="Target, stops"
-			/>
-			<NativeSelect
-				data={signalWindows.map((value) => ({
-					label: formatNumber(value),
-					value: String(value),
-				}))}
-				{...form.getInputProps("window")}
-				disabled={disabled}
-				key={form.key("window")}
-				label="Window, candles"
-			/>
+			<form.AppField name="targetRatio">
+				{(field) => (
+					<field.NativeSelectField
+						data={signalTargetRatios.map((value) => ({
+							label: formatNumber(value),
+							value: String(value),
+						}))}
+						disabled={disabled}
+						label="Target, stops"
+					/>
+				)}
+			</form.AppField>
+			<form.AppField name="window">
+				{(field) => (
+					<field.NativeSelectField
+						data={signalWindows.map((value) => ({
+							label: formatNumber(value),
+							value: String(value),
+						}))}
+						disabled={disabled}
+						label="Window, candles"
+					/>
+				)}
+			</form.AppField>
 		</Group>
 	);
 }

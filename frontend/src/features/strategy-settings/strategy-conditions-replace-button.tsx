@@ -1,16 +1,16 @@
 import { Button } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
+import { useSelector } from "@tanstack/react-form";
 
 import type {
-	StrategyFormValues,
+	StrategyFormApi,
 	StrategyRuleField,
 } from "@/features/strategy-settings/types";
-import { useWatchedValue } from "@/features/strategy-settings/use-watched-value";
+import { strategyFormValues } from "@/features/strategy-settings/utils";
 
 interface StrategyConditionsReplaceButtonProps {
 	disabled: boolean;
 	field: StrategyRuleField;
-	form: UseFormReturnType<StrategyFormValues>;
+	form: StrategyFormApi;
 	onClear(): void;
 	onImport(): void;
 }
@@ -24,11 +24,10 @@ export function StrategyConditionsReplaceButton({
 	onClear,
 	onImport,
 }: StrategyConditionsReplaceButtonProps) {
-	const empty = useWatchedValue(
-		form,
-		field,
-		(query) => query === undefined || query.rules.length === 0,
-	);
+	const empty = useSelector(form.store, ({ values }) => {
+		const query = strategyFormValues(values)[field];
+		return query === undefined || query.rules.length === 0;
+	});
 	return empty ? (
 		<Button
 			disabled={disabled}

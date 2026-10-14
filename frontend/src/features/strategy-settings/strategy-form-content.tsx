@@ -7,7 +7,7 @@ import {
 	Textarea,
 	TextInput,
 } from "@mantine/core";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
 	Direction,
 	type StrategyUpdate,
@@ -132,7 +132,12 @@ export function StrategyFormContent({
 				priceSetupChanged(takeProfit, parsePriceSetup(draft.takeProfit)) ||
 				priceSetupChanged(stopLoss, parsePriceSetup(draft.stopLoss))));
 	useEffect(() => onDirtyChange(dirty), [dirty, onDirtyChange]);
-	const entryVariables = withoutPositionVariables(variables);
+	// Kept stable: the rule builder memoizes its controls on the variables, so
+	// a new array would remount every condition and drop the input focus.
+	const entryVariables = useMemo(
+		() => withoutPositionVariables(variables),
+		[variables],
+	);
 	return (
 		<Stack gap="md">
 			<TextInput

@@ -3,6 +3,7 @@ import type {
 	LineSeriesPartialOptions,
 	TimeChartOptions,
 } from "lightweight-charts";
+
 import { resolvedTheme } from "@/app/theme";
 
 // Height of the equity chart in pixels.

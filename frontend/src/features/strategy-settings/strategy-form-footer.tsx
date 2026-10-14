@@ -1,6 +1,7 @@
 import { Button, Group, Text } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
 import { useState } from "react";
+
 import { Direction } from "@/api/generated/models";
 import { directionLabels } from "@/features/strategy-settings/constants";
 import type { StrategyFormValues } from "@/features/strategy-settings/types";

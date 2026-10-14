@@ -1,0 +1,19 @@
+{
+	"$schema": "./node_modules/oxlint/configuration_schema.json",
+	"plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "vitest"],
+	"categories": {
+		"correctness": "error"
+	},
+	"rules": {
+		"react/rules-of-hooks": "error",
+		"react/exhaustive-deps": "error",
+		"react/no-array-index-key": "error"
+	},
+	"ignorePatterns": [
+		"/*",
+		"!/src/",
+		"!/vite.config.ts",
+		"/src/api/generated/",
+		"/src/routeTree.gen.ts"
+	]
+}

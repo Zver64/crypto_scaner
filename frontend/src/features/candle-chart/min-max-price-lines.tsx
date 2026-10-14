@@ -1,4 +1,5 @@
 import { useComputedColorScheme } from "@mantine/core";
+
 import { PriceLine } from "@/components/lightweight-chart";
 import { minMaxPriceLineOptions } from "@/features/candle-chart/config";
 

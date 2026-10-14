@@ -1,6 +1,8 @@
 import { Stack, Text } from "@mantine/core";
+
 import type { StrategyBacktest } from "@/api/generated/models";
 import { backtestDateFormat } from "@/features/strategy-backtest/constants";
+import type { BacktestRun } from "@/features/strategy-backtest/types";
 import { shortenedPeriod } from "@/features/strategy-backtest/utils";
 import { formatUtcDateTime } from "@/utils/date-time-format";
 
@@ -9,9 +11,7 @@ const timeFormat = `${backtestDateFormat}, HH:mm`;
 
 interface BacktestEvaluatedPeriodProps {
 	backtest: StrategyBacktest;
-	// The first and last UTC days chosen for the run, YYYY-MM-DD.
-	from: string | undefined;
-	to: string | undefined;
+	run: BacktestRun;
 }
 
 // The candles the backtest actually evaluated, in the date format of the
@@ -19,14 +19,13 @@ interface BacktestEvaluatedPeriodProps {
 // chosen one turns yellow.
 export function BacktestEvaluatedPeriod({
 	backtest,
-	from,
-	to,
+	run,
 }: BacktestEvaluatedPeriodProps) {
 	if (!backtest.from || !backtest.to) return null;
 	const shortened = shortenedPeriod(
-		{ from, to },
+		run.parameters,
 		{ from: backtest.from, interval: backtest.interval, to: backtest.to },
-		Date.now(),
+		run.startedAt,
 	);
 	return (
 		<Stack gap={2}>

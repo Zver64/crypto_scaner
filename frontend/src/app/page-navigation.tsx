@@ -1,4 +1,5 @@
 import { Group, Paper, Title, VisuallyHidden } from "@mantine/core";
+
 import { PageLink } from "@/app/page-link";
 
 type Page = "favorites" | "market-scan" | "top-coins";

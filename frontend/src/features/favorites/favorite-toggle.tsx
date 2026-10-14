@@ -1,5 +1,6 @@
 import { ActionIcon, Tooltip } from "@mantine/core";
 import { IconStar, IconStarFilled } from "@tabler/icons-react";
+
 import { useFavorites } from "@/features/favorites/favorites-context";
 
 export function FavoriteToggle({ symbol }: { symbol: string }) {

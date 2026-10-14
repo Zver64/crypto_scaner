@@ -1,5 +1,6 @@
 import { useComputedColorScheme } from "@mantine/core";
 import { type AutoscaleInfoProvider, LineSeries } from "lightweight-charts";
+
 import { PriceLine, Series } from "@/components/lightweight-chart";
 import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import {

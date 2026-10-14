@@ -11,6 +11,7 @@ import {
 	type TimeChartOptions,
 	type UTCTimestamp,
 } from "lightweight-charts";
+
 import { resolvedTheme } from "@/app/theme";
 import type {
 	ChartInterval,

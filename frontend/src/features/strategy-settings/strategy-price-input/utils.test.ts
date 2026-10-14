@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import {
 	parsePriceSetup,
 	priceSetupChanged,
@@ -63,24 +64,23 @@ describe("fixed price operands", () => {
 		);
 	});
 
-	it.each([
-		'of("BTCUSDT", h_close)',
-		"h_close > 0",
-		"h_close +",
-	])("preserves unsupported formula %s", (source) => {
-		const setup = parsePriceSetup(source);
-		expect(setup).toEqual({ custom: source });
-		expect(priceSetupExpression(setup)).toBe(source);
-	});
+	it.each(['of("BTCUSDT", h_close)', "h_close > 0", "h_close +"])(
+		"preserves unsupported formula %s",
+		(source) => {
+			const setup = parsePriceSetup(source);
+			expect(setup).toEqual({ custom: source });
+			expect(priceSetupExpression(setup)).toBe(source);
+		},
+	);
 
-	it.each([
-		"h_close",
-		"h_close - 2 * h_atr_14",
-	])("clears dirty state when %s is restored without preservation metadata", (source) => {
-		const initial = parsePriceSetup(source);
-		expect(priceSetupChanged(parsePriceSetup("h_open"), initial)).toBe(true);
-		expect(priceSetupChanged({ node: initial.node }, initial)).toBe(false);
-	});
+	it.each(["h_close", "h_close - 2 * h_atr_14"])(
+		"clears dirty state when %s is restored without preservation metadata",
+		(source) => {
+			const initial = parsePriceSetup(source);
+			expect(priceSetupChanged(parsePriceSetup("h_open"), initial)).toBe(true);
+			expect(priceSetupChanged({ node: initial.node }, initial)).toBe(false);
+		},
+	);
 
 	it("tracks disabled, incomplete, and manually edited prices separately", () => {
 		const initial = parsePriceSetup("h_close");

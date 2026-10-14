@@ -1,5 +1,6 @@
 import type { UseFormReturnType } from "@mantine/form";
 import { useState } from "react";
+
 import type {
 	StrategyFormField,
 	StrategyFormValues,

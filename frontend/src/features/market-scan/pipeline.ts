@@ -9,8 +9,10 @@ import {
 	volatilityCriterionSelection,
 } from "@/features/market-scan/criteria";
 
-export interface MarketScanCriteria
-	extends Omit<SingleVolatilityCriteria, "unit"> {
+export interface MarketScanCriteria extends Omit<
+	SingleVolatilityCriteria,
+	"unit"
+> {
 	hourlyPeriod: number;
 	hourlyPercentile: number;
 	hourlyMinimumRangePercent: number;

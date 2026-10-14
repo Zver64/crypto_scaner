@@ -1,4 +1,5 @@
 import { CandlestickSeries, type IRange } from "lightweight-charts";
+
 import { Series, SeriesMarkers } from "@/components/lightweight-chart";
 import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import {

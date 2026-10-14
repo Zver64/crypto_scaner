@@ -1,4 +1,5 @@
 import { Stack, Text } from "@mantine/core";
+
 import { EmptyState } from "@/components/empty-state";
 import { BacktestChart } from "@/features/strategy-backtest/backtest-chart";
 import { BacktestResults } from "@/features/strategy-backtest/backtest-results";

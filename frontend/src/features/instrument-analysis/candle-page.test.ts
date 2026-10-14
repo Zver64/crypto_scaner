@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { listInstrumentCandlesResponseSuccess } from "@/api/generated/api";
 import {
 	nextCandlePageParam,

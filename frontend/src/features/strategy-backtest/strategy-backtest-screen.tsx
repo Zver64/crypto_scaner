@@ -1,4 +1,5 @@
 import { Button, Paper, Stack, Text, Title } from "@mantine/core";
+
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { EmptyState } from "@/components/empty-state";
 import { SidebarLayout } from "@/components/sidebar-layout";
@@ -104,11 +105,7 @@ export function StrategyBacktestScreen({
 			) : null}
 			{singleResult && run ? (
 				<Stack gap={4}>
-					<BacktestEvaluatedPeriod
-						backtest={singleResult}
-						from={run.parameters.from}
-						to={run.parameters.to}
-					/>
+					<BacktestEvaluatedPeriod backtest={singleResult} run={run} />
 					<Text c="dimmed" size="xs">
 						Execution time:{" "}
 						{formatNumber(

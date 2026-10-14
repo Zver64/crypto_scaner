@@ -1,4 +1,5 @@
 import { createContext } from "react";
+
 import type { StrategyVariable } from "@/api/generated/models";
 
 // The variables of one rule builder. Conditions read them from here, since

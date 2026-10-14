@@ -1,4 +1,5 @@
 import { QueryBuilder } from "react-querybuilder";
+
 import { StrategyGroup } from "@/features/strategy-settings/strategy-group";
 import { StrategyGroupHeader } from "@/features/strategy-settings/strategy-group-header";
 import { StrategyRule } from "@/features/strategy-settings/strategy-rule";

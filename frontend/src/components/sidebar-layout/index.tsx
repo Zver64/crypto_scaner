@@ -1,5 +1,6 @@
 import { Box, Flex, type MantineSpacing } from "@mantine/core";
 import type { ReactNode } from "react";
+
 import { usePageViewport } from "@/app/page-height";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 

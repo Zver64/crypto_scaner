@@ -1,4 +1,5 @@
 import { SimpleGrid, Stack } from "@mantine/core";
+
 import type { StrategyBacktest } from "@/api/generated/models";
 import { EmptyState } from "@/components/empty-state";
 import { BacktestEquityChart } from "@/features/strategy-backtest/backtest-equity-chart";

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+
 import { MarketScanScreen } from "@/features/market-scan/market-scan-screen";
 import {
 	marketScanSortFromSearch,

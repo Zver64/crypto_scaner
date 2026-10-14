@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { dataChange } from "@/components/lightweight-chart/utils";
 
 const point = (time: number, value: number) => ({ time, value });

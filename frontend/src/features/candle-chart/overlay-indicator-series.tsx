@@ -1,4 +1,5 @@
 import { LineSeries } from "lightweight-charts";
+
 import { Series } from "@/components/lightweight-chart";
 import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import { overlayIndicatorSeriesOptions } from "@/features/candle-chart/config";

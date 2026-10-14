@@ -12,6 +12,7 @@ import {
 import { themeToVars } from "@mantine/vanilla-extract";
 import { IconGripVertical } from "@tabler/icons-react";
 import { useState } from "react";
+
 import type {
 	ScannerIndicator,
 	ScannerIndicatorUpdate,

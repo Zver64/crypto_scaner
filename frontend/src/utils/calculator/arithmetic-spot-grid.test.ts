@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { calculateArithmeticSpotGrid } from "@/utils/calculator/arithmetic-spot-grid";
 
 const positiveFixture = {
@@ -120,11 +121,12 @@ describe("calculateArithmeticSpotGrid", () => {
 				investment: "1e1000",
 			},
 		},
-	])("rejects derived $name instead of returning zero or Infinity", ({
-		input,
-	}) => {
-		expect(() => calculateArithmeticSpotGrid(input)).toThrow(RangeError);
-	});
+	])(
+		"rejects derived $name instead of returning zero or Infinity",
+		({ input }) => {
+			expect(() => calculateArithmeticSpotGrid(input)).toThrow(RangeError);
+		},
+	);
 
 	it.each([
 		{ ...positiveFixture, lowerPrice: "" },

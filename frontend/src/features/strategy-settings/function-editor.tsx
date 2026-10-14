@@ -1,6 +1,7 @@
 import { ActionIcon, Button, Stack, Text } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconPlus, IconX } from "@tabler/icons-react";
+
 import {
 	ExpressionEditor,
 	type ExpressionEditorProps,
@@ -11,8 +12,10 @@ import {
 } from "@/features/strategy-settings/expressions";
 import { withoutPositionVariables } from "@/features/strategy-settings/utils";
 
-export interface FunctionEditorProps
-	extends Omit<ExpressionEditorProps, "label"> {
+export interface FunctionEditorProps extends Omit<
+	ExpressionEditorProps,
+	"label"
+> {
 	node: Extract<ExpressionNode, { kind: "func" }>;
 }
 
@@ -39,7 +42,7 @@ export function FunctionEditor({
 			{node.args.map((arg, index) => {
 				const title = titles[Math.min(index, titles.length - 1)] ?? "Value";
 				return (
-					// biome-ignore lint/suspicious/noArrayIndexKey: arguments are positional; an argument is its position.
+					// oxlint-disable-next-line react/no-array-index-key -- arguments are positional; an argument is its position.
 					<Stack gap={2} key={index}>
 						<Text c="dimmed" size="xs">
 							{title}

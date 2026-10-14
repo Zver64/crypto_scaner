@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
+
 import { getTelegramInitData, telegramUserID } from "@/app/telegram";
 
 const unknownUserScope = "telegram-user:unknown";

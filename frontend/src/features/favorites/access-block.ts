@@ -1,5 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
+
 import {
 	removeUserScopeQueries,
 	telegramUserScope,

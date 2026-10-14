@@ -6,11 +6,10 @@ interface SliderScaleLabel {
 	position: number;
 }
 
-interface SliderFieldProps
-	extends Omit<
-		SliderProps,
-		"label" | "thumbLabel" | "thumbValueText" | "value"
-	> {
+interface SliderFieldProps extends Omit<
+	SliderProps,
+	"label" | "thumbLabel" | "thumbValueText" | "value"
+> {
 	formatValue: (value: number) => string;
 	label: string;
 	scaleLabels: readonly SliderScaleLabel[];

@@ -1,5 +1,6 @@
 import { Box, Text } from "@mantine/core";
 import { Outlet, useLocation } from "@tanstack/react-router";
+
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { useTelegramBackButton } from "@/app/telegram";
 import { useAdministrator } from "@/app/use-administrator";

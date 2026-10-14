@@ -1,5 +1,6 @@
 import { Modal } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import { StrategyFormContent } from "@/features/strategy-settings/strategy-form-content";
 import type {
 	StrategyDraft,

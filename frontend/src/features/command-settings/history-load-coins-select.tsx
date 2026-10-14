@@ -1,15 +1,15 @@
 import { MultiSelect, type MultiSelectProps } from "@mantine/core";
 import { useState } from "react";
+
 import { CoinPicker } from "@/app/coin-picker";
 import { maxHistoryLoadCoins } from "@/features/command-settings/constants";
 
 // Takes the input props of the coins field as the form's getInputProps
 // returns them, typed like Mantine's own MultiSelect.
-interface HistoryLoadCoinsSelectProps
-	extends Pick<
-		MultiSelectProps,
-		"error" | "onBlur" | "onChange" | "onFocus" | "value"
-	> {
+interface HistoryLoadCoinsSelectProps extends Pick<
+	MultiSelectProps,
+	"error" | "onBlur" | "onChange" | "onFocus" | "value"
+> {
 	disabled: boolean;
 }
 

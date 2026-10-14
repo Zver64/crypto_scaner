@@ -1,4 +1,5 @@
 import { Anchor, useMatches } from "@mantine/core";
+
 import { openTelegramExternalLink } from "@/app/telegram";
 
 interface ExternalLinkProps {

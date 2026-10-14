@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+
 import type { AnalysisUnit } from "@/features/analysis/criteria";
 
 export type VolatilityFormValue = number | string;

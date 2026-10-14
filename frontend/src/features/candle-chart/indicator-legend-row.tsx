@@ -1,4 +1,5 @@
 import { Group, Text } from "@mantine/core";
+
 import type { ChartLegendItem } from "@/features/candle-chart/types";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
 

@@ -1,6 +1,7 @@
 import { Paper, Stack, Text, useComputedColorScheme } from "@mantine/core";
 import { LineSeries } from "lightweight-charts";
 import { useLayoutEffect, useRef } from "react";
+
 import type { StrategyBacktest } from "@/api/generated/models";
 import {
 	ChartCanvas,

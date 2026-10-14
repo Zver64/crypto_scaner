@@ -1,5 +1,6 @@
 import { SegmentedControl } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import { Direction } from "@/api/generated/models";
 import {
 	directionLabels,

@@ -1,4 +1,5 @@
 import type { MantineVars } from "@mantine/vanilla-extract";
+
 import type {
 	TableRow,
 	UnresolvedInstrumentCode,

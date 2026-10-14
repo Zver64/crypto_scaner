@@ -9,6 +9,7 @@ import {
 	Text,
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
+
 import type { Strategy } from "@/api/generated/models";
 import {
 	marketCapRangeLabel,

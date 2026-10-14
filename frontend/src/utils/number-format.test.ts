@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { formatCompactNumber, formatNumber } from "@/utils/number-format";
 
 describe("formatNumber", () => {
@@ -12,9 +13,12 @@ describe("formatNumber", () => {
 		["mid-sized values", "158.73", "158.7"],
 		["values above one", "1.23456", "1.235"],
 		["negative nonzero values", "-0.0000000123456789", "-0.00000001235"],
-	])("formats %s keeping the integer part and adapting the fraction", (_, input, expected) => {
-		expect(formatNumber(input)).toBe(expected);
-	});
+	])(
+		"formats %s keeping the integer part and adapting the fraction",
+		(_, input, expected) => {
+			expect(formatNumber(input)).toBe(expected);
+		},
+	);
 
 	it.each([
 		[70, undefined, "70"],
@@ -26,9 +30,12 @@ describe("formatNumber", () => {
 		[40.1, 1, "40.1"],
 		[0.0101, 10, "0.0101"],
 		[0.000000001, 2, "0"],
-	])("formats %s with fraction limit %s without trailing zeros", (input, maximumFractionDigits, expected) => {
-		expect(formatNumber(input, maximumFractionDigits)).toBe(expected);
-	});
+	])(
+		"formats %s with fraction limit %s without trailing zeros",
+		(input, maximumFractionDigits, expected) => {
+			expect(formatNumber(input, maximumFractionDigits)).toBe(expected);
+		},
+	);
 
 	it.each([
 		[0, "0.00"],

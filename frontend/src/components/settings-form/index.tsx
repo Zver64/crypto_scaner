@@ -1,4 +1,5 @@
 import { Button, Paper, SimpleGrid, Stack, useMatches } from "@mantine/core";
+
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import type { SettingsFormProps } from "@/components/settings-form/types";
 

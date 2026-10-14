@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+
 import { TopCoinsScreen } from "@/features/top-coins/top-coins-screen";
 import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
 import {

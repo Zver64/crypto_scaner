@@ -1,5 +1,6 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
+
 import {
 	DEFAULT_MARKUPS,
 	LOWER_MARKUP_MAX_PERCENT,
@@ -142,28 +143,35 @@ describe("spot grid recommendations", () => {
 		expect(upperMarkupPercent(100, "95")).toBe(-5);
 	});
 
-	it.each([
-		"geometric",
-		"arithmetic",
-	] as const)("derives the largest %s grid count that keeps the minimum step", (gridType) => {
-		for (const stepPercent of [0.3, 0.705, 1, 2.5]) {
-			const gridCount = gridCountForStep("1640", "1230", stepPercent, gridType);
-			if (!gridCount) throw new Error("missing grid count");
-			const input = {
-				lowerPrice: "1230",
-				upperPrice: "1640",
-				gridCount,
-				investment: "1000",
-			};
-			expect(minimumStep(input, gridType)).toBeGreaterThanOrEqual(stepPercent);
-			expect(
-				minimumStep(
-					{ ...input, gridCount: String(Number(gridCount) + 1) },
+	it.each(["geometric", "arithmetic"] as const)(
+		"derives the largest %s grid count that keeps the minimum step",
+		(gridType) => {
+			for (const stepPercent of [0.3, 0.705, 1, 2.5]) {
+				const gridCount = gridCountForStep(
+					"1640",
+					"1230",
+					stepPercent,
 					gridType,
-				),
-			).toBeLessThan(stepPercent);
-		}
-	});
+				);
+				if (!gridCount) throw new Error("missing grid count");
+				const input = {
+					lowerPrice: "1230",
+					upperPrice: "1640",
+					gridCount,
+					investment: "1000",
+				};
+				expect(minimumStep(input, gridType)).toBeGreaterThanOrEqual(
+					stepPercent,
+				);
+				expect(
+					minimumStep(
+						{ ...input, gridCount: String(Number(gridCount) + 1) },
+						gridType,
+					),
+				).toBeLessThan(stepPercent);
+			}
+		},
+	);
 
 	it("does not add a grid when rounding a markup-derived lower price down", () => {
 		expect(lowerPriceFromMarkup(at(2.13), 25)).toBe("1.597");
@@ -210,16 +218,20 @@ describe("spot grid recommendations", () => {
 });
 
 describe("calculateSpotGridInput", () => {
-	it.each(
-		Object.keys(validInput) as (keyof typeof validInput)[],
-	)("clears the estimate for partial input missing %s", (field) => {
-		const calculation = calculateSpotGridInput({ ...validInput, [field]: "" });
+	it.each(Object.keys(validInput) as (keyof typeof validInput)[])(
+		"clears the estimate for partial input missing %s",
+		(field) => {
+			const calculation = calculateSpotGridInput({
+				...validInput,
+				[field]: "",
+			});
 
-		expect(calculation).toBeNull();
-		expect(spotGridEstimateValues(calculation?.estimate ?? null)).toEqual(
-			zeroValues,
-		);
-	});
+			expect(calculation).toBeNull();
+			expect(spotGridEstimateValues(calculation?.estimate ?? null)).toEqual(
+				zeroValues,
+			);
+		},
+	);
 
 	it("calculates a geometric grid with a single constant profit per step", () => {
 		const calculation = calculateSpotGridInput(
@@ -514,23 +526,23 @@ describe("gridBounds with Binance limits", () => {
 		expect(upperPriceLimitError(bounds, "", "USDT")).toBeNull();
 	});
 
-	it.each([
-		"usdm",
-		"coinm",
-	] as const)("does not apply the spot limits to %s grids", (market) => {
-		const futures = gridBounds(market, undefined, limits);
+	it.each(["usdm", "coinm"] as const)(
+		"does not apply the spot limits to %s grids",
+		(market) => {
+			const futures = gridBounds(market, undefined, limits);
 
-		expect(futures).toEqual({
-			anchor: 100,
-			lowerMarkupMax: LOWER_MARKUP_MAX_PERCENT,
-			maxPrice: null,
-			minPrice: null,
-			tickSize: null,
-			upperMarkupMax: UPPER_MARKUP_MAX_PERCENT,
-		});
-		expect(upperPriceLimitError(futures, "1000", "USDT")).toBeNull();
-		expect(lowerPriceFromMarkup(futures, 10.3)).toBe("89.7");
-	});
+			expect(futures).toEqual({
+				anchor: 100,
+				lowerMarkupMax: LOWER_MARKUP_MAX_PERCENT,
+				maxPrice: null,
+				minPrice: null,
+				tickSize: null,
+				upperMarkupMax: UPPER_MARKUP_MAX_PERCENT,
+			});
+			expect(upperPriceLimitError(futures, "1000", "USDT")).toBeNull();
+			expect(lowerPriceFromMarkup(futures, 10.3)).toBe("89.7");
+		},
+	);
 });
 
 describe("investments", () => {

@@ -1,5 +1,6 @@
 import { useForm } from "@mantine/form";
 import { type FocusEvent, type KeyboardEvent, useState } from "react";
+
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import { DEFAULT_MARKUPS } from "@/features/instrument-analysis/grid-estimator/config";
 import type {

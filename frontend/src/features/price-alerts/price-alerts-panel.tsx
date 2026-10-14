@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+
 import { telegramUserScope } from "@/features/favorites/user-query-scope";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { PriceAlertsController } from "@/features/price-alerts/price-alerts-controller";

@@ -1,5 +1,6 @@
 import { Box, type BoxProps, useMantineTheme } from "@mantine/core";
 import type { ReactNode } from "react";
+
 import { nestingBorder } from "@/features/strategy-settings/nesting-colors";
 
 export interface NestingLineProps extends BoxProps {

@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+
 import type {
 	Candle,
 	ChartIndicatorDefinition,
@@ -119,7 +120,7 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 		Telegram: { WebApp: { initData: "signed-data" } },
 	});
 	vi.stubGlobal("WebSocket", FakeSocket);
-	const fetch = vi.fn();
+	const fetch = vi.fn<typeof globalThis.fetch>();
 	vi.stubGlobal("fetch", fetch);
 	const source = createCoinChartData("btcusdt", rsiCatalogs);
 	try {

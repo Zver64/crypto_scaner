@@ -1,4 +1,5 @@
 import { SegmentedControl } from "@mantine/core";
+
 import { SliderField } from "@/components/slider-field";
 import { DIRECTION_OPTIONS } from "@/features/instrument-analysis/grid-estimator/config";
 import { FUTURES_GRID_MAX_LEVERAGE } from "@/utils/calculator/futures-grid";

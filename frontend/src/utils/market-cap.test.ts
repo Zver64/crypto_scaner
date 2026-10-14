@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+
 import { formatMarketCapUsd } from "@/utils/market-cap";
 
 it("formats compact USD values", () => {

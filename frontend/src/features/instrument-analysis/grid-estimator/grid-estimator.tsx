@@ -6,6 +6,7 @@ import {
 	useMantineTheme,
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
+
 import { SegmentedValueGroup } from "@/components/segmented-value-group";
 import { SliderField } from "@/components/slider-field";
 import {

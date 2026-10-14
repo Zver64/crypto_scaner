@@ -1,4 +1,5 @@
 import { Alert, Badge, Group, Stack, Text } from "@mantine/core";
+
 import type {
 	CandleHistoryLoad,
 	CandleHistoryLoadJob,

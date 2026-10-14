@@ -10,6 +10,7 @@ import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconX } from "@tabler/icons-react";
 import { use } from "react";
 import type { RuleProps } from "react-querybuilder";
+
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
 import { firstField } from "@/features/strategy-settings/expressions";
 import { StrategyVariablesContext } from "@/features/strategy-settings/strategy-variables-context";

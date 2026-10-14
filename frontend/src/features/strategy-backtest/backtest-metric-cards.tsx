@@ -1,4 +1,5 @@
 import { SimpleGrid } from "@mantine/core";
+
 import { Direction, type StrategyBacktest } from "@/api/generated/models";
 import { BacktestReturn } from "@/features/strategy-backtest/backtest-return";
 import {

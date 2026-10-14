@@ -1,4 +1,5 @@
 import { Select } from "@mantine/core";
+
 import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
 
 export interface CoinSelectProps {

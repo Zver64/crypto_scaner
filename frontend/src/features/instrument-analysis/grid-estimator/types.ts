@@ -1,5 +1,6 @@
 import type Decimal from "decimal.js";
 import type { ComponentProps } from "react";
+
 import type { SegmentedValueGroup } from "@/components/segmented-value-group";
 import type { ArithmeticSpotGridEstimate } from "@/utils/calculator/arithmetic-spot-grid";
 import type { FuturesGridEstimate } from "@/utils/calculator/futures-grid";

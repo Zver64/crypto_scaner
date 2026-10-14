@@ -1,4 +1,5 @@
 import { Stack } from "@mantine/core";
+
 import { BacktestCoinSummary } from "@/features/strategy-backtest/backtest-coin-summary";
 import type { BacktestRun } from "@/features/strategy-backtest/types";
 
@@ -19,7 +20,7 @@ export function BacktestMultiResults({
 				<BacktestCoinSummary
 					key={item.symbol}
 					item={item}
-					parameters={run.parameters}
+					run={run}
 					gap={gap}
 					paperPadding={paperPadding}
 				/>

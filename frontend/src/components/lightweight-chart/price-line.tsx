@@ -1,6 +1,7 @@
 import equal from "fast-deep-equal";
 import type { CreatePriceLineOptions, IPriceLine } from "lightweight-charts";
 import { useLayoutEffect, useRef } from "react";
+
 import { useSeriesLifecycle } from "@/components/lightweight-chart/context";
 
 interface PriceLineProps {

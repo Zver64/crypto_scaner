@@ -1,6 +1,7 @@
 import { useMantineTheme } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 import { Sparkline } from "@microcharts/react/sparkline";
+
 import type { PriceHistoryWindow } from "@/api/generated/models";
 
 interface PriceSparklineProps {
@@ -63,7 +64,7 @@ export function PriceSparkline({
 				prices[index - 1] == null &&
 				prices[index + 1] == null ? (
 					<circle
-						// biome-ignore lint/suspicious/noArrayIndexKey: fixed hourly slots never reorder; the key is the observation's UTC time.
+						// oxlint-disable-next-line react/no-array-index-key -- fixed hourly slots never reorder; the key is the observation's UTC time.
 						key={Date.parse(window.from) + index * 3_600_000}
 						cx={2 + (index * (width - 4)) / 168}
 						cy={

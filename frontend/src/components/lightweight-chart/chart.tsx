@@ -5,7 +5,9 @@ import {
 	useImperativeHandle,
 	useLayoutEffect,
 	useRef,
+	useState,
 } from "react";
+
 import {
 	ChartContext,
 	type ChartLifecycle,
@@ -32,12 +34,11 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 		const optionsRef = useRef(options);
 		const rangeChangeRef = useRef(onVisibleLogicalRangeChange);
 
-		const lifecycleRef = useRef<ChartLifecycle | null>(null);
-		if (lifecycleRef.current === null) {
+		const [lifecycle] = useState((): ChartLifecycle => {
 			let chartApi: ReturnType<typeof createChart> | null = null;
 			let isRemoved = false;
 			let generation = 0;
-			lifecycleRef.current = {
+			return {
 				get isRemoved() {
 					return isRemoved;
 				},
@@ -83,8 +84,7 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 					if (chartApi !== null && !isRemoved) chartApi.removeSeries(series);
 				},
 			};
-		}
-		const lifecycle = lifecycleRef.current;
+		});
 
 		useImperativeHandle(
 			ref,

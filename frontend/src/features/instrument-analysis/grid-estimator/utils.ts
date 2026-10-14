@@ -1,4 +1,5 @@
 import type Decimal from "decimal.js";
+
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	BINANCE_GRID_FALLBACK_DEVIATION,

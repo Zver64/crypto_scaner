@@ -1,5 +1,6 @@
 import { Stack, Text } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import type { StrategyFormValues } from "@/features/strategy-settings/types";
 import { useWatchedValue } from "@/features/strategy-settings/use-watched-value";

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { defaultMarketScanCriteria } from "@/features/market-scan/pipeline";
 import {
 	parseOptionalScanCriteriaSearch,
@@ -69,7 +70,7 @@ describe("scan criteria URL state", () => {
 			[undefined, "30", -1, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 	] as const)("rejects missing or invalid %s", (field, values) => {
-		for (const value of [...values]) {
+		for (const value of values) {
 			const invalidSearch = { ...search, [field]: value };
 			expect(parseOptionalScanCriteriaSearch(invalidSearch)).toEqual({});
 			expect(parseRequiredScanCriteriaSearch(invalidSearch)).toEqual(

@@ -1,5 +1,6 @@
 import { Button } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import type {
 	StrategyFormValues,
 	StrategyRuleField,

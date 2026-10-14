@@ -1,4 +1,5 @@
 import { Center, Loader, Stack } from "@mantine/core";
+
 import type { CriterionRequest } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";

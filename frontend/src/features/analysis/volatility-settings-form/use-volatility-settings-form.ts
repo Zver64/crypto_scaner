@@ -1,4 +1,5 @@
 import { useForm } from "@mantine/form";
+
 import type { SettingsFormProps } from "@/components/settings-form/types";
 import { applicationConfig } from "@/config";
 import type { VolatilityFormField } from "@/features/analysis/volatility-form/types";

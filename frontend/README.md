@@ -62,6 +62,6 @@ npm run quality
 npm run build
 ```
 
-`npm test` runs the pure Vitest suite. `npm run quality` runs Biome checks and
-TypeScript typechecking. `npm run build` creates the production bundle in
+`npm test` runs the pure Vitest suite. `npm run quality` runs oxlint, the oxfmt
+format check, and TypeScript typechecking. `npm run build` creates the production bundle in
 `dist/`; the generated directory is a local build artifact and is not committed.

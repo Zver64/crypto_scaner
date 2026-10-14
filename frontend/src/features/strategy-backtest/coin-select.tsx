@@ -1,4 +1,5 @@
 import { Button, MultiSelect, Stack } from "@mantine/core";
+
 import { CoinPicker } from "@/app/coin-picker";
 import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
 

@@ -1,5 +1,6 @@
 import { Checkbox, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
+
 import {
 	type listInstrumentsResponseSuccess,
 	useListInstruments,

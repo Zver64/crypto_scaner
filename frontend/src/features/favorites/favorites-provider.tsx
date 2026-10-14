@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+
 import { UserFavoritesProvider } from "@/features/favorites/user-favorites-provider";
 import { telegramUserScope } from "@/features/favorites/user-query-scope";
 

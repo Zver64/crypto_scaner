@@ -1,11 +1,12 @@
 import { notifications } from "@mantine/notifications";
 import type { QueryMeta } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { createQueryClient } from "@/app/query-client";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
 
 vi.mock("@mantine/notifications", () => ({
-	notifications: { show: vi.fn() },
+	notifications: { show: vi.fn<typeof notifications.show>() },
 }));
 
 function apiError(status: number, code?: string) {

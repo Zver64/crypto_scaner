@@ -1,5 +1,6 @@
 import { notifications } from "@mantine/notifications";
 import { useEffect } from "react";
+
 import type { Warning } from "@/api/generated/models";
 
 export function useAnalysisWarningNotification(

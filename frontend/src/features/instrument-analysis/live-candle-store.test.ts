@@ -1,6 +1,8 @@
 import { expect, it, vi } from "vitest";
+
 import type {
 	Candle,
+	CandleInterval,
 	ChartIndicatorDefinition,
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
@@ -119,7 +121,7 @@ it("retains isolated calculated snapshots and rejects late versions", () => {
 });
 
 it("asks once for a new snapshot when an update cannot be applied", () => {
-	const onResync = vi.fn();
+	const onResync = vi.fn<(interval: CandleInterval) => void>();
 	const store = createLiveStore("BTC", rsiCatalogs, onResync);
 	const time = "2026-01-01T23:00:00Z";
 	const update = (version: number): LiveCandleServerMessage => ({

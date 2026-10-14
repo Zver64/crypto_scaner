@@ -1,5 +1,6 @@
 import { Stack } from "@mantine/core";
 import { useState } from "react";
+
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
 import { PageStack } from "@/components/page-stack";

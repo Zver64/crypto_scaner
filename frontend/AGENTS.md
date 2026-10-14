@@ -107,7 +107,7 @@ tanstackIntent:
 - Never write CSS custom properties or `var(--…)` references as strings in TS/TSX: not in props, `style` objects, theme `vars` resolvers, or template strings. Neither TypeScript nor a linter can check them.
 - In TS/TSX, pass style values only as typed JS data whose names TypeScript checks. Before relying on an API, confirm that a deliberate typo fails `npm run typecheck` (strip ANSI colors before grepping `tsc` output).
 - Reference Mantine CSS variables through `themeToVars` from `@mantine/vanilla-extract` (for example `themeToVars(theme).colors.dark[5]`), not handwritten strings. Verified: shade indexes (`dark[15]`) fail typecheck. Component `vars` resolver keys are not checked by Mantine's resolver type, so check them with `satisfies` against Mantine's CssVariables type (for example `satisfies Partial<Record<TooltipCssVariables["tooltip"], string>>`); then a misspelled key (`--tooltip-bgx`) fails typecheck. Not verified by TypeScript, because Mantine types color names as any string: color names (`colors.drak`) and semantic names (`colors.defaultHovr`) in `themeToVars`, and names and shades in `theme.colors`.
-- CSS custom properties belong only in CSS files, and only once a linter in `npm run quality` validates their names. No such linter exists yet (Biome excludes `src/styles.css` and does not check custom property names), so ask before adding styling that depends on CSS variables.
+- CSS custom properties belong only in CSS files, and only once a linter in `npm run quality` validates their names. No such linter exists yet (oxlint and oxfmt exclude `src/styles.css`, and nothing checks custom property names), so ask before adding styling that depends on CSS variables.
 
 ## Number formatting
 
@@ -115,7 +115,7 @@ tanstackIntent:
 
 ## React architecture
 
-- React Compiler memoizes automatically (`reactCompilerPreset` in `vite.config.ts`, client only, so Vitest runs uncompiled code). Code must follow the Rules of React; Biome enforces `useHookAtTopLevel`, `useExhaustiveDependencies`, `noReactPropAssignments`, and `noNestedComponentDefinitions` (no ESLint), so render purity and refs in render are not linted.
+- React Compiler memoizes automatically (`reactCompilerPreset` in `vite.config.ts`, client only, so Vitest runs uncompiled code). Code must follow the Rules of React; oxlint enforces `rules-of-hooks`, `exhaustive-deps`, and the React Compiler rules of its `correctness` category (`purity`, `refs`, `immutability`, `static-components`, and the rest).
 - Never memoize manually: no `memo`, `useMemo`, or `useCallback`. Solve a needed stable identity structurally (module-level definitions, query `select`, state, keys). Use `"use no memo"` only to work around a compiler problem, with a comment, and remove it once fixed.
 - No effects that synchronize or reset state: derive during render, reset per-entity state by keying components, put cache housekeeping in cache handlers or subscriptions.
 - Transform data at its boundary (sources and stores, module-level TanStack Query `select`/`combine` functions, one-time creation such as `createBacktestChart`); components receive ready, reference-stable data. Stateful instances (live and snapshot sources) live in `useState`, never in `useMemo`.

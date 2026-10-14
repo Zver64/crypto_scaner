@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+
 import {
 	initializeTelegramMiniApp,
 	openTelegramExternalLink,
@@ -10,11 +11,11 @@ afterEach(() => {
 
 it("does not initialize the same Telegram Mini App twice", () => {
 	const webApp = {
-		disableVerticalSwipes: vi.fn(),
-		expand: vi.fn(),
+		disableVerticalSwipes: vi.fn<() => void>(),
+		expand: vi.fn<() => void>(),
 		initData: "",
-		isVersionAtLeast: vi.fn(() => true),
-		ready: vi.fn(),
+		isVersionAtLeast: vi.fn<(version: string) => boolean>(() => true),
+		ready: vi.fn<() => void>(),
 	};
 
 	initializeTelegramMiniApp(webApp);
@@ -24,7 +25,7 @@ it("does not initialize the same Telegram Mini App twice", () => {
 });
 
 it("opens external links with the Telegram client when available", () => {
-	const openLink = vi.fn();
+	const openLink = vi.fn<(url: string) => void>();
 	vi.stubGlobal("window", { Telegram: { WebApp: { openLink } } });
 
 	expect(

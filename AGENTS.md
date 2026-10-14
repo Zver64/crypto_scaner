@@ -27,7 +27,7 @@ Pass these references on to subagents that work in those directories.
 ## Technology
 
 - Backend: Go 1.26, PostgreSQL 18, pgx, sqlc, golang-migrate, Binance connector, and CoinGecko.
-- Frontend: React 19 with React Compiler, TypeScript 6, Vite 8, TanStack Router and Query, Mantine, Biome, and Vitest.
+- Frontend: React 19 with React Compiler, TypeScript 6, Vite 8, TanStack Router and Query, Mantine, oxlint, oxfmt, and Vitest.
 - Infrastructure: Docker Compose, GitHub Actions, GHCR, and Lefthook.
 
 ## Development
@@ -75,7 +75,7 @@ npm -C frontend run quality
 npm -C frontend run test
 ```
 
-Verify only with tests and static analysis: `make check`, the Makefile targets, and the scripts in `frontend/package.json`. Never invoke tools directly (`npx tsc`, `npx biome`, `npx vitest`, and so on); use the matching script. Never build anything (`npm run build`, `vite build`, `tsc -b`, `go build`, Docker image builds) unless the user explicitly asks for a build.
+Verify only with tests and static analysis: `make check`, the Makefile targets, and the scripts in `frontend/package.json`. Never invoke tools directly (`npx tsc`, `npx oxlint`, `npx oxfmt`, `npx vitest`, and so on); use the matching script. Never build anything (`npm run build`, `vite build`, `tsc -b`, `go build`, Docker image builds) unless the user explicitly asks for a build.
 
 Pre-commit hooks run the checks relevant to staged changes, so do not routinely run those checks separately before committing. Run checks manually only when diagnosing a failure, when no commit will be created, or when explicitly requested. Use `make check` for manual verification of cross-cutting changes.
 

@@ -1,5 +1,6 @@
 import { ActionIcon, Group, Text, Tooltip } from "@mantine/core";
 import { IconPencil, IconTrash } from "@tabler/icons-react";
+
 import type { PriceAlert } from "@/api/generated/models";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { TargetChange } from "@/features/price-alerts/target-change";

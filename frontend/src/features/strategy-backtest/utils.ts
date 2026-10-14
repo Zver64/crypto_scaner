@@ -1,4 +1,5 @@
 import type { LineData, UTCTimestamp } from "lightweight-charts";
+
 import {
 	type BacktestEquityPoint,
 	type BacktestSignal,

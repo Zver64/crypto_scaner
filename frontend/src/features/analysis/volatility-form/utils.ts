@@ -1,4 +1,5 @@
 import type { NumberInputProps } from "@mantine/core";
+
 import type { NumberInputField } from "@/components/number-input-fieldset";
 import { analysisCriteriaConstraints } from "@/features/analysis/criteria";
 import type {

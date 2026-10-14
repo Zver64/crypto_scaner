@@ -1,6 +1,7 @@
 import { Code, Text, Tooltip, UnstyledButton } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
 import { useClipboard } from "@mantine/hooks";
+
 import type {
 	StrategyFormValues,
 	StrategyRuleField,

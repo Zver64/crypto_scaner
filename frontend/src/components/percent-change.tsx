@@ -1,5 +1,6 @@
 import { useMantineTheme } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
+
 import {
 	displayedPercentSign,
 	formatRangePercent,

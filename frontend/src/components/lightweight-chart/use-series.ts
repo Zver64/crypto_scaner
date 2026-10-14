@@ -10,7 +10,8 @@ import type {
 	SeriesType,
 	Time,
 } from "lightweight-charts";
-import { useLayoutEffect, useRef } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
+
 import {
 	type SeriesLifecycle,
 	useChartLifecycle,
@@ -57,8 +58,7 @@ export function useSeries<T extends SeriesType>({
 		crosshairRef.current = onCrosshairMove;
 	});
 
-	const bindingRef = useRef<SeriesBinding<T> | null>(null);
-	if (bindingRef.current === null) {
+	const [binding] = useState((): SeriesBinding<T> => {
 		let seriesApi: ISeriesApi<T> | null = null;
 		let isRemoved = false;
 		const series = () => {
@@ -93,9 +93,8 @@ export function useSeries<T extends SeriesType>({
 				}
 			},
 		};
-		bindingRef.current = { context, series };
-	}
-	const binding = bindingRef.current;
+		return { context, series };
+	});
 
 	// Data and price scale options applied to the current series; a recreated
 	// series starts empty and with the default price scale.

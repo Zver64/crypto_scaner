@@ -1,5 +1,6 @@
 import { Checkbox, Group, Input, Stack } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import type { CandleInterval } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";

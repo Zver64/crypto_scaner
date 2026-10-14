@@ -1,5 +1,6 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import type {
 	StrategyFormValues,

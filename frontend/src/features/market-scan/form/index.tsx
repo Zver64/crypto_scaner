@@ -8,6 +8,7 @@ import {
 } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import type { FormEvent } from "react";
+
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import { applicationConfig } from "@/config";
 import { VolatilityFieldset } from "@/features/analysis/volatility-form";

@@ -1,4 +1,5 @@
 import { useLayoutEffect } from "react";
+
 import { useSeriesLifecycle } from "@/components/lightweight-chart";
 import type { ValueResolution } from "@/features/candle-chart/types";
 import { axisPriceFormat } from "@/features/candle-chart/utils";

@@ -1,5 +1,6 @@
 import { Group, NumberInput, TagsInput } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import type { ScaleDraft } from "@/features/scanner-settings/types";
 
 interface ScannerIndicatorScaleFieldsProps {

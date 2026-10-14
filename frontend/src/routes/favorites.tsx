@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+
 import { FavoritesScreen } from "@/features/favorites/favorites-screen";
 import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
 import {

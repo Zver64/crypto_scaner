@@ -2,6 +2,7 @@ import { Button, Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
+
 import type { ErrorType } from "@/api/fetch";
 import {
 	type listIndicatorTypesResponseSuccess,

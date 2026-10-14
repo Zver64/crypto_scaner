@@ -1,4 +1,5 @@
 import { Button, Center, Loader, TextInput } from "@mantine/core";
+
 import { EmptyState } from "@/components/empty-state";
 import type { FavoritesAnalysis } from "@/features/favorites/use-favorites-analysis";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";

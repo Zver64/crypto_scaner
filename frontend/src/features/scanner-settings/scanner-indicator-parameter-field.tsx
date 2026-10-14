@@ -1,5 +1,6 @@
 import { NumberInput, Select } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import type { IndicatorParameter } from "@/api/generated/models";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 

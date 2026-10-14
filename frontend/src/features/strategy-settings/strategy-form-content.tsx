@@ -1,5 +1,6 @@
 import { Alert, Stack, Textarea, TextInput } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import { StrategyDirectionControl } from "@/features/strategy-settings/strategy-direction-control";
 import { StrategyExitConditions } from "@/features/strategy-settings/strategy-exit-conditions";

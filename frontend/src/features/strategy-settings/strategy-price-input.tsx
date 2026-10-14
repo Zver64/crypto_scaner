@@ -1,5 +1,6 @@
 import { Button, Group, Stack, Text, TextInput } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import type { StrategyVariable } from "@/api/generated/models";
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";

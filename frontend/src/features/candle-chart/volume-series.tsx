@@ -1,4 +1,5 @@
 import { HistogramSeries } from "lightweight-charts";
+
 import { Series } from "@/components/lightweight-chart";
 import {
 	volumePriceScaleOptions,

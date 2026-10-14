@@ -1,4 +1,5 @@
 import { Text, useMantineTheme } from "@mantine/core";
+
 import type {
 	ChartReadoutOptions,
 	PriceCandle,

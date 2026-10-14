@@ -10,7 +10,7 @@ const initData = new URLSearchParams({
 
 function setup() {
 	const storage = new Map<string, string>();
-	const setItem = vi.fn((key: string, value: string) => {
+	const setItem = vi.fn<(key: string, value: string) => void>((key, value) => {
 		storage.set(key, value);
 	});
 	vi.stubGlobal("window", {
@@ -35,7 +35,7 @@ function deferredResponse() {
 it("shares one exchange between concurrent calls for the same account", async () => {
 	const { setItem } = setup();
 	const response = deferredResponse();
-	const fetchMock = vi.fn().mockReturnValue(response.promise);
+	const fetchMock = vi.fn<typeof fetch>().mockReturnValue(response.promise);
 	vi.stubGlobal("fetch", fetchMock);
 	const { getSessionToken } = await import("@/api/session");
 	const first = getSessionToken();

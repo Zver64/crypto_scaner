@@ -45,12 +45,10 @@ const columns: DataTableColumn<SummaryRow>[] = [
 export function BacktestSummary({
 	backtest: { summary },
 }: BacktestSummaryProps) {
-	const rows = averages.map(
-		(average): SummaryRow => ({
-			...average,
-			strategy: summary.stats[average.key],
-		}),
-	);
+	const rows = averages.map((average): SummaryRow => ({
+		...average,
+		strategy: summary.stats[average.key],
+	}));
 	return (
 		<DataTable columns={columns} getRowKey={(row) => row.key} rows={rows} />
 	);

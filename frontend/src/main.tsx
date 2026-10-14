@@ -3,6 +3,7 @@ import { Notifications } from "@mantine/notifications";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
+
 import { createQueryClient } from "@/app/query-client";
 import { theme } from "@/app/theme";
 import { getRouter } from "@/router";

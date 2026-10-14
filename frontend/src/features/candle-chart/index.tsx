@@ -9,6 +9,7 @@ import {
 	useComputedColorScheme,
 } from "@mantine/core";
 import { type CSSProperties, useState } from "react";
+
 import { ChartCanvas } from "@/components/lightweight-chart";
 import { CandleSeries } from "@/features/candle-chart/candle-series";
 import { timeChartOptions } from "@/features/candle-chart/chart-options";

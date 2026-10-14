@@ -1,10 +1,11 @@
 import { Paper, Stack, Text, Title } from "@mantine/core";
+
 import { BacktestEvaluatedPeriod } from "@/features/strategy-backtest/backtest-evaluated-period";
 import { BacktestSignalSummary } from "@/features/strategy-backtest/backtest-signal-summary";
 import { BacktestTradingSummary } from "@/features/strategy-backtest/backtest-trading-summary";
 import type {
 	BacktestCoinResult,
-	BacktestRunParameters,
+	BacktestRun,
 } from "@/features/strategy-backtest/types";
 import { noCandlesMessage } from "@/features/strategy-backtest/utils";
 import { formatNumber } from "@/utils/number-format";
@@ -20,14 +21,14 @@ const statusLabels = {
 
 interface BacktestCoinSummaryProps {
 	item: BacktestCoinResult;
-	parameters: BacktestRunParameters;
+	run: BacktestRun;
 	gap: string;
 	paperPadding: string;
 }
 
 export function BacktestCoinSummary({
 	item,
-	parameters,
+	run,
 	gap,
 	paperPadding,
 }: BacktestCoinSummaryProps) {
@@ -40,11 +41,7 @@ export function BacktestCoinSummary({
 				</Title>
 				{result ? (
 					<>
-						<BacktestEvaluatedPeriod
-							backtest={result}
-							from={parameters.from}
-							to={parameters.to}
-						/>
+						<BacktestEvaluatedPeriod backtest={result} run={run} />
 						<Text c="dimmed" size="xs">
 							Execution time:{" "}
 							{formatNumber(
@@ -59,7 +56,8 @@ export function BacktestCoinSummary({
 						{result.from === null ? (
 							<Text c="dimmed" size="sm">
 								{noCandlesMessage(
-									parameters.from !== undefined || parameters.to !== undefined,
+									run.parameters.from !== undefined ||
+										run.parameters.to !== undefined,
 								)}
 							</Text>
 						) : result.signal ? (

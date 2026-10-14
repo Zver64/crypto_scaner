@@ -1,6 +1,7 @@
 import { Button, Group, Paper, Select, Stack, Text } from "@mantine/core";
 import { useForm } from "@mantine/form";
 import { useState } from "react";
+
 import type {
 	IndicatorType,
 	ScannerIndicatorInput,

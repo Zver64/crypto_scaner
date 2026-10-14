@@ -1,4 +1,5 @@
 import { Paper, Stack, Text, Title } from "@mantine/core";
+
 import { ShellContentCenter } from "@/components/shell-content-center";
 
 export function OpenInTelegram() {

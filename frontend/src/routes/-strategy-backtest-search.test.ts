@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { parseStrategyBacktestSearch } from "@/routes/-strategy-backtest-search";
 
 describe("parseStrategyBacktestSearch", () => {
@@ -33,25 +34,19 @@ describe("parseStrategyBacktestSearch", () => {
 		});
 	});
 
-	it.each([
-		"4",
-		0,
-		-1,
-		1.5,
-		null,
-	])("drops the invalid strategy id %s", (strategy) => {
-		expect(parseStrategyBacktestSearch({ strategy })).toEqual({});
-	});
+	it.each(["4", 0, -1, 1.5, null])(
+		"drops the invalid strategy id %s",
+		(strategy) => {
+			expect(parseStrategyBacktestSearch({ strategy })).toEqual({});
+		},
+	);
 
-	it.each([
-		"",
-		"   ",
-		123,
-		null,
-		["BTCUSDT"],
-	])("drops the invalid coin %s", (symbol) => {
-		expect(parseStrategyBacktestSearch({ symbol })).toEqual({});
-	});
+	it.each(["", "   ", 123, null, ["BTCUSDT"]])(
+		"drops the invalid coin %s",
+		(symbol) => {
+			expect(parseStrategyBacktestSearch({ symbol })).toEqual({});
+		},
+	);
 
 	it.each(["true", false, 1])("drops the invalid all_coins %s", (allCoins) => {
 		expect(parseStrategyBacktestSearch({ all_coins: allCoins })).toEqual({});

@@ -1,4 +1,5 @@
 import { useQueries } from "@tanstack/react-query";
+
 import {
 	getListChartIndicatorsQueryOptions,
 	type ListChartIndicatorsQueryResult,

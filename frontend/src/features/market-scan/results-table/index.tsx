@@ -1,5 +1,6 @@
 import { UnstyledButton } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
+
 import type {
 	MarketTable,
 	PriceHistoryWindow,

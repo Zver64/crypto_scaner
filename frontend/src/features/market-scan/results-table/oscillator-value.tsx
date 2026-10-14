@@ -1,5 +1,6 @@
 import { useMantineTheme } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
+
 import { oscillatorColor } from "@/features/market-scan/results-table/utils";
 import { formatNumber } from "@/utils/number-format";
 

@@ -1,4 +1,5 @@
 import type { Field, RuleGroupType, RuleType } from "react-querybuilder";
+
 import type { Direction, StrategyVariable } from "@/api/generated/models";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
 

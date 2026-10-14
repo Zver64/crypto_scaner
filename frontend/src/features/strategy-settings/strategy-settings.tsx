@@ -3,6 +3,7 @@ import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
+
 import type { ErrorType } from "@/api/fetch";
 import {
 	getListScannerIndicatorsQueryKey,

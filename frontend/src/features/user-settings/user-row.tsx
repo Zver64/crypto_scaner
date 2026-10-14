@@ -7,6 +7,7 @@ import {
 	Stack,
 	Text,
 } from "@mantine/core";
+
 import type { User } from "@/api/generated/models";
 import { formatUserName } from "@/features/user-settings/utils";
 

@@ -8,6 +8,7 @@ import type {
 	Time,
 } from "lightweight-charts";
 import type { ReactNode } from "react";
+
 import { SeriesContext } from "@/components/lightweight-chart/context";
 import { useSeries } from "@/components/lightweight-chart/use-series";
 

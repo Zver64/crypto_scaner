@@ -1,4 +1,5 @@
 import { Stack, Text } from "@mantine/core";
+
 import type { BacktestSignal, StrategyBacktest } from "@/api/generated/models";
 import { EmptyState } from "@/components/empty-state";
 import { BacktestSignalSummary } from "@/features/strategy-backtest/backtest-signal-summary";

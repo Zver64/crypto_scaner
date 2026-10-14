@@ -1,4 +1,5 @@
 import { createContext, useContext } from "react";
+
 import type { Favorite } from "@/api/generated/models";
 
 export interface FavoritesContextValue {

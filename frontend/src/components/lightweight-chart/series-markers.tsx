@@ -5,6 +5,7 @@ import {
 	type Time,
 } from "lightweight-charts";
 import { useLayoutEffect, useRef } from "react";
+
 import { useSeriesLifecycle } from "@/components/lightweight-chart/context";
 
 interface SeriesMarkersProps {

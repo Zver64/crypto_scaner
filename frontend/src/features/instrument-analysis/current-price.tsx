@@ -1,5 +1,6 @@
 import { Text } from "@mantine/core";
 import { useSyncExternalStore } from "react";
+
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { formatNumber } from "@/utils/number-format";
 

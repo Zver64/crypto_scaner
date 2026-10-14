@@ -1,5 +1,6 @@
 import { Group } from "@mantine/core";
 import { DatePickerInput } from "@mantine/dates";
+
 import { backtestDateFormat } from "@/features/strategy-backtest/constants";
 
 interface BacktestPeriodFieldsProps {

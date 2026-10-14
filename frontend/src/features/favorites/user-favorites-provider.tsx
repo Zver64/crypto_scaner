@@ -5,6 +5,7 @@ import {
 	useQueryClient,
 } from "@tanstack/react-query";
 import { type ReactNode, useState } from "react";
+
 import {
 	type AddFavoriteMutationVariables,
 	getAddFavoriteMutationKey,

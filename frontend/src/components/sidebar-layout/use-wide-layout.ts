@@ -1,4 +1,5 @@
 import { useMatches } from "@mantine/core";
+
 import { sidebarLayoutBreakpoint } from "@/components/sidebar-layout/constants";
 
 // Whether the screen is wide enough for the side-by-side layout, for content

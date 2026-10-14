@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { StrategyBacktest } from "@/api/generated/models";
 import {
 	normalizeBacktestSymbols,

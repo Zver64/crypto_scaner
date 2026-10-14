@@ -16,9 +16,7 @@ export interface VolatilitySettingsSearch {
 }
 
 export interface VolatilitySettingsSearchWithSort
-	extends VolatilitySettingsSearch,
-		MarketScanSortSearch,
-		SymbolFilterSearch {}
+	extends VolatilitySettingsSearch, MarketScanSortSearch, SymbolFilterSearch {}
 
 export function parseVolatilitySettingsSearch(
 	search: Record<string, unknown>,

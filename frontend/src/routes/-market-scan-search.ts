@@ -17,9 +17,7 @@ export interface SymbolFilterSearch {
 }
 
 export interface MarketScanSearch
-	extends ScanCriteriaSearch,
-		MarketScanSortSearch,
-		SymbolFilterSearch {}
+	extends ScanCriteriaSearch, MarketScanSortSearch, SymbolFilterSearch {}
 
 // Sortable columns come from the backend table, so the column is checked
 // against the table once it is loaded.

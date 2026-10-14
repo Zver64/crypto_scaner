@@ -63,4 +63,6 @@ export interface BacktestRun {
 	parameters: BacktestRunParameters;
 	items: BacktestCoinResult[];
 	revision: number;
+	// When the run started; candles closed by then count as stored.
+	startedAt: number;
 }

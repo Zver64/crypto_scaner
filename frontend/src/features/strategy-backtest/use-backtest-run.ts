@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+
 import { backtestStrategy } from "@/api/generated/api";
 import { runBacktests } from "@/features/strategy-backtest/run-backtests";
 import type {
@@ -26,6 +27,7 @@ export function useBacktestRun() {
 		active.current = controller;
 		const snapshot = { ...parameters, symbols: [...parameters.symbols] };
 		const currentRevision = ++revision.current;
+		const startedAt = Date.now();
 		setRunning(true);
 		try {
 			await runBacktests(
@@ -41,7 +43,12 @@ export function useBacktestRun() {
 				},
 				(items) => {
 					if (active.current === controller) {
-						setRun({ parameters: snapshot, items, revision: currentRevision });
+						setRun({
+							parameters: snapshot,
+							items,
+							revision: currentRevision,
+							startedAt,
+						});
 					}
 				},
 			);

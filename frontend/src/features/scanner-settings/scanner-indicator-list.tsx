@@ -1,5 +1,6 @@
 import { DragDropContext, Draggable, Droppable } from "@hello-pangea/dnd";
 import { Box, Text } from "@mantine/core";
+
 import type { ScannerIndicator } from "@/api/generated/models";
 import { ScannerIndicatorRow } from "@/features/scanner-settings/scanner-indicator-row";
 import { moveIndicator } from "@/features/scanner-settings/utils";

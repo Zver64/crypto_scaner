@@ -8,6 +8,7 @@ import {
 	Tooltip,
 	useMatches,
 } from "@mantine/core";
+
 import type {
 	InsufficientDataInstrument,
 	MarketAnalysisResponse,

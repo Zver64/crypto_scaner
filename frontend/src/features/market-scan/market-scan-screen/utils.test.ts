@@ -4,6 +4,7 @@ import {
 	QueryObserver,
 } from "@tanstack/react-query";
 import { afterEach, describe, expect, it, vi } from "vitest";
+
 import { getAnalyzeMarketQueryKey } from "@/api/generated/api";
 import type { MarketAnalysisResponse } from "@/api/generated/models";
 import { applicationConfig } from "@/config";
@@ -100,7 +101,7 @@ afterEach(() => {
 describe("market scan query policy", () => {
 	it("fetches a restore miss once and restores a retained hit after more than five minutes", async () => {
 		vi.useFakeTimers();
-		const fetchMock = vi.fn(async () => ok(response(1)));
+		const fetchMock = vi.fn<typeof fetch>(async () => ok(response(1)));
 		vi.stubGlobal("fetch", fetchMock);
 		const queryClient = client();
 		clients.push(queryClient);
@@ -190,7 +191,7 @@ describe("market scan query policy", () => {
 	});
 
 	it("switches the observer to a validated successful fetch without a duplicate request", async () => {
-		const fetchMock = vi.fn(async () => ok(response(2)));
+		const fetchMock = vi.fn<typeof fetch>(async () => ok(response(2)));
 		vi.stubGlobal("fetch", fetchMock);
 		const queryClient = client();
 		clients.push(queryClient);
@@ -238,7 +239,7 @@ describe("market scan query policy", () => {
 	it("retains data with a native refetch error, restores without fetching, and permits retry", async () => {
 		const failure = new Error("offline");
 		const fetchMock = vi
-			.fn()
+			.fn<typeof fetch>()
 			.mockResolvedValueOnce(ok(response(1)))
 			.mockRejectedValueOnce(failure)
 			.mockResolvedValueOnce(ok(response(3)));
@@ -285,7 +286,7 @@ describe("market scan query policy", () => {
 		const invalid = response(2);
 		invalid.price_history_window.to = invalid.price_history_window.from;
 		const fetchMock = vi
-			.fn()
+			.fn<typeof fetch>()
 			.mockResolvedValueOnce(ok(response(1)))
 			.mockResolvedValueOnce(ok(invalid));
 		vi.stubGlobal("fetch", fetchMock);
@@ -296,9 +297,9 @@ describe("market scan query policy", () => {
 		const unsubscribe = observer.subscribe(() => undefined);
 		await waitForSettled(observer);
 
-		await expect(
-			fetchFreshMarketScan(queryClient, criteriaA),
-		).rejects.toThrow();
+		await expect(fetchFreshMarketScan(queryClient, criteriaA)).rejects.toThrow(
+			"An unexpected error occurred. Please try again.",
+		);
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(observer.getCurrentResult().data?.matched_count).toBe(1);
 		expect(observer.getCurrentResult().isRefetchError).toBe(true);
@@ -307,7 +308,7 @@ describe("market scan query policy", () => {
 
 	it("does not commit failed changed criteria and commits a later success", async () => {
 		const fetchMock = vi
-			.fn()
+			.fn<typeof fetch>()
 			.mockResolvedValueOnce(ok(response(1)))
 			.mockRejectedValueOnce(new Error("offline"))
 			.mockResolvedValueOnce(ok(response(3)));
@@ -316,13 +317,13 @@ describe("market scan query policy", () => {
 		clients.push(queryClient);
 		await fetchFreshMarketScan(queryClient, criteriaA);
 		let committedCriteria = criteriaA;
-		const onCriteriaCommit = vi.fn();
+		const onCriteriaCommit = vi.fn<(criteria: MarketScanCriteria) => void>();
 		const mutation = new MutationObserver(
 			queryClient,
 			marketScanMutationOptions(queryClient),
 		);
 		const unsubscribe = mutation.subscribe(() => undefined);
-		const onError = vi.fn();
+		const onError = vi.fn<() => void>();
 		const commit = {
 			onError,
 			onSuccess: (_response: unknown, criteria: MarketScanCriteria) => {
@@ -345,7 +346,7 @@ describe("market scan query policy", () => {
 
 	it("populates the canonical cache without running observer callbacks after unsubscribe", async () => {
 		let resolveFetch!: (response: Response) => void;
-		const fetchMock = vi.fn(
+		const fetchMock = vi.fn<typeof fetch>(
 			() =>
 				new Promise<Response>((resolve) => {
 					resolveFetch = resolve;
@@ -359,7 +360,7 @@ describe("market scan query policy", () => {
 			marketScanMutationOptions(queryClient),
 		);
 		const unsubscribe = mutation.subscribe(() => undefined);
-		const onSuccess = vi.fn();
+		const onSuccess = vi.fn<() => void>();
 		const promise = mutation.mutate(criteriaB, { onSuccess });
 
 		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
@@ -377,7 +378,7 @@ describe("market scan query policy", () => {
 
 	it("does not run an observer error callback after unsubscribe", async () => {
 		let rejectFetch!: (error: Error) => void;
-		const fetchMock = vi.fn(
+		const fetchMock = vi.fn<typeof fetch>(
 			() =>
 				new Promise<Response>((_resolve, reject) => {
 					rejectFetch = reject;
@@ -391,7 +392,7 @@ describe("market scan query policy", () => {
 			marketScanMutationOptions(queryClient),
 		);
 		const unsubscribe = mutation.subscribe(() => undefined);
-		const onError = vi.fn();
+		const onError = vi.fn<() => void>();
 		const promise = mutation.mutate(criteriaB, { onError });
 
 		await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());

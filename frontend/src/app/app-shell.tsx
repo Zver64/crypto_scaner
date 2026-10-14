@@ -1,5 +1,6 @@
 import { AppShell, Group, Text } from "@mantine/core";
 import { Outlet, useMatches } from "@tanstack/react-router";
+
 import { useGetReadiness } from "@/api/generated/api";
 import { AppName } from "@/app/app-name";
 import { BusinessRequestContext } from "@/app/business-request-context";

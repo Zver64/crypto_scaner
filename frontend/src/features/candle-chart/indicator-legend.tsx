@@ -1,4 +1,5 @@
 import { Stack } from "@mantine/core";
+
 import { IndicatorLegendRow } from "@/features/candle-chart/indicator-legend-row";
 import type { ChartLegendItem } from "@/features/candle-chart/types";
 

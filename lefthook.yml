@@ -28,8 +28,11 @@ pre-commit:
       group:
         piped: true
         jobs:
-          - name: biome
-            run: npm exec -- biome check --write --files-ignore-unknown=true --no-errors-on-unmatched {staged_files}
+          - name: oxfmt
+            run: npm exec -- oxfmt --no-error-on-unmatched-pattern {staged_files}
+            stage_fixed: true
+          - name: oxlint
+            run: npm exec -- oxlint --fix --no-error-on-unmatched-pattern {staged_files}
             stage_fixed: true
           - name: typecheck
             run: npm run typecheck

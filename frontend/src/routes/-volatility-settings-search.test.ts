@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { applicationConfig } from "@/config";
 import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
 import {
@@ -53,9 +54,12 @@ describe("Top Market Cap URL state", () => {
 		["partial", { period: 60, percentile: 90 }],
 		["nonnumeric", { ...customSearch, hourly_period: "72" }],
 		["invalid", { ...customSearch, percentile: 101 }],
-	] as const)("atomically replaces a %s settings group with defaults", (_, search) => {
-		expect(parseVolatilitySettingsSearch(search)).toEqual(defaultSearch);
-	});
+	] as const)(
+		"atomically replaces a %s settings group with defaults",
+		(_, search) => {
+			expect(parseVolatilitySettingsSearch(search)).toEqual(defaultSearch);
+		},
+	);
 
 	it("keeps valid sort when settings are invalid", () => {
 		const parsed = parseVolatilitySettingsSearch({

@@ -1,4 +1,5 @@
 import type Decimal from "decimal.js";
+
 import { assertSupportedGridValue, extremes } from "@/utils/calculator/grid";
 import { spotGrid, spotGridCycle } from "@/utils/calculator/spot-grid";
 import type { GridInput } from "@/utils/calculator/types";

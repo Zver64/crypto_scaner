@@ -1,5 +1,6 @@
 import { Paper, Stack, Text } from "@mantine/core";
 import type { ReactNode } from "react";
+
 import { HintLabel } from "@/features/strategy-backtest/hint-label";
 
 interface MetricCardProps {

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import {
 	calculateFuturesGrid,
 	type FuturesGridInput,
@@ -28,18 +29,18 @@ describe("calculateFuturesGrid", () => {
 		{ currentPrice: 105, liquidationPrice: "68.98250801" },
 		// Every order fills at market below the range.
 		{ currentPrice: 90, liquidationPrice: "60.60606061" },
-	])("fills orders beyond the current price $currentPrice at market", ({
-		currentPrice,
-		liquidationPrice,
-	}) => {
-		const result = calculateFuturesGrid({
-			...longFixture,
-			currentPrice,
-			leverage: 3,
-		});
+	])(
+		"fills orders beyond the current price $currentPrice at market",
+		({ currentPrice, liquidationPrice }) => {
+			const result = calculateFuturesGrid({
+				...longFixture,
+				currentPrice,
+				leverage: 3,
+			});
 
-		expect(result.liquidationPrice?.toFixed(8)).toBe(liquidationPrice);
-	});
+			expect(result.liquidationPrice?.toFixed(8)).toBe(liquidationPrice);
+		},
+	);
 
 	it("liquidates a leveraged short above the grid once every order fills", () => {
 		const result = calculateFuturesGrid({

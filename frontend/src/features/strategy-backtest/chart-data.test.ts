@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { BacktestChart } from "@/api/generated/models";
 import { createBacktestChartData } from "@/features/strategy-backtest/chart-data";
 

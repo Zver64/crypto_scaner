@@ -1,4 +1,5 @@
 import { Select } from "@mantine/core";
+
 import {
 	type listStrategiesResponseSuccess,
 	useListStrategies,

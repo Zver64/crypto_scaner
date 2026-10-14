@@ -1,5 +1,6 @@
 import type { IRange } from "lightweight-charts";
 import { useLayoutEffect, useRef, useState } from "react";
+
 import type { ChartCanvasHandle } from "@/components/lightweight-chart";
 
 interface ViewportOptions {

@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+
 import { readResponseData } from "@/api/response";
 
 it("preserves the status without info for a non-JSON error", async () => {

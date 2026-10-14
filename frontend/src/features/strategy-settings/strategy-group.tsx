@@ -1,4 +1,5 @@
 import { RuleGroup, type RuleGroupProps } from "react-querybuilder";
+
 import { NestingLine } from "@/features/strategy-settings/nesting-line";
 
 // A group of conditions. Nested groups indent behind a line in the color of

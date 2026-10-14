@@ -1,4 +1,5 @@
 import { keepPreviousData } from "@tanstack/react-query";
+
 import {
 	analyzeFavorites,
 	type analyzeFavoritesResponseSuccess,

@@ -1,4 +1,5 @@
 import type { InfiniteData } from "@tanstack/react-query";
+
 import {
 	listInstrumentCandles,
 	type listInstrumentCandlesResponseSuccess,

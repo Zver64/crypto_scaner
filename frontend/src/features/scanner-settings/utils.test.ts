@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { IndicatorType } from "@/api/generated/models";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 import {

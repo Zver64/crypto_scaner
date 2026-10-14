@@ -1,6 +1,7 @@
 import { Group, Stack, Text } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
 import { type ReactNode, useState } from "react";
+
 import { StrategyConditionsReplaceButton } from "@/features/strategy-settings/strategy-conditions-replace-button";
 import { StrategyExpressionPreview } from "@/features/strategy-settings/strategy-expression-preview";
 import { StrategyImport } from "@/features/strategy-settings/strategy-import";

@@ -1,5 +1,6 @@
 import { Box, Button, Group, NumberInput, Stack, Text } from "@mantine/core";
 import type { FormEvent, ReactNode } from "react";
+
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { TargetChange } from "@/features/price-alerts/target-change";
 

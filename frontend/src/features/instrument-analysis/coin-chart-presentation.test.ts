@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+
 import { rangeReadout } from "@/features/instrument-analysis/coin-chart-presentation";
 
 it("formats the coin range metric", () => {

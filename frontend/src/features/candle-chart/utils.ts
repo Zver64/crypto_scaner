@@ -5,6 +5,7 @@ import type {
 	PriceFormatCustom,
 	UTCTimestamp,
 } from "lightweight-charts";
+
 import type {
 	ChartIndicatorDefinition,
 	ChartPageResponse,

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type {
 	ChartIndicatorDefinition,
 	ChartPageResponse,
@@ -138,6 +139,6 @@ describe("chart page contract", () => {
 	])("rejects a desynchronized chart response", (overrides) => {
 		expect(() =>
 			validateChartPage(response(overrides), "BTCUSDT", "1h", rsiCatalog),
-		).toThrow();
+		).toThrow("An unexpected error occurred. Please try again.");
 	});
 });

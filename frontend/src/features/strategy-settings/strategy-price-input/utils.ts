@@ -1,6 +1,7 @@
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { isRuleGroup } from "react-querybuilder";
 import { parseCEL } from "react-querybuilder/parseCEL";
+
 import {
 	expressionComplete,
 	expressionParser,

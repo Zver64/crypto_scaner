@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { getBusinessRequestPermission } from "@/utils/business-request-permission";
 
 describe("getBusinessRequestPermission", () => {

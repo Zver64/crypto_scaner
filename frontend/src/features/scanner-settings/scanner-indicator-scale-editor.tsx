@@ -1,5 +1,6 @@
 import { Button, Group, Stack } from "@mantine/core";
 import { useForm } from "@mantine/form";
+
 import type { ScannerIndicatorScale } from "@/api/generated/models";
 import { ScannerIndicatorScaleFields } from "@/features/scanner-settings/scanner-indicator-scale-fields";
 import {

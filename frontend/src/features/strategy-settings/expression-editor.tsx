@@ -17,6 +17,7 @@ import {
 	IconMathFunction,
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
+
 import type { StrategyVariable } from "@/api/generated/models";
 import { CoinSelect } from "@/features/strategy-settings/coin-select";
 import {

@@ -1,4 +1,5 @@
 import type { QueryClient, QueryMeta } from "@tanstack/react-query";
+
 import {
 	type analyzeMarketResponseSuccess,
 	getAnalyzeMarketQueryOptions,

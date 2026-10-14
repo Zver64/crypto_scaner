@@ -4,6 +4,7 @@ import {
 	useNavigate,
 	useRouter,
 } from "@tanstack/react-router";
+
 import { InstrumentAnalysisScreen } from "@/features/instrument-analysis/instrument-analysis-screen";
 import { volatilityCriterionSelections } from "@/features/market-scan/pipeline";
 import {

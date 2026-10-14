@@ -1,6 +1,7 @@
 import { Text, UnstyledButton } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
 import { Link, useMatchRoute } from "@tanstack/react-router";
+
 import { useCloseScannerSettings } from "@/features/scanner-settings/use-close-scanner-settings";
 
 interface AppNameProps {

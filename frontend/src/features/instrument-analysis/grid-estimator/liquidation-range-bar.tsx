@@ -9,6 +9,7 @@ import {
 } from "@mantine/core";
 import { themeToVars } from "@mantine/vanilla-extract";
 import type Decimal from "decimal.js";
+
 import { LegendItem } from "@/features/instrument-analysis/grid-estimator/legend-item";
 import {
 	formatAmount,

@@ -1,4 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
+
 import { LiveCandlesClient } from "@/api/live-candles";
 
 class FakeSocket {

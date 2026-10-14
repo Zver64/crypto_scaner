@@ -1,4 +1,5 @@
 import Decimal from "decimal.js";
+
 import type { PriceAlert } from "@/api/generated/models";
 import { normalizePriceTarget } from "@/features/price-alerts/target";
 import { formatRangePercent } from "@/utils/range-percent";

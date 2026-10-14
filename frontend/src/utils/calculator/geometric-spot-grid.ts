@@ -1,4 +1,5 @@
 import type Decimal from "decimal.js";
+
 import {
 	assertSupportedGridValue,
 	geometricStepRatio,

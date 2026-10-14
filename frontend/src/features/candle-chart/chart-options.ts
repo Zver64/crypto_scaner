@@ -1,4 +1,5 @@
 import type { DeepPartial, Time, TimeChartOptions } from "lightweight-charts";
+
 import {
 	chartIntervalOptions,
 	chartOptions,

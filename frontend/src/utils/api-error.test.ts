@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import type { ErrorType } from "@/api/fetch";
 import type { APIErrorCode, ErrorResponse } from "@/api/generated/models";
 import { describeApiError } from "@/utils/api-error";

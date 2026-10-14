@@ -1,5 +1,6 @@
 import { Group, NativeSelect } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
+
 import {
 	signalTargetRatios,
 	signalWindows,

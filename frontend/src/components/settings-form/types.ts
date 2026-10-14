@@ -1,5 +1,6 @@
 import type { SimpleGridProps } from "@mantine/core";
 import type { FormEventHandler, ReactNode } from "react";
+
 import type { NumberInputField } from "@/components/number-input-fieldset";
 
 export interface SettingsFormGroup {

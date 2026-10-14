@@ -1,4 +1,5 @@
 import { useState } from "react";
+
 import type { StrategyBacktest } from "@/api/generated/models";
 import { PriceHistoryChart } from "@/features/candle-chart";
 import { createBacktestChart } from "@/features/strategy-backtest/chart-data";

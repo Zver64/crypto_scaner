@@ -1,5 +1,6 @@
 import { Center, Loader, Stack, TextInput, useMatches } from "@mantine/core";
 import { useState } from "react";
+
 import {
 	analyzeMarket,
 	type analyzeMarketResponseSuccess,

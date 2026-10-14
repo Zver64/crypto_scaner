@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+
 import { historyLoadDepth } from "@/features/command-settings/constants";
 import { historyLoadRequest } from "@/features/command-settings/utils";
 

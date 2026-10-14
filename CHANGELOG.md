@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.5.1](https://github.com/Zver64/crypto_scaner/compare/v2.5.0...v2.5.1) (2026-10-14)
+
+
+### Bug Fixes
+
+* keep the mobile keyboard open while typing in entry conditions ([3d2c060](https://github.com/Zver64/crypto_scaner/commit/3d2c060c9472dd86914d474251bed130b0086cf9))
+* show the price alert change inside the target input ([7cf925e](https://github.com/Zver64/crypto_scaner/commit/7cf925e89124abb89eeca344239fa1eb883cd643))
+
 ## [2.5.0](https://github.com/Zver64/crypto_scaner/compare/v2.4.1...v2.5.0) (2026-10-11)
 
 

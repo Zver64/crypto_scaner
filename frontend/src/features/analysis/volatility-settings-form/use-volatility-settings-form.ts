@@ -1,5 +1,7 @@
-import { useForm } from "@mantine/form";
+import { useSelector } from "@tanstack/react-form";
+import { useId } from "react";
 
+import { useAppForm } from "@/components/form/use-app-form";
 import type { SettingsFormProps } from "@/components/settings-form/types";
 import { applicationConfig } from "@/config";
 import type { VolatilityFormField } from "@/features/analysis/volatility-form/types";
@@ -20,22 +22,22 @@ export function useVolatilitySettingsForm({
 	onCommit,
 }: UseVolatilitySettingsFormOptions): SettingsFormProps {
 	const presets = applicationConfig.volatility;
-	// Controlled, because the Apply settings button follows the values as they
-	// are typed and stays disabled while they are invalid.
-	const form = useForm<VolatilitySettingsDraft>({
-		initialValues: initialSettings,
-		mode: "controlled",
-		validate: validateVolatilitySettings,
-		validateInputOnChange: true,
-	});
-	const draftSettings = settingsFromValidDraft(form.values);
+	const id = useId();
+	// The inputs may hold strings while being typed.
+	const defaultValues: VolatilitySettingsDraft = initialSettings;
+	const form = useAppForm({ defaultValues });
+	// The fields and the Apply settings button follow the values as they are
+	// typed; the button stays disabled while they are invalid.
+	const values = useSelector(form.store, (state) => state.values);
+	const errors = validateVolatilitySettings(values);
+	const draftSettings = settingsFromValidDraft(values);
 
 	function field(name: keyof VolatilitySettingsDraft): VolatilityFormField {
 		return {
-			error: form.errors[name],
-			id: form.key(name),
+			error: errors[name],
+			id: `${id}-${name}`,
 			onChange: (value) => form.setFieldValue(name, value),
-			value: form.values[name],
+			value: values[name],
 		};
 	}
 

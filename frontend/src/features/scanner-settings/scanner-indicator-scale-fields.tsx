@@ -1,36 +1,37 @@
-import { Group, NumberInput, TagsInput } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
+import { Group } from "@mantine/core";
 
-import type { ScaleDraft } from "@/features/scanner-settings/types";
+import { withFieldGroup } from "@/components/form/use-app-form";
+import { emptyScaleDraft } from "@/features/scanner-settings/constants";
+import { levelsError } from "@/features/scanner-settings/utils";
 
-interface ScannerIndicatorScaleFieldsProps {
-	// The indicator form and the scale editor both pass their form, which
-	// validates the levels with levelsError on every change.
-	form: UseFormReturnType<ScaleDraft>;
-}
-
-export function ScannerIndicatorScaleFields({
-	form,
-}: ScannerIndicatorScaleFieldsProps) {
-	return (
-		<>
-			<Group grow>
-				<NumberInput
-					label="Scale min"
-					placeholder="auto"
-					{...form.getInputProps("scaleMin")}
-				/>
-				<NumberInput
-					label="Scale max"
-					placeholder="auto"
-					{...form.getInputProps("scaleMax")}
-				/>
-			</Group>
-			<TagsInput
-				label="Levels"
-				placeholder="For example 30, 70"
-				{...form.getInputProps("levels")}
-			/>
-		</>
-	);
-}
+// The pane scale of the indicator form and the scale editor. The levels are
+// validated on every change.
+export const ScannerIndicatorScaleFields = withFieldGroup({
+	defaultValues: emptyScaleDraft,
+	render: function ScannerIndicatorScaleFields({ group }) {
+		return (
+			<>
+				<Group grow>
+					<group.AppField name="scaleMin">
+						{(field) => (
+							<field.NumberField label="Scale min" placeholder="auto" />
+						)}
+					</group.AppField>
+					<group.AppField name="scaleMax">
+						{(field) => (
+							<field.NumberField label="Scale max" placeholder="auto" />
+						)}
+					</group.AppField>
+				</Group>
+				<group.AppField
+					name="levels"
+					validators={{ onChange: ({ value }) => levelsError(value) }}
+				>
+					{(field) => (
+						<field.TagsField label="Levels" placeholder="For example 30, 70" />
+					)}
+				</group.AppField>
+			</>
+		);
+	},
+});

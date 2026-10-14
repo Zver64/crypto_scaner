@@ -2,14 +2,12 @@ import {
 	Button,
 	Group,
 	Loader,
-	MultiSelect,
-	NumberInput,
 	Paper,
 	Stack,
 	Text,
 	Title,
 } from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { useSelector } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -17,6 +15,7 @@ import {
 	getGetCandleHistoryLoadQueryKey,
 	useStartCandleHistoryLoad,
 } from "@/api/generated/api";
+import { useAppForm } from "@/components/form/use-app-form";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import { historyLoadDepth } from "@/features/command-settings/constants";
 import { HistoryLoadCoinsSelect } from "@/features/command-settings/history-load-coins-select";
@@ -29,20 +28,21 @@ import {
 } from "@/features/command-settings/utils";
 import { formatNumber } from "@/utils/number-format";
 
+const defaultValues: HistoryLoadValues = {
+	coins: [],
+	depth: historyLoadDepth.default,
+	intervals: ["1h"],
+};
+
 // Starts a deeper history load and follows the latest one, which the server
 // keeps in memory until it restarts.
 export function HistoryLoadCommand() {
 	const queryClient = useQueryClient();
-	// Controlled, because the Start button and the coin placeholder follow the
-	// values as they change.
-	const form = useForm<HistoryLoadValues>({
-		initialValues: {
-			coins: [],
-			depth: historyLoadDepth.default,
-			intervals: ["1h"],
-		},
-		mode: "controlled",
-	});
+	const form = useAppForm({ defaultValues });
+	// The Start button follows the values as they change.
+	const request = historyLoadRequest(
+		useSelector(form.store, (state) => state.values),
+	);
 	const job = useHistoryLoadJob();
 	const start = useStartCandleHistoryLoad({
 		mutation: {
@@ -77,35 +77,46 @@ export function HistoryLoadCommand() {
 					of 1,000 candles per second, so backtests can replay more history. It
 					runs only when started here.
 				</Text>
-				<HistoryLoadCoinsSelect
-					disabled={running}
-					{...form.getInputProps("coins")}
-				/>
-				<MultiSelect
-					data={chartIntervalOptions.map(({ label, value }) => ({
-						label,
-						value,
-					}))}
-					disabled={running}
-					label="Intervals"
-					{...form.getInputProps("intervals")}
-				/>
-				<NumberInput
-					allowDecimal={false}
-					description={`Closed candles to keep per coin and interval, ${formatNumber(historyLoadDepth.min)}–${formatNumber(historyLoadDepth.max)}.`}
-					disabled={running}
-					label="Depth"
-					max={historyLoadDepth.max}
-					min={historyLoadDepth.min}
-					thousandSeparator=","
-					{...form.getInputProps("depth")}
-				/>
+				<form.Field name="coins">
+					{(field) => (
+						<HistoryLoadCoinsSelect
+							disabled={running}
+							onBlur={field.handleBlur}
+							onChange={field.handleChange}
+							value={field.state.value}
+						/>
+					)}
+				</form.Field>
+				<form.AppField name="intervals">
+					{(field) => (
+						<field.MultiSelectField
+							data={chartIntervalOptions.map(({ label, value }) => ({
+								label,
+								value,
+							}))}
+							disabled={running}
+							label="Intervals"
+						/>
+					)}
+				</form.AppField>
+				<form.AppField name="depth">
+					{(field) => (
+						<field.NumberField
+							allowDecimal={false}
+							description={`Closed candles to keep per coin and interval, ${formatNumber(historyLoadDepth.min)}–${formatNumber(historyLoadDepth.max)}.`}
+							disabled={running}
+							label="Depth"
+							max={historyLoadDepth.max}
+							min={historyLoadDepth.min}
+							thousandSeparator=","
+						/>
+					)}
+				</form.AppField>
 				<Group justify="flex-end">
 					<Button
-						disabled={running || !historyLoadRequest(form.values)}
+						disabled={running || !request}
 						loading={start.isPending}
 						onClick={() => {
-							const request = historyLoadRequest(form.getValues());
 							if (request) start.mutate({ data: request });
 						}}
 					>

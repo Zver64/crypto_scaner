@@ -1,5 +1,7 @@
-import { Button, Group, TextInput } from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { Button, Group } from "@mantine/core";
+import { useSelector } from "@tanstack/react-form";
+
+import { useAppForm } from "@/components/form/use-app-form";
 
 interface ApiTokenCreateProps {
 	isPending: boolean;
@@ -8,30 +10,39 @@ interface ApiTokenCreateProps {
 }
 
 export function ApiTokenCreate({ isPending, onCreate }: ApiTokenCreateProps) {
-	// Controlled, because the Create button follows the name as it is typed.
-	const form = useForm({ initialValues: { name: "" }, mode: "controlled" });
+	const form = useAppForm({
+		defaultValues: { name: "" },
+		onSubmit: ({ value }) => {
+			const trimmed = value.name.trim();
+			if (trimmed === "") return;
+			onCreate(trimmed, () => form.reset());
+		},
+	});
+	// The Create button follows the name as it is typed.
+	const empty = useSelector(
+		form.store,
+		(state) => state.values.name.trim() === "",
+	);
 	return (
 		<form
-			onSubmit={form.onSubmit(({ name }) => {
-				const trimmed = name.trim();
-				if (trimmed === "") return;
-				onCreate(trimmed, form.reset);
-			})}
+			onSubmit={(event) => {
+				event.preventDefault();
+				void form.handleSubmit();
+			}}
 		>
 			<Group align="flex-end" wrap="nowrap">
-				<TextInput
-					disabled={isPending}
-					flex={1}
-					label="New token"
-					maxLength={64}
-					placeholder="Where it is used, such as laptop CLI"
-					{...form.getInputProps("name")}
-				/>
-				<Button
-					disabled={form.values.name.trim() === ""}
-					loading={isPending}
-					type="submit"
-				>
+				<form.AppField name="name">
+					{(field) => (
+						<field.TextField
+							disabled={isPending}
+							flex={1}
+							label="New token"
+							maxLength={64}
+							placeholder="Where it is used, such as laptop CLI"
+						/>
+					)}
+				</form.AppField>
+				<Button disabled={empty} loading={isPending} type="submit">
 					Create
 				</Button>
 			</Group>

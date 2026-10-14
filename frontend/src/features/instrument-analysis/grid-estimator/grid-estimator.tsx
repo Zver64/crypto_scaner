@@ -52,12 +52,13 @@ export function GridEstimator({
 		hourlyRange,
 		inputProps,
 		priceUnit,
+		values: formValues,
 	} = useGridEstimatorForm({ ...formOptions, market });
 	const { colors } = themeToVars(useMantineTheme());
 	const { anchor } = bounds;
 	const hasAnchor = anchor !== null;
 	const isFutures = market !== "spot";
-	const selectedRangePercent = form.values.rangePercent;
+	const selectedRangePercent = formValues.rangePercent;
 	const canSelectRange =
 		hourlyRange !== null && dailyRange !== null && dailyRange > hourlyRange;
 	const { futuresEstimate, values } = estimate;
@@ -66,9 +67,9 @@ export function GridEstimator({
 		<Stack gap="md">
 			{isFutures ? (
 				<FuturesControls
-					direction={form.values.direction}
+					direction={formValues.direction}
 					disabled={disabled}
-					leverage={form.values.leverage}
+					leverage={formValues.leverage}
 					onDirectionChange={(direction) =>
 						form.setFieldValue("direction", direction)
 					}
@@ -83,17 +84,17 @@ export function GridEstimator({
 				disabled={disabled}
 				fullWidth
 				onChange={changeGridType}
-				value={form.values.gridType}
+				value={formValues.gridType}
 			/>
 			<Stack gap="sm">
 				<MarkupSliders
 					bounds={bounds}
 					defaultMarkups={DEFAULT_MARKUPS[market]}
 					disabled={disabled || !hasAnchor}
-					lowerMarkup={form.values.lowerMarkup}
+					lowerMarkup={formValues.lowerMarkup}
 					onLowerMarkupChange={changeLowerMarkup}
 					onUpperMarkupChange={changeMarkup}
-					upperMarkup={form.values.markup}
+					upperMarkup={formValues.markup}
 				/>
 				<SliderField
 					disabled={disabled || !canSelectRange}

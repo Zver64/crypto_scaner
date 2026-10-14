@@ -1,30 +1,37 @@
 import { Checkbox, Group, Input, Stack } from "@mantine/core";
-import type { UseFormReturnType } from "@mantine/form";
 
 import type { CandleInterval } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
-import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
+import type {
+	PeriodChoice,
+	PeriodChoices,
+} from "@/features/scanner-settings/types";
 
 interface ScannerIndicatorPeriodsFieldProps {
-	form: UseFormReturnType<ScannerIndicatorDraft>;
+	onChange(periods: PeriodChoices): void;
 	// Whether the chosen indicator can be a table column.
 	tableAllowed: boolean;
+	value: PeriodChoices;
 }
 
 // The periods an indicator is added on, each with its own table column and
 // chart choices.
 export function ScannerIndicatorPeriodsField({
-	form,
+	onChange,
 	tableAllowed,
+	value,
 }: ScannerIndicatorPeriodsFieldProps) {
-	const value = form.values.periods;
 	// A period is chosen by adding its entry and cleared by removing it.
-	const toggle = (interval: CandleInterval, chosen: boolean) =>
-		form.setFieldValue("periods", ({ [interval]: _removed, ...rest }) =>
+	const toggle = (interval: CandleInterval, chosen: boolean) => {
+		const { [interval]: _removed, ...rest } = value;
+		onChange(
 			chosen
 				? { ...rest, [interval]: { showInTable: false, showInChart: true } }
 				: rest,
 		);
+	};
+	const setChoice = (interval: CandleInterval, choice: PeriodChoice) =>
+		onChange({ ...value, [interval]: choice });
 	return (
 		<Input.Wrapper
 			description={
@@ -48,26 +55,34 @@ export function ScannerIndicatorPeriodsField({
 								w="6rem"
 							/>
 							<Checkbox
-								{...form.getInputProps(`periods.${interval}.showInTable`, {
-									type: "checkbox",
-								})}
+								aria-label={`Show ${label} in tables`}
 								// A period without an entry has no flags; Mantine's Checkbox
 								// passes an undefined checked on to the native input, which
 								// would keep showing its last state.
 								checked={choice?.showInTable ?? false}
-								aria-label={`Show ${label} in tables`}
 								disabled={!tableAllowed || choice === undefined}
 								label="Table"
+								onChange={(event) => {
+									if (choice)
+										setChoice(interval, {
+											...choice,
+											showInTable: event.currentTarget.checked,
+										});
+								}}
 								size="xs"
 							/>
 							<Checkbox
-								{...form.getInputProps(`periods.${interval}.showInChart`, {
-									type: "checkbox",
-								})}
-								checked={choice?.showInChart ?? false}
 								aria-label={`Show ${label} in charts`}
+								checked={choice?.showInChart ?? false}
 								disabled={choice === undefined}
 								label="Chart"
+								onChange={(event) => {
+									if (choice)
+										setChoice(interval, {
+											...choice,
+											showInChart: event.currentTarget.checked,
+										});
+								}}
 								size="xs"
 							/>
 						</Group>

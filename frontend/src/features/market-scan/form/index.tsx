@@ -6,9 +6,10 @@ import {
 	Stack,
 	useMatches,
 } from "@mantine/core";
-import { useForm } from "@mantine/form";
-import type { FormEvent } from "react";
+import { useSelector } from "@tanstack/react-form";
+import { type FormEvent, useId } from "react";
 
+import { useAppForm } from "@/components/form/use-app-form";
 import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import { applicationConfig } from "@/config";
 import { VolatilityFieldset } from "@/features/analysis/volatility-form";
@@ -43,15 +44,21 @@ export function MarketScanForm({
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const volatilityPresets = applicationConfig.volatility;
-	// Controlled, because the Run Market Scan button follows the values as they
-	// are typed and stays disabled while they are invalid.
-	const form = useForm<MarketScanDraft>({
-		initialValues: initialCriteria,
-		mode: "controlled",
-		validate: validateMarketScanCriteria,
-		validateInputOnChange: true,
+	const id = useId();
+	// The inputs may hold strings while being typed.
+	const defaultValues: MarketScanDraft = initialCriteria;
+	const form = useAppForm({ defaultValues });
+	// The fields and the Run Market Scan button follow the values as they are
+	// typed; the button stays disabled while they are invalid.
+	const values = useSelector(form.store, (state) => state.values);
+	const errors = validateMarketScanCriteria(values);
+	const draftCriteria = criteriaFromValidDraft(values);
+	const field = (name: keyof MarketScanDraft) => ({
+		error: errors[name],
+		id: `${id}-${name}`,
+		onChange: (value: number | string) => form.setFieldValue(name, value),
+		value: values[name],
 	});
-	const draftCriteria = criteriaFromValidDraft(form.values);
 
 	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
@@ -64,54 +71,21 @@ export function MarketScanForm({
 			<Stack gap={contentSpacing}>
 				<SimpleGrid cols={columns} spacing={contentSpacing}>
 					<VolatilityFieldset
-						minimumRangePercent={{
-							error: form.errors.minimumRangePercent,
-							id: form.key("minimumRangePercent"),
-							onChange: (value) =>
-								form.setFieldValue("minimumRangePercent", value),
-							value: form.values.minimumRangePercent,
-						}}
+						minimumRangePercent={field("minimumRangePercent")}
 						minimumRangePresets={volatilityPresets.days.candleRangePresets}
-						percentile={{
-							error: form.errors.percentile,
-							id: form.key("percentile"),
-							onChange: (value) => form.setFieldValue("percentile", value),
-							value: form.values.percentile,
-						}}
+						percentile={field("percentile")}
 						percentilePresets={volatilityPresets.percentilePresets}
-						period={{
-							error: form.errors.period,
-							id: form.key("period"),
-							onChange: (value) => form.setFieldValue("period", value),
-							value: form.values.period,
-						}}
+						period={field("period")}
 						periodPresets={volatilityPresets.days.periodPresets}
 						title="Daily Volatility"
 						unit="days"
 					/>
 					<VolatilityFieldset
-						minimumRangePercent={{
-							error: form.errors.hourlyMinimumRangePercent,
-							id: form.key("hourlyMinimumRangePercent"),
-							onChange: (value) =>
-								form.setFieldValue("hourlyMinimumRangePercent", value),
-							value: form.values.hourlyMinimumRangePercent,
-						}}
+						minimumRangePercent={field("hourlyMinimumRangePercent")}
 						minimumRangePresets={volatilityPresets.hours.candleRangePresets}
-						percentile={{
-							error: form.errors.hourlyPercentile,
-							id: form.key("hourlyPercentile"),
-							onChange: (value) =>
-								form.setFieldValue("hourlyPercentile", value),
-							value: form.values.hourlyPercentile,
-						}}
+						percentile={field("hourlyPercentile")}
 						percentilePresets={volatilityPresets.percentilePresets}
-						period={{
-							error: form.errors.hourlyPeriod,
-							id: form.key("hourlyPeriod"),
-							onChange: (value) => form.setFieldValue("hourlyPeriod", value),
-							value: form.values.hourlyPeriod,
-						}}
+						period={field("hourlyPeriod")}
 						periodPresets={volatilityPresets.hours.periodPresets}
 						title="Hourly Volatility"
 						unit="hours"
@@ -120,19 +94,15 @@ export function MarketScanForm({
 						inputs={[
 							{
 								decimalScale: 2,
-								error: form.errors.minimumMarketCapMillions,
-								id: form.key("minimumMarketCapMillions"),
+								...field("minimumMarketCapMillions"),
 								label: "Minimum Market Cap",
 								min: marketScanCriteriaConstraints.minimumMarketCapMillions
 									.minimum,
-								onChange: (value) =>
-									form.setFieldValue("minimumMarketCapMillions", value),
 								presets: applicationConfig.marketCap.presets.map((value) => ({
 									label: formatMarketCapPreset(value),
 									value,
 								})),
 								step: 1,
-								value: form.values.minimumMarketCapMillions,
 							},
 						]}
 						title="Market Cap"

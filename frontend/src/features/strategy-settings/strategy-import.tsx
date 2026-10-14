@@ -1,13 +1,5 @@
-import {
-	Alert,
-	Button,
-	Group,
-	List,
-	Modal,
-	Text,
-	Textarea,
-} from "@mantine/core";
-import { useForm } from "@mantine/form";
+import { Alert, Button, Group, List, Modal, Text } from "@mantine/core";
+import { useSelector } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
@@ -16,6 +8,7 @@ import {
 	useValidateStrategy,
 } from "@/api/generated/api";
 import type { StrategyMissingIndicator } from "@/api/generated/models";
+import { useAppForm } from "@/components/form/use-app-form";
 import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
 import { mutationErrorMessage } from "@/features/scanner-settings/utils";
 import type { StrategyQuery } from "@/features/strategy-settings/types";
@@ -47,12 +40,12 @@ export function StrategyImport({
 	opened,
 }: StrategyImportProps) {
 	const queryClient = useQueryClient();
-	// Controlled: the dialog is small, and its button follows the text.
-	const form = useForm({
-		initialValues: { expression: "" },
-		mode: "controlled",
-	});
-	const { expression } = form.values;
+	const form = useAppForm({ defaultValues: { expression: "" } });
+	// The import button follows the text.
+	const expression = useSelector(
+		form.store,
+		(state) => state.values.expression,
+	);
 	const [problems, setProblems] = useState<string[]>([]);
 	const [pending, setPending] = useState<PendingImport>();
 	const validation = useValidateStrategy();
@@ -123,22 +116,24 @@ export function StrategyImport({
 		);
 	return (
 		<Modal centered onClose={close} opened={opened} title="Import strategy">
-			<Textarea
-				autosize
-				data-autofocus
-				disabled={busy || pending !== undefined}
-				label="Expression"
-				minRows={4}
-				onChange={(event) => {
-					form.setValues({ expression: event.currentTarget.value });
-					setProblems([]);
-				}}
-				placeholder="h_rsi < 30 && crosses_above(h_close, h_sma_20)"
-				styles={(theme) => ({
-					input: { fontFamily: theme.fontFamilyMonospace },
-				})}
-				value={expression}
-			/>
+			<form.AppField
+				listeners={{ onChange: () => setProblems([]) }}
+				name="expression"
+			>
+				{(field) => (
+					<field.TextareaField
+						autosize
+						data-autofocus
+						disabled={busy || pending !== undefined}
+						label="Expression"
+						minRows={4}
+						placeholder="h_rsi < 30 && crosses_above(h_close, h_sma_20)"
+						styles={(theme) => ({
+							input: { fontFamily: theme.fontFamilyMonospace },
+						})}
+					/>
+				)}
+			</form.AppField>
 			{problems.length > 0 ? (
 				<Alert
 					color="red"

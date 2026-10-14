@@ -1,6 +1,6 @@
 import { Group, Paper, Stack, Text, Title } from "@mantine/core";
-import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
+import { useSelector } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
@@ -14,6 +14,8 @@ import {
 	useUpdatePriceAlert,
 } from "@/api/generated/api";
 import type { ErrorResponse } from "@/api/generated/models";
+import { useAppForm } from "@/components/form/use-app-form";
+import { fieldError } from "@/components/form/utils";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
@@ -66,21 +68,19 @@ export function PriceAlertsController({
 			select: selectAlerts,
 		},
 	});
-	// Controlled, so the submit button and the percent change follow the
-	// target as it is typed. The error stays until the next submit.
-	const form = useForm<PriceAlertEditor>({
-		clearInputErrorOnChange: false,
-		initialValues: emptyEditor,
-		mode: "controlled",
-		validate: { target: (target) => normalizePriceTarget(target).error },
+	const form = useAppForm({
+		defaultValues: emptyEditor,
+		onSubmit: ({ value }) => submit(value),
 	});
+	// The submit button and the percent change follow the target as it is
+	// typed.
+	const values = useSelector(form.store, (state) => state.values);
 	// An edited alert that no longer exists leaves the editor empty.
 	const editedAlertGone =
-		form.values.editingID !== undefined &&
+		values.editingID !== undefined &&
 		query.data !== undefined &&
-		!query.data.items.some((alert) => alert.id === form.values.editingID);
-	const editor = editedAlertGone ? emptyEditor : form.values;
-	const targetError = editedAlertGone ? undefined : form.errors.target;
+		!query.data.items.some((alert) => alert.id === values.editingID);
+	const editor = editedAlertGone ? emptyEditor : values;
 	const refresh = () => {
 		void queryClient.invalidateQueries({
 			queryKey: getListPriceAlertsQueryKey(symbol),
@@ -122,9 +122,6 @@ export function PriceAlertsController({
 			},
 		},
 	});
-	const isSaving = createMutation.isPending || updateMutation.isPending;
-	const limitReached =
-		query.data !== undefined && query.data.count >= query.data.limit;
 	// The form still holds an edited alert that no longer exists, although the
 	// editor shows it empty; submitting it clears the form instead of
 	// updating a missing alert.
@@ -141,7 +138,9 @@ export function PriceAlertsController({
 		}
 		createMutation.mutate({ symbol, data: { target: value } });
 	};
-
+	const isSaving = createMutation.isPending || updateMutation.isPending;
+	const limitReached =
+		query.data !== undefined && query.data.count >= query.data.limit;
 	return (
 		<Paper component="section" p={{ base: "xs", sm: "md" }}>
 			<Stack gap="md">
@@ -159,10 +158,12 @@ export function PriceAlertsController({
 							: undefined
 					}
 					onDelete={(alertId) => deleteMutation.mutate({ alertId })}
-					onEdit={(alert) => {
-						form.setValues({ editingID: alert.id, target: alert.target });
-						form.clearErrors();
-					}}
+					onEdit={(alert) =>
+						form.reset(
+							{ editingID: alert.id, target: alert.target },
+							{ keepDefaultValues: true },
+						)
+					}
 					priceSource={priceSource}
 				/>
 				{query.isPending ? <Text c="dimmed">Loading alerts…</Text> : null}
@@ -171,23 +172,39 @@ export function PriceAlertsController({
 						Unable to load price alerts.
 					</Text>
 				) : null}
-				<PriceAlertForm
-					isEditing={editor.editingID !== undefined}
-					isSaving={isSaving}
-					limit={query.data?.limit}
-					limitReached={limitReached}
-					onCancel={form.reset}
-					onSubmit={form.onSubmit(submit)}
-					// Not getInputProps: typing over an edited alert that no longer
-					// exists also drops its id, so the form holds what the editor shows.
-					onTargetChange={(target) => {
-						form.setValues({ ...editor, target });
-						if (editedAlertGone) form.clearErrors();
+				<form.Field
+					name="target"
+					validators={{
+						onSubmit: ({ value }) => normalizePriceTarget(value).error,
 					}}
-					priceSource={priceSource}
-					target={editor.target}
-					targetError={targetError}
-				/>
+				>
+					{(field) => (
+						<PriceAlertForm
+							isEditing={editor.editingID !== undefined}
+							isSaving={isSaving}
+							limit={query.data?.limit}
+							limitReached={limitReached}
+							onCancel={() => form.reset()}
+							onSubmit={(event) => {
+								event.preventDefault();
+								void form.handleSubmit();
+							}}
+							// Typing over an edited alert that no longer exists also drops
+							// its id, so the form holds what the editor shows.
+							onTargetChange={(target) => {
+								field.handleChange(target);
+								if (editedAlertGone) form.setFieldValue("editingID", undefined);
+							}}
+							priceSource={priceSource}
+							target={editor.target}
+							targetError={
+								editedAlertGone
+									? undefined
+									: fieldError(field.state.meta.errors)
+							}
+						/>
+					)}
+				</form.Field>
 			</Stack>
 		</Paper>
 	);

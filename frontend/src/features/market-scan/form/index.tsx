@@ -12,12 +12,11 @@ import { applicationConfig } from "@/config";
 import { VolatilityFields } from "@/features/analysis/volatility-form";
 import { presetOptions } from "@/features/analysis/volatility-form/utils";
 import { marketScanCriteriaConstraints } from "@/features/market-scan/criteria";
-import { criteriaFromValidDraft } from "@/features/market-scan/form/utils";
-import {
-	type MarketScanCriteria,
-	type MarketScanDraft,
-	validateMarketScanCriteria,
+import type {
+	MarketScanCriteria,
+	MarketScanDraft,
 } from "@/features/market-scan/pipeline";
+import { marketScanCriteriaSchema } from "@/features/market-scan/schemas";
 
 function formatMarketCapPreset(value: number) {
 	return value >= 1000 ? `${value / 1000}B` : `${value}M`;
@@ -61,13 +60,8 @@ export function MarketScanForm({
 	const defaultValues: MarketScanDraft = initialCriteria;
 	const form = useAppForm({
 		defaultValues,
-		onSubmit: ({ value }) => {
-			const criteria = criteriaFromValidDraft(value);
-			if (criteria) onCommit(criteria);
-		},
-		validators: {
-			onChange: ({ value }) => ({ fields: validateMarketScanCriteria(value) }),
-		},
+		onSubmit: ({ value }) => onCommit(marketScanCriteriaSchema.parse(value)),
+		validators: { onChange: marketScanCriteriaSchema },
 	});
 
 	return (

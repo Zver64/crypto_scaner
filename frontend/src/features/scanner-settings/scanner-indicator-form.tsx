@@ -6,7 +6,7 @@ import type {
 	IndicatorType,
 	ScannerIndicatorInput,
 } from "@/api/generated/models";
-import { useAppForm } from "@/components/form";
+import { fieldError, useAppForm } from "@/components/form";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import {
 	emptyScaleDraft,
@@ -14,6 +14,10 @@ import {
 } from "@/features/scanner-settings/constants";
 import { ScannerIndicatorPeriodsField } from "@/features/scanner-settings/scanner-indicator-periods-field";
 import { ScannerIndicatorScaleFields } from "@/features/scanner-settings/scanner-indicator-scale-fields";
+import {
+	indicatorPeriodsSchema,
+	indicatorTypeSchema,
+} from "@/features/scanner-settings/schemas";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 import {
 	defaultParameterValues,
@@ -113,10 +117,7 @@ export function ScannerIndicatorForm({
 					<form.AppField
 						listeners={{ onChange: ({ value }) => resetForType(value) }}
 						name="type"
-						validators={{
-							onChange: ({ value }) =>
-								value === null ? "Choose an indicator" : undefined,
-						}}
+						validators={{ onChange: indicatorTypeSchema }}
 					>
 						{(field) => (
 							<field.SelectField
@@ -169,16 +170,11 @@ export function ScannerIndicatorForm({
 					) : null}
 					<form.Field
 						name="periods"
-						validators={{
-							onChange: ({ value }) =>
-								Object.keys(value).length === 0
-									? "Choose at least one period"
-									: undefined,
-						}}
+						validators={{ onChange: indicatorPeriodsSchema }}
 					>
 						{(field) => (
 							<ScannerIndicatorPeriodsField
-								error={field.state.meta.errors[0]}
+								error={fieldError(field.state.meta.errors)}
 								onChange={field.handleChange}
 								tableAllowed={tableColumnAllowed(type)}
 								value={field.state.value}

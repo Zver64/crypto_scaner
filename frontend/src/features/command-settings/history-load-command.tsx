@@ -6,15 +6,15 @@ import {
 	getGetCandleHistoryLoadQueryKey,
 	useStartCandleHistoryLoad,
 } from "@/api/generated/api";
-import { useAppForm } from "@/components/form";
+import { fieldError, useAppForm } from "@/components/form";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import { historyLoadDepth } from "@/features/command-settings/constants";
 import { HistoryLoadCoinsSelect } from "@/features/command-settings/history-load-coins-select";
 import { HistoryLoadJob } from "@/features/command-settings/history-load-job";
+import { historyLoadSchema } from "@/features/command-settings/schemas";
 import type { HistoryLoadValues } from "@/features/command-settings/types";
 import { useHistoryLoadJob } from "@/features/command-settings/use-history-load-job";
 import {
-	historyLoadDepthError,
 	historyLoadErrorMessage,
 	historyLoadRequest,
 } from "@/features/command-settings/utils";
@@ -80,15 +80,12 @@ export function HistoryLoadCommand() {
 				</Text>
 				<form.Field
 					name="coins"
-					validators={{
-						onChange: ({ value }) =>
-							value.length === 0 ? "Choose at least one coin" : undefined,
-					}}
+					validators={{ onChange: historyLoadSchema.shape.coins }}
 				>
 					{(field) => (
 						<HistoryLoadCoinsSelect
 							disabled={running}
-							error={field.state.meta.errors[0]}
+							error={fieldError(field.state.meta.errors)}
 							onBlur={field.handleBlur}
 							onChange={field.handleChange}
 							value={field.state.value}
@@ -97,10 +94,7 @@ export function HistoryLoadCommand() {
 				</form.Field>
 				<form.AppField
 					name="intervals"
-					validators={{
-						onChange: ({ value }) =>
-							value.length === 0 ? "Choose at least one interval" : undefined,
-					}}
+					validators={{ onChange: historyLoadSchema.shape.intervals }}
 				>
 					{(field) => (
 						<field.MultiSelectField
@@ -115,7 +109,7 @@ export function HistoryLoadCommand() {
 				</form.AppField>
 				<form.AppField
 					name="depth"
-					validators={{ onChange: ({ value }) => historyLoadDepthError(value) }}
+					validators={{ onChange: historyLoadSchema.shape.depth }}
 				>
 					{(field) => (
 						<field.NumberField

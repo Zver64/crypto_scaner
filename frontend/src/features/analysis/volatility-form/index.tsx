@@ -2,17 +2,16 @@ import { Fieldset, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 
 import { withFieldGroup } from "@/components/form";
-import {
-	type AnalysisDraft,
-	analysisCriteriaConstraints,
-} from "@/features/analysis/criteria";
+import { analysisCriteriaConstraints } from "@/features/analysis/criteria";
 import { presetOptions } from "@/features/analysis/volatility-form/utils";
+import type { VolatilitySettingsDraft } from "@/features/analysis/volatility-settings-form/types";
 
 // The fields the group binds, as the inputs emit them; only the keys matter.
-const volatilityDraft: Pick<AnalysisDraft, "percentile" | "period"> = {
-	percentile: "",
-	period: "",
-};
+const volatilityDraft: Pick<VolatilitySettingsDraft, "percentile" | "period"> =
+	{
+		percentile: "",
+		period: "",
+	};
 
 interface VolatilityFieldsProps {
 	// Fields of the criterion's own, shown after the shared ones.

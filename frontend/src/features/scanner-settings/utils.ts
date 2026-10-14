@@ -67,11 +67,6 @@ export function parseLevels(levels: readonly string[]): number[] | undefined {
 	return values.every(Number.isFinite) ? values : undefined;
 }
 
-// The validation rule of the levels input.
-export function levelsError(levels: readonly string[]): string | null {
-	return parseLevels(levels) ? null : "Levels must be numbers";
-}
-
 // Builds a pane scale; returns undefined while a level is not a number.
 export function indicatorScale(
 	draft: ScaleDraft,

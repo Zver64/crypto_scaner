@@ -14,13 +14,13 @@ import {
 	useUpdatePriceAlert,
 } from "@/api/generated/api";
 import type { ErrorResponse } from "@/api/generated/models";
-import { useAppForm } from "@/components/form";
+import { fieldError, useAppForm } from "@/components/form";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { PriceAlertForm } from "@/features/price-alerts/price-alert-form";
 import { PriceAlertList } from "@/features/price-alerts/price-alert-list";
-import { normalizePriceTarget } from "@/features/price-alerts/target";
+import { priceTargetSchema } from "@/features/price-alerts/schemas";
 import type { PriceAlertEditor } from "@/features/price-alerts/types";
 import { describeApiError } from "@/utils/api-error";
 
@@ -128,8 +128,7 @@ export function PriceAlertsController({
 			form.reset();
 			return;
 		}
-		const { value } = normalizePriceTarget(target);
-		if (value === undefined) return;
+		const value = priceTargetSchema.parse(target);
 		if (editingID !== undefined) {
 			updateMutation.mutate({ alertId: editingID, data: { target: value } });
 			return;
@@ -173,7 +172,7 @@ export function PriceAlertsController({
 				<form.Field
 					name="target"
 					validators={{
-						onSubmit: ({ value }) => normalizePriceTarget(value).error,
+						onSubmit: priceTargetSchema,
 					}}
 				>
 					{(field) => (
@@ -201,7 +200,9 @@ export function PriceAlertsController({
 							)}
 							target={editor.target}
 							targetError={
-								editedAlertGone ? undefined : field.state.meta.errors[0]
+								editedAlertGone
+									? undefined
+									: fieldError(field.state.meta.errors)
 							}
 						/>
 					)}

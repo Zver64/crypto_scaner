@@ -1,9 +1,7 @@
 import type { CriterionRequest, Evaluation } from "@/api/generated/models";
 import {
 	type AnalysisCriteria,
-	type AnalysisDraft,
 	defaultAnalysisCriteria,
-	validateAnalysisCriteria,
 } from "@/features/analysis/criteria";
 import {
 	criterionKeys,
@@ -17,11 +15,6 @@ export interface MarketScanCriteria extends AnalysisCriteria {
 	minimumRangePercent: number;
 }
 
-export interface MarketScanDraft extends AnalysisDraft {
-	minimumMarketCapMillions: number | string;
-	minimumRangePercent: number | string;
-}
-
 export const defaultMarketScanCriteria: MarketScanCriteria = {
 	...defaultAnalysisCriteria,
 	minimumMarketCapMillions: 500,
@@ -32,45 +25,6 @@ export const marketScanCriteriaConstraints = {
 	minimumMarketCapMillions: { minimum: 0 },
 	minimumRangePercent: { minimum: 0 },
 } as const;
-
-export type MarketScanValidationErrors = Partial<
-	Record<keyof MarketScanCriteria, string>
->;
-
-export function validateMarketScanCriteria(
-	values: MarketScanDraft,
-): MarketScanValidationErrors {
-	const errors: MarketScanValidationErrors = validateAnalysisCriteria(values);
-	validateNonNegativeNumber(
-		values.minimumMarketCapMillions,
-		"Minimum market cap",
-		"minimumMarketCapMillions",
-		errors,
-	);
-	validateNonNegativeNumber(
-		values.minimumRangePercent,
-		"Minimum range",
-		"minimumRangePercent",
-		errors,
-	);
-
-	return errors;
-}
-
-function validateNonNegativeNumber(
-	value: number | string,
-	label: string,
-	field: keyof MarketScanCriteria,
-	errors: MarketScanValidationErrors,
-) {
-	if (value === "") {
-		errors[field] = `${label} is required`;
-	} else if (typeof value !== "number" || !Number.isFinite(value)) {
-		errors[field] = `${label} must be a number`;
-	} else if (value < 0) {
-		errors[field] = `${label} must be zero or greater`;
-	}
-}
 
 export function volatilityCriterionSelection(
 	criteria: MarketScanCriteria,

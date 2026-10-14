@@ -1,6 +1,6 @@
 import { applicationConfig } from "@/config";
+import { volatilitySettingsSchema } from "@/features/analysis/schemas";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
-import { settingsFromValidDraft } from "@/features/analysis/volatility-settings-form/utils";
 import {
 	type MarketScanSortSearch,
 	parseMarketScanSortSearch,
@@ -57,20 +57,10 @@ export function volatilitySettingsToSearch(
 function volatilitySettingsFromUnknownSearch(
 	search: Record<string, unknown>,
 ): VolatilitySettings | undefined {
-	const { hourly_percentile, hourly_period, percentile, period } = search;
-	if (
-		typeof period !== "number" ||
-		typeof percentile !== "number" ||
-		typeof hourly_period !== "number" ||
-		typeof hourly_percentile !== "number"
-	) {
-		return undefined;
-	}
-
-	return settingsFromValidDraft({
-		hourlyPercentile: hourly_percentile,
-		hourlyPeriod: hourly_period,
-		percentile,
-		period,
-	});
+	return volatilitySettingsSchema.safeParse({
+		hourlyPercentile: search.hourly_percentile,
+		hourlyPeriod: search.hourly_period,
+		percentile: search.percentile,
+		period: search.period,
+	}).data;
 }

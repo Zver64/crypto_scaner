@@ -1,71 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { expect, it } from "vitest";
 
 import {
 	criterionSelections,
-	validateMarketScanCriteria,
 	volatilityCriterionSelection,
 	volatilityEvaluation,
 } from "@/features/market-scan/criteria";
-
-describe("validateMarketScanCriteria", () => {
-	it("accepts zero minimum ranges", () => {
-		expect(
-			validateMarketScanCriteria({
-				minimumRangePercent: 0,
-				minimumMarketCapMillions: 0,
-				percentile: 80,
-				period: 30,
-				unit: "days",
-			}),
-		).toEqual({});
-	});
-
-	it("rejects a negative minimum range", () => {
-		expect(
-			validateMarketScanCriteria({
-				minimumRangePercent: -0.1,
-				minimumMarketCapMillions: 0,
-				percentile: 80,
-				period: 30,
-				unit: "days",
-			}),
-		).toEqual({
-			minimumRangePercent: "Minimum range must be zero or greater",
-		});
-	});
-
-	it("combines shared analysis and scan-specific validation errors", () => {
-		expect(
-			validateMarketScanCriteria({
-				minimumRangePercent: -0.1,
-				minimumMarketCapMillions: -1,
-				percentile: 101,
-				period: 0,
-				unit: "days",
-			}),
-		).toEqual({
-			minimumMarketCapMillions: "Minimum market cap must be zero or greater",
-			minimumRangePercent: "Minimum range must be zero or greater",
-			percentile: "Range percentile must be between 0 and 100",
-			period: "Analysis period must be a whole number between 1 and 2000 days",
-		});
-	});
-
-	it("requires a numeric minimum range", () => {
-		expect(
-			validateMarketScanCriteria({
-				minimumRangePercent: "",
-				minimumMarketCapMillions: "",
-				percentile: 80,
-				period: 30,
-				unit: "days",
-			}),
-		).toEqual({
-			minimumMarketCapMillions: "Minimum market cap is required",
-			minimumRangePercent: "Minimum range is required",
-		});
-	});
-});
 
 it("adapts volatility form criteria and safely extracts its evaluation", () => {
 	expect(

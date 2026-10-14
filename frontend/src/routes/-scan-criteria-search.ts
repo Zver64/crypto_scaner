@@ -1,8 +1,8 @@
 import {
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
-	validateMarketScanCriteria,
 } from "@/features/market-scan/pipeline";
+import { marketScanCriteriaSchema } from "@/features/market-scan/schemas";
 
 export interface ScanCriteriaSearch {
 	hourly_minimum_range_percent?: number;
@@ -46,41 +46,18 @@ export function scanCriteriaToSearch(
 export function scanCriteriaFromSearch(
 	search: ScanCriteriaSearch | Record<string, unknown>,
 ): MarketScanCriteria | undefined {
-	const period = search.period;
-	const hourlyPeriod = search.hourly_period;
-	const hourlyPercentile = search.hourly_percentile;
-	const hourlyMinimumRangePercent = search.hourly_minimum_range_percent;
-	const percentile = search.percentile;
-	const minimumRangePercent = search.minimum_range_percent;
-	const minimumMarketCapMillions =
-		search.minimum_market_cap_millions === undefined
-			? 0
-			: search.minimum_market_cap_millions;
-
-	if (
-		typeof period !== "number" ||
-		typeof hourlyPeriod !== "number" ||
-		typeof hourlyPercentile !== "number" ||
-		typeof hourlyMinimumRangePercent !== "number" ||
-		typeof percentile !== "number" ||
-		typeof minimumRangePercent !== "number" ||
-		typeof minimumMarketCapMillions !== "number"
-	) {
-		return undefined;
-	}
-
-	const criteria = {
-		hourlyMinimumRangePercent,
-		hourlyPercentile,
-		hourlyPeriod,
-		minimumMarketCapMillions,
-		minimumRangePercent,
-		percentile,
-		period,
-	};
-	return Object.keys(validateMarketScanCriteria(criteria)).length === 0
-		? criteria
-		: undefined;
+	return marketScanCriteriaSchema.safeParse({
+		hourlyMinimumRangePercent: search.hourly_minimum_range_percent,
+		hourlyPercentile: search.hourly_percentile,
+		hourlyPeriod: search.hourly_period,
+		minimumMarketCapMillions:
+			search.minimum_market_cap_millions === undefined
+				? 0
+				: search.minimum_market_cap_millions,
+		minimumRangePercent: search.minimum_range_percent,
+		percentile: search.percentile,
+		period: search.period,
+	}).data;
 }
 
 export function requiredScanCriteriaFromSearch(

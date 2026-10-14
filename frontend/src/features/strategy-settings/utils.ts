@@ -442,11 +442,6 @@ export function strategyDraft(
 	};
 }
 
-// Why a strategy name cannot be saved.
-export function strategyNameError(name: string): string | undefined {
-	return name.trim() === "" ? "Enter a name" : undefined;
-}
-
 // The strategy form's values with their trees typed; only the strategy form
 // writes them. Drop with StrategyFormData once TanStack Form types recursive
 // values.

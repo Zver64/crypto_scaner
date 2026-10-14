@@ -13,7 +13,9 @@ import { TextareaField } from "@/components/form/textarea-field";
 // The only entry point to forms: create a form with useAppForm, share parts
 // of one with withForm or withFieldGroup, and render the bound inputs as
 // field.TextField and the like inside form.AppField, and the submit button
-// as form.SubmitButton inside form.AppForm.
+// as form.SubmitButton inside form.AppForm. A feature's own input inside
+// form.Field shows its error with fieldError(field.state.meta.errors).
+export { fieldError } from "@/components/form/utils";
 export const { useAppForm, withFieldGroup, withForm } = createFormHook({
 	fieldComponents: {
 		MultiSelectField,

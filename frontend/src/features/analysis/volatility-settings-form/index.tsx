@@ -8,15 +8,12 @@ import {
 
 import { useAppForm } from "@/components/form";
 import { applicationConfig } from "@/config";
+import { volatilitySettingsSchema } from "@/features/analysis/schemas";
 import { VolatilityFields } from "@/features/analysis/volatility-form";
 import type {
 	VolatilitySettings,
 	VolatilitySettingsDraft,
 } from "@/features/analysis/volatility-settings-form/types";
-import {
-	settingsFromValidDraft,
-	validateVolatilitySettings,
-} from "@/features/analysis/volatility-settings-form/utils";
 
 interface VolatilitySettingsFormProps {
 	// Grid columns of the fieldsets; one per row by default.
@@ -41,13 +38,8 @@ export function VolatilitySettingsForm({
 	const defaultValues: VolatilitySettingsDraft = initialSettings;
 	const form = useAppForm({
 		defaultValues,
-		onSubmit: ({ value }) => {
-			const settings = settingsFromValidDraft(value);
-			if (settings) onCommit(settings);
-		},
-		validators: {
-			onChange: ({ value }) => ({ fields: validateVolatilitySettings(value) }),
-		},
+		onSubmit: ({ value }) => onCommit(volatilitySettingsSchema.parse(value)),
+		validators: { onChange: volatilitySettingsSchema },
 	});
 	return (
 		<Paper

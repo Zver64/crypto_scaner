@@ -1,6 +1,7 @@
 import { Box, Group } from "@mantine/core";
 
 import { useAppForm } from "@/components/form";
+import { tokenNameSchema } from "@/features/api-token-settings/schemas";
 
 interface ApiTokenCreateProps {
 	isPending: boolean;
@@ -11,7 +12,8 @@ interface ApiTokenCreateProps {
 export function ApiTokenCreate({ isPending, onCreate }: ApiTokenCreateProps) {
 	const form = useAppForm({
 		defaultValues: { name: "" },
-		onSubmit: ({ value }) => onCreate(value.name.trim(), () => form.reset()),
+		onSubmit: ({ value }) =>
+			onCreate(tokenNameSchema.parse(value.name), () => form.reset()),
 	});
 	return (
 		<form
@@ -21,13 +23,7 @@ export function ApiTokenCreate({ isPending, onCreate }: ApiTokenCreateProps) {
 			}}
 		>
 			<form.AppForm>
-				<form.AppField
-					name="name"
-					validators={{
-						onChange: ({ value }) =>
-							value.trim() === "" ? "Enter a token name" : undefined,
-					}}
-				>
+				<form.AppField name="name" validators={{ onChange: tokenNameSchema }}>
 					{(field) => (
 						<field.TextField
 							disabled={isPending}

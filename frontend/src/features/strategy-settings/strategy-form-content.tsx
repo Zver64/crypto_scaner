@@ -1,5 +1,6 @@
 import { Alert, Stack } from "@mantine/core";
 
+import { strategyNameSchema } from "@/features/strategy-settings/schemas";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import { StrategyDirectionControl } from "@/features/strategy-settings/strategy-direction-control";
 import { StrategyExitConditions } from "@/features/strategy-settings/strategy-exit-conditions";
@@ -12,10 +13,7 @@ import type {
 	StrategyFormApi,
 	StrategyVariableSets,
 } from "@/features/strategy-settings/types";
-import {
-	strategyKind,
-	strategyNameError,
-} from "@/features/strategy-settings/utils";
+import { strategyKind } from "@/features/strategy-settings/utils";
 
 interface StrategyFormContentProps {
 	draft: StrategyDraft;
@@ -44,8 +42,8 @@ export function StrategyFormContent({
 				name="name"
 				validators={{
 					// Checked from the start, since Save stays disabled without a name.
-					onChange: ({ value }) => strategyNameError(value),
-					onMount: ({ value }) => strategyNameError(value),
+					onChange: strategyNameSchema,
+					onMount: strategyNameSchema,
 				}}
 			>
 				{(field) => (

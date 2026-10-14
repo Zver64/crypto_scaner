@@ -1,14 +1,8 @@
-export interface VolatilitySettings {
-	hourlyPercentile: number;
-	hourlyPeriod: number;
-	percentile: number;
-	period: number;
-}
+import type { z } from "zod";
 
-export type VolatilitySettingsDraft = {
-	[Field in keyof VolatilitySettings]: number | string;
-};
+import type { volatilitySettingsSchema } from "@/features/analysis/schemas";
 
-export type VolatilitySettingsValidationErrors = Partial<
-	Record<keyof VolatilitySettings, string>
->;
+export type VolatilitySettings = z.output<typeof volatilitySettingsSchema>;
+
+// The settings as the number inputs emit them.
+export type VolatilitySettingsDraft = z.input<typeof volatilitySettingsSchema>;

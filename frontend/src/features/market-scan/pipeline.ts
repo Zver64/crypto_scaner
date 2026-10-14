@@ -1,26 +1,19 @@
+import type { z } from "zod";
+
 import type { CriterionRequest } from "@/api/generated/models";
 import { applicationConfig } from "@/config";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import {
-	type MarketScanCriteria as SingleVolatilityCriteria,
 	defaultMarketScanCriteria as singleVolatilityDefaults,
 	criterionSelections as singleVolatilitySelections,
-	validateMarketScanCriteria as validateSingleVolatility,
 	volatilityCriterionSelection,
 } from "@/features/market-scan/criteria";
+import type { marketScanCriteriaSchema } from "@/features/market-scan/schemas";
 
-export interface MarketScanCriteria extends Omit<
-	SingleVolatilityCriteria,
-	"unit"
-> {
-	hourlyPeriod: number;
-	hourlyPercentile: number;
-	hourlyMinimumRangePercent: number;
-}
+export type MarketScanCriteria = z.output<typeof marketScanCriteriaSchema>;
 
-export type MarketScanDraft = {
-	[Field in keyof MarketScanCriteria]: number | string;
-};
+// The criteria as the number inputs emit them.
+export type MarketScanDraft = z.input<typeof marketScanCriteriaSchema>;
 
 export const defaultMarketScanCriteria: MarketScanCriteria = {
 	period: 30,
@@ -32,24 +25,6 @@ export const defaultMarketScanCriteria: MarketScanCriteria = {
 		applicationConfig.volatility.hours.defaultCandleRange,
 	minimumMarketCapMillions: singleVolatilityDefaults.minimumMarketCapMillions,
 };
-
-export function validateMarketScanCriteria(values: MarketScanDraft) {
-	const errors: Partial<Record<keyof MarketScanCriteria, string>> =
-		validateSingleVolatility({ ...values, unit: "days" });
-	const hourlyErrors = validateSingleVolatility({
-		...values,
-		unit: "hours",
-		period: values.hourlyPeriod,
-		percentile: values.hourlyPercentile,
-		minimumRangePercent: values.hourlyMinimumRangePercent,
-	});
-	if (hourlyErrors.period) errors.hourlyPeriod = hourlyErrors.period;
-	if (hourlyErrors.percentile)
-		errors.hourlyPercentile = hourlyErrors.percentile;
-	if (hourlyErrors.minimumRangePercent)
-		errors.hourlyMinimumRangePercent = hourlyErrors.minimumRangePercent;
-	return errors;
-}
 
 export function criterionSelections(
 	criteria: MarketScanCriteria,

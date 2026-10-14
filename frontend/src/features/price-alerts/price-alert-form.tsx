@@ -40,30 +40,32 @@ export function PriceAlertForm({
 					disabled={isSaving || formLocked}
 					error={targetError}
 					inputContainer={(input) => (
-						<Group gap="sm" wrap="nowrap">
-							<Box flex={1}>{input}</Box>
-							<TargetChange source={priceSource} target={target} />
+						<Group gap="xs" wrap="nowrap">
+							<Box flex={1} miw={0}>
+								{input}
+							</Box>
+							{isEditing ? (
+								<Button onClick={onCancel} type="button" variant="default">
+									Cancel
+								</Button>
+							) : null}
+							<Button
+								disabled={formLocked || target === ""}
+								loading={isSaving}
+								type="submit"
+							>
+								{isEditing ? "Save alert" : "Create alert"}
+							</Button>
 						</Group>
 					)}
 					label={isEditing ? "Edit target" : "New target"}
 					onChange={onTargetChange}
 					placeholder="0.00"
+					rightSection={<TargetChange source={priceSource} target={target} />}
+					rightSectionPointerEvents="none"
+					rightSectionWidth="12ch"
 					value={target}
 				/>
-				<Group justify="flex-end">
-					{isEditing ? (
-						<Button onClick={onCancel} type="button" variant="default">
-							Cancel
-						</Button>
-					) : null}
-					<Button
-						disabled={formLocked || target === ""}
-						loading={isSaving}
-						type="submit"
-					>
-						{isEditing ? "Save alert" : "Create alert"}
-					</Button>
-				</Group>
 				{formLocked ? (
 					<Text c="dimmed" size="sm">
 						The limit of {limit} alerts has been reached.

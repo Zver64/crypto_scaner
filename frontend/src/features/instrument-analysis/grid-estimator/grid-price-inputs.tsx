@@ -1,49 +1,86 @@
-import { SimpleGrid, TextInput } from "@mantine/core";
+import { SimpleGrid } from "@mantine/core";
 
 import type { GridInputField } from "@/features/instrument-analysis/grid-estimator/types";
 import type { useGridEstimatorForm } from "@/features/instrument-analysis/grid-estimator/use-grid-estimator-form";
 
-interface GridPriceInputsProps {
+type GridEstimatorForm = ReturnType<typeof useGridEstimatorForm>;
+
+interface GridPriceInputsProps extends Pick<
+	GridEstimatorForm,
+	"commitError" | "commitField" | "committedInput" | "form"
+> {
 	disabled: boolean;
-	inputProps: ReturnType<typeof useGridEstimatorForm>["inputProps"];
 	investmentAsset: string;
 	priceUnit: string;
 }
 
-// The typed prices, grid count, and investment of a grid calculator.
+// The typed prices, grid count, and investment of a grid calculator. Each is
+// checked and committed on blur or Enter, and restored on Escape.
 export function GridPriceInputs({
+	commitError,
+	commitField,
+	committedInput,
 	disabled,
-	inputProps,
+	form,
 	investmentAsset,
 	priceUnit,
 }: GridPriceInputsProps) {
-	const field = (name: GridInputField) => ({ disabled, ...inputProps(name) });
+	const inputs: {
+		inputMode: "decimal" | "numeric";
+		label: string;
+		name: GridInputField;
+	}[] = [
+		{
+			inputMode: "decimal",
+			label: `Lower price (${priceUnit})`,
+			name: "lowerPrice",
+		},
+		{
+			inputMode: "decimal",
+			label: `Upper price (${priceUnit})`,
+			name: "upperPrice",
+		},
+		{ inputMode: "numeric", label: "Grid count", name: "gridCount" },
+		{
+			inputMode: "decimal",
+			label: `${investmentAsset} investment`,
+			name: "investment",
+		},
+	];
 	return (
 		<SimpleGrid cols={2} spacing="md">
-			<TextInput
-				inputMode="decimal"
-				label={`Lower price (${priceUnit})`}
-				required
-				{...field("lowerPrice")}
-			/>
-			<TextInput
-				inputMode="decimal"
-				label={`Upper price (${priceUnit})`}
-				required
-				{...field("upperPrice")}
-			/>
-			<TextInput
-				inputMode="numeric"
-				label="Grid count"
-				required
-				{...field("gridCount")}
-			/>
-			<TextInput
-				inputMode="decimal"
-				label={`${investmentAsset} investment`}
-				required
-				{...field("investment")}
-			/>
+			{inputs.map(({ inputMode, label, name }) => (
+				<form.AppField
+					key={name}
+					listeners={{
+						onBlur: ({ fieldApi }) => {
+							if (fieldApi.state.meta.errors.length === 0) commitField(name);
+						},
+					}}
+					name={name}
+					validators={{ onBlur: ({ value }) => commitError(name, value) }}
+				>
+					{(field) => (
+						<field.TextField
+							disabled={disabled}
+							inputMode={inputMode}
+							label={label}
+							onKeyDown={(event) => {
+								if (event.key === "Enter") {
+									event.preventDefault();
+									field.handleBlur();
+								}
+								if (event.key === "Escape") {
+									event.preventDefault();
+									field.handleChange(committedInput[name]);
+									field.handleBlur();
+								}
+							}}
+							required
+						/>
+					)}
+				</form.AppField>
+			))}
 		</SimpleGrid>
 	);
 }

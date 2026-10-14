@@ -8,7 +8,7 @@ import {
 	useValidateStrategy,
 } from "@/api/generated/api";
 import type { StrategyMissingIndicator } from "@/api/generated/models";
-import { useAppForm } from "@/components/form/use-app-form";
+import { useAppForm } from "@/components/form";
 import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
 import { mutationErrorMessage } from "@/features/scanner-settings/utils";
 import type { StrategyQuery } from "@/features/strategy-settings/types";

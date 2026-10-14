@@ -14,8 +14,7 @@ import {
 	useUpdatePriceAlert,
 } from "@/api/generated/api";
 import type { ErrorResponse } from "@/api/generated/models";
-import { useAppForm } from "@/components/form/use-app-form";
-import { fieldError } from "@/components/form/utils";
+import { useAppForm } from "@/components/form";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
@@ -72,8 +71,7 @@ export function PriceAlertsController({
 		defaultValues: emptyEditor,
 		onSubmit: ({ value }) => submit(value),
 	});
-	// The submit button and the percent change follow the target as it is
-	// typed.
+	// The percent change follows the target as it is typed.
 	const values = useSelector(form.store, (state) => state.values);
 	// An edited alert that no longer exists leaves the editor empty.
 	const editedAlertGone =
@@ -196,11 +194,14 @@ export function PriceAlertsController({
 								if (editedAlertGone) form.setFieldValue("editingID", undefined);
 							}}
 							priceSource={priceSource}
+							renderSubmit={(props) => (
+								<form.AppForm>
+									<form.SubmitButton {...props} loading={isSaving} />
+								</form.AppForm>
+							)}
 							target={editor.target}
 							targetError={
-								editedAlertGone
-									? undefined
-									: fieldError(field.state.meta.errors)
+								editedAlertGone ? undefined : field.state.meta.errors[0]
 							}
 						/>
 					)}

@@ -1,7 +1,7 @@
 import { useSelector } from "@tanstack/react-form";
-import { type ChangeEvent, type KeyboardEvent, useState } from "react";
+import { useState } from "react";
 
-import { useAppForm } from "@/components/form/use-app-form";
+import { useAppForm } from "@/components/form";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import { DEFAULT_MARKUPS } from "@/features/instrument-analysis/grid-estimator/config";
 import type {
@@ -80,12 +80,13 @@ export function useGridEstimatorForm({
 	const [committedInput, setCommittedInput] = useState<GridInput>(
 		recommendation.input,
 	);
-	// Why a typed field was not committed; kept until the field changes.
-	const [errors, setErrors] = useState<Partial<Record<GridInputField, string>>>(
-		{},
-	);
-	const setError = (field: GridInputField, error: string | undefined) =>
-		setErrors((current) => ({ ...current, [field]: error }));
+	// Sets a typed field's error the way its blur validator does, so the next
+	// blur checks the field again.
+	const setBlurError = (field: GridInputField, error: string | undefined) =>
+		form.setFieldMeta(field, (meta) => ({
+			...meta,
+			errorMap: { ...meta.errorMap, onBlur: error },
+		}));
 
 	const { anchor } = bounds;
 	const hourlyRange = validPositiveNumber(hourlyVolatilityPercent)
@@ -128,12 +129,9 @@ export function useGridEstimatorForm({
 		if (markups.markup !== undefined) {
 			form.setFieldValue("markup", markups.markup);
 		}
-		setErrors((current) => ({
-			...current,
-			gridCount: error ?? undefined,
-			lowerPrice: undefined,
-			upperPrice: undefined,
-		}));
+		setBlurError("gridCount", error ?? undefined);
+		setBlurError("lowerPrice", undefined);
+		setBlurError("upperPrice", undefined);
 		setCommittedInput({
 			...committedInput,
 			gridCount,
@@ -175,11 +173,6 @@ export function useGridEstimatorForm({
 	}
 
 	function commitUpperPrice(upperPrice: string) {
-		const limitError = upperPriceLimitError(bounds, upperPrice, priceUnit);
-		if (limitError) {
-			setError("upperPrice", limitError);
-			return;
-		}
 		const markup = upperMarkupPercent(anchor, upperPrice);
 		if (markup === null) {
 			setCommittedInput({ ...committedInput, upperPrice });
@@ -189,11 +182,6 @@ export function useGridEstimatorForm({
 	}
 
 	function commitLowerPrice(lowerPrice: string) {
-		const limitError = lowerPriceLimitError(bounds, lowerPrice, priceUnit);
-		if (limitError) {
-			setError("lowerPrice", limitError);
-			return;
-		}
 		const lowerMarkup = lowerMarkupPercent(anchor, lowerPrice);
 		if (lowerMarkup === null) {
 			setCommittedInput({ ...committedInput, lowerPrice });
@@ -202,37 +190,43 @@ export function useGridEstimatorForm({
 		applyRange({ ...currentRange(), lowerPrice }, { lowerMarkup });
 	}
 
-	// Accepts a typed grid count only when its minimum step stays within the
-	// hourly-to-daily range, then moves the step slider to that step. Spot and
-	// futures grids share their levels, so the spot estimate gives the step.
-	function commitGridCount(gridCount: string) {
-		const nextInput = { ...committedInput, gridCount };
+	// The minimum step of a typed grid count, when the hourly range bounds
+	// it. Spot and futures grids share their levels, so the spot estimate
+	// gives the step.
+	function gridCountStepPercent(gridCount: string): number | null {
 		const spotEstimate = calculateSpotGridInput(
-			nextInput,
+			{ ...committedInput, gridCount },
 			values.gridType,
 		)?.estimate;
-		if (!spotEstimate || hourlyRange === null) {
-			setCommittedInput(nextInput);
-			return;
-		}
+		return spotEstimate && hourlyRange !== null
+			? spotGridMinimumStepPercent(spotEstimate)
+			: null;
+	}
 
-		const stepPercent = spotGridMinimumStepPercent(spotEstimate);
+	// Accepts a typed grid count only when its minimum step stays within the
+	// hourly-to-daily range.
+	function gridCountError(gridCount: string): string | undefined {
+		const stepPercent = gridCountStepPercent(gridCount);
 		if (
-			stepPercent < hourlyRange ||
-			(dailyRange !== null && stepPercent > dailyRange)
+			stepPercent === null ||
+			hourlyRange === null ||
+			(stepPercent >= hourlyRange &&
+				(dailyRange === null || stepPercent <= dailyRange))
 		) {
-			setError(
-				"gridCount",
-				`Minimum grid step would be ${formatRangePercent(stepPercent)}; it must be ${
-					dailyRange === null
-						? `at least ${formatRangePercent(hourlyRange)}`
-						: `from ${formatRangePercent(hourlyRange)} to ${formatRangePercent(dailyRange)}`
-				}`,
-			);
-			return;
+			return undefined;
 		}
-		form.setFieldValue("rangePercent", stepPercent);
-		setCommittedInput(nextInput);
+		return `Minimum grid step would be ${formatRangePercent(stepPercent)}; it must be ${
+			dailyRange === null
+				? `at least ${formatRangePercent(hourlyRange)}`
+				: `from ${formatRangePercent(hourlyRange)} to ${formatRangePercent(dailyRange)}`
+		}`;
+	}
+
+	// Commits an accepted grid count and moves the step slider to its step.
+	function commitGridCount(gridCount: string) {
+		const stepPercent = gridCountStepPercent(gridCount);
+		if (stepPercent !== null) form.setFieldValue("rangePercent", stepPercent);
+		setCommittedInput({ ...committedInput, gridCount });
 	}
 
 	function commitField(field: GridInputField) {
@@ -247,32 +241,22 @@ export function useGridEstimatorForm({
 
 	function applyInvestment(investment: string) {
 		form.setFieldValue("investment", investment);
-		setError("investment", undefined);
 		setCommittedInput({ ...committedInput, investment });
 	}
 
-	// Commits a typed field on blur or Enter and restores it on Escape.
-	function inputProps(field: GridInputField) {
-		return {
-			error: errors[field],
-			onBlur: () => commitField(field),
-			onChange: (event: ChangeEvent<HTMLInputElement>) => {
-				form.setFieldValue(field, event.currentTarget.value);
-				setError(field, undefined);
-			},
-			onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => {
-				if (event.key === "Enter") {
-					event.preventDefault();
-					commitField(field);
-				}
-				if (event.key === "Escape") {
-					event.preventDefault();
-					form.setFieldValue(field, committedInput[field]);
-					setError(field, undefined);
-				}
-			},
-			value: values[field],
-		};
+	// Why a typed field cannot be committed; checked on blur.
+	function commitError(
+		field: GridInputField,
+		value: string,
+	): string | undefined {
+		if (field === "upperPrice") {
+			return upperPriceLimitError(bounds, value, priceUnit) ?? undefined;
+		}
+		if (field === "lowerPrice") {
+			return lowerPriceLimitError(bounds, value, priceUnit) ?? undefined;
+		}
+		if (field === "gridCount") return gridCountError(value);
+		return undefined;
 	}
 
 	return {
@@ -284,9 +268,11 @@ export function useGridEstimatorForm({
 		changeRange,
 		dailyRange,
 		estimate,
+		commitError,
+		commitField,
+		committedInput,
 		form,
 		hourlyRange,
-		inputProps,
 		priceUnit,
 		values,
 	};

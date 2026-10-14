@@ -1,8 +1,7 @@
 import { Button, Group, Stack } from "@mantine/core";
-import { useSelector } from "@tanstack/react-form";
 
 import type { ScannerIndicatorScale } from "@/api/generated/models";
-import { useAppForm } from "@/components/form/use-app-form";
+import { useAppForm } from "@/components/form";
 import { scaleFields } from "@/features/scanner-settings/constants";
 import { ScannerIndicatorScaleFields } from "@/features/scanner-settings/scanner-indicator-scale-fields";
 import { indicatorScale, scaleDraft } from "@/features/scanner-settings/utils";
@@ -28,8 +27,6 @@ export function ScannerIndicatorScaleEditor({
 			if (next) onSave(next);
 		},
 	});
-	// The Save button follows the values as they change.
-	const next = indicatorScale(useSelector(form.store, (state) => state.values));
 	return (
 		<form
 			onSubmit={(event) => {
@@ -43,9 +40,11 @@ export function ScannerIndicatorScaleEditor({
 					<Button onClick={onCancel} size="compact-xs" variant="subtle">
 						Cancel
 					</Button>
-					<Button disabled={disabled || !next} size="compact-xs" type="submit">
-						Save
-					</Button>
+					<form.AppForm>
+						<form.SubmitButton disabled={disabled} size="compact-xs">
+							Save
+						</form.SubmitButton>
+					</form.AppForm>
 				</Group>
 			</Stack>
 		</form>

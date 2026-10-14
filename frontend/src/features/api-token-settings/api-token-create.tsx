@@ -1,7 +1,6 @@
-import { Button, Group } from "@mantine/core";
-import { useSelector } from "@tanstack/react-form";
+import { Box, Group } from "@mantine/core";
 
-import { useAppForm } from "@/components/form/use-app-form";
+import { useAppForm } from "@/components/form";
 
 interface ApiTokenCreateProps {
 	isPending: boolean;
@@ -12,17 +11,8 @@ interface ApiTokenCreateProps {
 export function ApiTokenCreate({ isPending, onCreate }: ApiTokenCreateProps) {
 	const form = useAppForm({
 		defaultValues: { name: "" },
-		onSubmit: ({ value }) => {
-			const trimmed = value.name.trim();
-			if (trimmed === "") return;
-			onCreate(trimmed, () => form.reset());
-		},
+		onSubmit: ({ value }) => onCreate(value.name.trim(), () => form.reset()),
 	});
-	// The Create button follows the name as it is typed.
-	const empty = useSelector(
-		form.store,
-		(state) => state.values.name.trim() === "",
-	);
 	return (
 		<form
 			onSubmit={(event) => {
@@ -30,22 +20,33 @@ export function ApiTokenCreate({ isPending, onCreate }: ApiTokenCreateProps) {
 				void form.handleSubmit();
 			}}
 		>
-			<Group align="flex-end" wrap="nowrap">
-				<form.AppField name="name">
+			<form.AppForm>
+				<form.AppField
+					name="name"
+					validators={{
+						onChange: ({ value }) =>
+							value.trim() === "" ? "Enter a token name" : undefined,
+					}}
+				>
 					{(field) => (
 						<field.TextField
 							disabled={isPending}
-							flex={1}
+							// The button sits beside the input, above its error.
+							inputContainer={(input) => (
+								<Group gap="sm" wrap="nowrap">
+									<Box flex={1}>{input}</Box>
+									<form.SubmitButton loading={isPending}>
+										Create
+									</form.SubmitButton>
+								</Group>
+							)}
 							label="New token"
 							maxLength={64}
 							placeholder="Where it is used, such as laptop CLI"
 						/>
 					)}
 				</form.AppField>
-				<Button disabled={empty} loading={isPending} type="submit">
-					Create
-				</Button>
-			</Group>
+			</form.AppForm>
 		</form>
 	);
 }

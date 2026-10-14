@@ -1,4 +1,4 @@
-import { Button, Group, Paper, Select, Stack, Text } from "@mantine/core";
+import { Group, Paper, Select, Stack, Text } from "@mantine/core";
 import { useSelector } from "@tanstack/react-form";
 import { useState } from "react";
 
@@ -6,13 +6,12 @@ import type {
 	IndicatorType,
 	ScannerIndicatorInput,
 } from "@/api/generated/models";
-import { useAppForm } from "@/components/form/use-app-form";
+import { useAppForm } from "@/components/form";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import {
 	emptyScaleDraft,
 	scaleFields,
 } from "@/features/scanner-settings/constants";
-import { ScannerIndicatorParameterField } from "@/features/scanner-settings/scanner-indicator-parameter-field";
 import { ScannerIndicatorPeriodsField } from "@/features/scanner-settings/scanner-indicator-periods-field";
 import { ScannerIndicatorScaleFields } from "@/features/scanner-settings/scanner-indicator-scale-fields";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
@@ -62,10 +61,9 @@ export function ScannerIndicatorForm({
 	});
 	// The group only narrows the indicator choice and is not submitted.
 	const [group, setGroup] = useState(allGroups);
-	// The chosen type decides which fields are shown, and the Add button
-	// follows the values as they change.
-	const draft = useSelector(form.store, (state) => state.values);
-	const type = types.find((item) => item.type === draft.type);
+	// The chosen type decides which fields are shown.
+	const typeKey = useSelector(form.store, (state) => state.values.type);
+	const type = types.find((item) => item.type === typeKey);
 	const groupTypes =
 		group === allGroups ? types : types.filter((item) => item.group === group);
 	// A new type starts from its own defaults.
@@ -115,6 +113,10 @@ export function ScannerIndicatorForm({
 					<form.AppField
 						listeners={{ onChange: ({ value }) => resetForType(value) }}
 						name="type"
+						validators={{
+							onChange: ({ value }) =>
+								value === null ? "Choose an indicator" : undefined,
+						}}
 					>
 						{(field) => (
 							<field.SelectField
@@ -132,7 +134,28 @@ export function ScannerIndicatorForm({
 							key={parameter.key}
 							name={`parameters.${parameter.key}`}
 						>
-							{() => <ScannerIndicatorParameterField parameter={parameter} />}
+							{(field) =>
+								parameter.kind === "choice" ? (
+									<field.SelectField
+										allowDeselect={false}
+										data={(parameter.choices ?? []).map((choice) => ({
+											label: choice.title,
+											value: String(choice.value),
+										}))}
+										description={parameter.description}
+										label={parameter.title}
+									/>
+								) : (
+									<field.NumberField
+										allowDecimal={parameter.kind === "real"}
+										description={parameter.description}
+										label={parameter.title}
+										max={parameter.maximum}
+										min={parameter.minimum}
+										placeholder={String(parameter.default)}
+									/>
+								)
+							}
 						</form.AppField>
 					))}
 					{type ? (
@@ -144,9 +167,18 @@ export function ScannerIndicatorForm({
 							Outputs: {type.outputs.join(", ")}
 						</Text>
 					) : null}
-					<form.Field name="periods">
+					<form.Field
+						name="periods"
+						validators={{
+							onChange: ({ value }) =>
+								Object.keys(value).length === 0
+									? "Choose at least one period"
+									: undefined,
+						}}
+					>
 						{(field) => (
 							<ScannerIndicatorPeriodsField
+								error={field.state.meta.errors[0]}
 								onChange={field.handleChange}
 								tableAllowed={tableColumnAllowed(type)}
 								value={field.state.value}
@@ -157,13 +189,9 @@ export function ScannerIndicatorForm({
 						<ScannerIndicatorScaleFields fields={scaleFields} form={form} />
 					) : null}
 					<Group justify="flex-end">
-						<Button
-							disabled={!scannerIndicatorInput(draft, type, periodOrder)}
-							loading={isSaving}
-							type="submit"
-						>
-							Add
-						</Button>
+						<form.AppForm>
+							<form.SubmitButton loading={isSaving}>Add</form.SubmitButton>
+						</form.AppForm>
 					</Group>
 				</Stack>
 			</form>

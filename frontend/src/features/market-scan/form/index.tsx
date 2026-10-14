@@ -1,18 +1,16 @@
 import {
-	Button,
+	Fieldset,
 	Paper,
 	SimpleGrid,
 	type SimpleGridProps,
 	Stack,
 	useMatches,
 } from "@mantine/core";
-import { useSelector } from "@tanstack/react-form";
-import { type FormEvent, useId } from "react";
 
-import { useAppForm } from "@/components/form/use-app-form";
-import { NumberInputFieldset } from "@/components/number-input-fieldset";
+import { useAppForm } from "@/components/form";
 import { applicationConfig } from "@/config";
-import { VolatilityFieldset } from "@/features/analysis/volatility-form";
+import { VolatilityFields } from "@/features/analysis/volatility-form";
+import { presetOptions } from "@/features/analysis/volatility-form/utils";
 import { marketScanCriteriaConstraints } from "@/features/market-scan/criteria";
 import { criteriaFromValidDraft } from "@/features/market-scan/form/utils";
 import {
@@ -31,7 +29,7 @@ interface MarketScanFormProps {
 	initialCriteria: MarketScanCriteria;
 	disabled: boolean;
 	isSubmitting: boolean;
-	onCommit(criteria: MarketScanCriteria): Promise<void>;
+	onCommit(criteria: MarketScanCriteria): void;
 }
 
 export function MarketScanForm({
@@ -44,77 +42,96 @@ export function MarketScanForm({
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const volatilityPresets = applicationConfig.volatility;
-	const id = useId();
+	// The daily and the hourly criterion, each with its own candle range.
+	const volatilityCriteria = [
+		{
+			fields: { percentile: "percentile", period: "period" },
+			legend: "Daily Volatility",
+			presets: volatilityPresets.days,
+			rangeField: "minimumRangePercent",
+		},
+		{
+			fields: { percentile: "hourlyPercentile", period: "hourlyPeriod" },
+			legend: "Hourly Volatility",
+			presets: volatilityPresets.hours,
+			rangeField: "hourlyMinimumRangePercent",
+		},
+	] as const;
 	// The inputs may hold strings while being typed.
 	const defaultValues: MarketScanDraft = initialCriteria;
-	const form = useAppForm({ defaultValues });
-	// The fields and the Run Market Scan button follow the values as they are
-	// typed; the button stays disabled while they are invalid.
-	const values = useSelector(form.store, (state) => state.values);
-	const errors = validateMarketScanCriteria(values);
-	const draftCriteria = criteriaFromValidDraft(values);
-	const field = (name: keyof MarketScanDraft) => ({
-		error: errors[name],
-		id: `${id}-${name}`,
-		onChange: (value: number | string) => form.setFieldValue(name, value),
-		value: values[name],
+	const form = useAppForm({
+		defaultValues,
+		onSubmit: ({ value }) => {
+			const criteria = criteriaFromValidDraft(value);
+			if (criteria) onCommit(criteria);
+		},
+		validators: {
+			onChange: ({ value }) => ({ fields: validateMarketScanCriteria(value) }),
+		},
 	});
 
-	const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		if (!draftCriteria) return;
-		await onCommit(draftCriteria);
-	};
-
 	return (
-		<Paper component="form" onSubmit={handleSubmit} p={paperPadding}>
+		<Paper
+			component="form"
+			onSubmit={(event) => {
+				event.preventDefault();
+				void form.handleSubmit();
+			}}
+			p={paperPadding}
+		>
 			<Stack gap={contentSpacing}>
 				<SimpleGrid cols={columns} spacing={contentSpacing}>
-					<VolatilityFieldset
-						minimumRangePercent={field("minimumRangePercent")}
-						minimumRangePresets={volatilityPresets.days.candleRangePresets}
-						percentile={field("percentile")}
-						percentilePresets={volatilityPresets.percentilePresets}
-						period={field("period")}
-						periodPresets={volatilityPresets.days.periodPresets}
-						title="Daily Volatility"
-						unit="days"
-					/>
-					<VolatilityFieldset
-						minimumRangePercent={field("hourlyMinimumRangePercent")}
-						minimumRangePresets={volatilityPresets.hours.candleRangePresets}
-						percentile={field("hourlyPercentile")}
-						percentilePresets={volatilityPresets.percentilePresets}
-						period={field("hourlyPeriod")}
-						periodPresets={volatilityPresets.hours.periodPresets}
-						title="Hourly Volatility"
-						unit="hours"
-					/>
-					<NumberInputFieldset
-						inputs={[
-							{
-								decimalScale: 2,
-								...field("minimumMarketCapMillions"),
-								label: "Minimum Market Cap",
-								min: marketScanCriteriaConstraints.minimumMarketCapMillions
-									.minimum,
-								presets: applicationConfig.marketCap.presets.map((value) => ({
-									label: formatMarketCapPreset(value),
-									value,
-								})),
-								step: 1,
-							},
-						]}
-						title="Market Cap"
-					/>
+					{volatilityCriteria.map((criterion) => (
+						<VolatilityFields
+							fields={criterion.fields}
+							form={form}
+							key={criterion.legend}
+							legend={criterion.legend}
+							percentilePresets={volatilityPresets.percentilePresets}
+							periodPresets={criterion.presets.periodPresets}
+						>
+							<form.AppField name={criterion.rangeField}>
+								{(field) => (
+									<field.NumberField
+										decimalScale={10}
+										label="Candle Range (%)"
+										min={
+											marketScanCriteriaConstraints.minimumRangePercent.minimum
+										}
+										presets={presetOptions(
+											criterion.presets.candleRangePresets,
+										)}
+										step={0.1}
+									/>
+								)}
+							</form.AppField>
+						</VolatilityFields>
+					))}
+					<Fieldset legend="Market Cap">
+						<form.AppField name="minimumMarketCapMillions">
+							{(field) => (
+								<field.NumberField
+									decimalScale={2}
+									label="Minimum Market Cap"
+									min={
+										marketScanCriteriaConstraints.minimumMarketCapMillions
+											.minimum
+									}
+									presets={applicationConfig.marketCap.presets.map((value) => ({
+										label: formatMarketCapPreset(value),
+										value,
+									}))}
+									step={1}
+								/>
+							)}
+						</form.AppField>
+					</Fieldset>
 				</SimpleGrid>
-				<Button
-					disabled={disabled || !draftCriteria}
-					loading={isSubmitting}
-					type="submit"
-				>
-					Run Market Scan
-				</Button>
+				<form.AppForm>
+					<form.SubmitButton disabled={disabled} loading={isSubmitting}>
+						Run Market Scan
+					</form.SubmitButton>
+				</form.AppForm>
 			</Stack>
 		</Paper>
 	);

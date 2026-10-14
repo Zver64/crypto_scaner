@@ -14,6 +14,8 @@ interface PriceAlertFormProps {
 	onTargetChange(target: number | string): void;
 	// Live price the target's percent change is measured from.
 	priceSource?: CoinChartData;
+	// The form's submit button, with the label and lock this form gives it.
+	renderSubmit(props: { children: string; disabled: boolean }): ReactNode;
 	target: number | string;
 	targetError?: ReactNode;
 }
@@ -27,6 +29,7 @@ export function PriceAlertForm({
 	onSubmit,
 	onTargetChange,
 	priceSource,
+	renderSubmit,
 	target,
 	targetError,
 }: PriceAlertFormProps) {
@@ -50,13 +53,10 @@ export function PriceAlertForm({
 									Cancel
 								</Button>
 							) : null}
-							<Button
-								disabled={formLocked || target === ""}
-								loading={isSaving}
-								type="submit"
-							>
-								{isEditing ? "Save alert" : "Create alert"}
-							</Button>
+							{renderSubmit({
+								children: isEditing ? "Save alert" : "Create alert",
+								disabled: formLocked,
+							})}
 						</Group>
 					)}
 					label={isEditing ? "Edit target" : "New target"}

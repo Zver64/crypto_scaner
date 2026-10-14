@@ -8,13 +8,14 @@ import { maxHistoryLoadCoins } from "@/features/command-settings/constants";
 // MultiSelect.
 interface HistoryLoadCoinsSelectProps extends Pick<
 	MultiSelectProps,
-	"onBlur" | "onChange" | "value"
+	"error" | "onBlur" | "onChange" | "value"
 > {
 	disabled: boolean;
 }
 
 export function HistoryLoadCoinsSelect({
 	disabled,
+	error,
 	onChange,
 	value = [],
 	...input
@@ -34,6 +35,7 @@ export function HistoryLoadCoinsSelect({
 					{...select}
 					{...input}
 					clearable
+					error={select.error ?? error}
 					description={`Up to ${maxHistoryLoadCoins} coins.`}
 					hidePickedOptions
 					label="Coins"

@@ -8,6 +8,7 @@ import { chartIntervalOptions } from "@/features/candle-chart/config";
 import { historyLoadDepth } from "@/features/command-settings/constants";
 import type { HistoryLoadValues } from "@/features/command-settings/types";
 import { describeApiError } from "@/utils/api-error";
+import { formatNumber } from "@/utils/number-format";
 
 export function historyLoadErrorMessage(
 	error: ErrorType<ErrorResponse> | null,
@@ -30,6 +31,17 @@ export function intervalLabel(interval: CandleInterval): string {
 	);
 }
 
+// Why a depth cannot be loaded; undefined while it is within the limits.
+export function historyLoadDepthError(
+	depth: number | string,
+): string | undefined {
+	return typeof depth === "number" &&
+		depth >= historyLoadDepth.min &&
+		depth <= historyLoadDepth.max
+		? undefined
+		: `Depth must be from ${formatNumber(historyLoadDepth.min)} to ${formatNumber(historyLoadDepth.max)}`;
+}
+
 // Builds the start request, with the intervals in chart order rather than in
 // the order chosen; returns undefined while no coin or interval is chosen or
 // the depth is outside its limits.
@@ -45,8 +57,7 @@ export function historyLoadRequest({
 		coins.length === 0 ||
 		intervals.length === 0 ||
 		typeof depth !== "number" ||
-		depth < historyLoadDepth.min ||
-		depth > historyLoadDepth.max
+		historyLoadDepthError(depth) !== undefined
 	) {
 		return undefined;
 	}

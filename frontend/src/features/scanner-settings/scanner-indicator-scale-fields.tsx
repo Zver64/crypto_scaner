@@ -1,6 +1,6 @@
 import { Group } from "@mantine/core";
 
-import { withFieldGroup } from "@/components/form/use-app-form";
+import { withFieldGroup } from "@/components/form";
 import { emptyScaleDraft } from "@/features/scanner-settings/constants";
 import { levelsError } from "@/features/scanner-settings/utils";
 

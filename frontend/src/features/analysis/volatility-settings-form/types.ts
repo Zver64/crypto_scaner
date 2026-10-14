@@ -5,13 +5,6 @@ export interface VolatilitySettings {
 	period: number;
 }
 
-export interface UseVolatilitySettingsFormOptions {
-	disabled: boolean;
-	initialSettings: VolatilitySettings;
-	loading?: boolean;
-	onCommit(settings: VolatilitySettings): void;
-}
-
 export type VolatilitySettingsDraft = {
 	[Field in keyof VolatilitySettings]: number | string;
 };

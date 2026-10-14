@@ -84,7 +84,6 @@ export function MarketScanScreen({
 									onCriteriaCommit(criteria);
 								},
 							});
-							return Promise.resolve();
 						}}
 					/>
 				}

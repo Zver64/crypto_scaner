@@ -1,13 +1,4 @@
-import {
-	Button,
-	Group,
-	Loader,
-	Paper,
-	Stack,
-	Text,
-	Title,
-} from "@mantine/core";
-import { useSelector } from "@tanstack/react-form";
+import { Group, Loader, Paper, Stack, Text, Title } from "@mantine/core";
 import { useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -15,7 +6,7 @@ import {
 	getGetCandleHistoryLoadQueryKey,
 	useStartCandleHistoryLoad,
 } from "@/api/generated/api";
-import { useAppForm } from "@/components/form/use-app-form";
+import { useAppForm } from "@/components/form";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import { historyLoadDepth } from "@/features/command-settings/constants";
 import { HistoryLoadCoinsSelect } from "@/features/command-settings/history-load-coins-select";
@@ -23,6 +14,7 @@ import { HistoryLoadJob } from "@/features/command-settings/history-load-job";
 import type { HistoryLoadValues } from "@/features/command-settings/types";
 import { useHistoryLoadJob } from "@/features/command-settings/use-history-load-job";
 import {
+	historyLoadDepthError,
 	historyLoadErrorMessage,
 	historyLoadRequest,
 } from "@/features/command-settings/utils";
@@ -38,11 +30,6 @@ const defaultValues: HistoryLoadValues = {
 // keeps in memory until it restarts.
 export function HistoryLoadCommand() {
 	const queryClient = useQueryClient();
-	const form = useAppForm({ defaultValues });
-	// The Start button follows the values as they change.
-	const request = historyLoadRequest(
-		useSelector(form.store, (state) => state.values),
-	);
 	const job = useHistoryLoadJob();
 	const start = useStartCandleHistoryLoad({
 		mutation: {
@@ -65,9 +52,23 @@ export function HistoryLoadCommand() {
 				}),
 		},
 	});
+	const form = useAppForm({
+		defaultValues,
+		onSubmit: ({ value }) => {
+			const request = historyLoadRequest(value);
+			if (request) start.mutate({ data: request });
+		},
+	});
 	const running = job.data?.status === "running";
 	return (
-		<Paper p="md">
+		<Paper
+			component="form"
+			onSubmit={(event) => {
+				event.preventDefault();
+				void form.handleSubmit();
+			}}
+			p="md"
+		>
 			<Stack gap="sm">
 				<Title order={3} size="h5">
 					Load deeper candle history
@@ -77,17 +78,30 @@ export function HistoryLoadCommand() {
 					of 1,000 candles per second, so backtests can replay more history. It
 					runs only when started here.
 				</Text>
-				<form.Field name="coins">
+				<form.Field
+					name="coins"
+					validators={{
+						onChange: ({ value }) =>
+							value.length === 0 ? "Choose at least one coin" : undefined,
+					}}
+				>
 					{(field) => (
 						<HistoryLoadCoinsSelect
 							disabled={running}
+							error={field.state.meta.errors[0]}
 							onBlur={field.handleBlur}
 							onChange={field.handleChange}
 							value={field.state.value}
 						/>
 					)}
 				</form.Field>
-				<form.AppField name="intervals">
+				<form.AppField
+					name="intervals"
+					validators={{
+						onChange: ({ value }) =>
+							value.length === 0 ? "Choose at least one interval" : undefined,
+					}}
+				>
 					{(field) => (
 						<field.MultiSelectField
 							data={chartIntervalOptions.map(({ label, value }) => ({
@@ -99,7 +113,10 @@ export function HistoryLoadCommand() {
 						/>
 					)}
 				</form.AppField>
-				<form.AppField name="depth">
+				<form.AppField
+					name="depth"
+					validators={{ onChange: ({ value }) => historyLoadDepthError(value) }}
+				>
 					{(field) => (
 						<field.NumberField
 							allowDecimal={false}
@@ -113,15 +130,11 @@ export function HistoryLoadCommand() {
 					)}
 				</form.AppField>
 				<Group justify="flex-end">
-					<Button
-						disabled={running || !request}
-						loading={start.isPending}
-						onClick={() => {
-							if (request) start.mutate({ data: request });
-						}}
-					>
-						Start
-					</Button>
+					<form.AppForm>
+						<form.SubmitButton disabled={running} loading={start.isPending}>
+							Start
+						</form.SubmitButton>
+					</form.AppForm>
 				</Group>
 				{start.isError ? (
 					<Text c="red" size="sm">

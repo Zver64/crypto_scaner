@@ -46,11 +46,13 @@ export function GridEstimator({
 		changeLowerMarkup,
 		changeMarkup,
 		changeRange,
+		commitError,
+		commitField,
+		committedInput,
 		dailyRange,
 		estimate,
 		form,
 		hourlyRange,
-		inputProps,
 		priceUnit,
 		values: formValues,
 	} = useGridEstimatorForm({ ...formOptions, market });
@@ -140,8 +142,11 @@ export function GridEstimator({
 				onSelect={applyInvestment}
 			/>
 			<GridPriceInputs
+				commitField={commitField}
+				committedInput={committedInput}
 				disabled={disabled}
-				inputProps={inputProps}
+				commitError={commitError}
+				form={form}
 				investmentAsset={marginAsset(market, formOptions.baseAsset)}
 				priceUnit={priceUnit}
 			/>

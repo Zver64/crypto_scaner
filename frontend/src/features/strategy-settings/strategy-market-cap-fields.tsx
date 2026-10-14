@@ -1,7 +1,6 @@
-import { Stack, Text } from "@mantine/core";
+import { Fieldset, NumberInput, Stack, Text } from "@mantine/core";
 import type { UseFormReturnType } from "@mantine/form";
 
-import { NumberInputFieldset } from "@/components/number-input-fieldset";
 import type { StrategyFormValues } from "@/features/strategy-settings/types";
 import { useWatchedValue } from "@/features/strategy-settings/use-watched-value";
 import {
@@ -33,25 +32,22 @@ export function StrategyMarketCapFields({
 	};
 	return (
 		<Stack gap={4}>
-			<NumberInputFieldset
-				inputs={[
-					{
-						...field,
-						...form.getInputProps("minMarketCap"),
-						error: errors.minimum,
-						id: "strategy-min-market-cap",
-						label: "Minimum",
-					},
-					{
-						...field,
-						...form.getInputProps("maxMarketCap"),
-						error: errors.maximum,
-						id: "strategy-max-market-cap",
-						label: "Maximum",
-					},
-				]}
-				title="Market cap"
-			/>
+			<Fieldset legend="Market cap">
+				<Stack gap="xs">
+					<NumberInput
+						{...field}
+						{...form.getInputProps("minMarketCap")}
+						error={errors.minimum}
+						label="Minimum"
+					/>
+					<NumberInput
+						{...field}
+						{...form.getInputProps("maxMarketCap")}
+						error={errors.maximum}
+						label="Maximum"
+					/>
+				</Stack>
+			</Fieldset>
 			<Text c="dimmed" size="xs">
 				Buys or signals only coins whose current market cap lies in this range;
 				coins without a known market cap then buy or signal nothing. Backtests

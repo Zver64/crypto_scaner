@@ -8,6 +8,7 @@ import type {
 } from "@/features/scanner-settings/types";
 
 interface ScannerIndicatorPeriodsFieldProps {
+	error: string | undefined;
 	onChange(periods: PeriodChoices): void;
 	// Whether the chosen indicator can be a table column.
 	tableAllowed: boolean;
@@ -17,6 +18,7 @@ interface ScannerIndicatorPeriodsFieldProps {
 // The periods an indicator is added on, each with its own table column and
 // chart choices.
 export function ScannerIndicatorPeriodsField({
+	error,
 	onChange,
 	tableAllowed,
 	value,
@@ -39,6 +41,7 @@ export function ScannerIndicatorPeriodsField({
 					? undefined
 					: "Only indicators with one output can be table columns."
 			}
+			error={error}
 			label="Periods"
 		>
 			<Stack gap="xs" mt="xs">

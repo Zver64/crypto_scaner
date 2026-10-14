@@ -1,5 +1,5 @@
 import { Button, Group, TextInput } from "@mantine/core";
-import { useState } from "react";
+import { useForm } from "@mantine/form";
 
 interface ApiTokenCreateProps {
 	isPending: boolean;
@@ -8,15 +8,15 @@ interface ApiTokenCreateProps {
 }
 
 export function ApiTokenCreate({ isPending, onCreate }: ApiTokenCreateProps) {
-	const [name, setName] = useState("");
-	const trimmed = name.trim();
+	// Controlled, because the Create button follows the name as it is typed.
+	const form = useForm({ initialValues: { name: "" }, mode: "controlled" });
 	return (
 		<form
-			onSubmit={(event) => {
-				event.preventDefault();
+			onSubmit={form.onSubmit(({ name }) => {
+				const trimmed = name.trim();
 				if (trimmed === "") return;
-				onCreate(trimmed, () => setName(""));
-			}}
+				onCreate(trimmed, form.reset);
+			})}
 		>
 			<Group align="flex-end" wrap="nowrap">
 				<TextInput
@@ -24,11 +24,14 @@ export function ApiTokenCreate({ isPending, onCreate }: ApiTokenCreateProps) {
 					flex={1}
 					label="New token"
 					maxLength={64}
-					onChange={(event) => setName(event.currentTarget.value)}
 					placeholder="Where it is used, such as laptop CLI"
-					value={name}
+					{...form.getInputProps("name")}
 				/>
-				<Button disabled={trimmed === ""} loading={isPending} type="submit">
+				<Button
+					disabled={form.values.name.trim() === ""}
+					loading={isPending}
+					type="submit"
+				>
 					Create
 				</Button>
 			</Group>

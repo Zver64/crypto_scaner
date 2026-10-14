@@ -1,23 +1,17 @@
-import {
-	Button,
-	Code,
-	Group,
-	Stack,
-	Text,
-	Tooltip,
-	UnstyledButton,
-} from "@mantine/core";
-import { useClipboard } from "@mantine/hooks";
+import { Group, Stack, Text } from "@mantine/core";
+import type { UseFormReturnType } from "@mantine/form";
 import { type ReactNode, useState } from "react";
-import type { StrategyVariable } from "@/api/generated/models";
+import { StrategyConditionsReplaceButton } from "@/features/strategy-settings/strategy-conditions-replace-button";
+import { StrategyExpressionPreview } from "@/features/strategy-settings/strategy-expression-preview";
 import { StrategyImport } from "@/features/strategy-settings/strategy-import";
 import { StrategyRuleBuilder } from "@/features/strategy-settings/strategy-rule-builder";
-import type { StrategyQuery } from "@/features/strategy-settings/types";
-import {
-	emptyStrategyQuery,
-	strategyExpression,
-	strategyQueryComplete,
-} from "@/features/strategy-settings/utils";
+import type {
+	StrategyFormValues,
+	StrategyQuery,
+	StrategyRuleField,
+	StrategyRuleVariables,
+} from "@/features/strategy-settings/types";
+import { emptyStrategyQuery } from "@/features/strategy-settings/utils";
 
 interface StrategyConditionsProps {
 	// Extra header actions, such as removing an optional rule.
@@ -25,25 +19,28 @@ interface StrategyConditionsProps {
 	disabled: boolean;
 	// Whether the rule is an exit rule, which may read position variables.
 	exit: boolean;
-	onChange(query: StrategyQuery): void;
-	query: StrategyQuery;
+	field: StrategyRuleField;
+	form: UseFormReturnType<StrategyFormValues>;
 	title: string;
-	variables: readonly StrategyVariable[];
+	variables: StrategyRuleVariables;
 }
 
-// One rule of a strategy: its builder, import, and copyable expression.
+// One rule of a strategy: its builder, import, and copyable expression. The
+// builder edits the form field itself; only the header button and the
+// expression follow the field.
 export function StrategyConditions({
 	actions,
 	disabled,
 	exit,
-	onChange,
-	query,
+	field,
+	form,
 	title,
 	variables,
 }: StrategyConditionsProps) {
 	const [importing, setImporting] = useState(false);
-	const clipboard = useClipboard({ timeout: 1500 });
-	const expression = strategyExpression(query);
+	// A replaced query changes the field's key, which remounts the builder
+	// with it.
+	const replace = (query: StrategyQuery) => form.setFieldValue(field, query);
 	return (
 		<Stack gap={4}>
 			<Group justify="space-between">
@@ -51,67 +48,30 @@ export function StrategyConditions({
 					{title}
 				</Text>
 				<Group gap={4}>
-					{/* An empty builder imports an expression; conditions are
-					    cleared first, so an import never replaces them. */}
-					{query.rules.length === 0 ? (
-						<Button
-							disabled={disabled}
-							onClick={() => setImporting(true)}
-							size="compact-sm"
-							variant="subtle"
-						>
-							Import
-						</Button>
-					) : (
-						<Button
-							color="red"
-							disabled={disabled}
-							onClick={() => onChange(emptyStrategyQuery())}
-							size="compact-sm"
-							variant="subtle"
-						>
-							Clear
-						</Button>
-					)}
+					<StrategyConditionsReplaceButton
+						disabled={disabled}
+						field={field}
+						form={form}
+						onClear={() => replace(emptyStrategyQuery())}
+						onImport={() => setImporting(true)}
+					/>
 					{actions}
 				</Group>
 			</Group>
 			<StrategyRuleBuilder
+				defaultQuery={form.getValues()[field] ?? emptyStrategyQuery()}
 				disabled={disabled}
-				onChange={onChange}
-				query={query}
+				key={form.key(field)}
+				onQueryChange={(query) =>
+					form.setFieldValue(field, query, { forceUpdate: false })
+				}
 				variables={variables}
 			/>
-			{strategyQueryComplete(query) ? (
-				<>
-					<Tooltip label="Copied" opened={clipboard.copied}>
-						<UnstyledButton
-							aria-label={`Copy the ${title.toLowerCase()}`}
-							onClick={() => clipboard.copy(expression)}
-						>
-							<Code
-								block
-								style={{ whiteSpace: "pre-wrap", wordBreak: "break-word" }}
-							>
-								{expression}
-							</Code>
-						</UnstyledButton>
-					</Tooltip>
-					<Text c={clipboard.error ? "red" : "dimmed"} size="xs">
-						{clipboard.error
-							? "The expression could not be copied."
-							: "Tap the expression to copy it."}
-					</Text>
-				</>
-			) : (
-				<Text c="dimmed" size="xs">
-					Add at least one condition and fill every value.
-				</Text>
-			)}
+			<StrategyExpressionPreview field={field} form={form} title={title} />
 			<StrategyImport
 				exit={exit}
 				onClose={() => setImporting(false)}
-				onImport={onChange}
+				onImport={replace}
 				opened={importing}
 			/>
 		</Stack>

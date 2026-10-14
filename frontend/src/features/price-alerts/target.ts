@@ -4,8 +4,10 @@ export type PriceTargetResult =
 	| { value: string; error?: never }
 	| { value?: never; error: string };
 
-export function normalizePriceTarget(input: string): PriceTargetResult {
-	const raw = input.trim();
+export function normalizePriceTarget(
+	input: number | string,
+): PriceTargetResult {
+	const raw = String(input).trim();
 	if (!raw) return { error: "Enter a target price." };
 	try {
 		const decimal = new Decimal(raw);

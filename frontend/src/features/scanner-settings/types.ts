@@ -1,7 +1,8 @@
 import type { CandleInterval } from "@/api/generated/models";
 
-// Parameter inputs by key; an empty input takes the backend default.
-export type ParameterValues = Record<string, number | string>;
+// Parameter inputs by key, as the inputs emit them: a number input's number or
+// string, a choice select's string. An empty input takes the backend default.
+export type ParameterValues = Record<string, number | string | null>;
 
 // Where a chosen period shows the indicator.
 export interface PeriodChoice {

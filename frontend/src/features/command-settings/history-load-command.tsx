@@ -9,29 +9,39 @@ import {
 	Text,
 	Title,
 } from "@mantine/core";
+import { useForm } from "@mantine/form";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import {
 	type getCandleHistoryLoadResponseSuccess,
 	getGetCandleHistoryLoadQueryKey,
 	useStartCandleHistoryLoad,
 } from "@/api/generated/api";
-import type { CandleInterval } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import { historyLoadDepth } from "@/features/command-settings/constants";
 import { HistoryLoadCoinsSelect } from "@/features/command-settings/history-load-coins-select";
 import { HistoryLoadJob } from "@/features/command-settings/history-load-job";
+import type { HistoryLoadValues } from "@/features/command-settings/types";
 import { useHistoryLoadJob } from "@/features/command-settings/use-history-load-job";
-import { historyLoadErrorMessage } from "@/features/command-settings/utils";
+import {
+	historyLoadErrorMessage,
+	historyLoadRequest,
+} from "@/features/command-settings/utils";
 import { formatNumber } from "@/utils/number-format";
 
 // Starts a deeper history load and follows the latest one, which the server
 // keeps in memory until it restarts.
 export function HistoryLoadCommand() {
 	const queryClient = useQueryClient();
-	const [coins, setCoins] = useState<string[]>([]);
-	const [intervals, setIntervals] = useState<CandleInterval[]>(["1h"]);
-	const [depth, setDepth] = useState<number | string>(historyLoadDepth.default);
+	// Controlled, because the Start button and the coin placeholder follow the
+	// values as they change.
+	const form = useForm<HistoryLoadValues>({
+		initialValues: {
+			coins: [],
+			depth: historyLoadDepth.default,
+			intervals: ["1h"],
+		},
+		mode: "controlled",
+	});
 	const job = useHistoryLoadJob();
 	const start = useStartCandleHistoryLoad({
 		mutation: {
@@ -55,10 +65,6 @@ export function HistoryLoadCommand() {
 		},
 	});
 	const running = job.data?.status === "running";
-	const validDepth =
-		typeof depth === "number" &&
-		depth >= historyLoadDepth.min &&
-		depth <= historyLoadDepth.max;
 	return (
 		<Paper p="md">
 			<Stack gap="sm">
@@ -72,8 +78,7 @@ export function HistoryLoadCommand() {
 				</Text>
 				<HistoryLoadCoinsSelect
 					disabled={running}
-					onChange={setCoins}
-					value={coins}
+					{...form.getInputProps("coins")}
 				/>
 				<MultiSelect
 					data={chartIntervalOptions.map(({ label, value }) => ({
@@ -82,14 +87,7 @@ export function HistoryLoadCommand() {
 					}))}
 					disabled={running}
 					label="Intervals"
-					onChange={(values) =>
-						setIntervals(
-							chartIntervalOptions
-								.map(({ value }) => value)
-								.filter((value) => values.includes(value)),
-						)
-					}
-					value={intervals}
+					{...form.getInputProps("intervals")}
 				/>
 				<NumberInput
 					allowDecimal={false}
@@ -98,25 +96,17 @@ export function HistoryLoadCommand() {
 					label="Depth"
 					max={historyLoadDepth.max}
 					min={historyLoadDepth.min}
-					onChange={setDepth}
 					thousandSeparator=","
-					value={depth}
+					{...form.getInputProps("depth")}
 				/>
 				<Group justify="flex-end">
 					<Button
-						disabled={
-							running ||
-							coins.length === 0 ||
-							intervals.length === 0 ||
-							!validDepth
-						}
+						disabled={running || !historyLoadRequest(form.values)}
 						loading={start.isPending}
-						onClick={() =>
-							typeof depth === "number" &&
-							start.mutate({
-								data: { depth, intervals, symbols: coins },
-							})
-						}
+						onClick={() => {
+							const request = historyLoadRequest(form.getValues());
+							if (request) start.mutate({ data: request });
+						}}
 					>
 						Start
 					</Button>

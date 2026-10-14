@@ -1,5 +1,6 @@
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import {
+	type Field,
 	formatQuery,
 	isRuleGroup,
 	type RuleGroupType,
@@ -16,6 +17,7 @@ import {
 	Direction,
 	type ErrorResponse,
 	type Strategy,
+	type StrategyUpdate,
 	type StrategyVariable,
 } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
@@ -29,6 +31,8 @@ import {
 	directionLabels,
 	kindNouns,
 	operandBoundaries,
+	signalTargetRatios,
+	signalWindows,
 	tokenPattern,
 } from "@/features/strategy-settings/constants";
 import {
@@ -39,11 +43,20 @@ import {
 	expressionSource,
 	firstField,
 } from "@/features/strategy-settings/expressions";
+import {
+	parsePriceSetup,
+	priceSetupChanged,
+	priceSetupComplete,
+	priceSetupExpression,
+} from "@/features/strategy-settings/strategy-price-input/utils";
 import type {
 	StrategyDraft,
+	StrategyFormValues,
 	StrategyKind,
 	StrategyOperator,
 	StrategyQuery,
+	StrategyRuleVariables,
+	StrategyVariableSets,
 	Token,
 } from "@/features/strategy-settings/types";
 import { describeApiError } from "@/utils/api-error";
@@ -377,19 +390,21 @@ export function newStrategyDraft(
 ): Omit<StrategyDraft, "revision"> {
 	return {
 		id: undefined,
-		name: "",
 		signal: kind === "signal",
-		direction: defaultDirection,
-		message: "",
-		query: emptyStrategyQuery(),
-		exitQuery: undefined,
-		takeProfit: "",
-		stopLoss: "",
-		minMarketCap: "",
-		maxMarketCap: "",
-		targetRatio: defaultSignalTargetRatio,
-		window: defaultSignalWindow,
 		incomplete: false,
+		values: {
+			name: "",
+			direction: defaultDirection,
+			message: "",
+			query: emptyStrategyQuery(),
+			exitQuery: undefined,
+			takeProfit: {},
+			stopLoss: {},
+			minMarketCap: "",
+			maxMarketCap: "",
+			targetRatio: String(defaultSignalTargetRatio),
+			window: String(defaultSignalWindow),
+		},
 	};
 }
 
@@ -404,23 +419,129 @@ export function strategyDraft(
 			: strategyQuery(strategy.exit_expression);
 	return {
 		id: strategy.id,
-		name: strategy.name,
 		signal: strategy.signal,
-		direction: strategy.direction,
-		message: strategy.message,
-		query,
-		exitQuery,
-		takeProfit: strategy.take_profit_expression,
-		stopLoss: strategy.stop_loss_expression,
-		minMarketCap: marketCapMillions(strategy.min_market_cap_usd),
-		maxMarketCap: marketCapMillions(strategy.max_market_cap_usd),
-		targetRatio: strategy.target_ratio ?? defaultSignalTargetRatio,
-		window: strategy.window ?? defaultSignalWindow,
 		incomplete:
 			strategyQueryDropped(strategy.expression, query) ||
 			(exitQuery !== undefined &&
 				strategyQueryDropped(strategy.exit_expression, exitQuery)),
+		values: {
+			name: strategy.name,
+			direction: strategy.direction,
+			message: strategy.message,
+			query,
+			exitQuery,
+			takeProfit: parsePriceSetup(strategy.take_profit_expression),
+			stopLoss: parsePriceSetup(strategy.stop_loss_expression),
+			minMarketCap: marketCapMillions(strategy.min_market_cap_usd),
+			maxMarketCap: marketCapMillions(strategy.max_market_cap_usd),
+			targetRatio: String(strategy.target_ratio ?? defaultSignalTargetRatio),
+			window: String(strategy.window ?? defaultSignalWindow),
+		},
 	};
+}
+
+// What the form's values send, whether or not they can be saved; the
+// footer describes it and the dirty check compares it. A signal trades
+// nothing, so it has no exit or price fields and sends them empty; only a
+// signal has a target ratio and a window, which the selects hold as strings.
+export function strategyFormUpdate(
+	values: StrategyFormValues,
+	signal: boolean,
+): StrategyUpdate {
+	return {
+		exit_expression:
+			!signal && values.exitQuery ? strategyExpression(values.exitQuery) : "",
+		expression: strategyExpression(values.query),
+		max_market_cap_usd: marketCapUsd(values.maxMarketCap),
+		message: values.message.trim(),
+		min_market_cap_usd: marketCapUsd(values.minMarketCap),
+		name: values.name.trim(),
+		signal,
+		direction: values.direction,
+		stop_loss_expression: signal ? "" : priceSetupExpression(values.stopLoss),
+		take_profit_expression: signal
+			? ""
+			: priceSetupExpression(values.takeProfit),
+		target_ratio: signal
+			? (signalTargetRatios.find(
+					(ratio) => String(ratio) === values.targetRatio,
+				) ?? null)
+			: null,
+		window: signal
+			? (signalWindows.find((window) => String(window) === values.window) ??
+				null)
+			: null,
+	};
+}
+
+// What saving the form sends; undefined while it cannot be saved: without a
+// name, with an incomplete rule or price, an invalid market cap bound, or a
+// signal without its target ratio and window.
+export function strategyInput(
+	values: StrategyFormValues,
+	signal: boolean,
+): StrategyUpdate | undefined {
+	const update = strategyFormUpdate(values, signal);
+	const boundErrors = marketCapErrors(
+		update.min_market_cap_usd,
+		update.max_market_cap_usd,
+	);
+	if (
+		update.name === "" ||
+		!strategyFormComplete(values, signal) ||
+		boundErrors.minimum ||
+		boundErrors.maximum ||
+		(signal && (update.target_ratio === null || update.window === null))
+	) {
+		return undefined;
+	}
+	return update;
+}
+
+// Whether the rules and prices of the form can be saved: every condition is
+// filled in, and a short strategy has both a take profit and a stop loss.
+function strategyFormComplete(
+	values: StrategyFormValues,
+	signal: boolean,
+): boolean {
+	if (!strategyQueryComplete(values.query)) return false;
+	if (signal) return true;
+	return (
+		(values.exitQuery === undefined ||
+			strategyQueryComplete(values.exitQuery)) &&
+		priceSetupComplete(values.takeProfit) &&
+		priceSetupComplete(values.stopLoss) &&
+		(values.direction !== Direction.short ||
+			(priceSetupExpression(values.takeProfit) !== "" &&
+				priceSetupExpression(values.stopLoss) !== ""))
+	);
+}
+
+// Whether the form differs from the values it opened with. Rules compare as
+// the expressions they save, so builder bookkeeping such as rule ids does
+// not count; a signal has no exit or price fields to differ.
+export function strategyFormDirty(
+	initial: StrategyFormValues,
+	values: StrategyFormValues,
+	signal: boolean,
+): boolean {
+	const saved = strategyFormUpdate(initial, signal);
+	const input = strategyFormUpdate(values, signal);
+	return (
+		values.name !== initial.name ||
+		values.message !== initial.message ||
+		input.direction !== saved.direction ||
+		input.expression !== saved.expression ||
+		input.min_market_cap_usd !== saved.min_market_cap_usd ||
+		input.max_market_cap_usd !== saved.max_market_cap_usd ||
+		(signal &&
+			(values.targetRatio !== initial.targetRatio ||
+				values.window !== initial.window)) ||
+		(!signal &&
+			(input.exit_expression !== saved.exit_expression ||
+				priceSetupChanged(values.takeProfit, initial.takeProfit) ||
+				priceSetupChanged(values.stopLoss, initial.stopLoss)))
+	);
 }
 
 // A market cap bound in millions of USD for the form; empty without one.
@@ -555,4 +676,25 @@ export function variableSelectData(variables: readonly StrategyVariable[]) {
 		groups.set(group, items);
 	}
 	return [...groups].map(([group, items]) => ({ group, items }));
+}
+
+// The variables of the entry and the exit rule with their builder fields.
+// Built in the variables query's select, whose structural sharing keeps them
+// the same objects across renders, so the builders keep their schema.
+export function strategyVariableSets(
+	variables: StrategyVariable[],
+): StrategyVariableSets {
+	return {
+		entry: ruleVariables(withoutPositionVariables(variables)),
+		exit: ruleVariables(variables),
+	};
+}
+
+function ruleVariables(variables: StrategyVariable[]): StrategyRuleVariables {
+	const fields: Field[] = variables.map(({ label, name }) => ({
+		label,
+		name,
+		valueSources: ["value", "field", "expression"],
+	}));
+	return { fields, variables };
 }

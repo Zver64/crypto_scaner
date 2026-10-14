@@ -1,29 +1,25 @@
 import { Group, Paper, Stack, Text, Title } from "@mantine/core";
+import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-	type FormEvent,
-	type ReactNode,
-	useCallback,
-	useEffect,
-	useState,
-} from "react";
+import type { ReactNode } from "react";
 import type { ErrorType } from "@/api/fetch";
 import {
 	getListPriceAlertsQueryKey,
+	type listPriceAlertsResponseSuccess,
 	useCreatePriceAlert,
 	useDeletePriceAlert,
 	useListPriceAlerts,
 	useUpdatePriceAlert,
 } from "@/api/generated/api";
 import type { ErrorResponse } from "@/api/generated/models";
-import { useFavorites } from "@/features/favorites/favorites-provider";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { PriceAlertForm } from "@/features/price-alerts/price-alert-form";
 import { PriceAlertList } from "@/features/price-alerts/price-alert-list";
 import { normalizePriceTarget } from "@/features/price-alerts/target";
+import type { PriceAlertEditor } from "@/features/price-alerts/types";
 import { describeApiError } from "@/utils/api-error";
 
 function mutationErrorMessage(error: ErrorType<ErrorResponse> | null): string {
@@ -40,6 +36,11 @@ function mutationErrorMessage(error: ErrorType<ErrorResponse> | null): string {
 	});
 }
 
+const selectAlerts = (response: listPriceAlertsResponseSuccess) =>
+	response.data;
+
+const emptyEditor: PriceAlertEditor = { editingID: undefined, target: "" };
+
 interface PriceAlertsControllerProps {
 	currentPrice?: ReactNode;
 	priceSource?: CoinChartData;
@@ -54,36 +55,31 @@ export function PriceAlertsController({
 	symbol,
 }: PriceAlertsControllerProps) {
 	const queryClient = useQueryClient();
-	const { handleAccessError } = useFavorites();
 	const query = useListPriceAlerts(symbol, {
 		query: {
+			meta: { userScoped: true },
 			queryKey: scopedUserQueryKey(getListPriceAlertsQueryKey(symbol), scope),
 			refetchInterval: 15_000,
 			refetchOnMount: "always",
 			retry: false,
-			select: (response) => response.data,
+			select: selectAlerts,
 		},
 	});
-	const [target, setTarget] = useState("");
-	const [targetError, setTargetError] = useState<string>();
-	const [editingID, setEditingID] = useState<number>();
-	const resetEditor = useCallback(() => {
-		setTarget("");
-		setTargetError(undefined);
-		setEditingID(undefined);
-	}, []);
-	useEffect(() => {
-		if (query.error) handleAccessError(query.error);
-	}, [handleAccessError, query.error]);
-	useEffect(() => {
-		if (
-			editingID !== undefined &&
-			query.data &&
-			!query.data.items.some((alert) => alert.id === editingID)
-		) {
-			resetEditor();
-		}
-	}, [editingID, query.data, resetEditor]);
+	// Controlled, so the submit button and the percent change follow the
+	// target as it is typed. The error stays until the next submit.
+	const form = useForm<PriceAlertEditor>({
+		clearInputErrorOnChange: false,
+		initialValues: emptyEditor,
+		mode: "controlled",
+		validate: { target: (target) => normalizePriceTarget(target).error },
+	});
+	// An edited alert that no longer exists leaves the editor empty.
+	const editedAlertGone =
+		form.values.editingID !== undefined &&
+		query.data !== undefined &&
+		!query.data.items.some((alert) => alert.id === form.values.editingID);
+	const editor = editedAlertGone ? emptyEditor : form.values;
+	const targetError = editedAlertGone ? undefined : form.errors.target;
 	const refresh = () => {
 		void queryClient.invalidateQueries({
 			queryKey: getListPriceAlertsQueryKey(symbol),
@@ -91,11 +87,10 @@ export function PriceAlertsController({
 		invalidateFavoriteQueries(queryClient);
 	};
 	const complete = () => {
-		resetEditor();
+		form.reset();
 		refresh();
 	};
 	const failed = (error: ErrorType<ErrorResponse>) => {
-		handleAccessError(error);
 		notifications.show({
 			color: "red",
 			message: mutationErrorMessage(error),
@@ -103,16 +98,25 @@ export function PriceAlertsController({
 		});
 	};
 	const createMutation = useCreatePriceAlert({
-		mutation: { onError: failed, onSuccess: complete },
+		mutation: {
+			meta: { userScoped: true },
+			onError: failed,
+			onSuccess: complete,
+		},
 	});
 	const updateMutation = useUpdatePriceAlert({
-		mutation: { onError: failed, onSuccess: complete },
+		mutation: {
+			meta: { userScoped: true },
+			onError: failed,
+			onSuccess: complete,
+		},
 	});
 	const deleteMutation = useDeletePriceAlert({
 		mutation: {
+			meta: { userScoped: true },
 			onError: failed,
 			onSuccess: (_response, variables) => {
-				if (editingID === variables.alertId) resetEditor();
+				if (editor.editingID === variables.alertId) form.reset();
 				refresh();
 			},
 		},
@@ -120,22 +124,21 @@ export function PriceAlertsController({
 	const isSaving = createMutation.isPending || updateMutation.isPending;
 	const limitReached =
 		query.data !== undefined && query.data.count >= query.data.limit;
-	const submit = (event: FormEvent) => {
-		event.preventDefault();
-		const normalized = normalizePriceTarget(target);
-		if ("error" in normalized) {
-			setTargetError(normalized.error);
+	// The form still holds an edited alert that no longer exists, although the
+	// editor shows it empty; submitting it clears the form instead of
+	// updating a missing alert.
+	const submit = ({ editingID, target }: PriceAlertEditor) => {
+		if (editedAlertGone) {
+			form.reset();
 			return;
 		}
-		setTargetError(undefined);
+		const { value } = normalizePriceTarget(target);
+		if (value === undefined) return;
 		if (editingID !== undefined) {
-			updateMutation.mutate({
-				alertId: editingID,
-				data: { target: normalized.value },
-			});
+			updateMutation.mutate({ alertId: editingID, data: { target: value } });
 			return;
 		}
-		createMutation.mutate({ symbol, data: { target: normalized.value } });
+		createMutation.mutate({ symbol, data: { target: value } });
 	};
 
 	return (
@@ -156,9 +159,8 @@ export function PriceAlertsController({
 					}
 					onDelete={(alertId) => deleteMutation.mutate({ alertId })}
 					onEdit={(alert) => {
-						setEditingID(alert.id);
-						setTarget(alert.target);
-						setTargetError(undefined);
+						form.setValues({ editingID: alert.id, target: alert.target });
+						form.clearErrors();
 					}}
 					priceSource={priceSource}
 				/>
@@ -169,15 +171,20 @@ export function PriceAlertsController({
 					</Text>
 				) : null}
 				<PriceAlertForm
-					isEditing={editingID !== undefined}
+					isEditing={editor.editingID !== undefined}
 					isSaving={isSaving}
 					limit={query.data?.limit}
 					limitReached={limitReached}
-					onCancel={resetEditor}
-					onSubmit={submit}
-					onTargetChange={setTarget}
+					onCancel={form.reset}
+					onSubmit={form.onSubmit(submit)}
+					// Not getInputProps: typing over an edited alert that no longer
+					// exists also drops its id, so the form holds what the editor shows.
+					onTargetChange={(target) => {
+						form.setValues({ ...editor, target });
+						if (editedAlertGone) form.clearErrors();
+					}}
 					priceSource={priceSource}
-					target={target}
+					target={editor.target}
 					targetError={targetError}
 				/>
 			</Stack>

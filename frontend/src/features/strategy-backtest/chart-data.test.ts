@@ -71,9 +71,11 @@ describe("backtest snapshot source", () => {
 		while (source.getSnapshot("1h").hasMore) source.loadOlder("1h");
 		const full = source.getSnapshot("1h");
 		expect(full.candles).toEqual(hourly.page.candles);
-		expect(full.indicators.rsi?.rsi).toEqual(
-			hourly.page.indicators[0]?.series[0]?.points,
-		);
+		expect(
+			full.series.lines["rsi:rsi"]?.data.map((slot) =>
+				"value" in slot ? slot.value : undefined,
+			),
+		).toEqual(hourly.page.indicators[0]?.series[0]?.points.map((p) => p.value));
 		expect(source.getSnapshot("1d")).toBe(day);
 		expect(initial.candles.length).toBeLessThan(full.candles.length);
 		expect(changes).toBeGreaterThan(0);
@@ -89,7 +91,7 @@ describe("backtest snapshot source", () => {
 		const source = createBacktestChartData([]);
 		expect(source.getSnapshot("1h")).toMatchObject({
 			candles: [],
-			indicators: {},
+			series: { candles: [], lines: {} },
 			isLoading: false,
 			hasMore: false,
 		});

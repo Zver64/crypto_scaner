@@ -8,7 +8,7 @@ import {
 
 interface TargetChangeProps {
 	source?: CoinChartData;
-	target: string;
+	target: number | string;
 }
 
 const subscribeNothing = () => () => {};

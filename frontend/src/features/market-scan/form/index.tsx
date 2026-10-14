@@ -42,6 +42,8 @@ export function MarketScanForm({
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
 	const volatilityPresets = applicationConfig.volatility;
+	// Controlled, because the Run Market Scan button follows the values as they
+	// are typed and stays disabled while they are invalid.
 	const form = useForm<MarketScanDraft>({
 		initialValues: initialCriteria,
 		mode: "controlled",

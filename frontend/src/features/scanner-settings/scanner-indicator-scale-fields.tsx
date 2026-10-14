@@ -1,38 +1,34 @@
 import { Group, NumberInput, TagsInput } from "@mantine/core";
+import type { UseFormReturnType } from "@mantine/form";
 import type { ScaleDraft } from "@/features/scanner-settings/types";
-import { parseLevels } from "@/features/scanner-settings/utils";
 
 interface ScannerIndicatorScaleFieldsProps {
-	onChange(value: ScaleDraft): void;
-	value: ScaleDraft;
+	// The indicator form and the scale editor both pass their form, which
+	// validates the levels with levelsError on every change.
+	form: UseFormReturnType<ScaleDraft>;
 }
 
 export function ScannerIndicatorScaleFields({
-	onChange,
-	value,
+	form,
 }: ScannerIndicatorScaleFieldsProps) {
 	return (
 		<>
 			<Group grow>
 				<NumberInput
 					label="Scale min"
-					onChange={(scaleMin) => onChange({ ...value, scaleMin })}
 					placeholder="auto"
-					value={value.scaleMin}
+					{...form.getInputProps("scaleMin")}
 				/>
 				<NumberInput
 					label="Scale max"
-					onChange={(scaleMax) => onChange({ ...value, scaleMax })}
 					placeholder="auto"
-					value={value.scaleMax}
+					{...form.getInputProps("scaleMax")}
 				/>
 			</Group>
 			<TagsInput
-				error={parseLevels(value.levels) ? undefined : "Levels must be numbers"}
 				label="Levels"
-				onChange={(levels) => onChange({ ...value, levels })}
 				placeholder="For example 30, 70"
-				value={value.levels}
+				{...form.getInputProps("levels")}
 			/>
 		</>
 	);

@@ -1,24 +1,34 @@
 import { Button, Group, Stack, Text, TextInput } from "@mantine/core";
+import type { UseFormReturnType } from "@mantine/form";
 import type { StrategyVariable } from "@/api/generated/models";
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
+import type {
+	StrategyFormValues,
+	StrategyPriceField,
+} from "@/features/strategy-settings/types";
+import { useWatchedValue } from "@/features/strategy-settings/use-watched-value";
 
 interface StrategyPriceInputProps {
 	disabled: boolean;
+	field: StrategyPriceField;
+	form: UseFormReturnType<StrategyFormValues>;
 	label: string;
-	onChange(value: PriceSetup): void;
-	value: PriceSetup;
 	variables: readonly StrategyVariable[];
 }
 
 // The same numeric operand builder as conditions, evaluated once at entry.
+// It follows the form field, which a direction change clears.
 export function StrategyPriceInput({
 	disabled,
+	field,
+	form,
 	label,
-	onChange,
-	value,
 	variables,
 }: StrategyPriceInputProps) {
+	const value = useWatchedValue(form, field, (setup) => setup);
+	const onChange = (setup: PriceSetup) =>
+		form.setFieldValue(field, setup, { forceUpdate: false });
 	const enabled = value.node !== undefined || value.custom !== undefined;
 	const start = () => onChange({ node: { kind: "field", field: "" } });
 	return (

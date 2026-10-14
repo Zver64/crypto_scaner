@@ -1,4 +1,5 @@
 import type {
+	AutoscaleInfoProvider,
 	CandlestickData,
 	HistogramData,
 	LineData,
@@ -25,7 +26,11 @@ export type ChartFreshness = "waiting" | "fresh" | "stale" | "recovering";
 
 export interface PriceHistorySnapshot {
 	candles: readonly PriceCandle[];
-	indicators: ChartIndicatorPoints;
+	// The candles and indicator lines ready to draw, created with the snapshot
+	// so they keep their references until the snapshot data changes.
+	series: ChartSeriesData;
+	// Markers on the candles, such as the trades of a backtest.
+	markers?: readonly ChartMarker[];
 	connection: ChartConnection;
 	freshness: ChartFreshness;
 	error?: string;
@@ -46,6 +51,26 @@ export interface ChartIntervalOption {
 	label: string;
 	value: ChartInterval;
 	showTime?: boolean;
+}
+// Number resolution of the values on a price or value scale.
+export interface ValueResolution {
+	base: number;
+	fractionDigits: number;
+	minMove: number;
+}
+// One indicator line aligned with the candle slots.
+export interface ChartLineData {
+	data: readonly ChartIndicatorSlot[];
+	// The resolution of a pane line's scale; an overlay shares the candles'.
+	resolution: ValueResolution;
+}
+export interface ChartSeriesData {
+	// Candle slots, with whitespace for missing candles.
+	candles: readonly ChartCandleSlot[];
+	volumes: readonly ChartVolumeSlot[];
+	priceResolution: ValueResolution;
+	// Every line of the catalog, keyed by "id:output".
+	lines: Readonly<Record<string, ChartLineData>>;
 }
 // Points of each indicator line, keyed by indicator id and then output name.
 export type ChartIndicatorPoints = Readonly<
@@ -73,8 +98,17 @@ export interface ChartPaneIndicatorOptions {
 	lines: readonly ChartIndicatorLine[];
 	scale: ChartIndicatorScale;
 }
+// What the chart of one interval draws besides the candles, created once per
+// catalog. Line colors are Mantine theme colors, resolved where they are drawn.
+export interface ChartIndicatorLayout {
+	indicators: readonly ChartIndicatorOptions[];
+	panes: readonly ChartIndicatorPane[];
+}
 // One pane below the candles with the indicators drawn in it.
 export interface ChartIndicatorPane {
+	// Fits the pane to its visible values and the scale levels; created with
+	// the layout, so it keeps its identity while the catalog does not change.
+	autoscaleInfoProvider: AutoscaleInfoProvider;
 	indicators: readonly ChartPaneIndicatorOptions[];
 	scale: ChartIndicatorScale;
 }
@@ -99,7 +133,7 @@ export interface PriceHistoryChartProps {
 	live?: boolean;
 	enabled: boolean;
 	// Indicators drawn on the chart of each interval.
-	indicators: Readonly<Record<ChartInterval, readonly ChartIndicatorOptions[]>>;
+	indicators: Readonly<Record<ChartInterval, ChartIndicatorLayout>>;
 	extraReadout?: ChartReadoutOptions;
 	// Stretches the chart over the free height of its flex column parent,
 	// keeping its fixed height as the minimum.
@@ -107,8 +141,6 @@ export interface PriceHistoryChartProps {
 	// Restricts the interval switch to these intervals; the first is shown
 	// first.
 	intervals?: readonly ChartInterval[];
-	// Trades marked with arrows on the candles containing their times.
-	markers?: ChartTradeMarkers;
 	paperPadding: string;
 	source: PriceHistorySource;
 	symbol: string;

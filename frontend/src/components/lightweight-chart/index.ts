@@ -1,4 +1,5 @@
 export { ChartCanvas } from "@/components/lightweight-chart/chart";
+export { useSeriesLifecycle } from "@/components/lightweight-chart/context";
 export { PriceLine } from "@/components/lightweight-chart/price-line";
 export { Series } from "@/components/lightweight-chart/series";
 export { SeriesMarkers } from "@/components/lightweight-chart/series-markers";

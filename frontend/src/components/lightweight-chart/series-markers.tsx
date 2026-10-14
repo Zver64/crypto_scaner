@@ -8,16 +8,16 @@ import { useLayoutEffect, useRef } from "react";
 import { useSeriesLifecycle } from "@/components/lightweight-chart/context";
 
 interface SeriesMarkersProps {
+	// Applied when the reference changes: the data boundary creates a new array
+	// only when the markers change.
 	markers: readonly SeriesMarker<Time>[];
 }
 
 export function SeriesMarkers({ markers }: SeriesMarkersProps) {
 	const parent = useSeriesLifecycle();
+	// The markers the plugin has: it is created with them.
 	const markersRef = useRef(markers);
 	const pluginRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
-	useLayoutEffect(() => {
-		markersRef.current = markers;
-	}, [markers]);
 
 	useLayoutEffect(() => {
 		pluginRef.current = createSeriesMarkers(
@@ -32,8 +32,10 @@ export function SeriesMarkers({ markers }: SeriesMarkersProps) {
 	}, [parent]);
 
 	useLayoutEffect(() => {
+		if (markersRef.current === markers) return;
+		markersRef.current = markers;
 		pluginRef.current?.setMarkers(Array.from(markers));
-	}, [markers]);
+	});
 
 	return null;
 }

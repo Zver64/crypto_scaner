@@ -1,3 +1,4 @@
+import equal from "fast-deep-equal";
 import type {
 	DeepPartial,
 	IPriceLine,
@@ -14,7 +15,7 @@ import {
 	type SeriesLifecycle,
 	useChartLifecycle,
 } from "@/components/lightweight-chart/context";
-import { isTailChange } from "@/components/lightweight-chart/utils";
+import { dataChange } from "@/components/lightweight-chart/utils";
 
 interface UseSeriesOptions<T extends SeriesType> {
 	data: readonly SeriesDataItemTypeMap<Time>[T][];
@@ -42,6 +43,9 @@ export function useSeries<T extends SeriesType>({
 }: UseSeriesOptions<T>): SeriesLifecycle {
 	const parent = useChartLifecycle();
 	const definitionRef = useRef(definition);
+	// The options and pane the series has: it is created with them and applies
+	// only options that differ by value, so callers may build them on every
+	// render.
 	const optionsRef = useRef(options);
 	const paneRef = useRef(pane);
 	const beforeDataChangeRef = useRef(onBeforeDataChange);
@@ -49,11 +53,9 @@ export function useSeries<T extends SeriesType>({
 	const hasCrosshairHandler = onCrosshairMove !== undefined;
 	useLayoutEffect(() => {
 		definitionRef.current = definition;
-		optionsRef.current = options;
-		paneRef.current = pane;
 		beforeDataChangeRef.current = onBeforeDataChange;
 		crosshairRef.current = onCrosshairMove;
-	}, [definition, options, pane, onBeforeDataChange, onCrosshairMove]);
+	});
 
 	const bindingRef = useRef<SeriesBinding<T> | null>(null);
 	if (bindingRef.current === null) {
@@ -95,27 +97,41 @@ export function useSeries<T extends SeriesType>({
 	}
 	const binding = bindingRef.current;
 
-	// Data applied to the current series; a recreated series starts empty.
+	// Data and price scale options applied to the current series; a recreated
+	// series starts empty and with the default price scale.
 	const appliedDataRef = useRef<readonly SeriesDataItemTypeMap<Time>[T][]>([]);
+	const appliedPriceScaleRef =
+		useRef<DeepPartial<PriceScaleOptions>>(undefined);
 	useLayoutEffect(() => {
 		binding.series();
 		return () => {
 			binding.context.destroy();
 			appliedDataRef.current = [];
+			appliedPriceScaleRef.current = undefined;
 		};
 	}, [binding]);
 
 	useLayoutEffect(() => {
+		if (equal(optionsRef.current, options)) return;
+		optionsRef.current = options;
 		binding.series().applyOptions(options);
-	}, [binding, options]);
+	});
 
+	// Data is compared by reference first: the data boundary creates a new
+	// array only when the data changes, so large histories are compared only
+	// then, in the same pass that detects a live tick.
 	useLayoutEffect(() => {
+		const applied = appliedDataRef.current;
+		if (applied === data) return;
 		beforeDataChangeRef.current?.();
+		appliedDataRef.current = data;
+		const change = dataChange(applied, data);
+		if (change === "none") return;
 		const series = binding.series();
 		const last = data.at(-1);
 		// Live ticks only touch the last point; redrawing the whole series on
 		// every trade would scale with the loaded history.
-		if (last !== undefined && isTailChange(appliedDataRef.current, data)) {
+		if (change === "tail" && last !== undefined) {
 			try {
 				series.update(last);
 			} catch {
@@ -125,14 +141,22 @@ export function useSeries<T extends SeriesType>({
 		} else {
 			series.setData(Array.from(data));
 		}
-		appliedDataRef.current = data;
-	}, [binding, data]);
+	});
 
 	useLayoutEffect(() => {
 		const series = binding.series();
-		series.moveToPane(pane);
-		if (priceScale !== undefined) series.priceScale().applyOptions(priceScale);
-	}, [binding, pane, priceScale]);
+		if (paneRef.current !== pane) {
+			paneRef.current = pane;
+			series.moveToPane(pane);
+		}
+		if (
+			priceScale !== undefined &&
+			!equal(appliedPriceScaleRef.current, priceScale)
+		) {
+			appliedPriceScaleRef.current = priceScale;
+			series.priceScale().applyOptions(priceScale);
+		}
+	});
 
 	useLayoutEffect(() => {
 		if (!hasCrosshairHandler) return;

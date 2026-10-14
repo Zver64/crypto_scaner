@@ -1,4 +1,5 @@
 import { Button, Group, Loader, Paper, Stack, Text } from "@mantine/core";
+import { useForm } from "@mantine/form";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
@@ -6,6 +7,8 @@ import type { ErrorType } from "@/api/fetch";
 import {
 	getListScannerIndicatorsQueryKey,
 	getListStrategiesQueryKey,
+	type listStrategiesResponseSuccess,
+	type listStrategyVariablesResponseSuccess,
 	useCreateScannerIndicatorBatch,
 	useCreateStrategy,
 	useDeleteStrategy,
@@ -14,11 +17,7 @@ import {
 	useSetStrategyEnabled,
 	useUpdateStrategy,
 } from "@/api/generated/api";
-import type {
-	ErrorResponse,
-	Strategy,
-	StrategyUpdate,
-} from "@/api/generated/models";
+import type { ErrorResponse, Strategy } from "@/api/generated/models";
 import { EmptyState } from "@/components/empty-state";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
@@ -33,14 +32,33 @@ import { StrategyRemovalConfirmation } from "@/features/strategy-settings/strate
 import { StrategyRow } from "@/features/strategy-settings/strategy-row";
 import type {
 	StrategyDraft,
+	StrategyFormValues,
 	StrategyKind,
 } from "@/features/strategy-settings/types";
 import {
 	newStrategyDraft,
 	strategyDraft,
 	strategyErrorMessage,
+	strategyFormDirty,
+	strategyInput,
 	strategyKind,
+	strategyVariableSets,
 } from "@/features/strategy-settings/utils";
+
+const selectStrategyVariables = (
+	response: listStrategyVariablesResponseSuccess,
+) => strategyVariableSets(response.data.items);
+
+const selectStrategiesOfKind =
+	(kind: StrategyKind) => (response: listStrategiesResponseSuccess) =>
+		response.data.items.filter((strategy) => strategyKind(strategy) === kind);
+
+// One stable select per kind, so the list is filtered again only when the
+// strategies change, not on every render.
+const selectStrategies = {
+	signal: selectStrategiesOfKind("signal"),
+	strategy: selectStrategiesOfKind("strategy"),
+} satisfies Record<StrategyKind, ReturnType<typeof selectStrategiesOfKind>>;
 
 interface StrategySettingsProps {
 	// Whether the page lists the strategies or the signals; each page creates
@@ -53,8 +71,12 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	const wide = useWideLayout();
 	const queryClient = useQueryClient();
 	const [draft, setDraft] = useState<StrategyDraft>();
-	// Whether the open form differs from its draft.
-	const [dirty, setDirty] = useState(false);
+	// The fields of the open draft, set when it opens. Uncontrolled, so most
+	// keystrokes render only the components that watch the edited field. When
+	// a field turns dirty or clean (its first change, or a return to its
+	// opening value), @mantine/form re-renders this whole page, the list and
+	// both rule builders included, though nothing remounts.
+	const form = useForm<StrategyFormValues>({ mode: "uncontrolled" });
 	// A strategy waiting to replace an open form with unsaved changes.
 	const [pending, setPending] = useState<Omit<StrategyDraft, "revision">>();
 	const revision = useRef(0);
@@ -64,14 +86,14 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	const strategies = useListStrategies({
 		query: {
 			retry: false,
-			select: (response) =>
-				response.data.items.filter(
-					(strategy) => strategyKind(strategy) === kind,
-				),
+			select: selectStrategies[kind],
 		},
 	});
 	const variables = useListStrategyVariables({
-		query: { retry: false, select: (response) => response.data.items },
+		query: {
+			retry: false,
+			select: selectStrategyVariables,
+		},
 	});
 	// Strategies decide which indicators are in use.
 	const refresh = () => {
@@ -147,17 +169,26 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 		isSaving;
 	const show = (next: Omit<StrategyDraft, "revision">) => {
 		revision.current += 1;
+		form.setInitialValues(next.values);
+		form.reset();
 		setDraft({ ...next, revision: revision.current });
-		setDirty(false);
 	};
 	// Beside the list, opening another strategy would silently drop the
 	// changes of the open one, so it asks first.
 	const open = (next: Omit<StrategyDraft, "revision">) => {
-		if (draft && dirty) setPending(next);
-		else show(next);
+		if (
+			draft &&
+			strategyFormDirty(form.getInitialValues(), form.getValues(), draft.signal)
+		) {
+			setPending(next);
+		} else {
+			show(next);
+		}
 	};
-	const submit = (input: StrategyUpdate) => {
+	const submit = () => {
 		if (!draft) return;
+		const input = strategyInput(form.getValues(), draft.signal);
+		if (!input) return;
 		// A finished save closes the form it came from, not one opened since.
 		const saved = draft.revision;
 		const close = () =>
@@ -183,7 +214,7 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 					{`No ${nouns.many} yet.`}
 				</Text>
 			) : null}
-			{variables.data.length === 0 ? (
+			{variables.data.exit.variables.length === 0 ? (
 				<Text c="dimmed" size="sm">
 					Add indicators first.
 				</Text>
@@ -191,7 +222,7 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 			{/* Full width on phones and in the sidebar. */}
 			<Group grow>
 				<Button
-					disabled={variables.data.length === 0}
+					disabled={variables.data.exit.variables.length === 0}
 					onClick={() => open(newStrategyDraft(kind))}
 				>
 					{`Add ${nouns.one}`}
@@ -281,7 +312,7 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 					draft={draft}
 					isSaving={isSaving}
 					onCancel={() => setDraft(undefined)}
-					onDirtyChange={setDirty}
+					form={form}
 					onSubmit={submit}
 					variables={variables.data}
 				/>
@@ -299,7 +330,7 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 							isSaving={isSaving}
 							key={draft.revision}
 							onCancel={() => setDraft(undefined)}
-							onDirtyChange={setDirty}
+							form={form}
 							onSubmit={submit}
 							variables={variables.data}
 						/>

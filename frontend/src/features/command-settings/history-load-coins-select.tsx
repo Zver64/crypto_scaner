@@ -1,18 +1,24 @@
-import { MultiSelect } from "@mantine/core";
+import { MultiSelect, type MultiSelectProps } from "@mantine/core";
 import { useState } from "react";
 import { CoinPicker } from "@/app/coin-picker";
 import { maxHistoryLoadCoins } from "@/features/command-settings/constants";
 
-interface HistoryLoadCoinsSelectProps {
+// Takes the input props of the coins field as the form's getInputProps
+// returns them, typed like Mantine's own MultiSelect.
+interface HistoryLoadCoinsSelectProps
+	extends Pick<
+		MultiSelectProps,
+		"error" | "onBlur" | "onChange" | "onFocus" | "value"
+	> {
 	disabled: boolean;
-	onChange(coins: string[]): void;
-	value: string[];
 }
 
 export function HistoryLoadCoinsSelect({
 	disabled,
+	error,
 	onChange,
-	value,
+	value = [],
+	...input
 }: HistoryLoadCoinsSelectProps) {
 	const [allCoins, setAllCoins] = useState(false);
 	return (
@@ -21,13 +27,15 @@ export function HistoryLoadCoinsSelect({
 			disabled={disabled}
 			onAllCoinsChange={(nextAllCoins, isFavorite) => {
 				setAllCoins(nextAllCoins);
-				if (!nextAllCoins) onChange(value.filter(isFavorite));
+				if (!nextAllCoins) onChange?.(value.filter(isFavorite));
 			}}
 		>
 			{(select) => (
 				<MultiSelect
 					{...select}
+					{...input}
 					clearable
+					error={select.error ?? error}
 					description={`Up to ${maxHistoryLoadCoins} coins.`}
 					hidePickedOptions
 					label="Coins"

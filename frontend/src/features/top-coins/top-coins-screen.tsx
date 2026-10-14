@@ -1,8 +1,10 @@
 import { Center, Loader, Stack, TextInput, useMatches } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
-import { useEffect, useState } from "react";
-import { useAnalyzeMarket } from "@/api/generated/api";
-import type { MarketAnalysisResponse } from "@/api/generated/models";
+import { useState } from "react";
+import {
+	analyzeMarket,
+	type analyzeMarketResponseSuccess,
+	useAnalyzeMarket,
+} from "@/api/generated/api";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
 import { EmptyState } from "@/components/empty-state";
@@ -11,10 +13,7 @@ import { SettingsForm } from "@/components/settings-form";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { sidebarColumns } from "@/components/sidebar-layout/constants";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
-import {
-	apiErrorMessage,
-	unexpectedApiError,
-} from "@/features/analysis/api-error";
+import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
@@ -27,6 +26,9 @@ import {
 	buildTopCoinsScanCriteria,
 	topCoinsRequestOptions,
 } from "@/features/top-coins/top-coins";
+
+const selectAnalysis = (response: analyzeMarketResponseSuccess) =>
+	response.data;
 
 interface TopCoinsScreenProps {
 	initialSettings: VolatilitySettings;
@@ -51,23 +53,31 @@ export function TopCoinsScreen({
 	const [settings, setSettings] = useState(initialSettings);
 	const scanCriteria = buildTopCoinsScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
-	const query = useAnalyzeMarket<MarketAnalysisResponse>(
-		{ criteria, ...topCoinsRequestOptions },
-		{
-			query: {
-				enabled: permission.allowed,
-				gcTime: Number.POSITIVE_INFINITY,
-				retry: false,
-				staleTime: Number.POSITIVE_INFINITY,
-				select: (response) => {
-					if (!hasExpectedMarketScanResult(response.data, criteria)) {
-						throw unexpectedApiError();
-					}
-					return response.data;
+	const request = { criteria, ...topCoinsRequestOptions };
+	const query = useAnalyzeMarket(request, {
+		query: {
+			enabled: permission.allowed,
+			gcTime: Number.POSITIVE_INFINITY,
+			meta: {
+				errorNotification: {
+					id: "top-market-cap-error",
+					title: "Top Market Cap failed",
 				},
 			},
+			// Validated when fetched, so an unexpected response fails the query
+			// and reaches the query cache error handler.
+			queryFn: async ({ signal }) => {
+				const response = await analyzeMarket(request, { signal });
+				if (!hasExpectedMarketScanResult(response.data, criteria)) {
+					throw unexpectedApiError();
+				}
+				return response;
+			},
+			retry: false,
+			staleTime: Number.POSITIVE_INFINITY,
+			select: selectAnalysis,
 		},
-	);
+	});
 	const settingsForm = useVolatilitySettingsForm({
 		disabled: !permission.allowed,
 		initialSettings,
@@ -79,17 +89,6 @@ export function TopCoinsScreen({
 	});
 	const allRows = query.data?.table.rows ?? [];
 	const rows = filterMarketScanRows(allRows, symbolFilter);
-	useEffect(() => {
-		if (query.isError) {
-			notifications.show({
-				id: "top-market-cap-error",
-				autoClose: 5000,
-				color: "red",
-				message: apiErrorMessage(query.error),
-				title: "Top Market Cap failed",
-			});
-		}
-	}, [query.error, query.isError]);
 	useAnalysisWarningNotification(
 		query.data?.warnings,
 		"Top Market Cap warning",

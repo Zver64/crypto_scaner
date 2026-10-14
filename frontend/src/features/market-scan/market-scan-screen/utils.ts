@@ -1,14 +1,18 @@
-import type { QueryClient } from "@tanstack/react-query";
+import type { QueryClient, QueryMeta } from "@tanstack/react-query";
 import {
-	type analyzeMarket,
+	type analyzeMarketResponseSuccess,
 	getAnalyzeMarketQueryOptions,
 } from "@/api/generated/api";
 import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
+import { marketScanErrorNotification } from "@/features/market-scan/market-scan-screen/constants";
 import {
 	criterionSelections,
 	type MarketScanCriteria,
 } from "@/features/market-scan/pipeline";
+
+const selectAnalysis = (response: analyzeMarketResponseSuccess) =>
+	response.data;
 
 function validatedMarketScanQueryOptions(criteria: MarketScanCriteria) {
 	const selections = criterionSelections(criteria);
@@ -33,16 +37,23 @@ function validatedMarketScanQueryOptions(criteria: MarketScanCriteria) {
 
 // Results stay cached until invalidated (for example after the administrator
 // changes indicators); an invalidated scan refetches when a screen mounts it.
+// Only the screen's own failed first load notifies; scans it runs report their
+// own failures, and a failed refetch keeps the shown result.
 export function marketScanObserverOptions(criteria: MarketScanCriteria) {
 	return {
 		...validatedMarketScanQueryOptions(criteria),
 		gcTime: Number.POSITIVE_INFINITY,
+		meta: {
+			errorNotification: {
+				...marketScanErrorNotification,
+				initialLoadOnly: true,
+			},
+		} satisfies QueryMeta,
 		refetchOnReconnect: false as const,
 		refetchOnWindowFocus: false as const,
 		retry: false as const,
 		staleTime: Number.POSITIVE_INFINITY,
-		select: (response: Awaited<ReturnType<typeof analyzeMarket>>) =>
-			response.data,
+		select: selectAnalysis,
 	};
 }
 

@@ -5,7 +5,7 @@ import type {
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart";
-import { chartIndicatorPoints } from "@/features/candle-chart/utils";
+import { createChartSeriesData } from "@/features/candle-chart/utils";
 import {
 	type ChartCatalogs,
 	chartIntervals,
@@ -68,6 +68,17 @@ export function createCoinChartData(
 		if (!current) return;
 		const state = live.getSnapshot(interval);
 		if (!force && current.input === state) return;
+		// Connection and freshness changes keep the chart, and with it the
+		// chart-ready series, so the chart redraws only for new data.
+		const series =
+			current.snapshot && current.input?.chart === state.chart
+				? current.snapshot.series
+				: createChartSeriesData(
+						state.chart?.candles ?? [],
+						state.chart,
+						catalogs[interval],
+						interval,
+					);
 		current.input = state;
 		const closed = state.chart?.candles.length ?? 0;
 		if (
@@ -78,7 +89,7 @@ export function createCoinChartData(
 			current.loadingMore = false;
 		current.snapshot = {
 			candles: state.chart?.candles ?? [],
-			indicators: chartIndicatorPoints(state.chart, catalogs[interval]),
+			series,
 			connection: state.connection,
 			freshness: state.freshness,
 			error: state.error,
@@ -158,7 +169,7 @@ export function createCoinChartData(
 
 const emptySnapshot: PriceHistorySnapshot = {
 	candles: [],
-	indicators: {},
+	series: createChartSeriesData([], undefined, [], "1h"),
 	connection: "connecting",
 	freshness: "waiting",
 	isLoading: true,

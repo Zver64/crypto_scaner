@@ -24,6 +24,8 @@ interface BacktestResultsProps {
 // tablets on, then the trades, as a signal shows its
 // results above its signals. Without trades, one empty state replaces them all. A
 // signal shows its signals and the moves after them instead.
+// memo keeps the large trade and signal tables from re-rendering on every
+// control change of the backtest screen.
 export const BacktestResults = memo(function BacktestResults({
 	backtest,
 	gap,

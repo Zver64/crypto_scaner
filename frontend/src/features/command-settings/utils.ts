@@ -1,6 +1,12 @@
 import type { ErrorType } from "@/api/fetch";
-import type { CandleInterval, ErrorResponse } from "@/api/generated/models";
+import type {
+	CandleHistoryLoadInput,
+	CandleInterval,
+	ErrorResponse,
+} from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
+import { historyLoadDepth } from "@/features/command-settings/constants";
+import type { HistoryLoadValues } from "@/features/command-settings/types";
 import { describeApiError } from "@/utils/api-error";
 
 export function historyLoadErrorMessage(
@@ -22,4 +28,27 @@ export function intervalLabel(interval: CandleInterval): string {
 		chartIntervalOptions.find(({ value }) => value === interval)?.label ??
 		interval
 	);
+}
+
+// Builds the start request, with the intervals in chart order rather than in
+// the order chosen; returns undefined while no coin or interval is chosen or
+// the depth is outside its limits.
+export function historyLoadRequest({
+	coins,
+	depth,
+	intervals: chosenIntervals,
+}: HistoryLoadValues): CandleHistoryLoadInput | undefined {
+	const intervals = chartIntervalOptions
+		.map(({ value }) => value)
+		.filter((value) => chosenIntervals.includes(value));
+	if (
+		coins.length === 0 ||
+		intervals.length === 0 ||
+		typeof depth !== "number" ||
+		depth < historyLoadDepth.min ||
+		depth > historyLoadDepth.max
+	) {
+		return undefined;
+	}
+	return { depth, intervals, symbols: coins };
 }

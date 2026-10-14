@@ -1,17 +1,18 @@
 import { NumberInput, Select } from "@mantine/core";
+import type { UseFormReturnType } from "@mantine/form";
 import type { IndicatorParameter } from "@/api/generated/models";
+import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 
 interface ScannerIndicatorParameterFieldProps {
-	onChange(value: number | string): void;
+	form: UseFormReturnType<ScannerIndicatorDraft>;
 	parameter: IndicatorParameter;
-	value: number | string | undefined;
 }
 
 export function ScannerIndicatorParameterField({
-	onChange,
+	form,
 	parameter,
-	value,
 }: ScannerIndicatorParameterFieldProps) {
+	const path = `parameters.${parameter.key}`;
 	if (parameter.kind === "choice") {
 		return (
 			<Select
@@ -22,8 +23,7 @@ export function ScannerIndicatorParameterField({
 				}))}
 				description={parameter.description}
 				label={parameter.title}
-				onChange={(next) => onChange(next === null ? "" : Number(next))}
-				value={value === undefined || value === "" ? null : String(value)}
+				{...form.getInputProps(path)}
 			/>
 		);
 	}
@@ -34,9 +34,8 @@ export function ScannerIndicatorParameterField({
 			label={parameter.title}
 			max={parameter.maximum}
 			min={parameter.minimum}
-			onChange={onChange}
 			placeholder={String(parameter.default)}
-			value={value ?? ""}
+			{...form.getInputProps(path)}
 		/>
 	);
 }

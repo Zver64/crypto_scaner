@@ -1,7 +1,13 @@
 import { Select } from "@mantine/core";
-import { useListStrategies } from "@/api/generated/api";
+import {
+	type listStrategiesResponseSuccess,
+	useListStrategies,
+} from "@/api/generated/api";
 import { kindNouns } from "@/features/strategy-settings/constants";
 import { strategyKind } from "@/features/strategy-settings/utils";
+
+const selectStrategies = (response: listStrategiesResponseSuccess) =>
+	response.data.items;
 
 interface StrategySelectProps {
 	disabled?: boolean;
@@ -17,7 +23,7 @@ export function StrategySelect({
 	strategy,
 }: StrategySelectProps) {
 	const strategies = useListStrategies({
-		query: { retry: false, select: (response) => response.data.items },
+		query: { retry: false, select: selectStrategies },
 	});
 	return (
 		<Select

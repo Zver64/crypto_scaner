@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ErrorType } from "@/api/fetch";
 import {
+	type listIndicatorTypesResponseSuccess,
+	type listScannerIndicatorsResponseSuccess,
 	useCreateScannerIndicator,
 	useDeleteScannerIndicator,
 	useDeleteUnusedScannerIndicators,
@@ -22,6 +24,12 @@ import {
 	orderIndicators,
 } from "@/features/scanner-settings/utils";
 
+const selectIndicatorTypes = (response: listIndicatorTypesResponseSuccess) =>
+	response.data.items;
+
+const selectIndicators = (response: listScannerIndicatorsResponseSuccess) =>
+	response.data.items;
+
 export function ScannerSettings() {
 	const queryClient = useQueryClient();
 	const [removing, setRemoving] = useState<ScannerIndicator>();
@@ -29,12 +37,12 @@ export function ScannerSettings() {
 	const types = useListIndicatorTypes({
 		query: {
 			retry: false,
-			select: (response) => response.data.items,
+			select: selectIndicatorTypes,
 			staleTime: Number.POSITIVE_INFINITY,
 		},
 	});
 	const indicators = useListScannerIndicators({
-		query: { retry: false, select: (response) => response.data.items },
+		query: { retry: false, select: selectIndicators },
 	});
 	const refresh = () => invalidateScannerIndicatorQueries(queryClient);
 	const failed = (error: ErrorType<ErrorResponse>) => {

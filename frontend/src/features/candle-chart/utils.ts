@@ -1,5 +1,10 @@
-import { type MantineTheme, parseThemeColor } from "@mantine/core";
-import type { AutoscaleInfo, IRange, UTCTimestamp } from "lightweight-charts";
+import type {
+	AutoscaleInfo,
+	AutoscaleInfoProvider,
+	IRange,
+	PriceFormatCustom,
+	UTCTimestamp,
+} from "lightweight-charts";
 import type {
 	ChartIndicatorDefinition,
 	ChartPageResponse,
@@ -8,6 +13,7 @@ import {
 	entryMarkerOptions,
 	exitMarkerOptions,
 	markMarkerOptions,
+	volumeColors,
 } from "@/features/candle-chart/config";
 import {
 	dayTimeFormat,
@@ -17,6 +23,7 @@ import {
 import type {
 	ChartCandle,
 	ChartCandleSlot,
+	ChartIndicatorLayout,
 	ChartIndicatorOptions,
 	ChartIndicatorPane,
 	ChartIndicatorPoints,
@@ -24,21 +31,23 @@ import type {
 	ChartIndicatorSlot,
 	ChartInterval,
 	ChartLegendItem,
+	ChartLineData,
 	ChartMarker,
 	ChartPaneIndicatorOptions,
+	ChartSeriesData,
 	ChartTradeMarkers,
 	ChartVolumeSlot,
 	IndicatorPoint,
 	PriceCandle,
+	ValueResolution,
 } from "@/features/candle-chart/types";
 import { formatNumber } from "@/utils/number-format";
 
 // Results arrive in catalog order. Both chart sources use the same id/output
-// mapping; a snapshot can restrict the points to its revealed candle range.
-export function chartIndicatorPoints(
+// mapping.
+function chartIndicatorPoints(
 	chart: Pick<ChartPageResponse, "indicators"> | undefined,
 	catalog: readonly Pick<ChartIndicatorDefinition, "id">[],
-	from?: string,
 ): ChartIndicatorPoints {
 	if (!chart) return {};
 	return Object.fromEntries(
@@ -47,34 +56,81 @@ export function chartIndicatorPoints(
 			Object.fromEntries(
 				(chart.indicators[index]?.series ?? []).map(({ name, points }) => [
 					name,
-					from === undefined
-						? points
-						: points.filter(({ time }) => time >= from),
+					points,
 				]),
 			),
 		]),
 	);
 }
 
+// The chart-ready data of a snapshot, created once by its source: candle
+// slots with whitespace for missing candles, volume bars, and every catalog
+// line aligned with the slots, so points before the first candle are dropped.
+export function createChartSeriesData(
+	candles: readonly PriceCandle[],
+	chart: Pick<ChartPageResponse, "indicators"> | undefined,
+	catalog: readonly Pick<
+		ChartIndicatorDefinition,
+		"id" | "lines" | "placement"
+	>[],
+	interval: ChartInterval,
+): ChartSeriesData {
+	const slots = createCandlestickData(candles, interval);
+	const points = chartIndicatorPoints(chart, catalog);
+	const priceResolution = chartPriceResolution(slots);
+	return {
+		candles: slots,
+		volumes: createVolumeData(slots, candles, volumeColors),
+		priceResolution,
+		lines: Object.fromEntries(
+			catalog.flatMap(({ id, lines, placement }) =>
+				lines.map(({ output }) => {
+					const data = createIndicatorData(slots, points[id]?.[output] ?? []);
+					// Overlays are drawn on the candles' scale, so only a pane line
+					// has a resolution of its own.
+					const line: ChartLineData = {
+						data,
+						resolution:
+							placement === "overlay"
+								? priceResolution
+								: valueResolution(
+										data.flatMap((slot) =>
+											"value" in slot ? [slot.value] : [],
+										),
+									),
+					};
+					return [`${id}:${output}`, line];
+				}),
+			),
+		),
+	};
+}
+
 // Catalog presentation is shared by live charts and immutable backtest charts.
-export function toChartIndicatorOptions(
-	{ id, lines, pane, placement, scale }: ChartIndicatorDefinition,
-	theme: MantineTheme,
-	colorScheme: "light" | "dark",
-): ChartIndicatorOptions {
-	const resolvedLines = lines.map((line) => ({
-		...line,
-		color: parseThemeColor({ color: line.color, colorScheme, theme }).value,
-	}));
+function toChartIndicatorOptions({
+	id,
+	lines,
+	pane,
+	placement,
+	scale,
+}: ChartIndicatorDefinition): ChartIndicatorOptions {
 	return placement === "overlay"
-		? { id, lines: resolvedLines, placement }
+		? { id, lines, placement }
 		: {
 				id,
-				lines: resolvedLines,
+				lines,
 				placement,
 				pane: pane ?? id,
 				scale: scale ?? { levels: [] },
 			};
+}
+
+// What a chart draws from one interval's catalog, created once per catalog.
+export function createIndicatorLayout(
+	catalog: readonly ChartIndicatorDefinition[],
+): ChartIndicatorLayout {
+	const indicators = catalog.map(toChartIndicatorOptions);
+	return { indicators, panes: createIndicatorPanes(indicators) };
 }
 
 export function toUtcTimestamp(value: string): UTCTimestamp {
@@ -127,8 +183,8 @@ export function createIndicatorData(
 	});
 }
 
-// Aggregate trades once per selection/interval. Each chart owns its selector;
-// immutable candle arrays with only OHLC changes reuse the marker array.
+// Aggregate trades once per selection/interval. Each source interval owns its
+// selector; candle arrays with only OHLC changes reuse the marker array.
 export function createMarkerDataSelector(
 	{ entries, exits, marks = [], groups = [] }: ChartTradeMarkers,
 	interval: ChartInterval,
@@ -291,11 +347,9 @@ export function isChartCandle(value: unknown): value is ChartCandle {
 	);
 }
 
-export function chartPriceResolution(data: readonly ChartCandleSlot[]): {
-	base: number;
-	fractionDigits: number;
-	minMove: number;
-} {
+export function chartPriceResolution(
+	data: readonly ChartCandleSlot[],
+): ValueResolution {
 	return valueResolution(
 		data.flatMap((item) =>
 			"open" in item ? [item.open, item.high, item.low, item.close] : [],
@@ -306,11 +360,7 @@ export function chartPriceResolution(data: readonly ChartCandleSlot[]): {
 // Eight significant digits (at least cents) of the smallest non-zero magnitude,
 // with a valid decimal tick base. Indicator panes use it too, so tiny values
 // such as MACD of a low-priced coin keep their digits.
-export function valueResolution(values: readonly number[]): {
-	base: number;
-	fractionDigits: number;
-	minMove: number;
-} {
+export function valueResolution(values: readonly number[]): ValueResolution {
 	const smallest = Math.min(
 		...values.map(Math.abs).filter((value) => value > 0),
 	);
@@ -322,6 +372,21 @@ export function valueResolution(values: readonly number[]): {
 		// Intl accepts at most 100 fraction digits.
 		fractionDigits: Math.min(100, exponent),
 		minMove: 10 ** -exponent,
+	};
+}
+
+// The axis price format of a resolution. Axis ticks carry floating-point noise
+// near zero; rounding it at the resolution keeps it from widening the scale.
+export function axisPriceFormat({
+	base,
+	fractionDigits,
+	minMove,
+}: ValueResolution): PriceFormatCustom {
+	return {
+		base,
+		formatter: (value: number) => formatNumber(value, fractionDigits),
+		minMove,
+		type: "custom",
 	};
 }
 
@@ -365,13 +430,13 @@ export function nextCandleOpen(value: string, interval: ChartInterval): string {
 // is aligned with the candle slots, so the slot index selects the value.
 export function createIndicatorLegend(
 	indicators: readonly ChartIndicatorOptions[],
-	indicatorData: ReadonlyMap<string, readonly ChartIndicatorSlot[]>,
+	lines: Readonly<Record<string, ChartLineData>>,
 	slotIndex: number,
 ): ChartLegendItem[] {
 	return indicators.flatMap((indicator) =>
 		indicator.lines.map(({ color, output, title }) => {
 			const key = `${indicator.id}:${output}`;
-			const slot = indicatorData.get(key)?.[slotIndex];
+			const slot = lines[key]?.data[slotIndex];
 			const value =
 				slot && "value" in slot
 					? indicator.placement === "pane"
@@ -384,7 +449,8 @@ export function createIndicatorLegend(
 }
 
 // Groups the pane indicators by pane key, ordering the panes by their first
-// indicator.
+// indicator. Each pane gets its autoscale provider here, once per catalog, so
+// the provider keeps its identity as long as the layout does.
 export function createIndicatorPanes(
 	indicators: readonly ChartIndicatorOptions[],
 ): ChartIndicatorPane[] {
@@ -395,10 +461,14 @@ export function createIndicatorPanes(
 		if (group) group.push(indicator);
 		else groups.set(indicator.pane, [indicator]);
 	}
-	return [...groups.values()].map((group) => ({
-		indicators: group,
-		scale: group.map(({ scale }) => scale).reduce(mergeScales),
-	}));
+	return [...groups.values()].map((group) => {
+		const scale = group.map(({ scale }) => scale).reduce(mergeScales);
+		return {
+			autoscaleInfoProvider: paneScaleProvider(scale),
+			indicators: group,
+			scale,
+		};
+	});
 }
 
 // The scale of a shared pane spans the bounds of all its indicators, an
@@ -438,4 +508,11 @@ export function fitPaneIndicatorScale(
 			minValue: Math.max(Math.min(...values), min ?? Number.NEGATIVE_INFINITY),
 		},
 	};
+}
+
+// Fits the pane to its visible values instead of the full range, such as RSI
+// 0-100, so the line fills the pane without empty space above and below.
+function paneScaleProvider(scale: ChartIndicatorScale): AutoscaleInfoProvider {
+	return (baseImplementation) =>
+		fitPaneIndicatorScale(baseImplementation(), scale);
 }

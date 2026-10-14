@@ -62,6 +62,8 @@ export function useGridEstimatorForm({
 			defaultInvestment(market, bounds.anchor),
 		),
 	);
+	// Controlled, because the sliders, markups, futures options, and estimate
+	// follow the values as they change.
 	const form = useForm<GridEstimatorFormValues>({
 		initialValues: {
 			...recommendation.input,
@@ -87,6 +89,9 @@ export function useGridEstimatorForm({
 		: null;
 	const priceUnit = priceAsset(market);
 	const { direction, gridType, leverage } = form.values;
+	// The controlled form renders on every keystroke, while the estimate changes
+	// only on commit; it is memoized because the Decimal calculation walks every
+	// grid level.
 	const estimate = useMemo(
 		() =>
 			gridMarketEstimate(

@@ -1,11 +1,6 @@
-import {
-	CandlestickSeries,
-	type CandlestickSeriesPartialOptions,
-	type IRange,
-	type PriceFormatCustom,
-} from "lightweight-charts";
-import { useMemo } from "react";
+import { CandlestickSeries, type IRange } from "lightweight-charts";
 import { Series, SeriesMarkers } from "@/components/lightweight-chart";
+import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import {
 	candlePriceScaleOptions,
 	candleSeriesOptions,
@@ -15,13 +10,14 @@ import type {
 	ChartCandle,
 	ChartCandleSlot,
 	ChartMarker,
+	ValueResolution,
 } from "@/features/candle-chart/types";
 import { getVisibleMinMax, isChartCandle } from "@/features/candle-chart/utils";
 
 interface CandleSeriesProps {
 	data: readonly ChartCandleSlot[];
 	markers?: readonly ChartMarker[];
-	priceFormat: PriceFormatCustom;
+	priceResolution: ValueResolution;
 	onActiveCandleChange(candle: ChartCandle | null): void;
 	visibleRange: IRange<number> | null;
 }
@@ -30,17 +26,10 @@ export function CandleSeries({
 	data,
 	markers,
 	onActiveCandleChange,
-	priceFormat,
+	priceResolution,
 	visibleRange,
 }: CandleSeriesProps) {
-	const options = useMemo<CandlestickSeriesPartialOptions>(
-		() => ({ ...candleSeriesOptions, priceFormat }),
-		[priceFormat],
-	);
-	const minMax = useMemo(
-		() => getVisibleMinMax(data, visibleRange),
-		[data, visibleRange],
-	);
+	const minMax = getVisibleMinMax(data, visibleRange);
 	return (
 		<Series
 			data={data}
@@ -48,9 +37,10 @@ export function CandleSeries({
 			onCrosshairMove={(value) =>
 				onActiveCandleChange(isChartCandle(value) ? value : null)
 			}
-			options={options}
+			options={candleSeriesOptions}
 			priceScale={candlePriceScaleOptions}
 		>
+			<AxisPriceFormat resolution={priceResolution} />
 			{minMax ? <MinMaxPriceLines max={minMax.max} min={minMax.min} /> : null}
 			{markers ? <SeriesMarkers markers={markers} /> : null}
 		</Series>

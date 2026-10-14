@@ -1,5 +1,5 @@
 import type { IRange } from "lightweight-charts";
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import type { ChartCanvasHandle } from "@/components/lightweight-chart";
 
 interface ViewportOptions {
@@ -13,7 +13,8 @@ interface ViewportOptions {
 }
 
 // Keep a logical viewport steady while data is prepended or appended. This is
-// chart behavior, independent of the instrument and its candle interval.
+// chart behavior, independent of the instrument and its candle interval. data
+// must keep its reference until it changes, as chart-ready source data does.
 export function useChartViewport({
 	barWidth,
 	data,
@@ -33,27 +34,21 @@ export function useChartViewport({
 	const previousFirstTimeRef = useRef<number | undefined>(undefined);
 	const previousRangeRef = useRef<IRange<number> | null>(null);
 
-	const onBeforeDataChange = useCallback(() => {
+	// The chart wrappers call the latest handlers, so they may change on every
+	// render.
+	const onBeforeDataChange = () => {
 		const chartHandle = chartRef.current;
 		previousRangeRef.current =
 			chartHandle === null || previousLengthRef.current === 0
 				? null
 				: chartHandle.getVisibleLogicalRange();
-	}, []);
-	const onVisibleLogicalRangeChange = useCallback(
-		(range: IRange<number> | null) => {
-			setVisibleRange(range);
-			if (
-				range !== null &&
-				range.from < threshold &&
-				hasMore &&
-				!isLoadingMore
-			) {
-				onLoadOlder();
-			}
-		},
-		[hasMore, isLoadingMore, onLoadOlder, threshold],
-	);
+	};
+	const onVisibleLogicalRangeChange = (range: IRange<number> | null) => {
+		setVisibleRange(range);
+		if (range !== null && range.from < threshold && hasMore && !isLoadingMore) {
+			onLoadOlder();
+		}
+	};
 
 	useLayoutEffect(() => {
 		const chartHandle = chartRef.current;

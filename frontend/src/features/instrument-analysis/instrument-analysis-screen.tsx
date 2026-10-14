@@ -1,5 +1,4 @@
 import { Center, Loader, Stack } from "@mantine/core";
-import { useMemo } from "react";
 import type { CriterionRequest } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { RefreshingOverlay } from "@/components/refreshing-overlay";
@@ -8,10 +7,10 @@ import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import { CoinBackButton } from "@/features/instrument-analysis/coin-back-button";
 import { CoinChart } from "@/features/instrument-analysis/coin-chart";
-import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { CurrentPrice } from "@/features/instrument-analysis/current-price";
 import { GridCalculator } from "@/features/instrument-analysis/grid-estimator/grid-calculator";
 import { useChartIndicators } from "@/features/instrument-analysis/use-chart-indicators";
+import { useCoinChartData } from "@/features/instrument-analysis/use-coin-chart-data";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 import { useGridLimits } from "@/features/instrument-analysis/use-grid-limits";
 import { useHourlyHistory } from "@/features/instrument-analysis/use-hourly-history";
@@ -45,10 +44,7 @@ export function InstrumentAnalysisScreen({
 	const gridLimits = useGridLimits(symbol, permission.allowed);
 	const chart = useChartIndicators(permission.allowed);
 	// Shared by the chart and the price alerts, which show its current price.
-	const chartSource = useMemo(
-		() => chart.catalogs && createCoinChartData(symbol, chart.catalogs),
-		[chart.catalogs, symbol],
-	);
+	const chartSource = useCoinChartData(symbol, chart.catalogs);
 
 	// The previous symbol's result stays visible while refetching; the spot grid
 	// only uses a result for this symbol.

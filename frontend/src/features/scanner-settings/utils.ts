@@ -15,9 +15,16 @@ import type {
 } from "@/features/scanner-settings/types";
 import { describeApiError } from "@/utils/api-error";
 
+// The parameter inputs' initial values; a choice select holds its value as a
+// string.
 export function defaultParameterValues(type: IndicatorType): ParameterValues {
 	return Object.fromEntries(
-		type.parameters.map((parameter) => [parameter.key, parameter.default]),
+		type.parameters.map((parameter) => [
+			parameter.key,
+			parameter.kind === "choice"
+				? String(parameter.default)
+				: parameter.default,
+		]),
 	);
 }
 
@@ -60,6 +67,11 @@ export function parseLevels(levels: readonly string[]): number[] | undefined {
 	return values.every(Number.isFinite) ? values : undefined;
 }
 
+// The validation rule of the levels input.
+export function levelsError(levels: readonly string[]): string | null {
+	return parseLevels(levels) ? null : "Levels must be numbers";
+}
+
 // Builds a pane scale; returns undefined while a level is not a number.
 export function indicatorScale(
 	draft: ScaleDraft,
@@ -80,13 +92,15 @@ export function scaleDraft(scale: ScannerIndicatorScale): ScaleDraft {
 	};
 }
 
-// Builds the create request, one entry per chosen period in the given order;
-// returns undefined while no period is chosen or a level is not a number.
+// Builds the create request, one entry per chosen period in the given order,
+// with the parameter inputs as numbers; returns undefined while no type or
+// period is chosen or a level is not a number.
 export function scannerIndicatorInput(
 	draft: ScannerIndicatorDraft,
-	type: IndicatorType,
+	type: IndicatorType | undefined,
 	periods: readonly CandleInterval[],
 ): ScannerIndicatorInput | undefined {
+	if (!type) return undefined;
 	const intervals = periods.flatMap((interval) => {
 		const choice = draft.periods[interval];
 		return choice
@@ -102,7 +116,7 @@ export function scannerIndicatorInput(
 	if (intervals.length === 0) return undefined;
 	const parameters = Object.fromEntries(
 		Object.entries(draft.parameters).flatMap(([key, value]) =>
-			value === "" ? [] : [[key, Number(value)]],
+			value === "" || value === null ? [] : [[key, Number(value)]],
 		),
 	);
 	const input: ScannerIndicatorInput = {

@@ -19,6 +19,8 @@ export function useVolatilitySettingsForm({
 	onCommit,
 }: UseVolatilitySettingsFormOptions): SettingsFormProps {
 	const presets = applicationConfig.volatility;
+	// Controlled, because the Apply settings button follows the values as they
+	// are typed and stays disabled while they are invalid.
 	const form = useForm<VolatilitySettingsDraft>({
 		initialValues: initialSettings,
 		mode: "controlled",

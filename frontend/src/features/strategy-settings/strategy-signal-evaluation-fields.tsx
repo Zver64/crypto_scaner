@@ -1,27 +1,22 @@
 import { Group, NativeSelect } from "@mantine/core";
-import type { SignalTargetRatio, SignalWindow } from "@/api/generated/models";
+import type { UseFormReturnType } from "@mantine/form";
 import {
 	signalTargetRatios,
 	signalWindows,
 } from "@/features/strategy-settings/constants";
+import type { StrategyFormValues } from "@/features/strategy-settings/types";
 import { formatNumber } from "@/utils/number-format";
 
 interface StrategySignalEvaluationFieldsProps {
 	disabled: boolean;
-	onTargetRatioChange(value: SignalTargetRatio): void;
-	onWindowChange(value: SignalWindow): void;
-	targetRatio: SignalTargetRatio;
-	window: SignalWindow;
+	form: UseFormReturnType<StrategyFormValues>;
 }
 
 // The target distance in stops and the window in candles that backtests
 // judge a signal by.
 export function StrategySignalEvaluationFields({
 	disabled,
-	onTargetRatioChange,
-	onWindowChange,
-	targetRatio,
-	window,
+	form,
 }: StrategySignalEvaluationFieldsProps) {
 	return (
 		<Group grow>
@@ -30,30 +25,20 @@ export function StrategySignalEvaluationFields({
 					label: formatNumber(value),
 					value: String(value),
 				}))}
+				{...form.getInputProps("targetRatio")}
 				disabled={disabled}
+				key={form.key("targetRatio")}
 				label="Target, stops"
-				onChange={(event) => {
-					const next = signalTargetRatios.find(
-						(value) => String(value) === event.currentTarget.value,
-					);
-					if (next !== undefined) onTargetRatioChange(next);
-				}}
-				value={String(targetRatio)}
 			/>
 			<NativeSelect
 				data={signalWindows.map((value) => ({
 					label: formatNumber(value),
 					value: String(value),
 				}))}
+				{...form.getInputProps("window")}
 				disabled={disabled}
+				key={form.key("window")}
 				label="Window, candles"
-				onChange={(event) => {
-					const next = signalWindows.find(
-						(value) => String(value) === event.currentTarget.value,
-					);
-					if (next !== undefined) onWindowChange(next);
-				}}
-				value={String(window)}
 			/>
 		</Group>
 	);

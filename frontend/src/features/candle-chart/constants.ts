@@ -1,3 +1,6 @@
+import type { ChartLineData } from "@/features/candle-chart/types";
+import { valueResolution } from "@/features/candle-chart/utils";
+
 // Creating an Intl.DateTimeFormat is expensive and chart readouts format a
 // time on every crosshair move, so the formatters are created once.
 export const hourTimeFormat = new Intl.DateTimeFormat("en", {
@@ -19,3 +22,9 @@ export const dayTimeFormat = new Intl.DateTimeFormat("en", {
 	year: "numeric",
 	timeZone: "UTC",
 });
+
+// A line missing from a snapshot, such as one still loading, draws nothing.
+export const emptyChartLine: ChartLineData = {
+	data: [],
+	resolution: valueResolution([]),
+};

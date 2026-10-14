@@ -7,6 +7,7 @@ import {
 	Text,
 	Textarea,
 } from "@mantine/core";
+import { useForm } from "@mantine/form";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
@@ -45,7 +46,12 @@ export function StrategyImport({
 	opened,
 }: StrategyImportProps) {
 	const queryClient = useQueryClient();
-	const [expression, setExpression] = useState("");
+	// Controlled: the dialog is small, and its button follows the text.
+	const form = useForm({
+		initialValues: { expression: "" },
+		mode: "controlled",
+	});
+	const { expression } = form.values;
 	const [problems, setProblems] = useState<string[]>([]);
 	const [pending, setPending] = useState<PendingImport>();
 	const validation = useValidateStrategy();
@@ -57,7 +63,7 @@ export function StrategyImport({
 	});
 	const busy = validation.isPending || addition.isPending;
 	const finish = () => {
-		setExpression("");
+		form.reset();
 		setProblems([]);
 		setPending(undefined);
 		onClose();
@@ -123,7 +129,7 @@ export function StrategyImport({
 				label="Expression"
 				minRows={4}
 				onChange={(event) => {
-					setExpression(event.currentTarget.value);
+					form.setValues({ expression: event.currentTarget.value });
 					setProblems([]);
 				}}
 				placeholder="h_rsi < 30 && crosses_above(h_close, h_sma_20)"

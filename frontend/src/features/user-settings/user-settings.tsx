@@ -4,6 +4,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import {
 	getListUsersQueryKey,
+	type listUsersResponseSuccess,
 	useDeleteUser,
 	useListUsers,
 	useUpdateUser,
@@ -17,11 +18,13 @@ import {
 	updateUserErrorMessage,
 } from "@/features/user-settings/utils";
 
+const selectUsers = (response: listUsersResponseSuccess) => response.data.items;
+
 export function UserSettings() {
 	const queryClient = useQueryClient();
 	const [removing, setRemoving] = useState<User>();
 	const users = useListUsers({
-		query: { retry: false, select: (response) => response.data.items },
+		query: { retry: false, select: selectUsers },
 	});
 	const deleteMutation = useDeleteUser({
 		mutation: {

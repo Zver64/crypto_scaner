@@ -1,8 +1,9 @@
 import { MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
+import { createQueryClient } from "@/app/query-client";
 import { theme } from "@/app/theme";
 import { getRouter } from "@/router";
 
@@ -12,7 +13,7 @@ import "@mantine/notifications/styles.css";
 import "@microcharts/react/styles.css";
 import "@/styles.css";
 
-const queryClient = new QueryClient();
+const queryClient = createQueryClient();
 
 const router = getRouter();
 

@@ -6,6 +6,7 @@ describe("normalizePriceTarget", () => {
 		["1.0", "1"],
 		[".5", "0.5"],
 		["1e-8", "0.00000001"],
+		[1.2e-7, "0.00000012"],
 	])("normalizes %s", (input, expected) => {
 		expect(normalizePriceTarget(input)).toEqual({ value: expected });
 	});

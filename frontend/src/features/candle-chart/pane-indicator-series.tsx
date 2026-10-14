@@ -1,11 +1,7 @@
 import { useComputedColorScheme } from "@mantine/core";
-import {
-	type AutoscaleInfo,
-	LineSeries,
-	type LineSeriesPartialOptions,
-} from "lightweight-charts";
-import { useMemo } from "react";
+import { type AutoscaleInfoProvider, LineSeries } from "lightweight-charts";
 import { PriceLine, Series } from "@/components/lightweight-chart";
+import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import {
 	paneIndicatorLevelOptions,
 	paneIndicatorPriceScaleOptions,
@@ -14,18 +10,15 @@ import {
 import type {
 	ChartIndicatorLine,
 	ChartIndicatorScale,
-	ChartIndicatorSlot,
+	ChartLineData,
 } from "@/features/candle-chart/types";
-import {
-	fitPaneIndicatorScale,
-	valueResolution,
-} from "@/features/candle-chart/utils";
-import { formatNumber } from "@/utils/number-format";
+import { useThemeColor } from "@/features/candle-chart/use-theme-color";
 
 interface PaneIndicatorSeriesProps {
+	autoscaleInfoProvider: AutoscaleInfoProvider;
 	// One line of each pane also draws the scale levels, which belong to the pane.
 	drawsLevels: boolean;
-	data: readonly ChartIndicatorSlot[];
+	data: ChartLineData;
 	line: ChartIndicatorLine;
 	pane: number;
 	scale: ChartIndicatorScale;
@@ -33,45 +26,29 @@ interface PaneIndicatorSeriesProps {
 
 // One indicator line in a pane below the candles, on the scale of the pane.
 export function PaneIndicatorSeries({
+	autoscaleInfoProvider,
 	drawsLevels,
-	data,
+	data: { data, resolution },
 	line,
 	pane,
 	scale,
 }: PaneIndicatorSeriesProps) {
 	const levelOptions =
 		paneIndicatorLevelOptions[useComputedColorScheme("dark")];
-	const { base, fractionDigits, minMove } = valueResolution(
-		data.flatMap((slot) => ("value" in slot ? [slot.value] : [])),
-	);
-	// Depends on the resolution, not on data, so live ticks keep the same
-	// options and the series is not reconfigured on every trade.
-	const options = useMemo<LineSeriesPartialOptions>(() => {
-		return {
-			...paneIndicatorSeriesOptions,
-			// Fit the visible values instead of the full range, such as RSI 0-100,
-			// so the line fills the pane without empty space above and below.
-			autoscaleInfoProvider: (baseImplementation: () => AutoscaleInfo | null) =>
-				fitPaneIndicatorScale(baseImplementation(), scale),
-			color: line.color,
-			priceFormat: {
-				base,
-				// Axis ticks carry floating-point noise near zero; round it at
-				// the resolution so it cannot widen the scale.
-				formatter: (value: number) => formatNumber(value, fractionDigits),
-				minMove,
-				type: "custom",
-			},
-		};
-	}, [base, fractionDigits, line, minMove, scale]);
+	const themeColor = useThemeColor();
 	return (
 		<Series
 			data={data}
 			definition={LineSeries}
-			options={options}
+			options={{
+				...paneIndicatorSeriesOptions,
+				autoscaleInfoProvider,
+				color: themeColor(line.color),
+			}}
 			pane={pane}
 			priceScale={paneIndicatorPriceScaleOptions}
 		>
+			<AxisPriceFormat resolution={resolution} />
 			{drawsLevels
 				? scale.levels.map(({ value }) => (
 						<PriceLine

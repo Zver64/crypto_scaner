@@ -1,6 +1,6 @@
 import type { CandleInterval } from "@/api/generated/models";
 import {
-	type ChartIndicatorOptions,
+	type ChartIndicatorLayout,
 	PriceHistoryChart,
 } from "@/features/candle-chart";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
@@ -12,9 +12,9 @@ interface CoinChartProps {
 	enabled: boolean;
 	failed: boolean;
 	fillHeight: boolean;
-	indicators: Readonly<
-		Record<CandleInterval, readonly ChartIndicatorOptions[]>
-	>;
+	indicators:
+		| Readonly<Record<CandleInterval, ChartIndicatorLayout>>
+		| undefined;
 	source: CoinChartData | undefined;
 	symbol: string;
 }
@@ -30,7 +30,7 @@ export function CoinChart({
 	symbol,
 }: CoinChartProps) {
 	const { paperPadding } = useCoinPageLayout();
-	if (!source) {
+	if (!source || !indicators) {
 		return <CoinChartPlaceholder failed={failed} paperPadding={paperPadding} />;
 	}
 	return (

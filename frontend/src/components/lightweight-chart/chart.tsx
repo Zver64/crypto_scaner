@@ -1,3 +1,4 @@
+import equal from "fast-deep-equal";
 import { createChart } from "lightweight-charts";
 import {
 	forwardRef,
@@ -26,7 +27,10 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 		ref,
 	) {
 		const containerRef = useRef<HTMLDivElement>(null);
+		// The options the chart has: it is created with them and applies only
+		// options that differ by value, so callers may build them on every render.
 		const optionsRef = useRef(options);
+		const rangeChangeRef = useRef(onVisibleLogicalRangeChange);
 
 		const lifecycleRef = useRef<ChartLifecycle | null>(null);
 		if (lifecycleRef.current === null) {
@@ -54,11 +58,20 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 					return chartApi;
 				},
 				generation: () => generation,
+				// Compared with the factors the chart's panes have, not with the
+				// last applied ones: a pane recreated by its series remounting
+				// starts with the default factor although the factors are equal.
+				// Setting a factor redraws the whole chart, so equal ones are skipped.
 				applyPaneStretchFactors(factors) {
 					if (chartApi === null || isRemoved) return;
-					for (const [index, factor] of factors.entries()) {
-						chartApi.panes()[index]?.setStretchFactor(factor);
-					}
+					const panes = chartApi.panes();
+					const changes = factors.flatMap((factor, index) => {
+						const pane = panes[index];
+						return pane && pane.getStretchFactor() !== factor
+							? [{ factor, pane }]
+							: [];
+					});
+					for (const { factor, pane } of changes) pane.setStretchFactor(factor);
 				},
 				destroy() {
 					isRemoved = true;
@@ -107,10 +120,14 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 		}, [lifecycle]);
 
 		useLayoutEffect(() => {
+			rangeChangeRef.current = onVisibleLogicalRangeChange;
+			if (equal(optionsRef.current, options)) return;
 			optionsRef.current = options;
 			lifecycle.api().applyOptions(options);
-		}, [lifecycle, options]);
+		});
 
+		// Runs after every render, since series added by children create their
+		// panes; it changes the chart only when a pane's factor differs.
 		useLayoutEffect(() => {
 			lifecycle.applyPaneStretchFactors(paneStretchFactors);
 		});
@@ -120,14 +137,14 @@ export const ChartCanvas = forwardRef<ChartCanvasHandle, ChartCanvasProps>(
 			const timeScale = chart.timeScale();
 			const handleRangeChange: Parameters<
 				typeof timeScale.subscribeVisibleLogicalRangeChange
-			>[0] = (range) => onVisibleLogicalRangeChange?.(range);
+			>[0] = (range) => rangeChangeRef.current?.(range);
 			timeScale.subscribeVisibleLogicalRangeChange(handleRangeChange);
 			return () => {
 				if (!lifecycle.isRemoved) {
 					timeScale.unsubscribeVisibleLogicalRangeChange(handleRangeChange);
 				}
 			};
-		}, [lifecycle, onVisibleLogicalRangeChange]);
+		}, [lifecycle]);
 
 		return (
 			<ChartContext.Provider value={lifecycle}>

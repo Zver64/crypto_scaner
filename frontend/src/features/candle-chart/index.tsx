@@ -8,20 +8,13 @@ import {
 	Text,
 	useComputedColorScheme,
 } from "@mantine/core";
-import type { DeepPartial, Time, TimeChartOptions } from "lightweight-charts";
-import {
-	type CSSProperties,
-	memo,
-	useCallback,
-	useMemo,
-	useState,
-} from "react";
+import { type CSSProperties, useState } from "react";
 import { ChartCanvas } from "@/components/lightweight-chart";
 import { CandleSeries } from "@/features/candle-chart/candle-series";
+import { timeChartOptions } from "@/features/candle-chart/chart-options";
 import { ChartReadout } from "@/features/candle-chart/chart-readout";
 import {
 	barSpacing,
-	chartOptions as baseChartOptions,
 	candlePaneHeight,
 	chartIntervalOptions,
 	defaultChartInterval,
@@ -29,6 +22,7 @@ import {
 	loadOlderThreshold,
 	minVisibleBars,
 } from "@/features/candle-chart/config";
+import { emptyChartLine } from "@/features/candle-chart/constants";
 import { IndicatorLegend } from "@/features/candle-chart/indicator-legend";
 import { LiveStatus } from "@/features/candle-chart/live-status";
 import { OverlayIndicatorSeries } from "@/features/candle-chart/overlay-indicator-series";
@@ -39,21 +33,12 @@ import type {
 	PriceHistoryChartProps,
 } from "@/features/candle-chart/types";
 import { useChartViewport } from "@/features/candle-chart/use-chart-viewport";
-import { usePriceFormat } from "@/features/candle-chart/use-price-format";
 import { usePriceHistory } from "@/features/candle-chart/use-price-history";
-import {
-	createCandlestickData,
-	createIndicatorData,
-	createIndicatorLegend,
-	createIndicatorPanes,
-	createMarkerDataSelector,
-	formatChartTime,
-} from "@/features/candle-chart/utils";
+import { createIndicatorLegend } from "@/features/candle-chart/utils";
 import { VolumeSeries } from "@/features/candle-chart/volume-series";
 
 export type {
-	ChartIndicatorOptions,
-	ChartIndicatorPoints,
+	ChartIndicatorLayout,
 	ChartIntervalOption,
 	ChartReadoutOptions,
 	PriceHistorySnapshot,
@@ -65,14 +50,16 @@ const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
 	value,
 }));
 
-export const PriceHistoryChart = memo(function PriceHistoryChart({
+// Sources deliver chart-ready data (see PriceHistorySnapshot.series) and the
+// chart wrappers compare what they receive, so the chart transforms nothing
+// while rendering and needs no memoization.
+export function PriceHistoryChart({
 	enabled,
-	indicators: intervalIndicators,
+	indicators: layouts,
 	extraReadout,
 	fillHeight = false,
 	intervals,
 	live = true,
-	markers,
 	paperPadding,
 	source,
 	symbol,
@@ -84,7 +71,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		? intervalControlData.filter(({ value }) => intervals.includes(value))
 		: intervalControlData;
 	const [activeCandle, setActiveCandle] = useState<ChartCandle | null>(null);
-	const indicators = intervalIndicators[interval];
+	const { indicators, panes } = layouts[interval];
 	const colorScheme = useComputedColorScheme("dark");
 	const {
 		candles,
@@ -92,64 +79,16 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		error,
 		freshness,
 		hasMore,
-		indicators: indicatorPoints,
 		isLoading,
 		isLoadingMore,
+		markers,
+		series,
 	} = usePriceHistory(source, interval, enabled);
-
-	const data = useMemo(
-		() => createCandlestickData(candles, interval),
-		[candles, interval],
-	);
-	const priceFormat = usePriceFormat(data);
-	const selectMarkerData = useMemo(
-		() => markers && createMarkerDataSelector(markers, interval),
-		[markers, interval],
-	);
-	const markerData = useMemo(
-		() => selectMarkerData?.(data),
-		[data, selectMarkerData],
-	);
-	// Aligns every indicator line with the candle slots, keyed by "id:output".
-	const indicatorData = useMemo(
-		() =>
-			new Map(
-				indicators.flatMap(({ id, lines }) =>
-					lines.map(({ output }) => [
-						`${id}:${output}`,
-						createIndicatorData(data, indicatorPoints[id]?.[output] ?? []),
-					]),
-				),
-			),
-		[data, indicators, indicatorPoints],
-	);
+	const line = (key: string) => series.lines[key] ?? emptyChartLine;
 	const overlays = indicators.filter(
 		(indicator) => indicator.placement === "overlay",
 	);
-	const panes = useMemo(() => createIndicatorPanes(indicators), [indicators]);
-	const chartOptions = useMemo<DeepPartial<TimeChartOptions>>(
-		() => ({
-			...baseChartOptions[colorScheme],
-			localization: {
-				timeFormatter: (time: Time) =>
-					typeof time === "number"
-						? formatChartTime(time, interval)
-						: String(time),
-			},
-			timeScale: {
-				...baseChartOptions[colorScheme].timeScale,
-				timeVisible:
-					chartIntervalOptions.find((item) => item.value === interval)
-						?.showTime ?? false,
-			},
-		}),
-		[colorScheme, interval],
-	);
 
-	const onLoadOlder = useCallback(
-		() => source.loadOlder(interval),
-		[source, interval],
-	);
 	const {
 		chartRef,
 		onBeforeDataChange,
@@ -157,11 +96,11 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 		visibleRange,
 	} = useChartViewport({
 		barWidth: barSpacing,
-		data,
+		data: series.candles,
 		hasMore,
 		isLoadingMore,
 		minVisibleBars,
-		onLoadOlder,
+		onLoadOlder: () => source.loadOlder(interval),
 		threshold: loadOlderThreshold,
 	});
 
@@ -171,11 +110,11 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 	};
 	const readoutCandle = activeCandle ?? candles.at(-1);
 	const legendSlotIndex = activeCandle
-		? data.findIndex((slot) => slot.time === activeCandle.time)
-		: data.length - 1;
+		? series.candles.findIndex((slot) => slot.time === activeCandle.time)
+		: series.candles.length - 1;
 	const legendItems = createIndicatorLegend(
 		indicators,
-		indicatorData,
+		series.lines,
 		legendSlotIndex,
 	);
 	const hasCandles = candles.length > 0;
@@ -212,7 +151,7 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 						key={`${symbol}:${interval}`}
 						aria-label={`${symbol}: ${interval} candlestick history${live ? " with the current live candle" : " of the completed backtest"}. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
 						onVisibleLogicalRangeChange={onVisibleLogicalRangeChange}
-						options={chartOptions}
+						options={timeChartOptions[colorScheme][interval]}
 						paneStretchFactors={[
 							candlePaneHeight,
 							...panes.map(() => indicatorPaneHeight),
@@ -228,40 +167,44 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 						{/* Added first so the volume bars are drawn behind the candles. As the
 						first series to receive data, it also records the viewport first. */}
 						<VolumeSeries
-							candles={candles}
-							data={data}
+							data={series.volumes}
 							onBeforeDataChange={onBeforeDataChange}
 						/>
 						<CandleSeries
-							data={data}
-							markers={markerData}
+							data={series.candles}
+							markers={markers}
 							onActiveCandleChange={setActiveCandle}
-							priceFormat={priceFormat}
+							priceResolution={series.priceResolution}
 							visibleRange={visibleRange}
 						/>
 						{overlays.flatMap(({ id, lines }) =>
-							lines.map((line) => (
+							lines.map((indicatorLine) => (
 								<OverlayIndicatorSeries
-									data={indicatorData.get(`${id}:${line.output}`) ?? []}
-									key={`${id}:${line.output}`}
-									line={line}
-									priceFormat={priceFormat}
+									data={line(`${id}:${indicatorLine.output}`).data}
+									key={`${id}:${indicatorLine.output}`}
+									line={indicatorLine}
+									priceResolution={series.priceResolution}
 								/>
 							)),
 						)}
-						{panes.flatMap(({ indicators: paneIndicators, scale }, paneIndex) =>
-							paneIndicators.flatMap(({ id, lines }, indicatorIndex) =>
-								lines.map((line, lineIndex) => (
-									<PaneIndicatorSeries
-										data={indicatorData.get(`${id}:${line.output}`) ?? []}
-										drawsLevels={indicatorIndex === 0 && lineIndex === 0}
-										key={`${id}:${line.output}`}
-										line={line}
-										pane={paneIndex + 1}
-										scale={scale}
-									/>
-								)),
-							),
+						{panes.flatMap(
+							(
+								{ autoscaleInfoProvider, indicators: paneIndicators, scale },
+								paneIndex,
+							) =>
+								paneIndicators.flatMap(({ id, lines }, indicatorIndex) =>
+									lines.map((indicatorLine, lineIndex) => (
+										<PaneIndicatorSeries
+											autoscaleInfoProvider={autoscaleInfoProvider}
+											data={line(`${id}:${indicatorLine.output}`)}
+											drawsLevels={indicatorIndex === 0 && lineIndex === 0}
+											key={`${id}:${indicatorLine.output}`}
+											line={indicatorLine}
+											pane={paneIndex + 1}
+											scale={scale}
+										/>
+									)),
+								),
 						)}
 					</ChartCanvas>
 					{isLoading && !hasCandles ? (
@@ -285,4 +228,4 @@ export const PriceHistoryChart = memo(function PriceHistoryChart({
 			</Stack>
 		</Paper>
 	);
-});
+}

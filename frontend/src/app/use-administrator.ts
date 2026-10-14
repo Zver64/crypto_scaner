@@ -1,4 +1,10 @@
-import { useGetCurrentUser } from "@/api/generated/api";
+import {
+	type getCurrentUserResponseSuccess,
+	useGetCurrentUser,
+} from "@/api/generated/api";
+
+const selectAdministrator = (response: getCurrentUserResponseSuccess) =>
+	response.data.administrator;
 
 // Whether the current user manages the global scanner settings.
 export function useAdministrator(enabled: boolean): boolean {
@@ -6,7 +12,7 @@ export function useAdministrator(enabled: boolean): boolean {
 		query: {
 			enabled,
 			retry: false,
-			select: (response) => response.data.administrator,
+			select: selectAdministrator,
 			staleTime: Number.POSITIVE_INFINITY,
 		},
 	});

@@ -49,7 +49,7 @@ export function BacktestSingleResults({
 					backtest={result}
 					enabled={enabled}
 					fillHeight={wide}
-					identity={run.revision}
+					key={run.revision}
 					paperPadding={paperPadding}
 				/>
 			</Stack>

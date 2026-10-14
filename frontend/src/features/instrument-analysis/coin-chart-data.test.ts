@@ -26,8 +26,8 @@ const rsiCatalogs = {
 };
 
 const rsiValues = (source: ReturnType<typeof createCoinChartData>) =>
-	(source.getSnapshot("1h").indicators["rsi-14"]?.rsi ?? []).map(
-		(point) => point.value,
+	(source.getSnapshot("1h").series.lines["rsi-14:rsi"]?.data ?? []).flatMap(
+		(slot) => ("value" in slot ? [slot.value] : []),
 	);
 
 vi.mock("@/api/session", () => ({
@@ -222,6 +222,7 @@ it("streams only the interval on screen and keeps the last chart of others as st
 			["subscribe", "1d", 200],
 		]);
 
+		const { series } = source.getSnapshot("1h");
 		socket.emitMessage({
 			type: "unsubscribed",
 			symbol: "BTCUSDT",
@@ -230,6 +231,8 @@ it("streams only the interval on screen and keeps the last chart of others as st
 		const hourly = source.getSnapshot("1h");
 		expect(hourly.candles).toHaveLength(2);
 		expect(hourly.freshness).toBe("stale");
+		// A freshness change keeps the chart-ready data, so nothing is redrawn.
+		expect(hourly.series).toBe(series);
 	} finally {
 		source.stop();
 	}

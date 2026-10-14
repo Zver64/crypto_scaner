@@ -6,7 +6,7 @@ import { formatRangePercent } from "@/utils/range-percent";
 // Percent distance from the current price to the target; undefined until the
 // price is known and the target is one the alert form would accept.
 export function targetChangePercent(
-	target: string,
+	target: number | string,
 	price: number | undefined,
 ): number | undefined {
 	if (price === undefined || !(price > 0) || !Number.isFinite(price)) {

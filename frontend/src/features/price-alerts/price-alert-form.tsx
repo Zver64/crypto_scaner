@@ -1,5 +1,5 @@
 import { Box, Button, Group, NumberInput, Stack, Text } from "@mantine/core";
-import type { FormEvent } from "react";
+import type { FormEvent, ReactNode } from "react";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { TargetChange } from "@/features/price-alerts/target-change";
 
@@ -10,11 +10,11 @@ interface PriceAlertFormProps {
 	limitReached: boolean;
 	onCancel(): void;
 	onSubmit(event: FormEvent<HTMLFormElement>): void;
-	onTargetChange(target: string): void;
+	onTargetChange(target: number | string): void;
 	// Live price the target's percent change is measured from.
 	priceSource?: CoinChartData;
-	target: string;
-	targetError?: string;
+	target: number | string;
+	targetError?: ReactNode;
 }
 
 export function PriceAlertForm({
@@ -46,8 +46,7 @@ export function PriceAlertForm({
 						</Group>
 					)}
 					label={isEditing ? "Edit target" : "New target"}
-					// onChange converts to a JS number; the raw string keeps all 18 decimals.
-					onValueChange={({ value }) => onTargetChange(value)}
+					onChange={onTargetChange}
 					placeholder="0.00"
 					value={target}
 				/>
@@ -58,7 +57,7 @@ export function PriceAlertForm({
 						</Button>
 					) : null}
 					<Button
-						disabled={formLocked || target.trim() === ""}
+						disabled={formLocked || target === ""}
 						loading={isSaving}
 						type="submit"
 					>

@@ -8,10 +8,11 @@ import {
 } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconX } from "@tabler/icons-react";
+import { memo, use } from "react";
 import type { RuleProps } from "react-querybuilder";
-import type { StrategyVariable } from "@/api/generated/models";
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
 import { firstField } from "@/features/strategy-settings/expressions";
+import { StrategyVariablesContext } from "@/features/strategy-settings/strategy-variables-context";
 import type { StrategyOperator } from "@/features/strategy-settings/types";
 import {
 	isCrossOperator,
@@ -31,21 +32,19 @@ const operatorOptions: { label: string; value: StrategyOperator }[] = [
 	{ label: "crosses below", value: "crossesBelow" },
 ];
 
-interface StrategyRuleProps extends RuleProps {
-	variables: readonly StrategyVariable[];
-}
-
 // One comparison, stacked vertically for phones: the compared operand, the
 // operator, then a range or the operand it is compared with. Each operand is
 // an indicator, a number (right side only), a function, or an indicator of
-// another coin.
-export function StrategyRule({
+// another coin. Memoized like the builder's own condition component, which
+// it replaces: a group renders its conditions itself on every change of one
+// of them, and only the changed condition gets new props.
+export const StrategyRule = memo(function StrategyRule({
 	actions,
 	disabled,
 	path,
 	rule,
-	variables,
-}: StrategyRuleProps) {
+}: RuleProps) {
+	const variables = use(StrategyVariablesContext);
 	// A crossing reads the previous candle too.
 	const operandVariables = isCrossOperator(rule.operator)
 		? withoutPositionVariables(variables)
@@ -179,4 +178,4 @@ export function StrategyRule({
 			)}
 		</Stack>
 	);
-}
+});

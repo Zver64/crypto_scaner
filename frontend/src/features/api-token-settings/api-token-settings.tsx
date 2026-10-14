@@ -5,6 +5,7 @@ import { useState } from "react";
 import type { ErrorType } from "@/api/fetch";
 import {
 	getListApiTokensQueryKey,
+	type listApiTokensResponseSuccess,
 	useCreateApiToken,
 	useDeleteApiToken,
 	useListApiTokens,
@@ -16,12 +17,15 @@ import { ApiTokenRow } from "@/features/api-token-settings/api-token-row";
 import { IssuedApiToken } from "@/features/api-token-settings/issued-api-token";
 import { apiTokenErrorMessage } from "@/features/api-token-settings/utils";
 
+const selectTokens = (response: listApiTokensResponseSuccess) =>
+	response.data.items;
+
 // Tokens of the administrator for the scanner CLI and other API clients.
 export function ApiTokenSettings() {
 	const queryClient = useQueryClient();
 	const [removing, setRemoving] = useState<ApiToken>();
 	const tokens = useListApiTokens({
-		query: { retry: false, select: (response) => response.data.items },
+		query: { retry: false, select: selectTokens },
 	});
 	const refresh = () =>
 		queryClient.invalidateQueries({ queryKey: getListApiTokensQueryKey() });

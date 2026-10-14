@@ -114,6 +114,11 @@ export function createEquityData(
 	];
 }
 
+// Axis labels of the equity chart, whose values are percentages.
+export function formatEquityPercent(value: number): string {
+	return formatRangePercent(value, 2);
+}
+
 // The chart marks of a backtest: the first fills and the closes of trades,
 // or blue signal entries and outcome-colored closes, with circles for
 // sideways. A long trade opens on a rise mark and

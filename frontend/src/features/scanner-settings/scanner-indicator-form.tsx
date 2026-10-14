@@ -1,5 +1,6 @@
 import { Button, Group, Paper, Select, Stack, Text } from "@mantine/core";
-import { type FormEvent, useState } from "react";
+import { useForm } from "@mantine/form";
+import { useState } from "react";
 import type {
 	IndicatorType,
 	ScannerIndicatorInput,
@@ -13,7 +14,7 @@ import {
 	defaultParameterValues,
 	indicatorGroups,
 	indicatorTypeOptions,
-	parseLevels,
+	levelsError,
 	scannerIndicatorInput,
 	tableColumnAllowed,
 	withoutTableColumns,
@@ -43,34 +44,44 @@ export function ScannerIndicatorForm({
 	onSubmit,
 	types,
 }: ScannerIndicatorFormProps) {
-	const [draft, setDraft] = useState(emptyDraft);
+	// Controlled, because the chosen type decides which fields are shown and
+	// the levels error and the Add button follow the values as they change.
+	const form = useForm({
+		initialValues: emptyDraft,
+		mode: "controlled",
+		validate: { levels: levelsError },
+		validateInputOnChange: true,
+	});
+	// The group only narrows the indicator choice and is not submitted.
 	const [group, setGroup] = useState(allGroups);
+	const draft = form.values;
 	const type = types.find((item) => item.type === draft.type);
 	const groupTypes =
 		group === allGroups ? types : types.filter((item) => item.group === group);
-	const levelsValid = parseLevels(draft.levels) !== undefined;
-	const submit = (event: FormEvent) => {
-		event.preventDefault();
-		if (!type) return;
+	const submit = form.onSubmit((values) => {
 		// The form keeps its values after adding, so a similar indicator needs
 		// only the changed fields.
-		const input = scannerIndicatorInput(draft, type, periodOrder);
+		const input = scannerIndicatorInput(
+			values,
+			types.find((item) => item.type === values.type),
+			periodOrder,
+		);
 		if (input) onSubmit(input);
-	};
+	});
 	const selectType = (value: string | null) => {
 		const next = types.find((item) => item.type === value);
-		setDraft((current) => ({
-			...current,
+		const { periods } = form.getValues();
+		form.setValues({
 			levels: [],
 			parameters: next ? defaultParameterValues(next) : {},
 			scaleMax: "",
 			scaleMin: "",
 			// A table choice made for a single-output type does not carry over.
 			periods: tableColumnAllowed(next)
-				? current.periods
-				: withoutTableColumns(current.periods),
+				? periods
+				: withoutTableColumns(periods),
 			type: value,
-		}));
+		});
 	};
 
 	const selectGroup = (value: string | null) => {
@@ -82,83 +93,65 @@ export function ScannerIndicatorForm({
 
 	return (
 		<Paper p="sm" radius="md" withBorder>
-			<Stack component="form" gap="sm" onSubmit={submit}>
-				<Select
-					allowDeselect={false}
-					aria-label="Indicator group"
-					data={[
-						{ label: "All", value: allGroups },
-						...indicatorGroups(types).map((item) => ({
-							label: item,
-							value: item,
-						})),
-					]}
-					onChange={selectGroup}
-					value={group}
-				/>
-				<Select
-					aria-label="Indicator"
-					clearable
-					data={indicatorTypeOptions(groupTypes)}
-					nothingFoundMessage="No indicators found"
-					onChange={selectType}
-					placeholder="Search indicators"
-					searchable
-					value={draft.type}
-				/>
-				{type?.parameters.map((parameter) => (
-					<ScannerIndicatorParameterField
-						key={parameter.key}
-						onChange={(value) =>
-							setDraft((current) => ({
-								...current,
-								parameters: { ...current.parameters, [parameter.key]: value },
-							}))
-						}
-						parameter={parameter}
-						value={draft.parameters[parameter.key]}
+			<form onSubmit={submit}>
+				<Stack gap="sm">
+					<Select
+						allowDeselect={false}
+						aria-label="Indicator group"
+						data={[
+							{ label: "All", value: allGroups },
+							...indicatorGroups(types).map((item) => ({
+								label: item,
+								value: item,
+							})),
+						]}
+						onChange={selectGroup}
+						value={group}
 					/>
-				))}
-				{type ? (
-					<Text c="dimmed" size="xs">
-						{type.overlay
-							? "Drawn over the candles"
-							: "Drawn in a pane below the candles"}
-						{" · "}
-						Outputs: {type.outputs.join(", ")}
-					</Text>
-				) : null}
-				<ScannerIndicatorPeriodsField
-					onChange={(periods) =>
-						setDraft((current) => ({ ...current, periods }))
-					}
-					tableAllowed={tableColumnAllowed(type)}
-					value={draft.periods}
-				/>
-				{type && !type.overlay ? (
-					<ScannerIndicatorScaleFields
-						onChange={(scale) =>
-							setDraft((current) => ({ ...current, ...scale }))
-						}
-						value={{
-							levels: draft.levels,
-							scaleMax: draft.scaleMax,
-							scaleMin: draft.scaleMin,
-						}}
+					<Select
+						aria-label="Indicator"
+						clearable
+						data={indicatorTypeOptions(groupTypes)}
+						nothingFoundMessage="No indicators found"
+						onChange={selectType}
+						placeholder="Search indicators"
+						searchable
+						value={draft.type}
 					/>
-				) : null}
-				<Group justify="flex-end">
-					<Button
-						disabled={
-							!type || !levelsValid || Object.keys(draft.periods).length === 0
-						}
-						loading={isSaving}
-						type="submit"
-					>
-						Add
-					</Button>
-				</Group>
-			</Stack>
+					{type?.parameters.map((parameter) => (
+						<ScannerIndicatorParameterField
+							form={form}
+							key={parameter.key}
+							parameter={parameter}
+						/>
+					))}
+					{type ? (
+						<Text c="dimmed" size="xs">
+							{type.overlay
+								? "Drawn over the candles"
+								: "Drawn in a pane below the candles"}
+							{" · "}
+							Outputs: {type.outputs.join(", ")}
+						</Text>
+					) : null}
+					<ScannerIndicatorPeriodsField
+						form={form}
+						tableAllowed={tableColumnAllowed(type)}
+					/>
+					{type && !type.overlay ? (
+						<ScannerIndicatorScaleFields form={form} />
+					) : null}
+					<Group justify="flex-end">
+						<Button
+							disabled={!scannerIndicatorInput(draft, type, periodOrder)}
+							loading={isSaving}
+							type="submit"
+						>
+							Add
+						</Button>
+					</Group>
+				</Stack>
+			</form>
 		</Paper>
 	);
 }

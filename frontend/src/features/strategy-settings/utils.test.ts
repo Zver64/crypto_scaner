@@ -4,8 +4,11 @@ import {
 	marketCapErrors,
 	marketCapRangeLabel,
 	marketCapUsd,
+	newStrategyDraft,
 	parenthesizeOperands,
 	strategyExpression,
+	strategyFormDirty,
+	strategyInput,
 	strategyQuery,
 	strategyQueryDropped,
 } from "@/features/strategy-settings/utils";
@@ -109,5 +112,62 @@ describe("marketCapRangeLabel", () => {
 				min_market_cap_usd: minimum,
 			}),
 		).toBe(label);
+	});
+});
+
+describe("strategyFormDirty", () => {
+	const { values } = newStrategyDraft("strategy");
+	const initial = { ...values, query: strategyQuery("h_close > 1") };
+
+	it("compares rules by the expression they save", () => {
+		// The builder adds ids to the rules it edits.
+		const edited = {
+			...initial.query,
+			rules: initial.query.rules.map((rule) => ({ ...rule, id: "rule" })),
+		};
+		expect(
+			strategyFormDirty(initial, { ...initial, query: edited }, false),
+		).toBe(false);
+		expect(
+			strategyFormDirty(
+				initial,
+				{ ...initial, query: strategyQuery("h_close > 2") },
+				false,
+			),
+		).toBe(true);
+	});
+
+	it("ignores the price fields of a signal", () => {
+		const takeProfit = { custom: "h_close * 1.1" };
+		expect(strategyFormDirty(initial, { ...initial, takeProfit }, true)).toBe(
+			false,
+		);
+		expect(strategyFormDirty(initial, { ...initial, takeProfit }, false)).toBe(
+			true,
+		);
+	});
+});
+
+describe("strategyInput", () => {
+	const { values } = newStrategyDraft("signal");
+	const named = {
+		...values,
+		name: "Signal",
+		query: strategyQuery("h_close > 1"),
+		targetRatio: "3",
+		window: "12",
+	};
+
+	it("sends the selects' choices as numbers", () => {
+		expect(strategyInput(named, true)).toMatchObject({
+			target_ratio: 3,
+			window: 12,
+		});
+	});
+
+	it("is undefined while the form cannot be saved", () => {
+		expect(strategyInput({ ...named, name: " " }, true)).toBeUndefined();
+		expect(strategyInput({ ...named, minMarketCap: 0 }, true)).toBeUndefined();
+		expect(strategyInput({ ...named, window: "7" }, true)).toBeUndefined();
 	});
 });

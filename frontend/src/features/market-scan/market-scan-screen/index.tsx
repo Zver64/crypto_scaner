@@ -1,17 +1,17 @@
 import { Center, Loader, useMatches } from "@mantine/core";
-import { notifications } from "@mantine/notifications";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { PageNavigation } from "@/app/page-navigation";
+import { showQueryErrorNotification } from "@/app/query-client";
 import { EmptyState } from "@/components/empty-state";
 import { PageStack } from "@/components/page-stack";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { sidebarColumns } from "@/components/sidebar-layout/constants";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
-import { type ApiError, apiErrorMessage } from "@/features/analysis/api-error";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { MarketScanForm } from "@/features/market-scan/form";
+import { marketScanErrorNotification } from "@/features/market-scan/market-scan-screen/constants";
 import {
 	marketScanMutationOptions,
 	marketScanObserverOptions,
@@ -30,16 +30,6 @@ interface MarketScanScreenProps {
 	onSymbolFilterChange(symbolFilter: string): void;
 	sort: MarketScanSort | undefined;
 	symbolFilter: string;
-}
-
-function showMarketScanError(error: ApiError) {
-	notifications.show({
-		id: "market-scan-error",
-		autoClose: 5000,
-		color: "red",
-		message: apiErrorMessage(error),
-		title: "Market Scan failed",
-	});
 }
 
 export function MarketScanScreen({
@@ -63,12 +53,6 @@ export function MarketScanScreen({
 	});
 	const mutation = useMutation(marketScanMutationOptions(queryClient));
 
-	useEffect(() => {
-		if (committedCriteria && query.isLoadingError) {
-			showMarketScanError(query.error);
-		}
-	}, [committedCriteria, query.error, query.isLoadingError]);
-
 	const displayedData = committedCriteria ? query.data : undefined;
 	const isScanPending = query.isLoading || mutation.isPending;
 	useAnalysisWarningNotification(
@@ -89,7 +73,11 @@ export function MarketScanScreen({
 						isSubmitting={isScanPending}
 						onCommit={(criteria) => {
 							mutation.mutate(criteria, {
-								onError: showMarketScanError,
+								onError: (error) =>
+									showQueryErrorNotification(
+										marketScanErrorNotification,
+										error,
+									),
 								onSuccess: () => {
 									setCommittedCriteria(criteria);
 									onCriteriaCommit(criteria);

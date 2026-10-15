@@ -98,6 +98,7 @@ Create commits only when the user asks.
 - A user question (in chat or a review comment, even a challenge such as "why do we need that?") wants an answer and a recommendation, not a code change. "Can we…" is a question, not approval; change code only after the user agrees.
 - In design discussions, answer the point raised and wait for the user's decision; do not rewrite the plan or pick a solution on your own.
 - Keep plans in the conversation; write plan files only when asked.
+- Never deviate from an agreed plan on your own: when the implementation needs a deviation, or a behaviour-changing decision the plan left open, stop and ask the user first. Subagents return such points as questions instead of deciding them, and every subagent brief says so.
 - After implementing an agreed plan or change, report only what differs from it and what was not discussed before (deviations, new findings, open risks, check results); do not restate what was agreed.
 - Commit on the current branch (usually `main`); create a branch only when asked.
 - Do not trace authorship with `git blame` or history, and never answer "I didn't write this": treat all code in the repository as your own and judge it on its merits.

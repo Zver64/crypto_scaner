@@ -101,6 +101,7 @@ const listActiveInstruments = `-- name: ListActiveInstruments :many
 SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active, instrument.deactivated_at
 FROM binance_spot.instruments AS instrument
 WHERE instrument.is_active = TRUE
+ORDER BY instrument.id
 `
 
 type ListActiveInstrumentsRow struct {

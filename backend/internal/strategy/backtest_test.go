@@ -425,10 +425,11 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 	}
 
 	tracked := snapshot{reads: readsOf([]Entry{entry}, func(Entry, []Instrument) []Instrument { return instruments }, instruments), bySymbol: bySymbol(instruments), now: now}
-	tracker, err := closedindicator.New(store, registry, subscriptionSource(tracked.reads.subscriptions), nil, slog.New(slog.DiscardHandler))
+	tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
+	tracker.Subscribe("test", tracked.reads.subscriptions)
 	changed := make(chan struct{}, 1)
 	tracker.Listen(func([]closedindicator.Change) {
 		select {
@@ -559,7 +560,7 @@ func testEMA(t *testing.T, registry *indicator.Registry, id int64, interval mark
 func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *Service {
 	t.Helper()
 	store.strategies = items
-	service, err := NewService(store, testIndicators{}, testRegistry(t), slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), noTracker{}, slog.New(slog.DiscardHandler), func([]int64) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -581,11 +582,10 @@ func (indicators testIndicators) Preview(item scannerindicator.Indicator) (scann
 	return scannerindicator.Entry{}, errors.New("not configured")
 }
 
-type subscriptionSource []closedindicator.Subscription
+// noTracker ignores subscriptions.
+type noTracker struct{}
 
-func (source subscriptionSource) Subscriptions(context.Context) ([]closedindicator.Subscription, error) {
-	return source, nil
-}
+func (noTracker) Subscribe(string, []closedindicator.Subscription) {}
 
 // backtestStore holds BTCUSDT (1), the administrator's only favorite, and
 // ETHUSDT (2), which is active but not a favorite. Methods the backtest does
@@ -644,7 +644,7 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.strategies = []Strategy{{ID: 1, Name: "Cross", Expression: "crosses_above(h_close, h_ema_100)"}}
-	service, err := NewService(store, indicators, registry, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), func([]int64) {})
 	if err != nil {
 		b.Fatal(err)
 	}

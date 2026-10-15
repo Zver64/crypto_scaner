@@ -104,11 +104,12 @@ func TestHistoryLoaderReportsPartialChangesAndResumesAfterFailure(t *testing.T) 
 		if err != nil {
 			t.Fatal(err)
 		}
-		subscriptions := historySubscriptions{{InstrumentID: 1, Target: closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type}}, Points: 1500}}
-		tracker, err := closedindicator.New(store, registry, subscriptions, nil, slog.New(slog.DiscardHandler))
+		subscriptions := []closedindicator.Subscription{{InstrumentID: 1, Target: closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type}}, Points: 1500}}
+		tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
 		if err != nil {
 			t.Fatal(err)
 		}
+		tracker.Subscribe("test", subscriptions)
 		notified, rounds := 0, 0
 		loader := marketsync.NewHistoryLoader(knownInstruments{}, map[market.CandleInterval]marketsync.HistoryExtender{market.IntervalHour: synchronizer}, slog.New(slog.DiscardHandler), marketsync.HistoryLoaderOptions{
 			Changed: func(candles []market.Candle) {
@@ -168,13 +169,7 @@ func TestHistoryLoaderReportsPartialChangesAndResumesAfterFailure(t *testing.T) 
 	})
 }
 
-type historySubscriptions []closedindicator.Subscription
-
-func (subscriptions historySubscriptions) Subscriptions(context.Context) ([]closedindicator.Subscription, error) {
-	return subscriptions, nil
-}
-
-func assertHistoryShift(t *testing.T, tracker *closedindicator.Tracker, subscriptions historySubscriptions, wantKnown bool) {
+func assertHistoryShift(t *testing.T, tracker *closedindicator.Tracker, subscriptions []closedindicator.Subscription, wantKnown bool) {
 	t.Helper()
 	values, missing := tracker.Snapshot(subscriptions)
 	if len(missing) != 0 || len(values) != 1 {

@@ -16,8 +16,7 @@ import (
 )
 
 const (
-	fullPassTime = 5 * time.Minute
-	sendWorkers  = 4
+	sendWorkers = 4
 	// retryDelay and maxRetryDelay space the rounds after a failed one.
 	retryDelay    = 10 * time.Second
 	maxRetryDelay = 5 * time.Minute
@@ -141,7 +140,8 @@ func (monitor *Monitor) StrategiesChanged(baselines []int64) {
 	monitor.signal()
 }
 
-// Changed schedules a full evaluation.
+// Changed schedules a full evaluation, such as after the catalog changed,
+// which disables the strategies of delisted coins. It never blocks.
 func (monitor *Monitor) Changed() { monitor.StrategiesChanged(nil) }
 
 func (monitor *Monitor) signal() {
@@ -174,8 +174,6 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 		}
 	}
 	monitor.StrategiesChanged(pending)
-	ticker := time.NewTicker(fullPassTime)
-	defer ticker.Stop()
 	retry := time.NewTimer(retryDelay)
 	retry.Stop()
 	defer retry.Stop()
@@ -186,9 +184,6 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
-			monitor.Changed()
-			continue
 		case <-monitor.wake:
 			if failures > 0 {
 				continue

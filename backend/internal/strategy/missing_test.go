@@ -19,7 +19,7 @@ func TestStrategyReadsIndicatorsThatAreNotConfigured(t *testing.T) {
 	indicators := &previewIndicators{registry: registry}
 	store := newBacktestStore(market.IntervalHour, nil)
 	store.strategies = []Strategy{{ID: 1, Name: "Trend", Expression: "h_close > h_ema_3", StopLossExpression: "h_ema_5"}}
-	service, err := NewService(store, indicators, registry, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), func([]int64) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +63,7 @@ func TestStrategyReadsIndicatorsThatAreNotConfigured(t *testing.T) {
 
 func TestValidateResolvesIndicatorsThatAreNotConfigured(t *testing.T) {
 	registry := testRegistry(t)
-	service, err := NewService(newBacktestStore(market.IntervalHour, nil), &previewIndicators{registry: registry}, registry, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(newBacktestStore(market.IntervalHour, nil), &previewIndicators{registry: registry}, registry, noTracker{}, slog.New(slog.DiscardHandler), func([]int64) {})
 	if err != nil {
 		t.Fatal(err)
 	}

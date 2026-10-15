@@ -50,7 +50,8 @@ SELECT id FROM binance_spot.instruments WHERE symbol = $1 AND is_active;
 -- name: ListActiveInstruments :many
 SELECT sqlc.embed(instrument)
 FROM binance_spot.instruments AS instrument
-WHERE instrument.is_active = TRUE;
+WHERE instrument.is_active = TRUE
+ORDER BY instrument.id;
 
 -- name: SelectActiveInstruments :many
 SELECT sqlc.embed(instrument),

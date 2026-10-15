@@ -89,11 +89,14 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err := scannerIndicators.Load(ctx); err != nil {
 		return app{}, err
 	}
+	// Tables calculate the values they show on demand; only the values
+	// enabled strategies read stay current in the background.
+	closedIndicators, err = closedindicator.New(store, indicatorRegistry, scannerIndicators.TableTargets(), logger)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
+	}
 	// Changes before the monitor exists are covered by its first evaluation.
-	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, logger, func(baselines []int64) {
-		if closedIndicators != nil {
-			closedIndicators.Refresh()
-		}
+	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, closedIndicators, logger, func(baselines []int64) {
 		if strategyMonitor != nil {
 			strategyMonitor.StrategiesChanged(baselines)
 		}
@@ -116,21 +119,18 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites table: %w", err)
 	}
-	// Tables calculate the values they show on demand; only the values
-	// enabled strategies read stay current in the background.
-	closedIndicators, err = closedindicator.New(store, indicatorRegistry, strategies, scannerIndicators.TableTargets(), logger)
-	if err != nil {
-		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
-	}
-
 	// Kline and trade connections share the process-wide Binance dial budget.
 	dialLimiter := binance.NewDialLimiter()
 	klineStream := binance.NewKlineStream(logger, dialLimiter)
 	liveService := marketlive.New(klineStream, store, logger, marketlive.Options{})
 	exchange := binance.New(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
-	syncStore := marketsync.ObservableStore{Store: store, Changed: func(candles []market.Candle) {
+	syncStore := &marketsync.ObservableStore{Store: store, Changed: func(candles []market.Candle) {
 		liveService.HistoryChanged(candles)
 		closedIndicators.HistoryChanged(candles)
+	}, InstrumentsChanged: func(instruments []market.Instrument) {
+		// Synchronization runs only once every service exists.
+		strategies.InstrumentsChanged(instruments)
+		strategyMonitor.Changed()
 	}}
 	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
 	// History loads notify only when completing a partial live history;

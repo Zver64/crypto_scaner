@@ -256,10 +256,7 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 		return Backtest{}, fmt.Errorf("resolve backtest instrument %s: %w", symbol, err)
 	}
 	instrument := Instrument{ID: found.ID, Symbol: found.Symbol}
-	active, err := service.store.ListStrategyInstruments(ctx)
-	if err != nil {
-		return Backtest{}, fmt.Errorf("load backtest instruments: %w", err)
-	}
+	active := service.activeInstruments()
 	// Values of coins that are not active stay unknown, so nothing would
 	// signal.
 	if absent := inactive(active, entry.symbols); len(absent) > 0 {

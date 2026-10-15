@@ -44,12 +44,6 @@ func (store historyStore) ListCandlePage(_ context.Context, _ int64, _ market.Ca
 	return market.CandlePage{Candles: store.candles[split:], HasMore: split > 0}, nil
 }
 
-type noSubscriptions struct{}
-
-func (noSubscriptions) Subscriptions(context.Context) ([]closedindicator.Subscription, error) {
-	return nil, nil
-}
-
 type emptyCatalog struct{}
 
 func (emptyCatalog) ChartCatalog(market.CandleInterval) []chart.CatalogIndicator { return nil }
@@ -129,7 +123,7 @@ func TestTrackerAgreesWithChartsAndPoints(t *testing.T) {
 
 func newTracker(t *testing.T, registry *indicator.Registry, history []market.Candle, targets ...closedindicator.Target) *closedindicator.Tracker {
 	t.Helper()
-	tracker, err := closedindicator.New(historyStore{history}, registry, noSubscriptions{}, targets, slog.New(slog.DiscardHandler))
+	tracker, err := closedindicator.New(historyStore{history}, registry, targets, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,10 +193,11 @@ func TestTrackerRecalculatesOnlyTheSyncedInterval(t *testing.T) {
 		for _, interval := range []market.CandleInterval{market.IntervalHour, market.IntervalDay} {
 			store.add(bar(interval, start))
 		}
-		tracker, err := closedindicator.New(store, registry, subscriptions{{InstrumentID: 1, Target: target(market.IntervalHour)}, {InstrumentID: 1, Target: target(market.IntervalDay)}}, nil, slog.New(slog.DiscardHandler))
+		tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
 		if err != nil {
 			t.Fatal(err)
 		}
+		tracker.Subscribe("test", []closedindicator.Subscription{{InstrumentID: 1, Target: target(market.IntervalHour)}, {InstrumentID: 1, Target: target(market.IntervalDay)}})
 		var batches [][]market.CandleInterval
 		tracker.Listen(func(changes []closedindicator.Change) {
 			var intervals []market.CandleInterval
@@ -234,12 +229,6 @@ func TestTrackerRecalculatesOnlyTheSyncedInterval(t *testing.T) {
 	})
 }
 
-type subscriptions []closedindicator.Subscription
-
-func (items subscriptions) Subscriptions(context.Context) ([]closedindicator.Subscription, error) {
-	return items, nil
-}
-
 // intervalStore serves the candles of each interval.
 type intervalStore struct {
 	mu      sync.Mutex
@@ -257,4 +246,45 @@ func (store *intervalStore) ListLatestCandles(_ context.Context, ids []int64, in
 	defer store.mu.Unlock()
 	candles := store.candles[interval]
 	return map[int64][]market.Candle{1: slices.Clone(candles[max(0, len(candles)-limit):])}, nil
+}
+
+// Pairs stay current while any subscriber keeps them; a pair nobody keeps is
+// dropped.
+func TestTrackerKeepsThePairsOfEverySubscriber(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		registry, err := indicator.NewRegistry(candle.New())
+		if err != nil {
+			t.Fatal(err)
+		}
+		store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
+		open := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		store.add(market.Candle{InstrumentID: 1, Interval: market.IntervalHour, OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 1, High: 2, Low: 1, Close: 2})
+		tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatal(err)
+		}
+		pair := closedindicator.Subscription{InstrumentID: 1, Target: closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error)
+		go func() { done <- tracker.Run(ctx) }()
+		defer func() { cancel(); <-done }()
+		tracked := func() bool {
+			synctest.Wait()
+			_, missing := tracker.Snapshot([]closedindicator.Subscription{pair})
+			return len(missing) == 0
+		}
+		tracker.Subscribe("first", []closedindicator.Subscription{pair})
+		tracker.Subscribe("second", []closedindicator.Subscription{pair})
+		if !tracked() {
+			t.Fatal("subscribed pair is not tracked")
+		}
+		tracker.Subscribe("first", nil)
+		if !tracked() {
+			t.Fatal("a pair another subscriber keeps was dropped")
+		}
+		tracker.Subscribe("second", nil)
+		if tracked() {
+			t.Fatal("a pair nobody keeps is still tracked")
+		}
+	})
 }

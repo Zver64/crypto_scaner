@@ -268,6 +268,7 @@ type Service struct {
 	indicators Indicators
 	// registry checks that the history kept covers what expressions read.
 	registry *indicator.Registry
+	tracker  Tracker
 	logger   *slog.Logger
 	changed  func(baselines []int64)
 
@@ -275,18 +276,31 @@ type Service struct {
 	writes  sync.Mutex
 	mu      sync.RWMutex
 	entries []Entry
+	// active are the active instruments, as the catalog last reported them,
+	// without market caps.
+	active []Instrument
 	// backtests holds a slot per running backtest.
 	backtests chan struct{}
 }
 
+// Tracker keeps the values subscribers read current in the background.
+type Tracker interface {
+	// Subscribe replaces the values subscriber reads; it never blocks.
+	Subscribe(subscriber string, subscriptions []closedindicator.Subscription)
+}
+
+// trackerSubscriber names the subscription of strategies and signals.
+const trackerSubscriber = "strategies"
+
 // NewService creates an empty service; Load reads the stored strategies.
-// changed receives the ids of strategies whose trading states must start
-// afresh after each change and must not block.
-func NewService(store Store, indicators Indicators, registry *indicator.Registry, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
-	if store == nil || indicators == nil || registry == nil || logger == nil || changed == nil {
-		return nil, errors.New("strategy store, indicators, registry, logger, and change listener are required")
+// Every change subscribes tracker to the values the enabled strategies and
+// signals read. changed receives the ids of strategies whose trading states
+// must start afresh after each change and must not block.
+func NewService(store Store, indicators Indicators, registry *indicator.Registry, tracker Tracker, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
+	if store == nil || indicators == nil || registry == nil || tracker == nil || logger == nil || changed == nil {
+		return nil, errors.New("strategy store, indicators, registry, tracker, logger, and change listener are required")
 	}
-	return &Service{store: store, indicators: indicators, registry: registry, logger: logger.With("module", "strategy"), changed: changed, backtests: make(chan struct{}, maxBacktests)}, nil
+	return &Service{store: store, indicators: indicators, registry: registry, tracker: tracker, logger: logger.With("module", "strategy"), changed: changed, backtests: make(chan struct{}, maxBacktests)}, nil
 }
 
 // RuleKind tells what an expression is to a strategy.
@@ -369,12 +383,8 @@ func (service *Service) Validate(ctx context.Context, expression string, kind Ru
 	if err != nil {
 		return Validation{}, err
 	}
-	active, err := service.store.ListStrategyInstruments(ctx)
-	if err != nil {
-		return Validation{}, err
-	}
 	problems := []string{}
-	if absent := inactive(active, compiled.Symbols()); len(absent) > 0 {
+	if absent := inactive(service.activeInstruments(), compiled.Symbols()); len(absent) > 0 {
 		problems = append(problems, notActive(absent).Error())
 	}
 	return Validation{Problems: problems, Missing: missing}, nil
@@ -510,12 +520,20 @@ func mergeReads(compiled *Expression, others ...*Expression) []Read {
 	return reads
 }
 
-// Load replaces the strategies with the stored ones. A strategy that no
-// longer compiles is kept but not evaluated.
+// Load replaces the strategies and the active instruments with the stored
+// ones. A strategy that no longer compiles is kept but not evaluated.
 func (service *Service) Load(ctx context.Context) error {
 	stored, err := service.store.ListStrategies(ctx)
 	if err != nil {
 		return fmt.Errorf("load strategies: %w", err)
+	}
+	instruments, err := service.store.ListStrategyInstruments(ctx)
+	if err != nil {
+		return fmt.Errorf("load active instruments: %w", err)
+	}
+	active := make([]Instrument, len(instruments))
+	for i, instrument := range instruments {
+		active[i] = Instrument{ID: instrument.ID, Symbol: instrument.Symbol}
 	}
 	entries := make([]Entry, len(stored))
 	for i, item := range stored {
@@ -528,8 +546,31 @@ func (service *Service) Load(ctx context.Context) error {
 	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
+	service.mu.Lock()
+	service.active = active
+	service.mu.Unlock()
 	service.replace(entries, nil)
 	return nil
+}
+
+// InstrumentsChanged replaces the active instruments after the catalog
+// changed, so signals of all coins evaluate new listings. It never blocks.
+func (service *Service) InstrumentsChanged(instruments []market.Instrument) {
+	active := make([]Instrument, len(instruments))
+	for i, instrument := range instruments {
+		active[i] = Instrument{ID: instrument.ID, Symbol: instrument.Symbol}
+	}
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	service.active = active
+	service.subscribe()
+}
+
+// activeInstruments returns the active instruments.
+func (service *Service) activeInstruments() []Instrument {
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+	return service.active
 }
 
 // List returns the strategies ordered by creation.
@@ -561,22 +602,18 @@ func (service *Service) IndicatorUsage() map[int64][]string {
 	return usage
 }
 
-// Subscriptions returns the values enabled strategies read, with the points
-// they need, which must stay current in the background: each value of the
-// evaluated instrument on every instrument they evaluate, and each value read
-// through of only on the instrument it names.
-func (service *Service) Subscriptions(ctx context.Context) ([]closedindicator.Subscription, error) {
-	instruments, err := service.store.ListStrategyInstruments(ctx)
-	if err != nil {
-		return nil, err
-	}
+// subscribe subscribes the tracker to the values the enabled strategies and
+// signals read: each value of the evaluated instrument on every instrument
+// they evaluate, and each value read through of only on the instrument it
+// names. It must be called with mu held.
+func (service *Service) subscribe() {
 	var evaluated []Entry
-	for _, entry := range service.List() {
+	for _, entry := range service.entries {
 		if entry.evaluated() {
 			evaluated = append(evaluated, entry)
 		}
 	}
-	return readsOf(evaluated, Entry.instruments, instruments).subscriptions, nil
+	service.tracker.Subscribe(trackerSubscriber, readsOf(evaluated, Entry.instruments, service.active).subscriptions)
 }
 
 // Create validates and stores a strategy.
@@ -585,7 +622,7 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 	if err != nil {
 		return Entry{}, err
 	}
-	if err := service.checkCoins(ctx, entry); err != nil {
+	if err := service.checkCoins(entry); err != nil {
 		return Entry{}, err
 	}
 	service.writes.Lock()
@@ -624,7 +661,7 @@ func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error
 	if err != nil {
 		return Entry{}, err
 	}
-	if err := service.checkCoins(ctx, entry); err != nil {
+	if err := service.checkCoins(entry); err != nil {
 		return Entry{}, err
 	}
 	retrade := previous.trades(entry.Strategy)
@@ -659,7 +696,7 @@ func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) 
 		if !current[index].AllCoins && len(current[index].Coins) == 0 {
 			return Entry{}, fmt.Errorf("%w: choose at least one coin before enabling it", ErrInvalidArgument)
 		}
-		if err := service.checkCoins(ctx, current[index]); err != nil {
+		if err := service.checkCoins(current[index]); err != nil {
 			return Entry{}, err
 		}
 	}
@@ -719,6 +756,7 @@ func (service *Service) replace(entries []Entry, baselines []int64) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.entries = entries
+	service.subscribe()
 	service.changed(baselines)
 }
 
@@ -757,12 +795,8 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 
 // checkCoins rejects entry while a coin it evaluates or reads through of is
 // not active, such as a delisted one; the monitor disables it then.
-func (service *Service) checkCoins(ctx context.Context, entry Entry) error {
-	active, err := service.store.ListStrategyInstruments(ctx)
-	if err != nil {
-		return err
-	}
-	if absent := entry.inactive(active); len(absent) > 0 {
+func (service *Service) checkCoins(entry Entry) error {
+	if absent := entry.inactive(service.activeInstruments()); len(absent) > 0 {
 		return fmt.Errorf("%w: %w", ErrInvalidArgument, notActive(absent))
 	}
 	return nil

@@ -88,6 +88,7 @@ func TestUpdateStartsAfreshOnlyWhenTheCoinsChange(t *testing.T) {
 	var baselines []int64
 	service := newBacktestService(t, store.backtestStore, Strategy{ID: 1, Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Coins: []string{"ETHUSDT"}, Enabled: true})
 	service.store, service.changed = store, func(ids []int64) { baselines = ids }
+	service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
 	for _, test := range []struct {
 		coins   []string
 		retrade bool
@@ -111,10 +112,6 @@ func TestUpdateStartsAfreshOnlyWhenTheCoinsChange(t *testing.T) {
 type updatingStore struct {
 	*backtestStore
 	retrade, baseline bool
-}
-
-func (store *updatingStore) ListStrategyInstruments(context.Context) ([]Instrument, error) {
-	return []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}}, nil
 }
 
 func (store *updatingStore) UpdateStrategy(_ context.Context, _ Strategy, _ []int64, retrade, baseline bool) (int64, error) {
@@ -209,4 +206,62 @@ type failingStore struct {
 func (store *failingStore) ListStrategyInstruments(context.Context) ([]Instrument, error) {
 	store.calls.Add(1)
 	return nil, errors.New("database unavailable")
+}
+
+// The service subscribes the tracker to what its enabled strategies and
+// signals read, and again after any change of them or of the catalog.
+func TestServiceSubscribesTheTrackerToWhatItsStrategiesRead(t *testing.T) {
+	store := newBacktestStore(market.IntervalHour, nil)
+	store.strategies = []Strategy{
+		{ID: 1, Name: "Hourly", Expression: "h_close > 1", Coins: []string{"BTCUSDT"}, Enabled: true},
+		{ID: 2, Name: "Daily", Signal: true, Expression: "d_close > 1", AllCoins: true, Enabled: true},
+		{ID: 3, Name: "Off", Expression: "w_close > 1", Coins: []string{"BTCUSDT"}},
+	}
+	tracker := &recordingTracker{}
+	service, err := NewService(store, testIndicators{}, testRegistry(t), tracker, slog.New(slog.DiscardHandler), func([]int64) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.Load(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	// The store lists only BTCUSDT as active.
+	want := map[market.CandleInterval][]int64{market.IntervalHour: {1}, market.IntervalDay: {1}}
+	if got := tracker.subscribed(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("after load = %v, want %v", got, want)
+	}
+	service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
+	want[market.IntervalDay] = []int64{1, 2}
+	if got := tracker.subscribed(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("after a listing = %v, want %v", got, want)
+	}
+	service.store = &disablingStore{backtestStore: store}
+	if _, err := service.DisableAtRevision(context.Background(), 2, 0); err != nil {
+		t.Fatal(err)
+	}
+	if got := tracker.subscribed(); !reflect.DeepEqual(got, map[market.CandleInterval][]int64{market.IntervalHour: {1}}) {
+		t.Fatalf("after disabling the signal = %v", got)
+	}
+}
+
+// recordingTracker keeps the subscription of trackerSubscriber; another
+// subscriber would leave stale pairs behind.
+type recordingTracker struct {
+	subscriptions []closedindicator.Subscription
+}
+
+func (tracker *recordingTracker) Subscribe(subscriber string, subscriptions []closedindicator.Subscription) {
+	if subscriber != trackerSubscriber {
+		panic("unexpected subscriber " + subscriber)
+	}
+	tracker.subscriptions = subscriptions
+}
+
+// subscribed lists the subscribed instruments by interval.
+func (tracker *recordingTracker) subscribed() map[market.CandleInterval][]int64 {
+	result := map[market.CandleInterval][]int64{}
+	for _, subscription := range tracker.subscriptions {
+		result[subscription.Target.Interval] = append(result[subscription.Target.Interval], subscription.InstrumentID)
+	}
+	return result
 }

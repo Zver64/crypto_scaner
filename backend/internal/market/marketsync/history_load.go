@@ -74,7 +74,7 @@ func (synchronizer *Synchronizer) LoadHistory(ctx context.Context, instrument ma
 		}
 		store := synchronizer.store
 		if target <= market.SyncDepth {
-			store = ObservableStore{Store: store, Changed: changed}
+			store = &ObservableStore{Store: store, Changed: changed}
 		}
 		loaded, ranOut := synchronizer.loadOlder(ctx, store, instrument, policy, history.Oldest.UTC(), target-history.Count, startedAt)
 		historyChanged, exhausted = historyChanged || loaded.rowsChanged > 0, ranOut

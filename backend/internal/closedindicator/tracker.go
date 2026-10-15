@@ -18,10 +18,7 @@ import (
 	"crypto-scanner/internal/platform/numeric"
 )
 
-const (
-	retryDelay    = 30 * time.Second
-	refreshPeriod = 5 * time.Minute
-)
+const retryDelay = 30 * time.Second
 
 // Target is an indicator selection calculated on one candle interval.
 type Target struct {
@@ -97,11 +94,6 @@ type Subscription struct {
 
 func (subscription Subscription) points() int { return max(1, subscription.Points) }
 
-// Source supplies the pairs that must stay current without any clients.
-type Source interface {
-	Subscriptions(ctx context.Context) ([]Subscription, error)
-}
-
 type Store interface {
 	// ListLatestCandles returns up to limit latest closed candles per
 	// instrument in chronological order.
@@ -124,15 +116,16 @@ type historyKey struct {
 type Tracker struct {
 	store    Store
 	registry *indicator.Registry
-	source   Source
 	logger   *slog.Logger
 	wake     chan struct{}
 	// retries are applied by Run after retryDelay; only Run's goroutine
 	// touches them.
 	retries []func()
 
-	mu      sync.Mutex
-	targets []Target
+	mu sync.Mutex
+	// subscribers hold the pairs each subscriber keeps current.
+	subscribers map[string][]Subscription
+	targets     []Target
 	// tableKeys holds the keys of targets by interval; every cached value
 	// that is not tracked belongs to one of them.
 	tableKeys map[market.CandleInterval][]string
@@ -150,14 +143,14 @@ type Tracker struct {
 	listener func([]Change)
 }
 
-// New creates a tracker. Targets are the values served to tables; source
+// New creates a tracker. Targets are the values served to tables; Subscribe
 // decides which pairs are kept current in the background.
-func New(store Store, registry *indicator.Registry, source Source, targets []Target, logger *slog.Logger) (*Tracker, error) {
-	if store == nil || registry == nil || source == nil || logger == nil {
-		return nil, fmt.Errorf("closed indicator store, indicator registry, source, and logger are required")
+func New(store Store, registry *indicator.Registry, targets []Target, logger *slog.Logger) (*Tracker, error) {
+	if store == nil || registry == nil || logger == nil {
+		return nil, fmt.Errorf("closed indicator store, indicator registry, and logger are required")
 	}
 	tracker := &Tracker{
-		store: store, registry: registry, targets: targets, tableKeys: keysByInterval(targets), source: source, logger: logger,
+		store: store, registry: registry, targets: targets, tableKeys: keysByInterval(targets), logger: logger, subscribers: map[string][]Subscription{},
 		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, trackedHistories: map[historyKey]struct{}{}, values: map[pairKey]Value{},
 		versions: map[historyKey]uint64{}, dirty: map[historyKey]struct{}{}, synced: map[market.CandleInterval]struct{}{},
 	}
@@ -187,8 +180,8 @@ func (tracker *Tracker) Listen(listener func([]Change)) {
 	tracker.mu.Unlock()
 }
 
-// SetTargets replaces the table targets, drops cached values of removed ones,
-// and reloads the tracked pairs.
+// SetTargets replaces the table targets and drops cached values of removed
+// ones.
 func (tracker *Tracker) SetTargets(targets []Target) error {
 	for _, target := range targets {
 		if _, err := Depth(tracker.registry, target, 1); err != nil {
@@ -209,15 +202,30 @@ func (tracker *Tracker) SetTargets(targets []Target) error {
 			}
 		}
 	}
-	tracker.refresh = true
 	tracker.mu.Unlock()
-	tracker.signal()
 	return nil
 }
 
-// Refresh reloads the tracked pairs from the source.
-func (tracker *Tracker) Refresh() {
+// Subscribe replaces the pairs subscriber keeps current, which the tracker
+// calculates at once and keeps current in the background, together with the
+// pairs of the other subscribers; the pairs nobody keeps any more are
+// dropped. Invalid pairs are left out. It never blocks.
+func (tracker *Tracker) Subscribe(subscriber string, subscriptions []Subscription) {
+	valid := make([]Subscription, 0, len(subscriptions))
+	// One warning names each invalid target, however many coins read it.
+	invalid := map[string]error{}
+	for _, subscription := range subscriptions {
+		if _, err := Depth(tracker.registry, subscription.Target, subscription.points()); err != nil {
+			invalid[subscription.Target.Key()] = err
+			continue
+		}
+		valid = append(valid, subscription)
+	}
+	for _, key := range slices.Sorted(maps.Keys(invalid)) {
+		tracker.logger.Warn("skip invalid closed indicator subscription", "module", "closed_indicator", "subscriber", subscriber, "target", key, "error", invalid[key])
+	}
 	tracker.mu.Lock()
+	tracker.subscribers[subscriber] = valid
 	tracker.refresh = true
 	tracker.mu.Unlock()
 	tracker.signal()
@@ -363,9 +371,6 @@ func (tracker *Tracker) Snapshot(subscriptions []Subscription) (values []Value, 
 
 // Run keeps tracked pairs current until ctx is cancelled.
 func (tracker *Tracker) Run(ctx context.Context) error {
-	tracker.Refresh()
-	ticker := time.NewTicker(refreshPeriod)
-	defer ticker.Stop()
 	retry := time.NewTimer(retryDelay)
 	retry.Stop()
 	defer retry.Stop()
@@ -373,8 +378,6 @@ func (tracker *Tracker) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
-			tracker.Refresh()
 		case <-retry.C:
 			tracker.mu.Lock()
 			for _, mark := range tracker.retries {
@@ -418,13 +421,9 @@ func (tracker *Tracker) step(ctx context.Context) {
 	tracker.mu.Unlock()
 	pending := map[pairKey]Subscription{}
 	if refresh {
-		subscriptions, err := tracker.collect(ctx)
-		if err != nil {
-			tracker.logger.WarnContext(ctx, "load tracked closed indicators failed", "module", "closed_indicator", "error", err)
-			tracker.retry(func() { tracker.refresh = true })
-		} else {
-			tracker.mu.Lock()
-			next := make(map[pairKey]Subscription, len(subscriptions))
+		tracker.mu.Lock()
+		next := map[pairKey]Subscription{}
+		for _, subscriptions := range tracker.subscribers {
 			for _, subscription := range subscriptions {
 				key := pairKey{subscription.InstrumentID, subscription.Target.Key()}
 				if existing, ok := next[key]; ok {
@@ -432,26 +431,26 @@ func (tracker *Tracker) step(ctx context.Context) {
 				}
 				next[key] = subscription
 			}
-			// A pair that now keeps more points is recalculated as well.
-			for key, subscription := range next {
-				if existing, tracked := tracker.tracked[key]; !tracked || existing.points() != subscription.points() {
-					pending[key] = subscription
-				}
-			}
-			// A dropped pair may hold a value awaiting recalculation, which
-			// would otherwise be served as a fresh cache entry.
-			for key := range tracker.tracked {
-				if _, kept := next[key]; !kept {
-					delete(tracker.values, key)
-				}
-			}
-			tracker.tracked = next
-			tracker.trackedHistories = make(map[historyKey]struct{}, len(next))
-			for key, subscription := range next {
-				tracker.trackedHistories[historyKey{key.instrumentID, subscription.Target.Interval}] = struct{}{}
-			}
-			tracker.mu.Unlock()
 		}
+		// A pair that now keeps more points is recalculated as well.
+		for key, subscription := range next {
+			if existing, tracked := tracker.tracked[key]; !tracked || existing.points() != subscription.points() {
+				pending[key] = subscription
+			}
+		}
+		// A dropped pair may hold a value awaiting recalculation, which
+		// would otherwise be served as a fresh cache entry.
+		for key := range tracker.tracked {
+			if _, kept := next[key]; !kept {
+				delete(tracker.values, key)
+			}
+		}
+		tracker.tracked = next
+		tracker.trackedHistories = make(map[historyKey]struct{}, len(next))
+		for key, subscription := range next {
+			tracker.trackedHistories[historyKey{key.instrumentID, subscription.Target.Interval}] = struct{}{}
+		}
+		tracker.mu.Unlock()
 	}
 	tracker.mu.Lock()
 	for key, subscription := range tracker.tracked {
@@ -503,22 +502,6 @@ func (tracker *Tracker) step(ctx context.Context) {
 	if listener != nil && len(changes) > 0 {
 		listener(changes)
 	}
-}
-
-func (tracker *Tracker) collect(ctx context.Context) ([]Subscription, error) {
-	subscriptions, err := tracker.source.Subscriptions(ctx)
-	if err != nil {
-		return nil, err
-	}
-	result := make([]Subscription, 0, len(subscriptions))
-	for _, subscription := range subscriptions {
-		if _, err := Depth(tracker.registry, subscription.Target, subscription.points()); err != nil {
-			tracker.logger.WarnContext(ctx, "skip invalid closed indicator subscription", "module", "closed_indicator", "instrument_id", subscription.InstrumentID, "error", err)
-			continue
-		}
-		result = append(result, subscription)
-	}
-	return result, nil
 }
 
 // retry schedules mark to run under the lock after retryDelay, followed by a

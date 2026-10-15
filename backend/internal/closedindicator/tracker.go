@@ -142,9 +142,10 @@ type Tracker struct {
 	values           map[pairKey]Value
 	versions         map[historyKey]uint64
 	dirty            map[historyKey]struct{}
-	// synced lets the next step recalculate the dirty histories, which
-	// otherwise wait for the end of the synchronization round.
-	synced   bool
+	// synced are the intervals whose dirty histories the next step
+	// recalculates; the others wait for the end of their own
+	// synchronization round, so a round is recalculated at once.
+	synced   map[market.CandleInterval]struct{}
 	refresh  bool
 	listener func([]Change)
 }
@@ -158,7 +159,7 @@ func New(store Store, registry *indicator.Registry, source Source, targets []Tar
 	tracker := &Tracker{
 		store: store, registry: registry, targets: targets, tableKeys: keysByInterval(targets), source: source, logger: logger,
 		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, trackedHistories: map[historyKey]struct{}{}, values: map[pairKey]Value{},
-		versions: map[historyKey]uint64{}, dirty: map[historyKey]struct{}{},
+		versions: map[historyKey]uint64{}, dirty: map[historyKey]struct{}{}, synced: map[market.CandleInterval]struct{}{},
 	}
 	for _, target := range targets {
 		if _, err := Depth(registry, target, 1); err != nil {
@@ -248,12 +249,21 @@ func (tracker *Tracker) HistoryChanged(candles []market.Candle) {
 	}
 }
 
-// HistorySynced recalculates the tracked pairs whose history changed, once a
-// synchronization round has committed all its changes. It never blocks.
-func (tracker *Tracker) HistorySynced() {
+// HistorySynced recalculates the tracked pairs of interval whose history
+// changed, once a synchronization round of interval has committed all its
+// changes. It never blocks.
+func (tracker *Tracker) HistorySynced(interval market.CandleInterval) {
 	tracker.mu.Lock()
-	marked := len(tracker.dirty) > 0
-	tracker.synced = tracker.synced || marked
+	marked := false
+	for key := range tracker.dirty {
+		if key.interval == interval {
+			marked = true
+			break
+		}
+	}
+	if marked {
+		tracker.synced[interval] = struct{}{}
+	}
 	tracker.mu.Unlock()
 	if marked {
 		tracker.signal()
@@ -397,11 +407,14 @@ func (tracker *Tracker) step(ctx context.Context) {
 	tracker.mu.Lock()
 	refresh := tracker.refresh
 	tracker.refresh = false
-	var dirty map[historyKey]struct{}
-	if tracker.synced {
-		dirty = tracker.dirty
-		tracker.synced, tracker.dirty = false, map[historyKey]struct{}{}
+	dirty := map[historyKey]struct{}{}
+	for key := range tracker.dirty {
+		if _, ok := tracker.synced[key.interval]; ok {
+			dirty[key] = struct{}{}
+			delete(tracker.dirty, key)
+		}
 	}
+	clear(tracker.synced)
 	tracker.mu.Unlock()
 	pending := map[pairKey]Subscription{}
 	if refresh {
@@ -461,8 +474,8 @@ func (tracker *Tracker) step(ctx context.Context) {
 		tracker.retry(func() {
 			for _, subscription := range subscriptions {
 				tracker.dirty[historyKey{subscription.InstrumentID, subscription.Target.Interval}] = struct{}{}
+				tracker.synced[subscription.Target.Interval] = struct{}{}
 			}
-			tracker.synced = true
 		})
 		return
 	}

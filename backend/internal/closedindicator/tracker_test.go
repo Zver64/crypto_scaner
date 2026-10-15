@@ -4,12 +4,16 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"slices"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
+	"crypto-scanner/internal/indicator/candle"
 	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 )
@@ -174,4 +178,83 @@ func testHistory(count int) []market.Candle {
 
 func settled(got, want float64) bool {
 	return math.Abs(got-want) <= settledTolerance*math.Max(1, math.Abs(want))
+}
+
+// A synchronization round recalculates only its own interval, so changes of
+// another interval still being synchronized wait for that round.
+func TestTrackerRecalculatesOnlyTheSyncedInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		registry, err := indicator.NewRegistry(candle.New())
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := func(interval market.CandleInterval) closedindicator.Target {
+			return closedindicator.Target{Interval: interval, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}
+		}
+		store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
+		bar := func(interval market.CandleInterval, open time.Time) market.Candle {
+			return market.Candle{InstrumentID: 1, Interval: interval, OpenTime: open, CloseTime: interval.NextOpenTime(open).Add(-time.Millisecond), Open: 1, High: 2, Low: 1, Close: 2}
+		}
+		start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		for _, interval := range []market.CandleInterval{market.IntervalHour, market.IntervalDay} {
+			store.add(bar(interval, start))
+		}
+		tracker, err := closedindicator.New(store, registry, subscriptions{{InstrumentID: 1, Target: target(market.IntervalHour)}, {InstrumentID: 1, Target: target(market.IntervalDay)}}, nil, slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var batches [][]market.CandleInterval
+		tracker.Listen(func(changes []closedindicator.Change) {
+			var intervals []market.CandleInterval
+			for _, change := range changes {
+				intervals = append(intervals, change.Current.Target.Interval)
+			}
+			batches = append(batches, intervals)
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error)
+		go func() { done <- tracker.Run(ctx) }()
+		synctest.Wait()
+
+		next := []market.Candle{bar(market.IntervalHour, start.Add(time.Hour)), bar(market.IntervalDay, start.AddDate(0, 0, 1))}
+		for _, item := range next {
+			store.add(item)
+		}
+		tracker.HistoryChanged(next)
+		tracker.HistorySynced(market.IntervalHour)
+		synctest.Wait()
+		tracker.HistorySynced(market.IntervalDay)
+		synctest.Wait()
+		cancel()
+		<-done
+		want := []market.CandleInterval{market.IntervalHour, market.IntervalDay}
+		if len(batches) != 3 || !slices.Equal(batches[1], want[:1]) || !slices.Equal(batches[2], want[1:]) {
+			t.Fatalf("batches = %v, want the initial one, then 1h, then 1d", batches)
+		}
+	})
+}
+
+type subscriptions []closedindicator.Subscription
+
+func (items subscriptions) Subscriptions(context.Context) ([]closedindicator.Subscription, error) {
+	return items, nil
+}
+
+// intervalStore serves the candles of each interval.
+type intervalStore struct {
+	mu      sync.Mutex
+	candles map[market.CandleInterval][]market.Candle
+}
+
+func (store *intervalStore) add(item market.Candle) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	store.candles[item.Interval] = append(store.candles[item.Interval], item)
+}
+
+func (store *intervalStore) ListLatestCandles(_ context.Context, ids []int64, interval market.CandleInterval, limit int) (map[int64][]market.Candle, error) {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	candles := store.candles[interval]
+	return map[int64][]market.Candle{1: slices.Clone(candles[max(0, len(candles)-limit):])}, nil
 }

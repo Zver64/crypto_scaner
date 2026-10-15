@@ -115,9 +115,9 @@ func TestHistoryLoaderReportsPartialChangesAndResumesAfterFailure(t *testing.T) 
 				notified += len(candles)
 				tracker.HistoryChanged(candles)
 			},
-			Synced: func() {
+			Synced: func(interval market.CandleInterval) {
 				rounds++
-				tracker.HistorySynced()
+				tracker.HistorySynced(interval)
 			},
 		})
 		ctx, cancel := context.WithCancel(t.Context())

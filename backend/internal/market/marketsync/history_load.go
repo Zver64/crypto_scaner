@@ -145,11 +145,11 @@ type HistoryExtender interface {
 }
 
 // HistoryLoaderOptions connects committed live-window changes to consumers.
-// Both callbacks must be non-blocking; Synced ends a load that notified Changed,
-// even when a later page failed.
+// Both callbacks must be non-blocking; Synced ends a load of an interval that
+// notified Changed, even when a later page failed.
 type HistoryLoaderOptions struct {
 	Changed func([]market.Candle)
-	Synced  func()
+	Synced  func(market.CandleInterval)
 }
 
 // HistoryLoader runs one history load at a time in the background, for the
@@ -260,7 +260,7 @@ func (loader *HistoryLoader) run(ctx context.Context, instruments []market.Instr
 					}
 				})
 				if liveChanged && loader.options.Synced != nil {
-					loader.options.Synced()
+					loader.options.Synced(interval)
 				}
 				if errors.Is(err, ErrHistoryNotReady) {
 					// One new coin or interval does not stop the others.

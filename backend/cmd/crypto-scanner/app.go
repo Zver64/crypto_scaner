@@ -140,7 +140,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		// The tracker recalculates once a round has committed all its changes.
 		synchronizers[interval] = marketsync.ObservableRunner{
 			Runner: marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.SyncDepth, market.BinanceSpotSyncProfile(interval)),
-			Synced: closedIndicators.HistorySynced,
+			Synced: func() { closedIndicators.HistorySynced(interval) },
 		}
 		historyExtenders[interval] = marketsync.New(exchange, store, logger, cfg.SyncWorkers, market.SyncDepth, market.BinanceSpotSyncProfile(interval))
 	}

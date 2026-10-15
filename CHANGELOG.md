@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.0](https://github.com/Zver64/crypto_scaner/compare/v2.6.0...v2.7.0) (2026-10-15)
+
+
+### Features
+
+* let signals follow the administrator's favorites ([c0fda85](https://github.com/Zver64/crypto_scaner/commit/c0fda851779eae093357685b948aa2d24d1fd0d5))
+
 ## [2.6.0](https://github.com/Zver64/crypto_scaner/compare/v2.5.1...v2.6.0) (2026-10-15)
 
 

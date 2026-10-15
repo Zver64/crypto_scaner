@@ -22,8 +22,7 @@ const (
 	sendWorkers  = 4
 )
 
-// Instrument is one instrument strategies evaluate: an active favorite of
-// the administrator.
+// Instrument is one active instrument strategies may evaluate.
 type Instrument struct {
 	ID     int64
 	Symbol string
@@ -32,9 +31,9 @@ type Instrument struct {
 }
 
 type MonitorStore interface {
-	// ListStrategyInstruments returns the active favorites of the
-	// administrator, which strategies evaluate.
-	ListStrategyInstruments(ctx context.Context, administratorTelegramID int64) ([]Instrument, error)
+	// ListStrategyInstruments returns the active instruments, among which
+	// each strategy evaluates its own.
+	ListStrategyInstruments(context.Context) ([]Instrument, error)
 	// ListStrategyStates maps strategy ids to the trading states of their
 	// instruments.
 	ListStrategyStates(context.Context) (map[int64]map[int64]TradeState, error)
@@ -135,7 +134,7 @@ func (monitor *Monitor) StrategiesChanged(baselines []int64) {
 	monitor.signal()
 }
 
-// Changed schedules a full evaluation after the monitored instruments change.
+// Changed schedules a full evaluation.
 func (monitor *Monitor) Changed() { monitor.StrategiesChanged(nil) }
 
 func (monitor *Monitor) signal() {
@@ -261,7 +260,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 	if len(strategies) == 0 {
 		return
 	}
-	instruments, err := monitor.store.ListStrategyInstruments(ctx, monitor.administratorID)
+	instruments, err := monitor.store.ListStrategyInstruments(ctx)
 	if err != nil {
 		monitor.logger.WarnContext(ctx, "load monitored instruments failed", "error", err)
 		requeue()
@@ -275,41 +274,41 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		requeue()
 		return
 	}
-	monitored := make(map[int64]Instrument, len(instruments))
+	active := make(map[int64]Instrument, len(instruments))
 	for _, instrument := range instruments {
-		monitored[instrument.ID] = instrument
+		active[instrument.ID] = instrument
 	}
 	var changed []Instrument
 	for id := range pending {
-		if instrument, ok := monitored[id]; ok {
+		if instrument, ok := active[id]; ok {
 			changed = append(changed, instrument)
 		}
 	}
-	// A change of an instrument a strategy reads through of changes its
-	// results for every instrument.
-	candidatesOf := func(entry Entry) []Instrument {
-		symbols := entry.symbols
-		if full || slices.ContainsFunc(changed, func(instrument Instrument) bool {
-			return slices.Contains(symbols, instrument.Symbol)
-		}) {
-			return instruments
-		}
-		return changed
-	}
-	current := snapshot{reads: readsOf(strategies, instruments, instruments), now: monitor.now(), bySymbol: bySymbol(instruments)}
+	current := snapshot{reads: readsOf(strategies, Entry.instruments, instruments), now: monitor.now(), bySymbol: bySymbol(instruments)}
 	var missing []closedindicator.Target
 	current.values, missing = monitor.values.Snapshot(current.reads.subscriptions)
 
 	for _, entry := range strategies {
+		// A delisted coin disables the strategy, which then waits for the
+		// coin to be replaced.
+		if absent := entry.inactive(instruments); len(absent) > 0 {
+			monitor.halt(ctx, entry, notActive(absent))
+			continue
+		}
+		evaluated := entry.instruments(instruments)
+		evaluates := make(map[int64]struct{}, len(evaluated))
+		for _, instrument := range evaluated {
+			evaluates[instrument.ID] = struct{}{}
+		}
 		states := state[entry.ID]
 		if states == nil {
 			states = map[int64]TradeState{}
 			state[entry.ID] = states
 		}
-		// Instruments that left the favorites forget their states.
+		// Instruments it no longer evaluates forget their states.
 		var left []int64
 		for id := range states {
-			if _, ok := monitored[id]; !ok {
+			if _, ok := evaluates[id]; !ok {
 				left = append(left, id)
 			}
 		}
@@ -334,14 +333,23 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 				monitor.mu.Unlock()
 				continue
 			}
-			monitor.baseline(ctx, state, entry, instruments, current, recipients)
+			monitor.baseline(ctx, state, entry, evaluated, current, recipients)
 			continue
 		}
 
+		// A change of an instrument it reads through of changes its results
+		// for every instrument.
+		candidates := evaluated
+		if !full && !slices.ContainsFunc(changed, func(instrument Instrument) bool { return slices.Contains(entry.symbols, instrument.Symbol) }) {
+			candidates = slices.DeleteFunc(slices.Clone(changed), func(instrument Instrument) bool {
+				_, ok := evaluates[instrument.ID]
+				return !ok
+			})
+		}
 		changes := map[int64]TradeState{}
 		signals := map[int64][]TradeEvent{}
 		var failure error
-		for _, instrument := range candidatesOf(entry) {
+		for _, instrument := range candidates {
 			next, events, processed, err := current.advance(entry, instrument.ID, states[instrument.ID], !entry.MarketCap.Contains(instrument.MarketCapUSD))
 			if err != nil {
 				failure = fmt.Errorf("%s %w", instrument.Symbol, err)
@@ -373,7 +381,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 			monitor.desync()
 		}
 		var alerts []string
-		for _, instrument := range instruments {
+		for _, instrument := range evaluated {
 			if !slices.Contains(stored, instrument.ID) {
 				continue
 			}
@@ -431,7 +439,8 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 	monitor.send(ctx, recipients, summaryText(entry, matching, current))
 }
 
-// halt disables entry after the rule error err and tells the administrator.
+// halt disables entry after err, a rule error or a coin that is no longer
+// active, and tells the administrator.
 // A disabled strategy is no longer evaluated, so the message goes once; a
 // failed disable is retried by the next round, which meets the error again.
 // A strategy changed since entry was listed stays enabled and is evaluated
@@ -439,13 +448,13 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 func (monitor *Monitor) halt(ctx context.Context, entry Entry, err error) {
 	disabled, disableErr := monitor.strategies.DisableAtRevision(ctx, entry.ID, entry.Revision)
 	if disableErr != nil {
-		monitor.logger.WarnContext(ctx, "disable strategy after a rule error failed", "strategy_id", entry.ID, "rule_error", err, "error", disableErr)
+		monitor.logger.WarnContext(ctx, "disable halted strategy failed", "strategy_id", entry.ID, "reason", err, "error", disableErr)
 		return
 	}
 	if !disabled {
 		return
 	}
-	monitor.logger.InfoContext(ctx, "strategy disabled after a rule error", "strategy_id", entry.ID, "error", err)
+	monitor.logger.InfoContext(ctx, "strategy halted", "strategy_id", entry.ID, "error", err)
 	monitor.send(ctx, []int64{monitor.administratorID}, "⛔ "+entry.Name+" is disabled: "+err.Error())
 }
 
@@ -616,12 +625,12 @@ type reads struct {
 	keys map[int64]map[string]string
 }
 
-// readsOf subscribes every read of the evaluated instrument on each of
-// evaluated and every read through of only on the instrument it names among
-// named.
-func readsOf(strategies []Entry, evaluated, named []Instrument) reads {
+// readsOf subscribes every read of the evaluated instrument on each
+// instrument evaluated lists among active for its strategy, and every read
+// through of only on the instrument it names among active.
+func readsOf(strategies []Entry, evaluated func(Entry, []Instrument) []Instrument, active []Instrument) reads {
 	result := reads{positions: map[pair]int{}, keys: make(map[int64]map[string]string, len(strategies))}
-	symbols := bySymbol(named)
+	symbols := bySymbol(active)
 	subscribe := func(instrumentID int64, read Read, key string) {
 		at := pair{instrumentID, key}
 		position, ok := result.positions[at]
@@ -633,11 +642,12 @@ func readsOf(strategies []Entry, evaluated, named []Instrument) reads {
 		result.subscriptions[position].Points = max(result.subscriptions[position].Points, read.Shift+1)
 	}
 	for _, entry := range strategies {
+		instruments := evaluated(entry, active)
 		keys := map[string]string{}
 		result.keys[entry.ID] = keys
 		// The candles of the interval of entry price its trades.
 		candles := Read{Variable: Variable{Target: CandleTarget(entry.Interval)}}
-		for _, instrument := range evaluated {
+		for _, instrument := range instruments {
 			subscribe(instrument.ID, candles, candles.Variable.Target.Key())
 		}
 		for _, read := range entry.reads {
@@ -652,7 +662,7 @@ func readsOf(strategies []Entry, evaluated, named []Instrument) reads {
 				}
 				continue
 			}
-			for _, instrument := range evaluated {
+			for _, instrument := range instruments {
 				subscribe(instrument.ID, read, key)
 			}
 		}
@@ -680,9 +690,8 @@ func bySymbol(instruments []Instrument) map[string]int64 {
 const maxSummaryLength = 4000
 
 // summaryText announces an enabled or changed strategy, its market cap
-// range, and the instruments within it whose entry is true now, which buy only once it turns true again, and warns
-// about instruments it reads that are not monitored, such as delisted ones,
-// which leave its results unknown.
+// range, and the instruments within it whose entry is true now, which buy
+// only once it turns true again.
 func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	text := "🎯 " + entry.Name + " is active\n"
 	switch {
@@ -706,15 +715,6 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	}
 	if bounds := entry.MarketCap.String(); bounds != "" {
 		text += "Market cap: " + bounds + "\n"
-	}
-	var absent []string
-	for _, symbol := range entry.symbols {
-		if _, ok := current.bySymbol[symbol]; !ok {
-			absent = append(absent, symbol)
-		}
-	}
-	if len(absent) > 0 {
-		text += "⚠️ Not in favorites: " + strings.Join(absent, ", ") + "\n"
 	}
 	if len(matching) == 0 {
 		return text + "No coin's entry is true now."

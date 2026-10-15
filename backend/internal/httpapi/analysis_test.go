@@ -419,6 +419,10 @@ func (service *countingAnalysis) CoinM(ctx context.Context, request analysis.Sea
 	return service.Search(ctx, request)
 }
 
+func (service *countingAnalysis) CoinMSymbols(context.Context) ([]string, error) {
+	return nil, analysis.ErrMarketDataUnavailable
+}
+
 func (service *countingAnalysis) Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error) {
 	return markettable.Result{}, analysis.ErrInvalidArgument
 }

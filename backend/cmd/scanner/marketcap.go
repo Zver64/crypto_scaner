@@ -11,15 +11,14 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// marketCapFlags are the --min-market-cap and --max-market-cap flags that
-// strategies and signals share.
+// marketCapFlags are the --min-market-cap and --max-market-cap flags of
+// signals.
 type marketCapFlags struct{ minimum, maximum string }
 
-// addCreate registers the flags of a create command, whose strategy or
-// signal does what verb says, such as buy, only within the range.
-func (f *marketCapFlags) addCreate(flags *pflag.FlagSet, verb string) {
-	flags.StringVar(&f.minimum, "min-market-cap", "", verb+" only coins whose market cap is at least `USD`, such as 50M; backtests ignore it")
-	flags.StringVar(&f.maximum, "max-market-cap", "", verb+" only coins whose market cap is at most `USD`, such as 2B; backtests ignore it")
+// addCreate registers the flags of a create command.
+func (f *marketCapFlags) addCreate(flags *pflag.FlagSet) {
+	flags.StringVar(&f.minimum, "min-market-cap", "", "signal only coins whose market cap is at least `USD`, such as 50M; backtests ignore it")
+	flags.StringVar(&f.maximum, "max-market-cap", "", "signal only coins whose market cap is at most `USD`, such as 2B; backtests ignore it")
 }
 
 // addUpdate registers the flags of an update command.

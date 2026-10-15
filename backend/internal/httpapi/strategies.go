@@ -16,7 +16,6 @@ import (
 type Strategies interface {
 	List() []strategy.Entry
 	Variables() []strategy.Variable
-	Symbols(context.Context) ([]string, error)
 	Validate(ctx context.Context, expression string, kind strategy.RuleKind) (strategy.Validation, error)
 	// Unconfigured lists the indicators entry reads that are not configured.
 	Unconfigured(entry strategy.Entry) []scannerindicator.Entry
@@ -41,14 +40,6 @@ func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequ
 		}
 	}
 	return ListStrategyVariables200JSONResponse{Items: items}, nil
-}
-
-func (api *api) ListStrategySymbols(ctx context.Context, _ ListStrategySymbolsRequestObject) (ListStrategySymbolsResponseObject, error) {
-	symbols, err := api.strategies.Symbols(ctx)
-	if err != nil {
-		return ListStrategySymbols500JSONResponse{api.internalError(ctx, "list_strategy_symbols", err)}, nil
-	}
-	return ListStrategySymbols200JSONResponse{Items: symbols}, nil
 }
 
 func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRequestObject) (ValidateStrategyResponseObject, error) {
@@ -82,6 +73,7 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 	entry, err := api.strategies.Create(ctx, strategy.Strategy{
 		Name: body.Name, Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
+		Coins: body.Coins, AllCoins: body.AllCoins,
 		MarketCap:   strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
 		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
 		Message: body.Message, Enabled: body.Enabled,
@@ -103,6 +95,7 @@ func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyReques
 	entry, err := api.strategies.Update(ctx, strategy.Strategy{
 		ID: request.StrategyId, Name: body.Name, Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
+		Coins: body.Coins, AllCoins: body.AllCoins,
 		MarketCap:   strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
 		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
 		Message: body.Message,
@@ -126,6 +119,8 @@ func (api *api) SetStrategyEnabled(ctx context.Context, request SetStrategyEnabl
 	switch {
 	case err == nil:
 		return SetStrategyEnabled200JSONResponse(api.strategyDTO(entry)), nil
+	case errors.Is(err, strategy.ErrInvalidArgument):
+		return SetStrategyEnabled400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, strategy.ErrNotFound):
 		return SetStrategyEnabled404JSONResponse{strategyNotFound(ctx)}, nil
 	default:
@@ -357,6 +352,7 @@ func (api *api) strategyDTO(entry strategy.Entry) Strategy {
 	dto := Strategy{
 		Id: entry.ID, Name: entry.Name, Signal: StrategySignal(entry.Signal), Direction: Direction(entry.Direction), Expression: entry.Expression, ExitExpression: entry.ExitExpression,
 		TakeProfitExpression: entry.TakeProfitExpression, StopLossExpression: entry.StopLossExpression,
+		Coins: append([]string{}, entry.Coins...), AllCoins: entry.AllCoins,
 		MinMarketCapUsd: entry.MarketCap.MinUSD, MaxMarketCapUsd: entry.MarketCap.MaxUSD,
 		TargetRatio: toNullable[SignalTargetRatio](entry.TargetRatio), Window: toNullable[SignalWindow](entry.Window),
 		Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,

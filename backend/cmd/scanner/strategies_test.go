@@ -10,34 +10,35 @@ import (
 )
 
 func TestUpdateStrategyPreservesUnspecifiedFields(t *testing.T) {
-	usd := func(value float64) *float64 { return &value }
-	minimum, maximum := usd(10e6), usd(2e9)
+	coins := []string{"BTCUSDT"}
 	for _, test := range []struct {
 		name  string
 		flags []string
 		want  apiclient.StrategyUpdate
 		added bool
 	}{
-		{"expression", []string{"--expr", "w_rsi < 50"}, apiclient.StrategyUpdate{Name: "Test", Expression: "w_rsi < 50", Message: "custom", MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum}, false},
-		{"name", []string{"--name", "New"}, apiclient.StrategyUpdate{Name: "New", Expression: "m_rsi < 40", Message: "custom", MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum}, false},
-		{"clear message", []string{"--message", ""}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "", MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum}, false},
-		{"add indicators", []string{"--add-indicators"}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom", MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum}, true},
+		{"expression", []string{"--expr", "w_rsi < 50"}, apiclient.StrategyUpdate{Name: "Test", Expression: "w_rsi < 50", Message: "custom", Coins: coins}, false},
+		{"name", []string{"--name", "New"}, apiclient.StrategyUpdate{Name: "New", Expression: "m_rsi < 40", Message: "custom", Coins: coins}, false},
+		{"clear message", []string{"--message", ""}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "", Coins: coins}, false},
+		{"add indicators", []string{"--add-indicators"}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom", Coins: coins}, true},
 		{
 			"exits", []string{"--exit", "pnl > 5 || w_rsi > 70", "--take-profit", "h_close * 1.1", "--stop-loss", "w_low", "--add-indicators"},
 			apiclient.StrategyUpdate{
 				Name: "Test", Expression: "m_rsi < 40", ExitExpression: "pnl > 5 || w_rsi > 70", TakeProfitExpression: "h_close * 1.1", StopLossExpression: "w_low", Message: "custom",
-				MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum,
+				Coins: coins,
 			}, true,
 		},
 		{
-			"market cap", []string{"--min-market-cap", "$50m", "--max-market-cap", ""},
-			apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom", MinMarketCapUsd: usd(50e6)}, false,
+			// Chosen coins replace the current ones; only active favorites count.
+			"coins", []string{"--coin", "solusdt,", "--favorites"},
+			apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom", Coins: []string{"ETHUSDT", "SOLUSDT"}}, false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := `{"id":6,"name":"Test","expression":"w_rsi < 50","message":"custom","enabled":false,"valid":true}`
 			api, server := newFakeAPI(t, map[string]string{
-				"GET /api/v1/admin/strategies":                 `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","min_market_cap_usd":10000000,"max_market_cap_usd":2000000000,"message":"custom","enabled":false,"valid":true}]}`,
+				"GET /api/v1/admin/strategies":                 `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","coins":["BTCUSDT"],"message":"custom","enabled":false,"valid":true}]}`,
+				"GET /api/v1/favorites":                        `{"items":[{"symbol":"ETHUSDT","active":true},{"symbol":"OLDUSDT","active":false}]}`,
 				"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1w","type":"rsi","parameters":{"period":14},"title":"w-rsi"}]}`,
 				"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
 				"PUT /api/v1/admin/strategies/6":               response,
@@ -91,7 +92,6 @@ func TestUpdateStrategyRejectsInvalidInputBeforeWrites(t *testing.T) {
 		{name: "bad ID", args: []string{"0", "--name", "New"}},
 		{name: "overflow ID", args: []string{"9223372036854775808", "--name", "New"}},
 		{name: "no fields", args: []string{"6"}},
-		{name: "bad market cap", args: []string{"6", "--min-market-cap", "lots"}, stderr: "scanner: --min-market-cap: want a positive USD amount such as 150M, 1.5B, or 2000000\n"},
 		{name: "missing strategy", args: []string{"6", "--name", "New"}, list: `{"items":[]}`},
 		{name: "invalid expression", args: []string{"6", "--expr", "bad"}, list: `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","message":"","enabled":false,"valid":true}]}`, validation: `{"errors":["invalid expression"],"missing_indicators":[]}`},
 		{name: "enabled strategy", args: []string{"6", "--expr", "w_rsi < 50"}, list: `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","message":"","enabled":true,"valid":true}]}`, stderr: "scanner: strategy 6 is enabled; edit it in the Mini App\n"},

@@ -60,9 +60,9 @@ func TestBacktestSkipsCandlesBeforeTheWarmUpOfAPrunedHistory(t *testing.T) {
 	assertReplay(t, service, 1, market.IntervalHour, Backtest{From: first, To: hour(len(hourly) - 1), Alerts: []time.Time{first}})
 }
 
-// ETHUSDT has history but is not among the administrator's favorites, so the
-// values read through of stay unknown and nothing alerts.
-func TestBacktestLeavesCoinsOutsideTheFavoritesUnknown(t *testing.T) {
+// ETHUSDT has history but is not active, so the values read through of
+// would stay unknown and nothing would alert; the backtest refuses instead.
+func TestBacktestRefusesInactiveCoinsReadThroughOf(t *testing.T) {
 	var hourly, other []market.Candle
 	for index := range 5 {
 		open := backtestStart.Add(time.Duration(index) * time.Hour)
@@ -73,7 +73,9 @@ func TestBacktestLeavesCoinsOutsideTheFavoritesUnknown(t *testing.T) {
 	store.candles[market.IntervalHour][2] = other
 	service := newBacktestService(t, store, Strategy{ID: 1, Name: "Pair", Expression: `h_close > 5 && of("ETHUSDT", h_close) > 5`})
 
-	assertReplay(t, service, 1, market.IntervalHour, Backtest{From: backtestStart, To: backtestStart.Add(4 * time.Hour)})
+	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, time.Time{}, false); !errors.Is(err, ErrInvalidArgument) {
+		t.Fatalf("Backtest() error = %v, want ErrInvalidArgument", err)
+	}
 }
 
 func TestBacktestWithoutHistoryEvaluatesNothing(t *testing.T) {
@@ -422,7 +424,7 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 		t.Fatalf("at() warm = %v, error = %v", warm, err)
 	}
 
-	tracked := snapshot{reads: readsOf([]Entry{entry}, instruments, instruments), bySymbol: bySymbol(instruments), now: now}
+	tracked := snapshot{reads: readsOf([]Entry{entry}, func(Entry, []Instrument) []Instrument { return instruments }, instruments), bySymbol: bySymbol(instruments), now: now}
 	tracker, err := closedindicator.New(store, registry, subscriptionSource(tracked.reads.subscriptions), nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -557,7 +559,7 @@ func testEMA(t *testing.T, registry *indicator.Registry, id int64, interval mark
 func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *Service {
 	t.Helper()
 	store.strategies = items
-	service, err := NewService(store, testIndicators{}, testRegistry(t), 7, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), slog.New(slog.DiscardHandler), func([]int64) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -602,7 +604,7 @@ func (store *backtestStore) ListStrategies(context.Context) ([]Strategy, error) 
 	return store.strategies, nil
 }
 
-func (store *backtestStore) ListStrategyInstruments(context.Context, int64) ([]Instrument, error) {
+func (store *backtestStore) ListStrategyInstruments(context.Context) ([]Instrument, error) {
 	return []Instrument{{ID: 1, Symbol: "BTCUSDT"}}, nil
 }
 
@@ -642,7 +644,7 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.strategies = []Strategy{{ID: 1, Name: "Cross", Expression: "crosses_above(h_close, h_ema_100)"}}
-	service, err := NewService(store, indicators, registry, 7, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, indicators, registry, slog.New(slog.DiscardHandler), func([]int64) {})
 	if err != nil {
 		b.Fatal(err)
 	}

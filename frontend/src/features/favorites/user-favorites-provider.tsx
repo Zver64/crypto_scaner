@@ -23,7 +23,6 @@ import { FavoriteRemovalConfirmation } from "@/features/favorites/favorite-remov
 import { FavoritesContext } from "@/features/favorites/favorites-context";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
-import { instrumentUsesMessage } from "@/features/favorites/utils";
 
 const noFavorites: ReadonlyMap<string, Favorite> = new Map();
 
@@ -105,11 +104,10 @@ export function UserFavoritesProvider({
 			onSuccess: refreshFavorites,
 		},
 	});
-	const removalFailed = (error: unknown) => {
+	const removalFailed = () => {
 		notifications.show({
 			color: "red",
-			message:
-				instrumentUsesMessage(error) ?? "The favorite could not be removed.",
+			message: "The favorite could not be removed.",
 			title: "Favorite update failed",
 		});
 	};
@@ -127,11 +125,7 @@ export function UserFavoritesProvider({
 					setConfirmation({ symbol, alertCount });
 					return;
 				}
-				// Confirming again cannot help while strategies read the coin.
-				if (params?.confirm_alerts && instrumentUsesMessage(error)) {
-					closeConfirmation(symbol);
-				}
-				removalFailed(error);
+				removalFailed();
 			},
 			onSuccess: (_response, { symbol }) => {
 				closeConfirmation(symbol);

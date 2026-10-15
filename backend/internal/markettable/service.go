@@ -54,16 +54,27 @@ func (service *Service) Search(ctx context.Context, request analysis.SearchReque
 	return searchResult(search, service.market), nil
 }
 
-// CoinM analyzes the Spot USDT instruments of the coins that have a Binance
-// COIN-M perpetual contract.
-func (service *Service) CoinM(ctx context.Context, request analysis.SearchRequest) (Result, error) {
+// CoinMSymbols lists the Spot USDT symbols of the coins that have a Binance
+// COIN-M perpetual contract, active or not. It fails with
+// analysis.ErrMarketDataUnavailable when the contracts cannot be listed.
+func (service *Service) CoinMSymbols(ctx context.Context) ([]string, error) {
 	assets, err := service.perpetuals.BaseAssets(ctx)
 	if err != nil {
-		return Result{}, fmt.Errorf("list COIN-M perpetuals: %w: %w", analysis.ErrMarketDataUnavailable, err)
+		return nil, fmt.Errorf("list COIN-M perpetuals: %w: %w", analysis.ErrMarketDataUnavailable, err)
 	}
 	symbols := make([]string, len(assets))
 	for i, asset := range assets {
 		symbols[i] = market.NormalizeSymbol(asset + binanceSpotQuoteAsset)
+	}
+	return symbols, nil
+}
+
+// CoinM analyzes the Spot USDT instruments of the coins that have a Binance
+// COIN-M perpetual contract.
+func (service *Service) CoinM(ctx context.Context, request analysis.SearchRequest) (Result, error) {
+	symbols, err := service.CoinMSymbols(ctx)
+	if err != nil {
+		return Result{}, err
 	}
 	search, err := service.analyzer.SearchSymbols(ctx, request, symbols)
 	if err != nil {

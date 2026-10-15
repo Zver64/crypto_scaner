@@ -17,7 +17,6 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { BacktestSymbolName } from './backtestSymbolName.ts';
 import type { Direction } from './direction.ts';
 import type { SignalTargetRatio } from './signalTargetRatio.ts';
 import type { SignalWindow } from './signalWindow.ts';
@@ -25,6 +24,7 @@ import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategySignal } from './strategySignal.ts';
 import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts';
 import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
+import type { SymbolName } from './symbolName.ts';
 
 /**
  * The rules and trading settings of an unsaved strategy or signal, as
@@ -45,7 +45,7 @@ export interface StrategyBacktestInput {
   stop_loss_expression: StrategyStopLossExpression;
   target_ratio: SignalTargetRatio | null;
   window: SignalWindow | null;
-  symbol: BacktestSymbolName;
+  symbol: SymbolName;
   /** Earliest open time of an evaluated candle; the start of the stored history when absent. */
   from?: string;
   /** Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent. */

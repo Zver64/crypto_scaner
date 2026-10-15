@@ -90,7 +90,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		return app{}, err
 	}
 	// Changes before the monitor exists are covered by its first evaluation.
-	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, cfg.AdminTelegramID, logger, func(baselines []int64) {
+	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, logger, func(baselines []int64) {
 		if closedIndicators != nil {
 			closedIndicators.Refresh()
 		}
@@ -176,8 +176,8 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	tradeStream := binance.NewTradeStream(logger, dialLimiter)
 	alertMonitor := alerts.NewMonitor(store, tradeStream, botService, logger)
 	strategyMonitor = strategy.NewMonitor(store, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
-	monitoredChanged = append(monitoredChanged, alertMonitor.Changed, closedIndicators.Refresh, strategyMonitor.Changed)
-	favoriteService, err := favorites.New(store, cfg.AdminTelegramID, monitoredChanged.notify)
+	monitoredChanged = append(monitoredChanged, alertMonitor.Changed)
+	favoriteService, err := favorites.New(store, monitoredChanged.notify)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites service: %w", err)
 	}

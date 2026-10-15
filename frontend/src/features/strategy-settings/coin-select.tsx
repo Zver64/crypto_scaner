@@ -1,6 +1,6 @@
 import { Select } from "@mantine/core";
 
-import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
+import { useInstrumentSymbols } from "@/app/use-instrument-symbols";
 
 export interface CoinSelectProps {
 	coin: string;
@@ -8,11 +8,10 @@ export interface CoinSelectProps {
 	onChange(symbol: string): void;
 }
 
-// Chooses the coin of of among the administrator's favorites, the coins
-// strategies can read.
-// A stored coin that left them stays shown, so the expression is kept.
+// Chooses the coin of of among the active coins, the coins strategies can
+// read. A stored coin that left them stays shown, so the expression is kept.
 export function CoinSelect({ coin, disabled, onChange }: CoinSelectProps) {
-	const symbols = useFavoriteSymbols();
+	const symbols = useInstrumentSymbols();
 	const data = symbols.data ?? [];
 	return (
 		<Select
@@ -20,13 +19,11 @@ export function CoinSelect({ coin, disabled, onChange }: CoinSelectProps) {
 			clearable
 			data={coin === "" || data.includes(coin) ? data : [coin, ...data]}
 			disabled={disabled}
-			error={
-				symbols.isError ? "Favorite coins could not be loaded." : undefined
-			}
-			nothingFoundMessage="No favorite coins"
+			error={symbols.isError ? "Coins could not be loaded." : undefined}
+			nothingFoundMessage="No coins found"
 			// Clearing leaves the coin to be chosen again.
 			onChange={(symbol) => onChange(symbol ?? "")}
-			placeholder="Favorite coin"
+			placeholder="Coin"
 			searchable
 			size="sm"
 			value={coin === "" ? null : coin}

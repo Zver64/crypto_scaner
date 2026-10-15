@@ -105,6 +105,12 @@ type AppStrategy struct {
 	Direction            string
 	TargetRatio          pgtype.Int2
 	WindowCandles        pgtype.Int2
+	AllCoins             bool
+}
+
+type AppStrategyCoin struct {
+	StrategyID   int64
+	InstrumentID int64
 }
 
 type AppStrategyIndicator struct {
@@ -123,11 +129,6 @@ type AppStrategyState struct {
 	OpenedAt     pgtype.Timestamptz
 	TakeProfit   float64
 	StopLoss     float64
-}
-
-type AppStrategySymbol struct {
-	StrategyID   int64
-	InstrumentID int64
 }
 
 type AppUser struct {

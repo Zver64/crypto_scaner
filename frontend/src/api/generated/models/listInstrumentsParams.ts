@@ -17,7 +17,8 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { MarketUniverse } from './marketUniverse.ts';
 
-export interface StrategySymbolList {
-  items: string[];
-}
+export type ListInstrumentsParams = {
+universe?: MarketUniverse;
+};

@@ -1,6 +1,7 @@
 import { Alert, Stack } from "@mantine/core";
 
 import { strategyNameSchema } from "@/features/strategy-settings/schemas";
+import { StrategyCoinFields } from "@/features/strategy-settings/strategy-coin-fields";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import { StrategyDirectionControl } from "@/features/strategy-settings/strategy-direction-control";
 import { StrategyExitConditions } from "@/features/strategy-settings/strategy-exit-conditions";
@@ -73,6 +74,11 @@ export function StrategyFormContent({
 				form={form}
 				kind={strategyKind(draft)}
 			/>
+			<StrategyCoinFields
+				disabled={isSaving}
+				form={form}
+				signal={draft.signal}
+			/>
 			{draft.incomplete ? (
 				<Alert color="yellow" variant="light">
 					Part of a stored rule cannot be shown here. Saving keeps only the
@@ -88,9 +94,13 @@ export function StrategyFormContent({
 				variables={variables.entry}
 			/>
 			{/* A signal trades nothing, so it has no exit or price fields;
-			    only a signal has a target ratio and a window. */}
+			    only a signal has a target ratio, a window, and a market cap
+			    range. */}
 			{draft.signal ? (
-				<StrategySignalEvaluationFields disabled={isSaving} form={form} />
+				<>
+					<StrategySignalEvaluationFields disabled={isSaving} form={form} />
+					<StrategyMarketCapFields disabled={isSaving} form={form} />
+				</>
 			) : (
 				<>
 					<StrategyExitConditions
@@ -114,7 +124,6 @@ export function StrategyFormContent({
 					/>
 				</>
 			)}
-			<StrategyMarketCapFields disabled={isSaving} form={form} />
 			<StrategyFormFooter
 				form={form}
 				isSaving={isSaving}

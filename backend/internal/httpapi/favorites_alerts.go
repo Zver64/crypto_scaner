@@ -90,9 +90,6 @@ func (api *api) RemoveFavorite(ctx context.Context, request RemoveFavoriteReques
 	if errors.Is(err, favorites.ErrAlertsExist) {
 		return RemoveFavorite409JSONResponse{FavoriteConflictJSONResponse: FavoriteConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "favorite_has_alerts", "Confirmation is required to delete existing alerts", map[string]any{"alert_count": count}).body)}, nil
 	}
-	if conflict, ok := instrumentsInUse(ctx, err); ok {
-		return RemoveFavorite409JSONResponse{FavoriteConflictJSONResponse: FavoriteConflictJSONResponse(conflict.body)}, nil
-	}
 	if errors.Is(err, favorites.ErrNotFound) {
 		return RemoveFavorite404JSONResponse{FavoriteNotFoundJSONResponse: FavoriteNotFoundJSONResponse(newAPIError(ctx, http.StatusNotFound, "favorite_not_found", "Favorite not found", nil).body)}, nil
 	}

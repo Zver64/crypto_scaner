@@ -184,8 +184,18 @@ func TestDirectionRules(t *testing.T) {
 		{Direction: DirectionSideways},
 		{Direction: DirectionShort, StopLossExpression: "h_close * 2"},
 		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", ExitExpression: "h_close > 1"},
+		// Only a signal has a market cap range or evaluates all coins, and
+		// every strategy evaluates some coins.
+		{Direction: DirectionLong, MarketCap: MarketCapRange{MaxUSD: &usd}},
+		{Direction: DirectionLong, AllCoins: true, Coins: []string{}},
+		{Direction: DirectionLong, Coins: []string{}},
+		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, Coins: []string{}},
+		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, AllCoins: true},
 	} {
 		item.Name, item.Expression = "Strategy", "h_close > 5"
+		if item.Coins == nil {
+			item.Coins = []string{"BTCUSDT"}
+		}
 		if _, err := service.entry(item); !errors.Is(err, ErrInvalidArgument) {
 			t.Fatalf("%+v: %v", item, err)
 		}
@@ -194,8 +204,12 @@ func TestDirectionRules(t *testing.T) {
 		{Signal: true, Direction: DirectionSideways, TargetRatio: 5, Window: 24},
 		{Signal: true, Direction: DirectionShort, MarketCap: MarketCapRange{MaxUSD: &usd}, TargetRatio: 2, Window: 3},
 		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", StopLossExpression: "h_close * 2"},
+		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, AllCoins: true, Coins: []string{}},
 	} {
 		item.Name, item.Expression = "Strategy", "h_close > 5"
+		if item.Coins == nil {
+			item.Coins = []string{"BTCUSDT"}
+		}
 		if _, err := service.entry(item); err != nil {
 			t.Fatalf("%+v: %v", item, err)
 		}
@@ -207,7 +221,7 @@ func TestDirectionRules(t *testing.T) {
 		{Signal: true, Direction: DirectionLong},
 		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", StopLossExpression: "h_close * 2"},
 	} {
-		item.ID, item.Name, item.Expression = 1, "Trade", "h_close > 5"
+		item.ID, item.Name, item.Expression, item.Coins = 1, "Trade", "h_close > 5", []string{"BTCUSDT"}
 		if _, err := saved.Update(context.Background(), item); !errors.Is(err, ErrInvalidArgument) {
 			t.Fatalf("%+v: %v", item, err)
 		}

@@ -6,8 +6,26 @@ import type {
 import {
 	marketCapErrors,
 	marketCapUsd,
+	strategyCoinsError,
 	strategyFormValues,
 } from "@/features/strategy-settings/utils";
+
+// Checks the fields that depend on others: the coins on the choice of all
+// coins, and the market cap bounds together, as the maximum must not be
+// below the minimum.
+function validateLinkedFields({ value }: { value: StrategyFormData }) {
+	const errors = marketCapErrors(
+		marketCapUsd(value.minMarketCap),
+		marketCapUsd(value.maxMarketCap),
+	);
+	return {
+		fields: {
+			coins: strategyCoinsError(value.coins, value.allCoins),
+			maxMarketCap: errors.maximum,
+			minMarketCap: errors.minimum,
+		},
+	};
+}
 
 // The form of the open draft, opened with its values; without a draft it
 // holds nothing to show. It submits only values strategyInput accepts.
@@ -19,21 +37,6 @@ export function useStrategyForm(
 	return useAppForm({
 		defaultValues,
 		onSubmit: ({ value }) => onSubmit(strategyFormValues(value)),
-		validators: {
-			// The bounds are checked together, as the maximum must not be below
-			// the minimum.
-			onChange: ({ value }) => {
-				const errors = marketCapErrors(
-					marketCapUsd(value.minMarketCap),
-					marketCapUsd(value.maxMarketCap),
-				);
-				return {
-					fields: {
-						maxMarketCap: errors.maximum,
-						minMarketCap: errors.minimum,
-					},
-				};
-			},
-		},
+		validators: { onChange: validateLinkedFields },
 	});
 }

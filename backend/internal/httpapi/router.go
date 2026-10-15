@@ -39,6 +39,8 @@ type Analysis interface {
 type MarketTables interface {
 	Search(context.Context, analysis.SearchRequest) (markettable.Result, error)
 	CoinM(context.Context, analysis.SearchRequest) (markettable.Result, error)
+	// CoinMSymbols fails with analysis.ErrMarketDataUnavailable.
+	CoinMSymbols(context.Context) ([]string, error)
 	Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error)
 }
 
@@ -146,7 +148,6 @@ var administratorRoutes = []string{
 	"PATCH /api/v1/admin/users/{telegram_id}",
 	"DELETE /api/v1/admin/users/{telegram_id}",
 	"GET /api/v1/admin/strategy-variables",
-	"GET /api/v1/admin/strategy-symbols",
 	"POST /api/v1/admin/strategy-validations",
 	"GET /api/v1/admin/strategies",
 	"POST /api/v1/admin/strategies",

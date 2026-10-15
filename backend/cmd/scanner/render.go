@@ -57,6 +57,24 @@ func terminalWidth(w io.Writer) int {
 	return width
 }
 
+// maxListedCoins is how many coins a strategy row names before it counts
+// the rest.
+const maxListedCoins = 3
+
+// coinsLabel names the coins a strategy evaluates, such as "BTCUSDT,
+// ETHUSDT", "BTCUSDT, ETHUSDT, SOLUSDT +5", or "all".
+func coinsLabel(strategy apiclient.Strategy) string {
+	switch {
+	case strategy.AllCoins:
+		return "all"
+	case len(strategy.Coins) == 0:
+		return "-"
+	case len(strategy.Coins) > maxListedCoins:
+		return fmt.Sprintf("%s +%d", strings.Join(strategy.Coins[:maxListedCoins], ", "), len(strategy.Coins)-maxListedCoins)
+	}
+	return strings.Join(strategy.Coins, ", ")
+}
+
 // renderStrategies prints the strategies of k; on a terminal, the Name, Entry,
 // and Exit cells wrap to fit its width. Strategies show the direction they
 // trade, signals the move they expect instead of how they trade.
@@ -66,9 +84,9 @@ func renderStrategies(w io.Writer, k kind, strategies []apiclient.Strategy) {
 
 // renderStrategiesWidth also accepts an explicit width for non-terminal tests.
 func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy, width int) {
-	header := table.Row{"ID", "State", "Name", "Direction", "Entry", "Exit", "Buys", "Market cap"}
+	header := table.Row{"ID", "State", "Name", "Direction", "Entry", "Exit", "Buys", "Coins"}
 	if k.signals {
-		header = table.Row{"ID", "State", "Name", "Entry", "Signal", "Window", "Target", "Market cap"}
+		header = table.Row{"ID", "State", "Name", "Entry", "Signal", "Window", "Target", "Coins", "Market cap"}
 	}
 	var rows []table.Row
 	widths := make([]int, len(header))
@@ -99,9 +117,9 @@ func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy,
 			name += "\nmessage: " + strategy.Message
 		}
 		expression := strings.Join(strings.Fields(strategy.Expression), " ")
-		row := table.Row{strategy.Id, state, name, string(strategy.Direction), expression, exits(strategy), buys(strategy), marketCapRange(strategy)}
+		row := table.Row{strategy.Id, state, name, string(strategy.Direction), expression, exits(strategy), buys(strategy), coinsLabel(strategy)}
 		if k.signals {
-			row = table.Row{strategy.Id, state, name, expression, string(strategy.Direction), signalSetting(strategy.Window, "candles"), signalSetting(strategy.TargetRatio, "stops"), marketCapRange(strategy)}
+			row = table.Row{strategy.Id, state, name, expression, string(strategy.Direction), signalSetting(strategy.Window, "candles"), signalSetting(strategy.TargetRatio, "stops"), coinsLabel(strategy), marketCapRange(strategy)}
 		}
 		rows = append(rows, row)
 		measure(row)

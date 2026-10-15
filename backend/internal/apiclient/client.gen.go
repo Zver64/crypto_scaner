@@ -31,7 +31,6 @@ const (
 	APIErrorCodeFavoriteHasAlerts          APIErrorCode = "favorite_has_alerts"
 	APIErrorCodeFavoriteNotFound           APIErrorCode = "favorite_not_found"
 	APIErrorCodeHistoryLoadRunning         APIErrorCode = "history_load_running"
-	APIErrorCodeInstrumentUsedByStrategy   APIErrorCode = "instrument_used_by_strategy"
 	APIErrorCodeInsufficientData           APIErrorCode = "insufficient_data"
 	APIErrorCodeInternalError              APIErrorCode = "internal_error"
 	APIErrorCodeInvalidArgument            APIErrorCode = "invalid_argument"
@@ -79,8 +78,6 @@ func (e APIErrorCode) Valid() bool {
 	case APIErrorCodeFavoriteNotFound:
 		return true
 	case APIErrorCodeHistoryLoadRunning:
-		return true
-	case APIErrorCodeInstrumentUsedByStrategy:
 		return true
 	case APIErrorCodeInsufficientData:
 		return true
@@ -738,9 +735,6 @@ type BacktestSummary struct {
 	Stats BacktestTradeStats `json:"stats"`
 }
 
-// BacktestSymbolName Market symbol, such as `BTCUSDT`.
-type BacktestSymbolName = string
-
 // BacktestTrade defines model for BacktestTrade.
 type BacktestTrade struct {
 	// Buys Buys of the trade, each of the same amount.
@@ -1330,6 +1324,16 @@ type SignalWindow int
 
 // Strategy defines model for Strategy.
 type Strategy struct {
+	// AllCoins A signal's only; the signal evaluates every active coin instead of `coins`.
+	AllCoins StrategyAllCoins `json:"all_coins"`
+
+	// Coins The coins the enabled strategy or signal evaluates, among all coins,
+	// ascending. A strategy needs at least one; a signal needs at least one
+	// unless `all_coins` is set, and none then. Every coin must be active: a
+	// delisted coin, chosen or read through `of`, disables the strategy
+	// until it is replaced or removed.
+	Coins StrategyCoins `json:"coins"`
+
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: up, down, or sideways. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
@@ -1347,12 +1351,11 @@ type Strategy struct {
 	Expression string `json:"expression"`
 	Id         int64  `json:"id"`
 
-	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys or the enabled signal announces; null leaves
-	// that side open. With either bound, coins of an unknown market cap buy
-	// or signal nothing. The range limits only buys and signals: open trades
-	// sell as usual, and backtests ignore it. The minimum must not exceed
-	// the maximum.
+	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
@@ -1361,12 +1364,11 @@ type Strategy struct {
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 
-	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys or the enabled signal announces; null leaves
-	// that side open. With either bound, coins of an unknown market cap buy
-	// or signal nothing. The range limits only buys and signals: open trades
-	// sell as usual, and backtests ignore it. The minimum must not exceed
-	// the maximum.
+	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 
 	// MissingIndicators Indicators the rules read that are not configured, in reading
@@ -1402,6 +1404,9 @@ type Strategy struct {
 	Valid  bool          `json:"valid"`
 	Window *SignalWindow `json:"window"`
 }
+
+// StrategyAllCoins A signal's only; the signal evaluates every active coin instead of `coins`.
+type StrategyAllCoins = bool
 
 // StrategyBacktest Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
 type StrategyBacktest struct {
@@ -1484,7 +1489,7 @@ type StrategyBacktestInput struct {
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
 	// Symbol Market symbol, such as `BTCUSDT`.
-	Symbol BacktestSymbolName `json:"symbol"`
+	Symbol SymbolName `json:"symbol"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
 	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
@@ -1500,6 +1505,13 @@ type StrategyBacktestInput struct {
 	Window *SignalWindow `json:"window"`
 }
 
+// StrategyCoins The coins the enabled strategy or signal evaluates, among all coins,
+// ascending. A strategy needs at least one; a signal needs at least one
+// unless `all_coins` is set, and none then. Every coin must be active: a
+// delisted coin, chosen or read through `of`, disables the strategy
+// until it is replaced or removed.
+type StrategyCoins = []SymbolName
+
 // StrategyEnabled defines model for StrategyEnabled.
 type StrategyEnabled struct {
 	Enabled bool `json:"enabled"`
@@ -1513,6 +1525,16 @@ type StrategyExitExpression = string
 
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
+	// AllCoins A signal's only; the signal evaluates every active coin instead of `coins`.
+	AllCoins StrategyAllCoins `json:"all_coins"`
+
+	// Coins The coins the enabled strategy or signal evaluates, among all coins,
+	// ascending. A strategy needs at least one; a signal needs at least one
+	// unless `all_coins` is set, and none then. Every coin must be active: a
+	// delisted coin, chosen or read through `of`, disables the strategy
+	// until it is replaced or removed.
+	Coins StrategyCoins `json:"coins"`
+
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: up, down, or sideways. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
@@ -1527,12 +1549,11 @@ type StrategyInput struct {
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 	Expression     string                 `json:"expression"`
 
-	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys or the enabled signal announces; null leaves
-	// that side open. With either bound, coins of an unknown market cap buy
-	// or signal nothing. The range limits only buys and signals: open trades
-	// sell as usual, and backtests ignore it. The minimum must not exceed
-	// the maximum.
+	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
@@ -1541,12 +1562,11 @@ type StrategyInput struct {
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 
-	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys or the enabled signal announces; null leaves
-	// that side open. With either bound, coins of an unknown market cap buy
-	// or signal nothing. The range limits only buys and signals: open trades
-	// sell as usual, and backtests ignore it. The minimum must not exceed
-	// the maximum.
+	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 	Name            string                  `json:"name"`
 
@@ -1577,12 +1597,11 @@ type StrategyList struct {
 	Items []Strategy `json:"items"`
 }
 
-// StrategyMarketCapBound A bound, in USD and inclusive, of the current market caps of the coins
-// the enabled strategy buys or the enabled signal announces; null leaves
-// that side open. With either bound, coins of an unknown market cap buy
-// or signal nothing. The range limits only buys and signals: open trades
-// sell as usual, and backtests ignore it. The minimum must not exceed
-// the maximum.
+// StrategyMarketCapBound A signal's only: a bound, in USD and inclusive, of the current market
+// caps of the coins the enabled signal announces; null leaves that side
+// open, and a trading strategy has null for both. With either bound,
+// coins of an unknown market cap signal nothing. Backtests ignore it.
+// The minimum must not exceed the maximum.
 type StrategyMarketCapBound = float64
 
 // StrategyMessage Telegram alert text that follows the strategy name, the coin symbol,
@@ -1614,11 +1633,6 @@ type StrategySignal = bool
 // and its close buys nothing. Empty without a stop loss.
 type StrategyStopLossExpression = string
 
-// StrategySymbolList defines model for StrategySymbolList.
-type StrategySymbolList struct {
-	Items []string `json:"items"`
-}
-
 // StrategyTakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
 // the entry signal and fixed for the trade, such as `h_close * 1.05` or
 // `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
@@ -1629,6 +1643,16 @@ type StrategyTakeProfitExpression = string
 
 // StrategyUpdate defines model for StrategyUpdate.
 type StrategyUpdate struct {
+	// AllCoins A signal's only; the signal evaluates every active coin instead of `coins`.
+	AllCoins StrategyAllCoins `json:"all_coins"`
+
+	// Coins The coins the enabled strategy or signal evaluates, among all coins,
+	// ascending. A strategy needs at least one; a signal needs at least one
+	// unless `all_coins` is set, and none then. Every coin must be active: a
+	// delisted coin, chosen or read through `of`, disables the strategy
+	// until it is replaced or removed.
+	Coins StrategyCoins `json:"coins"`
+
 	// Direction How a strategy trades, long or short, or the price move a signal
 	// expects after its entry signals: up, down, or sideways. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
@@ -1649,15 +1673,14 @@ type StrategyUpdate struct {
 	// over the `n` closed candles before the latest one;
 	// `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
 	// previous candle. `of("BTCUSDT", x)` reads `x` of another coin,
-	// which must be in the administrator's favorites.
+	// which must be active.
 	Expression string `json:"expression"`
 
-	// MaxMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys or the enabled signal announces; null leaves
-	// that side open. With either bound, coins of an unknown market cap buy
-	// or signal nothing. The range limits only buys and signals: open trades
-	// sell as usual, and backtests ignore it. The minimum must not exceed
-	// the maximum.
+	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
 	// Message Telegram alert text that follows the strategy name, the coin symbol,
@@ -1666,12 +1689,11 @@ type StrategyUpdate struct {
 	// empty keeps the generated text.
 	Message StrategyMessage `json:"message"`
 
-	// MinMarketCapUsd A bound, in USD and inclusive, of the current market caps of the coins
-	// the enabled strategy buys or the enabled signal announces; null leaves
-	// that side open. With either bound, coins of an unknown market cap buy
-	// or signal nothing. The range limits only buys and signals: open trades
-	// sell as usual, and backtests ignore it. The minimum must not exceed
-	// the maximum.
+	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
+	// caps of the coins the enabled signal announces; null leaves that side
+	// open, and a trading strategy has null for both. With either bound,
+	// coins of an unknown market cap signal nothing. Backtests ignore it.
+	// The minimum must not exceed the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
 	Name            string                  `json:"name"`
 
@@ -1742,6 +1764,9 @@ type StrategyVariable struct {
 type StrategyVariableList struct {
 	Items []StrategyVariable `json:"items"`
 }
+
+// SymbolName Market symbol, such as `BTCUSDT`.
+type SymbolName = string
 
 // TableCell Holds the field its column kind reads; the field is omitted when its value is unavailable.
 type TableCell struct {
@@ -1912,7 +1937,7 @@ type UserNotFound = ErrorResponse
 // BacktestStrategyParams defines parameters for BacktestStrategy.
 type BacktestStrategyParams struct {
 	// Symbol Market symbol of the replayed coin.
-	Symbol BacktestSymbolName `form:"symbol" json:"symbol"`
+	Symbol SymbolName `form:"symbol" json:"symbol"`
 
 	// From Earliest open time of an evaluated candle; the start of the stored history when absent.
 	From *time.Time `form:"from,omitempty" json:"from,omitempty"`
@@ -1956,6 +1981,11 @@ type ListChartIndicatorsParams struct {
 // RemoveFavoriteParams defines parameters for RemoveFavorite.
 type RemoveFavoriteParams struct {
 	ConfirmAlerts *bool `form:"confirm_alerts,omitempty" json:"confirm_alerts,omitempty"`
+}
+
+// ListInstrumentsParams defines parameters for ListInstruments.
+type ListInstrumentsParams struct {
+	Universe *MarketUniverse `form:"universe,omitempty" json:"universe,omitempty"`
 }
 
 // ListInstrumentCandlesParams defines parameters for ListInstrumentCandles.
@@ -2222,8 +2252,8 @@ type ClientInterface interface {
 
 	// ListStrategies List the strategies
 	//
-	// Enabled strategies trade the administrator's favorites on the closed
-	// candles of the finest interval their rules read. An entry signal is
+	// Enabled strategies trade their coins, and signals their coins or every
+	// active coin, on the closed candles of the finest interval their rules read. An entry signal is
 	// the entry rule turning from false to true. A strategy that exits,
 	// through an exit rule, a take profit, or a stop loss, holds one buy per
 	// trade: a signal opens a trade, fixing its take profit and stop loss
@@ -2270,7 +2300,7 @@ type ClientInterface interface {
 
 	// SetStrategyEnabledWithBody Turn a strategy on or off
 	//
-	// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+	// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2279,7 +2309,7 @@ type ClientInterface interface {
 
 	// SetStrategyEnabled Turn a strategy on or off
 	//
-	// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+	// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2288,7 +2318,7 @@ type ClientInterface interface {
 
 	// UpdateStrategyWithBody Change a strategy
 	//
-	// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+	// A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2297,7 +2327,7 @@ type ClientInterface interface {
 
 	// UpdateStrategy Change a strategy
 	//
-	// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+	// A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2367,20 +2397,12 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
 	BacktestStrategyDraft(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListStrategySymbols List the coins strategy expressions can read through of
-	//
-	// The active coins in the administrator's favorites, ascending.
-	//
-	// Corresponds with GET /api/v1/admin/strategy-symbols (the `ListStrategySymbols` operationId).
-	ListStrategySymbols(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ValidateStrategyWithBody Check a strategy expression
 	//
 	// Lists every problem that would reject the expression as the entry
 	// rule of a strategy, or as its exit rule when `exit` is set, which may
 	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-	// depth, and coins read through `of` that are not active coins in the
-	// administrator's favorites. Variables of indicators that are not
+	// depth, and coins read through `of` that are not active. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
 	// when exactly one indicator has the name. Strategies read them without
 	// adding them, so no problems mean the expression is valid.
@@ -2395,8 +2417,7 @@ type ClientInterface interface {
 	// Lists every problem that would reject the expression as the entry
 	// rule of a strategy, or as its exit rule when `exit` is set, which may
 	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-	// depth, and coins read through `of` that are not active coins in the
-	// administrator's favorites. Variables of indicators that are not
+	// depth, and coins read through `of` that are not active. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
 	// when exactly one indicator has the name. Strategies read them without
 	// adding them, so no problems mean the expression is valid.
@@ -2529,7 +2550,7 @@ type ClientInterface interface {
 	// ListInstruments List the active instruments
 	//
 	// Corresponds with GET /api/v1/instruments (the `ListInstruments` operationId).
-	ListInstruments(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListInstruments(ctx context.Context, params *ListInstrumentsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListPriceAlerts performs a GET /api/v1/instruments/{symbol}/alerts (the `ListPriceAlerts` operationId) request.
 	ListPriceAlerts(ctx context.Context, symbol Symbol, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2822,8 +2843,8 @@ func (c *Client) UpdateScannerIndicator(ctx context.Context, indicatorId Scanner
 
 // ListStrategies List the strategies
 //
-// Enabled strategies trade the administrator's favorites on the closed
-// candles of the finest interval their rules read. An entry signal is
+// Enabled strategies trade their coins, and signals their coins or every
+// active coin, on the closed candles of the finest interval their rules read. An entry signal is
 // the entry rule turning from false to true. A strategy that exits,
 // through an exit rule, a take profit, or a stop loss, holds one buy per
 // trade: a signal opens a trade, fixing its take profit and stop loss
@@ -2910,7 +2931,7 @@ func (c *Client) DeleteStrategy(ctx context.Context, strategyId StrategyID, reqE
 
 // SetStrategyEnabledWithBody Turn a strategy on or off
 //
-// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2929,7 +2950,7 @@ func (c *Client) SetStrategyEnabledWithBody(ctx context.Context, strategyId Stra
 
 // SetStrategyEnabled Turn a strategy on or off
 //
-// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2948,7 +2969,7 @@ func (c *Client) SetStrategyEnabled(ctx context.Context, strategyId StrategyID, 
 
 // UpdateStrategyWithBody Change a strategy
 //
-// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+// A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2967,7 +2988,7 @@ func (c *Client) UpdateStrategyWithBody(ctx context.Context, strategyId Strategy
 
 // UpdateStrategy Change a strategy
 //
-// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+// A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -3077,30 +3098,12 @@ func (c *Client) BacktestStrategyDraft(ctx context.Context, body BacktestStrateg
 	return c.Client.Do(req)
 }
 
-// ListStrategySymbols List the coins strategy expressions can read through of
-//
-// The active coins in the administrator's favorites, ascending.
-//
-// Corresponds with GET /api/v1/admin/strategy-symbols (the `ListStrategySymbols` operationId).
-func (c *Client) ListStrategySymbols(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListStrategySymbolsRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 // ValidateStrategyWithBody Check a strategy expression
 //
 // Lists every problem that would reject the expression as the entry
 // rule of a strategy, or as its exit rule when `exit` is set, which may
 // also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-// depth, and coins read through `of` that are not active coins in the
-// administrator's favorites. Variables of indicators that are not
+// depth, and coins read through `of` that are not active. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
 // when exactly one indicator has the name. Strategies read them without
 // adding them, so no problems mean the expression is valid.
@@ -3125,8 +3128,7 @@ func (c *Client) ValidateStrategyWithBody(ctx context.Context, contentType strin
 // Lists every problem that would reject the expression as the entry
 // rule of a strategy, or as its exit rule when `exit` is set, which may
 // also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-// depth, and coins read through `of` that are not active coins in the
-// administrator's favorites. Variables of indicators that are not
+// depth, and coins read through `of` that are not active. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
 // when exactly one indicator has the name. Strategies read them without
 // adding them, so no problems mean the expression is valid.
@@ -3469,8 +3471,8 @@ func (c *Client) AddFavorite(ctx context.Context, symbol Symbol, reqEditors ...R
 // ListInstruments List the active instruments
 //
 // Corresponds with GET /api/v1/instruments (the `ListInstruments` operationId).
-func (c *Client) ListInstruments(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListInstrumentsRequest(c.Server)
+func (c *Client) ListInstruments(ctx context.Context, params *ListInstrumentsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListInstrumentsRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -4246,33 +4248,6 @@ func NewBacktestStrategyDraftRequestWithBody(server string, contentType string, 
 	return req, nil
 }
 
-// NewListStrategySymbolsRequest constructs an http.Request for the ListStrategySymbols method
-func NewListStrategySymbolsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/admin/strategy-symbols")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return req, nil
-}
-
 // NewValidateStrategyRequest calls the generic ValidateStrategy builder with application/json body
 func NewValidateStrategyRequest(server string, body ValidateStrategyJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -4943,7 +4918,7 @@ func NewAddFavoriteRequest(server string, symbol Symbol) (*http.Request, error) 
 }
 
 // NewListInstrumentsRequest constructs an http.Request for the ListInstruments method
-func NewListInstrumentsRequest(server string) (*http.Request, error) {
+func NewListInstrumentsRequest(server string, params *ListInstrumentsParams) (*http.Request, error) {
 	var err error
 
 	serverURL, err := url.Parse(server)
@@ -4959,6 +4934,33 @@ func NewListInstrumentsRequest(server string) (*http.Request, error) {
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Universe != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "universe", *params.Universe, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -5472,8 +5474,8 @@ type ClientWithResponsesInterface interface {
 
 	// ListStrategiesWithResponse List the strategies
 	//
-	// Enabled strategies trade the administrator's favorites on the closed
-	// candles of the finest interval their rules read. An entry signal is
+	// Enabled strategies trade their coins, and signals their coins or every
+	// active coin, on the closed candles of the finest interval their rules read. An entry signal is
 	// the entry rule turning from false to true. A strategy that exits,
 	// through an exit rule, a take profit, or a stop loss, holds one buy per
 	// trade: a signal opens a trade, fixing its take profit and stop loss
@@ -5524,7 +5526,7 @@ type ClientWithResponsesInterface interface {
 
 	// SetStrategyEnabledWithBodyWithResponse Turn a strategy on or off
 	//
-	// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+	// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5533,7 +5535,7 @@ type ClientWithResponsesInterface interface {
 
 	// SetStrategyEnabledWithResponse Turn a strategy on or off
 	//
-	// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+	// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5542,7 +5544,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateStrategyWithBodyWithResponse Change a strategy
 	//
-	// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+	// A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5551,7 +5553,7 @@ type ClientWithResponsesInterface interface {
 
 	// UpdateStrategyWithResponse Change a strategy
 	//
-	// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+	// A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5623,22 +5625,12 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
 	BacktestStrategyDraftWithResponse(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error)
 
-	// ListStrategySymbolsWithResponse List the coins strategy expressions can read through of
-	//
-	// The active coins in the administrator's favorites, ascending.
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/admin/strategy-symbols (the `ListStrategySymbols` operationId).
-	ListStrategySymbolsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListStrategySymbolsResponse, error)
-
 	// ValidateStrategyWithBodyWithResponse Check a strategy expression
 	//
 	// Lists every problem that would reject the expression as the entry
 	// rule of a strategy, or as its exit rule when `exit` is set, which may
 	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-	// depth, and coins read through `of` that are not active coins in the
-	// administrator's favorites. Variables of indicators that are not
+	// depth, and coins read through `of` that are not active. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
 	// when exactly one indicator has the name. Strategies read them without
 	// adding them, so no problems mean the expression is valid.
@@ -5653,8 +5645,7 @@ type ClientWithResponsesInterface interface {
 	// Lists every problem that would reject the expression as the entry
 	// rule of a strategy, or as its exit rule when `exit` is set, which may
 	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-	// depth, and coins read through `of` that are not active coins in the
-	// administrator's favorites. Variables of indicators that are not
+	// depth, and coins read through `of` that are not active. Variables of indicators that are not
 	// configured are resolved from their names into `missing_indicators`
 	// when exactly one indicator has the name. Strategies read them without
 	// adding them, so no problems mean the expression is valid.
@@ -5811,7 +5802,7 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v1/instruments (the `ListInstruments` operationId).
-	ListInstrumentsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListInstrumentsResponse, error)
+	ListInstrumentsWithResponse(ctx context.Context, params *ListInstrumentsParams, reqEditors ...RequestEditorFn) (*ListInstrumentsResponse, error)
 
 	// ListPriceAlertsWithResponse performs a GET /api/v1/instruments/{symbol}/alerts (the `ListPriceAlerts` operationId) request.
 	//
@@ -6900,6 +6891,11 @@ func (r DeleteStrategyResponse) ContentType() string {
 	return ""
 }
 
+// SetStrategyEnabledResponse400Headers the declared response headers of an HTTP 400 response for SetStrategyEnabled
+type SetStrategyEnabledResponse400Headers struct {
+	XRequestID string
+}
+
 // SetStrategyEnabledResponse401Headers the declared response headers of an HTTP 401 response for SetStrategyEnabled
 type SetStrategyEnabledResponse401Headers struct {
 	XRequestID string
@@ -6915,6 +6911,8 @@ type SetStrategyEnabledResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *Strategy
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *BadRequest
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthenticated
 	// JSON403 the response for an HTTP 403 `application/json` response
@@ -6923,6 +6921,8 @@ type SetStrategyEnabledResponse struct {
 	JSON404 *StrategyNotFound
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
+	// Headers400 the parsed response headers for an HTTP 400 response
+	Headers400 *SetStrategyEnabledResponse400Headers
 	// Headers401 the parsed response headers for an HTTP 401 response
 	Headers401 *SetStrategyEnabledResponse401Headers
 	// Headers500 the parsed response headers for an HTTP 500 response
@@ -6932,6 +6932,11 @@ type SetStrategyEnabledResponse struct {
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r SetStrategyEnabledResponse) GetJSON200() *Strategy {
 	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r SetStrategyEnabledResponse) GetJSON400() *BadRequest {
+	return r.JSON400
 }
 
 // GetJSON401 returns the response for an HTTP 401 `application/json` response
@@ -7345,82 +7350,6 @@ func (r BacktestStrategyDraftResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r BacktestStrategyDraftResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// ListStrategySymbolsResponse401Headers the declared response headers of an HTTP 401 response for ListStrategySymbols
-type ListStrategySymbolsResponse401Headers struct {
-	XRequestID string
-}
-
-// ListStrategySymbolsResponse500Headers the declared response headers of an HTTP 500 response for ListStrategySymbols
-type ListStrategySymbolsResponse500Headers struct {
-	XRequestID string
-}
-
-type ListStrategySymbolsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *StrategySymbolList
-	// JSON401 the response for an HTTP 401 `application/json` response
-	JSON401 *Unauthenticated
-	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *AdministratorRequired
-	// JSON500 the response for an HTTP 500 `application/json` response
-	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListStrategySymbolsResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListStrategySymbolsResponse500Headers
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r ListStrategySymbolsResponse) GetJSON200() *StrategySymbolList {
-	return r.JSON200
-}
-
-// GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r ListStrategySymbolsResponse) GetJSON401() *Unauthenticated {
-	return r.JSON401
-}
-
-// GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r ListStrategySymbolsResponse) GetJSON403() *AdministratorRequired {
-	return r.JSON403
-}
-
-// GetJSON500 returns the response for an HTTP 500 `application/json` response
-func (r ListStrategySymbolsResponse) GetJSON500() *InternalError {
-	return r.JSON500
-}
-
-// GetBody returns the raw response body bytes
-func (r ListStrategySymbolsResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r ListStrategySymbolsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListStrategySymbolsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListStrategySymbolsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -8980,6 +8909,11 @@ type ListInstrumentsResponse500Headers struct {
 	XRequestID string
 }
 
+// ListInstrumentsResponse503Headers the declared response headers of an HTTP 503 response for ListInstruments
+type ListInstrumentsResponse503Headers struct {
+	XRequestID string
+}
+
 type ListInstrumentsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8991,12 +8925,16 @@ type ListInstrumentsResponse struct {
 	JSON403 *AccessDenied
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *AnalysisUnavailable
 	// Headers401 the parsed response headers for an HTTP 401 response
 	Headers401 *ListInstrumentsResponse401Headers
 	// Headers403 the parsed response headers for an HTTP 403 response
 	Headers403 *ListInstrumentsResponse403Headers
 	// Headers500 the parsed response headers for an HTTP 500 response
 	Headers500 *ListInstrumentsResponse500Headers
+	// Headers503 the parsed response headers for an HTTP 503 response
+	Headers503 *ListInstrumentsResponse503Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -9017,6 +8955,11 @@ func (r ListInstrumentsResponse) GetJSON403() *AccessDenied {
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
 func (r ListInstrumentsResponse) GetJSON500() *InternalError {
 	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r ListInstrumentsResponse) GetJSON503() *AnalysisUnavailable {
+	return r.JSON503
 }
 
 // GetBody returns the raw response body bytes
@@ -9892,8 +9835,8 @@ func (c *ClientWithResponses) UpdateScannerIndicatorWithResponse(ctx context.Con
 
 // ListStrategiesWithResponse List the strategies
 //
-// Enabled strategies trade the administrator's favorites on the closed
-// candles of the finest interval their rules read. An entry signal is
+// Enabled strategies trade their coins, and signals their coins or every
+// active coin, on the closed candles of the finest interval their rules read. An entry signal is
 // the entry rule turning from false to true. A strategy that exits,
 // through an exit rule, a take profit, or a stop loss, holds one buy per
 // trade: a signal opens a trade, fixing its take profit and stop loss
@@ -9968,7 +9911,7 @@ func (c *ClientWithResponses) DeleteStrategyWithResponse(ctx context.Context, st
 
 // SetStrategyEnabledWithBodyWithResponse Turn a strategy on or off
 //
-// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9983,7 +9926,7 @@ func (c *ClientWithResponses) SetStrategyEnabledWithBodyWithResponse(ctx context
 
 // SetStrategyEnabledWithResponse Turn a strategy on or off
 //
-// Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+// Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9998,7 +9941,7 @@ func (c *ClientWithResponses) SetStrategyEnabledWithResponse(ctx context.Context
 
 // UpdateStrategyWithBodyWithResponse Change a strategy
 //
-// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+// A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10013,7 +9956,7 @@ func (c *ClientWithResponses) UpdateStrategyWithBodyWithResponse(ctx context.Con
 
 // UpdateStrategyWithResponse Change a strategy
 //
-// A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+// A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10109,28 +10052,12 @@ func (c *ClientWithResponses) BacktestStrategyDraftWithResponse(ctx context.Cont
 	return ParseBacktestStrategyDraftResponse(rsp)
 }
 
-// ListStrategySymbolsWithResponse List the coins strategy expressions can read through of
-//
-// The active coins in the administrator's favorites, ascending.
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/admin/strategy-symbols (the `ListStrategySymbols` operationId).
-func (c *ClientWithResponses) ListStrategySymbolsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListStrategySymbolsResponse, error) {
-	rsp, err := c.ListStrategySymbols(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListStrategySymbolsResponse(rsp)
-}
-
 // ValidateStrategyWithBodyWithResponse Check a strategy expression
 //
 // Lists every problem that would reject the expression as the entry
 // rule of a strategy, or as its exit rule when `exit` is set, which may
 // also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-// depth, and coins read through `of` that are not active coins in the
-// administrator's favorites. Variables of indicators that are not
+// depth, and coins read through `of` that are not active. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
 // when exactly one indicator has the name. Strategies read them without
 // adding them, so no problems mean the expression is valid.
@@ -10151,8 +10078,7 @@ func (c *ClientWithResponses) ValidateStrategyWithBodyWithResponse(ctx context.C
 // Lists every problem that would reject the expression as the entry
 // rule of a strategy, or as its exit rule when `exit` is set, which may
 // also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-// depth, and coins read through `of` that are not active coins in the
-// administrator's favorites. Variables of indicators that are not
+// depth, and coins read through `of` that are not active. Variables of indicators that are not
 // configured are resolved from their names into `missing_indicators`
 // when exactly one indicator has the name. Strategies read them without
 // adding them, so no problems mean the expression is valid.
@@ -10435,8 +10361,8 @@ func (c *ClientWithResponses) AddFavoriteWithResponse(ctx context.Context, symbo
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with GET /api/v1/instruments (the `ListInstruments` operationId).
-func (c *ClientWithResponses) ListInstrumentsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListInstrumentsResponse, error) {
-	rsp, err := c.ListInstruments(ctx, reqEditors...)
+func (c *ClientWithResponses) ListInstrumentsWithResponse(ctx context.Context, params *ListInstrumentsParams, reqEditors ...RequestEditorFn) (*ListInstrumentsResponse, error) {
+	rsp, err := c.ListInstruments(ctx, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -11553,6 +11479,13 @@ func ParseSetStrategyEnabledResponse(rsp *http.Response) (*SetStrategyEnabledRes
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
 		var dest Unauthenticated
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -11584,6 +11517,16 @@ func ParseSetStrategyEnabledResponse(rsp *http.Response) (*SetStrategyEnabledRes
 	}
 
 	switch {
+	case rsp.StatusCode == 400:
+		var headers SetStrategyEnabledResponse400Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers400 = &headers
 	case rsp.StatusCode == 401:
 		var headers SetStrategyEnabledResponse401Headers
 		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
@@ -11981,76 +11924,6 @@ func ParseBacktestStrategyDraftResponse(rsp *http.Response) (*BacktestStrategyDr
 			headers.XRequestID = value
 		}
 		response.Headers503 = &headers
-	}
-
-	return response, nil
-}
-
-// ParseListStrategySymbolsResponse parses an HTTP response from a ListStrategySymbolsWithResponse call
-func ParseListStrategySymbolsResponse(rsp *http.Response) (*ListStrategySymbolsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListStrategySymbolsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest StrategySymbolList
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthenticated
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest AdministratorRequired
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListStrategySymbolsResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListStrategySymbolsResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
 	}
 
 	return response, nil
@@ -13639,6 +13512,13 @@ func ParseListInstrumentsResponse(rsp *http.Response) (*ListInstrumentsResponse,
 		}
 		response.JSON500 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest AnalysisUnavailable
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
+
 	}
 
 	switch {
@@ -13672,6 +13552,16 @@ func ParseListInstrumentsResponse(rsp *http.Response) (*ListInstrumentsResponse,
 			headers.XRequestID = value
 		}
 		response.Headers500 = &headers
+	case rsp.StatusCode == 503:
+		var headers ListInstrumentsResponse503Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers503 = &headers
 	}
 
 	return response, nil

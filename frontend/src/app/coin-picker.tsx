@@ -1,12 +1,8 @@
 import { Checkbox, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 
-import {
-	type listInstrumentsResponseSuccess,
-	useListInstruments,
-} from "@/api/generated/api";
-import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
+import { useInstrumentSymbols } from "@/app/use-instrument-symbols";
 
 interface CoinSelectProps {
 	data: string[];
@@ -25,10 +21,7 @@ interface CoinPickerProps {
 	): void;
 }
 
-const selectSymbols = (response: listInstrumentsResponseSuccess) =>
-	response.data.items.map(({ symbol }) => symbol).sort();
-
-// A coin select over the administrator's favorites, or every active coin once
+// A coin select over the user's active favorites, or every active coin once
 // "Favorites only" is cleared. The children render the select itself.
 export function CoinPicker({
 	allCoins,
@@ -36,15 +29,8 @@ export function CoinPicker({
 	disabled = false,
 	onAllCoinsChange,
 }: CoinPickerProps) {
-	const permission = useBusinessRequestPermission();
 	const favorites = useFavoriteSymbols();
-	const instruments = useListInstruments({
-		query: {
-			enabled: permission.allowed && allCoins,
-			retry: false,
-			select: selectSymbols,
-		},
-	});
+	const instruments = useInstrumentSymbols(undefined, allCoins);
 	const coins = allCoins ? instruments : favorites;
 	return (
 		<Stack gap="xs">

@@ -7,8 +7,8 @@ interface StrategyMarketCapFieldsProps {
 	form: StrategyFormApi;
 }
 
-// The market cap range, in millions of USD, of the coins the strategy buys or
-// the signal announces. The form checks both bounds together.
+// The market cap range, in millions of USD, of the coins the signal
+// announces. The form checks both bounds together.
 export function StrategyMarketCapFields({
 	disabled,
 	form,
@@ -33,9 +33,9 @@ export function StrategyMarketCapFields({
 				</Stack>
 			</Fieldset>
 			<Text c="dimmed" size="xs">
-				Buys or signals only coins whose current market cap lies in this range;
-				coins without a known market cap then buy or signal nothing. Backtests
-				ignore the range. Leave empty for no limit.
+				Signals only coins whose current market cap lies in this range; coins
+				without a known market cap then signal nothing. Backtests ignore the
+				range. Leave empty for no limit.
 			</Text>
 		</Stack>
 	);

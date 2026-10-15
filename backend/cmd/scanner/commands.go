@@ -119,7 +119,7 @@ func (c *cli) validateCommand() *cobra.Command {
 func (c *cli) favoritesCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "favorites",
-		Short: "The administrator's favorites, the only coins of() reads",
+		Short: "Your favorites, which --favorites chooses for strategies and signals",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			client, err := c.client()
@@ -149,13 +149,13 @@ func (c *cli) favoritesCommand() *cobra.Command {
 }
 
 func (c *cli) strategiesCommand() *cobra.Command {
-	command := c.listCommand(strategiesKind, "Saved strategies: ID, state, name with any problem and message, entry, exits, buys, market cap")
+	command := c.listCommand(strategiesKind, "Saved strategies: ID, state, name with any problem and message, entry, exits, buys, coins")
 	command.AddCommand(c.createStrategyCommand(), c.updateStrategyCommand(), c.deleteCommand(strategiesKind), c.backtestStrategyDraftCommand())
 	return command
 }
 
 func (c *cli) signalsCommand() *cobra.Command {
-	command := c.listCommand(signalsKind, "Saved signals: ID, state, name with any problem and message, entry, expected move, window, target, market cap")
+	command := c.listCommand(signalsKind, "Saved signals: ID, state, name with any problem and message, entry, expected move, window, target, coins, market cap")
 	command.AddCommand(c.createSignalCommand(), c.updateSignalCommand(), c.deleteCommand(signalsKind), c.backtestSignalDraftCommand())
 	return command
 }
@@ -243,10 +243,10 @@ func (c *cli) deleteCommand(k kind) *cobra.Command {
 func (c *cli) createStrategyCommand() *cobra.Command {
 	var rules strategyRuleFlags
 	var message string
-	var marketCap marketCapFlags
+	var coins coinFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR [--direction long|short] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR (--coin SYM|--favorites|--coin-m)... [--direction long|short] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled strategy; it reads indicators that are not configured without adding them",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -257,11 +257,11 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			if body.Direction, err = strategiesKind.directionFlag(rules.direction); err != nil {
 				return err
 			}
-			if body.MinMarketCapUsd, body.MaxMarketCapUsd, err = marketCap.parse(); err != nil {
-				return err
-			}
 			client, err := c.client()
 			if err != nil {
+				return err
+			}
+			if body.Coins, _, err = c.resolveCoins(command, client, coins); err != nil {
 				return err
 			}
 			if _, err := c.prepareStrategyRules(command, client, rules.rules(), addIndicators); err != nil {
@@ -279,8 +279,8 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 		},
 	}
 	rules.add(command)
+	coins.add(command, false)
 	flags := command.Flags()
-	marketCap.addCreate(flags, "buy")
 	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
@@ -373,10 +373,10 @@ func (c *cli) prepareStrategyRules(command *cobra.Command, client *apiclient.Cli
 
 func (c *cli) updateStrategyCommand() *cobra.Command {
 	var name, expression, exit, takeProfit, stopLoss, message string
-	var marketCap marketCapFlags
+	var coins coinFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:               "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
+		Use:               "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--coin SYM]... [--favorites] [--coin-m] [--name NAME] [--message TEXT] [--add-indicators]",
 		Short:             "Edit a disabled saved strategy, preserving unspecified fields",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: c.completeArg(strategiesKind),
@@ -387,13 +387,10 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			}
 			flags := command.Flags()
 			// edits are the flags that change the strategy.
-			edits := []string{"expr", "exit", "take-profit", "stop-loss", "min-market-cap", "max-market-cap", "name", "message"}
-			if !slices.ContainsFunc(append(edits, "add-indicators"), flags.Changed) {
-				return usageError("specify at least one of --expr, --exit, --take-profit, --stop-loss, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
-			}
-			minimum, maximum, err := marketCap.parse()
-			if err != nil {
-				return err
+			edits := []string{"expr", "exit", "take-profit", "stop-loss", "name", "message"}
+			edited := slices.ContainsFunc(edits, flags.Changed) || coins.changed()
+			if !edited && !flags.Changed("add-indicators") {
+				return usageError("specify at least one of --expr, --exit, --take-profit, --stop-loss, --coin, --favorites, --coin-m, --name, --message, or --add-indicators")
 			}
 			client, err := c.client()
 			if err != nil {
@@ -406,9 +403,14 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			body := apiclient.StrategyUpdate{
 				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression, ExitExpression: current.ExitExpression,
 				TakeProfitExpression: current.TakeProfitExpression, StopLossExpression: current.StopLossExpression,
-				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
+				Coins: current.Coins, Message: current.Message,
 			}
-			marketCap.update(flags, &body, minimum, maximum)
+			// Chosen coins replace the current ones.
+			if coins.changed() {
+				if body.Coins, _, err = c.resolveCoins(command, client, coins); err != nil {
+					return err
+				}
+			}
 			if flags.Changed("name") {
 				body.Name = name
 			}
@@ -435,14 +437,14 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 				change.rule.expression = *change.target
 				rules = append(rules, change.rule)
 			}
-			return c.update(command, client, strategiesKind, *current, body, rules, addIndicators, slices.ContainsFunc(edits, flags.Changed))
+			return c.update(command, client, strategiesKind, *current, body, rules, addIndicators, edited)
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")
 	command.Flags().StringVar(&exit, "exit", "", "the exit rule `EXPR`ession; empty removes it, omitted preserves it")
 	command.Flags().StringVar(&takeProfit, "take-profit", "", "the take profit price `EXPR`ession; empty removes it, omitted preserves it")
 	command.Flags().StringVar(&stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession; empty removes it, omitted preserves it")
-	marketCap.addUpdate(command.Flags())
+	coins.add(command, false)
 	command.Flags().StringVar(&name, "name", "", "strategy `NAME`; omitted preserves the current name")
 	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")
 	command.Flags().BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)

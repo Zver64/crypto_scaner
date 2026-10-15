@@ -17,11 +17,8 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { InstrumentUse } from './instrumentUse.ts';
 
 /**
- * Details of `instrument_used_by_strategy`.
+ * A signal's only; the signal evaluates every active coin instead of `coins`.
  */
-export interface InstrumentUses {
-  uses: InstrumentUse[];
-}
+export type StrategyAllCoins = boolean;

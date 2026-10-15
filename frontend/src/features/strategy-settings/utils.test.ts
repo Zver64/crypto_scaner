@@ -155,6 +155,7 @@ describe("strategyInput", () => {
 		...values,
 		name: "Signal",
 		query: strategyQuery("h_close > 1"),
+		coins: ["SOLUSDT", "BTCUSDT"],
 		targetRatio: "3",
 		window: "12",
 	};
@@ -166,8 +167,25 @@ describe("strategyInput", () => {
 		});
 	});
 
+	it("sends the coins, or none for a signal of all coins", () => {
+		expect(strategyInput(named, true)).toMatchObject({
+			all_coins: false,
+			coins: ["BTCUSDT", "SOLUSDT"],
+		});
+		expect(strategyInput({ ...named, allCoins: true }, true)).toMatchObject({
+			all_coins: true,
+			coins: [],
+		});
+		// Only a signal evaluates all coins.
+		expect(strategyInput({ ...named, allCoins: true }, false)).toMatchObject({
+			all_coins: false,
+			coins: ["BTCUSDT", "SOLUSDT"],
+		});
+	});
+
 	it("is undefined while the form cannot be saved", () => {
 		expect(strategyInput({ ...named, name: " " }, true)).toBeUndefined();
+		expect(strategyInput({ ...named, coins: [] }, true)).toBeUndefined();
 		expect(strategyInput({ ...named, minMarketCap: 0 }, true)).toBeUndefined();
 		expect(strategyInput({ ...named, window: "7" }, true)).toBeUndefined();
 	});

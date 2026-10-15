@@ -193,8 +193,8 @@ func (c *cli) completeArg(k kind) cobra.CompletionFunc {
 	}
 }
 
-// completeFavorites completes the administrator's favorites, the coins
-// strategies watch; a backtest takes any coin all the same.
+// completeFavorites completes your active favorites; a backtest takes any
+// coin all the same.
 func (c *cli) completeFavorites(command *cobra.Command, _ []string, _ string) ([]cobra.Completion, cobra.ShellCompDirective) {
 	client, err := c.client()
 	if err != nil {

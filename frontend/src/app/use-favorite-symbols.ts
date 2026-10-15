@@ -1,15 +1,12 @@
-import {
-	type listStrategySymbolsResponseSuccess,
-	useListStrategySymbols,
-} from "@/api/generated/api";
+import { useFavorites } from "@/features/favorites/favorites-context";
 
-const selectSymbols = (response: listStrategySymbolsResponseSuccess) =>
-	response.data.items;
-
-// The administrator's favorites: the coins strategies read through of(), and
-// the coins offered for backtests and history loads.
+// The current user's active favorites, ascending: the administrator's on
+// the strategy, backtest, and command pages.
 export function useFavoriteSymbols() {
-	return useListStrategySymbols({
-		query: { retry: false, select: selectSymbols },
-	});
+	const { favorites, isError, isLoading } = useFavorites();
+	const data = [...favorites.values()]
+		.filter(({ active }) => active)
+		.map(({ symbol }) => symbol)
+		.sort();
+	return { data, isError, isPending: isLoading };
 }

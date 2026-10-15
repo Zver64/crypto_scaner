@@ -21,8 +21,6 @@ import type { ErrorResponse } from './errorResponse.ts';
 
 /**
  * `favorite_has_alerts`: confirmation is required because alerts exist
- * (`details.alert_count`). `instrument_used_by_strategy`: the
- * administrator's favorite is a coin strategies read through `of`
- * (`details.uses`, see `InstrumentUses`).
+ * (`details.alert_count`).
  */
 export type FavoriteConflictResponse = ErrorResponse;

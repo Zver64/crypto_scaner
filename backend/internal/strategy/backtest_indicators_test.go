@@ -27,7 +27,7 @@ func snapshotTestService(t *testing.T, store *backtestStore) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewService(store, source, registry, 7, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, source, registry, slog.New(slog.DiscardHandler), func([]int64) {})
 	if err != nil {
 		t.Fatal(err)
 	}

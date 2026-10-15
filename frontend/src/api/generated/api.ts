@@ -76,6 +76,7 @@ import type {
   IssuedApiToken,
   ListChartIndicatorsParams,
   ListInstrumentCandlesParams,
+  ListInstrumentsParams,
   LivenessResponse,
   MarketAnalysisRequest,
   MarketAnalysisResponse,
@@ -103,7 +104,6 @@ import type {
   StrategyInput,
   StrategyList,
   StrategyNotFoundResponse,
-  StrategySymbolList,
   StrategyUpdate,
   StrategyValidation,
   StrategyValidationInput,
@@ -1364,27 +1364,39 @@ export type listInstrumentsResponse500 = {
   status: 500
 }
 
+export type listInstrumentsResponse503 = {
+  data: AnalysisUnavailableResponse
+  status: 503
+}
+
 export type listInstrumentsResponseSuccess = (listInstrumentsResponse200) & {
   headers: Headers;
 };
-export type listInstrumentsResponseError = (listInstrumentsResponse401 | listInstrumentsResponse403 | listInstrumentsResponse500) & {
+export type listInstrumentsResponseError = (listInstrumentsResponse401 | listInstrumentsResponse403 | listInstrumentsResponse500 | listInstrumentsResponse503) & {
   headers: Headers;
 };
 
-export const getListInstrumentsUrl = () => {
+export const getListInstrumentsUrl = (params?: ListInstrumentsParams,) => {
+  const normalizedParams = new URLSearchParams();
 
+  Object.entries(params || {}).forEach(([key, value]) => {
 
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? 'null' : String(value))
+    }
+  });
 
+  const stringifiedParams = normalizedParams.toString();
 
-  return `/api/v1/instruments`
+  return stringifiedParams.length > 0 ? `/api/v1/instruments?${stringifiedParams}` : `/api/v1/instruments`
 }
 
 /**
  * @summary List the active instruments
  */
-export const listInstruments = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listInstrumentsResponseSuccess> => {
+export const listInstruments = async (params?: ListInstrumentsParams, options?: Parameters<typeof apiFetch>[1]): Promise<listInstrumentsResponseSuccess> => {
 
-  return apiFetch<listInstrumentsResponseSuccess>(getListInstrumentsUrl(),
+  return apiFetch<listInstrumentsResponseSuccess>(getListInstrumentsUrl(params),
   {
     ...options,
     method: 'GET'
@@ -1397,23 +1409,23 @@ export const listInstruments = async ( options?: Parameters<typeof apiFetch>[1])
 
 
 
-export const getListInstrumentsQueryKey = () => {
+export const getListInstrumentsQueryKey = (params?: ListInstrumentsParams,) => {
     return [
-    `/api/v1/instruments`
+    `/api/v1/instruments`, ...(params ? [params] : [])
     ] as const;
     }
 
 
-export const getListInstrumentsQueryOptions = <TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const getListInstrumentsQueryOptions = <TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListInstrumentsQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getListInstrumentsQueryKey(params);
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstruments>>> = ({ signal }) => listInstruments({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof listInstruments>>> = ({ signal }) => listInstruments(params, { signal, ...requestOptions });
 
 
 
@@ -1423,11 +1435,11 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListInstrumentsQueryResult = NonNullable<Awaited<ReturnType<typeof listInstruments>>>
-export type ListInstrumentsQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
+export type ListInstrumentsQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>
 
 
-export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>> & Pick<
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ params: undefined |  ListInstrumentsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInstruments>>,
           TError,
@@ -1436,8 +1448,8 @@ export function useListInstruments<TData = Awaited<ReturnType<typeof listInstrum
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>> & Pick<
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInstruments>>,
           TError,
@@ -1446,20 +1458,20 @@ export function useListInstruments<TData = Awaited<ReturnType<typeof listInstrum
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
  * @summary List the active instruments
  */
 
-export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+ params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getListInstrumentsQueryOptions(options)
+  const queryOptions = getListInstrumentsQueryOptions(params,options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -4049,135 +4061,6 @@ export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listS
 
 
 
-export type listStrategySymbolsResponse200 = {
-  data: StrategySymbolList
-  status: 200
-}
-
-export type listStrategySymbolsResponse401 = {
-  data: UnauthenticatedResponse
-  status: 401
-}
-
-export type listStrategySymbolsResponse403 = {
-  data: AdministratorRequiredResponse
-  status: 403
-}
-
-export type listStrategySymbolsResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
-
-export type listStrategySymbolsResponseSuccess = (listStrategySymbolsResponse200) & {
-  headers: Headers;
-};
-export type listStrategySymbolsResponseError = (listStrategySymbolsResponse401 | listStrategySymbolsResponse403 | listStrategySymbolsResponse500) & {
-  headers: Headers;
-};
-
-export const getListStrategySymbolsUrl = () => {
-
-
-
-
-  return `/api/v1/admin/strategy-symbols`
-}
-
-/**
- * The active coins in the administrator's favorites, ascending.
- * @summary List the coins strategy expressions can read through of
- */
-export const listStrategySymbols = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listStrategySymbolsResponseSuccess> => {
-
-  return apiFetch<listStrategySymbolsResponseSuccess>(getListStrategySymbolsUrl(),
-  {
-    ...options,
-    method: 'GET'
-
-
-  }
-);}
-
-
-
-
-
-export const getListStrategySymbolsQueryKey = () => {
-    return [
-    `/api/v1/admin/strategy-symbols`
-    ] as const;
-    }
-
-
-export const getListStrategySymbolsQueryOptions = <TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
-) => {
-
-const {query: queryOptions, request: requestOptions} = options ?? {};
-
-  const queryKey =  queryOptions?.queryKey ?? getListStrategySymbolsQueryKey();
-
-
-
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategySymbols>>> = ({ signal }) => listStrategySymbols({ signal, ...requestOptions });
-
-
-
-
-
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
-}
-
-export type ListStrategySymbolsQueryResult = NonNullable<Awaited<ReturnType<typeof listStrategySymbols>>>
-export type ListStrategySymbolsQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
-
-
-export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>> & Pick<
-        DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listStrategySymbols>>,
-          TError,
-          Awaited<ReturnType<typeof listStrategySymbols>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
- , queryClient?: QueryClient
-  ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>> & Pick<
-        UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listStrategySymbols>>,
-          TError,
-          Awaited<ReturnType<typeof listStrategySymbols>>
-        > , 'initialData'
-      >, request?: SecondParameter<typeof apiFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
- , queryClient?: QueryClient
-  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-/**
- * @summary List the coins strategy expressions can read through of
- */
-
-export function useListStrategySymbols<TData = Awaited<ReturnType<typeof listStrategySymbols>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategySymbols>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
- , queryClient?: QueryClient
- ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
-
-  const queryOptions = getListStrategySymbolsQueryOptions(options)
-
-  const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
-
-  return withQueryKey(query, queryOptions.queryKey);
-}
-
-
-
-
-
-
-
 export type validateStrategyResponse200 = {
   data: StrategyValidation
   status: 200
@@ -4222,8 +4105,7 @@ export const getValidateStrategyUrl = () => {
  * Lists every problem that would reject the expression as the entry
  * rule of a strategy, or as its exit rule when `exit` is set, which may
  * also read the position variables: syntax, unknown indicators, candle fields, and functions, history
- * depth, and coins read through `of` that are not active coins in the
- * administrator's favorites. Variables of indicators that are not
+ * depth, and coins read through `of` that are not active. Variables of indicators that are not
  * configured are resolved from their names into `missing_indicators`
  * when exactly one indicator has the name. Strategies read them without
  * adding them, so no problems mean the expression is valid.
@@ -4342,8 +4224,8 @@ export const getListStrategiesUrl = () => {
 }
 
 /**
- * Enabled strategies trade the administrator's favorites on the closed
- * candles of the finest interval their rules read. An entry signal is
+ * Enabled strategies trade their coins, and signals their coins or every
+ * active coin, on the closed candles of the finest interval their rules read. An entry signal is
  * the entry rule turning from false to true. A strategy that exits,
  * through an exit rule, a take profit, or a stop loss, holds one buy per
  * trade: a signal opens a trade, fixing its take profit and stop loss
@@ -4630,7 +4512,7 @@ export const getUpdateStrategyUrl = (strategyId: number,) => {
 }
 
 /**
- * A change of how an enabled strategy trades forgets its open trades and starts it afresh.
+ * A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
  * @summary Change a strategy
  */
 export const updateStrategy = async (strategyId: number,
@@ -4716,6 +4598,11 @@ export type setStrategyEnabledResponse200 = {
   status: 200
 }
 
+export type setStrategyEnabledResponse400 = {
+  data: BadRequestResponse
+  status: 400
+}
+
 export type setStrategyEnabledResponse401 = {
   data: UnauthenticatedResponse
   status: 401
@@ -4739,7 +4626,7 @@ export type setStrategyEnabledResponse500 = {
 export type setStrategyEnabledResponseSuccess = (setStrategyEnabledResponse200) & {
   headers: Headers;
 };
-export type setStrategyEnabledResponseError = (setStrategyEnabledResponse401 | setStrategyEnabledResponse403 | setStrategyEnabledResponse404 | setStrategyEnabledResponse500) & {
+export type setStrategyEnabledResponseError = (setStrategyEnabledResponse400 | setStrategyEnabledResponse401 | setStrategyEnabledResponse403 | setStrategyEnabledResponse404 | setStrategyEnabledResponse500) & {
   headers: Headers;
 };
 
@@ -4752,7 +4639,7 @@ export const getSetStrategyEnabledUrl = (strategyId: number,) => {
 }
 
 /**
- * Enabling starts the strategy afresh, without trades; disabling forgets its trades.
+ * Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
  * @summary Turn a strategy on or off
  */
 export const setStrategyEnabled = async (strategyId: number,
@@ -4787,7 +4674,7 @@ return apiFetch<setStrategyEnabledResponseSuccess>(getSetStrategyEnabledUrl(stra
 
 export const getSetStrategyEnabledMutationKey = () => ['setStrategyEnabled'] as const;
 
-export const getSetStrategyEnabledMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>,
+export const getSetStrategyEnabledMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext> => {
 
@@ -4816,13 +4703,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type SetStrategyEnabledMutationResult = NonNullable<Awaited<ReturnType<typeof setStrategyEnabled>>>
     export type SetStrategyEnabledMutationBody = StrategyEnabled
-    export type SetStrategyEnabledMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>
+    export type SetStrategyEnabledMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>
     export type SetStrategyEnabledMutationVariables = {strategyId: number;data: StrategyEnabled}
 
     /**
  * @summary Turn a strategy on or off
  */
-export const useSetStrategyEnabled = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>,
+export const useSetStrategyEnabled = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof setStrategyEnabled>>, TError,SetStrategyEnabledMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof setStrategyEnabled>>,

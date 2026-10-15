@@ -1,6 +1,7 @@
-import { Button, MultiSelect, Stack } from "@mantine/core";
+import { MultiSelect, Stack } from "@mantine/core";
 
 import { CoinPicker } from "@/app/coin-picker";
+import { CoinSelectionButtons } from "@/app/coin-selection-buttons";
 import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
 
 interface CoinSelectProps {
@@ -42,19 +43,17 @@ export function CoinSelect({
 					/>
 				)}
 			</CoinPicker>
-			<Button
-				disabled={disabled || !favorites.data?.length}
-				onClick={() =>
+			{/* Coins beyond the favorites need the select of all coins. */}
+			<CoinSelectionButtons
+				coins={symbols}
+				disabled={disabled}
+				onChange={(values) =>
 					onChange(
-						[...new Set([...symbols, ...(favorites.data ?? [])])],
-						allCoins,
+						values,
+						allCoins || values.some((coin) => !favorites.data.includes(coin)),
 					)
 				}
-				type="button"
-				variant="default"
-			>
-				Select all favorites
-			</Button>
+			/>
 		</Stack>
 	);
 }

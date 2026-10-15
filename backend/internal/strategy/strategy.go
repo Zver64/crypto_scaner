@@ -35,35 +35,9 @@ var (
 	ErrNotFound        = errors.New("strategy not found")
 	// ErrConflict means another strategy already has the name.
 	ErrConflict = errors.New("strategy name already exists")
-	// ErrInstrumentsInUse means that a change would take instruments that
-	// strategies read out of the administrator's favorites;
-	// InstrumentsInUseError names them.
-	ErrInstrumentsInUse = errors.New("strategies read the instruments")
 	// ErrBacktestBusy means that maxBacktests backtests already run.
 	ErrBacktestBusy = errors.New("too many backtests run")
 )
-
-// InstrumentUse names the strategies that read one instrument.
-type InstrumentUse struct {
-	Symbol     string
-	Strategies []string
-}
-
-// InstrumentsInUseError lists the instruments strategies read that a removal
-// from the administrator's favorites would take away from them.
-type InstrumentsInUseError struct {
-	Uses []InstrumentUse
-}
-
-func (err *InstrumentsInUseError) Error() string {
-	parts := make([]string, len(err.Uses))
-	for i, use := range err.Uses {
-		parts[i] = use.Symbol + " (" + strings.Join(use.Strategies, ", ") + ")"
-	}
-	return ErrInstrumentsInUse.Error() + ": " + strings.Join(parts, "; ")
-}
-
-func (err *InstrumentsInUseError) Is(target error) bool { return target == ErrInstrumentsInUse }
 
 // Direction is the price move a strategy trades or a signal expects after
 // its entry signals: up, down, or, for a signal only, sideways.
@@ -103,8 +77,13 @@ type Strategy struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
-	// MarketCap limits the coins the running strategy buys or a running
-	// signal announces; backtests ignore it.
+	// Coins are the symbols of the coins the strategy evaluates, ascending.
+	// AllCoins, a signal's only, evaluates every active coin instead, and
+	// Coins is empty then.
+	Coins    []string
+	AllCoins bool
+	// MarketCap, a signal's only, limits the coins a running signal
+	// announces; backtests ignore it.
 	MarketCap MarketCapRange
 	// TargetRatio and Window, a signal's only, tell how backtests judge its
 	// signals: the target lies TargetRatio stops away, and both are watched
@@ -188,10 +167,11 @@ func (bounds MarketCapRange) validate() error {
 }
 
 // trades reports whether other, of the same kind and direction, differs from
-// strategy in how it trades or signals.
+// strategy in how it trades or signals or in the coins it evaluates.
 func (strategy Strategy) trades(other Strategy) bool {
 	return strategy.Expression != other.Expression || strategy.ExitExpression != other.ExitExpression ||
-		strategy.TakeProfitExpression != other.TakeProfitExpression || strategy.StopLossExpression != other.StopLossExpression
+		strategy.TakeProfitExpression != other.TakeProfitExpression || strategy.StopLossExpression != other.StopLossExpression ||
+		strategy.AllCoins != other.AllCoins || !slices.Equal(strategy.Coins, other.Coins)
 }
 
 // Entry is a strategy with its compiled expressions. Compiled, the entry
@@ -217,6 +197,17 @@ type Entry struct {
 // evaluated reports whether the monitor evaluates the strategy.
 func (entry Entry) evaluated() bool { return entry.Enabled && entry.Compiled != nil }
 
+// instruments lists the instruments among active that entry evaluates.
+func (entry Entry) instruments(active []Instrument) []Instrument {
+	if entry.AllCoins {
+		return active
+	}
+	return slices.DeleteFunc(slices.Clone(active), func(instrument Instrument) bool {
+		_, found := slices.BinarySearch(entry.Coins, instrument.Symbol)
+		return !found
+	})
+}
+
 // Exits reports whether the strategy sells: through its exit rule, take
 // profit, or stop loss.
 func (entry Entry) Exits() bool {
@@ -238,16 +229,14 @@ func (entry Entry) indicatorIDs() []int64 {
 type Store interface {
 	ListStrategies(context.Context) ([]Strategy, error)
 	// CreateStrategy stores the strategy, at revision 1, with the indicators
-	// and the other instruments it reads and returns its id. It fails with
-	// ErrConflict for a taken name and with ErrInvalidArgument when an
-	// indicator no longer exists or an instrument it starts reading is not
-	// in the favorites of administratorTelegramID.
-	CreateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64) (int64, error)
-	// UpdateStrategy replaces the name, rules, trading settings, message,
-	// indicators, and instruments and returns the revision; baseline marks
-	// the trading states for a fresh start. It fails like CreateStrategy, or
-	// with ErrNotFound.
-	UpdateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64, baseline bool) (int64, error)
+	// it reads and returns its id. It fails with ErrConflict for a taken name
+	// and with ErrInvalidArgument when an indicator no longer exists.
+	CreateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64) (int64, error)
+	// UpdateStrategy replaces the name, rules, coins, trading settings,
+	// message, and indicators and returns the revision; retrade starts a new
+	// revision, and baseline marks the trading states for a fresh start. It
+	// fails like CreateStrategy, or with ErrNotFound.
+	UpdateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, retrade, baseline bool) (int64, error)
 	// SetStrategyEnabled returns the revision and fails with ErrNotFound.
 	// Enabling marks the trading states for a fresh start; disabling
 	// forgets them.
@@ -257,9 +246,8 @@ type Store interface {
 	// the new revision; otherwise disabled is false and nothing changes.
 	DisableStrategyAtRevision(ctx context.Context, id, revision int64) (next int64, disabled bool, err error)
 	DeleteStrategy(context.Context, int64) error
-	// ListStrategyInstruments returns the active favorites of the
-	// administrator.
-	ListStrategyInstruments(ctx context.Context, administratorTelegramID int64) ([]Instrument, error)
+	// ListStrategyInstruments returns the active instruments.
+	ListStrategyInstruments(context.Context) ([]Instrument, error)
 	// GetActiveInstrumentBySymbol fails with market.ErrInstrumentNotFound.
 	GetActiveInstrumentBySymbol(context.Context, string) (market.Instrument, error)
 	// ListLatestCandles returns up to limit latest closed candles per
@@ -282,9 +270,6 @@ type Service struct {
 	registry *indicator.Registry
 	logger   *slog.Logger
 	changed  func(baselines []int64)
-	// administratorID keeps in favorites the coins expressions read
-	// through of.
-	administratorID int64
 
 	// writes serializes changes, so name checks see every earlier change.
 	writes  sync.Mutex
@@ -295,14 +280,13 @@ type Service struct {
 }
 
 // NewService creates an empty service; Load reads the stored strategies.
-// Expressions read through of the coins in the favorites of
-// administratorID. changed receives the ids of strategies whose trading
-// states must start afresh after each change and must not block.
-func NewService(store Store, indicators Indicators, registry *indicator.Registry, administratorID int64, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
+// changed receives the ids of strategies whose trading states must start
+// afresh after each change and must not block.
+func NewService(store Store, indicators Indicators, registry *indicator.Registry, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
 	if store == nil || indicators == nil || registry == nil || logger == nil || changed == nil {
 		return nil, errors.New("strategy store, indicators, registry, logger, and change listener are required")
 	}
-	return &Service{store: store, indicators: indicators, registry: registry, administratorID: administratorID, logger: logger.With("module", "strategy"), changed: changed, backtests: make(chan struct{}, maxBacktests)}, nil
+	return &Service{store: store, indicators: indicators, registry: registry, logger: logger.With("module", "strategy"), changed: changed, backtests: make(chan struct{}, maxBacktests)}, nil
 }
 
 // RuleKind tells what an expression is to a strategy.
@@ -372,7 +356,7 @@ type Validation struct {
 
 // Validate lists every problem that would reject expression as a rule of
 // kind: the problems of compiling it, and the coins it reads through of that
-// are not the administrator's active favorites. Names of indicators that are
+// are not active. Names of indicators that are
 // not configured are resolved into Missing.
 func (service *Service) Validate(ctx context.Context, expression string, kind RuleKind) (Validation, error) {
 	expression = strings.TrimSpace(expression)
@@ -385,15 +369,13 @@ func (service *Service) Validate(ctx context.Context, expression string, kind Ru
 	if err != nil {
 		return Validation{}, err
 	}
-	favorites, err := service.Symbols(ctx)
+	active, err := service.store.ListStrategyInstruments(ctx)
 	if err != nil {
 		return Validation{}, err
 	}
 	problems := []string{}
-	for _, symbol := range compiled.Symbols() {
-		if !slices.Contains(favorites, symbol) {
-			problems = append(problems, symbol+" is not an active coin in the administrator's favorites")
-		}
+	if absent := inactive(active, compiled.Symbols()); len(absent) > 0 {
+		problems = append(problems, notActive(absent).Error())
 	}
 	return Validation{Problems: problems, Missing: missing}, nil
 }
@@ -562,21 +544,6 @@ func (service *Service) Variables() []Variable {
 	return Variables(service.indicators.List())
 }
 
-// Symbols lists the instruments of can read: the administrator's active
-// favorites, ascending.
-func (service *Service) Symbols(ctx context.Context) ([]string, error) {
-	instruments, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
-	if err != nil {
-		return nil, err
-	}
-	symbols := make([]string, len(instruments))
-	for i, instrument := range instruments {
-		symbols[i] = instrument.Symbol
-	}
-	slices.Sort(symbols)
-	return symbols, nil
-}
-
 // IndicatorUsage maps each indicator id to the names of the strategies that
 // read it.
 func (service *Service) IndicatorUsage() map[int64][]string {
@@ -599,7 +566,7 @@ func (service *Service) IndicatorUsage() map[int64][]string {
 // evaluated instrument on every instrument they evaluate, and each value read
 // through of only on the instrument it names.
 func (service *Service) Subscriptions(ctx context.Context) ([]closedindicator.Subscription, error) {
-	instruments, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
+	instruments, err := service.store.ListStrategyInstruments(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -609,7 +576,7 @@ func (service *Service) Subscriptions(ctx context.Context) ([]closedindicator.Su
 			evaluated = append(evaluated, entry)
 		}
 	}
-	return readsOf(evaluated, instruments, instruments).subscriptions, nil
+	return readsOf(evaluated, Entry.instruments, instruments).subscriptions, nil
 }
 
 // Create validates and stores a strategy.
@@ -618,9 +585,12 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 	if err != nil {
 		return Entry{}, err
 	}
+	if err := service.checkCoins(ctx, entry); err != nil {
+		return Entry{}, err
+	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
-	entry.ID, err = service.store.CreateStrategy(ctx, entry.Strategy, entry.indicatorIDs(), entry.symbols, service.administratorID)
+	entry.ID, err = service.store.CreateStrategy(ctx, entry.Strategy, entry.indicatorIDs())
 	if err != nil {
 		return Entry{}, err
 	}
@@ -633,9 +603,10 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 	return entry, nil
 }
 
-// Update changes the name, rules, trading settings, and message of the
+// Update changes the name, rules, coins, trading settings, and message of the
 // strategy item.ID; its enabled state stays. A change of how an enabled
-// strategy trades starts it afresh, forgetting its open trades.
+// strategy trades or of its coins starts it afresh, forgetting its open
+// trades.
 func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
@@ -653,11 +624,15 @@ func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error
 	if err != nil {
 		return Entry{}, err
 	}
+	if err := service.checkCoins(ctx, entry); err != nil {
+		return Entry{}, err
+	}
+	retrade := previous.trades(entry.Strategy)
 	var baselines []int64
-	if entry.Enabled && (previous.trades(entry.Strategy) || previous.Compiled == nil) {
+	if entry.Enabled && (retrade || previous.Compiled == nil) {
 		baselines = []int64{item.ID}
 	}
-	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, entry.indicatorIDs(), entry.symbols, service.administratorID, len(baselines) > 0)
+	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, entry.indicatorIDs(), retrade, len(baselines) > 0)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -667,7 +642,8 @@ func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error
 }
 
 // SetEnabled turns evaluation on or off. Enabling starts the trading states
-// afresh.
+// afresh and fails with ErrInvalidArgument without coins chosen or while a
+// coin is not active.
 func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) (Entry, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
@@ -678,6 +654,14 @@ func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) 
 	}
 	if current[index].Enabled == enabled {
 		return current[index], nil
+	}
+	if enabled {
+		if !current[index].AllCoins && len(current[index].Coins) == 0 {
+			return Entry{}, fmt.Errorf("%w: choose at least one coin before enabling it", ErrInvalidArgument)
+		}
+		if err := service.checkCoins(ctx, current[index]); err != nil {
+			return Entry{}, err
+		}
 	}
 	revision, err := service.store.SetStrategyEnabled(ctx, id, enabled)
 	if err != nil {
@@ -750,7 +734,62 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	if err := item.MarketCap.validate(); err != nil {
 		return Entry{}, err
 	}
+	coins := make([]string, 0, len(item.Coins))
+	for _, coin := range item.Coins {
+		if coin = market.NormalizeSymbol(coin); coin != "" {
+			coins = append(coins, coin)
+		}
+	}
+	slices.Sort(coins)
+	item.Coins = slices.Compact(coins)
+	switch {
+	case !item.Signal && (item.MarketCap.MinUSD != nil || item.MarketCap.MaxUSD != nil):
+		return Entry{}, fmt.Errorf("%w: only a signal has a market cap range", ErrInvalidArgument)
+	case !item.Signal && item.AllCoins:
+		return Entry{}, fmt.Errorf("%w: only a signal evaluates all coins; choose the coins of a strategy", ErrInvalidArgument)
+	case item.AllCoins && len(item.Coins) > 0:
+		return Entry{}, fmt.Errorf("%w: a signal of all coins has no coins chosen", ErrInvalidArgument)
+	case !item.AllCoins && len(item.Coins) == 0:
+		return Entry{}, fmt.Errorf("%w: choose at least one coin", ErrInvalidArgument)
+	}
 	return service.trading(item)
+}
+
+// checkCoins rejects entry while a coin it evaluates or reads through of is
+// not active, such as a delisted one; the monitor disables it then.
+func (service *Service) checkCoins(ctx context.Context, entry Entry) error {
+	active, err := service.store.ListStrategyInstruments(ctx)
+	if err != nil {
+		return err
+	}
+	if absent := entry.inactive(active); len(absent) > 0 {
+		return fmt.Errorf("%w: %w", ErrInvalidArgument, notActive(absent))
+	}
+	return nil
+}
+
+// inactive lists the coins entry evaluates or reads through of that are not
+// among active, ascending.
+func (entry Entry) inactive(active []Instrument) []string {
+	return inactive(active, append(slices.Clone(entry.Coins), entry.symbols...))
+}
+
+// inactive lists the symbols, once each and ascending, that are not among
+// active.
+func inactive(active []Instrument, symbols []string) []string {
+	var absent []string
+	for _, symbol := range symbols {
+		if !slices.ContainsFunc(active, func(instrument Instrument) bool { return instrument.Symbol == symbol }) {
+			absent = append(absent, symbol)
+		}
+	}
+	slices.Sort(absent)
+	return slices.Compact(absent)
+}
+
+// notActive names the absent coins, such as "not an active coin: LUNAUSDT".
+func notActive(absent []string) error {
+	return errors.New("not an active coin: " + strings.Join(absent, ", "))
 }
 
 // trading checks how item trades or what it signals and compiles its rules,

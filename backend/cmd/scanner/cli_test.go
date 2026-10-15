@@ -310,18 +310,18 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 		api, server := newFakeAPI(t, map[string]string{
 			"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 			"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
-			"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","direction":"long","expression":"h_atr_100 > 1","message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
+			"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","direction":"long","expression":"h_atr_100 > 1","coins":["BTCUSDT","ETHUSDT"],"message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		})
 		home := writeProfile(t, server.URL)
 
-		got := runCLI(t, home, "", append([]string{"strategies", "create", "ATR", "--expr", "h_atr_100 > 1"}, test.args...)...)
+		got := runCLI(t, home, "", append([]string{"strategies", "create", "ATR", "--expr", "h_atr_100 > 1", "--coin", "ethusdt,BTCUSDT"}, test.args...)...)
 
-		want := `┌────┬───────┬───────────────────────────┬───────────┬───────────────┬──────┬──────────────┬────────────┐
-│ ID │ STATE │ NAME                      │ DIRECTION │ ENTRY         │ EXIT │ BUYS         │ MARKET CAP │
-├────┼───────┼───────────────────────────┼───────────┼───────────────┼──────┼──────────────┼────────────┤
-│  7 │ off   │ ATR                       │ long      │ h_atr_100 > 1 │ -    │ every signal │ -          │
-│    │       │ not configured: h-atr-100 │           │               │      │              │            │
-└────┴───────┴───────────────────────────┴───────────┴───────────────┴──────┴──────────────┴────────────┘
+		want := `┌────┬───────┬───────────────────────────┬───────────┬───────────────┬──────┬──────────────┬──────────────────┐
+│ ID │ STATE │ NAME                      │ DIRECTION │ ENTRY         │ EXIT │ BUYS         │ COINS            │
+├────┼───────┼───────────────────────────┼───────────┼───────────────┼──────┼──────────────┼──────────────────┤
+│  7 │ off   │ ATR                       │ long      │ h_atr_100 > 1 │ -    │ every signal │ BTCUSDT, ETHUSDT │
+│    │       │ not configured: h-atr-100 │           │               │      │              │                  │
+└────┴───────┴───────────────────────────┴───────────┴───────────────┴──────┴──────────────┴──────────────────┘
 `
 		wantNote := ""
 		if test.add {
@@ -331,7 +331,7 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 			t.Fatalf("strategies create %v = %+v", test.args, got)
 		}
 		wants := map[string]string{
-			"POST /api/v1/admin/strategies": `{"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":"","target_ratio":null,"window":null}`,
+			"POST /api/v1/admin/strategies": `{"all_coins":false,"coins":["BTCUSDT","ETHUSDT"],"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":"","target_ratio":null,"window":null}`,
 		}
 		if test.add {
 			wants["POST /api/v1/admin/scanner-indicator-batches"] = `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`
@@ -367,7 +367,7 @@ func TestStrategiesCreateWithAnInvalidRuleAddsNothing(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	home := writeProfile(t, server.URL)
-	args := []string{"strategies", "create", "X", "--expr", "h_ema_3 > 0", "--exit", "bad(", "--stop-loss", "bad(", "--add-indicators"}
+	args := []string{"strategies", "create", "X", "--expr", "h_ema_3 > 0", "--exit", "bad(", "--stop-loss", "bad(", "--add-indicators", "--coin", "BTCUSDT"}
 
 	if got := runCLI(t, home, "", args...); got.code != 1 || got.stdout != "" ||
 		got.stderr != "scanner: invalid rules; nothing was sent\n  the exit rule: syntax error\n  the stop loss: syntax error\n" {
@@ -384,7 +384,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"},{"name":"pnl","label":"pnl","position":true}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","min_market_cap_usd":10000000,"max_market_cap_usd":1500000000,"message":"Dip!","enabled":true,"valid":true},{"id":4,"name":"Old","direction":"short","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","coins":["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"],"message":"Dip!","enabled":true,"valid":true},{"id":4,"name":"Old","direction":"short","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -397,14 +397,14 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"items":[{"indicator_id":1,"interval":"1d","label":"d-rsi","name":"d_rsi","position":false}]}` + "\n"},
 		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; reads indicators that are not configured: h-atr-100\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
-		{args: []string{"strategies"}, want: `┌────┬──────────────┬─────────────────────┬───────────┬───────────────────────────┬──────────────────┬─────────────────────┬──────────────┐
-│ ID │ STATE        │ NAME                │ DIRECTION │ ENTRY                     │ EXIT             │ BUYS                │ MARKET CAP   │
-├────┼──────────────┼─────────────────────┼───────────┼───────────────────────────┼──────────────────┼─────────────────────┼──────────────┤
-│  3 │ on           │ Dip buy             │ long      │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade       │ $10M – $1.5B │
-│    │              │ message: Dip!       │           │                           │ TP h_close * 1.1 │                     │              │
-│  4 │ off, invalid │ Old                 │ short     │ x                         │ -                │ one short per trade │ -            │
-│    │              │ problem: undeclared │           │                           │                  │                     │              │
-└────┴──────────────┴─────────────────────┴───────────┴───────────────────────────┴──────────────────┴─────────────────────┴──────────────┘
+		{args: []string{"strategies"}, want: `┌────┬──────────────┬─────────────────────┬───────────┬───────────────────────────┬──────────────────┬─────────────────────┬──────────────────────────────┐
+│ ID │ STATE        │ NAME                │ DIRECTION │ ENTRY                     │ EXIT             │ BUYS                │ COINS                        │
+├────┼──────────────┼─────────────────────┼───────────┼───────────────────────────┼──────────────────┼─────────────────────┼──────────────────────────────┤
+│  3 │ on           │ Dip buy             │ long      │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade       │ BTCUSDT, ETHUSDT, SOLUSDT +1 │
+│    │              │ message: Dip!       │           │                           │ TP h_close * 1.1 │                     │                              │
+│  4 │ off, invalid │ Old                 │ short     │ x                         │ -                │ one short per trade │ -                            │
+│    │              │ problem: undeclared │           │                           │                  │                     │                              │
+└────┴──────────────┴─────────────────────┴───────────┴───────────────────────────┴──────────────────┴─────────────────────┴──────────────────────────────┘
 `},
 	} {
 		if got := runCLI(t, home, "", test.args...); got.code != 0 || got.stdout != test.want {
@@ -514,8 +514,8 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 		{name: "validate", target: "/api/v1/admin/strategy-validations", args: []string{"validate", "h_close > 1"}, status: http.StatusOK},
 		{name: "favorites", target: "/api/v1/favorites", args: []string{"favorites"}, status: http.StatusOK},
 		{name: "strategies", target: "/api/v1/admin/strategies", args: []string{"strategies"}, status: http.StatusOK},
-		{name: "add indicators", target: "/api/v1/admin/scanner-indicator-batches", args: []string{"strategies", "create", "Test", "--expr", "h_atr_100 > 1", "--add-indicators"}, status: http.StatusCreated},
-		{name: "create", target: "/api/v1/admin/strategies", args: []string{"strategies", "create", "Test", "--expr", "h_close > 1"}, status: http.StatusCreated},
+		{name: "add indicators", target: "/api/v1/admin/scanner-indicator-batches", args: []string{"strategies", "create", "Test", "--expr", "h_atr_100 > 1", "--add-indicators", "--coin", "BTCUSDT"}, status: http.StatusCreated},
+		{name: "create", target: "/api/v1/admin/strategies", args: []string{"strategies", "create", "Test", "--expr", "h_close > 1", "--coin", "BTCUSDT"}, status: http.StatusCreated},
 		{name: "backtest", target: "/api/v1/admin/strategies/3/backtest", args: []string{"backtest", "--strategy", "3", "--symbol", "BTCUSDT"}, status: http.StatusOK},
 		{name: "delete", target: "/api/v1/admin/strategies/3", args: []string{"strategies", "delete", "3"}, status: http.StatusOK},
 	} {

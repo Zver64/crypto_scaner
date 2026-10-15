@@ -17,13 +17,13 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { BacktestSymbolName } from './backtestSymbolName.ts';
+import type { SymbolName } from './symbolName.ts';
 
 export type BacktestStrategyParams = {
 /**
  * Market symbol of the replayed coin.
  */
-symbol: BacktestSymbolName;
+symbol: SymbolName;
 /**
  * Earliest open time of an evaluated candle; the start of the stored history when absent.
  */

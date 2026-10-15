@@ -1,33 +1,39 @@
 -- name: ListStrategies :many
-SELECT id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-       min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending, revision
-FROM app.strategies
-ORDER BY id;
+-- coins lists the coins chosen, delisted ones included, in byte order, as the
+-- strategy package sorts them.
+SELECT s.id, s.name, s.signal, s.direction, s.expression, s.exit_expression, s.take_profit_expression, s.stop_loss_expression,
+       ARRAY(
+           SELECT i.symbol
+           FROM app.strategy_coins sc
+           JOIN binance_spot.instruments i ON i.id = sc.instrument_id
+           WHERE sc.strategy_id = s.id
+           ORDER BY i.symbol COLLATE "C"
+       )::TEXT[] AS coins,
+       s.all_coins, s.min_market_cap_usd, s.max_market_cap_usd, s.target_ratio, s.window_candles, s.message, s.enabled, s.baseline_pending, s.revision
+FROM app.strategies s
+ORDER BY s.id;
 
 -- name: InsertStrategy :one
 INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-                            min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
+                            all_coins, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
 VALUES (@name, @signal, @direction, @expression, @exit_expression, @take_profit_expression, @stop_loss_expression,
-        sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), sqlc.narg(target_ratio), sqlc.narg(window_candles),
+        @all_coins, sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), sqlc.narg(target_ratio), sqlc.narg(window_candles),
         @message, @enabled, @enabled)
 RETURNING id;
 
 -- name: UpdateStrategy :one
--- A change of how the strategy trades starts a new revision; a market cap
--- range change only limits later buys and signals, and a target ratio or window
--- change only how backtests judge a signal. The kind and the direction never
--- change.
+-- A change of how the strategy trades or of the coins it evaluates starts a
+-- new revision, @retrade; a market cap range change only limits later signals,
+-- and a target ratio or window change only how backtests judge a signal. The
+-- kind and the direction never change.
 UPDATE app.strategies
 SET name = @name, expression = @expression, exit_expression = @exit_expression,
     take_profit_expression = @take_profit_expression, stop_loss_expression = @stop_loss_expression,
-    min_market_cap_usd = sqlc.narg(min_market_cap_usd), max_market_cap_usd = sqlc.narg(max_market_cap_usd),
+    all_coins = @all_coins, min_market_cap_usd = sqlc.narg(min_market_cap_usd), max_market_cap_usd = sqlc.narg(max_market_cap_usd),
     target_ratio = sqlc.narg(target_ratio), window_candles = sqlc.narg(window_candles),
     message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
-    revision = revision + (expression IS DISTINCT FROM @expression
-        OR exit_expression IS DISTINCT FROM @exit_expression
-        OR take_profit_expression IS DISTINCT FROM @take_profit_expression
-        OR stop_loss_expression IS DISTINCT FROM @stop_loss_expression)::INTEGER
+    revision = revision + CASE WHEN @retrade::BOOLEAN THEN 1 ELSE 0 END
 WHERE id = @id
 RETURNING revision;
 
@@ -106,15 +112,14 @@ DELETE FROM app.strategy_states
 WHERE strategy_id = @strategy_id::BIGINT AND instrument_id = ANY(@instrument_ids::BIGINT[]);
 
 -- name: ListStrategyInstruments :many
--- Strategies evaluate the active favorites of the administrator, with their
--- market caps when known; CoinGecko reports 0 for coins without supply data.
+-- Strategies evaluate active coins, with their market caps when known;
+-- CoinGecko reports 0 for coins without supply data.
 SELECT i.id, i.symbol, COALESCE(market_cap.market_cap_usd > 0, FALSE)::BOOLEAN AS market_cap_known,
        COALESCE(market_cap.market_cap_usd, 0)::DOUBLE PRECISION AS market_cap_usd
-FROM app.favorites f
-JOIN app.users u ON u.id = f.user_id AND u.telegram_id = @administrator_telegram_id::BIGINT
-JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
+FROM binance_spot.instruments i
 LEFT JOIN app.coingecko_asset_mappings mapping ON mapping.base_asset = i.base_asset AND mapping.status = 'resolved'
 LEFT JOIN app.coingecko_market_caps market_cap ON market_cap.coin_id = mapping.coin_id
+WHERE i.is_active
 ORDER BY i.id;
 
 -- name: ListStrategyRecipients :many
@@ -123,46 +128,11 @@ FROM app.users
 WHERE strategy_alerts OR telegram_id = @administrator_telegram_id::BIGINT
 ORDER BY telegram_id;
 
--- name: LockStrategySymbols :many
--- Locks the instruments an expression reads through of against their
--- removal from the administrator's favorites, then lists them.
-SELECT id, symbol
-FROM binance_spot.instruments
-WHERE symbol = ANY(@symbols::TEXT[])
-ORDER BY id
-FOR SHARE;
+-- name: DeleteStrategyCoins :exec
+DELETE FROM app.strategy_coins WHERE strategy_id = $1;
 
--- name: ListStrategyInstrumentsAmong :many
--- Runs after LockStrategySymbols, so it sees favorites removed meanwhile.
-SELECT i.id
-FROM app.favorites f
-JOIN app.users u ON u.id = f.user_id AND u.telegram_id = @administrator_telegram_id::BIGINT
-JOIN binance_spot.instruments i ON i.id = f.instrument_id AND i.is_active
-WHERE i.id = ANY(@instrument_ids::BIGINT[]);
-
--- name: ListStrategySymbolIDs :many
-SELECT instrument_id FROM app.strategy_symbols WHERE strategy_id = $1;
-
--- name: DeleteStrategySymbols :exec
-DELETE FROM app.strategy_symbols WHERE strategy_id = $1;
-
--- name: InsertStrategySymbols :exec
-INSERT INTO app.strategy_symbols (strategy_id, instrument_id)
-SELECT @strategy_id::BIGINT, instrument_id
-FROM unnest(@instrument_ids::BIGINT[]) AS ids(instrument_id);
-
--- name: LockInstrument :exec
--- Orders a favorite removal with strategy writes, which lock the instruments
--- they read FOR SHARE. NO KEY UPDATE conflicts with that but not with the
--- KEY SHARE locks of foreign key inserts, such as candles and favorites.
-SELECT id FROM binance_spot.instruments WHERE id = $1 FOR NO KEY UPDATE;
-
--- name: ListStrategiesReading :many
--- The strategies that read the active instrument through of; a delisted one
--- leaves them unknown anyway. Runs after LockInstrument.
-SELECT i.symbol, s.name
-FROM app.strategy_symbols ss
-JOIN app.strategies s ON s.id = ss.strategy_id
-JOIN binance_spot.instruments i ON i.id = ss.instrument_id AND i.is_active
-WHERE ss.instrument_id = $1
-ORDER BY s.name;
+-- name: InsertStrategyCoins :exec
+INSERT INTO app.strategy_coins (strategy_id, instrument_id)
+SELECT @strategy_id::BIGINT, i.id
+FROM binance_spot.instruments i
+WHERE i.symbol = ANY(@symbols::TEXT[]);

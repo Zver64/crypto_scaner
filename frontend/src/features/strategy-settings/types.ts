@@ -32,7 +32,11 @@ export interface StrategyFormValues {
 	exitQuery: StrategyQuery | undefined;
 	takeProfit: PriceSetup;
 	stopLoss: PriceSetup;
-	// The market cap bounds in millions of USD, a string while being typed;
+	// The coins evaluated, among all coins; allCoins, a signal's only,
+	// evaluates every active coin instead.
+	coins: string[];
+	allCoins: boolean;
+	// A signal's market cap bounds in millions of USD, a string while being typed;
 	// empty without a bound.
 	minMarketCap: number | string;
 	maxMarketCap: number | string;

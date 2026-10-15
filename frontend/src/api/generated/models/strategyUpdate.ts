@@ -20,6 +20,8 @@
 import type { Direction } from './direction.ts';
 import type { SignalTargetRatio } from './signalTargetRatio.ts';
 import type { SignalWindow } from './signalWindow.ts';
+import type { StrategyAllCoins } from './strategyAllCoins.ts';
+import type { StrategyCoins } from './strategyCoins.ts';
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
@@ -39,6 +41,8 @@ export interface StrategyUpdate {
   exit_expression: StrategyExitExpression;
   take_profit_expression: StrategyTakeProfitExpression;
   stop_loss_expression: StrategyStopLossExpression;
+  coins: StrategyCoins;
+  all_coins: StrategyAllCoins;
   min_market_cap_usd: StrategyMarketCapBound | null;
   max_market_cap_usd: StrategyMarketCapBound | null;
   target_ratio: SignalTargetRatio | null;
@@ -52,7 +56,7 @@ export interface StrategyUpdate {
      * over the `n` closed candles before the latest one;
      * `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
      * previous candle. `of("BTCUSDT", x)` reads `x` of another coin,
-     * which must be in the administrator's favorites.
+     * which must be active.
      * @minLength 1
      * @maxLength 2000
      */

@@ -111,22 +111,22 @@ scanner strategies update 6 --name 'Test Weekly'
 scanner strategies update 6 --message ''
 scanner strategies update 6 --exit 'bars_held >= 24' --take-profit 'h_close * 1.05' --stop-loss 'h_close - 2 * h_atr_14'
 scanner strategies update 6 --exit '' --take-profit '' --stop-loss ''
-scanner strategies update 6 --min-market-cap 10M --max-market-cap 1.5B
-scanner strategies update 6 --min-market-cap '' --max-market-cap ''
+scanner strategies update 6 --coin BTCUSDT,ETHUSDT --favorites
 ```
 
 Укажите положительный int64 ID и хотя бы один флаг: `--expr`, `--exit`, `--take-profit`,
-`--stop-loss`, `--min-market-cap`, `--max-market-cap`, `--name`, `--message`. Неуказанные поля сохраняются; пустой `--message`
+`--stop-loss`, `--coin`, `--favorites`, `--coin-m`, `--name`, `--message`. Неуказанные поля сохраняются; пустой `--message`
 возвращает автоматически генерируемый текст, пустые `--exit`, `--take-profit` и `--stop-loss`
 удаляют правило выхода и уровни. Стратегия с любым из них держит одну покупку на сделку;
 без всех трёх она покупает на каждом сигнале входа и не продаёт. `scanner strategies create`
 принимает те же `--exit`, `--take-profit` и `--stop-loss`. Изменять можно только отключённую стратегию: для включённой
 команда ничего не отправляет и сообщает `strategy N is enabled; edit it in the Mini App`.
-`--min-market-cap` и `--max-market-cap` (у `create` и `update`) задают диапазон текущей капитализации
-в USD, включая границы: `150M`, `1.5B`, `2T`, `500K` или число. Включённая стратегия покупает только
-монеты из диапазона, а монеты без известной капитализации при любой границе не покупает; открытые сделки
-продаются как обычно. Бэктест диапазон игнорирует и работает на любой монете. Пустое значение у `update`
-снимает границу; `scanner strategies` показывает диапазон в колонке `MARKET CAP`.
+Монеты стратегии выбираются из всех активных монет, избранное на них не влияет: `--coin SYM` (повторяется
+или через запятую), `--favorites` (ваше активное избранное) и `--coin-m` (монеты с COIN-M перпетуалом
+Binance) складываются; у `create` нужна хотя бы одна монета, у `update` выбранные монеты заменяют текущие.
+Включённая стратегия торгует только ими. Если монету стратегии (выбранную или из `of`) снимают с торгов, стратегия отключается с сообщением в Telegram, и сохранить или включить её нельзя, пока монету не заменят или не уберут.
+Смена монет включённой стратегии начинает её заново, как смена правил. Бэктест работает на любой монете.
+`scanner strategies` показывает монеты в колонке `COINS`.
 `strategies create --direction long|short` (по умолчанию `long`) задаёт направление торговли; после сохранения оно не меняется, для другой стороны создайте новую стратегию. Short-стратегия
 продаёт на входе и откупает на выходе, поэтому зарабатывает на падении; у неё обязательны `--take-profit`
 ниже закрытия и `--stop-loss` выше него, правило выхода необязательно. Бэктест short-стратегии не учитывает
@@ -147,19 +147,22 @@ funding, плечо и ликвидацию и печатает `Net profit` б�
 
 Сигналы — отдельная группа команд: сигнал ничего не покупает и только присылает в Telegram срабатывания
 с ожидаемым движением (`long`, `short` или `sideways`), поэтому у него нет правила выхода и уровней.
-`--min-market-cap` и `--max-market-cap` работают так же, как у стратегий: включённый сигнал присылает
-срабатывания только по монетам из диапазона, бэктест диапазон игнорирует; `scanner signals` показывает его
-в колонке `MARKET CAP`. `--target-ratio` (2, 3, 4 или 5 стопов, по умолчанию 2) и `--window` (3, 6, 12 или 24 свечи,
+Монеты сигнала выбираются теми же `--coin`, `--favorites` и `--coin-m`, что у стратегий, либо `--all-coins`
+проверяет все активные монеты; `scanner signals` показывает их в колонке `COINS`. Только у сигнала есть
+`--min-market-cap` и `--max-market-cap`: диапазон текущей капитализации в USD, включая границы (`150M`, `1.5B`,
+`2T`, `500K` или число). Включённый сигнал присылает срабатывания только по монетам из диапазона, а монеты без
+известной капитализации при любой границе пропускает; бэктест диапазон игнорирует. Пустое значение у `update`
+снимает границу; `scanner signals` показывает диапазон в колонке `MARKET CAP`. `--target-ratio` (2, 3, 4 или 5 стопов, по умолчанию 2) и `--window` (3, 6, 12 или 24 свечи,
 по умолчанию 6) задают, как бэктест оценивает сигнал; `scanner signals` показывает их в колонках `TARGET` и `WINDOW`.
 
 ```sh
 scanner signals
-scanner signals create 'Crash soon' --expr 'h_rsi > 80' --direction short --target-ratio 3 --window 12
+scanner signals create 'Crash soon' --expr 'h_rsi > 80' --direction short --all-coins --target-ratio 3 --window 12
 scanner signals update 7 --expr 'h_rsi > 75'
 scanner signals delete 7
 ```
 
-Направление сигнала задаётся при создании и не меняется. `signals update` принимает `--expr`, `--target-ratio`, `--window`, `--min-market-cap`, `--max-market-cap`, `--name`, `--message` и `--add-indicators` и, как
+Направление сигнала задаётся при создании и не меняется. `signals update` принимает `--expr`, `--coin`, `--favorites`, `--coin-m`, `--all-coins`, `--target-ratio`, `--window`, `--min-market-cap`, `--max-market-cap`, `--name`, `--message` и `--add-indicators` и, как
 `strategies update`, сохраняет неуказанные поля и меняет только отключённый сигнал. Группы не пересекаются:
 `scanner strategies update` и `delete` отказываются работать с сигналом, а `scanner signals` — со стратегией.
 Стратегию нельзя превратить в сигнал и обратно: создайте новую. `scanner backtest --strategy ID`

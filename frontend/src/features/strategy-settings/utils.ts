@@ -402,6 +402,8 @@ export function newStrategyDraft(
 			exitQuery: undefined,
 			takeProfit: {},
 			stopLoss: {},
+			coins: [],
+			allCoins: false,
 			minMarketCap: "",
 			maxMarketCap: "",
 			targetRatio: String(defaultSignalTargetRatio),
@@ -434,6 +436,8 @@ export function strategyDraft(
 			exitQuery,
 			takeProfit: parsePriceSetup(strategy.take_profit_expression),
 			stopLoss: parsePriceSetup(strategy.stop_loss_expression),
+			coins: strategy.coins,
+			allCoins: strategy.all_coins,
 			minMarketCap: marketCapMillions(strategy.min_market_cap_usd),
 			maxMarketCap: marketCapMillions(strategy.max_market_cap_usd),
 			targetRatio: String(strategy.target_ratio ?? defaultSignalTargetRatio),
@@ -452,18 +456,22 @@ export function strategyFormValues(data: StrategyFormData): StrategyFormValues {
 // What the form's values send, whether or not they can be saved; the
 // footer describes it and the dirty check compares it. A signal trades
 // nothing, so it has no exit or price fields and sends them empty; only a
-// signal has a target ratio and a window, which the selects hold as strings.
+// signal evaluates all coins and has a market cap range, a target ratio, and
+// a window, which the selects hold as strings.
 export function strategyFormUpdate(
 	values: StrategyFormValues,
 	signal: boolean,
 ): StrategyUpdate {
+	const allCoins = signal && values.allCoins;
 	return {
+		all_coins: allCoins,
+		coins: allCoins ? [] : [...values.coins].sort(),
 		exit_expression:
 			!signal && values.exitQuery ? strategyExpression(values.exitQuery) : "",
 		expression: strategyExpression(values.query),
-		max_market_cap_usd: marketCapUsd(values.maxMarketCap),
+		max_market_cap_usd: signal ? marketCapUsd(values.maxMarketCap) : null,
 		message: values.message.trim(),
-		min_market_cap_usd: marketCapUsd(values.minMarketCap),
+		min_market_cap_usd: signal ? marketCapUsd(values.minMarketCap) : null,
 		name: values.name.trim(),
 		signal,
 		direction: values.direction,
@@ -484,8 +492,8 @@ export function strategyFormUpdate(
 }
 
 // What saving the form sends; undefined while it cannot be saved: without a
-// name, with an incomplete rule or price, an invalid market cap bound, or a
-// signal without its target ratio and window.
+// name or coins, with an incomplete rule or price, an invalid market cap
+// bound, or a signal without its target ratio and window.
 export function strategyInput(
 	values: StrategyFormValues,
 	signal: boolean,
@@ -497,6 +505,7 @@ export function strategyInput(
 	);
 	if (
 		update.name === "" ||
+		strategyCoinsError(update.coins, update.all_coins) !== undefined ||
 		!strategyFormComplete(values, signal) ||
 		boundErrors.minimum ||
 		boundErrors.maximum ||
@@ -541,6 +550,8 @@ export function strategyFormDirty(
 		values.message !== initial.message ||
 		input.direction !== saved.direction ||
 		input.expression !== saved.expression ||
+		input.all_coins !== saved.all_coins ||
+		input.coins.join() !== saved.coins.join() ||
 		input.min_market_cap_usd !== saved.min_market_cap_usd ||
 		input.max_market_cap_usd !== saved.max_market_cap_usd ||
 		(signal &&
@@ -551,6 +562,15 @@ export function strategyFormDirty(
 				priceSetupChanged(values.takeProfit, initial.takeProfit) ||
 				priceSetupChanged(values.stopLoss, initial.stopLoss)))
 	);
+}
+
+// Why the coins cannot be saved: every strategy evaluates some coins unless
+// it is a signal of all coins. Undefined for valid coins.
+export function strategyCoinsError(
+	coins: string[],
+	allCoins: boolean,
+): string | undefined {
+	return allCoins || coins.length > 0 ? undefined : "Choose at least one coin";
 }
 
 // A market cap bound in millions of USD for the form; empty without one.

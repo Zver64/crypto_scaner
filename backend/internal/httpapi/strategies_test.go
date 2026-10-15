@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -142,7 +143,7 @@ func TestBacktestStrategyDraftPassesTheBodyAndMapsFailures(t *testing.T) {
 			}
 			assertBacktestDuration(t, response)
 			want := strategy.Strategy{Signal: true, Direction: strategy.DirectionSideways, Expression: "h_close > 1", TargetRatio: 3, Window: 12}
-			if strategies.draft != want || !strategies.withChart || strategies.symbol != "BTCUSDT" || !strategies.from.IsZero() ||
+			if !reflect.DeepEqual(strategies.draft, want) || !strategies.withChart || strategies.symbol != "BTCUSDT" || !strategies.from.IsZero() ||
 				!strategies.to.Equal(time.Date(2026, 3, 2, 1, 0, 0, 0, time.UTC)) || strategies.to.Location() != time.UTC {
 				t.Fatalf("draft = %+v, symbol %s, from %v, to %v", strategies.draft, strategies.symbol, strategies.from, strategies.to)
 			}

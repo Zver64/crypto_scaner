@@ -17,9 +17,14 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { SymbolName } from './symbolName.ts';
 
-export interface InstrumentUse {
-  symbol: string;
-  /** Names of the strategies that read the coin. */
-  strategies: string[];
-}
+/**
+ * The coins the enabled strategy or signal evaluates, among all coins,
+ * ascending. A strategy needs at least one; a signal needs at least one
+ * unless `all_coins` is set, and none then. Every coin must be active: a
+ * delisted coin, chosen or read through `of`, disables the strategy
+ * until it is replaced or removed.
+ * @maxItems 2000
+ */
+export type StrategyCoins = SymbolName[];

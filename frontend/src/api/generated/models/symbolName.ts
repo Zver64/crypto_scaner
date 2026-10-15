@@ -24,4 +24,4 @@
  * @maxLength 32
  * @pattern ^[A-Za-z0-9]+$
  */
-export type BacktestSymbolName = string;
+export type SymbolName = string;

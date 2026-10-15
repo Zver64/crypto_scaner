@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
 	"crypto-scanner/internal/strategy"
@@ -26,6 +25,7 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 		items[i] = strategy.Strategy{
 			ID: row.ID, Name: row.Name, Signal: row.Signal, Direction: strategy.Direction(row.Direction), Expression: row.Expression, ExitExpression: row.ExitExpression,
 			TakeProfitExpression: row.TakeProfitExpression, StopLossExpression: row.StopLossExpression,
+			Coins: row.Coins, AllCoins: row.AllCoins,
 			MarketCap:   strategy.MarketCapRange{MinUSD: float8Pointer(row.MinMarketCapUsd), MaxUSD: float8Pointer(row.MaxMarketCapUsd)},
 			TargetRatio: int(row.TargetRatio.Int16), Window: int(row.WindowCandles.Int16),
 			Message: row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
@@ -34,7 +34,7 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 	return items, nil
 }
 
-func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64) (int64, error) {
+func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64) (int64, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -44,7 +44,7 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{
 		Name: item.Name, Signal: item.Signal, Direction: string(item.Direction), Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
-		MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
+		AllCoins: item.AllCoins, MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
 		TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
 		Message: item.Message, Enabled: item.Enabled,
 	})
@@ -54,16 +54,16 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	if err := queries.InsertStrategyIndicators(ctx, generated.InsertStrategyIndicatorsParams{StrategyID: id, IndicatorIds: indicatorIDs}); err != nil {
 		return 0, strategyWriteError(err)
 	}
-	if err := replaceStrategySymbols(ctx, queries, id, symbols, administratorTelegramID); err != nil {
+	if err := queries.InsertStrategyCoins(ctx, generated.InsertStrategyCoinsParams{StrategyID: id, Symbols: item.Coins}); err != nil {
 		return 0, err
 	}
 	return id, tx.Commit(ctx)
 }
 
-// UpdateStrategy replaces the name, expressions, trading settings, message,
-// indicators, and instruments and returns the revision; baseline requests a
-// fresh start of the trading states.
-func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64, symbols []string, administratorTelegramID int64, baseline bool) (int64, error) {
+// UpdateStrategy replaces the name, expressions, coins, trading settings,
+// message, and indicators and returns the revision; retrade starts a new
+// revision, and baseline requests a fresh start of the trading states.
+func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64, retrade, baseline bool) (int64, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return 0, err
@@ -73,9 +73,9 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{
 		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
-		MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
+		AllCoins: item.AllCoins, MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
 		TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
-		Message: item.Message, Baseline: baseline,
+		Message: item.Message, Retrade: retrade, Baseline: baseline,
 	})
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, strategy.ErrNotFound
@@ -89,7 +89,10 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	if err := queries.InsertStrategyIndicators(ctx, generated.InsertStrategyIndicatorsParams{StrategyID: item.ID, IndicatorIds: indicatorIDs}); err != nil {
 		return 0, strategyWriteError(err)
 	}
-	if err := replaceStrategySymbols(ctx, queries, item.ID, symbols, administratorTelegramID); err != nil {
+	if err := queries.DeleteStrategyCoins(ctx, item.ID); err != nil {
+		return 0, err
+	}
+	if err := queries.InsertStrategyCoins(ctx, generated.InsertStrategyCoinsParams{StrategyID: item.ID, Symbols: item.Coins}); err != nil {
 		return 0, err
 	}
 	return revision, tx.Commit(ctx)
@@ -99,70 +102,6 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 // signals, as NULL.
 func optionalInt2(value int) pgtype.Int2 {
 	return pgtype.Int2{Int16: int16(value), Valid: value != 0}
-}
-
-// replaceStrategySymbols records the instruments a strategy reads through
-// of. Instruments it did not read before must be in the administrator's
-// favorites; those it keeps reading stay valid, so a delisting never blocks
-// a rename. The instrument locks wait for a concurrent favorite removal, and
-// the check runs after them, so it sees that removal.
-func replaceStrategySymbols(ctx context.Context, queries *generated.Queries, strategyID int64, symbols []string, administratorTelegramID int64) error {
-	previous, err := queries.ListStrategySymbolIDs(ctx, strategyID)
-	if err != nil {
-		return err
-	}
-	if err := queries.DeleteStrategySymbols(ctx, strategyID); err != nil {
-		return err
-	}
-	if len(symbols) == 0 {
-		return nil
-	}
-	rows, err := queries.LockStrategySymbols(ctx, symbols)
-	if err != nil {
-		return err
-	}
-	var ids, added []int64
-	for _, row := range rows {
-		ids = append(ids, row.ID)
-		if !slices.Contains(previous, row.ID) {
-			added = append(added, row.ID)
-		}
-	}
-	favorites, err := queries.ListStrategyInstrumentsAmong(ctx, generated.ListStrategyInstrumentsAmongParams{AdministratorTelegramID: administratorTelegramID, InstrumentIds: added})
-	if err != nil {
-		return err
-	}
-	var absent []string
-	for _, symbol := range symbols {
-		index := slices.IndexFunc(rows, func(row generated.LockStrategySymbolsRow) bool { return row.Symbol == symbol })
-		if index < 0 || (slices.Contains(added, rows[index].ID) && !slices.Contains(favorites, rows[index].ID)) {
-			absent = append(absent, symbol)
-		}
-	}
-	if len(absent) > 0 {
-		return fmt.Errorf("%w: not an active coin in the administrator's favorites: %s", strategy.ErrInvalidArgument, strings.Join(absent, ", "))
-	}
-	return queries.InsertStrategySymbols(ctx, generated.InsertStrategySymbolsParams{StrategyID: strategyID, InstrumentIds: ids})
-}
-
-// strategiesReading locks the instrument and reports the strategies that
-// read it as strategy.InstrumentsInUseError.
-func strategiesReading(ctx context.Context, queries *generated.Queries, instrumentID int64) error {
-	if err := queries.LockInstrument(ctx, instrumentID); err != nil {
-		return fmt.Errorf("lock instrument: %w", err)
-	}
-	rows, err := queries.ListStrategiesReading(ctx, instrumentID)
-	if err != nil {
-		return fmt.Errorf("list strategies reading instrument: %w", err)
-	}
-	if len(rows) == 0 {
-		return nil
-	}
-	use := strategy.InstrumentUse{Symbol: rows[0].Symbol}
-	for _, row := range rows {
-		use.Strategies = append(use.Strategies, row.Name)
-	}
-	return &strategy.InstrumentsInUseError{Uses: []strategy.InstrumentUse{use}}
 }
 
 // SetStrategyEnabled turns a strategy on or off and returns the revision. An
@@ -300,10 +239,10 @@ func (store *Store) DeleteStrategyStates(ctx context.Context, strategyID int64, 
 	return store.queries.DeleteStrategyStates(ctx, generated.DeleteStrategyStatesParams{StrategyID: strategyID, InstrumentIds: instrumentIDs})
 }
 
-// ListStrategyInstruments returns the active favorites of the administrator,
-// which strategies evaluate.
-func (store *Store) ListStrategyInstruments(ctx context.Context, administratorTelegramID int64) ([]strategy.Instrument, error) {
-	rows, err := store.queries.ListStrategyInstruments(ctx, administratorTelegramID)
+// ListStrategyInstruments returns the active instruments, which strategies
+// evaluate.
+func (store *Store) ListStrategyInstruments(ctx context.Context) ([]strategy.Instrument, error) {
+	rows, err := store.queries.ListStrategyInstruments(ctx)
 	if err != nil {
 		return nil, err
 	}

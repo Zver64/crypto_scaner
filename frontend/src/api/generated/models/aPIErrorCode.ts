@@ -34,7 +34,6 @@ export const APIErrorCode = {
   favorite_has_alerts: 'favorite_has_alerts',
   favorite_not_found: 'favorite_not_found',
   history_load_running: 'history_load_running',
-  instrument_used_by_strategy: 'instrument_used_by_strategy',
   insufficient_data: 'insufficient_data',
   internal_error: 'internal_error',
   invalid_argument: 'invalid_argument',

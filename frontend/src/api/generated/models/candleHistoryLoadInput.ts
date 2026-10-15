@@ -17,15 +17,15 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { BacktestSymbolName } from './backtestSymbolName.ts';
 import type { CandleInterval } from './candleInterval.ts';
+import type { SymbolName } from './symbolName.ts';
 
 export interface CandleHistoryLoadInput {
   /**
      * @minItems 1
      * @maxItems 10
      */
-  symbols: BacktestSymbolName[];
+  symbols: SymbolName[];
   /**
      * @minItems 1
      * @maxItems 4

@@ -187,10 +187,11 @@ func texts(values []int) []string {
 func (c *cli) createSignalCommand() *cobra.Command {
 	var rules signalRuleFlags
 	var message string
+	var coins coinFlags
 	var marketCap marketCapFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR --direction long|short|sideways [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR --direction long|short|sideways (--all-coins|(--coin SYM|--favorites|--coin-m)...) [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled signal, which buys nothing and announces the move it expects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -206,11 +207,15 @@ func (c *cli) createSignalCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			chosen, allCoins, err := c.resolveCoins(command, client, coins)
+			if err != nil {
+				return err
+			}
 			if _, err := c.prepareStrategyRules(command, client, rules.rules(), addIndicators); err != nil {
 				return err
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
-				Name: args[0], Signal: true, Direction: move, Expression: rules.expression,
+				Name: args[0], Signal: true, Direction: move, Expression: rules.expression, Coins: chosen, AllCoins: allCoins,
 				TargetRatio: new(apiclient.SignalTargetRatio(rules.settings.ratio)), Window: new(apiclient.SignalWindow(rules.settings.window)),
 				MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum, Message: message,
 			})
@@ -225,8 +230,9 @@ func (c *cli) createSignalCommand() *cobra.Command {
 		},
 	}
 	rules.add(command)
+	coins.add(command, true)
 	flags := command.Flags()
-	marketCap.addCreate(flags, "signal")
+	marketCap.addCreate(flags)
 	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
@@ -265,11 +271,12 @@ func (f signalRuleFlags) rules() []strategyRule {
 
 func (c *cli) updateSignalCommand() *cobra.Command {
 	var name, expression, message string
+	var coins coinFlags
 	var marketCap marketCapFlags
 	var settings signalFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:               "update ID [--expr EXPR] [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
+		Use:               "update ID [--expr EXPR] [--all-coins|(--coin SYM|--favorites|--coin-m)...] [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
 		Short:             "Edit a disabled saved signal, preserving unspecified fields; its direction never changes",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: c.completeArg(signalsKind),
@@ -281,8 +288,9 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			flags := command.Flags()
 			// edits are the flags that change the signal.
 			edits := []string{"expr", "target-ratio", "window", "min-market-cap", "max-market-cap", "name", "message"}
-			if !slices.ContainsFunc(append(edits, "add-indicators"), flags.Changed) {
-				return usageError("specify at least one of --expr, --target-ratio, --window, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
+			edited := slices.ContainsFunc(edits, flags.Changed) || coins.changed()
+			if !edited && !flags.Changed("add-indicators") {
+				return usageError("specify at least one of --expr, --coin, --favorites, --coin-m, --all-coins, --target-ratio, --window, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
 			}
 			if err := settings.check(flags); err != nil {
 				return err
@@ -301,8 +309,14 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			}
 			body := apiclient.StrategyUpdate{
 				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression,
-				TargetRatio: current.TargetRatio, Window: current.Window,
+				Coins: current.Coins, AllCoins: current.AllCoins, TargetRatio: current.TargetRatio, Window: current.Window,
 				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
+			}
+			// Chosen coins replace the current ones.
+			if coins.changed() {
+				if body.Coins, body.AllCoins, err = c.resolveCoins(command, client, coins); err != nil {
+					return err
+				}
 			}
 			settings.update(flags, &body)
 			marketCap.update(flags, &body, minimum, maximum)
@@ -320,10 +334,11 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 				}
 				rules = append(rules, strategyRule{body.Expression, apiclient.StrategyValidationInputKindEntry, "the entry rule"})
 			}
-			return c.update(command, client, signalsKind, *current, body, rules, addIndicators, slices.ContainsFunc(edits, flags.Changed))
+			return c.update(command, client, signalsKind, *current, body, rules, addIndicators, edited)
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")
+	coins.add(command, true)
 	settings.add(command, false)
 	marketCap.addUpdate(command.Flags())
 	command.Flags().StringVar(&name, "name", "", "signal `NAME`; omitted preserves the current name")

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"strings"
 	"time"
 
 	"crypto-scanner/internal/closedindicator"
@@ -207,12 +206,11 @@ const maxBacktests = 2
 // same freshness, and the same signals, starting without a trade and with a
 // false entry. Candles are evaluated once every value is calculated over the
 // whole window the tracker loads, so the replay never reads indicators the
-// pruned history leaves unsettled; coins read through of are read only among
-// the administrator's favorites, like the monitor does. Only candles opening
-// from from to to are evaluated, a zero bound leaving that side open; older
-// candles still warm the indicators up. It fails with ErrNotFound,
-// ErrInvalidArgument for a strategy that no longer compiles, an empty
-// symbol, or from after to, market.ErrInstrumentNotFound, and
+// pruned history leaves unsettled. Only candles opening from from to to are
+// evaluated, a zero bound leaving that side open; older candles still warm
+// the indicators up. It fails with ErrNotFound, ErrInvalidArgument for a
+// strategy that no longer compiles or reads a coin that is not active
+// through of, an empty symbol, or from after to, market.ErrInstrumentNotFound, and
 // ErrBacktestBusy while maxBacktests others run.
 func (service *Service) Backtest(ctx context.Context, id int64, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
 	entries := service.List()
@@ -229,26 +227,12 @@ func (service *Service) Backtest(ctx context.Context, id int64, symbol string, f
 
 // BacktestDraft replays item like Backtest replays a saved strategy, without
 // saving it: its rules and trading settings are checked and compiled as a
-// save checks them, including that every coin read through of is an active
-// favorite of the administrator, while its name, message, and market cap
-// range, which backtests ignore, are not. It fails like Backtest, with
-// ErrInvalidArgument for an invalid item.
+// save checks them. It fails like Backtest, with ErrInvalidArgument for an
+// invalid item.
 func (service *Service) BacktestDraft(ctx context.Context, item Strategy, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
 	entry, err := service.trading(item)
 	if err != nil {
 		return Backtest{}, err
-	}
-	if len(entry.symbols) > 0 {
-		favorites, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
-		if err != nil {
-			return Backtest{}, fmt.Errorf("load backtest favorites: %w", err)
-		}
-		absent := slices.DeleteFunc(slices.Clone(entry.symbols), func(read string) bool {
-			return slices.ContainsFunc(favorites, func(favorite Instrument) bool { return favorite.Symbol == read })
-		})
-		if len(absent) > 0 {
-			return Backtest{}, fmt.Errorf("%w: not an active coin in the administrator's favorites: %s", ErrInvalidArgument, strings.Join(absent, ", "))
-		}
 	}
 	return service.backtest(ctx, entry, symbol, from, to, withChart)
 }
@@ -272,11 +256,16 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 		return Backtest{}, fmt.Errorf("resolve backtest instrument %s: %w", symbol, err)
 	}
 	instrument := Instrument{ID: found.ID, Symbol: found.Symbol}
-	favorites, err := service.store.ListStrategyInstruments(ctx, service.administratorID)
+	active, err := service.store.ListStrategyInstruments(ctx)
 	if err != nil {
-		return Backtest{}, fmt.Errorf("load backtest favorites: %w", err)
+		return Backtest{}, fmt.Errorf("load backtest instruments: %w", err)
 	}
-	replay, err := newReplay(service.registry, entry, instrument, favorites)
+	// Values of coins that are not active stay unknown, so nothing would
+	// signal.
+	if absent := inactive(active, entry.symbols); len(absent) > 0 {
+		return Backtest{}, fmt.Errorf("%w: %w", ErrInvalidArgument, notActive(absent))
+	}
+	replay, err := newReplay(service.registry, entry, instrument, active)
 	if err != nil {
 		return Backtest{}, err
 	}
@@ -739,10 +728,10 @@ type replay struct {
 }
 
 // newReplay reads entry, its candles included, on instrument and on the
-// favorites it reads through of; histories, holding the subscribed pairs, is
+// active instruments it reads through of; histories, holding the subscribed pairs, is
 // set before at is called.
-func newReplay(registry *indicator.Registry, entry Entry, instrument Instrument, favorites []Instrument) (*replay, error) {
-	reads := readsOf([]Entry{entry}, []Instrument{instrument}, favorites)
+func newReplay(registry *indicator.Registry, entry Entry, instrument Instrument, active []Instrument) (*replay, error) {
+	reads := readsOf([]Entry{entry}, func(Entry, []Instrument) []Instrument { return []Instrument{instrument} }, active)
 	depths := make([]int, len(reads.subscriptions))
 	for index, subscription := range reads.subscriptions {
 		depth, err := closedindicator.Depth(registry, subscription.Target, subscription.Points)
@@ -753,7 +742,7 @@ func newReplay(registry *indicator.Registry, entry Entry, instrument Instrument,
 	}
 	return &replay{
 		registry: registry, depths: depths,
-		current: snapshot{reads: reads, values: make([]closedindicator.Value, len(reads.subscriptions)), bySymbol: bySymbol(favorites)},
+		current: snapshot{reads: reads, values: make([]closedindicator.Value, len(reads.subscriptions)), bySymbol: bySymbol(active)},
 		opens:   make([]time.Time, len(reads.subscriptions)),
 		cut:     make([]bool, len(reads.subscriptions)),
 	}, nil

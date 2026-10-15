@@ -297,8 +297,9 @@ WHERE f.user_id = $1
 ORDER BY i.symbol COLLATE "C"
 `
 
-// Signals of the favorites evaluate the administrator's favorites among the
-// active coins; in byte order, as the strategy package sorts symbols.
+// The user's favorites, active or not, of which signals of the favorites
+// evaluate the active ones; in byte order, as the strategy package sorts
+// symbols.
 func (q *Queries) ListStrategyFavorites(ctx context.Context, userID int64) ([]string, error) {
 	rows, err := q.db.Query(ctx, listStrategyFavorites, userID)
 	if err != nil {

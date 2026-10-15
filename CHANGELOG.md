@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.6.0](https://github.com/Zver64/crypto_scaner/compare/v2.5.1...v2.6.0) (2026-10-15)
+
+
+### Features
+
+* add COIN-M tab listing coins with Binance COIN-M perpetuals ([c6e7ca2](https://github.com/Zver64/crypto_scaner/commit/c6e7ca2deae7f203d0ecc14ae120ca4392af2d40))
+* choose the coins strategies and signals evaluate ([af7efa1](https://github.com/Zver64/crypto_scaner/commit/af7efa1bf8c97b06c990160acaeba43a3d7f7c1d))
+* compact strategy alerts in Telegram ([f99491d](https://github.com/Zver64/crypto_scaner/commit/f99491dd1db7ac4ed8b4c0d640291c3d01cdffbd))
+
+
+### Performance Improvements
+
+* evaluate strategies right after candles synchronize ([7ce1347](https://github.com/Zver64/crypto_scaner/commit/7ce1347ddae6e4fad8148753d662e52674b321d1))
+* keep closed indicator candle windows in memory ([1ab3f23](https://github.com/Zver64/crypto_scaner/commit/1ab3f2327d4c7265d571dea5d0e1579b4d9e7d2a))
+* recalculate closed indicators per synchronized interval ([e4913ef](https://github.com/Zver64/crypto_scaner/commit/e4913ef09735603cb757ed873b8337170a2beb04))
+* synchronize by market cap and simplify the candle pipeline ([c96803e](https://github.com/Zver64/crypto_scaner/commit/c96803e90747c96c3be62a06ca9436684c5f8388))
+
 ## [2.5.1](https://github.com/Zver64/crypto_scaner/compare/v2.5.0...v2.5.1) (2026-10-14)
 
 

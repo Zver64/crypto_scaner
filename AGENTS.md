@@ -83,6 +83,8 @@ Pre-commit hooks run the checks relevant to staged changes, so do not routinely 
 
 When asked only to review code or changes, inspect `git status`, diffs, and files. Do not build, run tests, or start services unless asked to.
 
+In addition to the usual review checks, every review also checks decomposition, architecture, and approach: responsibilities and module boundaries, readable well-named units, minimal state with clear invariants, and whether a simpler design would do.
+
 ## Commits
 
 Use Conventional Commit messages. Use `feat:` and `fix:` only when a release

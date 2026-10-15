@@ -4,6 +4,7 @@ package closedindicator
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -90,6 +91,9 @@ type Subscription struct {
 	InstrumentID int64
 	Target       Target
 	Points       int
+	// depth is the number of candles the subscription needs, set once it is
+	// checked.
+	depth int
 }
 
 func (subscription Subscription) points() int { return max(1, subscription.Points) }
@@ -110,9 +114,9 @@ type historyKey struct {
 	interval     market.CandleInterval
 }
 
-// Tracker recalculates tracked pairs once a synchronization round changed
-// their closed history and caches on-demand table values until the history of
-// their instrument changes.
+// Tracker recalculates tracked pairs over in-memory windows of their closed
+// history once a synchronization round changed it, and caches on-demand table
+// values until the history of their instrument changes.
 type Tracker struct {
 	store    Store
 	registry *indicator.Registry
@@ -130,11 +134,11 @@ type Tracker struct {
 	// that is not tracked belongs to one of them.
 	tableKeys map[market.CandleInterval][]string
 	tracked   map[pairKey]Subscription
-	// trackedHistories are the histories of the tracked pairs.
-	trackedHistories map[historyKey]struct{}
-	values           map[pairKey]Value
-	versions         map[historyKey]uint64
-	dirty            map[historyKey]struct{}
+	// windows hold the candles of the histories of the tracked pairs, which
+	// committed changes keep current without reading the store.
+	windows  windows
+	values   map[pairKey]Value
+	versions map[historyKey]uint64
 	// synced are the intervals whose dirty histories the next step
 	// recalculates; the others wait for the end of their own
 	// synchronization round, so a round is recalculated at once.
@@ -151,8 +155,8 @@ func New(store Store, registry *indicator.Registry, targets []Target, logger *sl
 	}
 	tracker := &Tracker{
 		store: store, registry: registry, targets: targets, tableKeys: keysByInterval(targets), logger: logger, subscribers: map[string][]Subscription{},
-		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, trackedHistories: map[historyKey]struct{}{}, values: map[pairKey]Value{},
-		versions: map[historyKey]uint64{}, dirty: map[historyKey]struct{}{}, synced: map[market.CandleInterval]struct{}{},
+		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, windows: windows{}, values: map[pairKey]Value{},
+		versions: map[historyKey]uint64{}, synced: map[market.CandleInterval]struct{}{},
 	}
 	for _, target := range targets {
 		if _, err := Depth(registry, target, 1); err != nil {
@@ -209,16 +213,23 @@ func (tracker *Tracker) SetTargets(targets []Target) error {
 // Subscribe replaces the pairs subscriber keeps current, which the tracker
 // calculates at once and keeps current in the background, together with the
 // pairs of the other subscribers; the pairs nobody keeps any more are
-// dropped. Invalid pairs are left out. It never blocks.
+// dropped. Invalid pairs, and pairs deeper than the synchronized history,
+// whose windows committed changes would not keep current, are left out. It
+// never blocks.
 func (tracker *Tracker) Subscribe(subscriber string, subscriptions []Subscription) {
 	valid := make([]Subscription, 0, len(subscriptions))
 	// One warning names each invalid target, however many coins read it.
 	invalid := map[string]error{}
 	for _, subscription := range subscriptions {
-		if _, err := Depth(tracker.registry, subscription.Target, subscription.points()); err != nil {
+		depth, err := Depth(tracker.registry, subscription.Target, subscription.points())
+		if err == nil && depth > market.SyncDepth {
+			err = fmt.Errorf("needs %d closed candles, %d are synchronized", depth, market.SyncDepth)
+		}
+		if err != nil {
 			invalid[subscription.Target.Key()] = err
 			continue
 		}
+		subscription.depth = depth
 		valid = append(valid, subscription)
 	}
 	for _, key := range slices.Sorted(maps.Keys(invalid)) {
@@ -231,21 +242,20 @@ func (tracker *Tracker) Subscribe(subscriber string, subscriptions []Subscriptio
 	tracker.signal()
 }
 
-// HistoryChanged invalidates values after committed closed-candle changes and
-// marks tracked histories for the recalculation HistorySynced starts. It never
-// waits for recalculation.
+// HistoryChanged applies committed closed-candle changes to the windows,
+// invalidates values, and marks tracked histories for the recalculation
+// HistorySynced starts. It never waits for recalculation.
 func (tracker *Tracker) HistoryChanged(candles []market.Candle) {
-	touched := map[historyKey]struct{}{}
+	touched := map[historyKey][]market.Candle{}
 	for _, candle := range candles {
-		touched[historyKey{candle.InstrumentID, candle.Interval}] = struct{}{}
+		key := historyKey{candle.InstrumentID, candle.Interval}
+		touched[key] = append(touched[key], candle)
 	}
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
+	tracker.windows.apply(touched)
 	for key := range touched {
 		tracker.versions[key]++
-		if _, ok := tracker.trackedHistories[key]; ok {
-			tracker.dirty[key] = struct{}{}
-		}
 		// Tracked values stay available until recalculated; cached ones
 		// expire.
 		for _, target := range tracker.tableKeys[key.interval] {
@@ -262,13 +272,7 @@ func (tracker *Tracker) HistoryChanged(candles []market.Candle) {
 // changes. It never blocks.
 func (tracker *Tracker) HistorySynced(interval market.CandleInterval) {
 	tracker.mu.Lock()
-	marked := false
-	for key := range tracker.dirty {
-		if key.interval == interval {
-			marked = true
-			break
-		}
-	}
+	marked := tracker.windows.dirtyIn(interval)
 	if marked {
 		tracker.synced[interval] = struct{}{}
 	}
@@ -406,95 +410,158 @@ func (tracker *Tracker) signal() {
 	}
 }
 
+// step recalculates the pairs that are due: the new ones, those of
+// synchronized histories, and, after reading their windows, those whose
+// windows were missing or too short. Ready pairs never wait for loads.
 func (tracker *Tracker) step(ctx context.Context) {
 	tracker.mu.Lock()
-	refresh := tracker.refresh
-	tracker.refresh = false
-	dirty := map[historyKey]struct{}{}
-	for key := range tracker.dirty {
-		if _, ok := tracker.synced[key.interval]; ok {
-			dirty[key] = struct{}{}
-			delete(tracker.dirty, key)
-		}
+	due := map[pairKey]Subscription{}
+	if tracker.refresh {
+		tracker.refresh = false
+		tracker.resubscribe(due)
+	}
+	for _, key := range tracker.windows.takeDirty(tracker.synced) {
+		tracker.addPairs(due, key)
 	}
 	clear(tracker.synced)
+	loads := tracker.windows.startLoads()
+	ready := tracker.prepare(due)
 	tracker.mu.Unlock()
-	pending := map[pairKey]Subscription{}
-	if refresh {
-		tracker.mu.Lock()
-		next := map[pairKey]Subscription{}
-		for _, subscriptions := range tracker.subscribers {
-			for _, subscription := range subscriptions {
-				key := pairKey{subscription.InstrumentID, subscription.Target.Key()}
-				if existing, ok := next[key]; ok {
-					subscription.Points = max(subscription.points(), existing.points())
-				}
-				next[key] = subscription
+	tracker.recalculate(ctx, ready)
+	if len(loads) > 0 {
+		tracker.recalculate(ctx, tracker.fill(ctx, loads))
+	}
+}
+
+// resubscribe tracks the pairs of every subscriber, plans their windows, and
+// adds to due the new pairs and those that now keep more points whose
+// windows are ready. It must be called with the lock held.
+func (tracker *Tracker) resubscribe(due map[pairKey]Subscription) {
+	next := map[pairKey]Subscription{}
+	for _, subscriptions := range tracker.subscribers {
+		for _, subscription := range subscriptions {
+			key := pairKey{subscription.InstrumentID, subscription.Target.Key()}
+			if existing, ok := next[key]; ok {
+				subscription.Points = max(subscription.points(), existing.points())
+				subscription.depth = max(subscription.depth, existing.depth)
 			}
+			next[key] = subscription
 		}
-		// A pair that now keeps more points is recalculated as well.
-		for key, subscription := range next {
-			if existing, tracked := tracker.tracked[key]; !tracked || existing.points() != subscription.points() {
-				pending[key] = subscription
-			}
+	}
+	// A dropped pair may hold a value awaiting recalculation, which would
+	// otherwise be served as a fresh cache entry.
+	for key := range tracker.tracked {
+		if _, kept := next[key]; !kept {
+			delete(tracker.values, key)
 		}
-		// A dropped pair may hold a value awaiting recalculation, which
-		// would otherwise be served as a fresh cache entry.
-		for key := range tracker.tracked {
-			if _, kept := next[key]; !kept {
-				delete(tracker.values, key)
-			}
+	}
+	previous := tracker.tracked
+	tracker.tracked = next
+	tracker.windows.plan(next)
+	for key, subscription := range next {
+		existing, tracked := previous[key]
+		ready := tracker.windows[historyKey{subscription.InstrumentID, subscription.Target.Interval}].ready()
+		if ready && (!tracked || existing.points() != subscription.points()) {
+			due[key] = subscription
 		}
-		tracker.tracked = next
-		tracker.trackedHistories = make(map[historyKey]struct{}, len(next))
-		for key, subscription := range next {
-			tracker.trackedHistories[historyKey{key.instrumentID, subscription.Target.Interval}] = struct{}{}
-		}
-		tracker.mu.Unlock()
+	}
+}
+
+// addPairs adds the tracked pairs of history to due. It must be called with
+// the lock held.
+func (tracker *Tracker) addPairs(due map[pairKey]Subscription, history historyKey) {
+	for _, key := range tracker.windows[history].pairs {
+		due[key] = tracker.tracked[key]
+	}
+}
+
+// calculation is a set of due pairs with the windows and history versions
+// they are calculated from.
+type calculation struct {
+	due      map[pairKey]Subscription
+	windows  map[historyKey][]market.Candle
+	versions map[historyKey]uint64
+}
+
+// prepare takes the windows and versions of due. It must be called with the
+// lock held; windows are never modified in place, so they need no copy.
+func (tracker *Tracker) prepare(due map[pairKey]Subscription) calculation {
+	result := calculation{due: due, windows: map[historyKey][]market.Candle{}, versions: map[historyKey]uint64{}}
+	for _, subscription := range due {
+		key := historyKey{subscription.InstrumentID, subscription.Target.Interval}
+		result.windows[key] = tracker.windows[key].candles
+		result.versions[key] = tracker.versions[key]
+	}
+	return result
+}
+
+// fill reads the windows of loads, installs them with the changes committed
+// meanwhile, and returns the calculation of the pairs whose windows became
+// ready. The loads of a failed interval wait for the retry.
+func (tracker *Tracker) fill(ctx context.Context, loads map[historyKey]load) calculation {
+	depths := make(map[historyKey]int, len(loads))
+	for key, started := range loads {
+		depths[key] = started.depth
+	}
+	histories, failed := tracker.readLatest(ctx, depths)
+	if ctx.Err() != nil {
+		return calculation{}
+	}
+	for interval, err := range failed {
+		tracker.logger.WarnContext(ctx, "load closed indicator history failed", "module", "closed_indicator", "interval", interval, "error", err)
 	}
 	tracker.mu.Lock()
-	for key, subscription := range tracker.tracked {
-		if _, ok := dirty[historyKey{key.instrumentID, subscription.Target.Interval}]; ok {
-			pending[key] = subscription
+	defer tracker.mu.Unlock()
+	if len(failed) > 0 {
+		tracker.retry(tracker.windows.retryFailed)
+	}
+	due := map[pairKey]Subscription{}
+	for key, started := range loads {
+		if _, ok := failed[key.interval]; ok {
+			tracker.windows.fail(key, started)
+		} else if tracker.windows.install(key, started, histories[key]) {
+			tracker.addPairs(due, key)
 		}
 	}
-	subscriptions := make([]Subscription, 0, len(pending))
-	for _, subscription := range pending {
-		subscriptions = append(subscriptions, subscription)
-	}
-	versions := tracker.versionSnapshot(subscriptions)
-	tracker.mu.Unlock()
-	if len(subscriptions) == 0 {
+	return tracker.prepare(due)
+}
+
+// recalculate evaluates the pairs of current and publishes the values that
+// changed; a value calculated before a newer change of its history is left
+// to that change's recalculation.
+func (tracker *Tracker) recalculate(ctx context.Context, current calculation) {
+	if len(current.due) == 0 {
 		return
 	}
-	computed, err := tracker.calculate(ctx, subscriptions)
+	computed, err := tracker.evaluate(slices.Collect(maps.Values(current.due)), current.windows)
 	if err != nil {
 		tracker.logger.WarnContext(ctx, "recalculate closed indicators failed", "module", "closed_indicator", "error", err)
 		tracker.retry(func() {
-			for _, subscription := range subscriptions {
-				tracker.dirty[historyKey{subscription.InstrumentID, subscription.Target.Interval}] = struct{}{}
-				tracker.synced[subscription.Target.Interval] = struct{}{}
+			for key := range current.windows {
+				if window := tracker.windows[key]; window != nil {
+					window.dirty = true
+					tracker.synced[key.interval] = struct{}{}
+				}
 			}
 		})
 		return
 	}
 	var changes []Change
 	tracker.mu.Lock()
-	for key, subscription := range pending {
-		history := historyKey{subscription.InstrumentID, subscription.Target.Interval}
+	for key, subscription := range current.due {
+		at := historyKey{subscription.InstrumentID, subscription.Target.Interval}
 		if _, tracked := tracker.tracked[key]; !tracked {
 			delete(tracker.values, key)
 			continue
 		}
-		// A newer history change has already queued another recalculation.
-		if tracker.versions[history] != versions[history] {
+		if tracker.versions[at] != current.versions[at] {
 			continue
 		}
 		previous, existed := tracker.values[key]
-		current := computed[key]
-		tracker.values[key] = current
-		if !existed || !previous.equal(current) {
-			changes = append(changes, Change{InstrumentID: subscription.InstrumentID, Previous: previous, Current: current})
+		value := computed[key]
+		tracker.values[key] = value
+		if !existed || !previous.equal(value) {
+			changes = append(changes, Change{InstrumentID: subscription.InstrumentID, Previous: previous, Current: value})
 		}
 	}
 	listener := tracker.listener
@@ -502,6 +569,34 @@ func (tracker *Tracker) step(ctx context.Context) {
 	if listener != nil && len(changes) > 0 {
 		listener(changes)
 	}
+}
+
+// readLatest reads the latest candles of each history in depths, as deep as
+// its depth, one query per interval and depth, and reports the intervals
+// that failed.
+func (tracker *Tracker) readLatest(ctx context.Context, depths map[historyKey]int) (map[historyKey][]market.Candle, map[market.CandleInterval]error) {
+	type group struct {
+		interval market.CandleInterval
+		depth    int
+	}
+	groups := map[group][]int64{}
+	for key, depth := range depths {
+		at := group{key.interval, depth}
+		groups[at] = append(groups[at], key.instrumentID)
+	}
+	result := make(map[historyKey][]market.Candle, len(depths))
+	failed := map[market.CandleInterval]error{}
+	for at, ids := range groups {
+		candles, err := tracker.store.ListLatestCandles(ctx, ids, at.interval, at.depth)
+		if err != nil {
+			failed[at.interval] = fmt.Errorf("load closed %s history: %w", at.interval, err)
+			continue
+		}
+		for _, id := range ids {
+			result[historyKey{id, at.interval}] = candles[id]
+		}
+	}
+	return result, failed
 }
 
 // retry schedules mark to run under the lock after retryDelay, followed by a
@@ -536,46 +631,33 @@ func Depth(registry *indicator.Registry, target Target, points int) (int, error)
 	return window + max(1, points) - 1, nil
 }
 
-// calculate loads the closed history of each interval once, as deep as its
-// deepest pair needs, and evaluates every pair over its own latest candles.
+// calculate reads the closed histories of table values from the store, as
+// deep as their deepest pair needs, and evaluates every pair.
 func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscription) (map[pairKey]Value, error) {
-	type group struct {
-		ids   []int64
-		seen  map[int64]struct{}
-		depth int
-	}
-	groups := map[market.CandleInterval]*group{}
-	depths := make([]int, len(subscriptions))
+	depths := map[historyKey]int{}
 	for index, subscription := range subscriptions {
 		depth, err := Depth(tracker.registry, subscription.Target, subscription.points())
 		if err != nil {
 			return nil, err
 		}
-		depths[index] = depth
-		interval := subscription.Target.Interval
-		if groups[interval] == nil {
-			groups[interval] = &group{seen: map[int64]struct{}{}}
-		}
-		current := groups[interval]
-		current.depth = max(current.depth, depth)
-		if _, ok := current.seen[subscription.InstrumentID]; !ok {
-			current.seen[subscription.InstrumentID] = struct{}{}
-			current.ids = append(current.ids, subscription.InstrumentID)
-		}
+		subscriptions[index].depth = depth
+		key := historyKey{subscription.InstrumentID, subscription.Target.Interval}
+		depths[key] = max(depths[key], depth)
 	}
-	histories := make(map[market.CandleInterval]map[int64][]market.Candle, len(groups))
-	for interval, current := range groups {
-		candles, err := tracker.store.ListLatestCandles(ctx, current.ids, interval, current.depth)
-		if err != nil {
-			return nil, fmt.Errorf("load closed %s history: %w", interval, err)
-		}
-		histories[interval] = candles
+	histories, failed := tracker.readLatest(ctx, depths)
+	if len(failed) > 0 {
+		return nil, errors.Join(slices.Collect(maps.Values(failed))...)
 	}
+	return tracker.evaluate(subscriptions, histories)
+}
+
+// evaluate calculates every checked pair over the latest candles of its
+// history, as deep as the pair needs.
+func (tracker *Tracker) evaluate(subscriptions []Subscription, histories map[historyKey][]market.Candle) (map[pairKey]Value, error) {
 	result := make(map[pairKey]Value, len(subscriptions))
-	for index, subscription := range subscriptions {
-		candles := histories[subscription.Target.Interval][subscription.InstrumentID]
-		candles = candles[max(0, len(candles)-depths[index]):]
-		value, err := Calculate(tracker.registry, subscription.Target, candles, subscription.points())
+	for _, subscription := range subscriptions {
+		candles := histories[historyKey{subscription.InstrumentID, subscription.Target.Interval}]
+		value, err := Calculate(tracker.registry, subscription.Target, candles[max(0, len(candles)-subscription.depth):], subscription.points())
 		if err != nil {
 			return nil, err
 		}

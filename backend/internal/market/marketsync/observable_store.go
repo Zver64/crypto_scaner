@@ -11,6 +11,8 @@ import (
 // ObservableStore notifies consumers only after a closed-candle batch
 // commits, and after an instrument snapshot leaves other active instruments
 // than it last reported, with all of them. Consumers must not block.
+// Every write of the latest market.SyncDepth candles goes through Changed:
+// the closed indicator windows rely on it and never reread the store.
 type ObservableStore struct {
 	Store
 	Changed            func([]market.Candle)

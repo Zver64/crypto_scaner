@@ -2,6 +2,7 @@ package closedindicator_test
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math"
 	"slices"
@@ -233,6 +234,18 @@ func TestTrackerRecalculatesOnlyTheSyncedInterval(t *testing.T) {
 type intervalStore struct {
 	mu      sync.Mutex
 	candles map[market.CandleInterval][]market.Candle
+	reads   int
+	// reading, when set, receives each read before it completes, which
+	// waits for release; failures fail that many reads.
+	reading  chan struct{}
+	release  chan struct{}
+	failures int
+}
+
+func (store *intervalStore) readCount() int {
+	store.mu.Lock()
+	defer store.mu.Unlock()
+	return store.reads
 }
 
 func (store *intervalStore) add(item market.Candle) {
@@ -243,31 +256,29 @@ func (store *intervalStore) add(item market.Candle) {
 
 func (store *intervalStore) ListLatestCandles(_ context.Context, ids []int64, interval market.CandleInterval, limit int) (map[int64][]market.Candle, error) {
 	store.mu.Lock()
-	defer store.mu.Unlock()
-	candles := store.candles[interval]
-	return map[int64][]market.Candle{1: slices.Clone(candles[max(0, len(candles)-limit):])}, nil
+	store.reads++
+	candles := slices.Clone(store.candles[interval])
+	failed := store.failures > 0
+	if failed {
+		store.failures--
+	}
+	store.mu.Unlock()
+	if failed {
+		return nil, errors.New("database unavailable")
+	}
+	if store.reading != nil {
+		store.reading <- struct{}{}
+		<-store.release
+	}
+	return map[int64][]market.Candle{1: candles[max(0, len(candles)-limit):]}, nil
 }
 
 // Pairs stay current while any subscriber keeps them; a pair nobody keeps is
 // dropped.
 func TestTrackerKeepsThePairsOfEverySubscriber(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		registry, err := indicator.NewRegistry(candle.New())
-		if err != nil {
-			t.Fatal(err)
-		}
-		store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
-		open := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-		store.add(market.Candle{InstrumentID: 1, Interval: market.IntervalHour, OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 1, High: 2, Low: 1, Close: 2})
-		tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
-		if err != nil {
-			t.Fatal(err)
-		}
-		pair := closedindicator.Subscription{InstrumentID: 1, Target: closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}}
-		ctx, cancel := context.WithCancel(context.Background())
-		done := make(chan error)
-		go func() { done <- tracker.Run(ctx) }()
-		defer func() { cancel(); <-done }()
+		tracker, _, pair, _ := newWindowTracker(t)
+		defer tracker.stop()
 		tracked := func() bool {
 			synctest.Wait()
 			_, missing := tracker.Snapshot([]closedindicator.Subscription{pair})
@@ -287,4 +298,124 @@ func TestTrackerKeepsThePairsOfEverySubscriber(t *testing.T) {
 			t.Fatal("a pair nobody keeps is still tracked")
 		}
 	})
+}
+
+// A failed load waits for the retry instead of reading again at once, then
+// loads the window.
+func TestTrackerRetriesAFailedLoadLater(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tracker, store, pair, latest := newWindowTracker(t)
+		defer tracker.stop()
+		store.failures = 1
+		tracker.Subscribe("test", []closedindicator.Subscription{pair})
+		tracker.HistorySynced(market.IntervalHour)
+		if open, _ := latest(); !open.IsZero() || store.readCount() != 1 {
+			t.Fatalf("after the failure: %s, reads %d", open, store.readCount())
+		}
+		time.Sleep(closedindicator.RetryDelay - time.Second)
+		if latest(); store.readCount() != 1 {
+			t.Fatalf("reads before the retry = %d, want 1", store.readCount())
+		}
+		time.Sleep(time.Second)
+		if open, close := latest(); !open.Equal(windowStart) || close != 2 || store.readCount() != 2 {
+			t.Fatalf("after the retry: %s close %v, reads %d", open, close, store.readCount())
+		}
+	})
+}
+
+// The window of a tracked history is read once; later candles and
+// corrections update it without reading the store, and only a deeper
+// subscription reads it again.
+func TestTrackerKeepsWindowsCurrentWithoutTheStore(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tracker, store, pair, latest := newWindowTracker(t)
+		defer tracker.stop()
+		changed := func(candle market.Candle) {
+			store.add(candle)
+			tracker.HistoryChanged([]market.Candle{candle})
+			tracker.HistorySynced(market.IntervalHour)
+		}
+
+		tracker.Subscribe("test", []closedindicator.Subscription{pair})
+		if open, close := latest(); !open.Equal(windowStart) || close != 2 || store.readCount() != 1 {
+			t.Fatalf("after subscribing: %s close %v, reads %d", open, close, store.readCount())
+		}
+		next := windowStart.Add(time.Hour)
+		changed(windowBar(next, 3))
+		if open, close := latest(); !open.Equal(next) || close != 3 || store.readCount() != 1 {
+			t.Fatalf("after a candle: %s close %v, reads %d", open, close, store.readCount())
+		}
+		changed(windowBar(next, 4))
+		if open, close := latest(); !open.Equal(next) || close != 4 || store.readCount() != 1 {
+			t.Fatalf("after a correction: %s close %v, reads %d", open, close, store.readCount())
+		}
+		pair.Points = 3
+		tracker.Subscribe("test", []closedindicator.Subscription{pair})
+		if open, close := latest(); !open.Equal(next) || close != 4 || store.readCount() != 2 {
+			t.Fatalf("after a deeper subscription: %s close %v, reads %d", open, close, store.readCount())
+		}
+	})
+}
+
+// A candle committed while a window loads, which the read may miss, still
+// reaches the window.
+func TestTrackerKeepsChangesCommittedWhileAWindowLoads(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tracker, store, pair, latest := newWindowTracker(t)
+		defer tracker.stop()
+		store.reading, store.release = make(chan struct{}), make(chan struct{})
+		tracker.Subscribe("test", []closedindicator.Subscription{pair})
+		<-store.reading
+		next := windowStart.Add(time.Hour)
+		// The read has taken its candles, so it misses this one.
+		store.add(windowBar(next, 3))
+		tracker.HistoryChanged([]market.Candle{windowBar(next, 3)})
+		close(store.release)
+		if open, value := latest(); !open.Equal(next) || value != 3 || store.readCount() != 1 {
+			t.Fatalf("after the load: %s close %v, reads %d", open, value, store.readCount())
+		}
+	})
+}
+
+var windowStart = time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+func windowBar(open time.Time, close float64) market.Candle {
+	return market.Candle{InstrumentID: 1, Interval: market.IntervalHour, OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 1, High: 9, Low: 1, Close: close}
+}
+
+// runningTracker is a tracker whose Run stops with stop.
+type runningTracker struct {
+	*closedindicator.Tracker
+	stop func()
+}
+
+// newWindowTracker runs a tracker over a store holding one hourly candle and
+// returns a pair of its candles and a reader of the pair's latest close.
+func newWindowTracker(t *testing.T) (runningTracker, *intervalStore, closedindicator.Subscription, func() (time.Time, float64)) {
+	t.Helper()
+	registry, err := indicator.NewRegistry(candle.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
+	store.add(windowBar(windowStart, 2))
+	tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pair := closedindicator.Subscription{InstrumentID: 1, Target: closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}, Points: 2}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error)
+	go func() { done <- tracker.Run(ctx) }()
+	latest := func() (time.Time, float64) {
+		synctest.Wait()
+		values, _ := tracker.Snapshot([]closedindicator.Subscription{pair})
+		for _, output := range values[0].Outputs {
+			if output.Name == "close" {
+				return values[0].OpenTime, output.Value
+			}
+		}
+		return values[0].OpenTime, 0
+	}
+	return runningTracker{tracker, func() { cancel(); <-done }}, store, pair, latest
 }

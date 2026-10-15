@@ -71,6 +71,20 @@ func (store *Store) ListActiveInstruments(ctx context.Context) ([]market.Instrum
 	return items, nil
 }
 
+// ListActiveInstrumentsByMarketCap lists active instruments by descending
+// market cap; instruments without one follow by ID.
+func (store *Store) ListActiveInstrumentsByMarketCap(ctx context.Context) ([]market.Instrument, error) {
+	rows, err := store.queries.ListActiveInstrumentsByMarketCap(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list active instruments by market cap: %w", err)
+	}
+	items := make([]market.Instrument, 0, len(rows))
+	for _, row := range rows {
+		items = append(items, instrumentFromRow(row.BinanceSpotInstrument))
+	}
+	return items, nil
+}
+
 func (store *Store) SelectActiveInstruments(ctx context.Context, selection analysis.Selection) ([]market.Instrument, error) {
 	params, err := selectionParams(selection)
 	if err != nil {

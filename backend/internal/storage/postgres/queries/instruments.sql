@@ -53,6 +53,18 @@ FROM binance_spot.instruments AS instrument
 WHERE instrument.is_active = TRUE
 ORDER BY instrument.id;
 
+-- name: ListActiveInstrumentsByMarketCap :many
+-- Instruments with a positive market cap come first, largest first.
+SELECT sqlc.embed(instrument)
+FROM binance_spot.instruments AS instrument
+LEFT JOIN app.coingecko_asset_mappings AS mapping
+  ON mapping.base_asset = instrument.base_asset
+ AND mapping.status = 'resolved'
+LEFT JOIN app.coingecko_market_caps AS market_cap
+  ON market_cap.coin_id = mapping.coin_id
+WHERE instrument.is_active = TRUE
+ORDER BY CASE WHEN market_cap.market_cap_usd > 0 THEN market_cap.market_cap_usd END DESC NULLS LAST, instrument.id;
+
 -- name: SelectActiveInstruments :many
 SELECT sqlc.embed(instrument),
        (market_cap.coin_id IS NOT NULL)::boolean AS market_cap_available,

@@ -26,7 +26,9 @@ type Store interface {
 	GetSyncState(context.Context, market.SyncProfile) (market.SyncState, error)
 	SaveSyncState(context.Context, market.SyncState) error
 	ApplyInstrumentSnapshot(context.Context, []market.Instrument) error
-	ListActiveInstruments(context.Context) ([]market.Instrument, error)
+	// ListActiveInstrumentsByMarketCap lists active instruments by descending
+	// market cap, those without one last; runs synchronize them in this order.
+	ListActiveInstrumentsByMarketCap(context.Context) ([]market.Instrument, error)
 	// SummarizeCandleHistory summarizes up to limit latest candles per
 	// instrument; instruments without candles are omitted.
 	SummarizeCandleHistory(context.Context, []int64, market.CandleInterval, int) (map[int64]HistorySummary, error)
@@ -167,7 +169,7 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	if err := synchronizer.store.ApplyInstrumentSnapshot(ctx, items); err != nil {
 		return synchronizer.recordFailure(ctx, &state, fmt.Errorf("apply instrument snapshot: %w", err))
 	}
-	active, err := synchronizer.store.ListActiveInstruments(ctx)
+	active, err := synchronizer.store.ListActiveInstrumentsByMarketCap(ctx)
 	if err != nil {
 		return synchronizer.recordFailure(ctx, &state, fmt.Errorf("list active instruments: %w", err))
 	}
@@ -196,9 +198,9 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	synced := make(map[int64]struct{}, len(active))
 	beforeClosed := profile.Interval.PreviousOpenTime(closedThrough)
 	// collect records the results and returns the instruments that lack only
-	// the latest closed candle.
+	// the latest closed candle, in their given order.
 	collect := func(instruments []market.Instrument) []market.Instrument {
-		var late []market.Instrument
+		late := make(map[int64]struct{})
 		for result := range synchronizer.syncInstruments(ctx, instruments, histories, coverages, profile, startedAt) {
 			synced[result.instrument.ID] = struct{}{}
 			if result.err != nil {
@@ -216,10 +218,13 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 				state.LastClosedOpenTime = result.latestOpenTime
 			}
 			if result.latestOpenTime != nil && result.latestOpenTime.Equal(beforeClosed) {
-				late = append(late, result.instrument)
+				late[result.instrument.ID] = struct{}{}
 			}
 		}
-		return late
+		return slices.DeleteFunc(slices.Clone(instruments), func(instrument market.Instrument) bool {
+			_, found := late[instrument.ID]
+			return !found
+		})
 	}
 	// The exchange may publish a candle a moment after it closes, so
 	// instruments without it are synchronized again, from their histories as
@@ -284,6 +289,8 @@ type instrumentResult struct {
 	oldestOpenTime    *time.Time
 }
 
+// syncInstruments starts synchronizing the instruments in their given order;
+// results arrive as they finish.
 func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instruments []market.Instrument, histories map[int64]HistorySummary, coverages map[int64]market.HistoryCoverage, profile market.SyncProfile, startedAt time.Time) <-chan instrumentResult {
 	jobs := make(chan market.Instrument)
 	results := make(chan instrumentResult)

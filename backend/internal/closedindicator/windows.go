@@ -18,11 +18,9 @@ type window struct {
 	// loaded is the depth candles were loaded for, 0 before the first load.
 	loaded int
 	// loading marks a running load, which changes committed meanwhile may
-	// miss, so changes buffers them; failed holds a failed load back until
-	// the retry.
+	// miss, so changes buffers them.
 	loading bool
 	changes []market.Candle
-	failed  bool
 	// dirty marks changes since the pairs were last calculated.
 	dirty bool
 }
@@ -88,11 +86,11 @@ type load struct {
 }
 
 // startLoads marks the windows that must be loaded as loading and returns
-// their loads, leaving failed ones for the retry.
+// their loads.
 func (all windows) startLoads() map[historyKey]load {
 	loads := map[historyKey]load{}
 	for key, current := range all {
-		if current.ready() || current.loading || current.failed {
+		if current.ready() || current.loading {
 			continue
 		}
 		current.loading, current.changes = true, nil
@@ -114,17 +112,10 @@ func (all windows) install(key historyKey, started load, candles []market.Candle
 	return current.ready()
 }
 
-// fail ends started without a window; it waits for retryFailed.
+// fail ends started without a window, which the next load reads again.
 func (all windows) fail(key historyKey, started load) {
 	if current := all[key]; current == started.window && current.loading {
-		current.loading, current.failed, current.changes = false, true, nil
-	}
-}
-
-// retryFailed lets the failed loads run again.
-func (all windows) retryFailed() {
-	for _, current := range all {
-		current.failed = false
+		current.loading, current.changes = false, nil
 	}
 }
 
@@ -141,15 +132,18 @@ func (all windows) takeDirty(synced map[market.CandleInterval]struct{}) []histor
 	return keys
 }
 
-// dirtyIn reports whether any ready window of interval is dirty; the others
-// recalculate after their loads.
-func (all windows) dirtyIn(interval market.CandleInterval) bool {
+// pendingIn reports whether any ready window of interval is dirty, and
+// whether any is neither ready nor loading, such as after a failed load.
+func (all windows) pendingIn(interval market.CandleInterval) (dirty, unloaded bool) {
 	for key, current := range all {
-		if key.interval == interval && current.dirty && current.ready() {
-			return true
+		if key.interval != interval {
+			continue
 		}
+		ready := current.ready()
+		dirty = dirty || current.dirty && ready
+		unloaded = unloaded || !ready && !current.loading
 	}
-	return false
+	return dirty, unloaded
 }
 
 // merged returns window with changes applied by open time, a change

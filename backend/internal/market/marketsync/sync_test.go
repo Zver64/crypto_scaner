@@ -484,7 +484,7 @@ func (store *fakeMarketStore) ApplyInstrumentSnapshot(_ context.Context, items [
 	return store.applyErr
 }
 
-func (store *fakeMarketStore) ListActiveInstruments(context.Context) ([]market.Instrument, error) {
+func (store *fakeMarketStore) ListActiveInstrumentsByMarketCap(context.Context) ([]market.Instrument, error) {
 	return store.active, nil
 }
 
@@ -686,4 +686,83 @@ func (exchange *lateExchange) ListClosedCandles(context.Context, market.CandleRe
 		return exchange.first, nil
 	}
 	return exchange.later, nil
+}
+
+// Workers take instruments in the store's market cap order.
+func TestSynchronizerHandsInstrumentsToWorkersInMarketCapOrder(t *testing.T) {
+	active := []market.Instrument{{ID: 3, Symbol: "BTCUSDT"}, {ID: 1, Symbol: "ETHUSDT"}, {ID: 2, Symbol: "SOLUSDT"}}
+	exchange := &fakeExchange{items: active}
+	store := &fakeMarketStore{active: active, latest: map[int64][]market.Candle{}}
+	if err := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1, market.BinanceSpotSyncProfile(market.IntervalHour)).Sync(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	var symbols []string
+	for _, request := range exchange.candleRequests {
+		symbols = append(symbols, request.Symbol)
+	}
+	if want := []string{"BTCUSDT", "ETHUSDT", "SOLUSDT"}; !slices.Equal(symbols, want) {
+		t.Fatalf("requested %v, want %v", symbols, want)
+	}
+}
+
+// Instruments are synchronized in the store's market cap order, and late
+// candles are retried in it too, whatever order the first attempts finish in.
+func TestSynchronizerRetriesLateCandlesInMarketCapOrder(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		closed := market.IntervalHour.LastClosedOpenTime(time.Now())
+		candle := func(open time.Time) market.Candle {
+			return market.Candle{OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 1, High: 1, Low: 1, Close: 1}
+		}
+		previous := candle(market.IntervalHour.PreviousOpenTime(closed))
+		active := []market.Instrument{{ID: 3, Symbol: "BTCUSDT"}, {ID: 1, Symbol: "ETHUSDT"}, {ID: 2, Symbol: "SOLUSDT"}}
+		latest := map[int64][]market.Candle{}
+		for _, instrument := range active {
+			stored := previous
+			stored.InstrumentID, stored.Interval = instrument.ID, market.IntervalHour
+			latest[instrument.ID] = []market.Candle{stored}
+		}
+		// The first attempts finish in reverse order.
+		exchange := &slowLateExchange{fakeExchange: &fakeExchange{items: active}, first: []market.Candle{previous}, later: []market.Candle{previous, candle(closed)},
+			delays: map[string]time.Duration{"BTCUSDT": 3 * time.Second, "ETHUSDT": 2 * time.Second, "SOLUSDT": time.Second}, calls: map[string]int{}}
+		store := &summaryRecordingStore{fakeMarketStore: &fakeMarketStore{active: active, latest: latest}}
+		if err := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 3, 1, market.BinanceSpotSyncProfile(market.IntervalHour)).Sync(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		want := [][]int64{{3, 1, 2}, {3, 1, 2}}
+		if !reflect.DeepEqual(store.summarized, want) {
+			t.Fatalf("summarized %v, want %v", store.summarized, want)
+		}
+	})
+}
+
+// slowLateExchange serves first after a per-symbol delay, then later.
+type slowLateExchange struct {
+	*fakeExchange
+	first, later []market.Candle
+	delays       map[string]time.Duration
+	mu           sync.Mutex
+	calls        map[string]int
+}
+
+func (exchange *slowLateExchange) ListClosedCandles(_ context.Context, request market.CandleRequest) ([]market.Candle, error) {
+	exchange.mu.Lock()
+	exchange.calls[request.Symbol]++
+	call := exchange.calls[request.Symbol]
+	exchange.mu.Unlock()
+	if call == 1 {
+		time.Sleep(exchange.delays[request.Symbol])
+		return exchange.first, nil
+	}
+	return exchange.later, nil
+}
+
+// summaryRecordingStore records the instruments of every history summary.
+type summaryRecordingStore struct {
+	*fakeMarketStore
+	summarized [][]int64
+}
+
+func (store *summaryRecordingStore) SummarizeCandleHistory(ctx context.Context, ids []int64, interval market.CandleInterval, limit int) (map[int64]marketsync.HistorySummary, error) {
+	store.summarized = append(store.summarized, slices.Clone(ids))
+	return store.fakeMarketStore.SummarizeCandleHistory(ctx, ids, interval, limit)
 }

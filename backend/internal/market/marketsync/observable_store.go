@@ -2,15 +2,16 @@ package marketsync
 
 import (
 	"context"
-	"slices"
+	"maps"
 	"sync"
 
 	"crypto-scanner/internal/market"
 )
 
 // ObservableStore notifies consumers only after a closed-candle batch
-// commits, and after an instrument snapshot leaves other active instruments
-// than it last reported, with all of them. Consumers must not block.
+// commits, and after a read of the active instruments finds another set of
+// them (by ID and symbol, in any order) than it last reported, with all of
+// them. Consumers must not block.
 // Every write of the latest market.SyncDepth candles goes through Changed:
 // the closed indicator windows rely on it and never reread the store.
 type ObservableStore struct {
@@ -18,10 +19,15 @@ type ObservableStore struct {
 	Changed            func([]market.Candle)
 	InstrumentsChanged func([]market.Instrument)
 
-	// mu orders snapshots, so notifications follow their commits; last are
-	// the active instruments last reported, nil before the first report.
+	// mu orders reads of the active instruments, so notifications follow
+	// them; last is the set last reported, nil before the first report.
 	mu   sync.Mutex
-	last []market.Instrument
+	last map[instrumentKey]struct{}
+}
+
+type instrumentKey struct {
+	id     int64
+	symbol string
 }
 
 func (store *ObservableStore) UpsertCandlesWithChanges(ctx context.Context, candles []market.Candle) ([]market.Candle, error) {
@@ -35,25 +41,22 @@ func (store *ObservableStore) UpsertCandlesWithChanges(ctx context.Context, cand
 	return changed, nil
 }
 
-// ApplyInstrumentSnapshot reports the active instruments the snapshot leaves
-// when they differ from the last report; a snapshot whose result cannot be
-// read is reported by the next one.
-func (store *ObservableStore) ApplyInstrumentSnapshot(ctx context.Context, items []market.Instrument) error {
+// ListActiveInstrumentsByMarketCap reports the active instruments it reads
+// when their set differs from the last report.
+func (store *ObservableStore) ListActiveInstrumentsByMarketCap(ctx context.Context) ([]market.Instrument, error) {
 	store.mu.Lock()
 	defer store.mu.Unlock()
-	if err := store.Store.ApplyInstrumentSnapshot(ctx, items); err != nil {
-		return err
-	}
-	active, err := store.Store.ListActiveInstruments(ctx)
+	active, err := store.Store.ListActiveInstrumentsByMarketCap(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	same := store.last != nil && slices.EqualFunc(store.last, active, func(left, right market.Instrument) bool {
-		return left.ID == right.ID && left.Symbol == right.Symbol
-	})
-	if !same && store.InstrumentsChanged != nil {
+	set := make(map[instrumentKey]struct{}, len(active))
+	for _, instrument := range active {
+		set[instrumentKey{instrument.ID, instrument.Symbol}] = struct{}{}
+	}
+	if (store.last == nil || !maps.Equal(store.last, set)) && store.InstrumentsChanged != nil {
 		store.InstrumentsChanged(active)
 	}
-	store.last = active
-	return nil
+	store.last = set
+	return active, nil
 }

@@ -7,6 +7,7 @@ import (
 	"math"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -300,25 +301,174 @@ func TestTrackerKeepsThePairsOfEverySubscriber(t *testing.T) {
 	})
 }
 
-// A failed load waits for the retry instead of reading again at once, then
-// loads the window.
-func TestTrackerRetriesAFailedLoadLater(t *testing.T) {
+// A failed load leaves the window unloaded, without a timer: the next round
+// of its interval loads it, though no window of the interval is ready.
+func TestTrackerLoadsAFailedWindowOnTheNextStep(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		tracker, store, pair, latest := newWindowTracker(t)
 		defer tracker.stop()
 		store.failures = 1
 		tracker.Subscribe("test", []closedindicator.Subscription{pair})
-		tracker.HistorySynced(market.IntervalHour)
 		if open, _ := latest(); !open.IsZero() || store.readCount() != 1 {
 			t.Fatalf("after the failure: %s, reads %d", open, store.readCount())
 		}
-		time.Sleep(closedindicator.RetryDelay - time.Second)
+		time.Sleep(time.Hour)
 		if latest(); store.readCount() != 1 {
-			t.Fatalf("reads before the retry = %d, want 1", store.readCount())
+			t.Fatalf("reads without a step = %d, want 1", store.readCount())
 		}
-		time.Sleep(time.Second)
+		tracker.HistorySynced(market.IntervalHour)
 		if open, close := latest(); !open.Equal(windowStart) || close != 2 || store.readCount() != 2 {
-			t.Fatalf("after the retry: %s close %v, reads %d", open, close, store.readCount())
+			t.Fatalf("after the next round: %s close %v, reads %d", open, close, store.readCount())
+		}
+	})
+}
+
+// A failed calculation keeps its histories dirty, without a timer: the next
+// round of their interval recalculates them.
+func TestTrackerRecalculatesAFailedCalculationOnTheNextRound(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fail := &atomic.Bool{}
+		registry, err := indicator.NewRegistry(failingModule{candle.New(), fail})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tracker, store, pair, latest := runWindowTracker(t, registry)
+		defer tracker.stop()
+		tracker.Subscribe("test", []closedindicator.Subscription{pair})
+		latest()
+		next := windowStart.Add(time.Hour)
+		store.add(windowBar(next, 3))
+		fail.Store(true)
+		tracker.HistoryChanged([]market.Candle{windowBar(next, 3)})
+		tracker.HistorySynced(market.IntervalHour)
+		if open, _ := latest(); !open.Equal(windowStart) {
+			t.Fatalf("after the failure: %s", open)
+		}
+		fail.Store(false)
+		time.Sleep(time.Hour)
+		if open, _ := latest(); !open.Equal(windowStart) {
+			t.Fatalf("recalculated without a round: %s", open)
+		}
+		tracker.HistorySynced(market.IntervalHour)
+		if open, close := latest(); !open.Equal(next) || close != 3 || store.readCount() != 1 {
+			t.Fatalf("after the next round: %s close %v, reads %d", open, close, store.readCount())
+		}
+	})
+}
+
+// failingModule fails every calculation while fail is set.
+type failingModule struct {
+	indicator.Implementation
+	fail *atomic.Bool
+}
+
+func (module failingModule) Calculate(parameters indicator.Parameters, inputs indicator.Inputs) (indicator.Result, error) {
+	if module.fail.Load() {
+		return indicator.Result{}, errors.New("calculation failed")
+	}
+	return module.Implementation.Calculate(parameters, inputs)
+}
+
+// A pair whose calculation fails leaves the other pairs of its step alone.
+func TestTrackerReportsThePairsThatCalculate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		registry, err := indicator.NewRegistry(candle.New(), brokenModule{candle.New()})
+		if err != nil {
+			t.Fatal(err)
+		}
+		tracker, _, pair, _ := runWindowTracker(t, registry)
+		defer tracker.stop()
+		broken := pair
+		broken.Target.Selection.Type = brokenType
+		var reported []indicator.Type
+		tracker.Listen(func(changes []closedindicator.Change) {
+			for _, change := range changes {
+				reported = append(reported, change.Current.Target.Selection.Type)
+			}
+		})
+		tracker.Subscribe("test", []closedindicator.Subscription{pair, broken})
+		synctest.Wait()
+		if !slices.Equal(reported, []indicator.Type{candle.Type}) {
+			t.Fatalf("reported %v, want only the candle pair", reported)
+		}
+		if _, missing := tracker.Snapshot([]closedindicator.Subscription{pair, broken}); len(missing) != 1 || missing[0].Selection.Type != brokenType {
+			t.Fatalf("missing %v, want the broken pair", missing)
+		}
+	})
+}
+
+const brokenType indicator.Type = "broken"
+
+// brokenModule is the candle module under brokenType, whose calculations
+// always fail.
+type brokenModule struct{ indicator.Implementation }
+
+func (module brokenModule) Describe() indicator.Descriptor {
+	descriptor := module.Implementation.Describe()
+	descriptor.Type = brokenType
+	return descriptor
+}
+
+func (brokenModule) Calculate(indicator.Parameters, indicator.Inputs) (indicator.Result, error) {
+	return indicator.Result{}, errors.New("calculation failed")
+}
+
+// A step calculates the pairs of a synchronized round and those whose
+// windows it loaded together, so the listener receives them in one call.
+func TestTrackerReportsAStepInOneCall(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		registry, err := indicator.NewRegistry(candle.New())
+		if err != nil {
+			t.Fatal(err)
+		}
+		store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
+		bar := func(interval market.CandleInterval, open time.Time) market.Candle {
+			return market.Candle{InstrumentID: 1, Interval: interval, OpenTime: open, CloseTime: interval.NextOpenTime(open).Add(-time.Millisecond), Open: 1, High: 2, Low: 1, Close: 2}
+		}
+		subscription := func(interval market.CandleInterval) closedindicator.Subscription {
+			return closedindicator.Subscription{InstrumentID: 1, Target: closedindicator.Target{Interval: interval, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}}
+		}
+		start := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
+		for _, interval := range []market.CandleInterval{market.IntervalHour, market.IntervalDay, market.IntervalWeek} {
+			store.add(bar(interval, start))
+		}
+		tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var batches [][]market.CandleInterval
+		tracker.Listen(func(changes []closedindicator.Change) {
+			var intervals []market.CandleInterval
+			for _, change := range changes {
+				intervals = append(intervals, change.Current.Target.Interval)
+			}
+			slices.Sort(intervals)
+			batches = append(batches, intervals)
+		})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error)
+		go func() { done <- tracker.Run(ctx) }()
+		hour, day, week := subscription(market.IntervalHour), subscription(market.IntervalDay), subscription(market.IntervalWeek)
+		tracker.Subscribe("test", []closedindicator.Subscription{hour})
+		synctest.Wait()
+
+		// The load of the day window holds its step, while a round of the
+		// hour and a new week pair arrive for the next one.
+		store.reading, store.release = make(chan struct{}, 2), make(chan struct{})
+		tracker.Subscribe("test", []closedindicator.Subscription{hour, day})
+		synctest.Wait()
+		next := bar(market.IntervalHour, start.Add(time.Hour))
+		store.add(next)
+		tracker.HistoryChanged([]market.Candle{next})
+		tracker.HistorySynced(market.IntervalHour)
+		tracker.Subscribe("test", []closedindicator.Subscription{hour, day, week})
+		close(store.release)
+		synctest.Wait()
+		cancel()
+		<-done
+		want := [][]market.CandleInterval{{market.IntervalHour}, {market.IntervalDay}, {market.IntervalHour, market.IntervalWeek}}
+		if !slices.EqualFunc(batches, want, slices.Equal) {
+			t.Fatalf("batches = %v, want %v", batches, want)
 		}
 	})
 }
@@ -397,6 +547,13 @@ func newWindowTracker(t *testing.T) (runningTracker, *intervalStore, closedindic
 	if err != nil {
 		t.Fatal(err)
 	}
+	return runWindowTracker(t, registry)
+}
+
+// runWindowTracker is newWindowTracker over registry, which serves the
+// candle fields.
+func runWindowTracker(t *testing.T, registry *indicator.Registry) (runningTracker, *intervalStore, closedindicator.Subscription, func() (time.Time, float64)) {
+	t.Helper()
 	store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
 	store.add(windowBar(windowStart, 2))
 	tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))

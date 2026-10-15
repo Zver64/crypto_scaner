@@ -136,6 +136,51 @@ func (q *Queries) ListActiveInstruments(ctx context.Context) ([]ListActiveInstru
 	return items, nil
 }
 
+const listActiveInstrumentsByMarketCap = `-- name: ListActiveInstrumentsByMarketCap :many
+SELECT instrument.id, instrument.symbol, instrument.base_asset, instrument.quote_asset, instrument.exchange_status, instrument.is_active, instrument.deactivated_at
+FROM binance_spot.instruments AS instrument
+LEFT JOIN app.coingecko_asset_mappings AS mapping
+  ON mapping.base_asset = instrument.base_asset
+ AND mapping.status = 'resolved'
+LEFT JOIN app.coingecko_market_caps AS market_cap
+  ON market_cap.coin_id = mapping.coin_id
+WHERE instrument.is_active = TRUE
+ORDER BY CASE WHEN market_cap.market_cap_usd > 0 THEN market_cap.market_cap_usd END DESC NULLS LAST, instrument.id
+`
+
+type ListActiveInstrumentsByMarketCapRow struct {
+	BinanceSpotInstrument BinanceSpotInstrument
+}
+
+// Instruments with a positive market cap come first, largest first.
+func (q *Queries) ListActiveInstrumentsByMarketCap(ctx context.Context) ([]ListActiveInstrumentsByMarketCapRow, error) {
+	rows, err := q.db.Query(ctx, listActiveInstrumentsByMarketCap)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveInstrumentsByMarketCapRow
+	for rows.Next() {
+		var i ListActiveInstrumentsByMarketCapRow
+		if err := rows.Scan(
+			&i.BinanceSpotInstrument.ID,
+			&i.BinanceSpotInstrument.Symbol,
+			&i.BinanceSpotInstrument.BaseAsset,
+			&i.BinanceSpotInstrument.QuoteAsset,
+			&i.BinanceSpotInstrument.ExchangeStatus,
+			&i.BinanceSpotInstrument.IsActive,
+			&i.BinanceSpotInstrument.DeactivatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDelistedInstrumentIDs = `-- name: ListDelistedInstrumentIDs :many
 SELECT instrument.id
 FROM binance_spot.instruments AS instrument

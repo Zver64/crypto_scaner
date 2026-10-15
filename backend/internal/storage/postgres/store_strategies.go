@@ -25,7 +25,7 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 		items[i] = strategy.Strategy{
 			ID: row.ID, Name: row.Name, Signal: row.Signal, Direction: strategy.Direction(row.Direction), Expression: row.Expression, ExitExpression: row.ExitExpression,
 			TakeProfitExpression: row.TakeProfitExpression, StopLossExpression: row.StopLossExpression,
-			Coins: row.Coins, AllCoins: row.AllCoins,
+			Coins: row.Coins, CoinSource: strategy.CoinSource(row.CoinSource),
 			MarketCap:   strategy.MarketCapRange{MinUSD: float8Pointer(row.MinMarketCapUsd), MaxUSD: float8Pointer(row.MaxMarketCapUsd)},
 			TargetRatio: int(row.TargetRatio.Int16), Window: int(row.WindowCandles.Int16),
 			Message: row.Message, Enabled: row.Enabled, BaselinePending: row.BaselinePending, Revision: row.Revision,
@@ -44,7 +44,7 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{
 		Name: item.Name, Signal: item.Signal, Direction: string(item.Direction), Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
-		AllCoins: item.AllCoins, MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
+		CoinSource: string(item.CoinSource), MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
 		TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
 		Message: item.Message, Enabled: item.Enabled,
 	})
@@ -73,7 +73,7 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{
 		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
 		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
-		AllCoins: item.AllCoins, MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
+		CoinSource: string(item.CoinSource), MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
 		TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
 		Message: item.Message, Retrade: retrade, Baseline: baseline,
 	})
@@ -237,6 +237,12 @@ func (store *Store) SaveStrategyStates(ctx context.Context, strategyID, revision
 
 func (store *Store) DeleteStrategyStates(ctx context.Context, strategyID int64, instrumentIDs []int64) error {
 	return store.queries.DeleteStrategyStates(ctx, generated.DeleteStrategyStatesParams{StrategyID: strategyID, InstrumentIds: instrumentIDs})
+}
+
+// ListStrategyFavorites returns the symbols of the user's favorites, active
+// or not, ascending.
+func (store *Store) ListStrategyFavorites(ctx context.Context, userID int64) ([]string, error) {
+	return store.queries.ListStrategyFavorites(ctx, userID)
 }
 
 // ListStrategyInstruments returns the active instruments, which strategies

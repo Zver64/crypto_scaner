@@ -20,8 +20,8 @@
 import type { Direction } from './direction.ts';
 import type { SignalTargetRatio } from './signalTargetRatio.ts';
 import type { SignalWindow } from './signalWindow.ts';
-import type { StrategyAllCoins } from './strategyAllCoins.ts';
 import type { StrategyCoins } from './strategyCoins.ts';
+import type { StrategyCoinSource } from './strategyCoinSource.ts';
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
@@ -41,7 +41,7 @@ export interface Strategy {
   take_profit_expression: StrategyTakeProfitExpression;
   stop_loss_expression: StrategyStopLossExpression;
   coins: StrategyCoins;
-  all_coins: StrategyAllCoins;
+  coin_source: StrategyCoinSource;
   min_market_cap_usd: StrategyMarketCapBound | null;
   max_market_cap_usd: StrategyMarketCapBound | null;
   target_ratio: SignalTargetRatio | null;

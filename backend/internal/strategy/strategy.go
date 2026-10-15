@@ -77,11 +77,11 @@ type Strategy struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
-	// Coins are the symbols of the coins the strategy evaluates, ascending.
-	// AllCoins, a signal's only, evaluates every active coin instead, and
-	// Coins is empty then.
-	Coins    []string
-	AllCoins bool
+	// Coins are the symbols of the coins chosen for the strategy, ascending,
+	// which it evaluates when CoinSource is CoinsSelected; otherwise Coins
+	// is empty.
+	Coins      []string
+	CoinSource CoinSource
 	// MarketCap, a signal's only, limits the coins a running signal
 	// announces; backtests ignore it.
 	MarketCap MarketCapRange
@@ -108,6 +108,19 @@ var SignalTargetRatios = []int{2, 3, 4, 5}
 // SignalWindows are the windows, in candles of its interval, a signal may
 // have.
 var SignalWindows = []int{3, 6, 12, 24}
+
+// CoinSource tells which coins a strategy evaluates.
+type CoinSource string
+
+const (
+	// CoinsSelected evaluates the coins chosen for the strategy.
+	CoinsSelected CoinSource = "selected"
+	// CoinsFavorites, a signal's only, evaluates the administrator's active
+	// favorites, whatever they are at the time.
+	CoinsFavorites CoinSource = "favorites"
+	// CoinsAll, a signal's only, evaluates every active coin.
+	CoinsAll CoinSource = "all"
+)
 
 // MarketCapRange is a range of market caps in USD; a nil bound is open.
 type MarketCapRange struct {
@@ -171,7 +184,7 @@ func (bounds MarketCapRange) validate() error {
 func (strategy Strategy) trades(other Strategy) bool {
 	return strategy.Expression != other.Expression || strategy.ExitExpression != other.ExitExpression ||
 		strategy.TakeProfitExpression != other.TakeProfitExpression || strategy.StopLossExpression != other.StopLossExpression ||
-		strategy.AllCoins != other.AllCoins || !slices.Equal(strategy.Coins, other.Coins)
+		strategy.CoinSource != other.CoinSource || !slices.Equal(strategy.Coins, other.Coins)
 }
 
 // Entry is a strategy with its compiled expressions. Compiled, the entry
@@ -192,6 +205,10 @@ type Entry struct {
 	// the other instruments they read through of, ascending.
 	reads   []Read
 	symbols []string
+	// favorites are the symbols of the administrator's favorites,
+	// ascending, whose active coins a strategy of CoinsFavorites evaluates;
+	// only replace sets them.
+	favorites []string
 }
 
 // evaluated reports whether the monitor evaluates the strategy.
@@ -199,11 +216,15 @@ func (entry Entry) evaluated() bool { return entry.Enabled && entry.Compiled != 
 
 // instruments lists the instruments among active that entry evaluates.
 func (entry Entry) instruments(active []Instrument) []Instrument {
-	if entry.AllCoins {
+	coins := entry.Coins
+	switch entry.CoinSource {
+	case CoinsAll:
 		return active
+	case CoinsFavorites:
+		coins = entry.favorites
 	}
 	return slices.DeleteFunc(slices.Clone(active), func(instrument Instrument) bool {
-		_, found := slices.BinarySearch(entry.Coins, instrument.Symbol)
+		_, found := slices.BinarySearch(coins, instrument.Symbol)
 		return !found
 	})
 }
@@ -248,6 +269,9 @@ type Store interface {
 	DeleteStrategy(context.Context, int64) error
 	// ListStrategyInstruments returns the active instruments.
 	ListStrategyInstruments(context.Context) ([]Instrument, error)
+	// ListStrategyFavorites returns the symbols of the user's favorites,
+	// ascending.
+	ListStrategyFavorites(ctx context.Context, userID int64) ([]string, error)
 	// GetActiveInstrumentBySymbol fails with market.ErrInstrumentNotFound.
 	GetActiveInstrumentBySymbol(context.Context, string) (market.Instrument, error)
 	// ListLatestCandles returns up to limit latest closed candles per
@@ -271,6 +295,9 @@ type Service struct {
 	tracker  Tracker
 	logger   *slog.Logger
 	changed  func(baselines []int64)
+	// administratorUserID is the user id, not the Telegram id, of the
+	// administrator, whose favorites signals of CoinsFavorites evaluate.
+	administratorUserID int64
 
 	// writes serializes changes, so name checks see every earlier change.
 	writes  sync.Mutex
@@ -279,6 +306,9 @@ type Service struct {
 	// active are the active instruments, as the catalog last reported them,
 	// without market caps.
 	active []Instrument
+	// favorites are the symbols of the administrator's favorites, as last
+	// read, ascending.
+	favorites []string
 	// backtests holds a slot per running backtest.
 	backtests chan struct{}
 }
@@ -295,12 +325,14 @@ const trackerSubscriber = "strategies"
 // NewService creates an empty service; Load reads the stored strategies.
 // Every change subscribes tracker to the values the enabled strategies and
 // signals read. changed receives the ids of strategies whose trading states
-// must start afresh after each change and must not block.
-func NewService(store Store, indicators Indicators, registry *indicator.Registry, tracker Tracker, logger *slog.Logger, changed func(baselines []int64)) (*Service, error) {
+// must start afresh after each change and must not block. administratorUserID
+// is the user id of the administrator, whose favorites signals of
+// CoinsFavorites evaluate.
+func NewService(store Store, indicators Indicators, registry *indicator.Registry, tracker Tracker, logger *slog.Logger, administratorUserID int64, changed func(baselines []int64)) (*Service, error) {
 	if store == nil || indicators == nil || registry == nil || tracker == nil || logger == nil || changed == nil {
 		return nil, errors.New("strategy store, indicators, registry, tracker, logger, and change listener are required")
 	}
-	return &Service{store: store, indicators: indicators, registry: registry, tracker: tracker, logger: logger.With("module", "strategy"), changed: changed, backtests: make(chan struct{}, maxBacktests)}, nil
+	return &Service{store: store, indicators: indicators, registry: registry, tracker: tracker, logger: logger.With("module", "strategy"), administratorUserID: administratorUserID, changed: changed, backtests: make(chan struct{}, maxBacktests)}, nil
 }
 
 // RuleKind tells what an expression is to a strategy.
@@ -520,8 +552,9 @@ func mergeReads(compiled *Expression, others ...*Expression) []Read {
 	return reads
 }
 
-// Load replaces the strategies and the active instruments with the stored
-// ones. A strategy that no longer compiles is kept but not evaluated.
+// Load replaces the strategies, the active instruments, and the
+// administrator's favorites with the stored ones. A strategy that no longer
+// compiles is kept but not evaluated.
 func (service *Service) Load(ctx context.Context) error {
 	stored, err := service.store.ListStrategies(ctx)
 	if err != nil {
@@ -535,6 +568,10 @@ func (service *Service) Load(ctx context.Context) error {
 	for i, instrument := range instruments {
 		active[i] = Instrument{ID: instrument.ID, Symbol: instrument.Symbol}
 	}
+	favorites, err := service.store.ListStrategyFavorites(ctx, service.administratorUserID)
+	if err != nil {
+		return fmt.Errorf("load favorites: %w", err)
+	}
 	entries := make([]Entry, len(stored))
 	for i, item := range stored {
 		entry, err := service.compileEntry(item)
@@ -547,10 +584,35 @@ func (service *Service) Load(ctx context.Context) error {
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	service.mu.Lock()
-	service.active = active
+	service.active, service.favorites = active, favorites
 	service.mu.Unlock()
 	service.replace(entries, nil)
 	return nil
+}
+
+// FavoritesChanged rereads the administrator's favorites after the favorites
+// of the user userID changed, so signals of CoinsFavorites evaluate them from
+// now on; other users' favorites play no part.
+func (service *Service) FavoritesChanged(ctx context.Context, userID int64) {
+	if userID != service.administratorUserID {
+		return
+	}
+	service.writes.Lock()
+	defer service.writes.Unlock()
+	// Read under writes, so the read after the latest change applies last,
+	// and to the end even when the request that changed them ends.
+	favorites, err := service.store.ListStrategyFavorites(context.WithoutCancel(ctx), service.administratorUserID)
+	if err != nil {
+		service.logger.WarnContext(ctx, "load favorites failed", "error", err)
+		return
+	}
+	service.mu.Lock()
+	unchanged := slices.Equal(service.favorites, favorites)
+	service.favorites = favorites
+	service.mu.Unlock()
+	if !unchanged {
+		service.replace(service.List(), nil)
+	}
 }
 
 // InstrumentsChanged replaces the active instruments after the catalog
@@ -693,7 +755,7 @@ func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) 
 		return current[index], nil
 	}
 	if enabled {
-		if !current[index].AllCoins && len(current[index].Coins) == 0 {
+		if current[index].CoinSource == CoinsSelected && len(current[index].Coins) == 0 {
 			return Entry{}, fmt.Errorf("%w: choose at least one coin before enabling it", ErrInvalidArgument)
 		}
 		if err := service.checkCoins(current[index]); err != nil {
@@ -755,6 +817,12 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 func (service *Service) replace(entries []Entry, baselines []int64) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
+	for i := range entries {
+		entries[i].favorites = nil
+		if entries[i].CoinSource == CoinsFavorites {
+			entries[i].favorites = service.favorites
+		}
+	}
 	service.entries = entries
 	service.subscribe()
 	service.changed(baselines)
@@ -780,14 +848,19 @@ func (service *Service) entry(item Strategy) (Entry, error) {
 	}
 	slices.Sort(coins)
 	item.Coins = slices.Compact(coins)
+	switch item.CoinSource {
+	case CoinsSelected, CoinsFavorites, CoinsAll:
+	default:
+		return Entry{}, fmt.Errorf("%w: the coin source must be selected, favorites, or all", ErrInvalidArgument)
+	}
 	switch {
 	case !item.Signal && (item.MarketCap.MinUSD != nil || item.MarketCap.MaxUSD != nil):
 		return Entry{}, fmt.Errorf("%w: only a signal has a market cap range", ErrInvalidArgument)
-	case !item.Signal && item.AllCoins:
-		return Entry{}, fmt.Errorf("%w: only a signal evaluates all coins; choose the coins of a strategy", ErrInvalidArgument)
-	case item.AllCoins && len(item.Coins) > 0:
-		return Entry{}, fmt.Errorf("%w: a signal of all coins has no coins chosen", ErrInvalidArgument)
-	case !item.AllCoins && len(item.Coins) == 0:
+	case !item.Signal && item.CoinSource != CoinsSelected:
+		return Entry{}, fmt.Errorf("%w: only a signal evaluates the favorites or all coins; choose the coins of a strategy", ErrInvalidArgument)
+	case item.CoinSource != CoinsSelected && len(item.Coins) > 0:
+		return Entry{}, fmt.Errorf("%w: a signal of the favorites or all coins has no coins chosen", ErrInvalidArgument)
+	case item.CoinSource == CoinsSelected && len(item.Coins) == 0:
 		return Entry{}, fmt.Errorf("%w: choose at least one coin", ErrInvalidArgument)
 	}
 	return service.trading(item)

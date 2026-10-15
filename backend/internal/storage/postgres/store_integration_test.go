@@ -627,7 +627,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 			t.Fatalf("create indicators: %v", err)
 		}
 		table, chart, read, unused := ids[0], ids[1], ids[2], ids[3]
-		strategyID, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Reads RSI 13", Expression: "d_rsi_13 > 1"}, []int64{read})
+		strategyID, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Reads RSI 13", Expression: "d_rsi_13 > 1", CoinSource: strategy.CoinsSelected}, []int64{read})
 		if err != nil {
 			t.Fatalf("create strategy: %v", err)
 		}

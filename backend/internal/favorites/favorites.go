@@ -32,10 +32,12 @@ type Store interface {
 
 type Service struct {
 	store   Store
-	changed func()
+	changed func(ctx context.Context, userID int64)
 }
 
-func New(store Store, changed func()) (*Service, error) {
+// New creates the service; changed runs after every change of the favorites
+// of the user userID.
+func New(store Store, changed func(ctx context.Context, userID int64)) (*Service, error) {
 	if store == nil || changed == nil {
 		return nil, errors.New("favorites service dependencies are required")
 	}
@@ -50,7 +52,7 @@ func (s *Service) Add(ctx context.Context, userID int64, symbol string) (Favorit
 	if err != nil {
 		return Favorite{}, err
 	}
-	s.changed()
+	s.changed(ctx, userID)
 	return item, nil
 }
 func (s *Service) Remove(ctx context.Context, userID int64, symbol string, confirm bool) (int, error) {
@@ -58,6 +60,6 @@ func (s *Service) Remove(ctx context.Context, userID int64, symbol string, confi
 	if err != nil {
 		return count, err
 	}
-	s.changed()
+	s.changed(ctx, userID)
 	return count, nil
 }

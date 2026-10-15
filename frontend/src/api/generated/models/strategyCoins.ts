@@ -21,10 +21,10 @@ import type { SymbolName } from './symbolName.ts';
 
 /**
  * The coins the enabled strategy or signal evaluates, among all coins,
- * ascending. A strategy needs at least one; a signal needs at least one
- * unless `all_coins` is set, and none then. Every coin must be active: a
- * delisted coin, chosen or read through `of`, disables the strategy
- * until it is replaced or removed.
+ * ascending, when `coin_source` is `selected`, which needs at least
+ * one; none otherwise. Every coin must be active: a delisted coin,
+ * chosen or read through `of`, disables the strategy until it is
+ * replaced or removed.
  * @maxItems 2000
  */
 export type StrategyCoins = SymbolName[];

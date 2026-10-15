@@ -9,15 +9,15 @@ SELECT s.id, s.name, s.signal, s.direction, s.expression, s.exit_expression, s.t
            WHERE sc.strategy_id = s.id
            ORDER BY i.symbol COLLATE "C"
        )::TEXT[] AS coins,
-       s.all_coins, s.min_market_cap_usd, s.max_market_cap_usd, s.target_ratio, s.window_candles, s.message, s.enabled, s.baseline_pending, s.revision
+       s.coin_source, s.min_market_cap_usd, s.max_market_cap_usd, s.target_ratio, s.window_candles, s.message, s.enabled, s.baseline_pending, s.revision
 FROM app.strategies s
 ORDER BY s.id;
 
 -- name: InsertStrategy :one
 INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-                            all_coins, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
+                            coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
 VALUES (@name, @signal, @direction, @expression, @exit_expression, @take_profit_expression, @stop_loss_expression,
-        @all_coins, sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), sqlc.narg(target_ratio), sqlc.narg(window_candles),
+        @coin_source, sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), sqlc.narg(target_ratio), sqlc.narg(window_candles),
         @message, @enabled, @enabled)
 RETURNING id;
 
@@ -29,7 +29,7 @@ RETURNING id;
 UPDATE app.strategies
 SET name = @name, expression = @expression, exit_expression = @exit_expression,
     take_profit_expression = @take_profit_expression, stop_loss_expression = @stop_loss_expression,
-    all_coins = @all_coins, min_market_cap_usd = sqlc.narg(min_market_cap_usd), max_market_cap_usd = sqlc.narg(max_market_cap_usd),
+    coin_source = @coin_source, min_market_cap_usd = sqlc.narg(min_market_cap_usd), max_market_cap_usd = sqlc.narg(max_market_cap_usd),
     target_ratio = sqlc.narg(target_ratio), window_candles = sqlc.narg(window_candles),
     message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
@@ -136,3 +136,13 @@ INSERT INTO app.strategy_coins (strategy_id, instrument_id)
 SELECT @strategy_id::BIGINT, i.id
 FROM binance_spot.instruments i
 WHERE i.symbol = ANY(@symbols::TEXT[]);
+
+-- name: ListStrategyFavorites :many
+-- The user's favorites, active or not, of which signals of the favorites
+-- evaluate the active ones; in byte order, as the strategy package sorts
+-- symbols.
+SELECT i.symbol
+FROM app.favorites f
+JOIN binance_spot.instruments i ON i.id = f.instrument_id
+WHERE f.user_id = @user_id
+ORDER BY i.symbol COLLATE "C";

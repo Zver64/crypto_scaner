@@ -310,7 +310,7 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 		api, server := newFakeAPI(t, map[string]string{
 			"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 			"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
-			"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","direction":"long","expression":"h_atr_100 > 1","coins":["BTCUSDT","ETHUSDT"],"message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
+			"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","direction":"long","expression":"h_atr_100 > 1","coins":["BTCUSDT","ETHUSDT"],"coin_source":"selected","message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		})
 		home := writeProfile(t, server.URL)
 
@@ -331,7 +331,7 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 			t.Fatalf("strategies create %v = %+v", test.args, got)
 		}
 		wants := map[string]string{
-			"POST /api/v1/admin/strategies": `{"all_coins":false,"coins":["BTCUSDT","ETHUSDT"],"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":"","target_ratio":null,"window":null}`,
+			"POST /api/v1/admin/strategies": `{"coin_source":"selected","coins":["BTCUSDT","ETHUSDT"],"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":"","target_ratio":null,"window":null}`,
 		}
 		if test.add {
 			wants["POST /api/v1/admin/scanner-indicator-batches"] = `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`
@@ -384,7 +384,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"},{"name":"pnl","label":"pnl","position":true}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","coins":["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"],"message":"Dip!","enabled":true,"valid":true},{"id":4,"name":"Old","direction":"short","expression":"x","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","coins":["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"],"coin_source":"selected","message":"Dip!","enabled":true,"valid":true},{"id":4,"name":"Old","direction":"short","expression":"x","coin_source":"selected","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -664,7 +664,7 @@ func TestCompletionOffersProfileNames(t *testing.T) {
 
 func TestCompletionOffersStrategiesAndFavorites(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies": `{"items":[{"id":79,"name":"Dip buy","expression":"x","message":"","enabled":false,"valid":true}]}`,
+		"GET /api/v1/admin/strategies": `{"items":[{"id":79,"name":"Dip buy","expression":"x","coin_source":"selected","message":"","enabled":false,"valid":true}]}`,
 		"GET /api/v1/favorites":        `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
 	})
 	home := writeProfile(t, server.URL)

@@ -105,7 +105,7 @@ type AppStrategy struct {
 	Direction            string
 	TargetRatio          pgtype.Int2
 	WindowCandles        pgtype.Int2
-	AllCoins             bool
+	CoinSource           string
 }
 
 type AppStrategyCoin struct {

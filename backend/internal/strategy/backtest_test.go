@@ -560,7 +560,7 @@ func testEMA(t *testing.T, registry *indicator.Registry, id int64, interval mark
 func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *Service {
 	t.Helper()
 	store.strategies = items
-	service, err := NewService(store, testIndicators{}, testRegistry(t), noTracker{}, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]int64) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -593,6 +593,7 @@ func (noTracker) Subscribe(string, []closedindicator.Subscription) {}
 type backtestStore struct {
 	Store
 	strategies []Strategy
+	favorites  []string
 	candles    map[market.CandleInterval]map[int64][]market.Candle
 }
 
@@ -606,6 +607,10 @@ func (store *backtestStore) ListStrategies(context.Context) ([]Strategy, error) 
 
 func (store *backtestStore) ListStrategyInstruments(context.Context) ([]Instrument, error) {
 	return []Instrument{{ID: 1, Symbol: "BTCUSDT"}}, nil
+}
+
+func (store *backtestStore) ListStrategyFavorites(context.Context, int64) ([]string, error) {
+	return store.favorites, nil
 }
 
 func (store *backtestStore) GetActiveInstrumentBySymbol(_ context.Context, symbol string) (market.Instrument, error) {
@@ -644,7 +649,7 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.strategies = []Strategy{{ID: 1, Name: "Cross", Expression: "crosses_above(h_close, h_ema_100)"}}
-	service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]int64) {})
 	if err != nil {
 		b.Fatal(err)
 	}

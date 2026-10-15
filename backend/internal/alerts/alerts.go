@@ -101,12 +101,12 @@ type LiveIndex interface {
 type Service struct {
 	store CRUDStore
 	live  LiveIndex
-	// favoritesChanged runs when creating an alert added a favorite, which
-	// changes the monitored instruments.
-	favoritesChanged func()
+	// favoritesChanged runs when creating an alert added a favorite of the
+	// user userID, which changes the monitored instruments.
+	favoritesChanged func(ctx context.Context, userID int64)
 }
 
-func New(store CRUDStore, live LiveIndex, favoritesChanged func()) (*Service, error) {
+func New(store CRUDStore, live LiveIndex, favoritesChanged func(ctx context.Context, userID int64)) (*Service, error) {
 	if store == nil || live == nil || favoritesChanged == nil {
 		return nil, errors.New("price alert service dependencies are required")
 	}
@@ -126,7 +126,7 @@ func (s *Service) Create(ctx context.Context, userID int64, symbol, raw string) 
 	}
 	s.live.Apply(item)
 	if favoriteAdded {
-		s.favoritesChanged()
+		s.favoritesChanged(ctx, userID)
 	}
 	return item, nil
 }

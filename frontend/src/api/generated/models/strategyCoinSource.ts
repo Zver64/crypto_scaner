@@ -19,6 +19,15 @@
  */
 
 /**
- * A signal's only; the signal evaluates every active coin instead of `coins`.
+ * Which coins the strategy evaluates: `selected`, the coins in `coins`;
+ * or, a signal's only, `favorites`, the administrator's active favorites
+ * whenever they change, or `all`, every active coin.
  */
-export type StrategyAllCoins = boolean;
+export type StrategyCoinSource = typeof StrategyCoinSource[keyof typeof StrategyCoinSource];
+
+
+export const StrategyCoinSource = {
+  CoinSourceSelected: 'selected',
+  CoinSourceFavorites: 'favorites',
+  CoinSourceAll: 'all',
+} as const;

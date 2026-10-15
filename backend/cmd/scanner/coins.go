@@ -10,21 +10,25 @@ import (
 )
 
 // coinFlags choose the coins a strategy or signal evaluates: --coin,
-// --favorites, and --coin-m add coins, and a signal's --all-coins evaluates
-// every active coin instead.
+// --favorites, and --coin-m add coins, and a signal's --track-favorites
+// evaluates the administrator's favorites, whatever they are at the time,
+// and its --all-coins every active coin instead.
 type coinFlags struct {
-	coins                      []string
-	favorites, coinM, allCoins bool
+	coins                                      []string
+	favorites, coinM, trackFavorites, allCoins bool
 }
 
-// add registers the flags; only a signal may evaluate all coins.
+// add registers the flags; only a signal may track the favorites or evaluate
+// all coins.
 func (f *coinFlags) add(command *cobra.Command, signal bool) {
 	flags := command.Flags()
 	flags.StringSliceVar(&f.coins, "coin", nil, "evaluate coin `SYM`; repeat or comma-separate")
-	flags.BoolVar(&f.favorites, "favorites", false, "evaluate your active favorites")
+	flags.BoolVar(&f.favorites, "favorites", false, "copy your active favorites into the chosen coins")
 	flags.BoolVar(&f.coinM, "coin-m", false, "evaluate the coins with a Binance COIN-M perpetual")
 	if signal {
+		flags.BoolVar(&f.trackFavorites, "track-favorites", false, "evaluate the administrator's active favorites whenever they change")
 		flags.BoolVar(&f.allCoins, "all-coins", false, "evaluate every active coin")
+		command.MarkFlagsMutuallyExclusive("track-favorites", "all-coins")
 	}
 }
 
@@ -42,17 +46,20 @@ func (f coinFlags) symbols() []string {
 // changed reports whether the flags choose coins; a flag set to false or an
 // empty --coin chooses none.
 func (f coinFlags) changed() bool {
-	return len(f.symbols()) > 0 || f.favorites || f.coinM || f.allCoins
+	return len(f.symbols()) > 0 || f.favorites || f.coinM || f.trackFavorites || f.allCoins
 }
 
-// resolveCoins returns the coins f chooses, ascending, or reports all coins.
-func (c *cli) resolveCoins(command *cobra.Command, client *apiclient.ClientWithResponses, f coinFlags) ([]string, bool, error) {
+// resolveCoins returns the coins f chooses, ascending, and their source.
+func (c *cli) resolveCoins(command *cobra.Command, client *apiclient.ClientWithResponses, f coinFlags) ([]string, apiclient.StrategyCoinSource, error) {
 	coins := f.symbols()
-	if f.allCoins {
+	if f.trackFavorites || f.allCoins {
 		if len(coins) > 0 || f.favorites || f.coinM {
-			return nil, false, usageError("--all-coins evaluates every coin; drop --coin, --favorites, and --coin-m")
+			return nil, "", usageError("--track-favorites and --all-coins choose no coins; drop --coin, --favorites, and --coin-m")
 		}
-		return []string{}, true, nil
+		if f.trackFavorites {
+			return []string{}, apiclient.CoinSourceFavorites, nil
+		}
+		return []string{}, apiclient.CoinSourceAll, nil
 	}
 	if f.favorites {
 		favorites, err := client.ListFavoritesWithResponse(command.Context())
@@ -60,7 +67,7 @@ func (c *cli) resolveCoins(command *cobra.Command, client *apiclient.ClientWithR
 			err = c.check(favorites, favorites.JSON200 != nil)
 		}
 		if err != nil {
-			return nil, false, err
+			return nil, "", err
 		}
 		for _, favorite := range favorites.JSON200.Items {
 			if favorite.Active {
@@ -75,15 +82,15 @@ func (c *cli) resolveCoins(command *cobra.Command, client *apiclient.ClientWithR
 			err = c.check(instruments, instruments.JSON200 != nil, instruments.JSON503)
 		}
 		if err != nil {
-			return nil, false, err
+			return nil, "", err
 		}
 		for _, instrument := range instruments.JSON200.Items {
 			coins = append(coins, instrument.Symbol)
 		}
 	}
 	if len(coins) == 0 {
-		return nil, false, usageError("no coins chosen; use --coin, --favorites, or --coin-m, or a signal's --all-coins")
+		return nil, "", usageError("no coins chosen; use --coin, --favorites, or --coin-m, or a signal's --track-favorites or --all-coins")
 	}
 	slices.Sort(coins)
-	return slices.Compact(coins), false, nil
+	return slices.Compact(coins), apiclient.CoinSourceSelected, nil
 }

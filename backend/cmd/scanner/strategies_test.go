@@ -17,27 +17,27 @@ func TestUpdateStrategyPreservesUnspecifiedFields(t *testing.T) {
 		want  apiclient.StrategyUpdate
 		added bool
 	}{
-		{"expression", []string{"--expr", "w_rsi < 50"}, apiclient.StrategyUpdate{Name: "Test", Expression: "w_rsi < 50", Message: "custom", Coins: coins}, false},
-		{"name", []string{"--name", "New"}, apiclient.StrategyUpdate{Name: "New", Expression: "m_rsi < 40", Message: "custom", Coins: coins}, false},
-		{"clear message", []string{"--message", ""}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "", Coins: coins}, false},
-		{"add indicators", []string{"--add-indicators"}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom", Coins: coins}, true},
+		{"expression", []string{"--expr", "w_rsi < 50"}, apiclient.StrategyUpdate{Name: "Test", Expression: "w_rsi < 50", Message: "custom", Coins: coins, CoinSource: apiclient.CoinSourceSelected}, false},
+		{"name", []string{"--name", "New"}, apiclient.StrategyUpdate{Name: "New", Expression: "m_rsi < 40", Message: "custom", Coins: coins, CoinSource: apiclient.CoinSourceSelected}, false},
+		{"clear message", []string{"--message", ""}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "", Coins: coins, CoinSource: apiclient.CoinSourceSelected}, false},
+		{"add indicators", []string{"--add-indicators"}, apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom", Coins: coins, CoinSource: apiclient.CoinSourceSelected}, true},
 		{
 			"exits", []string{"--exit", "pnl > 5 || w_rsi > 70", "--take-profit", "h_close * 1.1", "--stop-loss", "w_low", "--add-indicators"},
 			apiclient.StrategyUpdate{
 				Name: "Test", Expression: "m_rsi < 40", ExitExpression: "pnl > 5 || w_rsi > 70", TakeProfitExpression: "h_close * 1.1", StopLossExpression: "w_low", Message: "custom",
-				Coins: coins,
+				Coins: coins, CoinSource: apiclient.CoinSourceSelected,
 			}, true,
 		},
 		{
 			// Chosen coins replace the current ones; only active favorites count.
 			"coins", []string{"--coin", "solusdt,", "--favorites"},
-			apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom", Coins: []string{"ETHUSDT", "SOLUSDT"}}, false,
+			apiclient.StrategyUpdate{Name: "Test", Expression: "m_rsi < 40", Message: "custom", Coins: []string{"ETHUSDT", "SOLUSDT"}, CoinSource: apiclient.CoinSourceSelected}, false,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			response := `{"id":6,"name":"Test","expression":"w_rsi < 50","message":"custom","enabled":false,"valid":true}`
 			api, server := newFakeAPI(t, map[string]string{
-				"GET /api/v1/admin/strategies":                 `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","coins":["BTCUSDT"],"message":"custom","enabled":false,"valid":true}]}`,
+				"GET /api/v1/admin/strategies":                 `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","coins":["BTCUSDT"],"coin_source":"selected","message":"custom","enabled":false,"valid":true}]}`,
 				"GET /api/v1/favorites":                        `{"items":[{"symbol":"ETHUSDT","active":true},{"symbol":"OLDUSDT","active":false}]}`,
 				"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1w","type":"rsi","parameters":{"period":14},"title":"w-rsi"}]}`,
 				"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
@@ -134,12 +134,12 @@ func TestGroupsRefuseTheOtherKind(t *testing.T) {
 	}
 }
 
-// A signal update keeps its fields, market cap range and target ratio
-// included, changing only the flags given.
+// A signal update keeps its fields, coin source, market cap range, and target
+// ratio included, changing only the flags given.
 func TestUpdateSignalPreservesUnspecifiedFields(t *testing.T) {
 	response := `{"id":6,"name":"Crash Soon","signal":true,"direction":"short","expression":"h_close > 1","message":"m","enabled":false,"valid":true}`
 	api, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies":   `{"items":[{"id":6,"name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","min_market_cap_usd":10000000,"max_market_cap_usd":2000000000,"target_ratio":3,"window":12,"message":"m","enabled":false,"valid":true}]}`,
+		"GET /api/v1/admin/strategies":   `{"items":[{"id":6,"name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","coin_source":"favorites","min_market_cap_usd":10000000,"max_market_cap_usd":2000000000,"target_ratio":3,"window":12,"message":"m","enabled":false,"valid":true}]}`,
 		"PUT /api/v1/admin/strategies/6": response,
 	})
 	got := runCLI(t, writeProfile(t, server.URL), "", "signals", "update", "6", "--name", "Crash Soon", "--max-market-cap", "1B", "--window", "24", "--json")
@@ -151,7 +151,7 @@ func TestUpdateSignalPreservesUnspecifiedFields(t *testing.T) {
 	minimum, maximum := 10e6, 1e9
 	ratio, window := apiclient.SignalTargetRatioN3, apiclient.SignalWindowN24
 	want := apiclient.StrategyUpdate{
-		Name: "Crash Soon", Signal: true, Direction: apiclient.Short, Expression: "h_close > 1", MinMarketCapUsd: &minimum, MaxMarketCapUsd: &maximum,
+		Name: "Crash Soon", Signal: true, Direction: apiclient.Short, Expression: "h_close > 1", CoinSource: apiclient.CoinSourceFavorites, MinMarketCapUsd: &minimum, MaxMarketCapUsd: &maximum,
 		TargetRatio: &ratio, Window: &window, Message: "m",
 	}
 	if err := json.Unmarshal([]byte(raw), &body); err != nil || !reflect.DeepEqual(body, want) {

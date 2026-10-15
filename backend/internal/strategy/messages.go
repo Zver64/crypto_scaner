@@ -19,9 +19,12 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	if entry.Signal {
 		kind = "signal"
 	}
-	coins := "all coins"
+	var coins string
 	switch {
-	case entry.AllCoins:
+	case entry.CoinSource == CoinsAll:
+		coins = "all coins"
+	case entry.CoinSource == CoinsFavorites:
+		coins = "favorites"
 	case len(entry.Coins) == 1:
 		coins = "1 coin"
 	default:

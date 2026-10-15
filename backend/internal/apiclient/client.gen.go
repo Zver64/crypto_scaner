@@ -473,6 +473,27 @@ func (e SignalWindow) Valid() bool {
 	}
 }
 
+// Defines values for StrategyCoinSource.
+const (
+	CoinSourceAll       StrategyCoinSource = "all"
+	CoinSourceFavorites StrategyCoinSource = "favorites"
+	CoinSourceSelected  StrategyCoinSource = "selected"
+)
+
+// Valid indicates whether the value is a known member of the StrategyCoinSource enum.
+func (e StrategyCoinSource) Valid() bool {
+	switch e {
+	case CoinSourceAll:
+		return true
+	case CoinSourceFavorites:
+		return true
+	case CoinSourceSelected:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for StrategyValidationInputKind.
 const (
 	StrategyValidationInputKindEntry StrategyValidationInputKind = "entry"
@@ -1324,14 +1345,16 @@ type SignalWindow int
 
 // Strategy defines model for Strategy.
 type Strategy struct {
-	// AllCoins A signal's only; the signal evaluates every active coin instead of `coins`.
-	AllCoins StrategyAllCoins `json:"all_coins"`
+	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
+	// or, a signal's only, `favorites`, the administrator's active favorites
+	// whenever they change, or `all`, every active coin.
+	CoinSource StrategyCoinSource `json:"coin_source"`
 
 	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending. A strategy needs at least one; a signal needs at least one
-	// unless `all_coins` is set, and none then. Every coin must be active: a
-	// delisted coin, chosen or read through `of`, disables the strategy
-	// until it is replaced or removed.
+	// ascending, when `coin_source` is `selected`, which needs at least
+	// one; none otherwise. Every coin must be active: a delisted coin,
+	// chosen or read through `of`, disables the strategy until it is
+	// replaced or removed.
 	Coins StrategyCoins `json:"coins"`
 
 	// Direction How a strategy trades, long or short, or the price move a signal
@@ -1403,9 +1426,6 @@ type Strategy struct {
 	Valid  bool          `json:"valid"`
 	Window *SignalWindow `json:"window"`
 }
-
-// StrategyAllCoins A signal's only; the signal evaluates every active coin instead of `coins`.
-type StrategyAllCoins = bool
 
 // StrategyBacktest Returns, drawdowns, moves, and fees are fractions, such as 0.012 for 1.2%.
 type StrategyBacktest struct {
@@ -1504,11 +1524,16 @@ type StrategyBacktestInput struct {
 	Window *SignalWindow `json:"window"`
 }
 
+// StrategyCoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
+// or, a signal's only, `favorites`, the administrator's active favorites
+// whenever they change, or `all`, every active coin.
+type StrategyCoinSource string
+
 // StrategyCoins The coins the enabled strategy or signal evaluates, among all coins,
-// ascending. A strategy needs at least one; a signal needs at least one
-// unless `all_coins` is set, and none then. Every coin must be active: a
-// delisted coin, chosen or read through `of`, disables the strategy
-// until it is replaced or removed.
+// ascending, when `coin_source` is `selected`, which needs at least
+// one; none otherwise. Every coin must be active: a delisted coin,
+// chosen or read through `of`, disables the strategy until it is
+// replaced or removed.
 type StrategyCoins = []SymbolName
 
 // StrategyEnabled defines model for StrategyEnabled.
@@ -1524,14 +1549,16 @@ type StrategyExitExpression = string
 
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
-	// AllCoins A signal's only; the signal evaluates every active coin instead of `coins`.
-	AllCoins StrategyAllCoins `json:"all_coins"`
+	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
+	// or, a signal's only, `favorites`, the administrator's active favorites
+	// whenever they change, or `all`, every active coin.
+	CoinSource StrategyCoinSource `json:"coin_source"`
 
 	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending. A strategy needs at least one; a signal needs at least one
-	// unless `all_coins` is set, and none then. Every coin must be active: a
-	// delisted coin, chosen or read through `of`, disables the strategy
-	// until it is replaced or removed.
+	// ascending, when `coin_source` is `selected`, which needs at least
+	// one; none otherwise. Every coin must be active: a delisted coin,
+	// chosen or read through `of`, disables the strategy until it is
+	// replaced or removed.
 	Coins StrategyCoins `json:"coins"`
 
 	// Direction How a strategy trades, long or short, or the price move a signal
@@ -1640,14 +1667,16 @@ type StrategyTakeProfitExpression = string
 
 // StrategyUpdate defines model for StrategyUpdate.
 type StrategyUpdate struct {
-	// AllCoins A signal's only; the signal evaluates every active coin instead of `coins`.
-	AllCoins StrategyAllCoins `json:"all_coins"`
+	// CoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
+	// or, a signal's only, `favorites`, the administrator's active favorites
+	// whenever they change, or `all`, every active coin.
+	CoinSource StrategyCoinSource `json:"coin_source"`
 
 	// Coins The coins the enabled strategy or signal evaluates, among all coins,
-	// ascending. A strategy needs at least one; a signal needs at least one
-	// unless `all_coins` is set, and none then. Every coin must be active: a
-	// delisted coin, chosen or read through `of`, disables the strategy
-	// until it is replaced or removed.
+	// ascending, when `coin_source` is `selected`, which needs at least
+	// one; none otherwise. Every coin must be active: a delisted coin,
+	// chosen or read through `of`, disables the strategy until it is
+	// replaced or removed.
 	Coins StrategyCoins `json:"coins"`
 
 	// Direction How a strategy trades, long or short, or the price move a signal

@@ -1,6 +1,10 @@
 import type { Field, RuleGroupType, RuleType } from "react-querybuilder";
 
-import type { Direction, StrategyVariable } from "@/api/generated/models";
+import type {
+	Direction,
+	StrategyCoinSource,
+	StrategyVariable,
+} from "@/api/generated/models";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
 import type { useStrategyForm } from "@/features/strategy-settings/use-strategy-form";
 
@@ -32,10 +36,10 @@ export interface StrategyFormValues {
 	exitQuery: StrategyQuery | undefined;
 	takeProfit: PriceSetup;
 	stopLoss: PriceSetup;
-	// The coins evaluated, among all coins; allCoins, a signal's only,
-	// evaluates every active coin instead.
+	// The coins chosen, among all coins, which coinSource selected evaluates;
+	// a signal's favorites or all coins evaluate other coins instead.
 	coins: string[];
-	allCoins: boolean;
+	coinSource: StrategyCoinSource;
 	// A signal's market cap bounds in millions of USD, a string while being typed;
 	// empty without a bound.
 	minMarketCap: number | string;

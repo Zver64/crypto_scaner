@@ -119,7 +119,7 @@ func (c *cli) validateCommand() *cobra.Command {
 func (c *cli) favoritesCommand() *cobra.Command {
 	return &cobra.Command{
 		Use:   "favorites",
-		Short: "Your favorites, which --favorites chooses for strategies and signals",
+		Short: "Your favorites, which --favorites chooses for strategies and signals and --track-favorites follows for signals",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			client, err := c.client()
@@ -261,7 +261,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if body.Coins, _, err = c.resolveCoins(command, client, coins); err != nil {
+			if body.Coins, body.CoinSource, err = c.resolveCoins(command, client, coins); err != nil {
 				return err
 			}
 			if _, err := c.prepareStrategyRules(command, client, rules.rules(), addIndicators); err != nil {
@@ -403,11 +403,11 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			body := apiclient.StrategyUpdate{
 				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression, ExitExpression: current.ExitExpression,
 				TakeProfitExpression: current.TakeProfitExpression, StopLossExpression: current.StopLossExpression,
-				Coins: current.Coins, Message: current.Message,
+				Coins: current.Coins, CoinSource: current.CoinSource, Message: current.Message,
 			}
 			// Chosen coins replace the current ones.
 			if coins.changed() {
-				if body.Coins, _, err = c.resolveCoins(command, client, coins); err != nil {
+				if body.Coins, body.CoinSource, err = c.resolveCoins(command, client, coins); err != nil {
 					return err
 				}
 			}

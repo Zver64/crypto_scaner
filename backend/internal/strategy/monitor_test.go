@@ -69,7 +69,7 @@ func (store *disablingStore) DisableStrategyAtRevision(_ context.Context, _, rev
 func TestReadsOfSubscribesTheCoinsOfEachStrategy(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil),
 		Strategy{ID: 1, Name: "Hourly", Expression: "h_close > 1", Coins: []string{"ETHUSDT", "LUNAUSDT"}},
-		Strategy{ID: 2, Name: "Daily", Signal: true, Expression: "d_close > 1", AllCoins: true},
+		Strategy{ID: 2, Name: "Daily", Signal: true, Expression: "d_close > 1", CoinSource: CoinsAll},
 	)
 	active := []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"}}
 	subscribed := map[market.CandleInterval][]int64{}
@@ -86,7 +86,7 @@ func TestReadsOfSubscribesTheCoinsOfEachStrategy(t *testing.T) {
 func TestUpdateStartsAfreshOnlyWhenTheCoinsChange(t *testing.T) {
 	store := &updatingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
 	var baselines []int64
-	service := newBacktestService(t, store.backtestStore, Strategy{ID: 1, Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Coins: []string{"ETHUSDT"}, Enabled: true})
+	service := newBacktestService(t, store.backtestStore, Strategy{ID: 1, Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Coins: []string{"ETHUSDT"}, CoinSource: CoinsSelected, Enabled: true})
 	service.store, service.changed = store, func(ids []int64) { baselines = ids }
 	service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
 	for _, test := range []struct {
@@ -168,6 +168,54 @@ func (noValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closed
 	return make([]closedindicator.Value, len(subscriptions)), nil
 }
 
+// A signal of the favorites starts a coin new to them silently and alerts
+// on coins it already evaluated.
+func TestMonitorStartsCoinsNewToTheFavoritesSilently(t *testing.T) {
+	store := newBacktestStore(market.IntervalHour, nil)
+	store.favorites = []string{"BTCUSDT"}
+	service := newBacktestService(t, store, Strategy{ID: 1, Name: "Watch", Signal: true, Direction: DirectionLong, Expression: "h_close > 1", CoinSource: CoinsFavorites, Enabled: true, Revision: 1})
+	for _, test := range []struct {
+		states map[int64]TradeState
+		alert  bool
+	}{{map[int64]TradeState{}, false}, {map[int64]TradeState{1: {}}, true}} {
+		saving := &savingStore{monitorStore: monitorStore{store}}
+		monitor := NewMonitor(saving, closingValues{}, service, nil, 7, slog.New(slog.DiscardHandler))
+		monitor.full = true
+		monitor.evaluate(context.Background(), map[int64]map[int64]TradeState{1: test.states})
+		if !reflect.DeepEqual(saving.saved, []int64{1}) || (len(monitor.sends) > 0) != test.alert {
+			t.Fatalf("states %v: saved %v, %d alerts", test.states, saving.saved, len(monitor.sends))
+		}
+	}
+}
+
+type savingStore struct {
+	monitorStore
+	saved []int64
+}
+
+func (store *savingStore) SaveStrategyStates(_ context.Context, _, _ int64, states map[int64]TradeState) ([]int64, error) {
+	for id := range states {
+		store.saved = append(store.saved, id)
+	}
+	return store.saved, nil
+}
+
+// closingValues reports every value fresh, each output 2.
+type closingValues struct{}
+
+func (closingValues) Listen(func([]closedindicator.Change)) {}
+
+func (closingValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closedindicator.Value, []closedindicator.Target) {
+	values := make([]closedindicator.Value, len(subscriptions))
+	for i, subscription := range subscriptions {
+		values[i] = closedindicator.Value{Target: subscription.Target, OpenTime: subscription.Target.Interval.LastClosedOpenTime(time.Now())}
+		for _, name := range []string{"open", "high", "low", "close"} {
+			values[i].Outputs = append(values[i].Outputs, closedindicator.Output{Name: name, Value: 2})
+		}
+	}
+	return values, nil
+}
+
 // A failed round is retried after a delay instead of at once.
 func TestMonitorRetriesAFailedRoundLater(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -209,16 +257,19 @@ func (store *failingStore) ListStrategyInstruments(context.Context) ([]Instrumen
 }
 
 // The service subscribes the tracker to what its enabled strategies and
-// signals read, and again after any change of them or of the catalog.
+// signals read, and again after any change of them, of the catalog, or of the
+// favorites.
 func TestServiceSubscribesTheTrackerToWhatItsStrategiesRead(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, nil)
 	store.strategies = []Strategy{
 		{ID: 1, Name: "Hourly", Expression: "h_close > 1", Coins: []string{"BTCUSDT"}, Enabled: true},
-		{ID: 2, Name: "Daily", Signal: true, Expression: "d_close > 1", AllCoins: true, Enabled: true},
+		{ID: 2, Name: "Daily", Signal: true, Expression: "d_close > 1", CoinSource: CoinsAll, Enabled: true},
 		{ID: 3, Name: "Off", Expression: "w_close > 1", Coins: []string{"BTCUSDT"}},
+		{ID: 4, Name: "Weekly", Signal: true, Expression: "w_close > 1", CoinSource: CoinsFavorites, Enabled: true},
 	}
+	store.favorites = []string{"ETHUSDT"}
 	tracker := &recordingTracker{}
-	service, err := NewService(store, testIndicators{}, testRegistry(t), tracker, slog.New(slog.DiscardHandler), func([]int64) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), tracker, slog.New(slog.DiscardHandler), 0, func([]int64) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,14 +283,26 @@ func TestServiceSubscribesTheTrackerToWhatItsStrategiesRead(t *testing.T) {
 	}
 	service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
 	want[market.IntervalDay] = []int64{1, 2}
+	want[market.IntervalWeek] = []int64{2}
 	if got := tracker.subscribed(); !reflect.DeepEqual(got, want) {
 		t.Fatalf("after a listing = %v, want %v", got, want)
+	}
+	store.favorites = []string{"BTCUSDT"}
+	// Only the administrator's favorites, user 0 here, count.
+	service.FavoritesChanged(context.Background(), 5)
+	if got := tracker.subscribed(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("after another user's favorites change = %v, want %v", got, want)
+	}
+	service.FavoritesChanged(context.Background(), 0)
+	want[market.IntervalWeek] = []int64{1}
+	if got := tracker.subscribed(); !reflect.DeepEqual(got, want) {
+		t.Fatalf("after a favorites change = %v, want %v", got, want)
 	}
 	service.store = &disablingStore{backtestStore: store}
 	if _, err := service.DisableAtRevision(context.Background(), 2, 0); err != nil {
 		t.Fatal(err)
 	}
-	if got := tracker.subscribed(); !reflect.DeepEqual(got, map[market.CandleInterval][]int64{market.IntervalHour: {1}}) {
+	if got := tracker.subscribed(); !reflect.DeepEqual(got, map[market.CandleInterval][]int64{market.IntervalHour: {1}, market.IntervalWeek: {1}}) {
 		t.Fatalf("after disabling the signal = %v", got)
 	}
 }

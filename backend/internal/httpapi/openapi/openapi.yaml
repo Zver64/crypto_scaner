@@ -2055,7 +2055,7 @@ components:
     Strategy:
       type: object
       additionalProperties: false
-      required: [id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, all_coins, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled, valid, missing_indicators]
+      required: [id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled, valid, missing_indicators]
       properties:
         id: { type: integer, format: int64 }
         name: { type: string }
@@ -2068,7 +2068,7 @@ components:
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
         coins: { $ref: "#/components/schemas/StrategyCoins" }
-        all_coins: { $ref: "#/components/schemas/StrategyAllCoins" }
+        coin_source: { $ref: "#/components/schemas/StrategyCoinSource" }
         min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         target_ratio:
@@ -2525,7 +2525,7 @@ components:
     StrategyUpdate:
       type: object
       additionalProperties: false
-      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, all_coins, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message]
+      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         signal: { $ref: "#/components/schemas/StrategySignal" }
@@ -2535,7 +2535,7 @@ components:
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
         coins: { $ref: "#/components/schemas/StrategyCoins" }
-        all_coins: { $ref: "#/components/schemas/StrategyAllCoins" }
+        coin_source: { $ref: "#/components/schemas/StrategyCoinSource" }
         min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         target_ratio:
@@ -2563,7 +2563,7 @@ components:
     StrategyInput:
       type: object
       additionalProperties: false
-      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, all_coins, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled]
+      required: [name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled]
       properties:
         name: { type: string, minLength: 1, maxLength: 64 }
         signal: { $ref: "#/components/schemas/StrategySignal" }
@@ -2573,7 +2573,7 @@ components:
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
         coins: { $ref: "#/components/schemas/StrategyCoins" }
-        all_coins: { $ref: "#/components/schemas/StrategyAllCoins" }
+        coin_source: { $ref: "#/components/schemas/StrategyCoinSource" }
         min_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         max_market_cap_usd: { $ref: "#/components/schemas/StrategyMarketCapBound" }
         target_ratio:
@@ -2657,13 +2657,18 @@ components:
       items: { $ref: "#/components/schemas/SymbolName" }
       description: |
         The coins the enabled strategy or signal evaluates, among all coins,
-        ascending. A strategy needs at least one; a signal needs at least one
-        unless `all_coins` is set, and none then. Every coin must be active: a
-        delisted coin, chosen or read through `of`, disables the strategy
-        until it is replaced or removed.
-    StrategyAllCoins:
-      type: boolean
-      description: A signal's only; the signal evaluates every active coin instead of `coins`.
+        ascending, when `coin_source` is `selected`, which needs at least
+        one; none otherwise. Every coin must be active: a delisted coin,
+        chosen or read through `of`, disables the strategy until it is
+        replaced or removed.
+    StrategyCoinSource:
+      type: string
+      enum: [selected, favorites, all]
+      x-enum-varnames: [CoinSourceSelected, CoinSourceFavorites, CoinSourceAll]
+      description: |
+        Which coins the strategy evaluates: `selected`, the coins in `coins`;
+        or, a signal's only, `favorites`, the administrator's active favorites
+        whenever they change, or `all`, every active coin.
     StrategyMarketCapBound:
       type: [number, "null"]
       format: double

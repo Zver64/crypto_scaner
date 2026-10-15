@@ -73,7 +73,7 @@ func (api *api) CreateStrategy(ctx context.Context, request CreateStrategyReques
 	entry, err := api.strategies.Create(ctx, strategy.Strategy{
 		Name: body.Name, Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
-		Coins: body.Coins, AllCoins: body.AllCoins,
+		Coins: body.Coins, CoinSource: strategy.CoinSource(body.CoinSource),
 		MarketCap:   strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
 		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
 		Message: body.Message, Enabled: body.Enabled,
@@ -95,7 +95,7 @@ func (api *api) UpdateStrategy(ctx context.Context, request UpdateStrategyReques
 	entry, err := api.strategies.Update(ctx, strategy.Strategy{
 		ID: request.StrategyId, Name: body.Name, Signal: bool(body.Signal), Direction: strategy.Direction(body.Direction), Expression: body.Expression, ExitExpression: body.ExitExpression,
 		TakeProfitExpression: body.TakeProfitExpression, StopLossExpression: body.StopLossExpression,
-		Coins: body.Coins, AllCoins: body.AllCoins,
+		Coins: body.Coins, CoinSource: strategy.CoinSource(body.CoinSource),
 		MarketCap:   strategy.MarketCapRange{MinUSD: body.MinMarketCapUsd, MaxUSD: body.MaxMarketCapUsd},
 		TargetRatio: fromNullable(body.TargetRatio), Window: fromNullable(body.Window),
 		Message: body.Message,
@@ -352,7 +352,7 @@ func (api *api) strategyDTO(entry strategy.Entry) Strategy {
 	dto := Strategy{
 		Id: entry.ID, Name: entry.Name, Signal: StrategySignal(entry.Signal), Direction: Direction(entry.Direction), Expression: entry.Expression, ExitExpression: entry.ExitExpression,
 		TakeProfitExpression: entry.TakeProfitExpression, StopLossExpression: entry.StopLossExpression,
-		Coins: append([]string{}, entry.Coins...), AllCoins: entry.AllCoins,
+		Coins: append([]string{}, entry.Coins...), CoinSource: StrategyCoinSource(entry.CoinSource),
 		MinMarketCapUsd: entry.MarketCap.MinUSD, MaxMarketCapUsd: entry.MarketCap.MaxUSD,
 		TargetRatio: toNullable[SignalTargetRatio](entry.TargetRatio), Window: toNullable[SignalWindow](entry.Window),
 		Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,

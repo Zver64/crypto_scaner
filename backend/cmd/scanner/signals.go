@@ -191,7 +191,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 	var marketCap marketCapFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR --direction long|short|sideways (--all-coins|(--coin SYM|--favorites|--coin-m)...) [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR --direction long|short|sideways (--track-favorites|--all-coins|(--coin SYM|--favorites|--coin-m)...) [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled signal, which buys nothing and announces the move it expects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -207,7 +207,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			chosen, allCoins, err := c.resolveCoins(command, client, coins)
+			chosen, source, err := c.resolveCoins(command, client, coins)
 			if err != nil {
 				return err
 			}
@@ -215,7 +215,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 				return err
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
-				Name: args[0], Signal: true, Direction: move, Expression: rules.expression, Coins: chosen, AllCoins: allCoins,
+				Name: args[0], Signal: true, Direction: move, Expression: rules.expression, Coins: chosen, CoinSource: source,
 				TargetRatio: new(apiclient.SignalTargetRatio(rules.settings.ratio)), Window: new(apiclient.SignalWindow(rules.settings.window)),
 				MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum, Message: message,
 			})
@@ -276,7 +276,7 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 	var settings signalFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:               "update ID [--expr EXPR] [--all-coins|(--coin SYM|--favorites|--coin-m)...] [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
+		Use:               "update ID [--expr EXPR] [--track-favorites|--all-coins|(--coin SYM|--favorites|--coin-m)...] [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--name NAME] [--message TEXT] [--add-indicators]",
 		Short:             "Edit a disabled saved signal, preserving unspecified fields; its direction never changes",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: c.completeArg(signalsKind),
@@ -290,7 +290,7 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			edits := []string{"expr", "target-ratio", "window", "min-market-cap", "max-market-cap", "name", "message"}
 			edited := slices.ContainsFunc(edits, flags.Changed) || coins.changed()
 			if !edited && !flags.Changed("add-indicators") {
-				return usageError("specify at least one of --expr, --coin, --favorites, --coin-m, --all-coins, --target-ratio, --window, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
+				return usageError("specify at least one of --expr, --coin, --favorites, --coin-m, --track-favorites, --all-coins, --target-ratio, --window, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
 			}
 			if err := settings.check(flags); err != nil {
 				return err
@@ -309,12 +309,12 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			}
 			body := apiclient.StrategyUpdate{
 				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression,
-				Coins: current.Coins, AllCoins: current.AllCoins, TargetRatio: current.TargetRatio, Window: current.Window,
+				Coins: current.Coins, CoinSource: current.CoinSource, TargetRatio: current.TargetRatio, Window: current.Window,
 				MinMarketCapUsd: current.MinMarketCapUsd, MaxMarketCapUsd: current.MaxMarketCapUsd, Message: current.Message,
 			}
 			// Chosen coins replace the current ones.
 			if coins.changed() {
-				if body.Coins, body.AllCoins, err = c.resolveCoins(command, client, coins); err != nil {
+				if body.Coins, body.CoinSource, err = c.resolveCoins(command, client, coins); err != nil {
 					return err
 				}
 			}

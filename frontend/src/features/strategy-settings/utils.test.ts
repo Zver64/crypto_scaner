@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { StrategyCoinSource } from "@/api/generated/models";
 import {
 	importedStrategyQuery,
 	marketCapErrors,
@@ -167,20 +168,25 @@ describe("strategyInput", () => {
 		});
 	});
 
-	it("sends the coins, or none for a signal of all coins", () => {
+	it("sends the coins, or none for a signal of the favorites or all coins", () => {
 		expect(strategyInput(named, true)).toMatchObject({
-			all_coins: false,
+			coin_source: StrategyCoinSource.CoinSourceSelected,
 			coins: ["BTCUSDT", "SOLUSDT"],
 		});
-		expect(strategyInput({ ...named, allCoins: true }, true)).toMatchObject({
-			all_coins: true,
-			coins: [],
-		});
-		// Only a signal evaluates all coins.
-		expect(strategyInput({ ...named, allCoins: true }, false)).toMatchObject({
-			all_coins: false,
-			coins: ["BTCUSDT", "SOLUSDT"],
-		});
+		for (const coinSource of [
+			StrategyCoinSource.CoinSourceFavorites,
+			StrategyCoinSource.CoinSourceAll,
+		]) {
+			expect(strategyInput({ ...named, coinSource }, true)).toMatchObject({
+				coin_source: coinSource,
+				coins: [],
+			});
+			// Only a signal evaluates the favorites or all coins.
+			expect(strategyInput({ ...named, coinSource }, false)).toMatchObject({
+				coin_source: StrategyCoinSource.CoinSourceSelected,
+				coins: ["BTCUSDT", "SOLUSDT"],
+			});
+		}
 	});
 
 	it("is undefined while the form cannot be saved", () => {

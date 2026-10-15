@@ -10,9 +10,9 @@ import {
 	strategyFormValues,
 } from "@/features/strategy-settings/utils";
 
-// Checks the fields that depend on others: the coins on the choice of all
-// coins, and the market cap bounds together, as the maximum must not be
-// below the minimum.
+// Checks the fields that depend on others: the coins on the coin source,
+// and the market cap bounds together, as the maximum must not be below the
+// minimum.
 function validateLinkedFields({ value }: { value: StrategyFormData }) {
 	const errors = marketCapErrors(
 		marketCapUsd(value.minMarketCap),
@@ -20,7 +20,7 @@ function validateLinkedFields({ value }: { value: StrategyFormData }) {
 	);
 	return {
 		fields: {
-			coins: strategyCoinsError(value.coins, value.allCoins),
+			coins: strategyCoinsError(value.coins, value.coinSource),
 			maxMarketCap: errors.maximum,
 			minMarketCap: errors.minimum,
 		},

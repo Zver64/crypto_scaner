@@ -95,8 +95,12 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
 	}
+	administrator, err := store.FindByTelegramID(ctx, cfg.AdminTelegramID)
+	if err != nil {
+		return app{}, fmt.Errorf("find administrator: %w", err)
+	}
 	// Changes before the monitor exists are covered by its first evaluation.
-	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, closedIndicators, logger, func(baselines []int64) {
+	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, closedIndicators, logger, administrator.ID, func(baselines []int64) {
 		if strategyMonitor != nil {
 			strategyMonitor.StrategiesChanged(baselines)
 		}
@@ -177,7 +181,13 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	alertMonitor := alerts.NewMonitor(store, tradeStream, botService, logger)
 	strategyMonitor = strategy.NewMonitor(store, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
 	monitoredChanged = append(monitoredChanged, alertMonitor.Changed)
-	favoriteService, err := favorites.New(store, monitoredChanged.notify)
+	// Favorites change the monitored instruments, and the administrator's
+	// those signals of the favorites evaluate.
+	favoritesChanged := func(ctx context.Context, userID int64) {
+		monitoredChanged.notify()
+		strategies.FavoritesChanged(ctx, userID)
+	}
+	favoriteService, err := favorites.New(store, favoritesChanged)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites service: %w", err)
 	}
@@ -185,7 +195,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize market table service: %w", err)
 	}
-	alertService, err := alerts.New(store, alertMonitor, monitoredChanged.notify)
+	alertService, err := alerts.New(store, alertMonitor, favoritesChanged)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize price alert service: %w", err)
 	}

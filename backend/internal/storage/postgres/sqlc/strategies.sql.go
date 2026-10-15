@@ -107,7 +107,7 @@ func (q *Queries) DisableStrategyAtRevision(ctx context.Context, arg DisableStra
 
 const insertStrategy = `-- name: InsertStrategy :one
 INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-                            all_coins, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
+                            coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
 VALUES ($1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12,
         $13, $14, $14)
@@ -122,7 +122,7 @@ type InsertStrategyParams struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
-	AllCoins             bool
+	CoinSource           string
 	MinMarketCapUsd      pgtype.Float8
 	MaxMarketCapUsd      pgtype.Float8
 	TargetRatio          pgtype.Int2
@@ -140,7 +140,7 @@ func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) 
 		arg.ExitExpression,
 		arg.TakeProfitExpression,
 		arg.StopLossExpression,
-		arg.AllCoins,
+		arg.CoinSource,
 		arg.MinMarketCapUsd,
 		arg.MaxMarketCapUsd,
 		arg.TargetRatio,
@@ -222,7 +222,7 @@ SELECT s.id, s.name, s.signal, s.direction, s.expression, s.exit_expression, s.t
            WHERE sc.strategy_id = s.id
            ORDER BY i.symbol COLLATE "C"
        )::TEXT[] AS coins,
-       s.all_coins, s.min_market_cap_usd, s.max_market_cap_usd, s.target_ratio, s.window_candles, s.message, s.enabled, s.baseline_pending, s.revision
+       s.coin_source, s.min_market_cap_usd, s.max_market_cap_usd, s.target_ratio, s.window_candles, s.message, s.enabled, s.baseline_pending, s.revision
 FROM app.strategies s
 ORDER BY s.id
 `
@@ -237,7 +237,7 @@ type ListStrategiesRow struct {
 	TakeProfitExpression string
 	StopLossExpression   string
 	Coins                []string
-	AllCoins             bool
+	CoinSource           string
 	MinMarketCapUsd      pgtype.Float8
 	MaxMarketCapUsd      pgtype.Float8
 	TargetRatio          pgtype.Int2
@@ -269,7 +269,7 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			&i.TakeProfitExpression,
 			&i.StopLossExpression,
 			&i.Coins,
-			&i.AllCoins,
+			&i.CoinSource,
 			&i.MinMarketCapUsd,
 			&i.MaxMarketCapUsd,
 			&i.TargetRatio,
@@ -282,6 +282,36 @@ func (q *Queries) ListStrategies(ctx context.Context) ([]ListStrategiesRow, erro
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStrategyFavorites = `-- name: ListStrategyFavorites :many
+SELECT i.symbol
+FROM app.favorites f
+JOIN binance_spot.instruments i ON i.id = f.instrument_id
+WHERE f.user_id = $1
+ORDER BY i.symbol COLLATE "C"
+`
+
+// Signals of the favorites evaluate the administrator's favorites among the
+// active coins; in byte order, as the strategy package sorts symbols.
+func (q *Queries) ListStrategyFavorites(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := q.db.Query(ctx, listStrategyFavorites, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var symbol string
+		if err := rows.Scan(&symbol); err != nil {
+			return nil, err
+		}
+		items = append(items, symbol)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -490,7 +520,7 @@ const updateStrategy = `-- name: UpdateStrategy :one
 UPDATE app.strategies
 SET name = $1, expression = $2, exit_expression = $3,
     take_profit_expression = $4, stop_loss_expression = $5,
-    all_coins = $6, min_market_cap_usd = $7, max_market_cap_usd = $8,
+    coin_source = $6, min_market_cap_usd = $7, max_market_cap_usd = $8,
     target_ratio = $9, window_candles = $10,
     message = $11, updated_at = now(),
     baseline_pending = baseline_pending OR $12::BOOLEAN,
@@ -505,7 +535,7 @@ type UpdateStrategyParams struct {
 	ExitExpression       string
 	TakeProfitExpression string
 	StopLossExpression   string
-	AllCoins             bool
+	CoinSource           string
 	MinMarketCapUsd      pgtype.Float8
 	MaxMarketCapUsd      pgtype.Float8
 	TargetRatio          pgtype.Int2
@@ -527,7 +557,7 @@ func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) 
 		arg.ExitExpression,
 		arg.TakeProfitExpression,
 		arg.StopLossExpression,
-		arg.AllCoins,
+		arg.CoinSource,
 		arg.MinMarketCapUsd,
 		arg.MaxMarketCapUsd,
 		arg.TargetRatio,

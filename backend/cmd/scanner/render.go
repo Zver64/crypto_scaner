@@ -62,11 +62,11 @@ func terminalWidth(w io.Writer) int {
 const maxListedCoins = 3
 
 // coinsLabel names the coins a strategy evaluates, such as "BTCUSDT,
-// ETHUSDT", "BTCUSDT, ETHUSDT, SOLUSDT +5", or "all".
+// ETHUSDT", "BTCUSDT, ETHUSDT, SOLUSDT +5", "favorites", or "all".
 func coinsLabel(strategy apiclient.Strategy) string {
 	switch {
-	case strategy.AllCoins:
-		return "all"
+	case strategy.CoinSource != apiclient.CoinSourceSelected:
+		return string(strategy.CoinSource)
 	case len(strategy.Coins) == 0:
 		return "-"
 	case len(strategy.Coins) > maxListedCoins:

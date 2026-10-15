@@ -93,8 +93,12 @@ func (monitor *Monitor) check(ctx context.Context, state map[int64]map[int64]Tra
 			failure = fmt.Errorf("%s %w", instrument.Symbol, err)
 			break
 		}
-		if processed {
-			changes[instrument.ID] = next
+		if !processed {
+			continue
+		}
+		changes[instrument.ID] = next
+		// A coin new to the favorites starts silently from its entry now.
+		if _, known := states[instrument.ID]; known || entry.CoinSource != CoinsFavorites {
 			signals[instrument.ID] = events
 		}
 	}

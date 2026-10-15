@@ -1377,6 +1377,15 @@ components:
           maximum: 100
         sort:
           $ref: "#/components/schemas/MarketSort"
+        universe:
+          $ref: "#/components/schemas/MarketUniverse"
+    MarketUniverse:
+      description: >-
+        Instruments to select. `spot` (the default) selects every active Spot
+        USDT instrument; `coinm_perpetual` selects only those whose coin has a
+        trading Binance COIN-M perpetual contract.
+      type: string
+      enum: [spot, coinm_perpetual]
     CriterionRequest:
       type: object
       additionalProperties: false

@@ -8,10 +8,10 @@ import { SidebarLayout } from "@/components/sidebar-layout";
 import { sidebarColumns } from "@/components/sidebar-layout/constants";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { VolatilitySettingsForm } from "@/features/analysis/volatility-settings-form";
-import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
+import type { VolatilitySettingsStateProps } from "@/features/analysis/volatility-settings-form/types";
 import { FavoritesTable } from "@/features/favorites/favorites-table";
 import { useFavoritesAnalysis } from "@/features/favorites/use-favorites-analysis";
-import type { MarketScanSort } from "@/features/market-scan/sort";
+import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
 
 export function FavoritesScreen({
 	initialSettings,
@@ -20,14 +20,7 @@ export function FavoritesScreen({
 	onSymbolFilterChange,
 	sort,
 	symbolFilter,
-}: {
-	initialSettings: VolatilitySettings;
-	onSettingsCommit(settings: VolatilitySettings): void;
-	onSortChange(sort: MarketScanSort): void;
-	onSymbolFilterChange(symbolFilter: string): void;
-	sort: MarketScanSort | undefined;
-	symbolFilter: string;
-}) {
+}: VolatilitySettingsStateProps & ResultsTableStateProps) {
 	const permission = useBusinessRequestPermission();
 	const wide = useWideLayout();
 	const [settings, setSettings] = useState(initialSettings);

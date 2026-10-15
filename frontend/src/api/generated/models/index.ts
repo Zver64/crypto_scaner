@@ -116,6 +116,7 @@ export * from './marketSort.ts';
 export * from './marketSortDirection.ts';
 export * from './marketSortField.ts';
 export * from './marketTable.ts';
+export * from './marketUniverse.ts';
 export * from './priceAlert.ts';
 export * from './priceAlertInput.ts';
 export * from './priceAlertsResponse.ts';

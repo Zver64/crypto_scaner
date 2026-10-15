@@ -5,7 +5,7 @@ import { Link } from "@tanstack/react-router";
 interface PageLinkProps {
 	active: boolean;
 	label: string;
-	to: "/" | "/favorites" | "/top-coins";
+	to: "/" | "/coin-m" | "/favorites" | "/top-coins";
 	withDivider?: boolean;
 }
 

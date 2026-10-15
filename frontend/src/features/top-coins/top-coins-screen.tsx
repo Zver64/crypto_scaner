@@ -17,26 +17,22 @@ import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { VolatilitySettingsForm } from "@/features/analysis/volatility-settings-form";
-import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
+import type { VolatilitySettingsStateProps } from "@/features/analysis/volatility-settings-form/types";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
+import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
 import { filterMarketScanRows } from "@/features/market-scan/results-table/utils";
-import type { MarketScanSort } from "@/features/market-scan/sort";
 import {
 	buildTopCoinsCriteria,
 	buildTopCoinsScanCriteria,
-	topCoinsRequestOptions,
+	topCoinsPages,
 } from "@/features/top-coins/top-coins";
 
 const selectAnalysis = (response: analyzeMarketResponseSuccess) =>
 	response.data;
 
-interface TopCoinsScreenProps {
-	initialSettings: VolatilitySettings;
-	onSettingsCommit(settings: VolatilitySettings): void;
-	onSortChange(sort: MarketScanSort): void;
-	onSymbolFilterChange(symbolFilter: string): void;
-	sort: MarketScanSort | undefined;
-	symbolFilter: string;
+interface TopCoinsScreenProps
+	extends VolatilitySettingsStateProps, ResultsTableStateProps {
+	page: keyof typeof topCoinsPages;
 }
 
 export function TopCoinsScreen({
@@ -44,24 +40,26 @@ export function TopCoinsScreen({
 	onSettingsCommit,
 	onSortChange,
 	onSymbolFilterChange,
+	page,
 	sort,
 	symbolFilter,
 }: TopCoinsScreenProps) {
+	const { request: requestOptions, title } = topCoinsPages[page];
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const wide = useWideLayout();
 	const permission = useBusinessRequestPermission();
 	const [settings, setSettings] = useState(initialSettings);
 	const scanCriteria = buildTopCoinsScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
-	const request = { criteria, ...topCoinsRequestOptions };
+	const request = { criteria, ...requestOptions };
 	const query = useAnalyzeMarket(request, {
 		query: {
 			enabled: permission.allowed,
 			gcTime: Number.POSITIVE_INFINITY,
 			meta: {
 				errorNotification: {
-					id: "top-market-cap-error",
-					title: "Top Market Cap failed",
+					id: `${page}-error`,
+					title: `${title} failed`,
 				},
 			},
 			// Validated when fetched, so an unexpected response fails the query
@@ -80,14 +78,11 @@ export function TopCoinsScreen({
 	});
 	const allRows = query.data?.table.rows ?? [];
 	const rows = filterMarketScanRows(allRows, symbolFilter);
-	useAnalysisWarningNotification(
-		query.data?.warnings,
-		"Top Market Cap warning",
-	);
+	useAnalysisWarningNotification(query.data?.warnings, `${title} warning`);
 
 	return (
 		<PageStack gap={pageGap}>
-			<PageNavigation current="top-coins" title="Top Market Cap" />
+			<PageNavigation current={page} title={title} />
 			<SidebarLayout
 				gap={pageGap}
 				sidebar={
@@ -107,7 +102,7 @@ export function TopCoinsScreen({
 				<Stack flex={wide ? 1 : undefined} gap={pageGap}>
 					{query.isFetching && !query.data ? (
 						<Center mih={180}>
-							<Loader aria-label="Loading Top Market Cap" />
+							<Loader aria-label={`Loading ${title}`} />
 						</Center>
 					) : null}
 					{query.error && !query.data ? (
@@ -121,7 +116,7 @@ export function TopCoinsScreen({
 						allRows.length > 0 ? (
 							<>
 								<TextInput
-									aria-label="Filter Top Market Cap by symbol"
+									aria-label={`Filter ${title} by symbol`}
 									onChange={(event) =>
 										onSymbolFilterChange(event.currentTarget.value)
 									}

@@ -21,16 +21,12 @@ import {
 	defaultMarketScanCriteria,
 	type MarketScanCriteria,
 } from "@/features/market-scan/pipeline";
+import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
 import { MarketScanResults } from "@/features/market-scan/results-view";
-import type { MarketScanSort } from "@/features/market-scan/sort";
 
-interface MarketScanScreenProps {
+interface MarketScanScreenProps extends ResultsTableStateProps {
 	initialCriteria: MarketScanCriteria | undefined;
 	onCriteriaCommit(criteria: MarketScanCriteria): void;
-	onSortChange(sort: MarketScanSort): void;
-	onSymbolFilterChange(symbolFilter: string): void;
-	sort: MarketScanSort | undefined;
-	symbolFilter: string;
 }
 
 export function MarketScanScreen({

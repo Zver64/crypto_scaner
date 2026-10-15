@@ -34,9 +34,11 @@ type Analysis interface {
 	AnalyzeSymbol(context.Context, analysis.SymbolRequest) (analysis.SymbolResult, error)
 }
 
-// MarketTables runs market and favorites analyses and presents them as tables.
+// MarketTables runs market, COIN-M, and favorites analyses and presents them
+// as tables.
 type MarketTables interface {
 	Search(context.Context, analysis.SearchRequest) (markettable.Result, error)
+	CoinM(context.Context, analysis.SearchRequest) (markettable.Result, error)
 	Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error)
 }
 

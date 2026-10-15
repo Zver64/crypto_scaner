@@ -104,9 +104,13 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err := strategies.Load(ctx); err != nil {
 		return app{}, err
 	}
-	marketTable, err := markettable.NewCatalog(scannerIndicators, defaultTableSort, marketTableColumns()...)
+	marketTable, err := markettable.NewCatalog(scannerIndicators, defaultTableSort, marketTableColumns(markettable.ExchangeLink{})...)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize market table: %w", err)
+	}
+	coinMTable, err := markettable.NewCatalog(scannerIndicators, defaultTableSort, marketTableColumns(markettable.CoinMPerpetualLink{})...)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize COIN-M table: %w", err)
 	}
 	favoritesTable, err := markettable.NewCatalog(scannerIndicators, defaultTableSort, favoritesTableColumns()...)
 	if err != nil {
@@ -177,7 +181,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites service: %w", err)
 	}
-	marketTables, err := markettable.NewService(analysisService, closedIndicators, marketTable, favoritesTable)
+	marketTables, err := markettable.NewService(analysisService, closedIndicators, binance.NewCoinMPerpetuals(logger), marketTable, coinMTable, favoritesTable)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize market table service: %w", err)
 	}

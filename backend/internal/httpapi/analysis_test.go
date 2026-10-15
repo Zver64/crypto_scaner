@@ -415,9 +415,17 @@ func (service *countingAnalysis) Search(_ context.Context, request analysis.Sear
 	return markettable.Result{}, analysis.ErrInvalidArgument
 }
 
+func (service *countingAnalysis) CoinM(ctx context.Context, request analysis.SearchRequest) (markettable.Result, error) {
+	return service.Search(ctx, request)
+}
+
 func (service *countingAnalysis) Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error) {
 	return markettable.Result{}, analysis.ErrInvalidArgument
 }
+
+type noCoinMPerpetuals struct{}
+
+func (noCoinMPerpetuals) BaseAssets(context.Context) ([]string, error) { return nil, nil }
 
 // analysisSessions accepts only analysisSessionToken.
 type analysisSessions struct{}
@@ -450,7 +458,7 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	if err != nil {
 		panic(err)
 	}
-	tables, err := markettable.NewService(service, noClosedIndicators{}, table, table)
+	tables, err := markettable.NewService(service, noClosedIndicators{}, noCoinMPerpetuals{}, table, table, table)
 	if err != nil {
 		panic(err)
 	}

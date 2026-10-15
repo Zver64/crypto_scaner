@@ -12,8 +12,8 @@ import (
 // frontend change unless it introduces a new kind. The administrator's
 // indicator columns fill the ConfiguredIndicators slot and are tracked in the
 // background. Criterion columns read the evaluation of that criterion,
-// whatever key the client gave it.
-func marketTableColumns() []markettable.Column {
+// whatever key the client gave it. link opens the instrument on Binance.
+func marketTableColumns(link markettable.Source) []markettable.Column {
 	return []markettable.Column{
 		{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
 		{ID: "market_cap_usd", Title: "MCap", Kind: markettable.KindUSDCompact, Sortable: true,
@@ -24,7 +24,7 @@ func marketTableColumns() []markettable.Column {
 			Source: markettable.CriterionMetric{Criterion: volatility.Name, Unit: analysis.UnitHours, Metric: volatility.RangePercentMetric}},
 		{ID: "seven_day_change_percent", Title: "7d %", Kind: markettable.KindPercentChange, Sortable: true, Source: markettable.PriceChangePercent{}},
 		{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{}},
-		{ID: "binance", Title: "Binance", Kind: markettable.KindLink, Source: markettable.ExchangeLink{}},
+		{ID: "binance", Title: "Binance", Kind: markettable.KindLink, Source: link},
 		{Source: markettable.ConfiguredIndicators{}},
 		{ID: "favorite", Title: "Favorite", Kind: markettable.KindFavorite, Source: markettable.Favorite{}},
 	}
@@ -34,5 +34,5 @@ var defaultTableSort = markettable.Sort{Column: "market_cap_usd", Direction: mar
 
 // favoritesTableColumns extend the market table with the user's alert count.
 func favoritesTableColumns() []markettable.Column {
-	return append(marketTableColumns(), markettable.Column{ID: "alert_count", Title: "Alerts", Kind: markettable.KindCount, Source: markettable.AlertCount{}})
+	return append(marketTableColumns(markettable.ExchangeLink{}), markettable.Column{ID: "alert_count", Title: "Alerts", Kind: markettable.KindCount, Source: markettable.AlertCount{}})
 }

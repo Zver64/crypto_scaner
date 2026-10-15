@@ -167,8 +167,8 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	}
 	if restrictSymbols {
 		selection.Symbols = append([]string(nil), symbols...)
-		// Favorites are not a Top-N search: all selected active instruments must
-		// reach the analysis pipeline regardless of the caller's table limit.
+		// A symbol list is not a Top-N search: all selected active instruments
+		// must reach the analysis pipeline regardless of the caller's table limit.
 		selection.Limit = 0
 	}
 	if restrictSymbols && len(symbols) == 0 {

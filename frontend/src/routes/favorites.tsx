@@ -1,13 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { FavoritesScreen } from "@/features/favorites/favorites-screen";
-import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
 import {
 	parseVolatilitySettingsSearch,
-	volatilitySettingsFromSearch,
-	volatilitySettingsToSearch,
+	volatilitySettingsSearchProps,
 } from "@/routes/-volatility-settings-search";
-import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export const Route = createFileRoute("/favorites")({
 	component: FavoritesPage,
@@ -15,24 +12,7 @@ export const Route = createFileRoute("/favorites")({
 });
 
 function FavoritesPage() {
-	const search = Route.useSearch();
 	return (
-		<FavoritesScreen
-			initialSettings={volatilitySettingsFromSearch(search)}
-			onSettingsCommit={(settings) => {
-				replaceUrlSearch({ ...volatilitySettingsToSearch(settings) });
-			}}
-			onSortChange={(sort) => {
-				replaceUrlSearch({
-					sort_column: sort.column,
-					sort_direction: sort.direction,
-				});
-			}}
-			onSymbolFilterChange={(symbolFilter) => {
-				replaceUrlSearch({ symbol_filter: symbolFilter || undefined });
-			}}
-			sort={marketScanSortFromSearch(search)}
-			symbolFilter={search.symbol_filter ?? ""}
-		/>
+		<FavoritesScreen {...volatilitySettingsSearchProps(Route.useSearch())} />
 	);
 }

@@ -309,13 +309,30 @@ const binanceSpotQuoteAsset = "USDT"
 
 func (ExchangeLink) data() data { return dataURL }
 func (ExchangeLink) cell(row Row) (Cell, bool) {
-	symbol := market.NormalizeSymbol(row.Symbol)
-	base, ok := strings.CutSuffix(symbol, binanceSpotQuoteAsset)
-	if !ok || base == "" {
+	base, ok := spotBaseAsset(row.Symbol)
+	if !ok {
 		return Cell{}, true
 	}
 	url := "https://www.binance.com/en/trade/" + base + "_" + binanceSpotQuoteAsset + "?type=spot"
 	return Cell{URL: &url}, true
+}
+
+// CoinMPerpetualLink opens the coin's Binance COIN-M perpetual contract.
+type CoinMPerpetualLink struct{}
+
+func (CoinMPerpetualLink) data() data { return dataURL }
+func (CoinMPerpetualLink) cell(row Row) (Cell, bool) {
+	base, ok := spotBaseAsset(row.Symbol)
+	if !ok {
+		return Cell{}, true
+	}
+	url := "https://www.binance.com/en/delivery/" + strings.ToLower(base) + "usd_perpetual"
+	return Cell{URL: &url}, true
+}
+
+func spotBaseAsset(symbol string) (string, bool) {
+	base, ok := strings.CutSuffix(market.NormalizeSymbol(symbol), binanceSpotQuoteAsset)
+	return base, ok && base != ""
 }
 
 // AlertCount is the number of the user's price alerts for the instrument.

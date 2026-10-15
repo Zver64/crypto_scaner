@@ -1,12 +1,18 @@
 import { applicationConfig } from "@/config";
 import { volatilitySettingsSchema } from "@/features/analysis/schemas";
-import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
+import type {
+	VolatilitySettings,
+	VolatilitySettingsStateProps,
+} from "@/features/analysis/volatility-settings-form/types";
+import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
 import {
 	type MarketScanSortSearch,
 	parseMarketScanSortSearch,
 	parseSymbolFilterSearch,
+	resultsTableSearchProps,
 	type SymbolFilterSearch,
 } from "@/routes/-market-scan-search";
+import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export interface VolatilitySettingsSearch {
 	hourly_percentile: number;
@@ -29,6 +35,20 @@ export function parseVolatilitySettingsSearch(
 		),
 		...parseMarketScanSortSearch(search),
 		...parseSymbolFilterSearch(search),
+	};
+}
+
+// Binds a page's volatility settings and results table state to its URL
+// search.
+export function volatilitySettingsSearchProps(
+	search: VolatilitySettingsSearchWithSort,
+): VolatilitySettingsStateProps & ResultsTableStateProps {
+	return {
+		initialSettings: volatilitySettingsFromSearch(search),
+		onSettingsCommit: (settings) => {
+			replaceUrlSearch({ ...volatilitySettingsToSearch(settings) });
+		},
+		...resultsTableSearchProps(search),
 	};
 }
 

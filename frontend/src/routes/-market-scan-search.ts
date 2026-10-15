@@ -1,3 +1,4 @@
+import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
 import type {
 	MarketScanSort,
 	MarketScanSortDirection,
@@ -6,6 +7,7 @@ import {
 	parseOptionalScanCriteriaSearch,
 	type ScanCriteriaSearch,
 } from "@/routes/-scan-criteria-search";
+import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export interface MarketScanSortSearch {
 	sort_column?: string;
@@ -65,4 +67,23 @@ export function marketScanSortFromSearch(
 	return search.sort_column && search.sort_direction
 		? { column: search.sort_column, direction: search.sort_direction }
 		: undefined;
+}
+
+// Binds a page's results table state to its URL search.
+export function resultsTableSearchProps(
+	search: MarketScanSortSearch & SymbolFilterSearch,
+): ResultsTableStateProps {
+	return {
+		onSortChange: (sort) => {
+			replaceUrlSearch({
+				sort_column: sort.column,
+				sort_direction: sort.direction,
+			});
+		},
+		onSymbolFilterChange: (symbolFilter) => {
+			replaceUrlSearch({ symbol_filter: symbolFilter || undefined });
+		},
+		sort: marketScanSortFromSearch(search),
+		symbolFilter: search.symbol_filter ?? "",
+	};
 }

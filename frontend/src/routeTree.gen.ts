@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as CoinMRouteImport } from './routes/coin-m'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as TopCoinsRouteImport } from './routes/top-coins'
 import { Route as AdminIndexRouteImport } from './routes/admin.index'
@@ -30,6 +31,11 @@ const IndexRoute = IndexRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoinMRoute = CoinMRouteImport.update({
+  id: '/coin-m',
+  path: '/coin-m',
   getParentRoute: () => rootRouteImport,
 } as any)
 const FavoritesRoute = FavoritesRouteImport.update({
@@ -86,6 +92,7 @@ const AdminBacktestIndexRoute = AdminBacktestIndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/coin-m': typeof CoinMRoute
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
   '/admin/commands': typeof AdminCommandsRoute
@@ -99,6 +106,7 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/coin-m': typeof CoinMRoute
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
   '/admin/commands': typeof AdminCommandsRoute
@@ -114,6 +122,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRouteWithChildren
+  '/coin-m': typeof CoinMRoute
   '/favorites': typeof FavoritesRoute
   '/top-coins': typeof TopCoinsRoute
   '/admin/commands': typeof AdminCommandsRoute
@@ -130,6 +139,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/coin-m'
     | '/favorites'
     | '/top-coins'
     | '/admin/commands'
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/coin-m'
     | '/favorites'
     | '/top-coins'
     | '/admin/commands'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/coin-m'
     | '/favorites'
     | '/top-coins'
     | '/admin/commands'
@@ -172,6 +184,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRouteWithChildren
+  CoinMRoute: typeof CoinMRoute
   FavoritesRoute: typeof FavoritesRoute
   TopCoinsRoute: typeof TopCoinsRoute
   InstrumentsSymbolRoute: typeof InstrumentsSymbolRoute
@@ -191,6 +204,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/coin-m': {
+      id: '/coin-m'
+      path: '/coin-m'
+      fullPath: '/coin-m'
+      preLoaderRoute: typeof CoinMRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/favorites': {
@@ -291,6 +311,7 @@ const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRouteWithChildren,
+  CoinMRoute: CoinMRoute,
   FavoritesRoute: FavoritesRoute,
   TopCoinsRoute: TopCoinsRoute,
   InstrumentsSymbolRoute: InstrumentsSymbolRoute,

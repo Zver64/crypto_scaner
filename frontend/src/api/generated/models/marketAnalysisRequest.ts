@@ -19,6 +19,7 @@
  */
 import type { CriterionRequest } from './criterionRequest.ts';
 import type { MarketSort } from './marketSort.ts';
+import type { MarketUniverse } from './marketUniverse.ts';
 
 export interface MarketAnalysisRequest {
   /**
@@ -33,4 +34,5 @@ export interface MarketAnalysisRequest {
      */
   limit?: number;
   sort?: MarketSort;
+  universe?: MarketUniverse;
 }

@@ -23,10 +23,19 @@ export function buildTopCoinsCriteria(
 	return criterionSelections(buildTopCoinsScanCriteria(settings));
 }
 
+const marketCapSort = { direction: "desc", field: "market_cap_usd" } as const;
+
 export const topCoinsRequestOptions = {
 	limit: applicationConfig.topMarketCap.resultLimit,
-	sort: {
-		direction: "desc",
-		field: "market_cap_usd",
+	sort: marketCapSort,
+} as const;
+
+// Pages ranking coins by market cap: Top selects the largest Spot coins,
+// COIN-M every coin with a Binance COIN-M perpetual contract.
+export const topCoinsPages = {
+	"coin-m": {
+		request: { sort: marketCapSort, universe: "coinm_perpetual" },
+		title: "COIN-M",
 	},
+	"top-coins": { request: topCoinsRequestOptions, title: "Top Market Cap" },
 } as const;

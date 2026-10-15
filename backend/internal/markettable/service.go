@@ -3,9 +3,11 @@ package markettable
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/favorites"
+	"crypto-scanner/internal/market"
 )
 
 // Result is a market analysis together with the table built from its items.
@@ -19,22 +21,29 @@ type Analyzer interface {
 	SearchSymbols(context.Context, analysis.SearchRequest, []string) (analysis.SearchResult, error)
 }
 
+// CoinMPerpetuals lists the base assets of Binance COIN-M perpetual contracts.
+type CoinMPerpetuals interface {
+	BaseAssets(context.Context) ([]string, error)
+}
+
 // Service runs market and favorites analyses and presents the instruments as
 // tables.
 type Service struct {
-	analyzer  Analyzer
-	closed    analysis.ClosedIndicators
-	market    Catalog
-	favorites Catalog
+	analyzer   Analyzer
+	closed     analysis.ClosedIndicators
+	perpetuals CoinMPerpetuals
+	market     Catalog
+	coinM      Catalog
+	favorites  Catalog
 }
 
-// NewService builds market tables with market and favorites tables with
-// favorites.
-func NewService(analyzer Analyzer, closed analysis.ClosedIndicators, market, favorites Catalog) (*Service, error) {
-	if analyzer == nil || closed == nil {
+// NewService builds market tables with market, COIN-M tables with coinM, and
+// favorites tables with favorites.
+func NewService(analyzer Analyzer, closed analysis.ClosedIndicators, perpetuals CoinMPerpetuals, market, coinM, favorites Catalog) (*Service, error) {
+	if analyzer == nil || closed == nil || perpetuals == nil {
 		return nil, errors.New("market table service dependencies are required")
 	}
-	return &Service{analyzer: analyzer, closed: closed, market: market, favorites: favorites}, nil
+	return &Service{analyzer: analyzer, closed: closed, perpetuals: perpetuals, market: market, coinM: coinM, favorites: favorites}, nil
 }
 
 func (service *Service) Search(ctx context.Context, request analysis.SearchRequest) (Result, error) {
@@ -42,11 +51,33 @@ func (service *Service) Search(ctx context.Context, request analysis.SearchReque
 	if err != nil {
 		return Result{}, err
 	}
+	return searchResult(search, service.market), nil
+}
+
+// CoinM analyzes the Spot USDT instruments of the coins that have a Binance
+// COIN-M perpetual contract.
+func (service *Service) CoinM(ctx context.Context, request analysis.SearchRequest) (Result, error) {
+	assets, err := service.perpetuals.BaseAssets(ctx)
+	if err != nil {
+		return Result{}, fmt.Errorf("list COIN-M perpetuals: %w: %w", analysis.ErrMarketDataUnavailable, err)
+	}
+	symbols := make([]string, len(assets))
+	for i, asset := range assets {
+		symbols[i] = market.NormalizeSymbol(asset + binanceSpotQuoteAsset)
+	}
+	search, err := service.analyzer.SearchSymbols(ctx, request, symbols)
+	if err != nil {
+		return Result{}, err
+	}
+	return searchResult(search, service.coinM), nil
+}
+
+func searchResult(search analysis.SearchResult, catalog Catalog) Result {
 	rows := make([]Row, len(search.Items))
 	for i, item := range search.Items {
 		rows[i] = RowFromSearchItem(item)
 	}
-	return Result{Search: search, Table: service.market.Build(rows)}, nil
+	return Result{Search: search, Table: catalog.Build(rows)}
 }
 
 // Favorites analyzes the active favorites and returns a table row for every

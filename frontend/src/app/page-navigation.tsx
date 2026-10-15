@@ -2,7 +2,7 @@ import { Group, Paper, Title, VisuallyHidden } from "@mantine/core";
 
 import { PageLink } from "@/app/page-link";
 
-type Page = "favorites" | "market-scan" | "top-coins";
+type Page = "coin-m" | "favorites" | "market-scan" | "top-coins";
 
 interface PageNavigationProps {
 	current: Page;
@@ -22,6 +22,12 @@ export function PageNavigation({ current, title }: PageNavigationProps) {
 						active={current === "top-coins"}
 						label="Top"
 						to="/top-coins"
+						withDivider
+					/>
+					<PageLink
+						active={current === "coin-m"}
+						label="COIN-M"
+						to="/coin-m"
 						withDivider
 					/>
 					<PageLink

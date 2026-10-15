@@ -52,7 +52,11 @@ func (api *api) AnalyzeMarket(ctx context.Context, request AnalyzeMarketRequestO
 	if request.Body != nil {
 		body = *request.Body
 	}
-	result, err := api.tables.Search(ctx, marketSearchRequest(body))
+	search := api.tables.Search
+	if body.Universe != nil && *body.Universe == CoinmPerpetual {
+		search = api.tables.CoinM
+	}
+	result, err := search(ctx, marketSearchRequest(body))
 	if err != nil {
 		return api.analyzeMarketError(ctx, err), nil
 	}

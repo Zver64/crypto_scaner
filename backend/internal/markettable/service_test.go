@@ -28,6 +28,10 @@ func (noConfiguredColumns) TableColumns() []markettable.Column { return nil }
 
 type closedStub struct{}
 
+type perpetualsStub []string
+
+func (stub perpetualsStub) BaseAssets(context.Context) ([]string, error) { return stub, nil }
+
 func (closedStub) Latest(context.Context, []int64) map[int64][]closedindicator.Value { return nil }
 
 func TestFavoritesAnalyzesActiveFavoritesAndKeepsEveryRow(t *testing.T) {
@@ -39,7 +43,7 @@ func TestFavoritesAnalyzesActiveFavoritesAndKeepsEveryRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	analyzer := &analyzerStub{}
-	service, err := markettable.NewService(analyzer, closedStub{}, table, table)
+	service, err := markettable.NewService(analyzer, closedStub{}, perpetualsStub{}, table, table, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,5 +64,25 @@ func TestFavoritesAnalyzesActiveFavoritesAndKeepsEveryRow(t *testing.T) {
 	}
 	if count := result.Table.Rows[2].Cells["alert_count"].Value; count == nil || *count != 2 {
 		t.Fatalf("alert count = %v, want 2", count)
+	}
+}
+
+func TestCoinMAnalyzesSpotUSDTPairsOfPerpetualCoins(t *testing.T) {
+	table, err := markettable.NewCatalog(noConfiguredColumns{}, markettable.Sort{Column: "alert_count", Direction: markettable.Descending},
+		markettable.Column{ID: "alert_count", Title: "Alerts", Kind: markettable.KindCount, Sortable: true, Source: markettable.AlertCount{}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	analyzer := &analyzerStub{}
+	service, err := markettable.NewService(analyzer, closedStub{}, perpetualsStub{"BTC", "ETH"}, table, table, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.CoinM(context.Background(), analysis.SearchRequest{}); err != nil {
+		t.Fatal(err)
+	}
+	if len(analyzer.symbols) != 2 || analyzer.symbols[0] != "BTCUSDT" || analyzer.symbols[1] != "ETHUSDT" {
+		t.Fatalf("analyzed symbols = %v", analyzer.symbols)
 	}
 }

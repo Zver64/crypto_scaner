@@ -338,6 +338,24 @@ func (e MarketSortField) Valid() bool {
 	}
 }
 
+// Defines values for MarketUniverse.
+const (
+	CoinmPerpetual MarketUniverse = "coinm_perpetual"
+	Spot           MarketUniverse = "spot"
+)
+
+// Valid indicates whether the value is a known member of the MarketUniverse enum.
+func (e MarketUniverse) Valid() bool {
+	switch e {
+	case CoinmPerpetual:
+		return true
+	case Spot:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for PriceAlertsResponseLimit.
 const (
 	N10 PriceAlertsResponseLimit = 10
@@ -1105,6 +1123,9 @@ type MarketAnalysisRequest struct {
 	// Limit Maximum instruments to select. Zero or omission means no limit.
 	Limit *int        `json:"limit,omitempty"`
 	Sort  *MarketSort `json:"sort,omitempty"`
+
+	// Universe Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract.
+	Universe *MarketUniverse `json:"universe,omitempty"`
 }
 
 // MarketAnalysisResponse defines model for MarketAnalysisResponse.
@@ -1146,6 +1167,9 @@ type MarketTable struct {
 	DefaultSort TableSort     `json:"default_sort"`
 	Rows        []TableRow    `json:"rows"`
 }
+
+// MarketUniverse Instruments to select. `spot` (the default) selects every active Spot USDT instrument; `coinm_perpetual` selects only those whose coin has a trading Binance COIN-M perpetual contract.
+type MarketUniverse string
 
 // PriceAlert defines model for PriceAlert.
 type PriceAlert struct {

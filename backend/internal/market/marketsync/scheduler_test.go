@@ -11,7 +11,7 @@ import (
 	"crypto-scanner/internal/market/marketsync"
 )
 
-func TestNextDailyRunTargetsThirtySecondsAfterUTCMidnight(t *testing.T) {
+func TestNextDailyRunTargetsFiveSecondsAfterUTCMidnight(t *testing.T) {
 	tests := []struct {
 		name string
 		now  time.Time
@@ -20,12 +20,12 @@ func TestNextDailyRunTargetsThirtySecondsAfterUTCMidnight(t *testing.T) {
 		{
 			name: "during prior UTC day",
 			now:  time.Date(2026, time.August, 5, 5, 59, 59, 0, time.FixedZone("ICT", 7*60*60)),
-			want: time.Date(2026, time.August, 5, 0, 0, 30, 0, time.UTC),
+			want: time.Date(2026, time.August, 5, 0, 0, 5, 0, time.UTC),
 		},
 		{
 			name: "after today's boundary",
-			now:  time.Date(2026, time.August, 5, 0, 0, 31, 0, time.UTC),
-			want: time.Date(2026, time.August, 6, 0, 0, 30, 0, time.UTC),
+			now:  time.Date(2026, time.August, 5, 0, 0, 6, 0, time.UTC),
+			want: time.Date(2026, time.August, 6, 0, 0, 5, 0, time.UTC),
 		},
 	}
 	for _, test := range tests {
@@ -37,9 +37,9 @@ func TestNextDailyRunTargetsThirtySecondsAfterUTCMidnight(t *testing.T) {
 	}
 }
 
-func TestNextHourlyRunTargetsThirtySecondsAfterUTCClockHour(t *testing.T) {
+func TestNextHourlyRunTargetsFiveSecondsAfterUTCClockHour(t *testing.T) {
 	now := time.Date(2026, time.August, 5, 5, 59, 59, 0, time.FixedZone("ICT", 7*60*60))
-	want := time.Date(2026, time.August, 4, 23, 0, 30, 0, time.UTC)
+	want := time.Date(2026, time.August, 4, 23, 0, 5, 0, time.UTC)
 	if got := marketsync.NextRun(market.IntervalHour, now); !got.Equal(want) {
 		t.Fatalf("NextHourlyRun(%s) = %s, want %s", now, got, want)
 	}
@@ -47,11 +47,11 @@ func TestNextHourlyRunTargetsThirtySecondsAfterUTCClockHour(t *testing.T) {
 
 func TestNextWeeklyAndMonthlyRunsUseUTCCalendarBoundaries(t *testing.T) {
 	weeklyNow := time.Date(2026, time.August, 5, 12, 0, 0, 0, time.UTC)
-	if got, want := marketsync.NextRun(market.IntervalWeek, weeklyNow), time.Date(2026, time.August, 10, 0, 0, 30, 0, time.UTC); !got.Equal(want) {
+	if got, want := marketsync.NextRun(market.IntervalWeek, weeklyNow), time.Date(2026, time.August, 10, 0, 0, 5, 0, time.UTC); !got.Equal(want) {
 		t.Fatalf("NextWeeklyRun() = %s, want %s", got, want)
 	}
 	monthlyNow := time.Date(2024, time.February, 20, 0, 0, 0, 0, time.UTC)
-	if got, want := marketsync.NextRun(market.IntervalMonth, monthlyNow), time.Date(2024, time.March, 1, 0, 0, 30, 0, time.UTC); !got.Equal(want) {
+	if got, want := marketsync.NextRun(market.IntervalMonth, monthlyNow), time.Date(2024, time.March, 1, 0, 0, 5, 0, time.UTC); !got.Equal(want) {
 		t.Fatalf("NextMonthlyRun() = %s, want %s", got, want)
 	}
 }

@@ -430,7 +430,7 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 		t.Fatal(err)
 	}
 	changed := make(chan struct{}, 1)
-	tracker.Listen(func(closedindicator.Change) {
+	tracker.Listen(func([]closedindicator.Change) {
 		select {
 		case changed <- struct{}{}:
 		default:

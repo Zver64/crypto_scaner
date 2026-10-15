@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -647,4 +648,42 @@ func (store *fakeMarketStore) SaveSyncState(_ context.Context, state market.Sync
 	}
 	store.state = state
 	return nil
+}
+
+// A candle the exchange publishes a moment after it closes is loaded by one
+// more attempt of the same run.
+func TestSynchronizerRetriesACandlePublishedLate(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		instrument := market.Instrument{ID: 41, Symbol: "BTCUSDT", Active: true}
+		closed := market.IntervalHour.LastClosedOpenTime(time.Now())
+		candle := func(open time.Time) market.Candle {
+			return market.Candle{OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 1, High: 1, Low: 1, Close: 1}
+		}
+		previous := candle(market.IntervalHour.PreviousOpenTime(closed))
+		stored := previous
+		stored.InstrumentID, stored.Interval = instrument.ID, market.IntervalHour
+		exchange := &lateExchange{fakeExchange: &fakeExchange{items: []market.Instrument{instrument}}, first: []market.Candle{previous}, later: []market.Candle{previous, candle(closed)}}
+		store := &fakeMarketStore{active: []market.Instrument{instrument}, latest: map[int64][]market.Candle{instrument.ID: {stored}}}
+		if err := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 4, 1, market.BinanceSpotSyncProfile(market.IntervalHour)).Sync(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		if latest := store.latest[instrument.ID]; exchange.calls != 2 || !slices.ContainsFunc(latest, func(stored market.Candle) bool { return stored.OpenTime.Equal(closed) }) {
+			t.Fatalf("calls %d, latest %#v", exchange.calls, latest)
+		}
+	})
+}
+
+// lateExchange serves first, then later.
+type lateExchange struct {
+	*fakeExchange
+	first, later []market.Candle
+	calls        int
+}
+
+func (exchange *lateExchange) ListClosedCandles(context.Context, market.CandleRequest) ([]market.Candle, error) {
+	exchange.calls++
+	if exchange.calls == 1 {
+		return exchange.first, nil
+	}
+	return exchange.later, nil
 }

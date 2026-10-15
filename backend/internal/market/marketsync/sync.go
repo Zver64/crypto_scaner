@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/backoff"
 )
 
 // Exchange is the discovery boundary required by instrument synchronization.
@@ -77,6 +78,11 @@ const (
 	historyDepthPolicyVersion   = 1
 	historyExhaustionRetryDelay = 7 * 24 * time.Hour
 	emptyGapRetryDelay          = 7 * 24 * time.Hour
+	// lateCandleDelay and lateCandleAttempts wait for candles the exchange
+	// publishes a moment after they close: together with scheduleDelay, at
+	// least 30 seconds.
+	lateCandleDelay    = 10 * time.Second
+	lateCandleAttempts = 3
 )
 
 type intervalPolicy struct {
@@ -185,27 +191,59 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	if err != nil {
 		return synchronizer.recordFailure(ctx, &state, fmt.Errorf("load candle history coverage: %w", err))
 	}
-	results := synchronizer.syncInstruments(ctx, active, histories, coverages, profile, startedAt)
 	var instrumentFailures []error
 	failedIDs := make(map[int64]struct{})
-	for result := range results {
-		if result.err != nil {
-			stats.instrumentsFailed++
-			failedIDs[result.instrumentID] = struct{}{}
-			if len(instrumentFailures) < maxReportedFailures {
-				instrumentFailures = append(instrumentFailures, result.err)
+	synced := make(map[int64]struct{}, len(active))
+	beforeClosed := profile.Interval.PreviousOpenTime(closedThrough)
+	// collect records the results and returns the instruments that lack only
+	// the latest closed candle.
+	collect := func(instruments []market.Instrument) []market.Instrument {
+		var late []market.Instrument
+		for result := range synchronizer.syncInstruments(ctx, instruments, histories, coverages, profile, startedAt) {
+			synced[result.instrument.ID] = struct{}{}
+			if result.err != nil {
+				failedIDs[result.instrument.ID] = struct{}{}
+				if len(instrumentFailures) < maxReportedFailures {
+					instrumentFailures = append(instrumentFailures, result.err)
+				}
+				continue
 			}
-			continue
+			stats.exchangeRequests += result.exchangeRequests
+			stats.candleRowsRequested += result.rowsRequested
+			stats.candleRowsWritten += result.rowsWritten
+			stats.gapRangesRepaired += result.gapRangesRepaired
+			if result.latestOpenTime != nil && (state.LastClosedOpenTime == nil || result.latestOpenTime.After(*state.LastClosedOpenTime)) {
+				state.LastClosedOpenTime = result.latestOpenTime
+			}
+			if result.latestOpenTime != nil && result.latestOpenTime.Equal(beforeClosed) {
+				late = append(late, result.instrument)
+			}
 		}
-		stats.instrumentsSucceeded++
-		stats.exchangeRequests += result.exchangeRequests
-		stats.candleRowsRequested += result.rowsRequested
-		stats.candleRowsWritten += result.rowsWritten
-		stats.gapRangesRepaired += result.gapRangesRepaired
-		if result.latestOpenTime != nil && (state.LastClosedOpenTime == nil || result.latestOpenTime.After(*state.LastClosedOpenTime)) {
-			state.LastClosedOpenTime = result.latestOpenTime
-		}
+		return late
 	}
+	// The exchange may publish a candle a moment after it closes, so
+	// instruments without it are synchronized again, from their histories as
+	// the earlier attempt left them; a longer halt leaves more candles missing
+	// and waits for the next run.
+	late := collect(active)
+	for range lateCandleAttempts {
+		if len(late) == 0 || backoff.Sleep(ctx, lateCandleDelay) != nil {
+			break
+		}
+		lateIDs := make([]int64, len(late))
+		for index, instrument := range late {
+			lateIDs[index] = instrument.ID
+		}
+		if histories, err = synchronizer.store.SummarizeCandleHistory(ctx, lateIDs, profile.Interval, synchronizer.depth); err != nil {
+			return synchronizer.recordFailure(ctx, &state, fmt.Errorf("inspect candle history: %w", err))
+		}
+		if coverages, err = synchronizer.store.ListCandleHistoryCoverage(ctx, lateIDs, profile.Interval); err != nil {
+			return synchronizer.recordFailure(ctx, &state, fmt.Errorf("load candle history coverage: %w", err))
+		}
+		late = collect(late)
+	}
+	stats.instrumentsFailed = len(failedIDs)
+	stats.instrumentsSucceeded = len(synced) - stats.instrumentsFailed
 	if state.LastClosedOpenTime != nil {
 		for open := state.LastClosedOpenTime.UTC(); open.Before(profile.Interval.LastClosedOpenTime(startedAt)); open = profile.Interval.NextOpenTime(open) {
 			stats.lagIntervals++
@@ -234,7 +272,7 @@ func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 }
 
 type instrumentResult struct {
-	instrumentID     int64
+	instrument       market.Instrument
 	err              error
 	exchangeRequests int
 	rowsRequested    int
@@ -258,7 +296,7 @@ func (synchronizer *Synchronizer) syncInstruments(ctx context.Context, instrumen
 			for instrument := range jobs {
 				coverage, covered := coverages[instrument.ID]
 				result := synchronizer.syncInstrument(ctx, instrument, histories[instrument.ID], coverage, covered, profile, startedAt)
-				result.instrumentID = instrument.ID
+				result.instrument = instrument
 				results <- result
 			}
 		}()

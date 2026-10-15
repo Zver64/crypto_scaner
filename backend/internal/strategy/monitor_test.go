@@ -6,7 +6,10 @@ import (
 	"log/slog"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
+	"time"
 
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
@@ -162,8 +165,48 @@ func (monitorStore) DeleteStrategyStates(context.Context, int64, []int64) error 
 
 type noValues struct{}
 
-func (noValues) Listen(func(closedindicator.Change)) {}
+func (noValues) Listen(func([]closedindicator.Change)) {}
 
 func (noValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closedindicator.Value, []closedindicator.Target) {
 	return make([]closedindicator.Value, len(subscriptions)), nil
+}
+
+// A failed round is retried after a delay instead of at once.
+func TestMonitorRetriesAFailedRoundLater(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: 1, Name: "Hold", Expression: "h_close > 5", Coins: []string{"BTCUSDT"}, Enabled: true})
+		store := &failingStore{monitorStore: monitorStore{newBacktestStore(market.IntervalHour, nil)}}
+		monitor := NewMonitor(store, noValues{}, service, nil, 7, slog.New(slog.DiscardHandler))
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error)
+		go func() { done <- monitor.Run(ctx) }()
+		synctest.Wait()
+		if store.calls.Load() != 1 {
+			t.Fatalf("calls after start = %d, want 1", store.calls.Load())
+		}
+		// Changes wait for the retry too.
+		monitor.Changed()
+		time.Sleep(retryDelay - time.Second)
+		synctest.Wait()
+		if store.calls.Load() != 1 {
+			t.Fatalf("calls before the retry = %d, want 1", store.calls.Load())
+		}
+		time.Sleep(time.Second)
+		synctest.Wait()
+		if store.calls.Load() != 2 {
+			t.Fatalf("calls after the retry = %d, want 2", store.calls.Load())
+		}
+		cancel()
+		<-done
+	})
+}
+
+type failingStore struct {
+	monitorStore
+	calls atomic.Int32
+}
+
+func (store *failingStore) ListStrategyInstruments(context.Context) ([]Instrument, error) {
+	store.calls.Add(1)
+	return nil, errors.New("database unavailable")
 }

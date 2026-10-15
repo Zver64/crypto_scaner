@@ -146,7 +146,7 @@ type Tracker struct {
 	// otherwise wait for the end of the synchronization round.
 	synced   bool
 	refresh  bool
-	listener func(Change)
+	listener func([]Change)
 }
 
 // New creates a tracker. Targets are the values served to tables; source
@@ -177,8 +177,10 @@ func keysByInterval(targets []Target) map[market.CandleInterval][]string {
 }
 
 // Listen sets the consumer of recalculated tracked values, replacing any
-// earlier one. It is called outside the tracker lock and must not block.
-func (tracker *Tracker) Listen(listener func(Change)) {
+// earlier one. It receives the changes of each recalculation at once, such as
+// those of a synchronization round, outside the tracker lock, and must not
+// block.
+func (tracker *Tracker) Listen(listener func([]Change)) {
 	tracker.mu.Lock()
 	tracker.listener = listener
 	tracker.mu.Unlock()
@@ -485,11 +487,8 @@ func (tracker *Tracker) step(ctx context.Context) {
 	}
 	listener := tracker.listener
 	tracker.mu.Unlock()
-	if listener == nil {
-		return
-	}
-	for _, change := range changes {
-		listener(change)
+	if listener != nil && len(changes) > 0 {
+		listener(changes)
 	}
 }
 

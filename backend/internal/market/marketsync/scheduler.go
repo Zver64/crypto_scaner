@@ -86,7 +86,7 @@ func NewScheduler(profiles map[market.CandleInterval]Runner, logger *slog.Logger
 }
 
 const (
-	scheduleDelay = 30 * time.Second
+	scheduleDelay = 5 * time.Second
 	maxRetryDelay = 15 * time.Minute
 	// maxInstrumentRetries bounds the retries of a run's failed instruments.
 	maxInstrumentRetries = 4

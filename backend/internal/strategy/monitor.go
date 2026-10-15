@@ -12,14 +12,15 @@ import (
 	"time"
 
 	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/platform/backoff"
 )
 
 const (
-	// settleDelay groups the recalculations of one candle close, which arrive
-	// per interval and indicator, into one evaluation.
-	settleDelay  = 10 * time.Second
 	fullPassTime = 5 * time.Minute
 	sendWorkers  = 4
+	// retryDelay and maxRetryDelay space the rounds after a failed one.
+	retryDelay    = 10 * time.Second
+	maxRetryDelay = 5 * time.Minute
 )
 
 // Instrument is one active instrument strategies may evaluate.
@@ -53,7 +54,8 @@ type MonitorStore interface {
 
 // Values supplies the tracked closed indicator values.
 type Values interface {
-	Listen(func(closedindicator.Change))
+	// Listen receives the changes of each recalculation at once.
+	Listen(func([]closedindicator.Change))
 	// Snapshot returns the value of each subscription and also lists the
 	// targets some subscribed instrument has no value for yet, or none
 	// calculated with the subscribed points.
@@ -89,8 +91,9 @@ type Monitor struct {
 	wake  chan struct{}
 	sends chan message
 	// resync reloads the stored states before the next round, after a state
-	// write failed, conflicted, or was rejected. Only Run's goroutine uses it.
-	resync bool
+	// write failed, conflicted, or was rejected; failed delays the next round
+	// after a failed store call, but not after a conflict. Only Run's goroutine uses them.
+	resync, failed bool
 
 	mu sync.Mutex
 	// pending are instruments with changed values; full requests evaluating
@@ -113,9 +116,13 @@ func NewMonitor(store MonitorStore, values Values, strategies Strategies, sender
 		wake: make(chan struct{}, 1), sends: make(chan message, 256),
 		pending: map[int64]struct{}{}, baselines: map[int64]struct{}{},
 	}
-	values.Listen(func(change closedindicator.Change) {
+	// A recalculation, such as that of a synchronization round, is
+	// evaluated as one round, so its alerts of a strategy go together.
+	values.Listen(func(changes []closedindicator.Change) {
 		monitor.mu.Lock()
-		monitor.pending[change.InstrumentID] = struct{}{}
+		for _, change := range changes {
+			monitor.pending[change.InstrumentID] = struct{}{}
+		}
 		monitor.mu.Unlock()
 		monitor.signal()
 	})
@@ -169,34 +176,48 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 	monitor.StrategiesChanged(pending)
 	ticker := time.NewTicker(fullPassTime)
 	defer ticker.Stop()
-	settle := time.NewTimer(settleDelay)
-	settle.Stop()
-	defer settle.Stop()
-	settling := false
+	retry := time.NewTimer(retryDelay)
+	retry.Stop()
+	defer retry.Stop()
+	// failures counts the failed rounds in a row; while any, only the retry
+	// starts the next round.
+	failures := 0
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
 		case <-ticker.C:
 			monitor.Changed()
+			continue
 		case <-monitor.wake:
-			if !settling {
-				settle.Reset(settleDelay)
-				settling = true
+			if failures > 0 {
+				continue
 			}
-		case <-settle.C:
-			settling = false
-			if monitor.resync {
-				if err := monitor.loadStates(ctx, state); err != nil {
-					monitor.logger.WarnContext(ctx, "reload strategy states failed", "error", err)
-					monitor.signal()
-					continue
-				}
-				monitor.resync = false
-			}
-			monitor.evaluate(ctx, state)
+		case <-retry.C:
 		}
+		monitor.round(ctx, state)
+		if !monitor.failed {
+			failures = 0
+			continue
+		}
+		monitor.failed = false
+		retry.Reset(backoff.Exponential(retryDelay, maxRetryDelay, failures))
+		failures++
 	}
+}
+
+// round reloads the stored states when they may differ and evaluates the
+// pending work.
+func (monitor *Monitor) round(ctx context.Context, state map[int64]map[int64]TradeState) {
+	if monitor.resync {
+		if err := monitor.loadStates(ctx, state); err != nil {
+			monitor.logger.WarnContext(ctx, "reload strategy states failed", "error", err)
+			monitor.failed = true
+			return
+		}
+		monitor.resync = false
+	}
+	monitor.evaluate(ctx, state)
 }
 
 // loadStates replaces state with the stored trading states.
@@ -211,11 +232,18 @@ func (monitor *Monitor) loadStates(ctx context.Context, state map[int64]map[int6
 }
 
 // desync reloads the stored states and evaluates every instrument next
-// round, so a state whose write outcome is unknown is neither lost nor
-// repeated.
+// round, so a state the store rejected or whose write outcome is unknown is
+// neither lost nor repeated.
 func (monitor *Monitor) desync() {
 	monitor.resync = true
 	monitor.Changed()
+}
+
+// storeFailed reloads the stored states after a failed state write, whose
+// outcome is unknown, and delays the next round.
+func (monitor *Monitor) storeFailed() {
+	monitor.failed = true
+	monitor.desync()
 }
 
 // evaluate applies one round of pending work. Work that fails before any
@@ -235,7 +263,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		}
 		monitor.full = monitor.full || full
 		monitor.mu.Unlock()
-		monitor.signal()
+		monitor.failed = true
 	}
 	// Listed after draining: a strategy changed meanwhile has its baseline
 	// queued again and waits for the next round instead of alerting now. An
@@ -315,7 +343,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		if len(left) > 0 {
 			if err := monitor.store.DeleteStrategyStates(ctx, entry.ID, left); err != nil {
 				monitor.logger.WarnContext(ctx, "forget strategy states failed", "strategy_id", entry.ID, "error", err)
-				monitor.desync()
+				monitor.storeFailed()
 			} else {
 				for _, id := range left {
 					delete(states, id)
@@ -372,7 +400,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		stored, err := monitor.store.SaveStrategyStates(ctx, entry.ID, entry.Revision, changes)
 		if err != nil {
 			monitor.logger.WarnContext(ctx, "store strategy states failed", "strategy_id", entry.ID, "error", err)
-			monitor.desync()
+			monitor.storeFailed()
 			continue
 		}
 		// States not stored, or a rejected stale revision, mean the local
@@ -426,7 +454,7 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 		// whether the retry is still needed.
 		monitor.logger.WarnContext(ctx, "store strategy states failed", "strategy_id", entry.ID, "error", err)
 		monitor.StrategiesChanged([]int64{entry.ID})
-		monitor.desync()
+		monitor.storeFailed()
 		return
 	}
 	if !replaced {

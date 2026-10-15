@@ -1358,10 +1358,9 @@ type Strategy struct {
 	// The minimum must not exceed the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
-	// Message Telegram alert text that follows the strategy name, the coin symbol,
-	// and the buy, the sell, or the signal in place of the rule and the
-	// values it read;
-	// empty keeps the generated text.
+	// Message Text that Telegram alerts show under each title, which names the
+	// strategy, its interval, and the buy, sell, or signal, above the line
+	// of each coin; empty shows none.
 	Message StrategyMessage `json:"message"`
 
 	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
@@ -1556,10 +1555,9 @@ type StrategyInput struct {
 	// The minimum must not exceed the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
-	// Message Telegram alert text that follows the strategy name, the coin symbol,
-	// and the buy, the sell, or the signal in place of the rule and the
-	// values it read;
-	// empty keeps the generated text.
+	// Message Text that Telegram alerts show under each title, which names the
+	// strategy, its interval, and the buy, sell, or signal, above the line
+	// of each coin; empty shows none.
 	Message StrategyMessage `json:"message"`
 
 	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
@@ -1604,10 +1602,9 @@ type StrategyList struct {
 // The minimum must not exceed the maximum.
 type StrategyMarketCapBound = float64
 
-// StrategyMessage Telegram alert text that follows the strategy name, the coin symbol,
-// and the buy, the sell, or the signal in place of the rule and the
-// values it read;
-// empty keeps the generated text.
+// StrategyMessage Text that Telegram alerts show under each title, which names the
+// strategy, its interval, and the buy, sell, or signal, above the line
+// of each coin; empty shows none.
 type StrategyMessage = string
 
 // StrategyMissingIndicator defines model for StrategyMissingIndicator.
@@ -1683,10 +1680,9 @@ type StrategyUpdate struct {
 	// The minimum must not exceed the maximum.
 	MaxMarketCapUsd *StrategyMarketCapBound `json:"max_market_cap_usd"`
 
-	// Message Telegram alert text that follows the strategy name, the coin symbol,
-	// and the buy, the sell, or the signal in place of the rule and the
-	// values it read;
-	// empty keeps the generated text.
+	// Message Text that Telegram alerts show under each title, which names the
+	// strategy, its interval, and the buy, sell, or signal, above the line
+	// of each coin; empty shows none.
 	Message StrategyMessage `json:"message"`
 
 	// MinMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market

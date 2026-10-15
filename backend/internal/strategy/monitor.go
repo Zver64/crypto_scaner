@@ -380,7 +380,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 		if len(stored) < len(changes) {
 			monitor.desync()
 		}
-		var alerts []string
+		var alerts []alert
 		for _, instrument := range evaluated {
 			if !slices.Contains(stored, instrument.ID) {
 				continue
@@ -388,12 +388,12 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]
 			states[instrument.ID] = changes[instrument.ID]
 			for _, event := range signals[instrument.ID] {
 				if event.Kind != TradeSkip {
-					alerts = append(alerts, alertText(entry, instrument, event, current))
+					alerts = append(alerts, alert{instrument, event})
 				}
 			}
 		}
 		if len(alerts) > 0 {
-			monitor.send(ctx, recipients, strings.Join(alerts, "\n\n"))
+			monitor.send(ctx, recipients, alertText(entry, alerts, current))
 		}
 	}
 }
@@ -685,36 +685,31 @@ func bySymbol(instruments []Instrument) map[string]int64 {
 	return result
 }
 
-// maxSummaryLength keeps summaries below Telegram's 4096-character message
-// limit; the symbols that do not fit are counted instead.
-const maxSummaryLength = 4000
+// maxTextLength keeps messages below Telegram's 4096-character limit.
+const maxTextLength = 4000
 
-// summaryText announces an enabled or changed strategy, its market cap
-// range, and the instruments within it whose entry is true now, which buy
-// only once it turns true again.
+// summaryText announces an enabled or changed strategy: its kind, interval,
+// coins, and market cap range, and the instruments within it whose entry is
+// true now, which buy only once it turns true again.
 func summaryText(entry Entry, matching []Instrument, current snapshot) string {
-	text := "🎯 " + entry.Name + " is active\n"
+	kind := "strategy"
+	if entry.Signal {
+		kind = "signal"
+	}
+	coins := "all coins"
 	switch {
-	case entry.Signal:
-		text += "Signal: " + string(entry.Direction) + "\n"
-	case entry.Direction == DirectionShort:
-		text += "Direction: short\n"
+	case entry.AllCoins:
+	case len(entry.Coins) == 1:
+		coins = "1 coin"
+	default:
+		coins = strconv.Itoa(len(entry.Coins)) + " coins"
 	}
-	text += "Entry: " + entry.Expression + "\n"
-	if entry.Exit != nil {
-		text += "Exit: " + entry.ExitExpression + "\n"
-	}
-	if entry.TakeProfit != nil {
-		text += "Take profit: " + entry.TakeProfitExpression + "\n"
-	}
-	if entry.StopLoss != nil {
-		text += "Stop loss: " + entry.StopLossExpression + "\n"
+	text := "🎯 " + entry.Name + " is active\n" + capitalized(string(entry.Direction)) + " " + kind + " · " + string(entry.Interval) + " · " + coins + "\n"
+	if bounds := entry.MarketCap.String(); bounds != "" {
+		text += "Market cap: " + bounds + "\n"
 	}
 	if !entry.Signal && !entry.Exits() {
 		text += "No exit: every entry signal buys.\n"
-	}
-	if bounds := entry.MarketCap.String(); bounds != "" {
-		text += "Market cap: " + bounds + "\n"
 	}
 	if len(matching) == 0 {
 		return text + "No coin's entry is true now."
@@ -734,7 +729,7 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	}
 	for i, symbol := range symbols {
 		more := fmt.Sprintf(" and %d more", len(symbols)-i)
-		if len(text)+len(symbol)+2+len(more) > maxSummaryLength {
+		if len(text)+len(symbol)+2+len(more) > maxTextLength {
 			return strings.TrimSuffix(text, ", ") + more
 		}
 		text += symbol + ", "
@@ -742,69 +737,115 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	return strings.TrimSuffix(text, ", ")
 }
 
-// alertText names the strategy, the instrument, and the signal with the move
-// it expects, or the buy, with the take profit and stop loss of the trade it
-// opens, or the sell of event and what sold it, then the rule that signaled
-// it and the values that rule read,
-// named as it writes them. A sell at a take
-// profit or stop loss has no rule. A strategy message replaces the rule and
-// the values.
-func alertText(entry Entry, instrument Instrument, event TradeEvent, current snapshot) string {
-	var title string
-	rule, source := entry.Compiled, entry.Expression
+func capitalized(text string) string {
+	if text == "" {
+		return text
+	}
+	return strings.ToUpper(text[:1]) + text[1:]
+}
+
+// alert is one event of a strategy on one instrument.
+type alert struct {
+	instrument Instrument
+	event      TradeEvent
+}
+
+// alertText announces the events of one round of entry: under a title per
+// kind of event, naming the strategy, its interval, and the kind, come the
+// strategy message and a line per instrument. A message too long for
+// Telegram ends at the last line that fits.
+func alertText(entry Entry, alerts []alert, current snapshot) string {
+	var titles []string
+	lines := map[string][]string{}
+	for _, item := range alerts {
+		title := alertTitle(entry, item.event)
+		if _, ok := lines[title]; !ok {
+			titles = append(titles, title)
+		}
+		lines[title] = append(lines[title], alertLine(entry, item, current))
+	}
+	blocks := make([]string, len(titles))
+	for i, title := range titles {
+		block := []string{title}
+		if entry.Message != "" {
+			block = append(block, entry.Message)
+		}
+		blocks[i] = strings.Join(append(block, lines[title]...), "\n")
+	}
+	text := strings.Join(blocks, "\n\n")
+	const tooLong = "\n…message too long"
+	if len(text) <= maxTextLength {
+		return text
+	}
+	cut := text[:maxTextLength-len(tooLong)]
+	return cut[:max(0, strings.LastIndex(cut, "\n"))] + tooLong
+}
+
+// alertTitle names entry, its interval, and the kind of event, such as
+// "🟢 Trend · 1h · buy" or "📈 Rebound · 1h · long signal".
+func alertTitle(entry Entry, event TradeEvent) string {
+	mark, kind := signalMarks[entry.Direction], string(entry.Direction)+" signal"
+	switch {
+	case event.Kind == TradeSignal:
+	case event.Kind == TradeSell && entry.Direction == DirectionShort:
+		mark, kind = "🔺", "cover"
+	case event.Kind == TradeSell:
+		mark, kind = "🔴", "sell"
+	case entry.Direction == DirectionShort:
+		mark, kind = "🔻", "short"
+	default:
+		mark, kind = "🟢", "buy"
+	}
+	return mark + " " + entry.Name + " · " + string(entry.Interval) + " · " + kind
+}
+
+// alertLine describes the event on the instrument of item: the close of a
+// signal; the price, the buy number past the first, the take profit, and the
+// stop loss of a buy or short; or the price, what closed it, the return, the
+// entry price, and the buys past one of a sell or cover. Then come the values
+// the rule that caused it read, named as it writes them; a take profit or
+// stop loss has no rule.
+func alertLine(entry Entry, item alert, current snapshot) string {
+	event := item.event
+	parts := []string{item.instrument.Symbol + " " + formatNumber(event.Close)}
+	rule := entry.Compiled
+	var positions map[string]float64
 	switch event.Kind {
 	case TradeSignal:
-		title = signalMarks[entry.Direction] + " " + entry.Name + ": " + instrument.Symbol + " " + string(entry.Direction) + " signal at " + formatNumber(event.Close)
 	case TradeSell:
 		price, reason := event.Close, "exit rule"
 		switch event.Reason {
 		case ExitTakeProfit:
-			price, reason = event.Price, "take profit"
+			price, reason, rule = event.Price, "take profit", nil
 		case ExitStopLoss:
-			price, reason = event.Price, "stop loss"
+			price, reason, rule = event.Price, "stop loss", nil
+		default:
+			rule = entry.Exit
+			positions = entry.positions(event.Trade, entry.Interval.LastClosedOpenTime(current.now), event.Close)
 		}
-		if entry.Direction == DirectionShort {
-			title = fmt.Sprintf("🔺 %s: %s cover at %s by %s, entry %s, pnl %+.2f%%",
-				entry.Name, instrument.Symbol, formatNumber(price), reason, formatNumber(event.Trade.EntryPrice()), 100*event.Return)
-		} else {
-			title = fmt.Sprintf("🔴 %s: %s sell %d buys at %s by %s, entry %s, pnl %+.2f%%",
-				entry.Name, instrument.Symbol, event.Trade.Buys, formatNumber(price), reason, formatNumber(event.Trade.EntryPrice()), 100*event.Return)
+		parts = []string{item.instrument.Symbol + " at " + formatNumber(price) + " by " + reason, fmt.Sprintf("%+.2f%%", 100*event.Return), "entry " + formatNumber(event.Trade.EntryPrice())}
+		if event.Trade.Buys > 1 {
+			parts = append(parts, strconv.Itoa(event.Trade.Buys)+" buys")
 		}
-		rule, source = entry.Exit, entry.ExitExpression
 	default:
-		if entry.Direction == DirectionShort {
-			// A short strategy exits, so its trades open once.
-			title = "🔻 " + entry.Name + ": " + instrument.Symbol + " short at " + formatNumber(event.Close)
-		} else {
-			title = "🟢 " + entry.Name + ": " + instrument.Symbol + " buy #" + strconv.Itoa(event.Buy) + " at " + formatNumber(event.Close)
+		parts[0] = item.instrument.Symbol + " at " + formatNumber(event.Close)
+		if event.Buy > 1 {
+			parts[0] = item.instrument.Symbol + " #" + strconv.Itoa(event.Buy) + " at " + formatNumber(event.Close)
 		}
 		if event.Trade.TakeProfit > 0 {
-			title += ", take profit " + formatNumber(event.Trade.TakeProfit)
+			parts = append(parts, "TP "+formatNumber(event.Trade.TakeProfit))
 		}
 		if event.Trade.StopLoss > 0 {
-			title += ", stop loss " + formatNumber(event.Trade.StopLoss)
+			parts = append(parts, "SL "+formatNumber(event.Trade.StopLoss))
 		}
 	}
-	if entry.Message != "" {
-		return title + "\n" + entry.Message
+	if rule != nil {
+		values := rule.Values(current.resolver(entry, item.instrument.ID, positions))
+		for _, label := range slices.Sorted(maps.Keys(values)) {
+			parts = append(parts, label+" "+formatNumber(values[label]))
+		}
 	}
-	if event.Kind == TradeSell && event.Reason != ExitRuleSignal {
-		return title
-	}
-	lines := []string{title, source}
-	var positions map[string]float64
-	if event.Kind == TradeSell {
-		positions = entry.positions(event.Trade, entry.Interval.LastClosedOpenTime(current.now), event.Close)
-	}
-	values := rule.Values(current.resolver(entry, instrument.ID, positions))
-	readings := make([]string, 0, len(values))
-	for _, label := range slices.Sorted(maps.Keys(values)) {
-		readings = append(readings, label+" "+formatNumber(values[label]))
-	}
-	if len(readings) > 0 {
-		lines = append(lines, strings.Join(readings, " · "))
-	}
-	return strings.Join(lines, "\n")
+	return strings.Join(parts, " · ")
 }
 
 // signalMarks start the alerts of signals by the move they expect.

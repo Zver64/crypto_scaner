@@ -5,17 +5,35 @@ import (
 	"errors"
 	"log/slog"
 	"reflect"
+	"strings"
 	"testing"
 
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
 )
 
-func TestAlertTextUsesMessage(t *testing.T) {
-	entry := Entry{Strategy: Strategy{Name: "Breakout", Expression: "h_close > 1", Message: "Buy the breakout\nStop below 1"}}
-	got := alertText(entry, Instrument{ID: 1, Symbol: "BTCUSDT"}, TradeEvent{Kind: TradeBuy, Buy: 2, Close: 1.5}, snapshot{})
-	if want := "🟢 Breakout: BTCUSDT buy #2 at 1.5\nBuy the breakout\nStop below 1"; got != want {
+// Events of one round share a title per kind, followed by the message and a
+// line per coin; a message too long for Telegram ends at a whole line.
+func TestAlertTextGroupsEventsByKind(t *testing.T) {
+	entry := Entry{Strategy: Strategy{Name: "Trend", Direction: DirectionLong, Message: "Check volume"}, Interval: market.IntervalHour}
+	buy := func(symbol string, number int) alert {
+		return alert{Instrument{Symbol: symbol}, TradeEvent{Kind: TradeBuy, Buy: number, Close: 1.5, Trade: TradeState{TakeProfit: 2, StopLoss: 1}}}
+	}
+	sell := alert{Instrument{Symbol: "SOLUSDT"}, TradeEvent{Kind: TradeSell, Reason: ExitTakeProfit, Price: 152, Return: 0.038, Trade: TradeState{Buys: 2, Filled: 2, Quantity: 0.01}}}
+	got := alertText(entry, []alert{buy("BTCUSDT", 1), sell, buy("ETHUSDT", 2)}, snapshot{})
+	want := "🟢 Trend · 1h · buy\nCheck volume\nBTCUSDT at 1.5 · TP 2 · SL 1\nETHUSDT #2 at 1.5 · TP 2 · SL 1\n\n" +
+		"🔴 Trend · 1h · sell\nCheck volume\nSOLUSDT at 152 by take profit · +3.80% · entry 200 · 2 buys"
+	if got != want {
 		t.Fatalf("alertText() = %q, want %q", got, want)
+	}
+
+	many := make([]alert, 200)
+	for i := range many {
+		many[i] = buy("BTCUSDT", 1)
+	}
+	got = alertText(entry, many, snapshot{})
+	if len(got) > maxTextLength || !strings.HasSuffix(got, "SL 1\n…message too long") {
+		t.Fatalf("long alertText() ends %q after %d bytes", got[max(0, len(got)-40):], len(got))
 	}
 }
 

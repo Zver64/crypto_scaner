@@ -60,7 +60,7 @@ export function StrategyFormContent({
 				{(field) => (
 					<field.TextareaField
 						autosize
-						description="Sent in Telegram after the strategy name, coin, and the buy, sell, or signal instead of the rule and its values. Leave empty for the default text."
+						description="Sent in Telegram under the alert title, above the coins. Leave empty for none."
 						disabled={isSaving}
 						label="Message"
 						maxLength={1000}

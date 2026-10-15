@@ -233,7 +233,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 	coins.add(command, true)
 	flags := command.Flags()
 	marketCap.addCreate(flags)
-	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
+	flags.StringVar(&message, "message", "", "`TEXT` sent in Telegram alerts under the title; empty sends none")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
 }
@@ -342,7 +342,7 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 	settings.add(command, false)
 	marketCap.addUpdate(command.Flags())
 	command.Flags().StringVar(&name, "name", "", "signal `NAME`; omitted preserves the current name")
-	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")
+	command.Flags().StringVar(&message, "message", "", "`TEXT` sent in Telegram alerts under the title; empty removes it, omitted preserves it")
 	command.Flags().BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
 }

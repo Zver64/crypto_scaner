@@ -25,8 +25,8 @@ import (
 
 const (
 	maxNameLength = 64
-	// maxMessageLength keeps alerts well below Telegram's 4096-character
-	// message limit.
+	// maxMessageLength keeps alerts, which repeat the message under each
+	// title, well below Telegram's 4096-character message limit.
 	maxMessageLength = 1000
 )
 
@@ -90,7 +90,7 @@ type Strategy struct {
 	// over the Window candles after the signal. A trading strategy has 0 for
 	// both.
 	TargetRatio, Window int
-	// Message replaces the generated alert text when it is not empty.
+	// Message, when not empty, follows each title of the strategy's alerts.
 	Message string
 	Enabled bool
 	// BaselinePending reports, as loaded, that the trading states still have

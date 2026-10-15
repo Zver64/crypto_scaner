@@ -25,7 +25,7 @@ export interface StrategyFormValues {
 	name: string;
 	// How the strategy trades or the move the signal expects.
 	direction: Direction;
-	// Telegram alert text; empty keeps the generated one.
+	// Text Telegram alerts show under the title; empty shows none.
 	message: string;
 	query: StrategyQuery;
 	// The exit rule; undefined without one.

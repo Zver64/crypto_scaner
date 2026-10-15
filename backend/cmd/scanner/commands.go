@@ -281,7 +281,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 	rules.add(command)
 	coins.add(command, false)
 	flags := command.Flags()
-	flags.StringVar(&message, "message", "", "Telegram alert `TEXT`; empty keeps the generated text")
+	flags.StringVar(&message, "message", "", "`TEXT` sent in Telegram alerts under the title; empty sends none")
 	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
 }
@@ -446,7 +446,7 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 	command.Flags().StringVar(&stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession; empty removes it, omitted preserves it")
 	coins.add(command, false)
 	command.Flags().StringVar(&name, "name", "", "strategy `NAME`; omitted preserves the current name")
-	command.Flags().StringVar(&message, "message", "", "Telegram alert `TEXT`; empty restores generated text, omitted preserves it")
+	command.Flags().StringVar(&message, "message", "", "`TEXT` sent in Telegram alerts under the title; empty removes it, omitted preserves it")
 	command.Flags().BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
 }

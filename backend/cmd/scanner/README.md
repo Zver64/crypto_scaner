@@ -116,7 +116,7 @@ scanner strategies update 6 --coin BTCUSDT,ETHUSDT --favorites
 
 Укажите положительный int64 ID и хотя бы один флаг: `--expr`, `--exit`, `--take-profit`,
 `--stop-loss`, `--coin`, `--favorites`, `--coin-m`, `--name`, `--message`. Неуказанные поля сохраняются; пустой `--message`
-возвращает автоматически генерируемый текст, пустые `--exit`, `--take-profit` и `--stop-loss`
+убирает текст, который алерты в Telegram показывают под заголовком, пустые `--exit`, `--take-profit` и `--stop-loss`
 удаляют правило выхода и уровни. Стратегия с любым из них держит одну покупку на сделку;
 без всех трёх она покупает на каждом сигнале входа и не продаёт. `scanner strategies create`
 принимает те же `--exit`, `--take-profit` и `--stop-loss`. Изменять можно только отключённую стратегию: для включённой

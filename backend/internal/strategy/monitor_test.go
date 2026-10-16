@@ -13,6 +13,7 @@ import (
 
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/telegramhtml"
 )
 
 // Events of one round share a title per kind, followed by the message and a
@@ -23,9 +24,9 @@ func TestAlertTextGroupsEventsByKind(t *testing.T) {
 		return alert{Instrument{Symbol: symbol}, TradeEvent{Kind: TradeBuy, Buy: number, Close: 1.5, Trade: TradeState{TakeProfit: 2, StopLoss: 1}}}
 	}
 	sell := alert{Instrument{Symbol: "SOLUSDT"}, TradeEvent{Kind: TradeSell, Reason: ExitTakeProfit, Price: 152, Return: 0.038, Trade: TradeState{Buys: 2, Filled: 2, Quantity: 0.01}}}
-	got := alertText(entry, []alert{buy("BTCUSDT", 1), sell, buy("ETHUSDT", 2)}, snapshot{})
-	want := "🟢 Trend · 1h · buy\nCheck volume\nBTCUSDT at 1.5 · TP 2 · SL 1\nETHUSDT #2 at 1.5 · TP 2 · SL 1\n\n" +
-		"🔴 Trend · 1h · sell\nCheck volume\nSOLUSDT at 152 by take profit · +3.80% · entry 200 · 2 buys"
+	got := alertText(entry, []alert{buy("BTCUSDT", 1), sell, buy("ETHUSDT", 2)})
+	want := "<b>🟢 Trend · 1h · buy</b>\nCheck volume\n<a href=\"https://www.binance.com/en/trade/BTC_USDT?type=spot\">BTCUSDT</a> at 1.5 · TP 2 · SL 1\n<a href=\"https://www.binance.com/en/trade/ETH_USDT?type=spot\">ETHUSDT</a> #2 at 1.5 · TP 2 · SL 1\n\n" +
+		"<b>🔴 Trend · 1h · sell</b>\nCheck volume\n<a href=\"https://www.binance.com/en/trade/SOL_USDT?type=spot\">SOLUSDT</a> at 152 by take profit · +3.80% · entry 200 · 2 buys"
 	if got != want {
 		t.Fatalf("alertText() = %q, want %q", got, want)
 	}
@@ -34,8 +35,8 @@ func TestAlertTextGroupsEventsByKind(t *testing.T) {
 	for i := range many {
 		many[i] = buy("BTCUSDT", 1)
 	}
-	got = alertText(entry, many, snapshot{})
-	if len(got) > maxTextLength || !strings.HasSuffix(got, "SL 1\n…message too long") {
+	got = alertText(entry, many)
+	if len(got) > telegramhtml.MaxLength || !strings.HasSuffix(got, "SL 1\n…message too long") {
 		t.Fatalf("long alertText() ends %q after %d bytes", got[max(0, len(got)-40):], len(got))
 	}
 }
@@ -134,7 +135,7 @@ func TestMonitorHaltsStrategiesOfInactiveCoins(t *testing.T) {
 		if disabling.calls != 1 || service.List()[0].Enabled {
 			t.Fatalf("%s: disable calls %d, entry %+v", item.Name, disabling.calls, service.List()[0])
 		}
-		if sent := <-monitor.sends; sent.telegramID != 7 || sent.text != "⛔ "+item.Name+" is disabled: not an active coin: LUNAUSDT" {
+		if sent := <-monitor.sends; sent.telegramID != 7 || sent.text != "<b>⛔ "+item.Name+" · 1h · disabled</b>\nnot an active coin: LUNAUSDT" {
 			t.Fatalf("%s: sent %+v", item.Name, sent)
 		}
 	}

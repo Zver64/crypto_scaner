@@ -5,10 +5,13 @@ package opsnotify
 import (
 	"context"
 	"fmt"
+	"html"
 	"log/slog"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"crypto-scanner/internal/telegramhtml"
 )
 
 const (
@@ -16,8 +19,6 @@ const (
 	// repeatWindow is how long repeats of a delivered record are only counted.
 	repeatWindow = time.Hour
 	flushPeriod  = time.Minute
-	// messageLimit is the Telegram message length limit in characters.
-	messageLimit = 4096
 )
 
 // Queue buffers forwarded log records until the Notifier runs.
@@ -118,7 +119,7 @@ func (n *Notifier) flush(ctx context.Context, now time.Time) {
 		existing.since, existing.repeats = now, 0
 	}
 	if dropped := n.queue.dropped.Swap(0); dropped > 0 {
-		n.send(ctx, fmt.Sprintf("⚠️ %d log records were dropped because the notification queue was full", dropped))
+		n.send(ctx, telegramhtml.Title(fmt.Sprintf("⚠️ %d log records were dropped because the notification queue was full", dropped)))
 	}
 }
 
@@ -140,28 +141,40 @@ func module(record slog.Record) string {
 	return result
 }
 
+// format writes record as Telegram HTML: a bold title with the level and
+// module, the message, and a line per attribute, its value monospaced or, for
+// a symbol, linked to the coin. The message and values are joined into one
+// line each, so a message too long for Telegram ends at a whole line.
 func format(record slog.Record, repeats int) string {
 	icon := "⚠️"
 	if record.Level >= slog.LevelError {
 		icon = "🛑"
 	}
-	var text strings.Builder
-	text.WriteString(icon + " " + record.Level.String())
+	title := icon + " " + record.Level.String()
 	if name := module(record); name != "" {
-		text.WriteString(" · " + name)
+		title += " · " + name
 	}
-	text.WriteString("\n" + record.Message)
+	lines := []string{telegramhtml.Title(title), oneLine(record.Message)}
 	if repeats > 0 {
-		fmt.Fprintf(&text, "\nповторилось %d раз за час, последний случай:", repeats)
+		lines = append(lines, fmt.Sprintf("Repeated %d times in the last hour; latest:", repeats))
 	}
 	record.Attrs(func(attr slog.Attr) bool {
-		if attr.Key != "module" {
-			text.WriteString("\n" + attr.Key + ": " + attr.Value.String())
+		switch attr.Key {
+		case "module": // in the title
+		case "symbol":
+			lines = append(lines, "symbol: "+telegramhtml.Symbol(attr.Value.String()))
+		default:
+			lines = append(lines, oneLine(attr.Key)+": <code>"+oneLine(attr.Value.String())+"</code>")
 		}
 		return true
 	})
-	if runes := []rune(text.String()); len(runes) > messageLimit {
-		return string(runes[:messageLimit-1]) + "…"
-	}
-	return text.String()
+	return telegramhtml.Truncate(strings.Join(lines, "\n"), "\n…")
+}
+
+// lineBreaks are replaced by spaces in log text.
+var lineBreaks = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ")
+
+// oneLine escapes text and joins its lines.
+func oneLine(text string) string {
+	return html.EscapeString(lineBreaks.Replace(text))
 }

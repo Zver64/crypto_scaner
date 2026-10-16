@@ -64,7 +64,7 @@ func (service *Service) CoinMSymbols(ctx context.Context) ([]string, error) {
 	}
 	symbols := make([]string, len(assets))
 	for i, asset := range assets {
-		symbols[i] = market.NormalizeSymbol(asset + binanceSpotQuoteAsset)
+		symbols[i] = market.NormalizeSymbol(asset + market.BinanceSpotQuoteAsset)
 	}
 	return symbols, nil
 }

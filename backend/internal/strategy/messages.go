@@ -2,23 +2,22 @@ package strategy
 
 import (
 	"fmt"
-	"maps"
+	"html"
 	"slices"
 	"strconv"
 	"strings"
+
+	"crypto-scanner/internal/telegramhtml"
 )
 
-// maxTextLength keeps messages below Telegram's 4096-character limit.
-const maxTextLength = 4000
+// Messages are Telegram HTML, so user text in them is escaped.
 
-// summaryText announces an enabled or changed strategy: its kind, interval,
-// coins, and market cap range, and the instruments within it whose entry is
-// true now, which buy only once it turns true again.
+// summaryText announces an enabled or changed strategy: under its title come
+// the strategy message, its coins and market cap range, and a line per
+// instrument within it whose entry is true now, which buys only once it
+// turns true again. A message too long for Telegram ends at the last
+// instrument that fits.
 func summaryText(entry Entry, matching []Instrument, current snapshot) string {
-	kind := "strategy"
-	if entry.Signal {
-		kind = "signal"
-	}
 	var coins string
 	switch {
 	case entry.CoinSource == CoinsAll:
@@ -30,44 +29,58 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	default:
 		coins = strconv.Itoa(len(entry.Coins)) + " coins"
 	}
-	text := "🎯 " + entry.Name + " is active\n" + capitalized(string(entry.Direction)) + " " + kind + " · " + string(entry.Interval) + " · " + coins + "\n"
 	if bounds := entry.MarketCap.String(); bounds != "" {
-		text += "Market cap: " + bounds + "\n"
+		coins += " · market cap " + bounds
 	}
+	kind := string(entry.Direction) + " strategy active"
+	if entry.Signal {
+		kind = string(entry.Direction) + " signal active"
+	}
+	lines := []string{entryTitle("🎯", entry, kind)}
+	if entry.Message != "" {
+		lines = append(lines, html.EscapeString(entry.Message))
+	}
+	lines = append(lines, coins)
 	if !entry.Signal && !entry.Exits() {
-		text += "No exit: every entry signal buys.\n"
+		lines = append(lines, "No exit: every entry signal buys.")
 	}
 	if len(matching) == 0 {
-		return text + "No coin's entry is true now."
+		return strings.Join(append(lines, "No coin's entry is true now."), "\n")
 	}
-	symbols := make([]string, len(matching))
-	for i, instrument := range matching {
-		symbols[i] = instrument.Symbol
-	}
-	slices.Sort(symbols)
+	matching = slices.SortedFunc(slices.Values(matching), func(a, b Instrument) int { return strings.Compare(a.Symbol, b.Symbol) })
 	switch {
 	case entry.Signal:
-		text += "Entry true now, signaling once it turns true again: "
+		lines = append(lines, "Entry true now, signaling once it turns true again:")
 	case entry.Direction == DirectionShort:
-		text += "Entry true now, shorting once it turns true again: "
+		lines = append(lines, "Entry true now, shorting once it turns true again:")
 	default:
-		text += "Entry true now, buying once it turns true again: "
+		lines = append(lines, "Entry true now, buying once it turns true again:")
 	}
-	for i, symbol := range symbols {
-		more := fmt.Sprintf(" and %d more", len(symbols)-i)
-		if len(text)+len(symbol)+2+len(more) > maxTextLength {
-			return strings.TrimSuffix(text, ", ") + more
+	text := strings.Join(lines, "\n")
+	for i, instrument := range matching {
+		line := telegramhtml.Symbol(instrument.Symbol)
+		if price, ok := current.closePrice(entry, instrument.ID); ok {
+			line += " " + formatNumber(price)
 		}
-		text += symbol + ", "
+		more := fmt.Sprintf("\n…and %d more", len(matching)-i)
+		if len(text)+1+len(line)+len(more) > telegramhtml.MaxLength {
+			return text + more
+		}
+		text += "\n" + line
 	}
-	return strings.TrimSuffix(text, ", ")
+	return text
 }
 
-func capitalized(text string) string {
-	if text == "" {
-		return text
-	}
-	return strings.ToUpper(text[:1]) + text[1:]
+// haltText tells the administrator that err disabled entry.
+func haltText(entry Entry, err error) string {
+	return entryTitle("⛔", entry, "disabled") + "\n" + html.EscapeString(err.Error())
+}
+
+// entryTitle is the bold title of a message about entry, naming the
+// strategy, its interval, and kind after mark, such as
+// "📈 Rebound · 1h · long signal".
+func entryTitle(mark string, entry Entry, kind string) string {
+	return telegramhtml.Title(mark + " " + entry.Name + " · " + string(entry.Interval) + " · " + kind)
 }
 
 // alert is one event of a strategy on one instrument.
@@ -80,7 +93,7 @@ type alert struct {
 // kind of event, naming the strategy, its interval, and the kind, come the
 // strategy message and a line per instrument. A message too long for
 // Telegram ends at the last line that fits.
-func alertText(entry Entry, alerts []alert, current snapshot) string {
+func alertText(entry Entry, alerts []alert) string {
 	var titles []string
 	lines := map[string][]string{}
 	for _, item := range alerts {
@@ -88,23 +101,17 @@ func alertText(entry Entry, alerts []alert, current snapshot) string {
 		if _, ok := lines[title]; !ok {
 			titles = append(titles, title)
 		}
-		lines[title] = append(lines[title], alertLine(entry, item, current))
+		lines[title] = append(lines[title], alertLine(item))
 	}
 	blocks := make([]string, len(titles))
 	for i, title := range titles {
 		block := []string{title}
 		if entry.Message != "" {
-			block = append(block, entry.Message)
+			block = append(block, html.EscapeString(entry.Message))
 		}
 		blocks[i] = strings.Join(append(block, lines[title]...), "\n")
 	}
-	text := strings.Join(blocks, "\n\n")
-	const tooLong = "\n…message too long"
-	if len(text) <= maxTextLength {
-		return text
-	}
-	cut := text[:maxTextLength-len(tooLong)]
-	return cut[:max(0, strings.LastIndex(cut, "\n"))] + tooLong
+	return telegramhtml.Truncate(strings.Join(blocks, "\n\n"), "\n…message too long")
 }
 
 // alertTitle names entry, its interval, and the kind of event, such as
@@ -122,54 +129,43 @@ func alertTitle(entry Entry, event TradeEvent) string {
 	default:
 		mark, kind = "🟢", "buy"
 	}
-	return mark + " " + entry.Name + " · " + string(entry.Interval) + " · " + kind
+	return entryTitle(mark, entry, kind)
 }
 
 // alertLine describes the event on the instrument of item: the close of a
 // signal; the price, the buy number past the first, the take profit, and the
 // stop loss of a buy or short; or the price, what closed it, the return, the
-// entry price, and the buys past one of a sell or cover. Then come the values
-// the rule that caused it read, named as it writes them; a take profit or
-// stop loss has no rule.
-func alertLine(entry Entry, item alert, current snapshot) string {
+// entry price, and the buys past one of a sell or cover. The symbol links
+// to its Binance Spot pair.
+func alertLine(item alert) string {
 	event := item.event
-	parts := []string{item.instrument.Symbol + " " + formatNumber(event.Close)}
-	rule := entry.Compiled
-	var positions map[string]float64
+	symbol := telegramhtml.Symbol(item.instrument.Symbol)
 	switch event.Kind {
 	case TradeSignal:
+		return symbol + " " + formatNumber(event.Close)
 	case TradeSell:
 		price, reason := event.Close, "exit rule"
 		switch event.Reason {
 		case ExitTakeProfit:
-			price, reason, rule = event.Price, "take profit", nil
+			price, reason = event.Price, "take profit"
 		case ExitStopLoss:
-			price, reason, rule = event.Price, "stop loss", nil
-		default:
-			rule = entry.Exit
-			positions = entry.positions(event.Trade, entry.Interval.LastClosedOpenTime(current.now), event.Close)
+			price, reason = event.Price, "stop loss"
 		}
-		parts = []string{item.instrument.Symbol + " at " + formatNumber(price) + " by " + reason, fmt.Sprintf("%+.2f%%", 100*event.Return), "entry " + formatNumber(event.Trade.EntryPrice())}
+		parts := []string{symbol + " at " + formatNumber(price) + " by " + reason, fmt.Sprintf("%+.2f%%", 100*event.Return), "entry " + formatNumber(event.Trade.EntryPrice())}
 		if event.Trade.Buys > 1 {
 			parts = append(parts, strconv.Itoa(event.Trade.Buys)+" buys")
 		}
-	default:
-		parts[0] = item.instrument.Symbol + " at " + formatNumber(event.Close)
-		if event.Buy > 1 {
-			parts[0] = item.instrument.Symbol + " #" + strconv.Itoa(event.Buy) + " at " + formatNumber(event.Close)
-		}
-		if event.Trade.TakeProfit > 0 {
-			parts = append(parts, "TP "+formatNumber(event.Trade.TakeProfit))
-		}
-		if event.Trade.StopLoss > 0 {
-			parts = append(parts, "SL "+formatNumber(event.Trade.StopLoss))
-		}
+		return strings.Join(parts, " · ")
 	}
-	if rule != nil {
-		values := rule.Values(current.resolver(entry, item.instrument.ID, positions))
-		for _, label := range slices.Sorted(maps.Keys(values)) {
-			parts = append(parts, label+" "+formatNumber(values[label]))
-		}
+	if event.Buy > 1 {
+		symbol += " #" + strconv.Itoa(event.Buy)
+	}
+	parts := []string{symbol + " at " + formatNumber(event.Close)}
+	if event.Trade.TakeProfit > 0 {
+		parts = append(parts, "TP "+formatNumber(event.Trade.TakeProfit))
+	}
+	if event.Trade.StopLoss > 0 {
+		parts = append(parts, "SL "+formatNumber(event.Trade.StopLoss))
 	}
 	return strings.Join(parts, " · ")
 }

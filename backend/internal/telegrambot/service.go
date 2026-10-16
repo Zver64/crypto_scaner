@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"html"
 	"log/slog"
 	"strings"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/auth"
+	"crypto-scanner/internal/telegramhtml"
 
 	telegram "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
@@ -388,8 +390,16 @@ func (service *Service) SendAdministratorMessage(ctx context.Context, text strin
 	if err := service.sendLimiter.Wait(ctx); err != nil {
 		return err
 	}
-	_, err := service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: service.administratorID, Text: text})
+	_, err := service.bot.SendMessage(ctx, notification(service.administratorID, text))
 	return err
+}
+
+// notification builds the parameters of text, written in Telegram HTML,
+// without previews of its links. Every notification goes so; the bot's own
+// dialog stays plain.
+func notification(chatID int64, text string) *telegram.SendMessageParams {
+	disabled := true
+	return &telegram.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML, LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: &disabled}}
 }
 
 // deliver respects the bot-wide and per-user rate limits and rechecks access.
@@ -415,11 +425,26 @@ func (service *Service) deliver(ctx context.Context, telegramID int64, text stri
 	} else if err != nil {
 		return fmt.Errorf("look up recipient: %w", err)
 	}
-	_, err := service.bot.SendMessage(ctx, &telegram.SendMessageParams{ChatID: telegramID, Text: text})
+	_, err := service.bot.SendMessage(ctx, notification(telegramID, text))
 	return err
 }
 
-// priceAlertText names only the symbol and the target that was hit.
+// trimDecimal drops the trailing zeros Binance pads prices with, such as
+// 65012.30000000 to 65012.3.
+func trimDecimal(price string) string {
+	if !strings.Contains(price, ".") {
+		return price
+	}
+	trimmed := strings.TrimSuffix(strings.TrimRight(price, "0"), ".")
+	if trimmed == "" {
+		return "0"
+	}
+	return trimmed
+}
+
+// priceAlertText names the symbol, the price that hit the alert, and its
+// target.
 func priceAlertText(fired alerts.Fired) string {
-	return "🔔 " + fired.Alert.Symbol + " hit " + fired.Alert.Target
+	return telegramhtml.Title("🔔 "+fired.Alert.Symbol+" · price alert") + "\n" +
+		telegramhtml.Symbol(fired.Alert.Symbol) + " " + html.EscapeString(trimDecimal(fired.Price)) + " · target " + html.EscapeString(fired.Alert.Target)
 }

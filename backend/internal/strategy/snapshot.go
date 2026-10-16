@@ -45,8 +45,8 @@ func (current snapshot) resolver(entry Entry, instrumentID int64, positions map[
 // the rule and the candle (ruleError).
 func (current snapshot) advance(entry Entry, instrumentID int64, state TradeState, outOfRange bool) (TradeState, []TradeEvent, bool, error) {
 	at := entry.Interval.LastClosedOpenTime(current.now)
-	position, ok := current.reads.positions[pair{instrumentID, CandleTarget(entry.Interval).Key()}]
-	if !ok || !current.values[position].OpenTime.Equal(at) {
+	latest, ok := current.candle(entry, instrumentID)
+	if !ok {
 		return state, nil, false, nil
 	}
 	candle := TradeCandle{
@@ -71,7 +71,7 @@ func (current snapshot) advance(entry Entry, instrumentID int64, state TradeStat
 			return takeProfit, stopLoss, knownTakeProfit && knownStopLoss, nil
 		},
 	}
-	for _, output := range current.values[position].Outputs {
+	for _, output := range latest.Outputs {
 		switch output.Name {
 		case "open":
 			candle.Open = output.Value
@@ -88,6 +88,31 @@ func (current snapshot) advance(entry Entry, instrumentID int64, state TradeStat
 		candle.EntryErr = ruleError(at, "the entry rule", err)
 	}
 	return entry.step(state, candle)
+}
+
+// candle returns the latest closed candle of the interval of entry on one
+// instrument, when it is fresh.
+func (current snapshot) candle(entry Entry, instrumentID int64) (closedindicator.Value, bool) {
+	position, ok := current.reads.positions[pair{instrumentID, CandleTarget(entry.Interval).Key()}]
+	if !ok || !current.values[position].OpenTime.Equal(entry.Interval.LastClosedOpenTime(current.now)) {
+		return closedindicator.Value{}, false
+	}
+	return current.values[position], true
+}
+
+// closePrice returns the close of the latest closed candle of the interval of
+// entry on one instrument, when it is fresh.
+func (current snapshot) closePrice(entry Entry, instrumentID int64) (float64, bool) {
+	latest, ok := current.candle(entry, instrumentID)
+	if !ok {
+		return 0, false
+	}
+	for _, output := range latest.Outputs {
+		if output.Name == "close" {
+			return output.Value, true
+		}
+	}
+	return 0, false
 }
 
 // price evaluates the price expression, which may be nil for a price the

@@ -8,7 +8,7 @@ Packages and dependency direction (domain never imports adapters):
 
 - Domain: `market` (instruments, candles, intervals), `market/kline`, `market/trade`, `market/live`, `market/gridlimits`, `market/marketsync` (history sync), `indicator` (registry of self-describing modules), `chart`, `closedindicator` (background indicators on closed candles), `analysis`, `markettable`, `scannerindicator`, `strategy`, `users`, `favorites`, `alerts`, `marketcap`, `auth`.
 - Adapters: `indicator/talib`, `indicator/pivot`, `exchange/binance`, `coingecko`, `storage/postgres` (one `Store`, split into `store_*.go` by aggregate), `httpapi` (transport only), `telegrambot`, `auth/telegram`.
-- Shared helpers: `platform/backoff`, `platform/numeric`, `platform/logging`, `platform/config`.
+- Shared helpers: `platform/backoff`, `platform/numeric`, `platform/logging`, `platform/config`, and `telegramhtml` (parts of the Telegram HTML notifications: escaping, coin links, cutting).
 
 Rules:
 

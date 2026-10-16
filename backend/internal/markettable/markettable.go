@@ -305,15 +305,12 @@ func (PriceChangePercent) cell(row Row) (Cell, bool) {
 // ExchangeLink opens the instrument on Binance Spot.
 type ExchangeLink struct{}
 
-const binanceSpotQuoteAsset = "USDT"
-
 func (ExchangeLink) data() data { return dataURL }
 func (ExchangeLink) cell(row Row) (Cell, bool) {
-	base, ok := spotBaseAsset(row.Symbol)
+	url, ok := market.BinanceSpotURL(row.Symbol)
 	if !ok {
 		return Cell{}, true
 	}
-	url := "https://www.binance.com/en/trade/" + base + "_" + binanceSpotQuoteAsset + "?type=spot"
 	return Cell{URL: &url}, true
 }
 
@@ -322,17 +319,12 @@ type CoinMPerpetualLink struct{}
 
 func (CoinMPerpetualLink) data() data { return dataURL }
 func (CoinMPerpetualLink) cell(row Row) (Cell, bool) {
-	base, ok := spotBaseAsset(row.Symbol)
+	base, ok := market.SpotBaseAsset(row.Symbol)
 	if !ok {
 		return Cell{}, true
 	}
 	url := "https://www.binance.com/en/delivery/" + strings.ToLower(base) + "usd_perpetual"
 	return Cell{URL: &url}, true
-}
-
-func spotBaseAsset(symbol string) (string, bool) {
-	base, ok := strings.CutSuffix(market.NormalizeSymbol(symbol), binanceSpotQuoteAsset)
-	return base, ok && base != ""
 }
 
 // AlertCount is the number of the user's price alerts for the instrument.

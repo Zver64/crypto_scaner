@@ -135,7 +135,7 @@ func (monitor *Monitor) check(ctx context.Context, state map[int64]map[int64]Tra
 		}
 	}
 	if len(alerts) > 0 {
-		monitor.send(ctx, work.recipients, alertText(entry, alerts, work.current))
+		monitor.send(ctx, work.recipients, alertText(entry, alerts))
 	}
 }
 
@@ -196,7 +196,7 @@ func (monitor *Monitor) halt(ctx context.Context, entry Entry, err error) {
 		return
 	}
 	monitor.logger.InfoContext(ctx, "strategy halted", "strategy_id", entry.ID, "error", err)
-	monitor.send(ctx, []int64{monitor.administratorID}, "⛔ "+entry.Name+" is disabled: "+err.Error())
+	monitor.send(ctx, []int64{monitor.administratorID}, haltText(entry, err))
 }
 
 // ruleError names the rule and the candle, opening at at, of the rule error

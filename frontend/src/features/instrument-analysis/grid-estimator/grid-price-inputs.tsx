@@ -26,30 +26,30 @@ export function GridPriceInputs({
 	priceUnit,
 }: GridPriceInputsProps) {
 	const inputs: {
-		inputMode: "decimal" | "numeric";
+		allowDecimal: boolean;
 		label: string;
 		name: GridInputField;
 	}[] = [
 		{
-			inputMode: "decimal",
+			allowDecimal: true,
 			label: `Lower price (${priceUnit})`,
 			name: "lowerPrice",
 		},
 		{
-			inputMode: "decimal",
+			allowDecimal: true,
 			label: `Upper price (${priceUnit})`,
 			name: "upperPrice",
 		},
-		{ inputMode: "numeric", label: "Grid count", name: "gridCount" },
+		{ allowDecimal: false, label: "Grid count", name: "gridCount" },
 		{
-			inputMode: "decimal",
+			allowDecimal: true,
 			label: `${investmentAsset} investment`,
 			name: "investment",
 		},
 	];
 	return (
 		<SimpleGrid cols={2} spacing="md">
-			{inputs.map(({ inputMode, label, name }) => (
+			{inputs.map(({ allowDecimal, label, name }) => (
 				<form.AppField
 					key={name}
 					listeners={{
@@ -61,9 +61,10 @@ export function GridPriceInputs({
 					validators={{ onBlur: ({ value }) => commitError(name, value) }}
 				>
 					{(field) => (
-						<field.TextField
+						<field.NumberField
+							allowDecimal={allowDecimal}
+							asString
 							disabled={disabled}
-							inputMode={inputMode}
 							label={label}
 							onKeyDown={(event) => {
 								if (event.key === "Enter") {

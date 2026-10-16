@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.7.1](https://github.com/Zver64/crypto_scaner/compare/v2.7.0...v2.7.1) (2026-10-16)
+
+
+### Bug Fixes
+
+* accept a comma as the decimal separator in the grid estimator ([7d7b1d1](https://github.com/Zver64/crypto_scaner/commit/7d7b1d1acb579d29327ae64af8f3ad57079e6d44))
+
 ## [2.7.0](https://github.com/Zver64/crypto_scaner/compare/v2.6.0...v2.7.0) (2026-10-15)
 
 

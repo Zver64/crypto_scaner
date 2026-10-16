@@ -7,7 +7,19 @@
 	"rules": {
 		"react/rules-of-hooks": "error",
 		"react/exhaustive-deps": "error",
-		"react/no-array-index-key": "error"
+		"react/no-array-index-key": "error",
+		"no-restricted-imports": [
+			"error",
+			{
+				"paths": [
+					{
+						"name": "@tanstack/react-router",
+						"importNames": ["useMatchRoute"],
+						"message": "Its stable callback goes stale under React Compiler (TanStack/router#4499, fix pending in #6561); use useMatch or useLocation."
+					}
+				]
+			}
+		]
 	},
 	"ignorePatterns": [
 		"/*",

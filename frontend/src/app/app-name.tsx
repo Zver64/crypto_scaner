@@ -1,6 +1,6 @@
 import { Text, UnstyledButton } from "@mantine/core";
 import { IconX } from "@tabler/icons-react";
-import { Link, useMatchRoute } from "@tanstack/react-router";
+import { Link, useMatch } from "@tanstack/react-router";
 
 import { useCloseScannerSettings } from "@/features/scanner-settings/use-close-scanner-settings";
 
@@ -11,7 +11,8 @@ interface AppNameProps {
 // The app name in the header. For the administrator it is an unmarked entry
 // to the scanner settings and turns into a close button while they are open.
 export function AppName({ administrator }: AppNameProps) {
-	const matchRoute = useMatchRoute();
+	const settingsOpen =
+		useMatch({ from: "/admin", shouldThrow: false }) !== undefined;
 	const closeSettings = useCloseScannerSettings();
 	const name = (
 		<Text fw={800} lts="0.08em">
@@ -21,7 +22,7 @@ export function AppName({ administrator }: AppNameProps) {
 	if (!administrator) {
 		return name;
 	}
-	if (matchRoute({ fuzzy: true, to: "/admin" })) {
+	if (settingsOpen) {
 		return (
 			<UnstyledButton
 				aria-label="Close scanner settings"

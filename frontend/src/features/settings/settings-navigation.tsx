@@ -1,5 +1,5 @@
 import { ScrollArea, SegmentedControl } from "@mantine/core";
-import { useMatchRoute, useNavigate } from "@tanstack/react-router";
+import { useLocation, useNavigate } from "@tanstack/react-router";
 
 const pages = [
 	{ label: "Indicators", value: "/admin" },
@@ -14,11 +14,16 @@ const pages = [
 type SettingsPage = (typeof pages)[number]["value"];
 
 export function SettingsNavigation() {
-	const matchRoute = useMatchRoute();
+	// The pathname, unlike the stable useMatchRoute callback, changes on
+	// navigation, so React Compiler recomputes the current page.
+	const pathname = useLocation({ select: (location) => location.pathname });
 	const navigate = useNavigate();
 	const current: SettingsPage =
-		pages.find(({ value }) => value !== "/admin" && matchRoute({ to: value }))
-			?.value ?? "/admin";
+		pages.find(
+			({ value }) =>
+				value !== "/admin" &&
+				(pathname === value || pathname.startsWith(`${value}/`)),
+		)?.value ?? "/admin";
 	// The switch fills the width and scrolls sideways on phones too narrow
 	// for every section.
 	return (

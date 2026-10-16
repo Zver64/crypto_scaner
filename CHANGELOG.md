@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.8.0](https://github.com/Zver64/crypto_scaner/compare/v2.7.1...v2.8.0) (2026-10-16)
+
+
+### Features
+
+* format Telegram notifications as HTML with Binance coin links ([abd6166](https://github.com/Zver64/crypto_scaner/commit/abd6166a4b6202a84cbd7eef4b933f630f8b5427))
+
 ## [2.7.1](https://github.com/Zver64/crypto_scaner/compare/v2.7.0...v2.7.1) (2026-10-16)
 
 

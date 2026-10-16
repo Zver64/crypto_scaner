@@ -19,9 +19,11 @@ func TestSignalOutcomeResponseKeepsNeutralAndUnevaluatedDistinct(t *testing.T) {
 	result := strategy.Backtest{
 		Interval: market.IntervalHour, Symbol: "BTCUSDT", Direction: strategy.DirectionLong,
 		Signal: &strategy.SignalReport{
-			Window: 6, TargetRatio: 2, Evaluated: 3,
-			Signals: strategy.SignalStats{Count: 3, Successes: 1, Neutrals: 1},
-			All:     strategy.SignalStats{Count: 2, Neutrals: 2},
+			Judgement: &strategy.SignalJudgement{
+				Window: 6, TargetRatio: 2, Evaluated: 3,
+				Signals: strategy.SignalStats{Count: 3, Successes: 1, Neutrals: 1},
+				All:     strategy.SignalStats{Count: 2, Neutrals: 2},
+			},
 			Occurrences: []strategy.SignalOccurrence{
 				{Evaluation: &strategy.SignalEvaluation{Outcome: strategy.SignalSuccess, ExitTime: exit}},
 				{Evaluation: &strategy.SignalEvaluation{Outcome: strategy.SignalFailure, ExitTime: exit}},
@@ -56,8 +58,9 @@ func TestSignalOutcomeResponseKeepsNeutralAndUnevaluatedDistinct(t *testing.T) {
 	if report.Occurrences[3].Outcome != nil || report.Occurrences[3].Counted != nil || report.Occurrences[3].ExitTime != nil {
 		t.Fatal("unevaluated outcome is not null")
 	}
-	if report.Signals.Neutrals != 1 || report.Signals.SuccessRate == nil || *report.Signals.SuccessRate != 0.5 ||
-		report.All.Neutrals != 2 || report.All.SuccessRate != nil {
+	evaluation := report.Evaluation
+	if evaluation == nil || evaluation.Signals.Neutrals != 1 || evaluation.Signals.SuccessRate == nil || *evaluation.Signals.SuccessRate != 0.5 ||
+		evaluation.All.Neutrals != 2 || evaluation.All.SuccessRate != nil {
 		t.Fatalf("unexpected signal statistics: %+v", report)
 	}
 }

@@ -166,9 +166,9 @@ func TestStepSignalsWithoutBuying(t *testing.T) {
 	}
 }
 
-// A signal is long, short, or sideways, has a target ratio and a window, and
-// has no trading settings but may have a market cap range; a strategy trades
-// long or short, and a short one always has a take profit and a stop loss.
+// A signal is simple, long, short, or sideways, has a target ratio and a
+// window unless it is simple, and has no trading settings but may have a
+// market cap range; a strategy trades long or short, and a short one always has a take profit and a stop loss.
 func TestDirectionRules(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil))
 	usd := 1e9
@@ -182,6 +182,9 @@ func TestDirectionRules(t *testing.T) {
 		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 5},
 		{Direction: DirectionLong, TargetRatio: 2, Window: 6},
 		{Direction: DirectionSideways},
+		{Direction: DirectionSimple},
+		{Signal: true, Direction: DirectionSimple, TargetRatio: 2, Window: 6},
+		{Signal: true, Direction: DirectionSimple, Window: 6},
 		{Direction: DirectionShort, StopLossExpression: "h_close * 2"},
 		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", ExitExpression: "h_close > 1"},
 		// Only a signal has a market cap range or evaluates the favorites or
@@ -208,6 +211,7 @@ func TestDirectionRules(t *testing.T) {
 	}
 	for _, item := range []Strategy{
 		{Signal: true, Direction: DirectionSideways, TargetRatio: 5, Window: 24},
+		{Signal: true, Direction: DirectionSimple},
 		{Signal: true, Direction: DirectionShort, MarketCap: MarketCapRange{MaxUSD: &usd}, TargetRatio: 2, Window: 3},
 		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", StopLossExpression: "h_close * 2"},
 		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, CoinSource: CoinsAll, Coins: []string{}},

@@ -80,7 +80,7 @@ func (c *cli) backtestSignalDraftCommand() *cobra.Command {
 	var rules signalRuleFlags
 	var target backtestFlags
 	command := &cobra.Command{
-		Use:   "backtest --expr EXPR --direction long|short|sideways --symbol SYM [--target-ratio STOPS] [--window CANDLES] [--from TIME] [--to TIME]",
+		Use:   "backtest --expr EXPR --direction simple|long|short|sideways --symbol SYM [--target-ratio STOPS] [--window CANDLES] [--from TIME] [--to TIME]",
 		Short: "Backtest an unsaved signal on one or more coins",
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
@@ -88,9 +88,9 @@ func (c *cli) backtestSignalDraftCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			ratio, window := rules.judging(move)
 			return c.backtestDraft(command, apiclient.StrategyBacktestInput{
-				Signal: true, Direction: move, Expression: rules.expression,
-				TargetRatio: new(apiclient.SignalTargetRatio(rules.settings.ratio)), Window: new(apiclient.SignalWindow(rules.settings.window)),
+				Signal: true, Direction: move, Expression: rules.expression, TargetRatio: ratio, Window: window,
 			}, rules.rules(), target)
 		},
 	}

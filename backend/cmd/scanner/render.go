@@ -311,37 +311,50 @@ func renderBacktest(w io.Writer, backtest apiclient.StrategyBacktest, period, in
 }
 
 // renderSignal prints the backtest of a signal: how often its counted
-// signals succeeded beside every candle, then up to maxTradeRows signals, newest first.
+// signals succeeded beside every candle, then up to maxTradeRows signals,
+// newest first; a simple signal, which is never judged, shows only how often
+// and where it fired.
 func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apiclient.BacktestSignal, indicators bool) {
 	signals := "signals"
 	if len(signal.Occurrences) == 1 {
 		signals = "signal"
 	}
+	evaluation := signal.Evaluation
 	t := newTable()
 	t.AppendRows([]table.Row{
 		{"Coin", backtest.Symbol},
 		{"Period", fmt.Sprintf("%s → %s (%s candles)", day(*backtest.From), day(*backtest.To), backtest.Interval)},
 		{"Signal", fmt.Sprintf("%s, %d %s", backtest.Direction, len(signal.Occurrences), signals)},
-		{"Window", fmt.Sprintf("%d candles", signal.Window)},
-		{"Target", fmt.Sprintf("%d stops", signal.TargetRatio)},
 	})
+	if evaluation != nil {
+		t.AppendRows([]table.Row{
+			{"Window", fmt.Sprintf("%d candles", evaluation.Window)},
+			{"Target", fmt.Sprintf("%d stops", evaluation.TargetRatio)},
+		})
+	}
 	fmt.Fprintln(w, t.Render())
 	if len(signal.Occurrences) == 0 {
 		fmt.Fprintln(w, "No signals: the entry did not turn true on this coin in the stored history.")
 		return
 	}
 	sideways := backtest.Direction == apiclient.Sideways
-	fmt.Fprintln(w, signalExplanation(sideways, signal.Window, signal.TargetRatio))
+	if evaluation != nil {
+		fmt.Fprintln(w, signalExplanation(sideways, evaluation.Window, evaluation.TargetRatio))
+	}
 	renderSignalSummary(w, signal)
 	layout := candleTimeLayout(backtest.Interval)
 	fmt.Fprintln(w, "Signals, newest first; --indicators adds current indicator outputs; --json adds the values the entry read.")
 	t = newTable()
 	t.SetAutoIndex(true)
 	var header table.Row
-	if sideways {
+	switch {
+	case evaluation == nil:
+		header = table.Row{"Candle", "Close"}
+		t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}})
+	case sideways:
 		header = table.Row{"Candle", "Close", "Counted", "Targets ±%", "Move to target %", "Success"}
 		t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}})
-	} else {
+	default:
 		header = table.Row{"Candle", "Close", "Counted", "Stop %", "Target %", "Move to target %", "Success"}
 		t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}, {Number: 5, Align: text.AlignRight}, {Number: 6, Align: text.AlignRight}})
 	}
@@ -353,11 +366,14 @@ func renderSignal(w io.Writer, backtest apiclient.StrategyBacktest, signal apicl
 	t.AppendHeader(header)
 	occurrences := signal.Occurrences
 	for _, occurrence := range slices.Backward(occurrences[max(0, len(occurrences)-maxTradeRows):]) {
-		row := table.Row{occurrence.Time.UTC().Format(layout), price(occurrence.Close), yesNo(occurrence.Counted)}
-		if !sideways {
-			row = append(row, evaluated(occurrence.Stop))
+		row := table.Row{occurrence.Time.UTC().Format(layout), price(occurrence.Close)}
+		if evaluation != nil {
+			row = append(row, yesNo(occurrence.Counted))
+			if !sideways {
+				row = append(row, evaluated(occurrence.Stop))
+			}
+			row = append(row, evaluated(occurrence.Target), evaluated(occurrence.Move), signalOutcome(occurrence.Outcome))
 		}
-		row = append(row, evaluated(occurrence.Target), evaluated(occurrence.Move), signalOutcome(occurrence.Outcome))
 		if indicators {
 			for _, column := range backtest.IndicatorColumns {
 				value := ""

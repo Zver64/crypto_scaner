@@ -15,6 +15,14 @@ export interface SummaryRow {
 	strategy: number | null;
 }
 
+// One row of a simple signal's backtest summary: its signals or the
+// candles it could fire on.
+export interface SimpleSignalSummaryRow {
+	count: string;
+	key: "candles" | "signals";
+	label: string;
+}
+
 // One row of a signal's backtest summary: the counted signals or every
 // candle.
 export interface SignalSummaryRow {

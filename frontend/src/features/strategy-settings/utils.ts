@@ -27,7 +27,7 @@ import {
 	anyField,
 	arithmeticTokens,
 	comparisonTokens,
-	defaultDirection,
+	defaultDirections,
 	defaultSignalTargetRatio,
 	defaultSignalWindow,
 	directionLabels,
@@ -397,7 +397,7 @@ export function newStrategyDraft(
 		incomplete: false,
 		values: {
 			name: "",
-			direction: defaultDirection,
+			direction: defaultDirections[kind],
 			message: "",
 			query: emptyStrategyQuery(),
 			exitQuery: undefined,
@@ -457,12 +457,14 @@ export function strategyFormValues(data: StrategyFormData): StrategyFormValues {
 // What the form's values send, whether or not they can be saved; the
 // footer describes it and the dirty check compares it. A signal trades
 // nothing, so it has no exit or price fields and sends them empty; only a
-// signal evaluates the favorites or all coins and has a market cap range, a
-// target ratio, and a window, which the selects hold as strings.
+// signal evaluates the favorites or all coins and has a market cap range,
+// and only a signal that is not simple has a target ratio and a window,
+// which the selects hold as strings.
 export function strategyFormUpdate(
 	values: StrategyFormValues,
 	signal: boolean,
 ): StrategyUpdate {
+	const judged = signal && values.direction !== Direction.simple;
 	const coinSource = signal
 		? values.coinSource
 		: StrategyCoinSource.CoinSourceSelected;
@@ -485,12 +487,12 @@ export function strategyFormUpdate(
 		take_profit_expression: signal
 			? ""
 			: priceSetupExpression(values.takeProfit),
-		target_ratio: signal
+		target_ratio: judged
 			? (signalTargetRatios.find(
 					(ratio) => String(ratio) === values.targetRatio,
 				) ?? null)
 			: null,
-		window: signal
+		window: judged
 			? (signalWindows.find((window) => String(window) === values.window) ??
 				null)
 			: null,
@@ -499,7 +501,8 @@ export function strategyFormUpdate(
 
 // What saving the form sends; undefined while it cannot be saved: without a
 // name or coins, with an incomplete rule or price, an invalid market cap
-// bound, or a signal without its target ratio and window.
+// bound, or a signal that is not simple without its target ratio and
+// window.
 export function strategyInput(
 	values: StrategyFormValues,
 	signal: boolean,
@@ -515,7 +518,9 @@ export function strategyInput(
 		!strategyFormComplete(values, signal) ||
 		boundErrors.minimum ||
 		boundErrors.maximum ||
-		(signal && (update.target_ratio === null || update.window === null))
+		(signal &&
+			update.direction !== Direction.simple &&
+			(update.target_ratio === null || update.window === null))
 	) {
 		return undefined;
 	}
@@ -560,9 +565,8 @@ export function strategyFormDirty(
 		input.coins.join() !== saved.coins.join() ||
 		input.min_market_cap_usd !== saved.min_market_cap_usd ||
 		input.max_market_cap_usd !== saved.max_market_cap_usd ||
-		(signal &&
-			(values.targetRatio !== initial.targetRatio ||
-				values.window !== initial.window)) ||
+		input.target_ratio !== saved.target_ratio ||
+		input.window !== saved.window ||
 		(!signal &&
 			(input.exit_expression !== saved.exit_expression ||
 				priceSetupChanged(values.takeProfit, initial.takeProfit) ||

@@ -86,18 +86,19 @@ func TestSignalStatsExcludeNeutrals(t *testing.T) {
 	}
 }
 
-func TestNeutralSignalReportCountsAndSpacing(t *testing.T) {
+func TestJudgeSignalCountsNeutralsAndSpacing(t *testing.T) {
 	quiet := ohlc(100, 100.1, 99.9, 100)
 	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
 	at := signalHistoryCandles
-	report, err := signalReport(testRegistry(t), Strategy{Direction: DirectionLong, Window: 3, TargetRatio: 2}, market.IntervalHour, history,
-		[]SignalOccurrence{{}, {}, {}}, []int{at, at + 1, at + 3}, at, at+3)
+	occurrences := []SignalOccurrence{{}, {}, {}}
+	report, err := judgeSignal(testRegistry(t), Strategy{Direction: DirectionLong, Window: 3, TargetRatio: 2}, market.IntervalHour, history,
+		occurrences, []int{at, at + 1, at + 3}, at, at+3)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.Evaluated != 3 || report.Signals.Count != 2 || report.Signals.Neutrals != 2 || report.Signals.SuccessRate() != nil ||
 		report.All.Count != 4 || report.All.Neutrals != 4 || report.All.SuccessRate() != nil ||
-		report.Occurrences[1].Evaluation.Counted {
+		occurrences[1].Evaluation.Counted {
 		t.Fatalf("unexpected report %+v", report)
 	}
 }

@@ -20,8 +20,8 @@
 
 /**
  * The candles of its interval after each signal over which a signal's
- * backtest judges it. Required for a signal, null for a trading
- * strategy.
+ * backtest judges it. Required for a signal, null for a simple signal
+ * and a trading strategy.
  */
 export type SignalWindow = typeof SignalWindow[keyof typeof SignalWindow];
 

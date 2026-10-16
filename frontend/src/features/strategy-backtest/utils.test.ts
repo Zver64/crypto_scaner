@@ -75,14 +75,8 @@ describe("backtestMarkers", () => {
 	const signal = (direction: Direction) => ({
 		direction,
 		signal: {
-			all: {
-				count: 0,
-				median_move: null,
-				successes: 0,
-				neutrals: 0,
-				success_rate: null,
-			},
-			evaluated: 0,
+			candles: 1,
+			evaluation: null,
 			occurrences: [
 				{
 					close: 1,
@@ -97,15 +91,6 @@ describe("backtestMarkers", () => {
 					indicator_values: {},
 				},
 			],
-			signals: {
-				count: 0,
-				median_move: null,
-				successes: 0,
-				neutrals: 0,
-				success_rate: null,
-			},
-			target_ratio: 2,
-			window: 6,
 		},
 		trades: [],
 	});
@@ -121,11 +106,13 @@ describe("backtestMarkers", () => {
 			]);
 		}
 
-		expect(backtestMarkers(signal("sideways"))).toEqual({
-			entries: [],
-			exits: [],
-			marks: [time],
-		});
+		for (const direction of ["sideways", "simple"] as const) {
+			expect(backtestMarkers(signal(direction))).toEqual({
+				entries: [],
+				exits: [],
+				marks: [time],
+			});
+		}
 	});
 
 	it("groups every evaluated exit by outcome, including uncounted repeats", () => {

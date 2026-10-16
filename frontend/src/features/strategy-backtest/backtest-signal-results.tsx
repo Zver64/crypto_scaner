@@ -17,8 +17,9 @@ interface BacktestSignalResultsProps {
 	signal: BacktestSignal;
 }
 
-// How the price moved after the signals compared with every candle, then the
-// signals themselves. Without signals, one empty state replaces them.
+// How the price moved after the signals compared with every candle, or how
+// often a simple signal fired, then the signals themselves. Without signals,
+// one empty state replaces them.
 export function BacktestSignalResults({
 	backtest,
 	gap,
@@ -39,18 +40,20 @@ export function BacktestSignalResults({
 	}
 	return (
 		<Stack gap={gap}>
-			<Text c="dimmed" size="sm">
-				{signalExplanation(
-					backtest.direction,
-					signal.window,
-					signal.target_ratio,
-				)}
-			</Text>
+			{signal.evaluation === null ? null : (
+				<Text c="dimmed" size="sm">
+					{signalExplanation(
+						backtest.direction,
+						signal.evaluation.window,
+						signal.evaluation.target_ratio,
+					)}
+				</Text>
+			)}
 			<BacktestSignalSummary signal={signal} />
 			<BacktestSignalTable
 				direction={backtest.direction}
 				indicatorColumns={backtest.indicator_columns}
-				occurrences={signal.occurrences}
+				signal={signal}
 			/>
 		</Stack>
 	);

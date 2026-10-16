@@ -22,7 +22,7 @@
  * A signal's target distance in stops, which its backtest judges each
  * signal by: the stop lies one ATR(14) against the expected move,
  * independent of the window, and the target this many stops away in
- * its direction. Required for a signal, null for a trading strategy.
+ * its direction. Required for a signal, null for a simple signal and a trading strategy.
  */
 export type SignalTargetRatio = typeof SignalTargetRatio[keyof typeof SignalTargetRatio];
 

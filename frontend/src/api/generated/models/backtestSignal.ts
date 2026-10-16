@@ -17,40 +17,20 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { BacktestSignalEvaluation } from './backtestSignalEvaluation.ts';
 import type { BacktestSignalOccurrence } from './backtestSignalOccurrence.ts';
-import type { BacktestSignalStats } from './backtestSignalStats.ts';
 
 /**
- * Judges each signal candle's close, and every evaluated candle's
- * alike, by a stop and a target over the window candles after it. The
- * stop lies one ATR(14) from the close against the expected move.
- * ATR uses Wilder-smoothed true ranges through the signal candle,
- * including shadows and price gaps. The distance does not depend on
- * the window, which only limits evaluation time. The
- * target lies target_ratio stops away in the expected direction; a
- * sideways signal has a target on both sides and no stop. Outcomes may
- * read stored candles after the evaluated period.
+ * The entry signals of a signal and, unless it is simple, how they were judged.
  */
 export interface BacktestSignal {
-  /**
-     * Candles after the signal candle that are judged.
-     * @minimum 1
-     */
-  window: number;
-  /**
-     * Target distance in stops.
-     * @minimum 1
-     */
-  target_ratio: number;
   /** Entry signals, oldest first. */
   occurrences: BacktestSignalOccurrence[];
   /**
-     * Entry signals with an evaluation.
+     * Candles the entry was evaluated on, where it could signal.
      * @minimum 0
      */
-  evaluated: number;
-  /** The counted entry signals, each at least a window after the previous counted one. */
-  signals: BacktestSignalStats;
-  /** Every evaluated candle with an evaluation. */
-  all: BacktestSignalStats;
+  candles: number;
+  /** Null for a simple signal, which expects no particular move and is not judged. */
+  evaluation: BacktestSignalEvaluation | null;
 }

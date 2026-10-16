@@ -1,5 +1,7 @@
 import { Group } from "@mantine/core";
+import { useSelector } from "@tanstack/react-form";
 
+import { Direction } from "@/api/generated/models";
 import {
 	signalTargetRatios,
 	signalWindows,
@@ -13,11 +15,18 @@ interface StrategySignalEvaluationFieldsProps {
 }
 
 // The target distance in stops and the window in candles that backtests
-// judge a signal by.
+// judge a signal by; none for a simple signal, which is never judged.
 export function StrategySignalEvaluationFields({
 	disabled,
 	form,
 }: StrategySignalEvaluationFieldsProps) {
+	const simple = useSelector(
+		form.store,
+		({ values }) => values.direction === Direction.simple,
+	);
+	if (simple) {
+		return null;
+	}
 	return (
 		<Group grow>
 			<form.AppField name="targetRatio">

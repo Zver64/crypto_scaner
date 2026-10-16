@@ -1,5 +1,6 @@
 import type { BacktestSignal } from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
+import { BacktestSimpleSignalSummary } from "@/features/strategy-backtest/backtest-simple-signal-summary";
 import type { SignalSummaryRow } from "@/features/strategy-backtest/types";
 import {
 	formatFractionPercent,
@@ -50,13 +51,17 @@ const columns: DataTableColumn<SignalSummaryRow>[] = [
 	},
 ];
 
-// How often the counted signals succeeded beside every candle.
+// How often the counted signals succeeded beside every candle; how often a
+// simple signal fired.
 export function BacktestSignalSummary({ signal }: BacktestSignalSummaryProps) {
+	if (signal.evaluation === null) {
+		return <BacktestSimpleSignalSummary signal={signal} />;
+	}
 	return (
 		<DataTable
 			columns={columns}
 			getRowKey={({ key }) => key}
-			rows={signalSummaryRows(signal)}
+			rows={signalSummaryRows(signal.evaluation)}
 		/>
 	);
 }

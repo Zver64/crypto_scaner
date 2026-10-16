@@ -1,5 +1,6 @@
 import {
 	type BacktestIndicatorColumn,
+	type BacktestSignal,
 	type BacktestSignalOccurrence,
 	Direction,
 } from "@/api/generated/models";
@@ -12,7 +13,7 @@ import { formatNumber } from "@/utils/number-format";
 interface BacktestSignalTableProps {
 	indicatorColumns: readonly BacktestIndicatorColumn[];
 	direction: Direction;
-	occurrences: readonly BacktestSignalOccurrence[];
+	signal: BacktestSignal;
 }
 
 // A distance of an evaluated signal, empty without an evaluation.
@@ -32,12 +33,13 @@ const leadingColumns: DataTableColumn<BacktestSignalOccurrence>[] = [
 		key: "close",
 		textAlign: "right",
 	},
-	{
-		cell: ({ counted }) => (counted === null ? "" : counted ? "Yes" : "No"),
-		header: "Counted",
-		key: "counted",
-	},
 ];
+
+const countedColumn: DataTableColumn<BacktestSignalOccurrence> = {
+	cell: ({ counted }) => (counted === null ? "" : counted ? "Yes" : "No"),
+	header: "Counted",
+	key: "counted",
+};
 
 const levelColumns: DataTableColumn<BacktestSignalOccurrence>[] = [
 	{
@@ -78,18 +80,26 @@ const trailingColumns: DataTableColumn<BacktestSignalOccurrence>[] = [
 ];
 
 // The signals, newest first, with their stop and target and whether they
-// succeeded; a sideways signal has a target on both sides and no stop.
+// succeeded, unless the signal is simple and never judged; a sideways signal
+// has a target on both sides and no stop.
 export function BacktestSignalTable({
 	direction,
-	occurrences,
+	signal,
 	indicatorColumns,
 }: BacktestSignalTableProps) {
 	return (
 		<DataTable
 			columns={[
 				...leadingColumns,
-				...(direction === Direction.sideways ? sidewaysColumns : levelColumns),
-				...trailingColumns,
+				...(signal.evaluation === null
+					? []
+					: [
+							countedColumn,
+							...(direction === Direction.sideways
+								? sidewaysColumns
+								: levelColumns),
+							...trailingColumns,
+						]),
 				...indicatorColumns.map(
 					({ key, title }): DataTableColumn<BacktestSignalOccurrence> => ({
 						key: `indicator:${key}`,
@@ -103,7 +113,7 @@ export function BacktestSignalTable({
 				),
 			]}
 			getRowKey={({ time }) => time}
-			rows={[...occurrences].reverse()}
+			rows={[...signal.occurrences].reverse()}
 		/>
 	);
 }

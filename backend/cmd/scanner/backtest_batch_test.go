@@ -185,8 +185,10 @@ func TestMultiCoinSummaryOmitsDetailsAndCountsNeutrals(t *testing.T) {
 	result := apiclient.StrategyBacktest{
 		Symbol: "BTCUSDT", Interval: apiclient.N1h, Direction: apiclient.Long, From: &from, To: &from,
 		Signal: &apiclient.BacktestSignal{
-			Evaluated: 4, Signals: apiclient.BacktestSignalStats{Count: 4, Successes: 0, Neutrals: 1, SuccessRate: new(float64(0))},
-			All:         apiclient.BacktestSignalStats{Count: 1254, Successes: 243, Neutrals: 255, SuccessRate: new(float64(243.0 / 999))},
+			Evaluation: &apiclient.BacktestSignalEvaluation{
+				Evaluated: 4, Signals: apiclient.BacktestSignalStats{Count: 4, Successes: 0, Neutrals: 1, SuccessRate: new(float64(0))},
+				All: apiclient.BacktestSignalStats{Count: 1254, Successes: 243, Neutrals: 255, SuccessRate: new(float64(243.0 / 999))},
+			},
 			Occurrences: []apiclient.BacktestSignalOccurrence{{Close: 987654321}},
 		},
 	}

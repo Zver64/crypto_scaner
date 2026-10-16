@@ -20,7 +20,7 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 		DurationMs: 1234.5,
 		From:       &from, To: &occurrences[len(occurrences)-1].Time, Symbol: "BTCUSDT", Interval: apiclient.N1h, Direction: apiclient.Long,
 		IndicatorColumns: []apiclient.BacktestIndicatorColumn{{Key: "h_rsi", Title: "h_rsi"}, {Key: "h_pivot_low_bars", Title: "h_pivot_low_bars"}, {Key: "h_pivot_high_bars", Title: "h_pivot_high_bars"}},
-		Signal:           &apiclient.BacktestSignal{Window: 6, TargetRatio: 2, Occurrences: occurrences},
+		Signal:           &apiclient.BacktestSignal{Evaluation: &apiclient.BacktestSignalEvaluation{Window: 6, TargetRatio: 2}, Occurrences: occurrences},
 	}
 	body, err := json.Marshal(backtest)
 	if err != nil {

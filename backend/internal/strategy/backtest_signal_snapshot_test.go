@@ -34,7 +34,7 @@ func TestSignalSnapshotIncludesExitAfterRequestedPeriod(t *testing.T) {
 		t.Fatal("exit candle missing from snapshot")
 	}
 	// The chart tail must not add signals or statistical evaluations.
-	if result.Signal.All.Count != 1 || result.Signal.Signals.Count != 1 {
+	if judgement := result.Signal.Judgement; judgement == nil || judgement.All.Count != 1 || judgement.Signals.Count != 1 {
 		t.Fatal("chart tail was evaluated as entries")
 	}
 	withoutChart, err := service.Backtest(context.Background(), 1, "BTCUSDT", at, at, false)
@@ -43,5 +43,24 @@ func TestSignalSnapshotIncludesExitAfterRequestedPeriod(t *testing.T) {
 	}
 	if len(withoutChart.Charts) != 0 || !withoutChart.To.Equal(at) {
 		t.Fatal("unsolicited chart or expanded report")
+	}
+}
+
+func TestSimpleSignalBacktestListsSignalsWithoutJudging(t *testing.T) {
+	quiet := ohlc(100, 100.1, 99.9, 100)
+	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
+	store := newBacktestStore(market.IntervalHour, history)
+	store.strategies = []Strategy{{ID: 1, Signal: true, Direction: DirectionSimple, Expression: "h_close > 0"}}
+	service := snapshotTestService(t, store)
+	from, to := history[signalHistoryCandles].OpenTime, history[signalHistoryCandles+2].OpenTime
+	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", from, to, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Signal == nil || result.Signal.Judgement != nil || result.Signal.Candles != 3 || len(result.Signal.Occurrences) != 1 {
+		t.Fatalf("unexpected report: %+v", result.Signal)
+	}
+	if result.Signal.Occurrences[0].Evaluation != nil {
+		t.Fatal("a simple signal was evaluated")
 	}
 }

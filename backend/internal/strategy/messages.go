@@ -78,7 +78,7 @@ func haltText(entry Entry, err error) string {
 
 // entryTitle is the bold title of a message about entry, naming the
 // strategy, its interval, and kind after mark, such as
-// "📈 Rebound · 1h · long signal".
+// "🟢 Rebound · 1h · long signal".
 func entryTitle(mark string, entry Entry, kind string) string {
 	return telegramhtml.Title(mark + " " + entry.Name + " · " + string(entry.Interval) + " · " + kind)
 }
@@ -115,17 +115,17 @@ func alertText(entry Entry, alerts []alert) string {
 }
 
 // alertTitle names entry, its interval, and the kind of event, such as
-// "🟢 Trend · 1h · buy" or "📈 Rebound · 1h · long signal".
+// "🟢 Trend · 1h · buy" or "🟢 Rebound · 1h · long signal".
 func alertTitle(entry Entry, event TradeEvent) string {
 	mark, kind := signalMarks[entry.Direction], string(entry.Direction)+" signal"
 	switch {
 	case event.Kind == TradeSignal:
 	case event.Kind == TradeSell && entry.Direction == DirectionShort:
-		mark, kind = "🔺", "cover"
+		mark, kind = "🔴", "cover"
 	case event.Kind == TradeSell:
 		mark, kind = "🔴", "sell"
 	case entry.Direction == DirectionShort:
-		mark, kind = "🔻", "short"
+		mark, kind = "🟢", "short"
 	default:
 		mark, kind = "🟢", "buy"
 	}
@@ -171,7 +171,7 @@ func alertLine(item alert) string {
 }
 
 // signalMarks start the alerts of signals by the move they expect.
-var signalMarks = map[Direction]string{DirectionLong: "📈", DirectionShort: "📉", DirectionSideways: "↔️"}
+var signalMarks = map[Direction]string{DirectionSimple: "📣", DirectionLong: "🟢", DirectionShort: "🔴", DirectionSideways: "↔️"}
 
 func formatNumber(value float64) string {
 	return strconv.FormatFloat(value, 'g', 6, 64)

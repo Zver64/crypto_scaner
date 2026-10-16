@@ -64,16 +64,24 @@ type Backtest struct {
 // signalATRPeriod is the common ATR period used to judge every signal.
 const signalATRPeriod = 14
 
-// SignalReport judges the entry signals of a signal by a target and a stop
+// SignalReport lists the entry signals of a signal, oldest first, beside
+// Candles, the number of candles the entry was evaluated on, and, unless the signal is simple, judges
+// them: Judgement is nil for a simple signal, which expects no particular
+// move.
+type SignalReport struct {
+	Occurrences []SignalOccurrence
+	Candles     int
+	Judgement   *SignalJudgement
+}
+
+// SignalJudgement judges the entry signals of a signal by a target and a stop
 // over the Window candles after each, beside the same judgment after every
 // evaluated candle. A candle's stop lies one ATR(14) away from its close,
 // against the expected move, independent of Window. The target lies TargetRatio
 // stops away in the expected direction; a sideways signal has targets on both sides and
 // no stop. Outcomes may read stored candles after the evaluated period.
-type SignalReport struct {
+type SignalJudgement struct {
 	Window, TargetRatio int
-	// Occurrences are the entry signals, oldest first.
-	Occurrences []SignalOccurrence
 	// Evaluated counts the entry signals with an evaluation; Signals
 	// describes the counted ones and All every evaluated candle with an
 	// evaluation.
@@ -83,8 +91,8 @@ type SignalReport struct {
 
 // SignalOccurrence is an entry signal: Time is the open time of the candle
 // whose close signaled it, Close that close, and Values what the entry rule
-// read there. Evaluation is nil when the stored history lacks the candles to
-// judge it.
+// read there. Evaluation is nil for a simple signal and when the stored
+// history lacks the candles to judge it.
 type SignalOccurrence struct {
 	Time            time.Time
 	Close           float64
@@ -335,7 +343,7 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 	// signals are the indexes of the candles a signal signaled at.
 	var signals []int
 	var occurrences []SignalOccurrence
-	first := -1
+	first, candleCount := -1, 0
 	equity, peak := 1.0, 1.0
 	var returns, bars []float64
 	var reasons []ExitReason
@@ -376,6 +384,7 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 			result.From = candle.OpenTime.UTC()
 		}
 		result.To = candle.OpenTime.UTC()
+		candleCount++
 		pending := state.Buys > state.Filled
 		next, events, processed, err := current.advance(entry, instrument.ID, state, false)
 		if err != nil {
@@ -441,15 +450,19 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 		}
 		return nil
 	}
+	result.Signal = &SignalReport{Occurrences: occurrences, Candles: candleCount}
+	if entry.Direction == DirectionSimple {
+		return nil
+	}
 	var err error
-	result.Signal, err = signalReport(replay.registry, entry.Strategy, result.Interval, history, occurrences, signals, first, len(candles)-1)
+	result.Signal.Judgement, err = judgeSignal(replay.registry, entry.Strategy, result.Interval, history, occurrences, signals, first, len(candles)-1)
 	return err
 }
 
-// signalReport judges the occurrences of signal, at the indexes signals of
-// history, candles of interval, and every evaluated candle, from first
-// through last (none when first is negative).
-func signalReport(registry *indicator.Registry, signal Strategy, interval market.CandleInterval, history []market.Candle, occurrences []SignalOccurrence, signals []int, first, last int) (*SignalReport, error) {
+// judgeSignal judges the occurrences of signal, at the indexes signals of
+// history, candles of interval, setting their evaluations, and every
+// evaluated candle, from first through last (none when first is negative).
+func judgeSignal(registry *indicator.Registry, signal Strategy, interval market.CandleInterval, history []market.Candle, occurrences []SignalOccurrence, signals []int, first, last int) (*SignalJudgement, error) {
 	// Use the existing TA-Lib module, once over each contiguous history run.
 	// ATR at a candle reads only that candle and its preceding history.
 	selection := indicator.Selection{Type: "atr", Parameters: indicator.Parameters{"period": signalATRPeriod}}
@@ -476,7 +489,7 @@ func signalReport(registry *indicator.Registry, signal Strategy, interval market
 		}
 		return evaluateSignal(signal.Direction, interval, history, at, signal.Window, signal.TargetRatio, atr[history[at].OpenTime.UTC()])
 	}
-	report := &SignalReport{Window: signal.Window, TargetRatio: signal.TargetRatio, Occurrences: occurrences}
+	report := &SignalJudgement{Window: signal.Window, TargetRatio: signal.TargetRatio}
 	var moves []float64
 	next := 0
 	for index, at := range signals {
@@ -491,7 +504,7 @@ func signalReport(registry *indicator.Registry, signal Strategy, interval market
 			report.Signals.record(evaluation)
 			moves = append(moves, evaluation.Move)
 		}
-		report.Occurrences[index].Evaluation = evaluation
+		occurrences[index].Evaluation = evaluation
 	}
 	report.Signals.MedianMove = median(moves)
 	if first < 0 {

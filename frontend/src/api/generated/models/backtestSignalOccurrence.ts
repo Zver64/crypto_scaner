@@ -23,7 +23,7 @@ import type { BacktestValues } from './backtestValues.ts';
 
 /**
  * An entry signal. counted, stop, target, move, outcome, and exit_time are null
- * together when history lacks a positive ATR(14), the full consecutive
+ * together for a simple signal, or when history lacks a positive ATR(14), the full consecutive
  * future window, or valid positive-price levels. ATR needs at least
  * 14 preceding consecutive candles and restarts after missing candles.
  * Histories of at least 2,000 candles may have lost older seed candles:

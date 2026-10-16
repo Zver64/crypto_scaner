@@ -27,7 +27,7 @@ type kind struct {
 
 var (
 	strategiesKind = kind{noun: "strategy", plural: "strategies", directions: []string{string(apiclient.Long), string(apiclient.Short)}}
-	signalsKind    = kind{signals: true, noun: "signal", plural: "signals", directions: []string{string(apiclient.Long), string(apiclient.Short), string(apiclient.Sideways)}}
+	signalsKind    = kind{signals: true, noun: "signal", plural: "signals", directions: []string{string(apiclient.Simple), string(apiclient.Long), string(apiclient.Short), string(apiclient.Sideways)}}
 )
 
 // holds reports whether strategy belongs to k.
@@ -158,6 +158,14 @@ func (f signalFlags) check(flags *pflag.FlagSet) error {
 	return nil
 }
 
+// checkSimple refuses the flags for a simple signal, which is never judged.
+func (signalFlags) checkSimple(flags *pflag.FlagSet) error {
+	if flags.Changed("target-ratio") || flags.Changed("window") {
+		return usageError("--target-ratio and --window: a simple signal is never judged")
+	}
+	return nil
+}
+
 // update replaces the settings of body whose flags were given, preserving
 // the others.
 func (f signalFlags) update(flags *pflag.FlagSet, body *apiclient.StrategyUpdate) {
@@ -191,7 +199,7 @@ func (c *cli) createSignalCommand() *cobra.Command {
 	var marketCap marketCapFlags
 	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR --direction long|short|sideways (--track-favorites|--all-coins|(--coin SYM|--favorites|--coin-m)...) [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR --direction simple|long|short|sideways (--track-favorites|--all-coins|(--coin SYM|--favorites|--coin-m)...) [--target-ratio STOPS] [--window CANDLES] [--min-market-cap USD] [--max-market-cap USD] [--message TEXT] [--add-indicators]",
 		Short: "Save a disabled signal, which buys nothing and announces the move it expects",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -214,10 +222,10 @@ func (c *cli) createSignalCommand() *cobra.Command {
 			if _, err := c.prepareStrategyRules(command, client, rules.rules(), addIndicators); err != nil {
 				return err
 			}
+			ratio, window := rules.judging(move)
 			created, err := client.CreateStrategyWithResponse(command.Context(), apiclient.StrategyInput{
 				Name: args[0], Signal: true, Direction: move, Expression: rules.expression, Coins: chosen, CoinSource: source,
-				TargetRatio: new(apiclient.SignalTargetRatio(rules.settings.ratio)), Window: new(apiclient.SignalWindow(rules.settings.window)),
-				MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum, Message: message,
+				TargetRatio: ratio, Window: window, MinMarketCapUsd: minimum, MaxMarketCapUsd: maximum, Message: message,
 			})
 			if err == nil {
 				err = c.check(created, created.JSON201 != nil, created.JSON400, created.JSON409)
@@ -248,20 +256,33 @@ type signalRuleFlags struct {
 func (f *signalRuleFlags) add(command *cobra.Command) {
 	flags := command.Flags()
 	flags.StringVar(&f.expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
-	flags.StringVar(&f.direction, "direction", "", "the `MOVE` the signal expects: long, short, or sideways")
+	flags.StringVar(&f.direction, "direction", "", "the `MOVE` the signal expects: simple (none in particular, never judged), long, short, or sideways")
 	f.settings.add(command, true)
 	_ = command.MarkFlagRequired("expr")
 	_ = command.MarkFlagRequired("direction")
 	_ = command.RegisterFlagCompletionFunc("direction", signalsKind.completeDirections())
 }
 
-// parse checks the move and the settings and returns the move.
+// parse checks the move and the settings and returns the move. A simple
+// signal is never judged, so it takes neither --target-ratio nor --window.
 func (f signalRuleFlags) parse(command *cobra.Command) (apiclient.Direction, error) {
 	move, err := signalsKind.directionFlag(f.direction)
 	if err != nil {
 		return "", err
 	}
+	if move == apiclient.Simple {
+		return move, f.settings.checkSimple(command.Flags())
+	}
 	return move, f.settings.check(command.Flags())
+}
+
+// judging returns the target ratio and the window to send for move: none
+// for a simple signal.
+func (f signalRuleFlags) judging(move apiclient.Direction) (*apiclient.SignalTargetRatio, *apiclient.SignalWindow) {
+	if move == apiclient.Simple {
+		return nil, nil
+	}
+	return new(apiclient.SignalTargetRatio(f.settings.ratio)), new(apiclient.SignalWindow(f.settings.window))
 }
 
 // rules lists the expression for prepareStrategyRules.
@@ -306,6 +327,11 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			current, err := c.editable(command, client, signalsKind, id)
 			if err != nil {
 				return err
+			}
+			if current.Direction == apiclient.Simple {
+				if err := settings.checkSimple(flags); err != nil {
+					return err
+				}
 			}
 			body := apiclient.StrategyUpdate{
 				Name: current.Name, Signal: current.Signal, Direction: current.Direction, Expression: current.Expression,

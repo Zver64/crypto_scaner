@@ -3,6 +3,7 @@ import type { LineData, UTCTimestamp } from "lightweight-charts";
 import {
 	type BacktestEquityPoint,
 	type BacktestSignal,
+	type BacktestSignalEvaluation,
 	type BacktestSignalStats,
 	type CandleInterval,
 	Direction,
@@ -23,6 +24,7 @@ import {
 } from "@/features/strategy-backtest/constants";
 import type {
 	SignalSummaryRow,
+	SimpleSignalSummaryRow,
 	TradeWords,
 	TradingSummaryRow,
 } from "@/features/strategy-backtest/types";
@@ -122,7 +124,7 @@ export function formatEquityPercent(value: number): string {
 
 // The chart marks of a backtest: the first fills and the closes of trades,
 // or blue signal entries and outcome-colored closes, with circles for
-// sideways. A long trade opens on a rise mark and
+// sideways and simple signals. A long trade opens on a rise mark and
 // closes on a fall mark, a short trade the other way around.
 export function backtestMarkers({
 	direction,
@@ -134,7 +136,7 @@ export function backtestMarkers({
 >): ChartTradeMarkers {
 	if (signal) {
 		const times = signal.occurrences.map(({ time }) => time);
-		if (direction === Direction.sideways) {
+		if (direction === Direction.sideways || direction === Direction.simple) {
 			return { entries: [], exits: [], marks: times };
 		}
 		const short = direction === Direction.short;
@@ -180,19 +182,39 @@ export function tradeWords(direction: Direction): TradeWords {
 
 // The counted signals beside every candle of a signal's backtest; the
 // signals row also counts every evaluated signal.
-export function signalSummaryRows(signal: BacktestSignal): SignalSummaryRow[] {
+export function signalSummaryRows(
+	evaluation: BacktestSignalEvaluation,
+): SignalSummaryRow[] {
 	return [
 		{
-			count: `${formatNumber(signal.evaluated)} / ${formatNumber(signal.signals.count)}`,
+			count: `${formatNumber(evaluation.evaluated)} / ${formatNumber(evaluation.signals.count)}`,
 			key: "signals",
 			label: "Signals",
-			stats: signal.signals,
+			stats: evaluation.signals,
 		},
 		{
-			count: formatNumber(signal.all.count),
+			count: formatNumber(evaluation.all.count),
 			key: "all",
 			label: "All candles",
-			stats: signal.all,
+			stats: evaluation.all,
+		},
+	];
+}
+
+// How often a simple signal fired beside the candles it could fire on.
+export function simpleSignalSummaryRows(
+	signal: BacktestSignal,
+): SimpleSignalSummaryRow[] {
+	return [
+		{
+			count: formatNumber(signal.occurrences.length),
+			key: "signals",
+			label: "Signals",
+		},
+		{
+			count: formatNumber(signal.candles),
+			key: "candles",
+			label: "Candles evaluated",
 		},
 	];
 }

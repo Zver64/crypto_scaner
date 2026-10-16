@@ -8,13 +8,23 @@ import (
 	"io"
 )
 
+// renderSignalSummary prints how often the counted signals succeeded beside
+// every candle, or, for a simple signal, which is never judged, how often it
+// fired.
 func renderSignalSummary(w io.Writer, signal apiclient.BacktestSignal) {
 	t := newTable()
+	if signal.Evaluation == nil {
+		t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}})
+		t.AppendRows([]table.Row{{"Signals", len(signal.Occurrences)}, {"Candles evaluated", signal.Candles}})
+		fmt.Fprintln(w, t.Render())
+		return
+	}
+	evaluation := *signal.Evaluation
 	t.AppendHeader(table.Row{"", "Count (all / counted)", "Median move to target %", "Successful", "Neutral"})
 	t.SetColumnConfigs([]table.ColumnConfig{{Number: 2, Align: text.AlignRight}, {Number: 3, Align: text.AlignRight}, {Number: 4, Align: text.AlignRight}})
 	t.AppendRows([]table.Row{
-		{"Signals", fmt.Sprintf("%d / %d", signal.Evaluated, signal.Signals.Count), share(signal.Signals.MedianMove), successful(signal.Signals), signal.Signals.Neutrals},
-		{"All candles", signal.All.Count, share(signal.All.MedianMove), successful(signal.All), signal.All.Neutrals},
+		{"Signals", fmt.Sprintf("%d / %d", evaluation.Evaluated, evaluation.Signals.Count), share(evaluation.Signals.MedianMove), successful(evaluation.Signals), evaluation.Signals.Neutrals},
+		{"All candles", evaluation.All.Count, share(evaluation.All.MedianMove), successful(evaluation.All), evaluation.All.Neutrals},
 	})
 	fmt.Fprintln(w, t.Render())
 }

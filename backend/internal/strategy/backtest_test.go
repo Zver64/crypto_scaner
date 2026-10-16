@@ -749,11 +749,11 @@ func TestEvaluateSignalNeedsConsecutiveCandles(t *testing.T) {
 // evaluateTestSignal exercises ATR calculation and the outcome together.
 func evaluateTestSignal(t *testing.T, direction Direction, interval market.CandleInterval, history []market.Candle, at, window, ratio int) *SignalEvaluation {
 	t.Helper()
-	report, err := signalReport(testRegistry(t), Strategy{Direction: direction, Window: window, TargetRatio: ratio}, interval, history, []SignalOccurrence{{}}, []int{at}, -1, -1)
-	if err != nil {
+	occurrences := []SignalOccurrence{{}}
+	if _, err := judgeSignal(testRegistry(t), Strategy{Direction: direction, Window: window, TargetRatio: ratio}, interval, history, occurrences, []int{at}, -1, -1); err != nil {
 		t.Fatal(err)
 	}
-	return report.Occurrences[0].Evaluation
+	return occurrences[0].Evaluation
 }
 
 // Neither future OHLC nor the window changes the stop fixed at the signal.
@@ -796,14 +796,15 @@ func TestSignalATRWarmsUpPrunedHistory(t *testing.T) {
 	}
 	signal := Strategy{Direction: DirectionLong, Window: 6, TargetRatio: 2}
 	signals := []int{14, depth - 2, depth - 1}
-	report, err := signalReport(registry, signal, market.IntervalHour, history, make([]SignalOccurrence, len(signals)), signals, 0, len(history)-1)
+	occurrences := make([]SignalOccurrence, len(signals))
+	report, err := judgeSignal(registry, signal, market.IntervalHour, history, occurrences, signals, 0, len(history)-1)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Occurrences[0].Evaluation != nil || report.Occurrences[1].Evaluation != nil {
+	if occurrences[0].Evaluation != nil || occurrences[1].Evaluation != nil {
 		t.Fatal("evaluated a signal before its retained-history ATR warm-up")
 	}
-	last := report.Occurrences[2].Evaluation
+	last := occurrences[2].Evaluation
 	if last == nil || !last.Counted || *last.Stop >= 0.03 || report.Evaluated != 1 {
 		t.Fatalf("settled signal evaluation %+v, evaluated %d", last, report.Evaluated)
 	}
@@ -817,7 +818,7 @@ func TestSignalATRWarmsUpPrunedHistory(t *testing.T) {
 }
 
 // Counted signals are at least a window apart; the others are repeats.
-func TestSignalReportCountsSignalsAWindowApart(t *testing.T) {
+func TestJudgeSignalCountsSignalsAWindowApart(t *testing.T) {
 	quiet := ohlc(100, 100.1, 99.9, 100)
 	future := make([]market.Candle, 20)
 	for index := range future {
@@ -826,12 +827,12 @@ func TestSignalReportCountsSignalsAWindowApart(t *testing.T) {
 	history := signalHistory(future...)
 	signals := []int{100, 103, 106, 107, 112}
 	occurrences := make([]SignalOccurrence, len(signals))
-	report, err := signalReport(testRegistry(t), Strategy{Direction: DirectionSideways, TargetRatio: 2, Window: 6}, market.IntervalHour, history, occurrences, signals, 100, 105)
+	report, err := judgeSignal(testRegistry(t), Strategy{Direction: DirectionSideways, TargetRatio: 2, Window: 6}, market.IntervalHour, history, occurrences, signals, 100, 105)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var counted []bool
-	for _, occurrence := range report.Occurrences {
+	for _, occurrence := range occurrences {
 		counted = append(counted, occurrence.Evaluation != nil && occurrence.Evaluation.Counted)
 	}
 	if !slices.Equal(counted, []bool{true, false, true, false, true}) || report.Evaluated != 5 || report.Signals.Count != 3 || report.Signals.Successes != 3 {

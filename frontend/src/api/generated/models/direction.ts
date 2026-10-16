@@ -20,7 +20,8 @@
 
 /**
  * How a strategy trades, long or short, or the price move a signal
- * expects after its entry signals: up, down, or sideways. A short
+ * expects after its entry signals: none in particular (simple), up,
+ * down, or sideways. A simple signal has no target ratio or window. A short
  * strategy always has a take profit and a stop loss. Fixed at creation:
  * an update that changes it is refused.
  */
@@ -28,6 +29,7 @@ export type Direction = typeof Direction[keyof typeof Direction];
 
 
 export const Direction = {
+  simple: 'simple',
   long: 'long',
   short: 'short',
   sideways: 'sideways',

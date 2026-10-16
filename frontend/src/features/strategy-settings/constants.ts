@@ -25,13 +25,17 @@ export const anyField = { fieldExists: () => true };
 
 // Names of the directions strategies trade and the moves signals expect.
 export const directionLabels = {
+	simple: "Simple",
 	long: "Long",
 	short: "Short",
 	sideways: "Sideways",
 } as const satisfies Record<Direction, string>;
 
 // The direction a new strategy or signal starts with.
-export const defaultDirection = Direction.long;
+export const defaultDirections = {
+	signal: Direction.simple,
+	strategy: Direction.long,
+} as const satisfies Record<StrategyKind, Direction>;
 
 // The target ratio and window a new signal starts with.
 export const defaultSignalTargetRatio = SignalTargetRatio.NUMBER_2;
@@ -55,5 +59,6 @@ export const kindNouns = {
 	{ name: string; one: string; many: string; title: string }
 >;
 
-// The directions a strategy trades; only a signal expects a sideways move.
+// The directions a strategy trades; only a signal may be simple or expect a
+// sideways move.
 export const strategyDirections = [Direction.long, Direction.short] as const;

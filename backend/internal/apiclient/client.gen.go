@@ -232,6 +232,7 @@ const (
 	Long     Direction = "long"
 	Short    Direction = "short"
 	Sideways Direction = "sideways"
+	Simple   Direction = "simple"
 )
 
 // Valid indicates whether the value is a known member of the Direction enum.
@@ -242,6 +243,8 @@ func (e Direction) Valid() bool {
 	case Short:
 		return true
 	case Sideways:
+		return true
+	case Simple:
 		return true
 	default:
 		return false
@@ -652,7 +655,19 @@ type BacktestIndicatorColumn struct {
 	Title string `json:"title"`
 }
 
-// BacktestSignal Judges each signal candle's close, and every evaluated candle's
+// BacktestSignal The entry signals of a signal and, unless it is simple, how they were judged.
+type BacktestSignal struct {
+	// Candles Candles the entry was evaluated on, where it could signal.
+	Candles int `json:"candles"`
+
+	// Evaluation Null for a simple signal, which expects no particular move and is not judged.
+	Evaluation *BacktestSignalEvaluation `json:"evaluation"`
+
+	// Occurrences Entry signals, oldest first.
+	Occurrences []BacktestSignalOccurrence `json:"occurrences"`
+}
+
+// BacktestSignalEvaluation Judges each signal candle's close, and every evaluated candle's
 // alike, by a stop and a target over the window candles after it. The
 // stop lies one ATR(14) from the close against the expected move.
 // ATR uses Wilder-smoothed true ranges through the signal candle,
@@ -661,15 +676,12 @@ type BacktestIndicatorColumn struct {
 // target lies target_ratio stops away in the expected direction; a
 // sideways signal has a target on both sides and no stop. Outcomes may
 // read stored candles after the evaluated period.
-type BacktestSignal struct {
+type BacktestSignalEvaluation struct {
 	// All Every evaluated candle with an evaluation.
 	All BacktestSignalStats `json:"all"`
 
 	// Evaluated Entry signals with an evaluation.
 	Evaluated int `json:"evaluated"`
-
-	// Occurrences Entry signals, oldest first.
-	Occurrences []BacktestSignalOccurrence `json:"occurrences"`
 
 	// Signals The counted entry signals, each at least a window after the previous counted one.
 	Signals BacktestSignalStats `json:"signals"`
@@ -682,7 +694,7 @@ type BacktestSignal struct {
 }
 
 // BacktestSignalOccurrence An entry signal. counted, stop, target, move, outcome, and exit_time are null
-// together when history lacks a positive ATR(14), the full consecutive
+// together for a simple signal, or when history lacks a positive ATR(14), the full consecutive
 // future window, or valid positive-price levels. ATR needs at least
 // 14 preceding consecutive candles and restarts after missing candles.
 // Histories of at least 2,000 candles may have lost older seed candles:
@@ -981,7 +993,8 @@ type CurrentUser struct {
 }
 
 // Direction How a strategy trades, long or short, or the price move a signal
-// expects after its entry signals: up, down, or sideways. A short
+// expects after its entry signals: none in particular (simple), up,
+// down, or sideways. A simple signal has no target ratio or window. A short
 // strategy always has a take profit and a stop loss. Fixed at creation:
 // an update that changes it is refused.
 type Direction string
@@ -1335,12 +1348,12 @@ type Session struct {
 // SignalTargetRatio A signal's target distance in stops, which its backtest judges each
 // signal by: the stop lies one ATR(14) against the expected move,
 // independent of the window, and the target this many stops away in
-// its direction. Required for a signal, null for a trading strategy.
+// its direction. Required for a signal, null for a simple signal and a trading strategy.
 type SignalTargetRatio int
 
 // SignalWindow The candles of its interval after each signal over which a signal's
-// backtest judges it. Required for a signal, null for a trading
-// strategy.
+// backtest judges it. Required for a signal, null for a simple signal
+// and a trading strategy.
 type SignalWindow int
 
 // Strategy defines model for Strategy.
@@ -1358,7 +1371,8 @@ type Strategy struct {
 	Coins StrategyCoins `json:"coins"`
 
 	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: up, down, or sideways. A short
+	// expects after its entry signals: none in particular (simple), up,
+	// down, or sideways. A simple signal has no target ratio or window. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
 	// an update that changes it is refused.
 	Direction Direction `json:"direction"`
@@ -1436,7 +1450,8 @@ type StrategyBacktest struct {
 	Charts []BacktestChart `json:"charts"`
 
 	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: up, down, or sideways. A short
+	// expects after its entry signals: none in particular (simple), up,
+	// down, or sideways. A simple signal has no target ratio or window. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
 	// an update that changes it is refused.
 	Direction Direction `json:"direction"`
@@ -1481,7 +1496,8 @@ type StrategyBacktestInput struct {
 	Chart *bool `json:"chart,omitempty"`
 
 	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: up, down, or sideways. A short
+	// expects after its entry signals: none in particular (simple), up,
+	// down, or sideways. A simple signal has no target ratio or window. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
 	// an update that changes it is refused.
 	Direction Direction `json:"direction"`
@@ -1562,7 +1578,8 @@ type StrategyInput struct {
 	Coins StrategyCoins `json:"coins"`
 
 	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: up, down, or sideways. A short
+	// expects after its entry signals: none in particular (simple), up,
+	// down, or sideways. A simple signal has no target ratio or window. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
 	// an update that changes it is refused.
 	Direction Direction `json:"direction"`
@@ -1680,7 +1697,8 @@ type StrategyUpdate struct {
 	Coins StrategyCoins `json:"coins"`
 
 	// Direction How a strategy trades, long or short, or the price move a signal
-	// expects after its entry signals: up, down, or sideways. A short
+	// expects after its entry signals: none in particular (simple), up,
+	// down, or sideways. A simple signal has no target ratio or window. A short
 	// strategy always has a take profit and a stop loss. Fixed at creation:
 	// an update that changes it is refused.
 	Direction Direction `json:"direction"`
@@ -2293,7 +2311,7 @@ type ClientInterface interface {
 	// closes when the price rises to the stop loss or falls to the take
 	// profit. A strategy with `signal` true is a signal instead: it has no
 	// exits, buys nothing, and only announces its entry signals with the
-	// move its `direction` expects, which may also be sideways, on the
+	// move its `direction` expects, which may also be sideways or none in particular (simple), on the
 	// coins within its market cap range. The administrator and users with strategy alerts get a
 	// Telegram message for every buy, sell, short, cover, and signal.
 	//
@@ -2884,7 +2902,7 @@ func (c *Client) UpdateScannerIndicator(ctx context.Context, indicatorId Scanner
 // closes when the price rises to the stop loss or falls to the take
 // profit. A strategy with `signal` true is a signal instead: it has no
 // exits, buys nothing, and only announces its entry signals with the
-// move its `direction` expects, which may also be sideways, on the
+// move its `direction` expects, which may also be sideways or none in particular (simple), on the
 // coins within its market cap range. The administrator and users with strategy alerts get a
 // Telegram message for every buy, sell, short, cover, and signal.
 //
@@ -5515,7 +5533,7 @@ type ClientWithResponsesInterface interface {
 	// closes when the price rises to the stop loss or falls to the take
 	// profit. A strategy with `signal` true is a signal instead: it has no
 	// exits, buys nothing, and only announces its entry signals with the
-	// move its `direction` expects, which may also be sideways, on the
+	// move its `direction` expects, which may also be sideways or none in particular (simple), on the
 	// coins within its market cap range. The administrator and users with strategy alerts get a
 	// Telegram message for every buy, sell, short, cover, and signal.
 	//
@@ -9876,7 +9894,7 @@ func (c *ClientWithResponses) UpdateScannerIndicatorWithResponse(ctx context.Con
 // closes when the price rises to the stop loss or falls to the take
 // profit. A strategy with `signal` true is a signal instead: it has no
 // exits, buys nothing, and only announces its entry signals with the
-// move its `direction` expects, which may also be sideways, on the
+// move its `direction` expects, which may also be sideways or none in particular (simple), on the
 // coins within its market cap range. The administrator and users with strategy alerts get a
 // Telegram message for every buy, sell, short, cover, and signal.
 //

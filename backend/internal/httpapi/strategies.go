@@ -249,9 +249,12 @@ func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
 				occurrences[i].Stop, occurrences[i].Target, occurrences[i].Move = evaluation.Stop, &evaluation.Target, &evaluation.Move
 			}
 		}
-		dto.Signal = &BacktestSignal{
-			Window: report.Window, TargetRatio: report.TargetRatio, Occurrences: occurrences, Evaluated: report.Evaluated,
-			Signals: signalStatsDTO(report.Signals), All: signalStatsDTO(report.All),
+		dto.Signal = &BacktestSignal{Occurrences: occurrences, Candles: report.Candles}
+		if judgement := report.Judgement; judgement != nil {
+			dto.Signal.Evaluation = &BacktestSignalEvaluation{
+				Window: judgement.Window, TargetRatio: judgement.TargetRatio, Evaluated: judgement.Evaluated,
+				Signals: signalStatsDTO(judgement.Signals), All: signalStatsDTO(judgement.All),
+			}
 		}
 	}
 	return dto

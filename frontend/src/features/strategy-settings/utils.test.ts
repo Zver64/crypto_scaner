@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { StrategyCoinSource } from "@/api/generated/models";
+import { Direction, StrategyCoinSource } from "@/api/generated/models";
 import {
 	importedStrategyQuery,
 	marketCapErrors,
@@ -157,6 +157,7 @@ describe("strategyInput", () => {
 		name: "Signal",
 		query: strategyQuery("h_close > 1"),
 		coins: ["SOLUSDT", "BTCUSDT"],
+		direction: Direction.long,
 		targetRatio: "3",
 		window: "12",
 	};
@@ -166,6 +167,12 @@ describe("strategyInput", () => {
 			target_ratio: 3,
 			window: 12,
 		});
+	});
+
+	it("sends no target ratio or window for a simple signal", () => {
+		expect(
+			strategyInput({ ...named, direction: Direction.simple }, true),
+		).toMatchObject({ target_ratio: null, window: null });
 	});
 
 	it("sends the coins, or none for a signal of the favorites or all coins", () => {

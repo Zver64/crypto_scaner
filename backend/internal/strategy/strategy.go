@@ -40,10 +40,12 @@ var (
 )
 
 // Direction is the price move a strategy trades or a signal expects after
-// its entry signals: up, down, or, for a signal only, sideways.
+// its entry signals: up, down, or, for a signal only, sideways or none in
+// particular (simple).
 type Direction string
 
 const (
+	DirectionSimple   Direction = "simple"
 	DirectionLong     Direction = "long"
 	DirectionShort    Direction = "short"
 	DirectionSideways Direction = "sideways"
@@ -87,8 +89,8 @@ type Strategy struct {
 	MarketCap MarketCapRange
 	// TargetRatio and Window, a signal's only, tell how backtests judge its
 	// signals: the target lies TargetRatio stops away, and both are watched
-	// over the Window candles after the signal. A trading strategy has 0 for
-	// both.
+	// over the Window candles after the signal. A simple signal, which is
+	// not judged, and a trading strategy have 0 for both.
 	TargetRatio, Window int
 	// Message, when not empty, follows each title of the strategy's alerts.
 	Message string
@@ -907,11 +909,17 @@ func (service *Service) trading(item Strategy) (Entry, error) {
 	item.TakeProfitExpression = strings.TrimSpace(item.TakeProfitExpression)
 	item.StopLossExpression = strings.TrimSpace(item.StopLossExpression)
 	switch {
-	case item.Direction != DirectionLong && item.Direction != DirectionShort && item.Direction != DirectionSideways:
-		return Entry{}, fmt.Errorf("%w: the direction must be long, short, or sideways", ErrInvalidArgument)
+	case !slices.Contains([]Direction{DirectionSimple, DirectionLong, DirectionShort, DirectionSideways}, item.Direction):
+		return Entry{}, fmt.Errorf("%w: the direction must be simple, long, short, or sideways", ErrInvalidArgument)
 	case item.Signal:
 		if item.ExitExpression != "" || item.TakeProfitExpression != "" || item.StopLossExpression != "" {
 			return Entry{}, fmt.Errorf("%w: a signal has no exit rule, take profit, or stop loss", ErrInvalidArgument)
+		}
+		if item.Direction == DirectionSimple {
+			if item.TargetRatio != 0 || item.Window != 0 {
+				return Entry{}, fmt.Errorf("%w: a simple signal has no target ratio or window", ErrInvalidArgument)
+			}
+			break
 		}
 		if !slices.Contains(SignalTargetRatios, item.TargetRatio) {
 			return Entry{}, fmt.Errorf("%w: a signal's target ratio must be 2, 3, 4, or 5", ErrInvalidArgument)
@@ -921,8 +929,8 @@ func (service *Service) trading(item Strategy) (Entry, error) {
 		}
 	case item.TargetRatio != 0 || item.Window != 0:
 		return Entry{}, fmt.Errorf("%w: only a signal has a target ratio and a window", ErrInvalidArgument)
-	case item.Direction == DirectionSideways:
-		return Entry{}, fmt.Errorf("%w: a strategy trades long or short; only a signal expects a sideways move", ErrInvalidArgument)
+	case item.Direction == DirectionSimple || item.Direction == DirectionSideways:
+		return Entry{}, fmt.Errorf("%w: a strategy trades long or short; only a signal may be simple or expect a sideways move", ErrInvalidArgument)
 	case item.Direction == DirectionShort && (item.TakeProfitExpression == "" || item.StopLossExpression == ""):
 		return Entry{}, fmt.Errorf("%w: a short strategy needs a take profit and a stop loss", ErrInvalidArgument)
 	}

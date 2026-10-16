@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.0.0](https://github.com/Zver64/crypto_scaner/compare/v2.8.0...v3.0.0) (2026-10-16)
+
+
+### ⚠ BREAKING CHANGES
+
+* the backtest response moves a signal's window, target_ratio, evaluated, signals, and all under a nullable `evaluation`, null for a simple signal, and adds `candles`. Reinstall the scanner CLI.
+
+### Features
+
+* add simple signals that only report where they fire ([e2377a9](https://github.com/Zver64/crypto_scaner/commit/e2377a9d7fba82c4bec18d0389bb3f084085610d))
+
+
+### Bug Fixes
+
+* keep the settings tab highlight in sync with the open page ([ed5e497](https://github.com/Zver64/crypto_scaner/commit/ed5e4978409a67260f2201f3d45305a133af8f0c))
+
 ## [2.8.0](https://github.com/Zver64/crypto_scaner/compare/v2.7.1...v2.8.0) (2026-10-16)
 
 

@@ -417,7 +417,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 				}
 			}
 		}
-		prices, err := store.ListHourlyPrices(ctx, []int64{instruments[0].ID}, start, end)
+		prices, err := store.ListClosePrices(ctx, []int64{instruments[0].ID}, market.IntervalHour, start, end)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -434,7 +434,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if err != nil || page.HasMore || len(page.Candles) != 1 || !page.Candles[0].OpenTime.Equal(start.Add(-time.Hour)) {
 			t.Fatalf("older candle page = %+v / %v", page, err)
 		}
-		empty, err := store.ListHourlyPrices(ctx, nil, start, end)
+		empty, err := store.ListClosePrices(ctx, nil, market.IntervalHour, start, end)
 		if err != nil || len(empty) != 0 {
 			t.Fatalf("empty instrument selection: %+v / %v", empty, err)
 		}

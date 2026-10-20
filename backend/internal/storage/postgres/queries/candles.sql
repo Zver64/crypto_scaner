@@ -136,12 +136,12 @@ ON CONFLICT (instrument_id, interval) DO UPDATE SET
     policy_version = EXCLUDED.policy_version,
     retry_after = EXCLUDED.retry_after;
 
--- name: ListHourlyPrices :many
+-- name: ListClosePrices :many
 SELECT instrument_id, open_time, close
 FROM binance_spot.candles
 WHERE instrument_id = ANY(sqlc.arg(instrument_ids)::bigint[])
-  AND interval = '1h'
+  AND interval = sqlc.arg(interval)
   AND open_time >= sqlc.arg(from_time)
   AND open_time <= sqlc.arg(to_time)
-  AND close_time < sqlc.arg(to_time)::timestamptz + INTERVAL '1 hour'
+  AND close_time < sqlc.arg(closes_before)
 ORDER BY instrument_id, open_time;

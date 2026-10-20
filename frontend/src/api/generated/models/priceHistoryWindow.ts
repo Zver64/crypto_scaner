@@ -18,6 +18,11 @@
  * OpenAPI spec version: 1.0.0
  */
 
+/**
+ * The open times of the candles whose closes fill the first and the last
+ * slot of a sparkline series. The slots are evenly spaced except the
+ * last one of a thirty-day series, the latest hourly close.
+ */
 export interface PriceHistoryWindow {
   from: string;
   to: string;

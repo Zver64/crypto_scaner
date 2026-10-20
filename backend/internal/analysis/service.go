@@ -28,7 +28,9 @@ type Store interface {
 	// ListLatestCandles returns up to limit latest candles per instrument in
 	// chronological order.
 	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
-	ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error)
+	// ListClosePrices returns the closes of the interval candles opening
+	// from through to.
+	ListClosePrices(context.Context, []int64, market.CandleInterval, time.Time, time.Time) ([]market.ClosePrice, error)
 }
 
 // ClosedIndicators supplies indicator values at the latest closed candle.
@@ -57,14 +59,14 @@ type SearchSort struct {
 	Direction string
 }
 type SearchItem struct {
-	PriceHistory     []*float64
+	PriceHistories   PriceHistories
 	Symbol           string
 	Matched          bool
 	Evaluations      []Evaluation
 	ClosedIndicators []closedindicator.Value
 }
 type SearchResult struct {
-	PriceHistoryWindow    market.PriceHistoryWindow
+	PriceWindows          market.PriceWindows
 	MatchedCount          int
 	AnalyzedCount         int
 	InsufficientDataCount int
@@ -156,7 +158,7 @@ func (service *Service) SearchSymbols(ctx context.Context, request SearchRequest
 }
 
 func (service *Service) search(ctx context.Context, request SearchRequest, symbols []string, restrictSymbols bool) (SearchResult, error) {
-	window := market.SevenDayWindow(time.Now())
+	windows := market.NewPriceWindows(time.Now())
 	criteria, requirements, err := service.prepare(request.Criteria)
 	if err != nil {
 		return SearchResult{}, err
@@ -172,7 +174,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 		selection.Limit = 0
 	}
 	if restrictSymbols && len(symbols) == 0 {
-		return SearchResult{PriceHistoryWindow: window, Items: []SearchItem{}, Unresolved: []UnresolvedItem{}}, nil
+		return SearchResult{PriceWindows: windows, Items: []SearchItem{}, Unresolved: []UnresolvedItem{}}, nil
 	}
 	if err := service.requireMarketData(ctx, requirements); err != nil {
 		return SearchResult{}, err
@@ -181,7 +183,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("select active instruments: %w", err)
 	}
-	result := SearchResult{PriceHistoryWindow: window, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
+	result := SearchResult{PriceWindows: windows, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
 	candidates := append([]market.Instrument(nil), instruments...)
 	candleData := make(map[int64]map[Unit][]market.Candle, len(candidates))
 	for _, instrument := range candidates {
@@ -224,7 +226,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 		candidates = next
 	}
 	result.AnalyzedCount = len(instruments) - result.InsufficientDataCount - len(result.Unresolved)
-	histories, err := service.priceHistories(ctx, candidates, window)
+	histories, err := service.priceHistories(ctx, candidates, windows)
 	if err != nil {
 		return SearchResult{}, err
 	}
@@ -235,7 +237,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	closed := service.closed.Latest(ctx, ids)
 	for _, instrument := range candidates {
 		item := results[instrument.ID]
-		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistory: histories[instrument.ID], ClosedIndicators: closed[instrument.ID]})
+		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistories: histories[instrument.ID], ClosedIndicators: closed[instrument.ID]})
 	}
 	result.MatchedCount = len(result.Items)
 	return result, nil

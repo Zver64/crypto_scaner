@@ -92,7 +92,6 @@ export function FavoritesTable({
 							rows={rows}
 							sort={sort}
 							table={table}
-							window={query.data?.price_history_window}
 						/>
 					) : (
 						<EmptyState

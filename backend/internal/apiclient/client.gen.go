@@ -1163,7 +1163,6 @@ type MarketAnalysisResponse struct {
 	InsufficientDataCount int                          `json:"insufficient_data_count"`
 	Items                 []MarketAnalysisItem         `json:"items"`
 	MatchedCount          int                          `json:"matched_count"`
-	PriceHistoryWindow    PriceHistoryWindow           `json:"price_history_window"`
 
 	// Table The table clients render for an analysis, as configured by the backend:
 	// columns in display order, how each cell is shown, which columns are
@@ -1224,7 +1223,9 @@ type PriceAlertsResponse struct {
 // PriceAlertsResponseLimit defines model for PriceAlertsResponse.Limit.
 type PriceAlertsResponseLimit int
 
-// PriceHistoryWindow defines model for PriceHistoryWindow.
+// PriceHistoryWindow The open times of the candles whose closes fill the first and the last
+// slot of a sparkline series. The slots are evenly spaced except the
+// last one of a thirty-day series, the latest hourly close.
 type PriceHistoryWindow struct {
 	From time.Time `json:"from"`
 	To   time.Time `json:"to"`
@@ -1824,18 +1825,21 @@ type TableColumn struct {
 
 	// Kind How a cell is rendered and which cell field it reads. `text` and
 	// `favorite` use the row symbol; `sparkline` reads `series` over the
-	// response `price_history_window`; `link` reads `url`; every other kind
+	// column `window`; `link` reads `url`; every other kind
 	// reads `value`.
 	Kind TableColumnKind `json:"kind"`
 
 	// Sortable Sortable columns are numeric and sorted by the cell `value`.
 	Sortable bool   `json:"sortable"`
 	Title    string `json:"title"`
+
+	// Window Present only on `sparkline` columns; spans their series.
+	Window *PriceHistoryWindow `json:"window,omitempty"`
 }
 
 // TableColumnKind How a cell is rendered and which cell field it reads. `text` and
 // `favorite` use the row symbol; `sparkline` reads `series` over the
-// response `price_history_window`; `link` reads `url`; every other kind
+// column `window`; `link` reads `url`; every other kind
 // reads `value`.
 type TableColumnKind string
 

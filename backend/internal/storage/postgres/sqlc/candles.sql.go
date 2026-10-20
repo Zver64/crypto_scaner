@@ -107,38 +107,46 @@ func (q *Queries) ListCandlePage(ctx context.Context, arg ListCandlePageParams) 
 	return items, nil
 }
 
-const listHourlyPrices = `-- name: ListHourlyPrices :many
+const listClosePrices = `-- name: ListClosePrices :many
 SELECT instrument_id, open_time, close
 FROM binance_spot.candles
 WHERE instrument_id = ANY($1::bigint[])
-  AND interval = '1h'
-  AND open_time >= $2
-  AND open_time <= $3
-  AND close_time < $3::timestamptz + INTERVAL '1 hour'
+  AND interval = $2
+  AND open_time >= $3
+  AND open_time <= $4
+  AND close_time < $5
 ORDER BY instrument_id, open_time
 `
 
-type ListHourlyPricesParams struct {
+type ListClosePricesParams struct {
 	InstrumentIds []int64
+	Interval      string
 	FromTime      pgtype.Timestamptz
 	ToTime        pgtype.Timestamptz
+	ClosesBefore  pgtype.Timestamptz
 }
 
-type ListHourlyPricesRow struct {
+type ListClosePricesRow struct {
 	InstrumentID int64
 	OpenTime     pgtype.Timestamptz
 	Close        float64
 }
 
-func (q *Queries) ListHourlyPrices(ctx context.Context, arg ListHourlyPricesParams) ([]ListHourlyPricesRow, error) {
-	rows, err := q.db.Query(ctx, listHourlyPrices, arg.InstrumentIds, arg.FromTime, arg.ToTime)
+func (q *Queries) ListClosePrices(ctx context.Context, arg ListClosePricesParams) ([]ListClosePricesRow, error) {
+	rows, err := q.db.Query(ctx, listClosePrices,
+		arg.InstrumentIds,
+		arg.Interval,
+		arg.FromTime,
+		arg.ToTime,
+		arg.ClosesBefore,
+	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListHourlyPricesRow
+	var items []ListClosePricesRow
 	for rows.Next() {
-		var i ListHourlyPricesRow
+		var i ListClosePricesRow
 		if err := rows.Scan(&i.InstrumentID, &i.OpenTime, &i.Close); err != nil {
 			return nil, err
 		}

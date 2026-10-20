@@ -81,8 +81,7 @@ func marketAnalysisResponse(analyzed markettable.Result) MarketAnalysisResponse 
 		insufficient[i] = InsufficientDataInstrument{Symbol: item.Symbol, Unit: InsufficientDataInstrumentUnit(item.Unit), Required: item.Required, Available: item.Available}
 	}
 	return MarketAnalysisResponse{
-		PriceHistoryWindow: PriceHistoryWindow{From: result.PriceHistoryWindow.From, To: result.PriceHistoryWindow.To},
-		MatchedCount:       result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount,
+		MatchedCount: result.MatchedCount, AnalyzedCount: result.AnalyzedCount, InsufficientDataCount: result.InsufficientDataCount,
 		InsufficientData: insufficient,
 		Items:            items, Unresolved: unresolved, Warnings: responseWarnings(result.Warnings),
 		Table: marketTableResponse(analyzed.Table),
@@ -93,6 +92,9 @@ func marketTableResponse(table markettable.Table) MarketTable {
 	columns := make([]TableColumn, len(table.Columns))
 	for i, column := range table.Columns {
 		columns[i] = TableColumn{Id: column.ID, Title: column.Title, Kind: TableColumnKind(column.Kind), Sortable: column.Sortable}
+		if column.Window != nil {
+			columns[i].Window = &PriceHistoryWindow{From: column.Window.From, To: column.Window.To}
+		}
 	}
 	rows := make([]TableRow, len(table.Rows))
 	for i, row := range table.Rows {

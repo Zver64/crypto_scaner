@@ -67,14 +67,16 @@ function marketResult(evaluations: Evaluation[]): MarketAnalysisResponse {
 			},
 		],
 		matched_count: 1,
-		price_history_window: {
-			from: "2026-08-01T00:00:00Z",
-			to: "2026-08-08T00:00:00Z",
-		},
 		table: {
 			columns: [
 				{ id: "symbol", kind: "text", sortable: false, title: "Symbol" },
-				{ id: "chart", kind: "sparkline", sortable: false, title: "7d chart" },
+				{
+					id: "chart",
+					kind: "sparkline",
+					sortable: false,
+					title: "7d chart",
+					window: { from: "2026-08-01T00:00:00Z", to: "2026-08-08T00:00:00Z" },
+				},
 			],
 			default_sort: { column: "symbol", direction: "desc" },
 			rows: [
@@ -115,13 +117,16 @@ it("rejects malformed market history", () => {
 		hourlyEvaluation(true),
 		marketCapEvaluation,
 	];
-	const missingPrice = marketResult(evaluations);
-	missingPrice.table.rows[0].cells.chart.series?.pop();
+	const invalidPrice = marketResult(evaluations);
+	invalidPrice.table.rows[0].cells.chart.series?.fill(Number.NaN, 0, 1);
 	const invalidWindow = marketResult(evaluations);
-	invalidWindow.price_history_window.from = "invalid";
+	invalidWindow.table.columns[1].window = {
+		from: "invalid",
+		to: "2026-08-08T00:00:00Z",
+	};
 
 	expect(
-		hasExpectedMarketScanResult(missingPrice, [
+		hasExpectedMarketScanResult(invalidPrice, [
 			dailyCriterion,
 			hourlyCriterion,
 			marketCapCriterion,

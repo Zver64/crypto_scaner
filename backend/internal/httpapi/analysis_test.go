@@ -457,7 +457,8 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	table, err := markettable.NewCatalog(noConfiguredColumns{}, markettable.Sort{Column: "market_cap_usd", Direction: markettable.Descending},
 		markettable.Column{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
 		markettable.Column{ID: "market_cap_usd", Title: "MCap", Kind: markettable.KindUSDCompact, Sortable: true, Source: markettable.CriterionMetric{Criterion: "market_cap", Metric: "market_cap_usd"}},
-		markettable.Column{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{}},
+		markettable.Column{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{Period: markettable.SevenDays}},
+		markettable.Column{ID: "thirty_day_price_history", Title: "30d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{Period: markettable.ThirtyDays}},
 	)
 	if err != nil {
 		panic(err)
@@ -501,7 +502,7 @@ func (s httpStore) SelectActiveInstruments(_ context.Context, selection analysis
 	}
 	return items, nil
 }
-func (s httpStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+func (s httpStore) ListClosePrices(context.Context, []int64, market.CandleInterval, time.Time, time.Time) ([]market.ClosePrice, error) {
 	return nil, nil
 }
 func (s httpStore) ListLatestCandles(_ context.Context, instrumentIDs []int64, interval market.CandleInterval, _ int) (map[int64][]market.Candle, error) {

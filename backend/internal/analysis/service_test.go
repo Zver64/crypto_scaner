@@ -199,7 +199,7 @@ func TestSearchSymbolsReturnsValidatedEmptyResultWithoutMarketReadiness(t *testi
 		t.Fatal(err)
 	}
 	result, err := service.SearchSymbols(context.Background(), analysis.SearchRequest{Criteria: []analysis.CriterionConfig{{Key: "fake", Name: "fake", Label: "Fake"}}}, nil)
-	if err != nil || len(result.Items) != 0 || result.PriceHistoryWindow.From.IsZero() {
+	if err != nil || len(result.Items) != 0 || result.PriceWindows.SevenDay.From.IsZero() {
 		t.Fatalf("empty favorite result = %+v, %v", result, err)
 	}
 	if store.reads != 0 {
@@ -511,7 +511,7 @@ func (s *storeStub) SelectActiveInstruments(_ context.Context, selection analysi
 	return items, nil
 }
 
-func (s *storeStub) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+func (s *storeStub) ListClosePrices(context.Context, []int64, market.CandleInterval, time.Time, time.Time) ([]market.ClosePrice, error) {
 	return nil, nil
 }
 

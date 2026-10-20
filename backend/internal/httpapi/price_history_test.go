@@ -19,25 +19,47 @@ func TestMarketAPIIncludesFixedSevenDayWindowAndClosedPrices(t *testing.T) {
 		store := priceHistoryHTTPStore{httpStore: httpStore{
 			instruments: []market.Instrument{{ID: 1, Symbol: "BTCUSDT"}},
 			candles:     map[int64][]market.Candle{1: httpCandles(time.Now().Add(-24*time.Hour), 2, 24*time.Hour, 2)},
-		}, prices: completeSevenDayPrices(time.Now(), 1)}
+		}, prices: completeSevenDayPrices(time.Now(), 1), daily: completeThirtyDayPrices(time.Now(), 1)}
 		response := analysisRequestTo(t, newAnalysisHTTPHandler(store), "/api/v1/analysis/market", analysisBody)
 		if response.Code != http.StatusOK {
 			t.Fatalf("status %d: %s", response.Code, response.Body.String())
 		}
-		var body struct {
-			Window market.PriceHistoryWindow `json:"price_history_window"`
-			Table  struct {
-				Rows []priceHistoryRow `json:"rows"`
-			} `json:"table"`
-		}
+		var body priceHistoryBody
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
 		}
 		if len(body.Table.Rows) != 1 {
 			t.Fatalf("missing 169-slot history: %+v", body.Table.Rows)
 		}
-		assertCompleteSevenDayHistory(t, body.Window, body.Table.Rows[0].prices())
+		assertCompleteSevenDayHistory(t, body.window("price_history"), body.Table.Rows[0].prices())
+		window := body.window("thirty_day_price_history")
+		if window.From.Format(time.RFC3339) != "1999-12-01T00:00:00Z" || window.To.Format(time.RFC3339) != "1999-12-31T23:00:00Z" {
+			t.Fatalf("wrong thirty-day window: %+v", window)
+		}
+		prices := body.Table.Rows[0].Cells["thirty_day_price_history"].Series
+		if len(prices) != market.ThirtyDayPriceSlots || prices[0] == nil || *prices[0] != 1 || prices[30] == nil || *prices[30] != 31 || prices[31] == nil || *prices[31] != 199 {
+			t.Fatalf("thirty-day history must hold 31 daily closes and the latest hourly close: %v", prices)
+		}
 	})
+}
+
+type priceHistoryBody struct {
+	Table struct {
+		Columns []struct {
+			ID     string                     `json:"id"`
+			Window *market.PriceHistoryWindow `json:"window"`
+		} `json:"columns"`
+		Rows []priceHistoryRow `json:"rows"`
+	} `json:"table"`
+}
+
+func (body priceHistoryBody) window(id string) market.PriceHistoryWindow {
+	for _, column := range body.Table.Columns {
+		if column.ID == id && column.Window != nil {
+			return *column.Window
+		}
+	}
+	return market.PriceHistoryWindow{}
 }
 
 type priceHistoryRow struct {
@@ -51,22 +73,34 @@ func (row priceHistoryRow) prices() []*float64 { return row.Cells["price_history
 
 type priceHistoryHTTPStore struct {
 	httpStore
-	prices []market.HourlyPrice
+	prices []market.ClosePrice
+	daily  []market.ClosePrice
 	delay  time.Duration
 }
 
-func completeSevenDayPrices(at time.Time, instrumentID int64) []market.HourlyPrice {
-	prices := make([]market.HourlyPrice, 0, 171)
-	for hour := -170; hour <= 0; hour++ {
-		prices = append(prices, market.HourlyPrice{InstrumentID: instrumentID, OpenTime: at.Add(time.Duration(hour) * time.Hour), Close: float64(hour + 200)})
+// completeThirtyDayPrices closes the 31 days before the open one and the open
+// day, which must be ignored, at their day number.
+func completeThirtyDayPrices(at time.Time, instrumentID int64) []market.ClosePrice {
+	today := market.IntervalDay.OpenTime(at)
+	prices := make([]market.ClosePrice, 0, 32)
+	for day := 1; day <= 32; day++ {
+		prices = append(prices, market.ClosePrice{InstrumentID: instrumentID, OpenTime: today.AddDate(0, 0, day-32), Close: float64(day)})
 	}
 	return prices
 }
 
-func shortSevenDayPrices(at time.Time, instrumentID int64) []market.HourlyPrice {
-	prices := make([]market.HourlyPrice, 0, 73)
+func completeSevenDayPrices(at time.Time, instrumentID int64) []market.ClosePrice {
+	prices := make([]market.ClosePrice, 0, 171)
+	for hour := -170; hour <= 0; hour++ {
+		prices = append(prices, market.ClosePrice{InstrumentID: instrumentID, OpenTime: at.Add(time.Duration(hour) * time.Hour), Close: float64(hour + 200)})
+	}
+	return prices
+}
+
+func shortSevenDayPrices(at time.Time, instrumentID int64) []market.ClosePrice {
+	prices := make([]market.ClosePrice, 0, 73)
 	for slot := 96; slot < market.SevenDayPriceSlots; slot++ {
-		prices = append(prices, market.HourlyPrice{InstrumentID: instrumentID, OpenTime: at.Add(time.Duration(slot-169) * time.Hour), Close: float64(slot)})
+		prices = append(prices, market.ClosePrice{InstrumentID: instrumentID, OpenTime: at.Add(time.Duration(slot-169) * time.Hour), Close: float64(slot)})
 	}
 	return prices
 }
@@ -86,7 +120,7 @@ func assertCompleteSevenDayHistory(t *testing.T, window market.PriceHistoryWindo
 
 type failingHistoryHTTPStore struct{ httpStore }
 
-func (failingHistoryHTTPStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+func (failingHistoryHTTPStore) ListClosePrices(context.Context, []int64, market.CandleInterval, time.Time, time.Time) ([]market.ClosePrice, error) {
 	return nil, errors.New("database unavailable")
 }
 
@@ -108,7 +142,7 @@ func TestMarketAPIKeepsMissingHistoryAndFreezesWindowBeforeSlowAnalysis(t *testi
 				2: httpCandles(time.Now().Add(-24*time.Hour), 2, 24*time.Hour, 2),
 				3: httpCandles(time.Now().Add(-24*time.Hour), 2, 24*time.Hour, 2),
 			},
-		}, delay: 2 * time.Hour, prices: []market.HourlyPrice{
+		}, delay: 2 * time.Hour, prices: []market.ClosePrice{
 			{InstrumentID: 1, OpenTime: time.Now().Add(-73 * time.Hour), Close: 10.00000001},
 			{InstrumentID: 1, OpenTime: time.Now().Add(-71 * time.Hour), Close: 9.99999999},
 			{InstrumentID: 3, OpenTime: time.Now().Add(-24 * time.Hour), Close: 3},
@@ -118,11 +152,8 @@ func TestMarketAPIKeepsMissingHistoryAndFreezesWindowBeforeSlowAnalysis(t *testi
 			t.Fatalf("status %d: %s", response.Code, response.Body.String())
 		}
 		var body struct {
-			Window  market.PriceHistoryWindow `json:"price_history_window"`
-			Matched int                       `json:"matched_count"`
-			Table   struct {
-				Rows []priceHistoryRow `json:"rows"`
-			} `json:"table"`
+			priceHistoryBody
+			Matched int `json:"matched_count"`
 		}
 		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
 			t.Fatal(err)
@@ -130,8 +161,8 @@ func TestMarketAPIKeepsMissingHistoryAndFreezesWindowBeforeSlowAnalysis(t *testi
 		if body.Matched != 3 || len(body.Table.Rows) != 3 {
 			t.Fatalf("chart availability excluded results: %+v", body)
 		}
-		if body.Window.To.Format(time.RFC3339) != "1999-12-31T23:00:00Z" {
-			t.Fatalf("window moved during analysis: %+v", body.Window)
+		if window := body.window("price_history"); window.To.Format(time.RFC3339) != "1999-12-31T23:00:00Z" {
+			t.Fatalf("window moved during analysis: %+v", window)
 		}
 		for _, item := range body.Table.Rows {
 			if len(item.prices()) != 169 {
@@ -159,9 +190,13 @@ func TestMarketAPIKeepsMissingHistoryAndFreezesWindowBeforeSlowAnalysis(t *testi
 	})
 }
 
-func (s priceHistoryHTTPStore) ListHourlyPrices(_ context.Context, ids []int64, from, to time.Time) ([]market.HourlyPrice, error) {
-	var result []market.HourlyPrice
-	for _, price := range s.prices {
+func (s priceHistoryHTTPStore) ListClosePrices(_ context.Context, ids []int64, interval market.CandleInterval, from, to time.Time) ([]market.ClosePrice, error) {
+	prices := s.prices
+	if interval == market.IntervalDay {
+		prices = s.daily
+	}
+	var result []market.ClosePrice
+	for _, price := range prices {
 		for _, id := range ids {
 			if price.InstrumentID == id && !price.OpenTime.Before(from) && !price.OpenTime.After(to) {
 				result = append(result, price)

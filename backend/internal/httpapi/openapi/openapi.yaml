@@ -1458,6 +1458,10 @@ components:
           items:
             $ref: "#/components/schemas/Warning"
     PriceHistoryWindow:
+      description: |
+        The open times of the candles whose closes fill the first and the last
+        slot of a sparkline series. The slots are evenly spaced except the
+        last one of a thirty-day series, the latest hourly close.
       type: object
       additionalProperties: false
       required: [from, to]
@@ -1516,11 +1520,14 @@ components:
         sortable:
           description: Sortable columns are numeric and sorted by the cell `value`.
           type: boolean
+        window:
+          description: Present only on `sparkline` columns; spans their series.
+          $ref: "#/components/schemas/PriceHistoryWindow"
     TableColumnKind:
       description: |
         How a cell is rendered and which cell field it reads. `text` and
         `favorite` use the row symbol; `sparkline` reads `series` over the
-        response `price_history_window`; `link` reads `url`; every other kind
+        column `window`; `link` reads `url`; every other kind
         reads `value`.
       type: string
       enum: [text, usd_compact, range_percent, oscillator, percent_change, sparkline, link, favorite, count, number]
@@ -1560,8 +1567,7 @@ components:
           format: double
         series:
           type: array
-          minItems: 169
-          maxItems: 169
+          minItems: 2
           items:
             type: [number, "null"]
             format: double
@@ -1600,7 +1606,6 @@ components:
       type: object
       additionalProperties: false
       required:
-        - price_history_window
         - matched_count
         - analyzed_count
         - insufficient_data_count
@@ -1612,8 +1617,6 @@ components:
       properties:
         table:
           $ref: "#/components/schemas/MarketTable"
-        price_history_window:
-          $ref: "#/components/schemas/PriceHistoryWindow"
         matched_count:
           type: integer
           minimum: 0

@@ -41,10 +41,6 @@ function response(matchedCount: number): MarketAnalysisResponse {
 			default_sort: { column: "market_cap_usd", direction: "desc" },
 			rows: [],
 		},
-		price_history_window: {
-			from: "2024-01-01T00:00:00.000Z",
-			to: "2024-01-08T00:00:00.000Z",
-		},
 		unresolved: [],
 		warnings: [],
 	};
@@ -284,7 +280,16 @@ describe("market scan query policy", () => {
 
 	it("never replaces valid data with a semantic-invalid response", async () => {
 		const invalid = response(2);
-		invalid.price_history_window.to = invalid.price_history_window.from;
+		invalid.table.columns.push({
+			id: "chart",
+			kind: "sparkline",
+			sortable: false,
+			title: "7d chart",
+			window: {
+				from: "2024-01-01T00:00:00.000Z",
+				to: "2024-01-01T00:00:00.000Z",
+			},
+		});
 		const fetchMock = vi
 			.fn<typeof fetch>()
 			.mockResolvedValueOnce(ok(response(1)))

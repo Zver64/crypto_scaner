@@ -9,6 +9,7 @@ interface PriceSparklineProps {
 	prices: readonly (number | null)[];
 	responsive?: boolean;
 	symbol: string;
+	title: string;
 	width?: number;
 	window: PriceHistoryWindow;
 }
@@ -18,6 +19,7 @@ export function PriceSparkline({
 	prices,
 	responsive = false,
 	symbol,
+	title,
 	width = 140,
 	window,
 }: PriceSparklineProps) {
@@ -29,7 +31,7 @@ export function PriceSparkline({
 		return (
 			<span
 				role="img"
-				aria-label={`${symbol}: No hourly price history in the seven-day window`}
+				aria-label={`${symbol}: No price history in the ${title} window`}
 			>
 				—
 			</span>
@@ -50,7 +52,7 @@ export function PriceSparkline({
 			label="none"
 			curve="linear"
 			color={color}
-			summary={`${symbol}: 7-day hourly closing prices. ${available.length} of 169 observations. ${last > first ? "Rising" : last < first ? "Falling" : "Unchanged"}. Candle hours ${window.from} to ${window.to}.`}
+			summary={`${symbol}: ${title} closing prices. ${available.length} of ${prices.length} observations. ${last > first ? "Rising" : last < first ? "Falling" : "Unchanged"}. Candles ${window.from} to ${window.to}.`}
 			style={
 				responsive
 					? { width: "100%" }
@@ -64,9 +66,9 @@ export function PriceSparkline({
 				prices[index - 1] == null &&
 				prices[index + 1] == null ? (
 					<circle
-						// oxlint-disable-next-line react/no-array-index-key -- fixed hourly slots never reorder; the key is the observation's UTC time.
-						key={Date.parse(window.from) + index * 3_600_000}
-						cx={2 + (index * (width - 4)) / 168}
+						// oxlint-disable-next-line react/no-array-index-key -- fixed slots never reorder.
+						key={index}
+						cx={2 + (index * (width - 4)) / (prices.length - 1)}
 						cy={
 							high === low
 								? height / 2

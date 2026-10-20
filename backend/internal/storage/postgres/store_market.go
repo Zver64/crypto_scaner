@@ -413,17 +413,23 @@ func (store *Store) GetSyncState(ctx context.Context, profile market.SyncProfile
 	}, nil
 }
 
-func (store *Store) ListHourlyPrices(ctx context.Context, instrumentIDs []int64, from, to time.Time) ([]market.HourlyPrice, error) {
-	rows, err := store.queries.ListHourlyPrices(ctx, generated.ListHourlyPricesParams{InstrumentIds: instrumentIDs, FromTime: timestamptz(&from), ToTime: timestamptz(&to)})
+// ListClosePrices returns the closes of the interval candles opening from
+// through to, in chronological order per instrument.
+func (store *Store) ListClosePrices(ctx context.Context, instrumentIDs []int64, interval market.CandleInterval, from, to time.Time) ([]market.ClosePrice, error) {
+	closesBefore := interval.NextOpenTime(to)
+	rows, err := store.queries.ListClosePrices(ctx, generated.ListClosePricesParams{
+		InstrumentIds: instrumentIDs, Interval: string(interval),
+		FromTime: timestamptz(&from), ToTime: timestamptz(&to), ClosesBefore: timestamptz(&closesBefore),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("list hourly prices: %w", err)
+		return nil, fmt.Errorf("list %s close prices: %w", interval, err)
 	}
-	prices := make([]market.HourlyPrice, 0, len(rows))
+	prices := make([]market.ClosePrice, 0, len(rows))
 	for _, row := range rows {
 		if !numeric.Finite(row.Close) {
-			return nil, fmt.Errorf("invalid hourly close for instrument %d at %s", row.InstrumentID, row.OpenTime.Time)
+			return nil, fmt.Errorf("invalid %s close for instrument %d at %s", interval, row.InstrumentID, row.OpenTime.Time)
 		}
-		prices = append(prices, market.HourlyPrice{InstrumentID: row.InstrumentID, OpenTime: row.OpenTime.Time.UTC(), Close: row.Close})
+		prices = append(prices, market.ClosePrice{InstrumentID: row.InstrumentID, OpenTime: row.OpenTime.Time.UTC(), Close: row.Close})
 	}
 	return prices, nil
 }

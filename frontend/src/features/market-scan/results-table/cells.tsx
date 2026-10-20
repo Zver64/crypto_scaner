@@ -3,7 +3,6 @@ import type { ReactNode } from "react";
 
 import {
 	MarketUniverse,
-	type PriceHistoryWindow,
 	type TableCell,
 	type TableColumn,
 	type TableColumnKind,
@@ -23,7 +22,6 @@ interface CellContext {
 	column: TableColumn;
 	highlightCoinM: boolean;
 	row: TableRow;
-	window: PriceHistoryWindow | undefined;
 }
 
 export type CellRenderer = (context: CellContext) => ReactNode;
@@ -45,12 +43,13 @@ export const cellRenderers: Record<TableColumnKind, CellRenderer> = {
 		cell?.value == null ? "—" : formatRangePercent(cell.value),
 	oscillator: ({ cell }) => <OscillatorValue value={cell?.value ?? null} />,
 	percent_change: ({ cell }) => <PercentChange value={cell?.value ?? null} />,
-	sparkline: ({ cell, row, window }) =>
-		window && cell?.series ? (
+	sparkline: ({ cell, column, row }) =>
+		column.window && cell?.series ? (
 			<PriceSparkline
 				prices={cell.series}
 				symbol={row.symbol}
-				window={window}
+				title={column.title}
+				window={column.window}
 			/>
 		) : (
 			"—"

@@ -1,11 +1,7 @@
 import { UnstyledButton } from "@mantine/core";
 import { useNavigate } from "@tanstack/react-router";
 
-import type {
-	MarketTable,
-	PriceHistoryWindow,
-	TableRow,
-} from "@/api/generated/models";
+import type { MarketTable, TableRow } from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
 import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
 import {
@@ -24,7 +20,6 @@ interface MarketScanResultsTableProps {
 	criteria: MarketScanCriteria;
 	table: MarketTable;
 	rows: readonly TableRow[];
-	window?: PriceHistoryWindow;
 	sort: MarketScanSort | undefined;
 	// Colors the symbols of coins with a COIN-M perpetual contract.
 	highlightCoinM?: boolean;
@@ -40,7 +35,6 @@ export function MarketScanResultsTable({
 	criteria,
 	table,
 	rows,
-	window,
 	sort: requestedSort,
 	highlightCoinM = true,
 	onSortChange,
@@ -64,7 +58,6 @@ export function MarketScanResultsTable({
 								column,
 								highlightCoinM,
 								row,
-								window,
 							})
 						: "—",
 				ariaSort: column.sortable ? (active ? direction : "none") : undefined,

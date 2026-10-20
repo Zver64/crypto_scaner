@@ -101,7 +101,7 @@ func searchResult(search analysis.SearchResult, catalog Catalog, coinM []string)
 		rows[i] = RowFromSearchItem(item)
 		rows[i].Markets = markets(item.Symbol, coinM)
 	}
-	return Result{Search: search, Table: catalog.Build(rows)}
+	return Result{Search: search, Table: catalog.Build(rows, search.PriceWindows)}
 }
 
 // Favorites analyzes the active favorites and returns a table row for every
@@ -143,5 +143,5 @@ func (service *Service) Favorites(ctx context.Context, items []favorites.Favorit
 		row.AlertCount = item.AlertCount
 		rows[i] = row
 	}
-	return Result{Search: search, Table: service.favorites.Build(rows)}, nil
+	return Result{Search: search, Table: service.favorites.Build(rows, search.PriceWindows)}, nil
 }

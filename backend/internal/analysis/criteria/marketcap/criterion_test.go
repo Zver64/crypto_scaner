@@ -54,7 +54,7 @@ func (s *storeStub) SelectActiveInstruments(_ context.Context, selection analysi
 func (s *storeStub) ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error) {
 	return nil, nil
 }
-func (s *storeStub) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+func (s *storeStub) ListClosePrices(context.Context, []int64, market.CandleInterval, time.Time, time.Time) ([]market.ClosePrice, error) {
 	return nil, nil
 }
 

@@ -21,7 +21,7 @@
 /**
  * How a cell is rendered and which cell field it reads. `text` and
  * `favorite` use the row symbol; `sparkline` reads `series` over the
- * response `price_history_window`; `link` reads `url`; every other kind
+ * column `window`; `link` reads `url`; every other kind
  * reads `value`.
  */
 export type TableColumnKind = typeof TableColumnKind[keyof typeof TableColumnKind];

@@ -132,6 +132,6 @@ func (s *selectionStore) ListLatestCandles(_ context.Context, ids []int64, _ mar
 	}
 	return result, nil
 }
-func (*selectionStore) ListHourlyPrices(context.Context, []int64, time.Time, time.Time) ([]market.HourlyPrice, error) {
+func (*selectionStore) ListClosePrices(context.Context, []int64, market.CandleInterval, time.Time, time.Time) ([]market.ClosePrice, error) {
 	return nil, nil
 }

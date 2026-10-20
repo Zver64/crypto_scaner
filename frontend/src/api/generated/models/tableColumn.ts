@@ -17,6 +17,7 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { PriceHistoryWindow } from './priceHistoryWindow.ts';
 import type { TableColumnKind } from './tableColumnKind.ts';
 
 export interface TableColumn {
@@ -25,4 +26,6 @@ export interface TableColumn {
   kind: TableColumnKind;
   /** Sortable columns are numeric and sorted by the cell `value`. */
   sortable: boolean;
+  /** Present only on `sparkline` columns; spans their series. */
+  window?: PriceHistoryWindow;
 }

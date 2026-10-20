@@ -4,6 +4,7 @@ import type {
 	MarketAnalysisItem,
 	MarketAnalysisResponse,
 	MarketTable,
+	PriceHistoryWindow,
 } from "@/api/generated/models";
 import {
 	criterionNames,
@@ -28,8 +29,7 @@ export function hasExpectedMarketScanResult(
 ): boolean {
 	return (
 		result.items.every((item) => hasExpectedEvaluations(item, criteria)) &&
-		hasCompletePriceHistories(result.table) &&
-		isSevenDayHourlyWindow(result)
+		hasValidPriceHistories(result.table)
 	);
 }
 
@@ -43,29 +43,37 @@ function hasExpectedEvaluations(
 	);
 }
 
-// Sparklines span the fixed seven-day window: one slot per closed hour.
-function hasCompletePriceHistories(table: MarketTable): boolean {
-	const sparklines = table.columns.filter(({ kind }) => kind === "sparkline");
-	return table.rows.every((row) =>
-		sparklines.every(({ id }) => {
-			const series = row.cells[id]?.series;
+// Every sparkline spans its column window with the same slots in every row.
+function hasValidPriceHistories(table: MarketTable): boolean {
+	return table.columns
+		.filter(({ kind }) => kind === "sparkline")
+		.every((column) => {
+			const slots = table.rows[0]?.cells[column.id]?.series?.length;
 			return (
-				series?.length === 169 &&
-				series.every((value) => value === null || Number.isFinite(value))
+				isHourAlignedWindow(column.window) &&
+				table.rows.every((row) => {
+					const series = row.cells[column.id]?.series;
+					return (
+						series !== undefined &&
+						series.length === slots &&
+						series.length >= 2 &&
+						series.every((value) => value === null || Number.isFinite(value))
+					);
+				})
 			);
-		}),
-	);
+		});
 }
 
-function isSevenDayHourlyWindow(result: MarketAnalysisResponse): boolean {
-	const from = Date.parse(result.price_history_window.from);
-	const to = Date.parse(result.price_history_window.to);
+function isHourAlignedWindow(window: PriceHistoryWindow | undefined): boolean {
+	if (!window) return false;
+	const from = Date.parse(window.from);
+	const to = Date.parse(window.to);
 	return (
 		Number.isFinite(from) &&
 		Number.isFinite(to) &&
 		from % 3_600_000 === 0 &&
 		to % 3_600_000 === 0 &&
-		to - from === 168 * 3_600_000
+		to > from
 	);
 }
 

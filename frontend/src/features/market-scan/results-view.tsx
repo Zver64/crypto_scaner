@@ -119,7 +119,6 @@ export function MarketScanResults({
 						rows={rows}
 						sort={sort}
 						table={result.table}
-						window={result.price_history_window}
 					/>
 				)}
 				{result.unresolved.length > 0 ? (

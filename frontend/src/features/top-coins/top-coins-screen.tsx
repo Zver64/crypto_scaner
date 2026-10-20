@@ -135,7 +135,6 @@ export function TopCoinsScreen({
 										rows={rows}
 										sort={sort}
 										table={query.data.table}
-										window={query.data.price_history_window}
 									/>
 								) : (
 									<EmptyState

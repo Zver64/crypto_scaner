@@ -77,6 +77,8 @@ type Column struct {
 	Kind     Kind
 	Sortable bool
 	Source   Source
+	// Window spans the series of a sparkline column; Build sets it.
+	Window *market.PriceHistoryWindow
 }
 
 // Market is a Binance market the coin of a row trades on.
@@ -92,14 +94,14 @@ type Row struct {
 	Symbol           string
 	Markets          []Market
 	Evaluations      []analysis.Evaluation
-	PriceHistory     []*float64
+	PriceHistories   analysis.PriceHistories
 	ClosedIndicators []closedindicator.Value
 	AlertCount       int
 }
 
 // RowFromSearchItem converts an analyzed instrument into a table row.
 func RowFromSearchItem(item analysis.SearchItem) Row {
-	return Row{Symbol: item.Symbol, Evaluations: item.Evaluations, PriceHistory: item.PriceHistory, ClosedIndicators: item.ClosedIndicators}
+	return Row{Symbol: item.Symbol, Evaluations: item.Evaluations, PriceHistories: item.PriceHistories, ClosedIndicators: item.ClosedIndicators}
 }
 
 // Cell holds the field its column kind uses; unavailable values are nil.
@@ -179,9 +181,16 @@ func NewCatalog(configured ColumnSource, defaultSort Sort, columns ...Column) (C
 	return Catalog{columns: slices.Clone(columns), defaultSort: defaultSort, configured: configured}, nil
 }
 
-// Build fills every column for each row, in row order.
-func (catalog Catalog) Build(rows []Row) Table {
+// Build fills every column for each row, in row order. windows span the
+// rows' price histories.
+func (catalog Catalog) Build(rows []Row, windows market.PriceWindows) Table {
 	columns := catalog.expand()
+	for i, column := range columns {
+		if history, ok := column.Source.(PriceHistory); ok {
+			window := history.Period.window(windows)
+			columns[i].Window = &window
+		}
+	}
 	result := Table{Columns: columns, DefaultSort: catalog.defaultSort, Rows: make([]TableRow, len(rows))}
 	for i, row := range rows {
 		cells := make(map[string]Cell, len(columns))
@@ -278,25 +287,54 @@ func (source ClosedIndicator) cell(row Row) (Cell, bool) {
 	return Cell{}, true
 }
 
-// PriceHistory is the seven-day hourly close series.
-type PriceHistory struct{}
+// PricePeriod selects one of the row's price histories.
+type PricePeriod int
+
+const (
+	// SevenDays is the seven-day hourly close series.
+	SevenDays PricePeriod = iota
+	// ThirtyDays is the thirty-day daily close series ending with the latest
+	// hourly close.
+	ThirtyDays
+)
+
+// series returns the period's history, all slots missing when the row has
+// none.
+func (period PricePeriod) series(row Row) []*float64 {
+	series, slots := row.PriceHistories.SevenDay, market.SevenDayPriceSlots
+	if period == ThirtyDays {
+		series, slots = row.PriceHistories.ThirtyDay, market.ThirtyDayPriceSlots
+	}
+	if len(series) == slots {
+		return series
+	}
+	return make([]*float64, slots)
+}
+
+func (period PricePeriod) window(windows market.PriceWindows) market.PriceHistoryWindow {
+	if period == ThirtyDays {
+		return windows.ThirtyDay
+	}
+	return windows.SevenDay
+}
+
+// PriceHistory is the close series of a period.
+type PriceHistory struct{ Period PricePeriod }
 
 func (PriceHistory) data() data { return dataSeries }
-func (PriceHistory) cell(row Row) (Cell, bool) {
-	if len(row.PriceHistory) == market.SevenDayPriceSlots {
-		return Cell{Series: row.PriceHistory}, true
-	}
-	return Cell{Series: make([]*float64, market.SevenDayPriceSlots)}, true
+func (source PriceHistory) cell(row Row) (Cell, bool) {
+	return Cell{Series: source.Period.series(row)}, true
 }
 
 // PriceChangePercent is the change between the first and the last available
-// seven-day hourly close.
-type PriceChangePercent struct{}
+// close of a period; unavailable with fewer than two closes.
+type PriceChangePercent struct{ Period PricePeriod }
 
 func (PriceChangePercent) data() data { return dataValue }
-func (PriceChangePercent) cell(row Row) (Cell, bool) {
+func (source PriceChangePercent) cell(row Row) (Cell, bool) {
 	var first, last *float64
-	for _, price := range row.PriceHistory {
+	available := 0
+	for _, price := range source.Period.series(row) {
 		if price == nil {
 			continue
 		}
@@ -304,8 +342,9 @@ func (PriceChangePercent) cell(row Row) (Cell, bool) {
 			first = price
 		}
 		last = price
+		available++
 	}
-	if first == nil || *first == 0 {
+	if available < 2 || *first == 0 {
 		return Cell{}, true
 	}
 	change := (*last - *first) / *first * 100

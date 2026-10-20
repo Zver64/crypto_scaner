@@ -23,10 +23,7 @@
  */
 export interface TableCell {
   value?: number;
-  /**
-     * @minItems 169
-     * @maxItems 169
-     */
+  /** @minItems 2 */
   series?: (number | null)[];
   url?: string;
 }

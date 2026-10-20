@@ -24,8 +24,8 @@ func marketTableColumns(link markettable.Source) []markettable.Column {
 			Source: markettable.CriterionMetric{Criterion: volatility.Name, Unit: analysis.UnitHours, Metric: volatility.RangePercentMetric}},
 		{ID: "seven_day_change_percent", Title: "7d %", Kind: markettable.KindPercentChange, Sortable: true, Source: markettable.PriceChangePercent{}},
 		{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{}},
-		{ID: "binance", Title: "Binance", Kind: markettable.KindLink, Source: link},
 		{Source: markettable.ConfiguredIndicators{}},
+		{ID: "binance", Title: "Binance", Kind: markettable.KindLink, Source: link},
 		{ID: "favorite", Title: "Favorite", Kind: markettable.KindFavorite, Source: markettable.Favorite{}},
 	}
 }

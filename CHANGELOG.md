@@ -1,5 +1,16 @@
 # Changelog
 
+## [4.0.0](https://github.com/Zver64/crypto_scaner/compare/v3.1.0...v4.0.0) (2026-10-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* strategy ids in the API are UUID strings instead of integers, so older scanner CLI builds and saved backtest links with a numeric strategy no longer work.
+
+### Features
+
+* identify strategies and signals by UUIDv7 ([13bdb35](https://github.com/Zver64/crypto_scaner/commit/13bdb35db7c0bac3298700f5c420dddb81f9d00c))
+
 ## [3.1.0](https://github.com/Zver64/crypto_scaner/compare/v3.0.0...v3.1.0) (2026-10-20)
 
 

@@ -26,6 +26,8 @@ interface MarketScanResultsTableProps {
 	rows: readonly TableRow[];
 	window?: PriceHistoryWindow;
 	sort: MarketScanSort | undefined;
+	// Colors the symbols of coins with a COIN-M perpetual contract.
+	highlightCoinM?: boolean;
 	onSortChange(sort: MarketScanSort): void;
 	// Opens a row; the coin page by default.
 	onRowClick?(symbol: string): void;
@@ -40,6 +42,7 @@ export function MarketScanResultsTable({
 	rows,
 	window,
 	sort: requestedSort,
+	highlightCoinM = true,
 	onSortChange,
 	onRowClick,
 }: MarketScanResultsTableProps) {
@@ -56,7 +59,13 @@ export function MarketScanResultsTable({
 				textAlign: index === 0 ? "left" : "center",
 				cell: (row) =>
 					render
-						? render({ cell: row.cells[column.id], column, row, window })
+						? render({
+								cell: row.cells[column.id],
+								column,
+								highlightCoinM,
+								row,
+								window,
+							})
 						: "—",
 				ariaSort: column.sortable ? (active ? direction : "none") : undefined,
 				header: column.sortable ? (

@@ -1842,8 +1842,9 @@ type TableColumnKind string
 // TableRow defines model for TableRow.
 type TableRow struct {
 	// Cells Cells keyed by column id. Columns of kind `text` and `favorite` have no cell.
-	Cells  map[string]TableCell `json:"cells"`
-	Symbol string               `json:"symbol"`
+	Cells   map[string]TableCell `json:"cells"`
+	Markets []MarketUniverse     `json:"markets"`
+	Symbol  string               `json:"symbol"`
 }
 
 // TableSort defines model for TableSort.
@@ -8952,11 +8953,6 @@ type ListInstrumentsResponse500Headers struct {
 	XRequestID string
 }
 
-// ListInstrumentsResponse503Headers the declared response headers of an HTTP 503 response for ListInstruments
-type ListInstrumentsResponse503Headers struct {
-	XRequestID string
-}
-
 type ListInstrumentsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8968,16 +8964,12 @@ type ListInstrumentsResponse struct {
 	JSON403 *AccessDenied
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
-	// JSON503 the response for an HTTP 503 `application/json` response
-	JSON503 *AnalysisUnavailable
 	// Headers401 the parsed response headers for an HTTP 401 response
 	Headers401 *ListInstrumentsResponse401Headers
 	// Headers403 the parsed response headers for an HTTP 403 response
 	Headers403 *ListInstrumentsResponse403Headers
 	// Headers500 the parsed response headers for an HTTP 500 response
 	Headers500 *ListInstrumentsResponse500Headers
-	// Headers503 the parsed response headers for an HTTP 503 response
-	Headers503 *ListInstrumentsResponse503Headers
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -8998,11 +8990,6 @@ func (r ListInstrumentsResponse) GetJSON403() *AccessDenied {
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
 func (r ListInstrumentsResponse) GetJSON500() *InternalError {
 	return r.JSON500
-}
-
-// GetJSON503 returns the response for an HTTP 503 `application/json` response
-func (r ListInstrumentsResponse) GetJSON503() *AnalysisUnavailable {
-	return r.JSON503
 }
 
 // GetBody returns the raw response body bytes
@@ -13555,13 +13542,6 @@ func ParseListInstrumentsResponse(rsp *http.Response) (*ListInstrumentsResponse,
 		}
 		response.JSON500 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
-		var dest AnalysisUnavailable
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON503 = &dest
-
 	}
 
 	switch {
@@ -13595,16 +13575,6 @@ func ParseListInstrumentsResponse(rsp *http.Response) (*ListInstrumentsResponse,
 			headers.XRequestID = value
 		}
 		response.Headers500 = &headers
-	case rsp.StatusCode == 503:
-		var headers ListInstrumentsResponse503Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers503 = &headers
 	}
 
 	return response, nil

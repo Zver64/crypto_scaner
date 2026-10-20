@@ -17,10 +17,12 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { MarketUniverse } from './marketUniverse.ts';
 import type { TableRowCells } from './tableRowCells.ts';
 
 export interface TableRow {
   symbol: string;
+  markets: MarketUniverse[];
   /** Cells keyed by column id. Columns of kind `text` and `favorite` have no cell. */
   cells: TableRowCells;
 }

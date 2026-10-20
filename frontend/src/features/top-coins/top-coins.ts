@@ -31,11 +31,17 @@ export const topCoinsRequestOptions = {
 } as const;
 
 // Pages ranking coins by market cap: Top selects the largest Spot coins,
-// COIN-M every coin with a Binance COIN-M perpetual contract.
+// COIN-M every coin with a Binance COIN-M perpetual contract, so it does not
+// highlight them.
 export const topCoinsPages = {
 	"coin-m": {
+		highlightCoinM: false,
 		request: { sort: marketCapSort, universe: "coinm_perpetual" },
 		title: "COIN-M",
 	},
-	"top-coins": { request: topCoinsRequestOptions, title: "Top Market Cap" },
+	"top-coins": {
+		highlightCoinM: true,
+		request: topCoinsRequestOptions,
+		title: "Top Market Cap",
+	},
 } as const;

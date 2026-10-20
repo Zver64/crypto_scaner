@@ -10,9 +10,9 @@ import {
 } from "@/features/market-scan/results-table/utils";
 
 const items: TableRow[] = [
-	{ symbol: "ZZZUSDT", cells: {} },
-	{ symbol: "AdaUsdt", cells: {} },
-	{ symbol: "AAAUSDT", cells: {} },
+	{ symbol: "ZZZUSDT", markets: ["spot"], cells: {} },
+	{ symbol: "AdaUsdt", markets: ["spot"], cells: {} },
+	{ symbol: "AAAUSDT", markets: ["spot"], cells: {} },
 ];
 
 describe("Market Cap presentation", () => {

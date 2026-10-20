@@ -44,7 +44,11 @@ export function TopCoinsScreen({
 	sort,
 	symbolFilter,
 }: TopCoinsScreenProps) {
-	const { request: requestOptions, title } = topCoinsPages[page];
+	const {
+		highlightCoinM,
+		request: requestOptions,
+		title,
+	} = topCoinsPages[page];
 	const pageGap = useMatches({ base: "sm", sm: "md" });
 	const wide = useWideLayout();
 	const permission = useBusinessRequestPermission();
@@ -126,6 +130,7 @@ export function TopCoinsScreen({
 								{rows.length > 0 ? (
 									<MarketScanResultsTable
 										criteria={scanCriteria}
+										highlightCoinM={highlightCoinM}
 										onSortChange={onSortChange}
 										rows={rows}
 										sort={sort}

@@ -1364,15 +1364,10 @@ export type listInstrumentsResponse500 = {
   status: 500
 }
 
-export type listInstrumentsResponse503 = {
-  data: AnalysisUnavailableResponse
-  status: 503
-}
-
 export type listInstrumentsResponseSuccess = (listInstrumentsResponse200) & {
   headers: Headers;
 };
-export type listInstrumentsResponseError = (listInstrumentsResponse401 | listInstrumentsResponse403 | listInstrumentsResponse500 | listInstrumentsResponse503) & {
+export type listInstrumentsResponseError = (listInstrumentsResponse401 | listInstrumentsResponse403 | listInstrumentsResponse500) & {
   headers: Headers;
 };
 
@@ -1416,7 +1411,7 @@ export const getListInstrumentsQueryKey = (params?: ListInstrumentsParams,) => {
     }
 
 
-export const getListInstrumentsQueryOptions = <TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const getListInstrumentsQueryOptions = <TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
@@ -1435,10 +1430,10 @@ const {query: queryOptions, request: requestOptions} = options ?? {};
 }
 
 export type ListInstrumentsQueryResult = NonNullable<Awaited<ReturnType<typeof listInstruments>>>
-export type ListInstrumentsQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>
+export type ListInstrumentsQueryError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>
 
 
-export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
  params: undefined |  ListInstrumentsParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInstruments>>,
@@ -1448,7 +1443,7 @@ export function useListInstruments<TData = Awaited<ReturnType<typeof listInstrum
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
  params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof listInstruments>>,
@@ -1458,7 +1453,7 @@ export function useListInstruments<TData = Awaited<ReturnType<typeof listInstrum
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
  params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -1466,7 +1461,7 @@ export function useListInstruments<TData = Awaited<ReturnType<typeof listInstrum
  * @summary List the active instruments
  */
 
-export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(
+export function useListInstruments<TData = Awaited<ReturnType<typeof listInstruments>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(
  params?: ListInstrumentsParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listInstruments>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

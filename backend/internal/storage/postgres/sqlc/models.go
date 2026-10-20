@@ -164,6 +164,10 @@ type BinanceSpotCandleHistoryCoverage struct {
 	RetryAfter             pgtype.Timestamptz
 }
 
+type BinanceSpotCoinmPerpetual struct {
+	BaseAsset string
+}
+
 type BinanceSpotEmptyCandleGap struct {
 	InstrumentID int64
 	Interval     string

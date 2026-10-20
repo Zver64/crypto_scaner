@@ -314,7 +314,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AccessDenied" }
         "500": { $ref: "#/components/responses/InternalError" }
-        "503": { $ref: "#/components/responses/AnalysisUnavailable" }
   /api/v1/favorites:
     get:
       operationId: listFavorites
@@ -1538,10 +1537,14 @@ components:
     TableRow:
       type: object
       additionalProperties: false
-      required: [symbol, cells]
+      required: [symbol, markets, cells]
       properties:
         symbol:
           type: string
+        markets:
+          type: array
+          items:
+            $ref: "#/components/schemas/MarketUniverse"
         cells:
           description: Cells keyed by column id. Columns of kind `text` and `favorite` have no cell.
           type: object

@@ -39,7 +39,6 @@ type Analysis interface {
 type MarketTables interface {
 	Search(context.Context, analysis.SearchRequest) (markettable.Result, error)
 	CoinM(context.Context, analysis.SearchRequest) (markettable.Result, error)
-	// CoinMSymbols fails with analysis.ErrMarketDataUnavailable.
 	CoinMSymbols(context.Context) ([]string, error)
 	Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error)
 }

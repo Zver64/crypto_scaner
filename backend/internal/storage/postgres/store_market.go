@@ -429,7 +429,11 @@ func (store *Store) ListHourlyPrices(ctx context.Context, instrumentIDs []int64,
 }
 
 func (store *Store) SaveSyncState(ctx context.Context, state market.SyncState) error {
-	if err := store.queries.SaveSyncState(ctx, generated.SaveSyncStateParams{
+	return saveSyncState(ctx, store.queries, state)
+}
+
+func saveSyncState(ctx context.Context, q *generated.Queries, state market.SyncState) error {
+	if err := q.SaveSyncState(ctx, generated.SaveSyncStateParams{
 		ProfileKey: state.Profile.Key(), LastStartedAt: timestamptz(state.LastStartedAt), LastSucceededAt: timestamptz(state.LastSucceededAt),
 		LastClosedOpenTime: timestamptz(state.LastClosedOpenTime), Status: string(state.Status),
 		ErrorMessage: pgtype.Text{String: state.ErrorMessage, Valid: state.ErrorMessage != ""},

@@ -3,7 +3,7 @@ package markettable
 import (
 	"context"
 	"errors"
-	"fmt"
+	"slices"
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/favorites"
@@ -21,9 +21,10 @@ type Analyzer interface {
 	SearchSymbols(context.Context, analysis.SearchRequest, []string) (analysis.SearchResult, error)
 }
 
-// CoinMPerpetuals lists the base assets of Binance COIN-M perpetual contracts.
+// CoinMPerpetuals lists the stored base assets of Binance COIN-M perpetual
+// contracts.
 type CoinMPerpetuals interface {
-	BaseAssets(context.Context) ([]string, error)
+	ListCoinMPerpetuals(context.Context) ([]string, error)
 }
 
 // Service runs market and favorites analyses and presents the instruments as
@@ -51,16 +52,19 @@ func (service *Service) Search(ctx context.Context, request analysis.SearchReque
 	if err != nil {
 		return Result{}, err
 	}
-	return searchResult(search, service.market), nil
+	coinM, err := service.CoinMSymbols(ctx)
+	if err != nil {
+		return Result{}, err
+	}
+	return searchResult(search, service.market, coinM), nil
 }
 
 // CoinMSymbols lists the Spot USDT symbols of the coins that have a Binance
-// COIN-M perpetual contract, active or not. It fails with
-// analysis.ErrMarketDataUnavailable when the contracts cannot be listed.
+// COIN-M perpetual contract, active or not.
 func (service *Service) CoinMSymbols(ctx context.Context) ([]string, error) {
-	assets, err := service.perpetuals.BaseAssets(ctx)
+	assets, err := service.perpetuals.ListCoinMPerpetuals(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list COIN-M perpetuals: %w: %w", analysis.ErrMarketDataUnavailable, err)
+		return nil, err
 	}
 	symbols := make([]string, len(assets))
 	for i, asset := range assets {
@@ -80,13 +84,22 @@ func (service *Service) CoinM(ctx context.Context, request analysis.SearchReques
 	if err != nil {
 		return Result{}, err
 	}
-	return searchResult(search, service.coinM), nil
+	return searchResult(search, service.coinM, symbols), nil
 }
 
-func searchResult(search analysis.SearchResult, catalog Catalog) Result {
+// markets lists the markets the coin of a Spot USDT symbol trades on.
+func markets(symbol string, coinM []string) []Market {
+	if slices.Contains(coinM, symbol) {
+		return []Market{MarketSpot, MarketCoinMPerpetual}
+	}
+	return []Market{MarketSpot}
+}
+
+func searchResult(search analysis.SearchResult, catalog Catalog, coinM []string) Result {
 	rows := make([]Row, len(search.Items))
 	for i, item := range search.Items {
 		rows[i] = RowFromSearchItem(item)
+		rows[i].Markets = markets(item.Symbol, coinM)
 	}
 	return Result{Search: search, Table: catalog.Build(rows)}
 }
@@ -116,12 +129,17 @@ func (service *Service) Favorites(ctx context.Context, items []favorites.Favorit
 		}
 	}
 	closed := service.closed.Latest(ctx, missing)
+	coinM, err := service.CoinMSymbols(ctx)
+	if err != nil {
+		return Result{}, err
+	}
 	rows := make([]Row, len(items))
 	for i, item := range items {
 		row := Row{Symbol: item.Symbol, ClosedIndicators: closed[item.InstrumentID]}
 		if analyzedItem, ok := analyzed[item.Symbol]; ok {
 			row = RowFromSearchItem(analyzedItem)
 		}
+		row.Markets = markets(item.Symbol, coinM)
 		row.AlertCount = item.AlertCount
 		rows[i] = row
 	}

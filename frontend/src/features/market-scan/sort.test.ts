@@ -18,7 +18,11 @@ const table: MarketTable = {
 };
 
 function row(symbol: string, value: number | null): TableRow {
-	return { symbol, cells: { mcap: value === null ? {} : { value } } };
+	return {
+		symbol,
+		markets: ["spot"],
+		cells: { mcap: value === null ? {} : { value } },
+	};
 }
 
 describe("Market Scan sorting", () => {
@@ -50,10 +54,10 @@ describe("Market Scan sorting", () => {
 it.each(["asc", "desc"] as const)(
 	"sorts unavailable values last (%s), separately from zero, with alphabetical ties",
 	(direction) => {
-		const rows = [
+		const rows: TableRow[] = [
 			row("B", null),
 			row("ZERO", 0),
-			{ symbol: "A", cells: {} },
+			{ symbol: "A", markets: ["spot"], cells: {} },
 			row("VALUE", 100),
 			row("LOSS", -25),
 			row("TIE", 100),

@@ -79,7 +79,7 @@ func (c *cli) resolveCoins(command *cobra.Command, client *apiclient.ClientWithR
 		universe := apiclient.CoinmPerpetual
 		instruments, err := client.ListInstrumentsWithResponse(command.Context(), &apiclient.ListInstrumentsParams{Universe: &universe})
 		if err == nil {
-			err = c.check(instruments, instruments.JSON200 != nil, instruments.JSON503)
+			err = c.check(instruments, instruments.JSON200 != nil)
 		}
 		if err != nil {
 			return nil, "", err

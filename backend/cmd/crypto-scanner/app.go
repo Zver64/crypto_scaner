@@ -24,6 +24,7 @@ import (
 	"crypto-scanner/internal/market/gridlimits"
 	marketlive "crypto-scanner/internal/market/live"
 	"crypto-scanner/internal/market/marketsync"
+	"crypto-scanner/internal/market/perpetuals"
 	"crypto-scanner/internal/market/retention"
 	"crypto-scanner/internal/marketcap"
 	"crypto-scanner/internal/markettable"
@@ -191,7 +192,11 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites service: %w", err)
 	}
-	marketTables, err := markettable.NewService(analysisService, closedIndicators, binance.NewCoinMPerpetuals(logger), marketTable, coinMTable, favoritesTable)
+	coinMPerpetuals, err := perpetuals.NewSynchronizer(binance.NewCoinMPerpetuals(), store, logger, 24*time.Hour, time.Minute)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize COIN-M perpetuals synchronizer: %w", err)
+	}
+	marketTables, err := markettable.NewService(analysisService, closedIndicators, store, marketTable, coinMTable, favoritesTable)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize market table service: %w", err)
 	}
@@ -231,6 +236,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		{"strategy monitor", strategyMonitor},
 		{"Telegram bot", botService},
 		{"coin metadata synchronizer", coinMetadataSynchronizer},
+		{"COIN-M perpetuals synchronizer", coinMPerpetuals},
 		{"market history loader", historyLoader},
 		{"market retention", retention.New(store, logger, market.RetentionDepth)},
 		{"session pruner", sessions},

@@ -2,6 +2,7 @@ package markettable_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"crypto-scanner/internal/analysis"
@@ -18,7 +19,11 @@ func (*analyzerStub) Search(context.Context, analysis.SearchRequest) (analysis.S
 
 func (stub *analyzerStub) SearchSymbols(_ context.Context, _ analysis.SearchRequest, symbols []string) (analysis.SearchResult, error) {
 	stub.symbols = append([]string(nil), symbols...)
-	return analysis.SearchResult{}, nil
+	items := make([]analysis.SearchItem, len(symbols))
+	for i, symbol := range symbols {
+		items[i] = analysis.SearchItem{Symbol: symbol}
+	}
+	return analysis.SearchResult{Items: items}, nil
 }
 
 // noConfiguredColumns is a table without admin-configured indicator columns.
@@ -30,7 +35,7 @@ type closedStub struct{}
 
 type perpetualsStub []string
 
-func (stub perpetualsStub) BaseAssets(context.Context) ([]string, error) { return stub, nil }
+func (stub perpetualsStub) ListCoinMPerpetuals(context.Context) ([]string, error) { return stub, nil }
 
 func (closedStub) Latest(context.Context, []int64) map[int64][]closedindicator.Value { return nil }
 
@@ -84,5 +89,34 @@ func TestCoinMAnalyzesSpotUSDTPairsOfPerpetualCoins(t *testing.T) {
 	}
 	if len(analyzer.symbols) != 2 || analyzer.symbols[0] != "BTCUSDT" || analyzer.symbols[1] != "ETHUSDT" {
 		t.Fatalf("analyzed symbols = %v", analyzer.symbols)
+	}
+}
+
+func TestFavoritesMarkTheMarketsOfEveryCoin(t *testing.T) {
+	table, err := markettable.NewCatalog(noConfiguredColumns{}, markettable.Sort{Column: "alert_count", Direction: markettable.Descending},
+		markettable.Column{ID: "alert_count", Title: "Alerts", Kind: markettable.KindCount, Sortable: true, Source: markettable.AlertCount{}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := markettable.NewService(&analyzerStub{}, closedStub{}, perpetualsStub{"BTC", "OLD"}, table, table, table)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := []favorites.Favorite{
+		{InstrumentID: 1, Symbol: "BTCUSDT", Active: true},
+		{InstrumentID: 2, Symbol: "ETHUSDT", Active: true},
+		{InstrumentID: 3, Symbol: "OLDUSDT"},
+	}
+	result, err := service.Favorites(context.Background(), items, analysis.SearchRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	coinM := []markettable.Market{markettable.MarketSpot, markettable.MarketCoinMPerpetual}
+	want := [][]markettable.Market{coinM, {markettable.MarketSpot}, coinM}
+	for i, row := range result.Table.Rows {
+		if !slices.Equal(row.Markets, want[i]) {
+			t.Errorf("%s markets = %v, want %v", row.Symbol, row.Markets, want[i])
+		}
 	}
 }

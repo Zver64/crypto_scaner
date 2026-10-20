@@ -89,6 +89,12 @@ func BinanceSpotSyncProfile(interval CandleInterval) SyncProfile {
 	return SyncProfile{Exchange: "binance", Market: "spot", QuoteAsset: "USDT", Interval: interval, TimeZone: "UTC"}
 }
 
+// CoinMPerpetualsSyncProfile identifies persisted Binance COIN-M perpetual
+// contract refresh state.
+func CoinMPerpetualsSyncProfile() SyncProfile {
+	return SyncProfile{Exchange: "binance", Market: "coinm_perpetual", QuoteAsset: "USD", Interval: IntervalDay, TimeZone: "UTC"}
+}
+
 // CoinMetadataSyncProfile identifies persisted CoinGecko metadata refresh state.
 func CoinMetadataSyncProfile() SyncProfile {
 	return SyncProfile{Exchange: "coingecko", Market: "coin_metadata", QuoteAsset: "USD", Interval: IntervalHour, TimeZone: "UTC"}

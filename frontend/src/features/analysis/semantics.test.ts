@@ -80,6 +80,7 @@ function marketResult(evaluations: Evaluation[]): MarketAnalysisResponse {
 			rows: [
 				{
 					cells: { chart: { series: Array(169).fill(null) } },
+					markets: ["spot"],
 					symbol: "BTCUSDT",
 				},
 			],

@@ -104,7 +104,11 @@ func marketTableResponse(table markettable.Table) MarketTable {
 			}
 			cells[id] = response
 		}
-		rows[i] = TableRow{Symbol: row.Symbol, Cells: cells}
+		markets := make([]MarketUniverse, len(row.Markets))
+		for j, market := range row.Markets {
+			markets[j] = MarketUniverse(market)
+		}
+		rows[i] = TableRow{Symbol: row.Symbol, Markets: markets, Cells: cells}
 	}
 	return MarketTable{
 		Columns:     columns,

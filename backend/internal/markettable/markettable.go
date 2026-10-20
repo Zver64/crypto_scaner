@@ -79,9 +79,18 @@ type Column struct {
 	Source   Source
 }
 
+// Market is a Binance market the coin of a row trades on.
+type Market string
+
+const (
+	MarketSpot           Market = "spot"
+	MarketCoinMPerpetual Market = "coinm_perpetual"
+)
+
 // Row carries everything a column source can read for one instrument.
 type Row struct {
 	Symbol           string
+	Markets          []Market
 	Evaluations      []analysis.Evaluation
 	PriceHistory     []*float64
 	ClosedIndicators []closedindicator.Value
@@ -101,8 +110,9 @@ type Cell struct {
 }
 
 type TableRow struct {
-	Symbol string
-	Cells  map[string]Cell
+	Symbol  string
+	Markets []Market
+	Cells   map[string]Cell
 }
 
 type Table struct {
@@ -180,7 +190,7 @@ func (catalog Catalog) Build(rows []Row) Table {
 				cells[column.ID] = cell
 			}
 		}
-		result.Rows[i] = TableRow{Symbol: row.Symbol, Cells: cells}
+		result.Rows[i] = TableRow{Symbol: row.Symbol, Markets: row.Markets, Cells: cells}
 	}
 	return result
 }

@@ -1,11 +1,13 @@
+import { Text } from "@mantine/core";
 import type { ReactNode } from "react";
 
-import type {
-	PriceHistoryWindow,
-	TableCell,
-	TableColumn,
-	TableColumnKind,
-	TableRow,
+import {
+	MarketUniverse,
+	type PriceHistoryWindow,
+	type TableCell,
+	type TableColumn,
+	type TableColumnKind,
+	type TableRow,
 } from "@/api/generated/models";
 import { ExternalLink } from "@/components/external-link";
 import { PercentChange } from "@/components/percent-change";
@@ -19,6 +21,7 @@ import { formatRangePercent } from "@/utils/range-percent";
 interface CellContext {
 	cell: TableCell | undefined;
 	column: TableColumn;
+	highlightCoinM: boolean;
 	row: TableRow;
 	window: PriceHistoryWindow | undefined;
 }
@@ -28,7 +31,14 @@ export type CellRenderer = (context: CellContext) => ReactNode;
 // Every kind the backend can send needs a renderer here; columns themselves
 // come from the backend table.
 export const cellRenderers: Record<TableColumnKind, CellRenderer> = {
-	text: ({ row }) => row.symbol,
+	text: ({ highlightCoinM, row }) =>
+		highlightCoinM && row.markets.includes(MarketUniverse.coinm_perpetual) ? (
+			<Text c="teal" inherit span>
+				{row.symbol}
+			</Text>
+		) : (
+			row.symbol
+		),
 	usd_compact: ({ cell }) =>
 		cell?.value == null ? "—" : formatMarketCapUsd(cell.value),
 	range_percent: ({ cell }) =>

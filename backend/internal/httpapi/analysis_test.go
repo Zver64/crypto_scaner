@@ -420,7 +420,7 @@ func (service *countingAnalysis) CoinM(ctx context.Context, request analysis.Sea
 }
 
 func (service *countingAnalysis) CoinMSymbols(context.Context) ([]string, error) {
-	return nil, analysis.ErrMarketDataUnavailable
+	return nil, nil
 }
 
 func (service *countingAnalysis) Favorites(context.Context, []favorites.Favorite, analysis.SearchRequest) (markettable.Result, error) {
@@ -429,7 +429,7 @@ func (service *countingAnalysis) Favorites(context.Context, []favorites.Favorite
 
 type noCoinMPerpetuals struct{}
 
-func (noCoinMPerpetuals) BaseAssets(context.Context) ([]string, error) { return nil, nil }
+func (noCoinMPerpetuals) ListCoinMPerpetuals(context.Context) ([]string, error) { return nil, nil }
 
 // analysisSessions accepts only analysisSessionToken.
 type analysisSessions struct{}

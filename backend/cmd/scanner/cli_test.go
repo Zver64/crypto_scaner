@@ -155,21 +155,21 @@ func TestLoginRejectsTokensThatCannotServeTheCLI(t *testing.T) {
 
 func TestBacktestRendersTheTradesOfASavedStrategy(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT":                                                           backtestResponse,
-		"GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT&from=2024-01-01T00%3A00%3A00Z&to=2024-06-30T23%3A59%3A59Z": backtestResponse,
+		"GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=BTCUSDT":                                                           backtestResponse,
+		"GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=BTCUSDT&from=2024-01-01T00%3A00%3A00Z&to=2024-06-30T23%3A59%3A59Z": backtestResponse,
 	})
 	home := writeProfile(t, server.URL)
 
-	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT"); got.code != 0 || got.stdout != backtestText {
+	if got := runCLI(t, home, "", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT"); got.code != 0 || got.stdout != backtestText {
 		t.Errorf("backtest = %+v\nwant:\n%s", got, backtestText)
 	}
-	if raw := runCLI(t, home, "", "--json", "backtest", "--strategy", "3", "--symbol", "BTCUSDT"); raw.stdout != backtestResponse+"\n" {
+	if raw := runCLI(t, home, "", "--json", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT"); raw.stdout != backtestResponse+"\n" {
 		t.Errorf("--json output = %q", raw.stdout)
 	}
-	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT", "--from", "2024-01-01", "--to", "2024-06-30"); got.code != 0 {
+	if got := runCLI(t, home, "", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT", "--from", "2024-01-01", "--to", "2024-06-30"); got.code != 0 {
 		t.Errorf("backtest of a period = %+v", got)
 	}
-	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT", "--from", "January"); got.code != 1 || !strings.Contains(got.stderr, "--from") {
+	if got := runCLI(t, home, "", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT", "--from", "January"); got.code != 1 || !strings.Contains(got.stderr, "--from") {
 		t.Errorf("backtest of an invalid period = %+v", got)
 	}
 }
@@ -217,8 +217,8 @@ func TestBacktestDraftWithAnInvalidRuleSendsNothing(t *testing.T) {
 // request.
 func TestBacktestRefusesWhileAnotherRuns(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT": backtestResponse,
-		"POST /api/v1/admin/strategy-validations":                `{"errors":[],"missing_indicators":[]}`,
+		"GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=BTCUSDT": backtestResponse,
+		"POST /api/v1/admin/strategy-validations":                                                   `{"errors":[],"missing_indicators":[]}`,
 	})
 	home := writeProfile(t, server.URL)
 	running := flock.New(filepath.Join(home, "scanner", "backtest.lock"))
@@ -227,7 +227,7 @@ func TestBacktestRefusesWhileAnotherRuns(t *testing.T) {
 	}
 
 	for _, args := range [][]string{
-		{"backtest", "--strategy", "3", "--symbol", "BTCUSDT"},
+		{"backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT"},
 		{"strategies", "backtest", "--expr", "h_close > 1", "--symbol", "BTCUSDT"},
 		{"signals", "backtest", "--expr", "h_close > 1", "--direction", "long", "--symbol", "BTCUSDT"},
 	} {
@@ -238,7 +238,7 @@ func TestBacktestRefusesWhileAnotherRuns(t *testing.T) {
 	if err := running.Unlock(); err != nil {
 		t.Fatal(err)
 	}
-	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT"); got.code != 0 {
+	if got := runCLI(t, home, "", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT"); got.code != 0 {
 		t.Errorf("backtest after the other ended = %+v", got)
 	}
 }
@@ -310,18 +310,18 @@ func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
 		api, server := newFakeAPI(t, map[string]string{
 			"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 			"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
-			"POST /api/v1/admin/strategies":                `{"id":7,"name":"ATR","direction":"long","expression":"h_atr_100 > 1","coins":["BTCUSDT","ETHUSDT"],"coin_source":"selected","message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
+			"POST /api/v1/admin/strategies":                `{"id":"00000000-0000-7000-8000-000000000007","name":"ATR","direction":"long","expression":"h_atr_100 > 1","coins":["BTCUSDT","ETHUSDT"],"coin_source":"selected","message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		})
 		home := writeProfile(t, server.URL)
 
 		got := runCLI(t, home, "", append([]string{"strategies", "create", "ATR", "--expr", "h_atr_100 > 1", "--coin", "ethusdt,BTCUSDT"}, test.args...)...)
 
-		want := `┌────┬───────┬───────────────────────────┬───────────┬───────────────┬──────┬──────────────┬──────────────────┐
-│ ID │ STATE │ NAME                      │ DIRECTION │ ENTRY         │ EXIT │ BUYS         │ COINS            │
-├────┼───────┼───────────────────────────┼───────────┼───────────────┼──────┼──────────────┼──────────────────┤
-│  7 │ off   │ ATR                       │ long      │ h_atr_100 > 1 │ -    │ every signal │ BTCUSDT, ETHUSDT │
-│    │       │ not configured: h-atr-100 │           │               │      │              │                  │
-└────┴───────┴───────────────────────────┴───────────┴───────────────┴──────┴──────────────┴──────────────────┘
+		want := `┌──────────────────────────────────────┬───────┬───────────────────────────┬───────────┬───────────────┬──────┬──────────────┬──────────────────┐
+│ ID                                   │ STATE │ NAME                      │ DIRECTION │ ENTRY         │ EXIT │ BUYS         │ COINS            │
+├──────────────────────────────────────┼───────┼───────────────────────────┼───────────┼───────────────┼──────┼──────────────┼──────────────────┤
+│ 00000000-0000-7000-8000-000000000007 │ off   │ ATR                       │ long      │ h_atr_100 > 1 │ -    │ every signal │ BTCUSDT, ETHUSDT │
+│                                      │       │ not configured: h-atr-100 │           │               │      │              │                  │
+└──────────────────────────────────────┴───────┴───────────────────────────┴───────────┴───────────────┴──────┴──────────────┴──────────────────┘
 `
 		wantNote := ""
 		if test.add {
@@ -384,7 +384,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"},{"name":"pnl","label":"pnl","position":true}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":3,"name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","coins":["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"],"coin_source":"selected","message":"Dip!","enabled":true,"valid":true},{"id":4,"name":"Old","direction":"short","expression":"x","coin_source":"selected","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":"00000000-0000-7000-8000-000000000003","name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","coins":["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"],"coin_source":"selected","message":"Dip!","enabled":true,"valid":true},{"id":"00000000-0000-7000-8000-000000000004","name":"Old","direction":"short","expression":"x","coin_source":"selected","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -397,14 +397,14 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"items":[{"indicator_id":1,"interval":"1d","label":"d-rsi","name":"d_rsi","position":false}]}` + "\n"},
 		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; reads indicators that are not configured: h-atr-100\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
-		{args: []string{"strategies"}, want: `┌────┬──────────────┬─────────────────────┬───────────┬───────────────────────────┬──────────────────┬─────────────────────┬──────────────────────────────┐
-│ ID │ STATE        │ NAME                │ DIRECTION │ ENTRY                     │ EXIT             │ BUYS                │ COINS                        │
-├────┼──────────────┼─────────────────────┼───────────┼───────────────────────────┼──────────────────┼─────────────────────┼──────────────────────────────┤
-│  3 │ on           │ Dip buy             │ long      │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade       │ BTCUSDT, ETHUSDT, SOLUSDT +1 │
-│    │              │ message: Dip!       │           │                           │ TP h_close * 1.1 │                     │                              │
-│  4 │ off, invalid │ Old                 │ short     │ x                         │ -                │ one short per trade │ -                            │
-│    │              │ problem: undeclared │           │                           │                  │                     │                              │
-└────┴──────────────┴─────────────────────┴───────────┴───────────────────────────┴──────────────────┴─────────────────────┴──────────────────────────────┘
+		{args: []string{"strategies"}, want: `┌──────────────────────────────────────┬──────────────┬─────────────────────┬───────────┬───────────────────────────┬──────────────────┬─────────────────────┬──────────────────────────────┐
+│ ID                                   │ STATE        │ NAME                │ DIRECTION │ ENTRY                     │ EXIT             │ BUYS                │ COINS                        │
+├──────────────────────────────────────┼──────────────┼─────────────────────┼───────────┼───────────────────────────┼──────────────────┼─────────────────────┼──────────────────────────────┤
+│ 00000000-0000-7000-8000-000000000003 │ on           │ Dip buy             │ long      │ d_rsi < 30 && h_close > 1 │ pnl > 5          │ one per trade       │ BTCUSDT, ETHUSDT, SOLUSDT +1 │
+│                                      │              │ message: Dip!       │           │                           │ TP h_close * 1.1 │                     │                              │
+│ 00000000-0000-7000-8000-000000000004 │ off, invalid │ Old                 │ short     │ x                         │ -                │ one short per trade │ -                            │
+│                                      │              │ problem: undeclared │           │                           │                  │                     │                              │
+└──────────────────────────────────────┴──────────────┴─────────────────────┴───────────┴───────────────────────────┴──────────────────┴─────────────────────┴──────────────────────────────┘
 `},
 	} {
 		if got := runCLI(t, home, "", test.args...); got.code != 0 || got.stdout != test.want {
@@ -415,8 +415,8 @@ func TestCommandsRenderCompactText(t *testing.T) {
 
 func TestErrorsExitWithoutPrintingTheToken(t *testing.T) {
 	api, server := newFakeAPI(t, map[string]string{
-		"POST /api/v1/admin/strategy-validations":             `{"errors":["undeclared reference to 'x'"],"missing_indicators":[]}`,
-		"GET /api/v1/admin/strategies/3/backtest?symbol=NOPE": `{"error":{"code":"symbol_not_found","message":"Symbol is unknown"},"request_id":"r"}`,
+		"POST /api/v1/admin/strategy-validations":                                                `{"errors":["undeclared reference to 'x'"],"missing_indicators":[]}`,
+		"GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=NOPE": `{"error":{"code":"symbol_not_found","message":"Symbol is unknown"},"request_id":"r"}`,
 	})
 	home := writeProfile(t, server.URL)
 
@@ -424,7 +424,7 @@ func TestErrorsExitWithoutPrintingTheToken(t *testing.T) {
 		t.Errorf("invalid expression = %+v", got)
 	}
 	api.status = http.StatusNotFound
-	if got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "NOPE"); got.code != 1 || got.stderr != "scanner: symbol_not_found: Symbol is unknown\n" {
+	if got := runCLI(t, home, "", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "NOPE"); got.code != 1 || got.stderr != "scanner: symbol_not_found: Symbol is unknown\n" {
 		t.Errorf("API error = %+v", got)
 	}
 	if err := saveConfig(filepath.Join(home, "scanner", "config.json"), config{Current: "dev", Profiles: map[string]profile{"dev": {Server: server.URL, Token: "cst_revoked"}}}); err != nil {
@@ -485,8 +485,8 @@ func TestLocalErrors(t *testing.T) {
 		{args: []string{"favorites"}, code: "unreachable", prefix: "cannot reach http://127.0.0.1:1 (profile dev): "},
 		{args: []string{"indicators", "typo"}, code: "usage", prefix: `unknown command "typo" for "scanner indicators"`},
 		{args: []string{"typo"}, code: "usage", prefix: `unknown command "typo" for "scanner"`},
-		{args: []string{"backtest", "--strategy", "0", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "0" must be a positive int64`},
-		{args: []string{"backtest", "--strategy", "abc", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "abc" must be a positive int64`},
+		{args: []string{"backtest", "--strategy", "0", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "0" must be a UUID`},
+		{args: []string{"backtest", "--strategy", "abc", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "abc" must be a UUID`},
 	} {
 		got := runCLI(t, home, "", test.args...)
 		if got.code != 1 || got.stdout != "" || !strings.HasPrefix(got.stderr, "scanner: "+test.prefix) {
@@ -516,8 +516,8 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 		{name: "strategies", target: "/api/v1/admin/strategies", args: []string{"strategies"}, status: http.StatusOK},
 		{name: "add indicators", target: "/api/v1/admin/scanner-indicator-batches", args: []string{"strategies", "create", "Test", "--expr", "h_atr_100 > 1", "--add-indicators", "--coin", "BTCUSDT"}, status: http.StatusCreated},
 		{name: "create", target: "/api/v1/admin/strategies", args: []string{"strategies", "create", "Test", "--expr", "h_close > 1", "--coin", "BTCUSDT"}, status: http.StatusCreated},
-		{name: "backtest", target: "/api/v1/admin/strategies/3/backtest", args: []string{"backtest", "--strategy", "3", "--symbol", "BTCUSDT"}, status: http.StatusOK},
-		{name: "delete", target: "/api/v1/admin/strategies/3", args: []string{"strategies", "delete", "3"}, status: http.StatusOK},
+		{name: "backtest", target: "/api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest", args: []string{"backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT"}, status: http.StatusOK},
+		{name: "delete", target: "/api/v1/admin/strategies/00000000-0000-7000-8000-000000000003", args: []string{"strategies", "delete", "00000000-0000-7000-8000-000000000003"}, status: http.StatusOK},
 	} {
 		for _, html := range []bool{true, false} {
 			t.Run(test.name+"/html="+strconv.FormatBool(html), func(t *testing.T) {
@@ -525,7 +525,7 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 					w.Header().Set("Content-Type", "application/json")
 					if r.URL.Path == "/api/v1/admin/strategies" && test.name == "delete" {
 						// Delete checks that the ID is a strategy first.
-						fmt.Fprint(w, `{"items":[{"id":3,"name":"Test","expression":"h_close > 1","valid":true}]}`)
+						fmt.Fprint(w, `{"items":[{"id":"00000000-0000-7000-8000-000000000003","name":"Test","expression":"h_close > 1","valid":true}]}`)
 						return
 					}
 					if r.URL.Path != test.target {
@@ -568,16 +568,16 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 
 func TestDeleteStrategy(t *testing.T) {
 	api, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies":                        `{"items":[{"id":9223372036854775807,"name":"Max","expression":"h_close > 1","valid":true}]}`,
-		"DELETE /api/v1/admin/strategies/9223372036854775807": "",
+		"GET /api/v1/admin/strategies":                                         `{"items":[{"id":"01890a5d-ac96-774b-bcce-b302099a8057","name":"Old","expression":"h_close > 1","valid":true}]}`,
+		"DELETE /api/v1/admin/strategies/01890a5d-ac96-774b-bcce-b302099a8057": "",
 	})
-	api.statuses = map[string]int{"DELETE /api/v1/admin/strategies/9223372036854775807": http.StatusNoContent}
+	api.statuses = map[string]int{"DELETE /api/v1/admin/strategies/01890a5d-ac96-774b-bcce-b302099a8057": http.StatusNoContent}
 	home := writeProfile(t, server.URL)
 
 	for _, jsonOutput := range []bool{false, true} {
 		clear(api.bodies)
-		args := []string{"strategies", "delete", "9223372036854775807"}
-		want := "deleted strategy 9223372036854775807\n"
+		args := []string{"strategies", "delete", "01890a5d-ac96-774b-bcce-b302099a8057"}
+		want := "deleted strategy 01890a5d-ac96-774b-bcce-b302099a8057\n"
 		if jsonOutput {
 			args = append(args, "--json")
 			want = `{"deleted":1}` + "\n"
@@ -586,7 +586,7 @@ func TestDeleteStrategy(t *testing.T) {
 		if got.code != 0 || got.stdout != want || got.stderr != "" {
 			t.Fatalf("delete = %+v, want stdout %q", got, want)
 		}
-		if body, ok := api.bodies["DELETE /api/v1/admin/strategies/9223372036854775807"]; !ok || body != "" || len(api.bodies) != 2 {
+		if body, ok := api.bodies["DELETE /api/v1/admin/strategies/01890a5d-ac96-774b-bcce-b302099a8057"]; !ok || body != "" || len(api.bodies) != 2 {
 			t.Fatalf("delete requests = %v", api.bodies)
 		}
 	}
@@ -622,15 +622,15 @@ func TestDeleteStrategyReportsAPIErrors(t *testing.T) {
 	} {
 		t.Run(strconv.Itoa(test.status), func(t *testing.T) {
 			api, server := newFakeAPI(t, map[string]string{
-				"GET /api/v1/admin/strategies":      `{"items":[{"id":3,"name":"Test","expression":"h_close > 1","valid":true}]}`,
-				"DELETE /api/v1/admin/strategies/3": test.body,
+				"GET /api/v1/admin/strategies":                                         `{"items":[{"id":"00000000-0000-7000-8000-000000000003","name":"Test","expression":"h_close > 1","valid":true}]}`,
+				"DELETE /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003": test.body,
 			})
-			api.statuses = map[string]int{"DELETE /api/v1/admin/strategies/3": test.status}
+			api.statuses = map[string]int{"DELETE /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003": test.status}
 			home := writeProfile(t, server.URL)
-			if got := runCLI(t, home, "", "strategies", "delete", "3"); got.code != 1 || got.stdout != "" || got.stderr != "scanner: "+strings.ReplaceAll(test.text, "SERVER", server.URL)+"\n" {
+			if got := runCLI(t, home, "", "strategies", "delete", "00000000-0000-7000-8000-000000000003"); got.code != 1 || got.stdout != "" || got.stderr != "scanner: "+strings.ReplaceAll(test.text, "SERVER", server.URL)+"\n" {
 				t.Errorf("delete API error = %+v", got)
 			}
-			if got := runCLI(t, home, "", "strategies", "delete", "3", "--json"); got.code != 1 || got.stdout != "" || got.stderr != strings.ReplaceAll(test.json, "SERVER", server.URL)+"\n" {
+			if got := runCLI(t, home, "", "strategies", "delete", "00000000-0000-7000-8000-000000000003", "--json"); got.code != 1 || got.stdout != "" || got.stderr != strings.ReplaceAll(test.json, "SERVER", server.URL)+"\n" {
 				t.Errorf("delete --json API error = %+v", got)
 			}
 		})
@@ -664,15 +664,15 @@ func TestCompletionOffersProfileNames(t *testing.T) {
 
 func TestCompletionOffersStrategiesAndFavorites(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies": `{"items":[{"id":79,"name":"Dip buy","expression":"x","coin_source":"selected","message":"","enabled":false,"valid":true}]}`,
+		"GET /api/v1/admin/strategies": `{"items":[{"id":"00000000-0000-7000-8000-000000000079","name":"Dip buy","expression":"x","coin_source":"selected","message":"","enabled":false,"valid":true}]}`,
 		"GET /api/v1/favorites":        `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
 	})
 	home := writeProfile(t, server.URL)
 
 	for args, want := range map[[3]string]string{
-		{"strategies", "delete", ""}:   "79\tDip buy",
-		{"strategies", "update", ""}:   "79\tDip buy",
-		{"backtest", "--strategy", ""}: "79\tDip buy",
+		{"strategies", "delete", ""}:   "00000000-0000-7000-8000-000000000079\tDip buy",
+		{"strategies", "update", ""}:   "00000000-0000-7000-8000-000000000079\tDip buy",
+		{"backtest", "--strategy", ""}: "00000000-0000-7000-8000-000000000079\tDip buy",
 		{"backtest", "--symbol", ""}:   "BTCUSDT",
 	} {
 		got := runCLI(t, home, "", append([]string{"__complete"}, args[:]...)...)

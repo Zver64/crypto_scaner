@@ -230,12 +230,12 @@ func TestDirectionRules(t *testing.T) {
 	}
 
 	// A saved strategy keeps its kind and direction.
-	saved := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: 1, Name: "Trade", Direction: DirectionLong, Expression: "h_close > 5"})
+	saved := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: testID(1), Name: "Trade", Direction: DirectionLong, Expression: "h_close > 5"})
 	for _, item := range []Strategy{
 		{Signal: true, Direction: DirectionLong},
 		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", StopLossExpression: "h_close * 2"},
 	} {
-		item.ID, item.Name, item.Expression, item.Coins = 1, "Trade", "h_close > 5", []string{"BTCUSDT"}
+		item.ID, item.Name, item.Expression, item.Coins = testID(1), "Trade", "h_close > 5", []string{"BTCUSDT"}
 		if _, err := saved.Update(context.Background(), item); !errors.Is(err, ErrInvalidArgument) {
 			t.Fatalf("%+v: %v", item, err)
 		}

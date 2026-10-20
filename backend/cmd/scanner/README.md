@@ -51,7 +51,7 @@ scanner login dev --server http://localhost:8080
 Бэктест симулирует сделки сохранённой стратегии на одной монете по истории, хранящейся на сервере:
 
 ```sh
-scanner backtest --strategy 3 --symbol BTCUSDT
+scanner backtest --strategy 0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e --symbol BTCUSDT
 ```
 
 ### Несколько монет
@@ -59,7 +59,7 @@ scanner backtest --strategy 3 --symbol BTCUSDT
 Укажите монеты через запятую или повторите `--symbol`:
 
 ```sh
-scanner backtest --strategy 3 --symbol BTCUSDT,ETHUSDT,ARBUSDT
+scanner backtest --strategy 0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e --symbol BTCUSDT,ETHUSDT,ARBUSDT
 scanner signals backtest --expr 'h_rsi > 80' --direction short --symbol BTCUSDT --symbol ETHUSDT
 scanner strategies backtest --expr 'h_rsi < 30' --take-profit 'h_close * 1.05' --stop-loss 'h_close * 0.97' --symbol BTCUSDT,ETHUSDT
 ```
@@ -80,8 +80,8 @@ scanner strategies backtest --expr 'h_rsi < 30' --take-profit 'h_close * 1.05' -
 `--from` и `--to` ограничивают оцениваемый период по времени открытия свечей: дата UTC (`2026-01-31`) или время RFC 3339. Свечи раньше `--from` по-прежнему прогревают индикаторы. Так стратегию, подобранную на одной части истории, можно проверить на другой:
 
 ```sh
-scanner backtest --strategy 3 --symbol BTCUSDT --to 2025-12-31
-scanner backtest --strategy 3 --symbol BTCUSDT --from 2026-01-01
+scanner backtest --strategy 0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e --symbol BTCUSDT --to 2025-12-31
+scanner backtest --strategy 0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e --symbol BTCUSDT --from 2026-01-01
 ```
 
 Правила можно проверить и без сохранения: `scanner strategies backtest` и `scanner signals backtest`
@@ -106,15 +106,15 @@ scanner signals backtest --expr 'h_rsi > 80' --direction short --window 12 --sym
 ## Редактирование сохранённой стратегии
 
 ```sh
-scanner strategies update 6 --expr 'of("BTCUSDT", h_roc_12) < 0 && h_roc_12 > 0 && crosses_above(h_close, prev(h_max_12_high, 1)) && w_rsi < 50'
-scanner strategies update 6 --name 'Test Weekly'
-scanner strategies update 6 --message ''
-scanner strategies update 6 --exit 'bars_held >= 24' --take-profit 'h_close * 1.05' --stop-loss 'h_close - 2 * h_atr_14'
-scanner strategies update 6 --exit '' --take-profit '' --stop-loss ''
-scanner strategies update 6 --coin BTCUSDT,ETHUSDT --favorites
+scanner strategies update 0199a3f4-8e21-7c3b-a5f6-1d2e3f4a5b6c --expr 'of("BTCUSDT", h_roc_12) < 0 && h_roc_12 > 0 && crosses_above(h_close, prev(h_max_12_high, 1)) && w_rsi < 50'
+scanner strategies update 0199a3f4-8e21-7c3b-a5f6-1d2e3f4a5b6c --name 'Test Weekly'
+scanner strategies update 0199a3f4-8e21-7c3b-a5f6-1d2e3f4a5b6c --message ''
+scanner strategies update 0199a3f4-8e21-7c3b-a5f6-1d2e3f4a5b6c --exit 'bars_held >= 24' --take-profit 'h_close * 1.05' --stop-loss 'h_close - 2 * h_atr_14'
+scanner strategies update 0199a3f4-8e21-7c3b-a5f6-1d2e3f4a5b6c --exit '' --take-profit '' --stop-loss ''
+scanner strategies update 0199a3f4-8e21-7c3b-a5f6-1d2e3f4a5b6c --coin BTCUSDT,ETHUSDT --favorites
 ```
 
-Укажите положительный int64 ID и хотя бы один флаг: `--expr`, `--exit`, `--take-profit`,
+Укажите ID (UUID) и хотя бы один флаг: `--expr`, `--exit`, `--take-profit`,
 `--stop-loss`, `--coin`, `--favorites`, `--coin-m`, `--name`, `--message`. Неуказанные поля сохраняются; пустой `--message`
 убирает текст, который алерты в Telegram показывают под заголовком, пустые `--exit`, `--take-profit` и `--stop-loss`
 удаляют правило выхода и уровни. Стратегия с любым из них держит одну покупку на сделку;
@@ -162,8 +162,8 @@ funding, плечо и ликвидацию и печатает `Net profit` б�
 ```sh
 scanner signals
 scanner signals create 'Crash soon' --expr 'h_rsi > 80' --direction short --all-coins --target-ratio 3 --window 12
-scanner signals update 7 --expr 'h_rsi > 75'
-scanner signals delete 7
+scanner signals update 0199a3f6-1a2b-7d4c-8e5f-9a0b1c2d3e4f --expr 'h_rsi > 75'
+scanner signals delete 0199a3f6-1a2b-7d4c-8e5f-9a0b1c2d3e4f
 ```
 
 Направление сигнала задаётся при создании и не меняется. `signals update` принимает `--expr`, `--coin`, `--favorites`, `--coin-m`, `--track-favorites`, `--all-coins`, `--target-ratio`, `--window`, `--min-market-cap`, `--max-market-cap`, `--name`, `--message` и `--add-indicators` и, как
@@ -177,12 +177,12 @@ scanner signals delete 7
 Посмотрите ID через `scanner strategies`, затем удалите нужную стратегию:
 
 ```sh
-scanner strategies delete 3
+scanner strategies delete 0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e
 ```
 
-ID должен быть положительным int64. Команда удаляет стратегию без подтверждения.
-При ответе API `204 No Content` обычный режим печатает `deleted strategy 3`,
-а `scanner strategies delete 3 --json` печатает `{"deleted":1}`.
+ID — это UUID; Tab показывает ID вместе с именами стратегий. Команда удаляет стратегию без подтверждения.
+При ответе API `204 No Content` обычный режим печатает `deleted strategy 0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e`,
+а `scanner strategies delete 0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e --json` печатает `{"deleted":1}`.
 Ошибки выводятся в stderr с ненулевым кодом завершения.
 
 ## Очистка неиспользуемых индикаторов

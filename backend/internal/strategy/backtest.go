@@ -10,6 +10,8 @@ import (
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
+
+	"github.com/google/uuid"
 )
 
 // BacktestFee is the fee of each side of a simulated trade, as a fraction of
@@ -220,7 +222,7 @@ const maxBacktests = 2
 // strategy that no longer compiles or reads a coin that is not active
 // through of, an empty symbol, or from after to, market.ErrInstrumentNotFound, and
 // ErrBacktestBusy while maxBacktests others run.
-func (service *Service) Backtest(ctx context.Context, id int64, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
+func (service *Service) Backtest(ctx context.Context, id uuid.UUID, symbol string, from, to time.Time, withChart bool) (Backtest, error) {
 	entries := service.List()
 	index := slices.IndexFunc(entries, func(entry Entry) bool { return entry.ID == id })
 	if index < 0 {

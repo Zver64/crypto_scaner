@@ -10,6 +10,8 @@ import (
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
+
+	"github.com/google/uuid"
 )
 
 // A strategy may read indicators nobody configured: it compiles, trades,
@@ -18,8 +20,8 @@ func TestStrategyReadsIndicatorsThatAreNotConfigured(t *testing.T) {
 	registry := testRegistry(t)
 	indicators := &previewIndicators{registry: registry}
 	store := newBacktestStore(market.IntervalHour, nil)
-	store.strategies = []Strategy{{ID: 1, Name: "Trend", Expression: "h_close > h_ema_3", StopLossExpression: "h_ema_5"}}
-	service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]int64) {})
+	store.strategies = []Strategy{{ID: testID(1), Name: "Trend", Expression: "h_close > h_ema_3", StopLossExpression: "h_ema_5"}}
+	service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +39,7 @@ func TestStrategyReadsIndicatorsThatAreNotConfigured(t *testing.T) {
 	if ids := entry.indicatorIDs(); len(ids) != 0 {
 		t.Fatalf("indicator ids = %v, want none linked", ids)
 	}
-	if _, err := service.Backtest(context.Background(), 1, "BTCUSDT", backtestStart, backtestStart, false); err != nil {
+	if _, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", backtestStart, backtestStart, false); err != nil {
 		t.Fatalf("backtest: %v", err)
 	}
 
@@ -63,7 +65,7 @@ func TestStrategyReadsIndicatorsThatAreNotConfigured(t *testing.T) {
 
 func TestValidateResolvesIndicatorsThatAreNotConfigured(t *testing.T) {
 	registry := testRegistry(t)
-	service, err := NewService(newBacktestStore(market.IntervalHour, nil), &previewIndicators{registry: registry}, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]int64) {})
+	service, err := NewService(newBacktestStore(market.IntervalHour, nil), &previewIndicators{registry: registry}, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
 	}

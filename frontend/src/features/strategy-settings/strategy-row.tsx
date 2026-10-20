@@ -11,6 +11,8 @@ import {
 import { themeToVars } from "@mantine/vanilla-extract";
 
 import type { Strategy } from "@/api/generated/models";
+import { SignalDirectionIcon } from "@/features/strategy-settings/signal-direction-icon";
+import { StrategyId } from "@/features/strategy-settings/strategy-id";
 import {
 	marketCapRangeLabel,
 	strategyBuysLabel,
@@ -51,9 +53,9 @@ export function StrategyRow({
 			<Stack gap={6}>
 				<Group justify="space-between" wrap="nowrap">
 					<Group gap="xs" miw={0} wrap="nowrap">
-						<Text c="dimmed" ff="monospace" size="sm">
-							#{strategy.id}
-						</Text>
+						{strategy.signal ? (
+							<SignalDirectionIcon direction={strategy.direction} />
+						) : null}
 						<Text fw={700} truncate>
 							{strategy.name}
 						</Text>
@@ -97,33 +99,44 @@ export function StrategyRow({
 						</Stack>
 					),
 				)}
-				<Text c="dimmed" size="xs">
-					{strategyBuysLabel(strategy)}
-					{marketCap === undefined ? null : `; market cap ${marketCap}`}
-				</Text>
+				{strategy.signal ? (
+					marketCap === undefined ? null : (
+						<Text c="dimmed" size="xs">
+							Market cap {marketCap}
+						</Text>
+					)
+				) : (
+					<Text c="dimmed" size="xs">
+						{strategyBuysLabel(strategy)}
+						{marketCap === undefined ? null : `; market cap ${marketCap}`}
+					</Text>
+				)}
 				{strategy.message === "" ? null : (
-					<Text c="dimmed" size="xs" style={{ whiteSpace: "pre-wrap" }}>
+					<Text size="xs" style={{ whiteSpace: "pre-wrap" }}>
 						{strategy.message}
 					</Text>
 				)}
-				<Group gap="xs" justify="flex-end">
-					<Button
-						disabled={disabled}
-						onClick={onEdit}
-						size="compact-xs"
-						variant="subtle"
-					>
-						Edit
-					</Button>
-					<Button
-						color="red"
-						disabled={disabled}
-						onClick={onDelete}
-						size="compact-xs"
-						variant="subtle"
-					>
-						Delete
-					</Button>
+				<Group justify="space-between" wrap="nowrap">
+					<StrategyId id={strategy.id} />
+					<Group gap="xs" wrap="nowrap">
+						<Button
+							disabled={disabled}
+							onClick={onEdit}
+							size="compact-xs"
+							variant="subtle"
+						>
+							Edit
+						</Button>
+						<Button
+							color="red"
+							disabled={disabled}
+							onClick={onDelete}
+							size="compact-xs"
+							variant="subtle"
+						>
+							Delete
+						</Button>
+					</Group>
 				</Group>
 			</Stack>
 		</Paper>

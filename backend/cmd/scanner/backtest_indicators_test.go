@@ -26,10 +26,10 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, server := newFakeAPI(t, map[string]string{"GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT": string(body)})
+	_, server := newFakeAPI(t, map[string]string{"GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=BTCUSDT": string(body)})
 	home := writeProfile(t, server.URL)
 	for _, indicators := range []bool{false, true} {
-		args := []string{"backtest", "--strategy", "3", "--symbol", "BTCUSDT"}
+		args := []string{"backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT"}
 		if indicators {
 			args = append(args, "--indicators")
 		}
@@ -63,7 +63,7 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 			}
 		}
 	}
-	got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT", "--json")
+	got := runCLI(t, home, "", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT", "--json")
 	var full apiclient.StrategyBacktest
 	if got.code != 0 || json.Unmarshal([]byte(got.stdout), &full) != nil || full.DurationMs != backtest.DurationMs || full.Signal == nil || len(full.Signal.Occurrences) != len(occurrences) {
 		t.Fatalf("JSON must retain all signals: %+v", got)

@@ -1,5 +1,6 @@
 import { Button, Paper, Stack, Text, Title } from "@mantine/core";
 
+import type { StrategyID } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { EmptyState } from "@/components/empty-state";
 import { SidebarLayout } from "@/components/sidebar-layout";
@@ -21,8 +22,8 @@ interface StrategyBacktestScreenProps {
 	from: string | undefined;
 	onCoinChange(symbols: string[], allCoins: boolean): void;
 	onPeriodChange(from: string | undefined, to: string | undefined): void;
-	onStrategyChange(strategy: number): void;
-	strategy: number | undefined;
+	onStrategyChange(strategy: StrategyID): void;
+	strategy: StrategyID | undefined;
 	symbols: string[];
 	to: string | undefined;
 }

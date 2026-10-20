@@ -21,6 +21,8 @@ import (
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/numeric"
 	"crypto-scanner/internal/scannerindicator"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -71,7 +73,7 @@ func (direction Direction) gross(entry, exit float64) float64 {
 // never sells. A short strategy always has a take profit and a stop loss. A
 // signal has none of them.
 type Strategy struct {
-	ID                   int64
+	ID                   uuid.UUID
 	Name                 string
 	Signal               bool
 	Direction            Direction
@@ -254,7 +256,7 @@ type Store interface {
 	// CreateStrategy stores the strategy, at revision 1, with the indicators
 	// it reads and returns its id. It fails with ErrConflict for a taken name
 	// and with ErrInvalidArgument when an indicator no longer exists.
-	CreateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64) (int64, error)
+	CreateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64) (uuid.UUID, error)
 	// UpdateStrategy replaces the name, rules, coins, trading settings,
 	// message, and indicators and returns the revision; retrade starts a new
 	// revision, and baseline marks the trading states for a fresh start. It
@@ -263,12 +265,12 @@ type Store interface {
 	// SetStrategyEnabled returns the revision and fails with ErrNotFound.
 	// Enabling marks the trading states for a fresh start; disabling
 	// forgets them.
-	SetStrategyEnabled(context.Context, int64, bool) (int64, error)
+	SetStrategyEnabled(context.Context, uuid.UUID, bool) (int64, error)
 	// DisableStrategyAtRevision disables the strategy like
 	// SetStrategyEnabled only while it is enabled at revision and returns
 	// the new revision; otherwise disabled is false and nothing changes.
-	DisableStrategyAtRevision(ctx context.Context, id, revision int64) (next int64, disabled bool, err error)
-	DeleteStrategy(context.Context, int64) error
+	DisableStrategyAtRevision(ctx context.Context, id uuid.UUID, revision int64) (next int64, disabled bool, err error)
+	DeleteStrategy(context.Context, uuid.UUID) error
 	// ListStrategyInstruments returns the active instruments.
 	ListStrategyInstruments(context.Context) ([]Instrument, error)
 	// ListStrategyFavorites returns the symbols of the user's favorites,
@@ -296,7 +298,7 @@ type Service struct {
 	registry *indicator.Registry
 	tracker  Tracker
 	logger   *slog.Logger
-	changed  func(baselines []int64)
+	changed  func(baselines []uuid.UUID)
 	// administratorUserID is the user id, not the Telegram id, of the
 	// administrator, whose favorites signals of CoinsFavorites evaluate.
 	administratorUserID int64
@@ -330,7 +332,7 @@ const trackerSubscriber = "strategies"
 // must start afresh after each change and must not block. administratorUserID
 // is the user id of the administrator, whose favorites signals of
 // CoinsFavorites evaluate.
-func NewService(store Store, indicators Indicators, registry *indicator.Registry, tracker Tracker, logger *slog.Logger, administratorUserID int64, changed func(baselines []int64)) (*Service, error) {
+func NewService(store Store, indicators Indicators, registry *indicator.Registry, tracker Tracker, logger *slog.Logger, administratorUserID int64, changed func(baselines []uuid.UUID)) (*Service, error) {
 	if store == nil || indicators == nil || registry == nil || tracker == nil || logger == nil || changed == nil {
 		return nil, errors.New("strategy store, indicators, registry, tracker, logger, and change listener are required")
 	}
@@ -696,9 +698,9 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 		return Entry{}, err
 	}
 	entry.Revision = 1
-	var baselines []int64
+	var baselines []uuid.UUID
 	if entry.Enabled {
-		baselines = []int64{entry.ID}
+		baselines = []uuid.UUID{entry.ID}
 	}
 	service.replace(append(service.List(), entry), baselines)
 	return entry, nil
@@ -729,9 +731,9 @@ func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error
 		return Entry{}, err
 	}
 	retrade := previous.trades(entry.Strategy)
-	var baselines []int64
+	var baselines []uuid.UUID
 	if entry.Enabled && (retrade || previous.Compiled == nil) {
-		baselines = []int64{item.ID}
+		baselines = []uuid.UUID{item.ID}
 	}
 	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, entry.indicatorIDs(), retrade, len(baselines) > 0)
 	if err != nil {
@@ -745,7 +747,7 @@ func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error
 // SetEnabled turns evaluation on or off. Enabling starts the trading states
 // afresh and fails with ErrInvalidArgument without coins chosen or while a
 // coin is not active.
-func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) (Entry, error) {
+func (service *Service) SetEnabled(ctx context.Context, id uuid.UUID, enabled bool) (Entry, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
@@ -769,9 +771,9 @@ func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) 
 		return Entry{}, err
 	}
 	current[index].Revision = revision
-	var baselines []int64
+	var baselines []uuid.UUID
 	if enabled {
-		baselines = []int64{id}
+		baselines = []uuid.UUID{id}
 	}
 	current[index].Enabled = enabled
 	service.replace(current, baselines)
@@ -781,7 +783,7 @@ func (service *Service) SetEnabled(ctx context.Context, id int64, enabled bool) 
 // DisableAtRevision disables the strategy only while it is enabled at
 // revision, which the writes lock and the store both check, so a strategy
 // changed meanwhile stays as it is. It reports whether it disabled it.
-func (service *Service) DisableAtRevision(ctx context.Context, id, revision int64) (bool, error) {
+func (service *Service) DisableAtRevision(ctx context.Context, id uuid.UUID, revision int64) (bool, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
@@ -799,7 +801,7 @@ func (service *Service) DisableAtRevision(ctx context.Context, id, revision int6
 }
 
 // Delete removes the strategy and its trading states.
-func (service *Service) Delete(ctx context.Context, id int64) error {
+func (service *Service) Delete(ctx context.Context, id uuid.UUID) error {
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
@@ -816,7 +818,7 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 
 // replace must be called with writes held. The listener runs under the
 // lock, so whoever lists a changed strategy finds its baseline requested.
-func (service *Service) replace(entries []Entry, baselines []int64) {
+func (service *Service) replace(entries []Entry, baselines []uuid.UUID) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	for i := range entries {

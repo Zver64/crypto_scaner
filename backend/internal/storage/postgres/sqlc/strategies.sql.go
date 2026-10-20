@@ -8,6 +8,7 @@ package sqlc
 import (
 	"context"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -18,7 +19,7 @@ WHERE id = $1 AND enabled AND baseline_pending AND revision = $2
 `
 
 type CompleteStrategyBaselineParams struct {
-	ID       int64
+	ID       uuid.UUID
 	Revision int64
 }
 
@@ -36,7 +37,7 @@ const deleteAllStrategyStates = `-- name: DeleteAllStrategyStates :exec
 DELETE FROM app.strategy_states WHERE strategy_id = $1
 `
 
-func (q *Queries) DeleteAllStrategyStates(ctx context.Context, strategyID int64) error {
+func (q *Queries) DeleteAllStrategyStates(ctx context.Context, strategyID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteAllStrategyStates, strategyID)
 	return err
 }
@@ -45,7 +46,7 @@ const deleteStrategy = `-- name: DeleteStrategy :execrows
 DELETE FROM app.strategies WHERE id = $1
 `
 
-func (q *Queries) DeleteStrategy(ctx context.Context, id int64) (int64, error) {
+func (q *Queries) DeleteStrategy(ctx context.Context, id uuid.UUID) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteStrategy, id)
 	if err != nil {
 		return 0, err
@@ -57,7 +58,7 @@ const deleteStrategyCoins = `-- name: DeleteStrategyCoins :exec
 DELETE FROM app.strategy_coins WHERE strategy_id = $1
 `
 
-func (q *Queries) DeleteStrategyCoins(ctx context.Context, strategyID int64) error {
+func (q *Queries) DeleteStrategyCoins(ctx context.Context, strategyID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteStrategyCoins, strategyID)
 	return err
 }
@@ -66,18 +67,18 @@ const deleteStrategyIndicators = `-- name: DeleteStrategyIndicators :exec
 DELETE FROM app.strategy_indicators WHERE strategy_id = $1
 `
 
-func (q *Queries) DeleteStrategyIndicators(ctx context.Context, strategyID int64) error {
+func (q *Queries) DeleteStrategyIndicators(ctx context.Context, strategyID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, deleteStrategyIndicators, strategyID)
 	return err
 }
 
 const deleteStrategyStates = `-- name: DeleteStrategyStates :exec
 DELETE FROM app.strategy_states
-WHERE strategy_id = $1::BIGINT AND instrument_id = ANY($2::BIGINT[])
+WHERE strategy_id = $1::UUID AND instrument_id = ANY($2::BIGINT[])
 `
 
 type DeleteStrategyStatesParams struct {
-	StrategyID    int64
+	StrategyID    uuid.UUID
 	InstrumentIds []int64
 }
 
@@ -94,7 +95,7 @@ RETURNING revision
 `
 
 type DisableStrategyAtRevisionParams struct {
-	ID       int64
+	ID       uuid.UUID
 	Revision int64
 }
 
@@ -131,7 +132,7 @@ type InsertStrategyParams struct {
 	Enabled              bool
 }
 
-func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) (int64, error) {
+func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, insertStrategy,
 		arg.Name,
 		arg.Signal,
@@ -148,20 +149,20 @@ func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) 
 		arg.Message,
 		arg.Enabled,
 	)
-	var id int64
+	var id uuid.UUID
 	err := row.Scan(&id)
 	return id, err
 }
 
 const insertStrategyCoins = `-- name: InsertStrategyCoins :exec
 INSERT INTO app.strategy_coins (strategy_id, instrument_id)
-SELECT $1::BIGINT, i.id
+SELECT $1::UUID, i.id
 FROM binance_spot.instruments i
 WHERE i.symbol = ANY($2::TEXT[])
 `
 
 type InsertStrategyCoinsParams struct {
-	StrategyID int64
+	StrategyID uuid.UUID
 	Symbols    []string
 }
 
@@ -172,12 +173,12 @@ func (q *Queries) InsertStrategyCoins(ctx context.Context, arg InsertStrategyCoi
 
 const insertStrategyIndicators = `-- name: InsertStrategyIndicators :exec
 INSERT INTO app.strategy_indicators (strategy_id, indicator_id)
-SELECT $1::BIGINT, indicator_id
+SELECT $1::UUID, indicator_id
 FROM unnest($2::BIGINT[]) AS ids(indicator_id)
 `
 
 type InsertStrategyIndicatorsParams struct {
-	StrategyID   int64
+	StrategyID   uuid.UUID
 	IndicatorIds []int64
 }
 
@@ -188,7 +189,7 @@ func (q *Queries) InsertStrategyIndicators(ctx context.Context, arg InsertStrate
 
 const insertStrategyStates = `-- name: InsertStrategyStates :exec
 INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry)
-SELECT $1::BIGINT, v.instrument_id, v.open_time, v.entry
+SELECT $1::UUID, v.instrument_id, v.open_time, v.entry
 FROM (
     SELECT unnest($2::BIGINT[]) AS instrument_id, unnest($3::TIMESTAMPTZ[]) AS open_time,
            unnest($4::BOOLEAN[]) AS entry
@@ -196,7 +197,7 @@ FROM (
 `
 
 type InsertStrategyStatesParams struct {
-	StrategyID    int64
+	StrategyID    uuid.UUID
 	InstrumentIds []int64
 	OpenTimes     []pgtype.Timestamptz
 	Entries       []bool
@@ -228,7 +229,7 @@ ORDER BY s.id
 `
 
 type ListStrategiesRow struct {
-	ID                   int64
+	ID                   uuid.UUID
 	Name                 string
 	Signal               bool
 	Direction            string
@@ -397,15 +398,28 @@ FROM app.strategy_states
 ORDER BY strategy_id, instrument_id
 `
 
-func (q *Queries) ListStrategyStates(ctx context.Context) ([]AppStrategyState, error) {
+type ListStrategyStatesRow struct {
+	StrategyID   uuid.UUID
+	InstrumentID int64
+	OpenTime     pgtype.Timestamptz
+	Entry        bool
+	Buys         int32
+	Filled       int32
+	Quantity     float64
+	OpenedAt     pgtype.Timestamptz
+	TakeProfit   float64
+	StopLoss     float64
+}
+
+func (q *Queries) ListStrategyStates(ctx context.Context) ([]ListStrategyStatesRow, error) {
 	rows, err := q.db.Query(ctx, listStrategyStates)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []AppStrategyState
+	var items []ListStrategyStatesRow
 	for rows.Next() {
-		var i AppStrategyState
+		var i ListStrategyStatesRow
 		if err := rows.Scan(
 			&i.StrategyID,
 			&i.InstrumentID,
@@ -459,7 +473,7 @@ type SaveStrategyStatesParams struct {
 	OpenedAt      []pgtype.Timestamptz
 	TakeProfits   []float64
 	StopLosses    []float64
-	StrategyID    int64
+	StrategyID    uuid.UUID
 	Revision      int64
 }
 
@@ -506,7 +520,7 @@ RETURNING revision
 `
 
 type SetStrategyEnabledParams struct {
-	ID      int64
+	ID      uuid.UUID
 	Enabled bool
 }
 
@@ -544,7 +558,7 @@ type UpdateStrategyParams struct {
 	Message              string
 	Baseline             bool
 	Retrade              bool
-	ID                   int64
+	ID                   uuid.UUID
 }
 
 // A change of how the strategy trades or of the coins it evaluates starts a

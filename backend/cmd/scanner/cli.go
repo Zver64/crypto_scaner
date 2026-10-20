@@ -176,7 +176,7 @@ func (c *cli) completeKind(command *cobra.Command, keep func(apiclient.Strategy)
 	var completions []cobra.Completion
 	for _, strategy := range strategies.JSON200.Items {
 		if keep(strategy) {
-			completions = append(completions, cobra.CompletionWithDesc(strconv.FormatInt(strategy.Id, 10), strategy.Name))
+			completions = append(completions, cobra.CompletionWithDesc(strategy.Id.String(), strategy.Name))
 		}
 	}
 	return completions, cobra.ShellCompDirectiveNoFileComp

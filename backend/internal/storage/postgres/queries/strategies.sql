@@ -42,7 +42,7 @@ DELETE FROM app.strategy_indicators WHERE strategy_id = $1;
 
 -- name: InsertStrategyIndicators :exec
 INSERT INTO app.strategy_indicators (strategy_id, indicator_id)
-SELECT @strategy_id::BIGINT, indicator_id
+SELECT @strategy_id::UUID, indicator_id
 FROM unnest(@indicator_ids::BIGINT[]) AS ids(indicator_id);
 
 -- name: SetStrategyEnabled :one
@@ -78,7 +78,7 @@ WHERE id = @id AND enabled AND baseline_pending AND revision = @revision;
 -- name: InsertStrategyStates :exec
 -- Inserts the states of a baseline: no trades, only the entry values.
 INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry)
-SELECT @strategy_id::BIGINT, v.instrument_id, v.open_time, v.entry
+SELECT @strategy_id::UUID, v.instrument_id, v.open_time, v.entry
 FROM (
     SELECT unnest(@instrument_ids::BIGINT[]) AS instrument_id, unnest(@open_times::TIMESTAMPTZ[]) AS open_time,
            unnest(@entries::BOOLEAN[]) AS entry
@@ -109,7 +109,7 @@ RETURNING instrument_id;
 
 -- name: DeleteStrategyStates :exec
 DELETE FROM app.strategy_states
-WHERE strategy_id = @strategy_id::BIGINT AND instrument_id = ANY(@instrument_ids::BIGINT[]);
+WHERE strategy_id = @strategy_id::UUID AND instrument_id = ANY(@instrument_ids::BIGINT[]);
 
 -- name: ListStrategyInstruments :many
 -- Strategies evaluate active coins, with their market caps when known;
@@ -133,7 +133,7 @@ DELETE FROM app.strategy_coins WHERE strategy_id = $1;
 
 -- name: InsertStrategyCoins :exec
 INSERT INTO app.strategy_coins (strategy_id, instrument_id)
-SELECT @strategy_id::BIGINT, i.id
+SELECT @strategy_id::UUID, i.id
 FROM binance_spot.instruments i
 WHERE i.symbol = ANY(@symbols::TEXT[]);
 

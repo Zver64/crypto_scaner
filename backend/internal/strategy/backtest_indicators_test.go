@@ -14,6 +14,8 @@ import (
 	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
+
+	"github.com/google/uuid"
 )
 
 func snapshotTestService(t *testing.T, store *backtestStore) *Service {
@@ -27,7 +29,7 @@ func snapshotTestService(t *testing.T, store *backtestStore) *Service {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := NewService(store, source, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]int64) {})
+	service, err := NewService(store, source, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,13 +49,13 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.candles[market.IntervalDay] = map[int64][]market.Candle{1: daily}
-	item := Strategy{ID: 1, Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6,
+	item := Strategy{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6,
 		Expression: `h_close > 101 && prev(h_bbands_20_upperband) > 0 && percentile(h_rsi, 3, 50) > 0 && d_ema_3 > 0 && h_pivot_low_bars > 0 && of("BTCUSDT", h_ema_7) > 0`}
 	store.strategies = []Strategy{item}
 	service := snapshotTestService(t, store)
 	// A bounded run must not return the latest stored tail or future indicators.
 	to := hourly[2800].OpenTime
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", time.Time{}, to, true)
+	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, to, true)
 	if err != nil {
 		t.Fatal(err)
 	}

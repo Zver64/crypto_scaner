@@ -17,6 +17,7 @@ require (
 	github.com/go-telegram/bot v1.25.0
 	github.com/gofrs/flock v0.13.1
 	github.com/golang-migrate/migrate/v4 v4.18.3
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/jedib0t/go-pretty/v6 v6.8.3
@@ -45,7 +46,6 @@ require (
 	github.com/go-openapi/jsonpointer v1.0.0 // indirect
 	github.com/go-sql-driver/mysql v1.9.3 // indirect
 	github.com/google/cel-go v0.28.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/go-multierror v1.1.1 // indirect

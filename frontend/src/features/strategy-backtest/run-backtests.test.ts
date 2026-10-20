@@ -40,7 +40,7 @@ const result: StrategyBacktest = {
 	},
 };
 const parameters = {
-	strategy: 3,
+	strategy: "00000000-0000-7000-8000-000000000003",
 	symbols: ["BTCUSDT", "ETHUSDT", "ARBUSDT"],
 	from: undefined,
 	to: undefined,

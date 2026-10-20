@@ -5,6 +5,8 @@ import (
 	"time"
 
 	"crypto-scanner/internal/closedindicator"
+
+	"github.com/google/uuid"
 )
 
 // snapshot is the tracked values of one evaluation round.
@@ -163,14 +165,14 @@ type reads struct {
 	subscriptions []closedindicator.Subscription
 	positions     map[pair]int
 	// keys maps the variables of each strategy to the keys of their targets.
-	keys map[int64]map[string]string
+	keys map[uuid.UUID]map[string]string
 }
 
 // readsOf subscribes every read of the evaluated instrument on each
 // instrument evaluated lists among active for its strategy, and every read
 // through of only on the instrument it names among active.
 func readsOf(strategies []Entry, evaluated func(Entry, []Instrument) []Instrument, active []Instrument) reads {
-	result := reads{positions: map[pair]int{}, keys: make(map[int64]map[string]string, len(strategies))}
+	result := reads{positions: map[pair]int{}, keys: make(map[uuid.UUID]map[string]string, len(strategies))}
 	symbols := bySymbol(active)
 	subscribe := func(instrumentID int64, read Read, key string) {
 		at := pair{instrumentID, key}

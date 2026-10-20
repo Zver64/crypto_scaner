@@ -4498,7 +4498,7 @@ export type updateStrategyResponseError = (updateStrategyResponse400 | updateStr
   headers: Headers;
 };
 
-export const getUpdateStrategyUrl = (strategyId: number,) => {
+export const getUpdateStrategyUrl = (strategyId: string,) => {
 
 
 
@@ -4510,7 +4510,7 @@ export const getUpdateStrategyUrl = (strategyId: number,) => {
  * A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
  * @summary Change a strategy
  */
-export const updateStrategy = async (strategyId: number,
+export const updateStrategy = async (strategyId: string,
     strategyUpdate: StrategyUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateStrategyResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
@@ -4572,7 +4572,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type UpdateStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof updateStrategy>>>
     export type UpdateStrategyMutationBody = StrategyUpdate
     export type UpdateStrategyMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | StrategyConflictResponse | InternalErrorResponse>
-    export type UpdateStrategyMutationVariables = {strategyId: number;data: StrategyUpdate}
+    export type UpdateStrategyMutationVariables = {strategyId: string;data: StrategyUpdate}
 
     /**
  * @summary Change a strategy
@@ -4625,7 +4625,7 @@ export type setStrategyEnabledResponseError = (setStrategyEnabledResponse400 | s
   headers: Headers;
 };
 
-export const getSetStrategyEnabledUrl = (strategyId: number,) => {
+export const getSetStrategyEnabledUrl = (strategyId: string,) => {
 
 
 
@@ -4637,7 +4637,7 @@ export const getSetStrategyEnabledUrl = (strategyId: number,) => {
  * Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
  * @summary Turn a strategy on or off
  */
-export const setStrategyEnabled = async (strategyId: number,
+export const setStrategyEnabled = async (strategyId: string,
     strategyEnabled: StrategyEnabled, options?: Parameters<typeof apiFetch>[1]): Promise<setStrategyEnabledResponseSuccess> => {
 
     const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
@@ -4699,7 +4699,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type SetStrategyEnabledMutationResult = NonNullable<Awaited<ReturnType<typeof setStrategyEnabled>>>
     export type SetStrategyEnabledMutationBody = StrategyEnabled
     export type SetStrategyEnabledMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>
-    export type SetStrategyEnabledMutationVariables = {strategyId: number;data: StrategyEnabled}
+    export type SetStrategyEnabledMutationVariables = {strategyId: string;data: StrategyEnabled}
 
     /**
  * @summary Turn a strategy on or off
@@ -4747,7 +4747,7 @@ export type deleteStrategyResponseError = (deleteStrategyResponse401 | deleteStr
   headers: Headers;
 };
 
-export const getDeleteStrategyUrl = (strategyId: number,) => {
+export const getDeleteStrategyUrl = (strategyId: string,) => {
 
 
 
@@ -4758,7 +4758,7 @@ export const getDeleteStrategyUrl = (strategyId: number,) => {
 /**
  * @summary Remove a strategy
  */
-export const deleteStrategy = async (strategyId: number, options?: Parameters<typeof apiFetch>[1]): Promise<deleteStrategyResponseSuccess> => {
+export const deleteStrategy = async (strategyId: string, options?: Parameters<typeof apiFetch>[1]): Promise<deleteStrategyResponseSuccess> => {
 
   return apiFetch<deleteStrategyResponseSuccess>(getDeleteStrategyUrl(strategyId),
   {
@@ -4805,7 +4805,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type DeleteStrategyMutationResult = NonNullable<Awaited<ReturnType<typeof deleteStrategy>>>
 
     export type DeleteStrategyMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | StrategyNotFoundResponse | InternalErrorResponse>
-    export type DeleteStrategyMutationVariables = {strategyId: number}
+    export type DeleteStrategyMutationVariables = {strategyId: string}
 
     /**
  * @summary Remove a strategy
@@ -4868,7 +4868,7 @@ export type backtestStrategyResponseError = (backtestStrategyResponse400 | backt
   headers: Headers;
 };
 
-export const getBacktestStrategyUrl = (strategyId: number,
+export const getBacktestStrategyUrl = (strategyId: string,
     params: BacktestStrategyParams,) => {
   const normalizedParams = new URLSearchParams();
 
@@ -4916,7 +4916,7 @@ export const getBacktestStrategyUrl = (strategyId: number,
  * them.
  * @summary Backtest a saved strategy on one coin
  */
-export const backtestStrategy = async (strategyId: number,
+export const backtestStrategy = async (strategyId: string,
     params: BacktestStrategyParams, options?: Parameters<typeof apiFetch>[1]): Promise<backtestStrategyResponseSuccess> => {
 
   return apiFetch<backtestStrategyResponseSuccess>(getBacktestStrategyUrl(strategyId,params),
@@ -4932,7 +4932,7 @@ export const backtestStrategy = async (strategyId: number,
 
 
 
-export const getBacktestStrategyQueryKey = (strategyId: number,
+export const getBacktestStrategyQueryKey = (strategyId: string,
     params?: BacktestStrategyParams,) => {
     return [
     `/api/v1/admin/strategies/${strategyId}/backtest`, ...(params ? [params] : [])
@@ -4940,7 +4940,7 @@ export const getBacktestStrategyQueryKey = (strategyId: number,
     }
 
 
-export const getBacktestStrategyQueryOptions = <TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(strategyId: number,
+export const getBacktestStrategyQueryOptions = <TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(strategyId: string,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
@@ -4964,7 +4964,7 @@ export type BacktestStrategyQueryError = ErrorType<BadRequestResponse | Unauthen
 
 
 export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
- strategyId: number,
+ strategyId: string,
     params: BacktestStrategyParams, options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
           Awaited<ReturnType<typeof backtestStrategy>>,
@@ -4975,7 +4975,7 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
- strategyId: number,
+ strategyId: string,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
           Awaited<ReturnType<typeof backtestStrategy>>,
@@ -4986,7 +4986,7 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
- strategyId: number,
+ strategyId: string,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
@@ -4995,7 +4995,7 @@ export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestSt
  */
 
 export function useBacktestStrategy<TData = Awaited<ReturnType<typeof backtestStrategy>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ErrorResponse | BacktestBusyResponse | InternalErrorResponse | BacktestTooHeavyResponse>>(
- strategyId: number,
+ strategyId: string,
     params: BacktestStrategyParams, options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof backtestStrategy>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {

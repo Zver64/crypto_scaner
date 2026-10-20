@@ -10,6 +10,8 @@ import (
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/strategy"
+
+	"github.com/google/uuid"
 )
 
 // Strategies manages the administrator's strategies.
@@ -21,9 +23,9 @@ type Strategies interface {
 	Unconfigured(entry strategy.Entry) []scannerindicator.Entry
 	Create(context.Context, strategy.Strategy) (strategy.Entry, error)
 	Update(context.Context, strategy.Strategy) (strategy.Entry, error)
-	SetEnabled(ctx context.Context, id int64, enabled bool) (strategy.Entry, error)
-	Delete(context.Context, int64) error
-	Backtest(ctx context.Context, id int64, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error)
+	SetEnabled(ctx context.Context, id uuid.UUID, enabled bool) (strategy.Entry, error)
+	Delete(context.Context, uuid.UUID) error
+	Backtest(ctx context.Context, id uuid.UUID, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error)
 	BacktestDraft(ctx context.Context, item strategy.Strategy, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error)
 }
 

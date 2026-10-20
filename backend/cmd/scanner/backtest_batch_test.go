@@ -20,7 +20,7 @@ import (
 
 func TestMultiCoinBacktestsSavedAndDrafts(t *testing.T) {
 	for _, args := range [][]string{
-		{"backtest", "--strategy", "3"},
+		{"backtest", "--strategy", "00000000-0000-7000-8000-000000000003"},
 		{"strategies", "backtest", "--expr", "h_close > 1"},
 		{"signals", "backtest", "--expr", "h_close > 1", "--direction", "long"},
 	} {
@@ -107,15 +107,15 @@ func TestMultiCoinPartialAndGlobalFailures(t *testing.T) {
 		{500, "internal_error", false},
 	} {
 		t.Run(test.code, func(t *testing.T) {
-			first := "GET /api/v1/admin/strategies/3/backtest?symbol=BTCUSDT"
-			second := "GET /api/v1/admin/strategies/3/backtest?symbol=ETHUSDT"
+			first := "GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=BTCUSDT"
+			second := "GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=ETHUSDT"
 			api, server := newFakeAPI(t, map[string]string{
 				first:  fmt.Sprintf(`{"error":{"code":"%s","message":"Failed","details":{"reason":"test"}},"request_id":"batch-request"}`, test.code),
 				second: strings.ReplaceAll(backtestResponse, "BTCUSDT", "ETHUSDT"),
 			})
 			api.statuses = map[string]int{first: test.status}
 			home := writeProfile(t, server.URL)
-			got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT,ETHUSDT", "--json")
+			got := runCLI(t, home, "", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT,ETHUSDT", "--json")
 			var output struct {
 				Status string
 				Items  []backtestCoinResult
@@ -158,7 +158,7 @@ func TestMultiCoinTruncatedResponseStopsQueueAndRetainsResults(t *testing.T) {
 	}))
 	defer server.Close()
 	home := writeProfile(t, server.URL)
-	got := runCLI(t, home, "", "backtest", "--strategy", "3", "--symbol", "BTCUSDT,ETHUSDT,ARBUSDT", "--json")
+	got := runCLI(t, home, "", "backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT,ETHUSDT,ARBUSDT", "--json")
 	var output struct {
 		Status string
 		Items  []backtestCoinResult

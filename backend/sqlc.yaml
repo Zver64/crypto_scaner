@@ -12,3 +12,7 @@ sql:
         overrides:
           - db_type: pg_catalog.numeric
             go_type: string
+          - db_type: uuid
+            go_type:
+              import: github.com/google/uuid
+              type: UUID

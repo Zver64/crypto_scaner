@@ -2,6 +2,7 @@ import type {
 	BacktestSignalStats,
 	BacktestTradeStats,
 	StrategyBacktest,
+	StrategyID,
 } from "@/api/generated/models";
 
 // One average of the strategy's closed trades.
@@ -48,7 +49,7 @@ export interface TradingSummaryRow {
 }
 
 export interface BacktestRunParameters {
-	strategy: number;
+	strategy: StrategyID;
 	symbols: string[];
 	from: string | undefined;
 	to: string | undefined;

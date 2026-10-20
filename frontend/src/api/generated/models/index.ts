@@ -154,6 +154,7 @@ export * from './strategyCoinSource.ts';
 export * from './strategyConflictResponse.ts';
 export * from './strategyEnabled.ts';
 export * from './strategyExitExpression.ts';
+export * from './strategyID.ts';
 export * from './strategyInput.ts';
 export * from './strategyList.ts';
 export * from './strategyMarketCapBound.ts';

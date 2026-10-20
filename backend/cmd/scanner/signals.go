@@ -9,6 +9,7 @@ import (
 
 	"crypto-scanner/internal/apiclient"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -42,7 +43,7 @@ func (k kind) other() kind {
 }
 
 // saved returns the saved strategy id of k, refusing one of the other group.
-func (c *cli) saved(command *cobra.Command, client *apiclient.ClientWithResponses, k kind, id int64) (*apiclient.Strategy, error) {
+func (c *cli) saved(command *cobra.Command, client *apiclient.ClientWithResponses, k kind, id uuid.UUID) (*apiclient.Strategy, error) {
 	listed, err := client.ListStrategiesWithResponse(command.Context())
 	if err == nil {
 		err = c.check(listed, listed.JSON200 != nil)
@@ -52,25 +53,25 @@ func (c *cli) saved(command *cobra.Command, client *apiclient.ClientWithResponse
 	}
 	index := slices.IndexFunc(listed.JSON200.Items, func(strategy apiclient.Strategy) bool { return strategy.Id == id })
 	if index < 0 {
-		return nil, failure("strategy_not_found", "no %s %d; see scanner %s", k.noun, id, k.plural)
+		return nil, failure("strategy_not_found", "no %s %s; see scanner %s", k.noun, id, k.plural)
 	}
 	current := listed.JSON200.Items[index]
 	if !k.holds(current) {
 		other := k.other()
-		return nil, failure("not_a_"+k.noun, "%d is a %s; use scanner %s", id, other.noun, other.plural)
+		return nil, failure("not_a_"+k.noun, "%s is a %s; use scanner %s", id, other.noun, other.plural)
 	}
 	return &current, nil
 }
 
 // editable returns the saved strategy id of k that is disabled: enabled ones
 // alert, and only the Mini App edits them.
-func (c *cli) editable(command *cobra.Command, client *apiclient.ClientWithResponses, k kind, id int64) (*apiclient.Strategy, error) {
+func (c *cli) editable(command *cobra.Command, client *apiclient.ClientWithResponses, k kind, id uuid.UUID) (*apiclient.Strategy, error) {
 	current, err := c.saved(command, client, k, id)
 	if err != nil {
 		return nil, err
 	}
 	if current.Enabled {
-		return nil, failure("strategy_enabled", "%s %d is enabled; edit it in the Mini App", k.noun, id)
+		return nil, failure("strategy_enabled", "%s %s is enabled; edit it in the Mini App", k.noun, id)
 	}
 	return current, nil
 }

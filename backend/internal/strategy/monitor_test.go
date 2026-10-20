@@ -14,6 +14,8 @@ import (
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/telegramhtml"
+
+	"github.com/google/uuid"
 )
 
 // Events of one round share a title per kind, followed by the message and a
@@ -45,12 +47,12 @@ func TestAlertTextGroupsEventsByKind(t *testing.T) {
 // stays enabled.
 func TestDisableAtRevisionKeepsAChangedStrategy(t *testing.T) {
 	store := &disablingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
-	service := newBacktestService(t, store.backtestStore, Strategy{ID: 1, Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Enabled: true, Revision: 3})
+	service := newBacktestService(t, store.backtestStore, Strategy{ID: testID(1), Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Enabled: true, Revision: 3})
 	service.store = store
-	if disabled, err := service.DisableAtRevision(context.Background(), 1, 2); err != nil || disabled || store.calls != 0 || !service.List()[0].Enabled {
+	if disabled, err := service.DisableAtRevision(context.Background(), testID(1), 2); err != nil || disabled || store.calls != 0 || !service.List()[0].Enabled {
 		t.Fatalf("stale revision: disabled %v, error %v, store calls %d", disabled, err, store.calls)
 	}
-	if disabled, err := service.DisableAtRevision(context.Background(), 1, 3); err != nil || !disabled || store.calls != 1 || service.List()[0].Enabled || service.List()[0].Revision != 4 {
+	if disabled, err := service.DisableAtRevision(context.Background(), testID(1), 3); err != nil || !disabled || store.calls != 1 || service.List()[0].Enabled || service.List()[0].Revision != 4 {
 		t.Fatalf("current revision: disabled %v, error %v, entry %+v", disabled, err, service.List()[0])
 	}
 }
@@ -60,7 +62,7 @@ type disablingStore struct {
 	calls int
 }
 
-func (store *disablingStore) DisableStrategyAtRevision(_ context.Context, _, revision int64) (int64, bool, error) {
+func (store *disablingStore) DisableStrategyAtRevision(_ context.Context, _ uuid.UUID, revision int64) (int64, bool, error) {
 	store.calls++
 	return revision + 1, true, nil
 }
@@ -69,8 +71,8 @@ func (store *disablingStore) DisableStrategyAtRevision(_ context.Context, _, rev
 // coins every active one.
 func TestReadsOfSubscribesTheCoinsOfEachStrategy(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil),
-		Strategy{ID: 1, Name: "Hourly", Expression: "h_close > 1", Coins: []string{"ETHUSDT", "LUNAUSDT"}},
-		Strategy{ID: 2, Name: "Daily", Signal: true, Expression: "d_close > 1", CoinSource: CoinsAll},
+		Strategy{ID: testID(1), Name: "Hourly", Expression: "h_close > 1", Coins: []string{"ETHUSDT", "LUNAUSDT"}},
+		Strategy{ID: testID(2), Name: "Daily", Signal: true, Expression: "d_close > 1", CoinSource: CoinsAll},
 	)
 	active := []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"}}
 	subscribed := map[market.CandleInterval][]int64{}
@@ -86,9 +88,9 @@ func TestReadsOfSubscribesTheCoinsOfEachStrategy(t *testing.T) {
 // its trades, and a coin that is not active rejects the change.
 func TestUpdateStartsAfreshOnlyWhenTheCoinsChange(t *testing.T) {
 	store := &updatingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
-	var baselines []int64
-	service := newBacktestService(t, store.backtestStore, Strategy{ID: 1, Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Coins: []string{"ETHUSDT"}, CoinSource: CoinsSelected, Enabled: true})
-	service.store, service.changed = store, func(ids []int64) { baselines = ids }
+	var baselines []uuid.UUID
+	service := newBacktestService(t, store.backtestStore, Strategy{ID: testID(1), Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Coins: []string{"ETHUSDT"}, CoinSource: CoinsSelected, Enabled: true})
+	service.store, service.changed = store, func(ids []uuid.UUID) { baselines = ids }
 	service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
 	for _, test := range []struct {
 		coins   []string
@@ -124,14 +126,14 @@ func (store *updatingStore) UpdateStrategy(_ context.Context, _ Strategy, _ []in
 // disables the strategy and tells the administrator.
 func TestMonitorHaltsStrategiesOfInactiveCoins(t *testing.T) {
 	for _, item := range []Strategy{
-		{ID: 1, Name: "Chosen", Expression: "h_close > 5", Coins: []string{"BTCUSDT", "LUNAUSDT"}, Enabled: true, Revision: 3},
-		{ID: 1, Name: "Read", Expression: `h_close > 5 && of("LUNAUSDT", h_close) > 1`, Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 3},
+		{ID: testID(1), Name: "Chosen", Expression: "h_close > 5", Coins: []string{"BTCUSDT", "LUNAUSDT"}, Enabled: true, Revision: 3},
+		{ID: testID(1), Name: "Read", Expression: `h_close > 5 && of("LUNAUSDT", h_close) > 1`, Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 3},
 	} {
 		disabling := &disablingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
 		service := newBacktestService(t, disabling.backtestStore, item)
 		service.store = disabling
 		monitor := NewMonitor(monitorStore{disabling.backtestStore}, noValues{}, service, nil, 7, slog.New(slog.DiscardHandler))
-		monitor.evaluate(context.Background(), map[int64]map[int64]TradeState{})
+		monitor.evaluate(context.Background(), map[uuid.UUID]map[int64]TradeState{})
 		if disabling.calls != 1 || service.List()[0].Enabled {
 			t.Fatalf("%s: disable calls %d, entry %+v", item.Name, disabling.calls, service.List()[0])
 		}
@@ -143,7 +145,7 @@ func TestMonitorHaltsStrategiesOfInactiveCoins(t *testing.T) {
 
 type monitorStore struct{ *backtestStore }
 
-func (monitorStore) ListStrategyStates(context.Context) (map[int64]map[int64]TradeState, error) {
+func (monitorStore) ListStrategyStates(context.Context) (map[uuid.UUID]map[int64]TradeState, error) {
 	return nil, nil
 }
 
@@ -151,15 +153,15 @@ func (monitorStore) ListStrategyRecipients(context.Context, int64) ([]int64, err
 	return []int64{7}, nil
 }
 
-func (monitorStore) ReplaceStrategyStates(context.Context, int64, int64, map[int64]TradeState) (bool, error) {
+func (monitorStore) ReplaceStrategyStates(context.Context, uuid.UUID, int64, map[int64]TradeState) (bool, error) {
 	panic("unexpected baseline")
 }
 
-func (monitorStore) SaveStrategyStates(context.Context, int64, int64, map[int64]TradeState) ([]int64, error) {
+func (monitorStore) SaveStrategyStates(context.Context, uuid.UUID, int64, map[int64]TradeState) ([]int64, error) {
 	panic("unexpected states")
 }
 
-func (monitorStore) DeleteStrategyStates(context.Context, int64, []int64) error { return nil }
+func (monitorStore) DeleteStrategyStates(context.Context, uuid.UUID, []int64) error { return nil }
 
 type noValues struct{}
 
@@ -174,7 +176,7 @@ func (noValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closed
 func TestMonitorStartsCoinsNewToTheFavoritesSilently(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, nil)
 	store.favorites = []string{"BTCUSDT"}
-	service := newBacktestService(t, store, Strategy{ID: 1, Name: "Watch", Signal: true, Direction: DirectionLong, Expression: "h_close > 1", CoinSource: CoinsFavorites, Enabled: true, Revision: 1})
+	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Watch", Signal: true, Direction: DirectionLong, Expression: "h_close > 1", CoinSource: CoinsFavorites, Enabled: true, Revision: 1})
 	for _, test := range []struct {
 		states map[int64]TradeState
 		alert  bool
@@ -182,7 +184,7 @@ func TestMonitorStartsCoinsNewToTheFavoritesSilently(t *testing.T) {
 		saving := &savingStore{monitorStore: monitorStore{store}}
 		monitor := NewMonitor(saving, closingValues{}, service, nil, 7, slog.New(slog.DiscardHandler))
 		monitor.full = true
-		monitor.evaluate(context.Background(), map[int64]map[int64]TradeState{1: test.states})
+		monitor.evaluate(context.Background(), map[uuid.UUID]map[int64]TradeState{testID(1): test.states})
 		if !reflect.DeepEqual(saving.saved, []int64{1}) || (len(monitor.sends) > 0) != test.alert {
 			t.Fatalf("states %v: saved %v, %d alerts", test.states, saving.saved, len(monitor.sends))
 		}
@@ -194,7 +196,7 @@ type savingStore struct {
 	saved []int64
 }
 
-func (store *savingStore) SaveStrategyStates(_ context.Context, _, _ int64, states map[int64]TradeState) ([]int64, error) {
+func (store *savingStore) SaveStrategyStates(_ context.Context, _ uuid.UUID, _ int64, states map[int64]TradeState) ([]int64, error) {
 	for id := range states {
 		store.saved = append(store.saved, id)
 	}
@@ -220,7 +222,7 @@ func (closingValues) Snapshot(subscriptions []closedindicator.Subscription) ([]c
 // A failed round is retried after a delay instead of at once.
 func TestMonitorRetriesAFailedRoundLater(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: 1, Name: "Hold", Expression: "h_close > 5", Coins: []string{"BTCUSDT"}, Enabled: true})
+		service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: testID(1), Name: "Hold", Expression: "h_close > 5", Coins: []string{"BTCUSDT"}, Enabled: true})
 		store := &failingStore{monitorStore: monitorStore{newBacktestStore(market.IntervalHour, nil)}}
 		monitor := NewMonitor(store, noValues{}, service, nil, 7, slog.New(slog.DiscardHandler))
 		ctx, cancel := context.WithCancel(context.Background())
@@ -263,14 +265,14 @@ func (store *failingStore) ListStrategyInstruments(context.Context) ([]Instrumen
 func TestServiceSubscribesTheTrackerToWhatItsStrategiesRead(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, nil)
 	store.strategies = []Strategy{
-		{ID: 1, Name: "Hourly", Expression: "h_close > 1", Coins: []string{"BTCUSDT"}, Enabled: true},
-		{ID: 2, Name: "Daily", Signal: true, Expression: "d_close > 1", CoinSource: CoinsAll, Enabled: true},
-		{ID: 3, Name: "Off", Expression: "w_close > 1", Coins: []string{"BTCUSDT"}},
-		{ID: 4, Name: "Weekly", Signal: true, Expression: "w_close > 1", CoinSource: CoinsFavorites, Enabled: true},
+		{ID: testID(1), Name: "Hourly", Expression: "h_close > 1", Coins: []string{"BTCUSDT"}, Enabled: true},
+		{ID: testID(2), Name: "Daily", Signal: true, Expression: "d_close > 1", CoinSource: CoinsAll, Enabled: true},
+		{ID: testID(3), Name: "Off", Expression: "w_close > 1", Coins: []string{"BTCUSDT"}},
+		{ID: testID(4), Name: "Weekly", Signal: true, Expression: "w_close > 1", CoinSource: CoinsFavorites, Enabled: true},
 	}
 	store.favorites = []string{"ETHUSDT"}
 	tracker := &recordingTracker{}
-	service, err := NewService(store, testIndicators{}, testRegistry(t), tracker, slog.New(slog.DiscardHandler), 0, func([]int64) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), tracker, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +302,7 @@ func TestServiceSubscribesTheTrackerToWhatItsStrategiesRead(t *testing.T) {
 		t.Fatalf("after a favorites change = %v, want %v", got, want)
 	}
 	service.store = &disablingStore{backtestStore: store}
-	if _, err := service.DisableAtRevision(context.Background(), 2, 0); err != nil {
+	if _, err := service.DisableAtRevision(context.Background(), testID(2), 0); err != nil {
 		t.Fatal(err)
 	}
 	if got := tracker.subscribed(); !reflect.DeepEqual(got, map[market.CandleInterval][]int64{market.IntervalHour: {1}, market.IntervalWeek: {1}}) {

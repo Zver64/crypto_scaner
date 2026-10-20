@@ -64,6 +64,7 @@ import type {
 } from "@/features/strategy-settings/types";
 import { describeApiError } from "@/utils/api-error";
 import { formatMarketCapUsd, usdPerMillion } from "@/utils/market-cap";
+import { shortId } from "@/utils/short-id";
 
 export function isRangeOperator(operator: string): boolean {
 	return operator === "between" || operator === "notBetween";
@@ -671,7 +672,9 @@ export function strategyBuysLabel(
 // The title of the form editing draft.
 export function strategyFormTitle(draft: StrategyDraft): string {
 	const noun = kindNouns[strategyKind(draft)].one;
-	return draft.id === undefined ? `New ${noun}` : `Edit ${noun} #${draft.id}`;
+	return draft.id === undefined
+		? `New ${noun}`
+		: `Edit ${noun} #${shortId(draft.id)}`;
 }
 
 // The kind of a strategy or its draft.

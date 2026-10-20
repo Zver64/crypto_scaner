@@ -23,6 +23,7 @@ import type { SignalWindow } from './signalWindow.ts';
 import type { StrategyCoins } from './strategyCoins.ts';
 import type { StrategyCoinSource } from './strategyCoinSource.ts';
 import type { StrategyExitExpression } from './strategyExitExpression.ts';
+import type { StrategyID } from './strategyID.ts';
 import type { StrategyMarketCapBound } from './strategyMarketCapBound.ts';
 import type { StrategyMessage } from './strategyMessage.ts';
 import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
@@ -31,7 +32,7 @@ import type { StrategyStopLossExpression } from './strategyStopLossExpression.ts
 import type { StrategyTakeProfitExpression } from './strategyTakeProfitExpression.ts';
 
 export interface Strategy {
-  id: number;
+  id: StrategyID;
   name: string;
   signal: StrategySignal;
   direction: Direction;

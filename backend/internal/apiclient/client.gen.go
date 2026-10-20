@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 // Defines values for APIErrorCode.
@@ -1387,7 +1388,9 @@ type Strategy struct {
 
 	// Expression Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
 	Expression string `json:"expression"`
-	Id         int64  `json:"id"`
+
+	// Id UUIDv7 of a strategy or signal.
+	Id StrategyID `json:"id"`
 
 	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
 	// caps of the coins the enabled signal announces; null leaves that side
@@ -1563,6 +1566,9 @@ type StrategyEnabled struct {
 // without an exit rule. A strategy without an exit rule, take profit,
 // or stop loss never sells and buys at every entry signal.
 type StrategyExitExpression = string
+
+// StrategyID UUIDv7 of a strategy or signal.
+type StrategyID = openapi_types.UUID
 
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
@@ -1906,9 +1912,6 @@ type RequestID = string
 
 // ScannerIndicatorID defines model for ScannerIndicatorID.
 type ScannerIndicatorID = int64
-
-// StrategyID defines model for StrategyID.
-type StrategyID = int64
 
 // Symbol defines model for Symbol.
 type Symbol = string
@@ -4041,7 +4044,7 @@ func NewDeleteStrategyRequest(server string, strategyId StrategyID) (*http.Reque
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
 	if err != nil {
 		return nil, err
 	}
@@ -4086,7 +4089,7 @@ func NewSetStrategyEnabledRequestWithBody(server string, strategyId StrategyID, 
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
 	if err != nil {
 		return nil, err
 	}
@@ -4133,7 +4136,7 @@ func NewUpdateStrategyRequestWithBody(server string, strategyId StrategyID, cont
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
 	if err != nil {
 		return nil, err
 	}
@@ -4169,7 +4172,7 @@ func NewBacktestStrategyRequest(server string, strategyId StrategyID, params *Ba
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "strategy_id", strategyId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
 	if err != nil {
 		return nil, err
 	}

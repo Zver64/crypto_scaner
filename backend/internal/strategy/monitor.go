@@ -11,6 +11,8 @@ import (
 
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/platform/backoff"
+
+	"github.com/google/uuid"
 )
 
 const (
@@ -34,16 +36,16 @@ type MonitorStore interface {
 	ListStrategyInstruments(context.Context) ([]Instrument, error)
 	// ListStrategyStates maps strategy ids to the trading states of their
 	// instruments.
-	ListStrategyStates(context.Context) (map[int64]map[int64]TradeState, error)
+	ListStrategyStates(context.Context) (map[uuid.UUID]map[int64]TradeState, error)
 	// ReplaceStrategyStates stores the baseline states of revision, which
 	// hold no trades, and completes its pending baseline. It reports false,
 	// changing nothing, when that revision no longer awaits a baseline.
-	ReplaceStrategyStates(ctx context.Context, strategyID, revision int64, states map[int64]TradeState) (bool, error)
+	ReplaceStrategyStates(ctx context.Context, strategyID uuid.UUID, revision int64, states map[int64]TradeState) (bool, error)
 	// SaveStrategyStates stores states of later candles than the stored ones
 	// while revision is current and announced, and returns the instruments
 	// stored.
-	SaveStrategyStates(ctx context.Context, strategyID, revision int64, states map[int64]TradeState) ([]int64, error)
-	DeleteStrategyStates(ctx context.Context, strategyID int64, instrumentIDs []int64) error
+	SaveStrategyStates(ctx context.Context, strategyID uuid.UUID, revision int64, states map[int64]TradeState) ([]int64, error)
+	DeleteStrategyStates(ctx context.Context, strategyID uuid.UUID, instrumentIDs []int64) error
 	// ListStrategyRecipients returns the Telegram IDs that receive strategy
 	// messages: the administrator and users with strategy alerts.
 	ListStrategyRecipients(ctx context.Context, administratorTelegramID int64) ([]int64, error)
@@ -65,7 +67,7 @@ type Values interface {
 // revision that failed, and reports whether it did.
 type Strategies interface {
 	List() []Entry
-	DisableAtRevision(ctx context.Context, id, revision int64) (bool, error)
+	DisableAtRevision(ctx context.Context, id uuid.UUID, revision int64) (bool, error)
 }
 
 type Sender interface {
@@ -97,7 +99,7 @@ type Monitor struct {
 	// every instrument; baselines are strategies to start afresh.
 	pending   map[int64]struct{}
 	full      bool
-	baselines map[int64]struct{}
+	baselines map[uuid.UUID]struct{}
 }
 
 type message struct {
@@ -111,7 +113,7 @@ func NewMonitor(store MonitorStore, values Values, strategies Strategies, sender
 	monitor := &Monitor{
 		store: store, values: values, strategies: strategies, sender: sender, administratorID: administratorID, logger: logger.With("module", "strategy"), now: time.Now,
 		wake: make(chan struct{}, 1), sends: make(chan message, 256),
-		pending: map[int64]struct{}{}, baselines: map[int64]struct{}{},
+		pending: map[int64]struct{}{}, baselines: map[uuid.UUID]struct{}{},
 	}
 	// A tracker step, such as that of a synchronization round, is
 	// evaluated as one round, so its alerts of a strategy go together.
@@ -128,7 +130,7 @@ func NewMonitor(store MonitorStore, values Values, strategies Strategies, sender
 
 // StrategiesChanged schedules a full evaluation and starts the trading states
 // of baselines afresh. It never blocks.
-func (monitor *Monitor) StrategiesChanged(baselines []int64) {
+func (monitor *Monitor) StrategiesChanged(baselines []uuid.UUID) {
 	monitor.mu.Lock()
 	monitor.full = true
 	for _, id := range baselines {
@@ -151,7 +153,7 @@ func (monitor *Monitor) signal() {
 
 // Run evaluates strategies until ctx is cancelled.
 func (monitor *Monitor) Run(ctx context.Context) error {
-	state := map[int64]map[int64]TradeState{}
+	state := map[uuid.UUID]map[int64]TradeState{}
 	if err := monitor.loadStates(ctx, state); err != nil {
 		if ctx.Err() != nil {
 			return nil
@@ -165,7 +167,7 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 	}
 	defer workers.Wait()
 	// Baselines requested before a restart start now.
-	var pending []int64
+	var pending []uuid.UUID
 	for _, entry := range monitor.strategies.List() {
 		if entry.BaselinePending && entry.Enabled {
 			pending = append(pending, entry.ID)
@@ -201,7 +203,7 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 
 // round reloads the stored states when they may differ and evaluates the
 // pending work.
-func (monitor *Monitor) round(ctx context.Context, state map[int64]map[int64]TradeState) {
+func (monitor *Monitor) round(ctx context.Context, state map[uuid.UUID]map[int64]TradeState) {
 	if monitor.resync {
 		if err := monitor.loadStates(ctx, state); err != nil {
 			monitor.logger.WarnContext(ctx, "reload strategy states failed", "error", err)
@@ -214,7 +216,7 @@ func (monitor *Monitor) round(ctx context.Context, state map[int64]map[int64]Tra
 }
 
 // loadStates replaces state with the stored trading states.
-func (monitor *Monitor) loadStates(ctx context.Context, state map[int64]map[int64]TradeState) error {
+func (monitor *Monitor) loadStates(ctx context.Context, state map[uuid.UUID]map[int64]TradeState) error {
 	stored, err := monitor.store.ListStrategyStates(ctx)
 	if err != nil {
 		return fmt.Errorf("load strategy states: %w", err)
@@ -241,10 +243,10 @@ func (monitor *Monitor) storeFailed() {
 
 // evaluate applies one round of pending work. Work that fails before any
 // change is stored stays queued for the next round.
-func (monitor *Monitor) evaluate(ctx context.Context, state map[int64]map[int64]TradeState) {
+func (monitor *Monitor) evaluate(ctx context.Context, state map[uuid.UUID]map[int64]TradeState) {
 	monitor.mu.Lock()
 	pending, full, baselines := monitor.pending, monitor.full, monitor.baselines
-	monitor.pending, monitor.full, monitor.baselines = map[int64]struct{}{}, false, map[int64]struct{}{}
+	monitor.pending, monitor.full, monitor.baselines = map[int64]struct{}{}, false, map[uuid.UUID]struct{}{}
 	monitor.mu.Unlock()
 	requeue := func() {
 		monitor.mu.Lock()

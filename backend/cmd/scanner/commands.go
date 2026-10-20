@@ -6,11 +6,11 @@ import (
 	"io"
 	"net/http"
 	"slices"
-	"strconv"
 	"strings"
 
 	"crypto-scanner/internal/apiclient"
 
+	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 )
 
@@ -196,10 +196,10 @@ func (c *cli) listCommand(k kind, short string) *cobra.Command {
 }
 
 // strategyID parses the ID argument of a saved strategy.
-func strategyID(arg string) (int64, error) {
-	id, err := strconv.ParseInt(arg, 10, 64)
-	if err != nil || id <= 0 {
-		return 0, usageError("strategy ID %q must be a positive int64", arg)
+func strategyID(arg string) (uuid.UUID, error) {
+	id, err := uuid.Parse(arg)
+	if err != nil {
+		return uuid.Nil, usageError("strategy ID %q must be a UUID", arg)
 	}
 	return id, nil
 }
@@ -232,7 +232,7 @@ func (c *cli) deleteCommand(k kind) *cobra.Command {
 			if c.json {
 				return printJSON(command, map[string]int{"deleted": 1})
 			}
-			command.Printf("deleted %s %d\n", k.noun, id)
+			command.Printf("deleted %s %s\n", k.noun, id)
 			return nil
 		},
 	}

@@ -5,6 +5,7 @@
 package sqlc
 
 import (
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -87,7 +88,6 @@ type AppSession struct {
 }
 
 type AppStrategy struct {
-	ID                   int64
 	Name                 string
 	Expression           string
 	Enabled              bool
@@ -106,20 +106,20 @@ type AppStrategy struct {
 	TargetRatio          pgtype.Int2
 	WindowCandles        pgtype.Int2
 	CoinSource           string
+	ID                   uuid.UUID
 }
 
 type AppStrategyCoin struct {
-	StrategyID   int64
 	InstrumentID int64
+	StrategyID   uuid.UUID
 }
 
 type AppStrategyIndicator struct {
-	StrategyID  int64
 	IndicatorID int64
+	StrategyID  uuid.UUID
 }
 
 type AppStrategyState struct {
-	StrategyID   int64
 	InstrumentID int64
 	OpenTime     pgtype.Timestamptz
 	Entry        bool
@@ -129,6 +129,7 @@ type AppStrategyState struct {
 	OpenedAt     pgtype.Timestamptz
 	TakeProfit   float64
 	StopLoss     float64
+	StrategyID   uuid.UUID
 }
 
 type AppUser struct {

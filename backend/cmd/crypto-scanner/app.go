@@ -35,6 +35,8 @@ import (
 	"crypto-scanner/internal/strategy"
 	"crypto-scanner/internal/telegrambot"
 	"crypto-scanner/internal/users"
+
+	"github.com/google/uuid"
 )
 
 // app is the composed process: the HTTP handler and its background services.
@@ -101,7 +103,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		return app{}, fmt.Errorf("find administrator: %w", err)
 	}
 	// Changes before the monitor exists are covered by its first evaluation.
-	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, closedIndicators, logger, administrator.ID, func(baselines []int64) {
+	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, closedIndicators, logger, administrator.ID, func(baselines []uuid.UUID) {
 		if strategyMonitor != nil {
 			strategyMonitor.StrategiesChanged(baselines)
 		}

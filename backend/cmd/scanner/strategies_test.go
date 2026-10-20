@@ -35,20 +35,20 @@ func TestUpdateStrategyPreservesUnspecifiedFields(t *testing.T) {
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			response := `{"id":6,"name":"Test","expression":"w_rsi < 50","message":"custom","enabled":false,"valid":true}`
+			response := `{"id":"00000000-0000-7000-8000-000000000006","name":"Test","expression":"w_rsi < 50","message":"custom","enabled":false,"valid":true}`
 			api, server := newFakeAPI(t, map[string]string{
-				"GET /api/v1/admin/strategies":                 `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","coins":["BTCUSDT"],"coin_source":"selected","message":"custom","enabled":false,"valid":true}]}`,
-				"GET /api/v1/favorites":                        `{"items":[{"symbol":"ETHUSDT","active":true},{"symbol":"OLDUSDT","active":false}]}`,
-				"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1w","type":"rsi","parameters":{"period":14},"title":"w-rsi"}]}`,
-				"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
-				"PUT /api/v1/admin/strategies/6":               response,
+				"GET /api/v1/admin/strategies":                                      `{"items":[{"id":"00000000-0000-7000-8000-000000000006","name":"Test","expression":"m_rsi < 40","coins":["BTCUSDT"],"coin_source":"selected","message":"custom","enabled":false,"valid":true}]}`,
+				"GET /api/v1/favorites":                                             `{"items":[{"symbol":"ETHUSDT","active":true},{"symbol":"OLDUSDT","active":false}]}`,
+				"POST /api/v1/admin/strategy-validations":                           `{"errors":[],"missing_indicators":[{"interval":"1w","type":"rsi","parameters":{"period":14},"title":"w-rsi"}]}`,
+				"POST /api/v1/admin/scanner-indicator-batches":                      `{"items":[]}`,
+				"PUT /api/v1/admin/strategies/00000000-0000-7000-8000-000000000006": response,
 			})
-			got := runCLI(t, writeProfile(t, server.URL), "", append([]string{"strategies", "update", "6", "--json"}, test.flags...)...)
+			got := runCLI(t, writeProfile(t, server.URL), "", append([]string{"strategies", "update", "00000000-0000-7000-8000-000000000006", "--json"}, test.flags...)...)
 			if got.code != 0 || got.stdout != response+"\n" {
 				t.Fatalf("update = %+v", got)
 			}
 			var body apiclient.StrategyUpdate
-			raw := api.bodies["PUT /api/v1/admin/strategies/6"]
+			raw := api.bodies["PUT /api/v1/admin/strategies/00000000-0000-7000-8000-000000000006"]
 			if err := json.Unmarshal([]byte(raw), &body); err != nil || !reflect.DeepEqual(body, test.want) {
 				t.Fatalf("body = %s, want %+v", raw, test.want)
 			}
@@ -67,17 +67,17 @@ func TestUpdateStrategyPreservesUnspecifiedFields(t *testing.T) {
 // the strategy as it is.
 func TestUpdateStrategyWithNothingToAddSendsNothing(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies":            `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","message":"","enabled":false,"valid":true,"missing_indicators":[]}]}`,
+		"GET /api/v1/admin/strategies":            `{"items":[{"id":"00000000-0000-7000-8000-000000000006","name":"Test","expression":"m_rsi < 40","message":"","enabled":false,"valid":true,"missing_indicators":[]}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[]}`,
 	})
 	home := writeProfile(t, server.URL)
 
-	if got := runCLI(t, home, "", "strategies", "update", "6", "--add-indicators"); got.code != 0 || !strings.Contains(got.stdout, "│  6 │ off   │ Test │") || got.stderr != "no indicators to add\n" {
+	if got := runCLI(t, home, "", "strategies", "update", "00000000-0000-7000-8000-000000000006", "--add-indicators"); got.code != 0 || !strings.Contains(got.stdout, "│ 00000000-0000-7000-8000-000000000006 │ off   │ Test │") || got.stderr != "no indicators to add\n" {
 		t.Fatalf("update = %+v", got)
 	}
-	got := runCLI(t, home, "", "strategies", "update", "6", "--add-indicators", "--json")
+	got := runCLI(t, home, "", "strategies", "update", "00000000-0000-7000-8000-000000000006", "--add-indicators", "--json")
 	var printed apiclient.Strategy
-	if err := json.Unmarshal([]byte(got.stdout), &printed); err != nil || got.code != 0 || got.stderr != "" || printed.Id != 6 || printed.Expression != "m_rsi < 40" {
+	if err := json.Unmarshal([]byte(got.stdout), &printed); err != nil || got.code != 0 || got.stderr != "" || printed.Id.String() != "00000000-0000-7000-8000-000000000006" || printed.Expression != "m_rsi < 40" {
 		t.Fatalf("update --json = %+v", got)
 	}
 }
@@ -89,12 +89,12 @@ func TestUpdateStrategyRejectsInvalidInputBeforeWrites(t *testing.T) {
 		list, validation string
 		stderr           string
 	}{
-		{name: "bad ID", args: []string{"0", "--name", "New"}},
-		{name: "overflow ID", args: []string{"9223372036854775808", "--name", "New"}},
+		{name: "bad ID", args: []string{"00000000-0000-7000-8000-000000000000", "--name", "New"}},
+		{name: "overflow ID", args: []string{"00000000-0000-7000-8000-9223372036854775808", "--name", "New"}},
 		{name: "no fields", args: []string{"6"}},
-		{name: "missing strategy", args: []string{"6", "--name", "New"}, list: `{"items":[]}`},
-		{name: "invalid expression", args: []string{"6", "--expr", "bad"}, list: `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","message":"","enabled":false,"valid":true}]}`, validation: `{"errors":["invalid expression"],"missing_indicators":[]}`},
-		{name: "enabled strategy", args: []string{"6", "--expr", "w_rsi < 50"}, list: `{"items":[{"id":6,"name":"Test","expression":"m_rsi < 40","message":"","enabled":true,"valid":true}]}`, stderr: "scanner: strategy 6 is enabled; edit it in the Mini App\n"},
+		{name: "missing strategy", args: []string{"00000000-0000-7000-8000-000000000006", "--name", "New"}, list: `{"items":[]}`},
+		{name: "invalid expression", args: []string{"00000000-0000-7000-8000-000000000006", "--expr", "bad"}, list: `{"items":[{"id":"00000000-0000-7000-8000-000000000006","name":"Test","expression":"m_rsi < 40","message":"","enabled":false,"valid":true}]}`, validation: `{"errors":["invalid expression"],"missing_indicators":[]}`},
+		{name: "enabled strategy", args: []string{"00000000-0000-7000-8000-000000000006", "--expr", "w_rsi < 50"}, list: `{"items":[{"id":"00000000-0000-7000-8000-000000000006","name":"Test","expression":"m_rsi < 40","message":"","enabled":true,"valid":true}]}`, stderr: "scanner: strategy 00000000-0000-7000-8000-000000000006 is enabled; edit it in the Mini App\n"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			api, server := newFakeAPI(t, map[string]string{"GET /api/v1/admin/strategies": test.list, "POST /api/v1/admin/strategy-validations": test.validation})
@@ -115,17 +115,17 @@ func TestUpdateStrategyRejectsInvalidInputBeforeWrites(t *testing.T) {
 // strategies commands and a strategy by the signals ones, before any write.
 func TestGroupsRefuseTheOtherKind(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies": `{"items":[{"id":5,"name":"Trade","direction":"long","expression":"h_close > 1","valid":true},{"id":6,"name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","valid":true}]}`,
+		"GET /api/v1/admin/strategies": `{"items":[{"id":"00000000-0000-7000-8000-000000000005","name":"Trade","direction":"long","expression":"h_close > 1","valid":true},{"id":"00000000-0000-7000-8000-000000000006","name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","valid":true}]}`,
 	})
 	home := writeProfile(t, server.URL)
 	for _, test := range []struct {
 		args []string
 		want string
 	}{
-		{[]string{"strategies", "update", "6", "--name", "X"}, "scanner: 6 is a signal; use scanner signals\n"},
-		{[]string{"strategies", "delete", "6"}, "scanner: 6 is a signal; use scanner signals\n"},
-		{[]string{"signals", "update", "5", "--name", "X"}, "scanner: 5 is a strategy; use scanner strategies\n"},
-		{[]string{"signals", "delete", "5"}, "scanner: 5 is a strategy; use scanner strategies\n"},
+		{[]string{"strategies", "update", "00000000-0000-7000-8000-000000000006", "--name", "X"}, "scanner: 00000000-0000-7000-8000-000000000006 is a signal; use scanner signals\n"},
+		{[]string{"strategies", "delete", "00000000-0000-7000-8000-000000000006"}, "scanner: 00000000-0000-7000-8000-000000000006 is a signal; use scanner signals\n"},
+		{[]string{"signals", "update", "00000000-0000-7000-8000-000000000005", "--name", "X"}, "scanner: 00000000-0000-7000-8000-000000000005 is a strategy; use scanner strategies\n"},
+		{[]string{"signals", "delete", "00000000-0000-7000-8000-000000000005"}, "scanner: 00000000-0000-7000-8000-000000000005 is a strategy; use scanner strategies\n"},
 		{[]string{"strategies", "create", "X", "--expr", "h_close > 1", "--direction", "sideways"}, "scanner: --direction: \"sideways\" is not long or short\n"},
 	} {
 		if got := runCLI(t, home, "", test.args...); got.code != 1 || got.stderr != test.want {
@@ -137,17 +137,17 @@ func TestGroupsRefuseTheOtherKind(t *testing.T) {
 // A signal update keeps its fields, coin source, market cap range, and target
 // ratio included, changing only the flags given.
 func TestUpdateSignalPreservesUnspecifiedFields(t *testing.T) {
-	response := `{"id":6,"name":"Crash Soon","signal":true,"direction":"short","expression":"h_close > 1","message":"m","enabled":false,"valid":true}`
+	response := `{"id":"00000000-0000-7000-8000-000000000006","name":"Crash Soon","signal":true,"direction":"short","expression":"h_close > 1","message":"m","enabled":false,"valid":true}`
 	api, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategies":   `{"items":[{"id":6,"name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","coin_source":"favorites","min_market_cap_usd":10000000,"max_market_cap_usd":2000000000,"target_ratio":3,"window":12,"message":"m","enabled":false,"valid":true}]}`,
-		"PUT /api/v1/admin/strategies/6": response,
+		"GET /api/v1/admin/strategies":                                      `{"items":[{"id":"00000000-0000-7000-8000-000000000006","name":"Crash","signal":true,"direction":"short","expression":"h_close > 1","coin_source":"favorites","min_market_cap_usd":10000000,"max_market_cap_usd":2000000000,"target_ratio":3,"window":12,"message":"m","enabled":false,"valid":true}]}`,
+		"PUT /api/v1/admin/strategies/00000000-0000-7000-8000-000000000006": response,
 	})
-	got := runCLI(t, writeProfile(t, server.URL), "", "signals", "update", "6", "--name", "Crash Soon", "--max-market-cap", "1B", "--window", "24", "--json")
+	got := runCLI(t, writeProfile(t, server.URL), "", "signals", "update", "00000000-0000-7000-8000-000000000006", "--name", "Crash Soon", "--max-market-cap", "1B", "--window", "24", "--json")
 	if got.code != 0 || got.stdout != response+"\n" {
 		t.Fatalf("update = %+v", got)
 	}
 	var body apiclient.StrategyUpdate
-	raw := api.bodies["PUT /api/v1/admin/strategies/6"]
+	raw := api.bodies["PUT /api/v1/admin/strategies/00000000-0000-7000-8000-000000000006"]
 	minimum, maximum := 10e6, 1e9
 	ratio, window := apiclient.SignalTargetRatioN3, apiclient.SignalWindowN24
 	want := apiclient.StrategyUpdate{

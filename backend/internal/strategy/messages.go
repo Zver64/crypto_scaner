@@ -171,7 +171,7 @@ func alertLine(item alert) string {
 }
 
 // signalMarks start the alerts of signals by the move they expect.
-var signalMarks = map[Direction]string{DirectionSimple: "📣", DirectionLong: "🟢", DirectionShort: "🔴", DirectionSideways: "↔️"}
+var signalMarks = map[Direction]string{DirectionSimple: "📣", DirectionLong: "🟢", DirectionShort: "🔴", DirectionSideways: "↕️"}
 
 func formatNumber(value float64) string {
 	return strconv.FormatFloat(value, 'g', 6, 64)

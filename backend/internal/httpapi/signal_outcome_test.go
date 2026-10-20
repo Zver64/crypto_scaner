@@ -35,7 +35,7 @@ func TestSignalOutcomeResponseKeepsNeutralAndUnevaluatedDistinct(t *testing.T) {
 	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
 		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: &backtestStrategies{result: result},
 	}, httpapi.Options{})
-	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/strategies/1/backtest?symbol=BTCUSDT", nil)
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/strategies/"+strategyID(1).String()+"/backtest?symbol=BTCUSDT", nil)
 	request.Header.Set("Authorization", "Bearer admin")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)

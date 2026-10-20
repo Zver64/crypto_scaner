@@ -11,10 +11,10 @@ func TestSignalSnapshotIncludesExitAfterRequestedPeriod(t *testing.T) {
 	quiet := ohlc(100, 100.1, 99.9, 100)
 	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
 	store := newBacktestStore(market.IntervalHour, history)
-	store.strategies = []Strategy{{ID: 1, Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, Expression: "h_close > 0"}}
+	store.strategies = []Strategy{{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, Expression: "h_close > 0"}}
 	service := snapshotTestService(t, store)
 	at := history[signalHistoryCandles].OpenTime
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", at, at, true)
+	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", at, at, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -37,7 +37,7 @@ func TestSignalSnapshotIncludesExitAfterRequestedPeriod(t *testing.T) {
 	if judgement := result.Signal.Judgement; judgement == nil || judgement.All.Count != 1 || judgement.Signals.Count != 1 {
 		t.Fatal("chart tail was evaluated as entries")
 	}
-	withoutChart, err := service.Backtest(context.Background(), 1, "BTCUSDT", at, at, false)
+	withoutChart, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", at, at, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,10 +50,10 @@ func TestSimpleSignalBacktestListsSignalsWithoutJudging(t *testing.T) {
 	quiet := ohlc(100, 100.1, 99.9, 100)
 	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
 	store := newBacktestStore(market.IntervalHour, history)
-	store.strategies = []Strategy{{ID: 1, Signal: true, Direction: DirectionSimple, Expression: "h_close > 0"}}
+	store.strategies = []Strategy{{ID: testID(1), Signal: true, Direction: DirectionSimple, Expression: "h_close > 0"}}
 	service := snapshotTestService(t, store)
 	from, to := history[signalHistoryCandles].OpenTime, history[signalHistoryCandles+2].OpenTime
-	result, err := service.Backtest(context.Background(), 1, "BTCUSDT", from, to, false)
+	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", from, to, false)
 	if err != nil {
 		t.Fatal(err)
 	}

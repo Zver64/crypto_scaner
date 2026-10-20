@@ -23,18 +23,18 @@ describe("parseStrategyBacktestSearch", () => {
 				period: 30,
 				sort_column: "symbol",
 				sort_direction: "asc",
-				strategy: 4,
+				strategy: "0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e",
 				symbol: " btcusdt ",
 				symbol_filter: "BTC",
 			}),
 		).toEqual({
 			all_coins: true,
-			strategy: 4,
+			strategy: "0199a3f2-5c1e-7b2a-9d4e-6f8a1b2c3d4e",
 			symbol: "BTCUSDT",
 		});
 	});
 
-	it.each(["4", 0, -1, 1.5, null])(
+	it.each([4, "4", "0199a3f2-5c1e-7b2a-9d4e", null])(
 		"drops the invalid strategy id %s",
 		(strategy) => {
 			expect(parseStrategyBacktestSearch({ strategy })).toEqual({});

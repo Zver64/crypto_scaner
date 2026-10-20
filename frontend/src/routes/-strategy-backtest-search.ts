@@ -1,4 +1,6 @@
+import type { StrategyID } from "@/api/generated/models";
 import { normalizeBacktestSymbols } from "@/features/strategy-backtest/run-backtests";
+import { strategyIdSchema } from "@/features/strategy-settings/schemas";
 
 // The backtest page keeps its selected strategy, coins, coin filter
 // and period in the URL. Favorites only is the default.
@@ -6,7 +8,7 @@ export interface StrategyBacktestSearch {
 	all_coins?: true;
 	// The first and last UTC days of the evaluated period, as YYYY-MM-DD.
 	from?: string;
-	strategy?: number;
+	strategy?: StrategyID;
 	symbol?: string;
 	symbols?: string[];
 	to?: string;
@@ -29,7 +31,7 @@ function searchDate(value: unknown): string | undefined {
 export function parseStrategyBacktestSearch(
 	search: Record<string, unknown>,
 ): StrategyBacktestSearch {
-	const { strategy } = search;
+	const strategy = strategyIdSchema.safeParse(search.strategy);
 	const symbols = normalizeBacktestSymbols(
 		Array.isArray(search.symbols)
 			? search.symbols.filter(
@@ -45,11 +47,7 @@ export function parseStrategyBacktestSearch(
 		...(search.all_coins === true ? { all_coins: true } : {}),
 		...(from ? { from } : {}),
 		...(to ? { to } : {}),
-		...(typeof strategy === "number" &&
-		Number.isSafeInteger(strategy) &&
-		strategy >= 1
-			? { strategy }
-			: {}),
+		...(strategy.success ? { strategy: strategy.data } : {}),
 		...(symbols.length > 1
 			? { symbols }
 			: symbols.length === 1

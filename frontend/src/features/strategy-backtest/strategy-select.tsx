@@ -4,16 +4,18 @@ import {
 	type listStrategiesResponseSuccess,
 	useListStrategies,
 } from "@/api/generated/api";
+import type { StrategyID } from "@/api/generated/models";
 import { kindNouns } from "@/features/strategy-settings/constants";
 import { strategyKind } from "@/features/strategy-settings/utils";
+import { shortId } from "@/utils/short-id";
 
 const selectStrategies = (response: listStrategiesResponseSuccess) =>
 	response.data.items;
 
 interface StrategySelectProps {
 	disabled?: boolean;
-	onChange(strategy: number): void;
-	strategy: number | undefined;
+	onChange(strategy: StrategyID): void;
+	strategy: StrategyID | undefined;
 }
 
 // Offers every signal, then every strategy, disabled ones included; one whose
@@ -37,11 +39,11 @@ export function StrategySelect({
 						.map(({ enabled, id, name, valid }) => ({
 							disabled: !valid,
 							label: !valid
-								? `#${id} ${name} (invalid)`
+								? `#${shortId(id)} ${name} (invalid)`
 								: enabled
-									? `#${id} ${name}`
-									: `#${id} ${name} (disabled)`,
-							value: String(id),
+									? `#${shortId(id)} ${name}`
+									: `#${shortId(id)} ${name} (disabled)`,
+							value: id,
 						})),
 				}))
 				.filter(({ items }) => items.length > 0)}
@@ -53,12 +55,12 @@ export function StrategySelect({
 			}
 			nothingFoundMessage="No signals or strategies"
 			onChange={(value) => {
-				if (value !== null) onChange(Number(value));
+				if (value !== null) onChange(value);
 			}}
 			label="Signal / strategy"
 			placeholder="Choose a signal or strategy"
 			searchable
-			value={strategy === undefined ? null : String(strategy)}
+			value={strategy ?? null}
 		/>
 	);
 }

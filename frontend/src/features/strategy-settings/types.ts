@@ -3,6 +3,7 @@ import type { Field, RuleGroupType, RuleType } from "react-querybuilder";
 import type {
 	Direction,
 	StrategyCoinSource,
+	StrategyID,
 	StrategyVariable,
 } from "@/api/generated/models";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
@@ -85,7 +86,7 @@ export type StrategyPriceField = Extract<
 
 export interface StrategyDraft {
 	// Undefined while creating a strategy.
-	id: number | undefined;
+	id: StrategyID | undefined;
 	// Tells drafts opened one after another apart, so each opens a fresh
 	// form and a finished save closes only the draft it saved.
 	revision: number;

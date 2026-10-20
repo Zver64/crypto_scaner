@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"crypto-scanner/internal/closedindicator"
+
+	"github.com/google/uuid"
 )
 
 // roundWork is what one round evaluates each strategy against.
@@ -15,7 +17,7 @@ type roundWork struct {
 	// changed values, unless full evaluates every one.
 	instruments, changed []Instrument
 	full                 bool
-	baselines            map[int64]struct{}
+	baselines            map[uuid.UUID]struct{}
 	// missing are the targets some subscription has no value for yet.
 	missing    []closedindicator.Target
 	current    snapshot
@@ -26,7 +28,7 @@ type roundWork struct {
 // delisted, forgets the states of instruments it no longer evaluates, starts
 // a requested baseline, or advances the candidates and alerts on the events
 // it stores.
-func (monitor *Monitor) check(ctx context.Context, state map[int64]map[int64]TradeState, entry Entry, work roundWork) {
+func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64]TradeState, entry Entry, work roundWork) {
 	// A delisted coin disables the strategy, which then waits for the
 	// coin to be replaced.
 	if absent := entry.inactive(work.instruments); len(absent) > 0 {
@@ -143,7 +145,7 @@ func (monitor *Monitor) check(ctx context.Context, state map[int64]map[int64]Tra
 // now, without trades, and announces the instruments within its market cap
 // range whose entry is true. Instruments with unknown entries are left out and signal once their entry
 // turns true.
-func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]TradeState, entry Entry, instruments []Instrument, current snapshot, recipients []int64) {
+func (monitor *Monitor) baseline(ctx context.Context, state map[uuid.UUID]map[int64]TradeState, entry Entry, instruments []Instrument, current snapshot, recipients []int64) {
 	at := entry.Interval.LastClosedOpenTime(current.now)
 	states := map[int64]TradeState{}
 	var matching []Instrument
@@ -166,7 +168,7 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[int64]map[int64]
 		// The transaction may have committed; the stored flag decides
 		// whether the retry is still needed.
 		monitor.logger.WarnContext(ctx, "store strategy states failed", "strategy_id", entry.ID, "error", err)
-		monitor.StrategiesChanged([]int64{entry.ID})
+		monitor.StrategiesChanged([]uuid.UUID{entry.ID})
 		monitor.storeFailed()
 		return
 	}

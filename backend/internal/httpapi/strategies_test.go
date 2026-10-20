@@ -17,6 +17,8 @@ import (
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/strategy"
+
+	"github.com/google/uuid"
 )
 
 // emptyStats are the statistics of no trades.
@@ -47,14 +49,14 @@ func TestBacktestStrategyIsAdministratorOnlyAndMapsMissingResources(t *testing.T
 		// body is the exact response of an empty history.
 		body string
 	}{
-		{name: "user", token: "user", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt", status: http.StatusForbidden, code: "administrator_required"},
-		{name: "unknown strategy", token: "admin", target: "/api/v1/admin/strategies/2/backtest?symbol=BTCUSDT", status: http.StatusNotFound, code: "strategy_not_found"},
-		{name: "unknown symbol", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=ETHUSDT", status: http.StatusNotFound, code: "symbol_not_found"},
-		{name: "too heavy", token: "admin", target: "/api/v1/admin/strategies/5/backtest?symbol=BTCUSDT", status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
-		{name: "busy", token: "admin", target: "/api/v1/admin/strategies/6/backtest?symbol=BTCUSDT", status: http.StatusTooManyRequests, code: "backtest_busy"},
-		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/1/backtest?symbol=btcusdt&chart=true&from=2026-03-02T03:00:00%2B02:00", status: http.StatusOK},
+		{name: "user", token: "user", target: "/api/v1/admin/strategies/" + strategyID(1).String() + "/backtest?symbol=btcusdt", status: http.StatusForbidden, code: "administrator_required"},
+		{name: "unknown strategy", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(2).String() + "/backtest?symbol=BTCUSDT", status: http.StatusNotFound, code: "strategy_not_found"},
+		{name: "unknown symbol", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(1).String() + "/backtest?symbol=ETHUSDT", status: http.StatusNotFound, code: "symbol_not_found"},
+		{name: "too heavy", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(5).String() + "/backtest?symbol=BTCUSDT", status: http.StatusServiceUnavailable, code: "backtest_too_heavy"},
+		{name: "busy", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(6).String() + "/backtest?symbol=BTCUSDT", status: http.StatusTooManyRequests, code: "backtest_busy"},
+		{name: "administrator", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(1).String() + "/backtest?symbol=btcusdt&chart=true&from=2026-03-02T03:00:00%2B02:00", status: http.StatusOK},
 		{
-			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/3/backtest?symbol=BTCUSDT", status: http.StatusOK,
+			name: "empty history", token: "admin", target: "/api/v1/admin/strategies/" + strategyID(3).String() + "/backtest?symbol=BTCUSDT", status: http.StatusOK,
 			body: `{"baselines":{"buy_and_hold":null,"dca":null},"charts":[],"direction":"short","equity":[],"fee":0.001,"from":null,"indicator_columns":[],"interval":"1h",` +
 				`"signal":null,"skipped_alerts":0,"summary":{"max_drawdown":0,"net_profit":0,"stats":` + emptyStats + `},"symbol":"BTCUSDT","to":null,"trades":[]}`,
 		},
@@ -177,24 +179,27 @@ func (strategies *backtestStrategies) BacktestDraft(_ context.Context, item stra
 	return strategies.result, nil
 }
 
-func (strategies *backtestStrategies) Backtest(_ context.Context, id int64, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error) {
+func (strategies *backtestStrategies) Backtest(_ context.Context, id uuid.UUID, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error) {
 	symbol = market.NormalizeSymbol(symbol)
 	strategies.withChart = withChart
 	strategies.symbol, strategies.from, strategies.to = symbol, from, to
 	switch {
-	case id == 5:
+	case id == strategyID(5):
 		return strategy.Backtest{}, fmt.Errorf("replay: %w", context.DeadlineExceeded)
-	case id == 6:
+	case id == strategyID(6):
 		return strategy.Backtest{}, strategy.ErrBacktestBusy
-	case id == 3:
+	case id == strategyID(3):
 		return strategy.Backtest{Interval: market.IntervalHour, Symbol: symbol, Direction: strategy.DirectionShort}, nil
-	case id != 1:
+	case id != strategyID(1):
 		return strategy.Backtest{}, strategy.ErrNotFound
 	case symbol != "BTCUSDT":
 		return strategy.Backtest{}, market.ErrInstrumentNotFound
 	}
 	return strategies.result, nil
 }
+
+// strategyID is the id of the nth test strategy.
+func strategyID(n byte) uuid.UUID { return uuid.UUID{15: n} }
 
 // roleSessions authenticates the token "admin" as the administrator, "user"
 // as another user, and "program" as the administrator's API token.
@@ -249,10 +254,9 @@ func TestContractViolationsNameTheirField(t *testing.T) {
 	for _, test := range []struct {
 		method, target, body, want string
 	}{
-		{method: http.MethodGet, target: "/api/v1/admin/strategies/0/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": minimum: got 0, want 1`},
-		{method: http.MethodGet, target: "/api/v1/admin/strategies/abc/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": an invalid integer`},
-		{method: http.MethodGet, target: "/api/v1/admin/strategies/" + strings.Repeat("x", 1000) + "/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": an invalid integer`},
-		{method: http.MethodGet, target: "/api/v1/admin/strategies/1/backtest?symbol=BTC%2FUSDT", want: `Invalid query parameter "symbol": 'BTC/USDT' does not match pattern '^[A-Za-z0-9]+$'`},
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/1/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": '1' does not match pattern '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'`},
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/" + strings.Repeat("x", 1000) + "/backtest?symbol=BTCUSDT", want: `Invalid path parameter "strategy_id": '` + strings.Repeat("x", 199) + "…"},
+		{method: http.MethodGet, target: "/api/v1/admin/strategies/" + strategyID(1).String() + "/backtest?symbol=BTC%2FUSDT", want: `Invalid query parameter "symbol": 'BTC/USDT' does not match pattern '^[A-Za-z0-9]+$'`},
 		{method: http.MethodPost, target: "/api/v1/admin/strategies", body: `{"name":"","expression":"h_close > 1","message":""}`, want: `Invalid request body field "name": minimum string length is 1`},
 	} {
 		t.Run(test.target, func(t *testing.T) {

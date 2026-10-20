@@ -1,5 +1,14 @@
 # Changelog
 
+## [3.1.0](https://github.com/Zver64/crypto_scaner/compare/v3.0.0...v3.1.0) (2026-10-20)
+
+
+### Features
+
+* add 30-day change and chart columns to market tables ([70cc693](https://github.com/Zver64/crypto_scaner/commit/70cc693f50d8e2ee5af97f531a19a24af1522566))
+* highlight COIN-M coins in market tables ([7566862](https://github.com/Zver64/crypto_scaner/commit/75668626d6a13830e670e8d18b00b35d2b890a67))
+* move the Binance column to the end of market tables ([04f59f9](https://github.com/Zver64/crypto_scaner/commit/04f59f98a72185b0c2d8fbfdb8019796ff2da3f8))
+
 ## [3.0.0](https://github.com/Zver64/crypto_scaner/compare/v2.8.0...v3.0.0) (2026-10-16)
 
 

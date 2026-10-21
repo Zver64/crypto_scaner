@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.1.0](https://github.com/Zver64/crypto_scaner/compare/v4.0.0...v4.1.0) (2026-10-21)
+
+
+### Features
+
+* catch up missed strategy candles and harden the backend ([0b54c30](https://github.com/Zver64/crypto_scaner/commit/0b54c30254c337fdda8796db6b20329f085c778c))
+
 ## [4.0.0](https://github.com/Zver64/crypto_scaner/compare/v3.1.0...v4.0.0) (2026-10-20)
 
 

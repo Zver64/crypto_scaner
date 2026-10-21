@@ -168,6 +168,23 @@ export const paneIndicatorLevelOptions = {
 	light: priceLineOptionsFor(schemeColors.light.grid),
 } satisfies Record<ColorScheme, Partial<PriceLineOptions>>;
 
+function priceLevelLineOptions(color: string) {
+	return { ...priceLineOptionsFor(color), axisLabelVisible: false };
+}
+
+// Price levels across the candles without axis labels: the lower bound green
+// and the upper bound red; the steps between them are fainter, green below the
+// current price and red above it.
+export const priceLevelOptions = {
+	lower: priceLevelLineOptions(upColor),
+	stepAbove: priceLevelLineOptions(alpha(downColor, 0.45)),
+	stepBelow: priceLevelLineOptions(alpha(upColor, 0.45)),
+	upper: priceLevelLineOptions(downColor),
+} satisfies Record<
+	"lower" | "stepAbove" | "stepBelow" | "upper",
+	Partial<PriceLineOptions>
+>;
+
 // Axis labels for the visible minimum and maximum prices, without a line.
 export const minMaxPriceLineOptions = {
 	dark: { ...priceLineOptionsFor(schemeColors.dark.text), lineVisible: false },

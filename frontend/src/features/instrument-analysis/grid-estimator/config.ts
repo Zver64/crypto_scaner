@@ -7,6 +7,14 @@ import type { FuturesContract } from "@/utils/calculator/futures-grid";
 import { GridDecimal } from "@/utils/calculator/grid";
 import type { GridType, PositionDirection } from "@/utils/calculator/types";
 
+// Calculator tabs, in order.
+export const GRID_MARKET_TABS: readonly { label: string; value: GridMarket }[] =
+	[
+		{ label: "Spot", value: "spot" },
+		{ label: "USDT-M", value: "usdm" },
+		{ label: "COIN-M", value: "coinm" },
+	];
+
 // Starting markups of each market. Without a lower markup, the lower price
 // starts as low as the range allows.
 export const DEFAULT_MARKUPS: Record<GridMarket, GridMarkups> = {

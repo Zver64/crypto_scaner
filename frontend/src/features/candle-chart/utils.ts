@@ -35,6 +35,7 @@ import type {
 	ChartLineData,
 	ChartMarker,
 	ChartPaneIndicatorOptions,
+	ChartPriceLevels,
 	ChartSeriesData,
 	ChartTradeMarkers,
 	ChartVolumeSlot,
@@ -491,11 +492,17 @@ function mergeScales(
 	};
 }
 
-// Fits a pane scale to the visible values while keeping its reference levels,
-// such as RSI 30 and 70, in view and staying within the indicator's bounds.
-export function fitPaneIndicatorScale(
+// Fits a scale to the visible values while keeping its levels, such as RSI 30
+// and 70 or the bounds of price levels, in view and staying within its bounds.
+export function fitScaleToLevels(
 	visible: AutoscaleInfo | null,
-	{ levels, max, min }: Pick<ChartIndicatorScale, "levels" | "max" | "min">,
+	{
+		levels,
+		max,
+		min,
+	}: Pick<ChartIndicatorScale, "max" | "min"> & {
+		levels: readonly { value: number }[];
+	},
 ): AutoscaleInfo | null {
 	const values = levels.map(({ value }) => value);
 	if (visible?.priceRange) {
@@ -514,6 +521,20 @@ export function fitPaneIndicatorScale(
 // Fits the pane to its visible values instead of the full range, such as RSI
 // 0-100, so the line fills the pane without empty space above and below.
 function paneScaleProvider(scale: ChartIndicatorScale): AutoscaleInfoProvider {
-	return (baseImplementation) =>
-		fitPaneIndicatorScale(baseImplementation(), scale);
+	return (baseImplementation) => fitScaleToLevels(baseImplementation(), scale);
+}
+
+// Keeps the bounds of the price levels in view. The autoscale provider is
+// created with the levels, so it keeps its identity while they do not change.
+export function createChartPriceLevels(
+	levels: readonly number[],
+): ChartPriceLevels {
+	const bounds = [levels[0], levels[levels.length - 1]].map((value) => ({
+		value,
+	}));
+	return {
+		autoscaleInfoProvider: (baseImplementation) =>
+			fitScaleToLevels(baseImplementation(), { levels: bounds }),
+		levels,
+	};
 }

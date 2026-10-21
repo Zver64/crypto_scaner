@@ -1,6 +1,7 @@
 import type { CandleInterval } from "@/api/generated/models";
 import {
 	type ChartIndicatorLayout,
+	type ChartPriceLevels,
 	PriceHistoryChart,
 } from "@/features/candle-chart";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
@@ -15,6 +16,7 @@ interface CoinChartProps {
 	indicators:
 		| Readonly<Record<CandleInterval, ChartIndicatorLayout>>
 		| undefined;
+	priceLevels?: ChartPriceLevels;
 	source: CoinChartData | undefined;
 	symbol: string;
 }
@@ -26,6 +28,7 @@ export function CoinChart({
 	failed,
 	fillHeight,
 	indicators,
+	priceLevels,
 	source,
 	symbol,
 }: CoinChartProps) {
@@ -41,6 +44,7 @@ export function CoinChart({
 			indicators={indicators}
 			key={symbol}
 			paperPadding={paperPadding}
+			priceLevels={priceLevels}
 			source={source}
 			symbol={symbol}
 		/>

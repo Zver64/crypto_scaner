@@ -4,7 +4,7 @@ import {
 	createCandlestickData,
 	createIndicatorData,
 	createMarkerDataSelector,
-	fitPaneIndicatorScale,
+	fitScaleToLevels,
 	formatChartTime,
 	formatOhlc,
 	formatPrice,
@@ -255,7 +255,7 @@ describe("marker data selector", () => {
 	});
 });
 
-describe("fitPaneIndicatorScale", () => {
+describe("fitScaleToLevels", () => {
 	const rsi = {
 		levels: [
 			{ title: "Oversold", value: 30 },
@@ -267,20 +267,20 @@ describe("fitPaneIndicatorScale", () => {
 
 	it("keeps the levels in view when values stay between them", () => {
 		expect(
-			fitPaneIndicatorScale({ priceRange: { maxValue: 57, minValue: 40 } }, rsi)
+			fitScaleToLevels({ priceRange: { maxValue: 57, minValue: 40 } }, rsi)
 				?.priceRange,
 		).toEqual({ maxValue: 70, minValue: 30 });
 	});
 
 	it("extends past the levels to fit the values", () => {
 		expect(
-			fitPaneIndicatorScale({ priceRange: { maxValue: 85, minValue: 22 } }, rsi)
+			fitScaleToLevels({ priceRange: { maxValue: 85, minValue: 22 } }, rsi)
 				?.priceRange,
 		).toEqual({ maxValue: 85, minValue: 22 });
 	});
 
 	it("shows only the levels without visible values", () => {
-		expect(fitPaneIndicatorScale(null, rsi)?.priceRange).toEqual({
+		expect(fitScaleToLevels(null, rsi)?.priceRange).toEqual({
 			maxValue: 70,
 			minValue: 30,
 		});
@@ -288,6 +288,6 @@ describe("fitPaneIndicatorScale", () => {
 
 	it("keeps the visible range of an unbounded indicator", () => {
 		const visible = { priceRange: { maxValue: 2, minValue: -1 } };
-		expect(fitPaneIndicatorScale(visible, { levels: [] })).toEqual(visible);
+		expect(fitScaleToLevels(visible, { levels: [] })).toEqual(visible);
 	});
 });

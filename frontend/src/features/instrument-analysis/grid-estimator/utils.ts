@@ -48,6 +48,8 @@ import {
 	GRID_MAX_COUNT,
 	GridDecimal,
 	gridCountForMinimumStep,
+	gridLevels,
+	parseGridCount,
 	parseGridDecimal,
 } from "@/utils/calculator/grid";
 import type { GridInput, GridType } from "@/utils/calculator/types";
@@ -825,4 +827,29 @@ export function markupScaleLabels(
 			: []),
 		{ label: formatRangePercent(maxPercent), position: 100 },
 	];
+}
+
+// The ascending price levels of a grid, or null while its range is invalid or
+// too narrow to keep its levels apart as numbers. Spot and futures grids share
+// their levels.
+export function gridPriceLevels(
+	{ gridCount, lowerPrice, upperPrice }: GridInput,
+	gridType: GridType,
+): number[] | null {
+	let levels: number[];
+	try {
+		levels = gridLevels(
+			parseGridDecimal(lowerPrice, "Lower price"),
+			parseGridDecimal(upperPrice, "Upper price"),
+			parseGridCount(gridCount),
+			gridType,
+		).map((level) => level.toNumber());
+	} catch {
+		return null;
+	}
+	return levels.every(
+		(level, index) => index === 0 || level > levels[index - 1],
+	)
+		? levels
+		: null;
 }

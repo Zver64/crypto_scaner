@@ -112,6 +112,13 @@ export interface ChartIndicatorPane {
 	indicators: readonly ChartPaneIndicatorOptions[];
 	scale: ChartIndicatorScale;
 }
+// Price levels drawn across the candles, such as the levels of a grid, with an
+// autoscale provider that keeps them in view. Created with createChartPriceLevels.
+export interface ChartPriceLevels {
+	autoscaleInfoProvider: AutoscaleInfoProvider;
+	// Ascending and distinct; the first and last are the bounds.
+	levels: readonly number[];
+}
 // Entry and exit times of trades, arrows under and over their candles, and
 // other marked times, circles over their candles.
 export interface ChartMarkerGroup {
@@ -142,6 +149,7 @@ export interface PriceHistoryChartProps {
 	// first.
 	intervals?: readonly ChartInterval[];
 	paperPadding: string;
+	priceLevels?: ChartPriceLevels;
 	source: PriceHistorySource;
 	symbol: string;
 }

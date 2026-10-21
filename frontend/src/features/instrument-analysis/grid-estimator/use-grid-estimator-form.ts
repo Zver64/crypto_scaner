@@ -17,6 +17,7 @@ import {
 	gridBounds,
 	gridCountForRange,
 	gridMarketEstimate,
+	gridPriceLevels,
 	gridRecommendation,
 	lowerMarkupPercent,
 	lowerPriceFromMarkup,
@@ -38,6 +39,9 @@ export interface GridEstimatorFormOptions {
 	gridLimits?: SpotGridLimits | null;
 	hourlyVolatilityPercent?: number;
 	market: GridMarket;
+	// Called with the levels of the committed grid when the form mounts and
+	// whenever they are committed.
+	onPriceLevelsChange(levels: readonly number[] | null): void;
 }
 
 /**
@@ -51,6 +55,7 @@ export function useGridEstimatorForm({
 	gridLimits,
 	hourlyVolatilityPercent,
 	market,
+	onPriceLevelsChange,
 }: GridEstimatorFormOptions) {
 	// The parent remounts the calculator once its data is ready, so the price
 	// both markups are measured from stays fixed while it is being edited.
@@ -73,13 +78,37 @@ export function useGridEstimatorForm({
 		markup: recommendation.upperMarkup,
 		rangePercent: hourlyVolatilityPercent ?? 0,
 	}));
-	const form = useAppForm({ defaultValues });
+	const form = useAppForm({
+		defaultValues,
+		listeners: {
+			onMount: () =>
+				onPriceLevelsChange(
+					gridPriceLevels(recommendation.input, defaultValues.gridType),
+				),
+		},
+	});
 	// The sliders, markups, futures options, and estimate follow the values as
 	// they change.
 	const values = useSelector(form.store, (state) => state.values);
 	const [committedInput, setCommittedInput] = useState<GridInput>(
 		recommendation.input,
 	);
+	// Commits an input and reports the levels when the range changes. applyRange
+	// passes the grid type it has just set; other commits keep the current one.
+	const commitInput = (
+		input: GridInput,
+		gridType: GridType = values.gridType,
+	) => {
+		setCommittedInput(input);
+		if (
+			input.lowerPrice !== committedInput.lowerPrice ||
+			input.upperPrice !== committedInput.upperPrice ||
+			input.gridCount !== committedInput.gridCount ||
+			gridType !== values.gridType
+		) {
+			onPriceLevelsChange(gridPriceLevels(input, gridType));
+		}
+	};
 	// Sets a typed field's error the way its blur validator does, so the next
 	// blur checks the field again.
 	const setBlurError = (field: GridInputField, error: string | undefined) =>
@@ -132,12 +161,15 @@ export function useGridEstimatorForm({
 		setBlurError("gridCount", error ?? undefined);
 		setBlurError("lowerPrice", undefined);
 		setBlurError("upperPrice", undefined);
-		setCommittedInput({
-			...committedInput,
-			gridCount,
-			lowerPrice: range.lowerPrice,
-			upperPrice: range.upperPrice,
-		});
+		commitInput(
+			{
+				...committedInput,
+				gridCount,
+				lowerPrice: range.lowerPrice,
+				upperPrice: range.upperPrice,
+			},
+			range.gridType,
+		);
 	}
 
 	function currentRange(): GridRangeValues {
@@ -175,7 +207,7 @@ export function useGridEstimatorForm({
 	function commitUpperPrice(upperPrice: string) {
 		const markup = upperMarkupPercent(anchor, upperPrice);
 		if (markup === null) {
-			setCommittedInput({ ...committedInput, upperPrice });
+			commitInput({ ...committedInput, upperPrice });
 			return;
 		}
 		applyRange({ ...currentRange(), upperPrice }, { markup });
@@ -184,7 +216,7 @@ export function useGridEstimatorForm({
 	function commitLowerPrice(lowerPrice: string) {
 		const lowerMarkup = lowerMarkupPercent(anchor, lowerPrice);
 		if (lowerMarkup === null) {
-			setCommittedInput({ ...committedInput, lowerPrice });
+			commitInput({ ...committedInput, lowerPrice });
 			return;
 		}
 		applyRange({ ...currentRange(), lowerPrice }, { lowerMarkup });
@@ -226,7 +258,7 @@ export function useGridEstimatorForm({
 	function commitGridCount(gridCount: string) {
 		const stepPercent = gridCountStepPercent(gridCount);
 		if (stepPercent !== null) form.setFieldValue("rangePercent", stepPercent);
-		setCommittedInput({ ...committedInput, gridCount });
+		commitInput({ ...committedInput, gridCount });
 	}
 
 	function commitField(field: GridInputField) {
@@ -236,12 +268,12 @@ export function useGridEstimatorForm({
 		if (field === "upperPrice") commitUpperPrice(value);
 		else if (field === "lowerPrice") commitLowerPrice(value);
 		else if (field === "gridCount") commitGridCount(value);
-		else setCommittedInput({ ...committedInput, [field]: value });
+		else commitInput({ ...committedInput, [field]: value });
 	}
 
 	function applyInvestment(investment: string) {
 		form.setFieldValue("investment", investment);
-		setCommittedInput({ ...committedInput, investment });
+		commitInput({ ...committedInput, investment });
 	}
 
 	// Why a typed field cannot be committed; checked on blur.

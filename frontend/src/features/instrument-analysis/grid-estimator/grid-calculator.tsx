@@ -1,20 +1,45 @@
 import { Center, Paper, Stack, Tabs, Title } from "@mantine/core";
+import { useRef, useState } from "react";
 
+import { GRID_MARKET_TABS } from "@/features/instrument-analysis/grid-estimator/config";
 import {
 	GridEstimator,
 	type GridEstimatorProps,
 } from "@/features/instrument-analysis/grid-estimator/grid-estimator";
+import type { GridMarket } from "@/features/instrument-analysis/grid-estimator/types";
 
 interface GridCalculatorProps extends GridEstimatorProps {
 	paperPadding: string;
 }
 
 // Spot, USDT-M, and COIN-M grid calculators in tabs. Inactive panels stay mounted, so
-// each calculator keeps its inputs across tab switches.
+// each calculator keeps its inputs across tab switches. Reports the price
+// levels of the selected tab's grid.
 export function GridCalculator({
+	onPriceLevelsChange,
 	paperPadding,
 	...estimatorProps
 }: GridCalculatorProps) {
+	const [market, setMarket] = useState<GridMarket>("spot");
+	// The latest levels of every market, read only when a tab is selected.
+	const levelsRef = useRef<
+		Partial<Record<GridMarket, readonly number[] | null>>
+	>({});
+
+	const selectMarket = (value: string | null) => {
+		const tab = GRID_MARKET_TABS.find((item) => item.value === value);
+		if (!tab) return;
+		setMarket(tab.value);
+		onPriceLevelsChange(levelsRef.current[tab.value] ?? null);
+	};
+	const changeLevels = (
+		changedMarket: GridMarket,
+		changed: readonly number[] | null,
+	) => {
+		levelsRef.current[changedMarket] = changed;
+		if (changedMarket === market) onPriceLevelsChange(changed);
+	};
+
 	return (
 		<Paper
 			component="section"
@@ -28,21 +53,23 @@ export function GridCalculator({
 						Calculator
 					</Title>
 				</Center>
-				<Tabs defaultValue="spot">
+				<Tabs onChange={selectMarket} value={market}>
 					<Tabs.List grow>
-						<Tabs.Tab value="spot">Spot</Tabs.Tab>
-						<Tabs.Tab value="usdm">USDT-M</Tabs.Tab>
-						<Tabs.Tab value="coinm">COIN-M</Tabs.Tab>
+						{GRID_MARKET_TABS.map(({ label, value }) => (
+							<Tabs.Tab key={value} value={value}>
+								{label}
+							</Tabs.Tab>
+						))}
 					</Tabs.List>
-					<Tabs.Panel pt="md" value="spot">
-						<GridEstimator {...estimatorProps} market="spot" />
-					</Tabs.Panel>
-					<Tabs.Panel pt="md" value="usdm">
-						<GridEstimator {...estimatorProps} market="usdm" />
-					</Tabs.Panel>
-					<Tabs.Panel pt="md" value="coinm">
-						<GridEstimator {...estimatorProps} market="coinm" />
-					</Tabs.Panel>
+					{GRID_MARKET_TABS.map(({ value }) => (
+						<Tabs.Panel key={value} pt="md" value={value}>
+							<GridEstimator
+								{...estimatorProps}
+								market={value}
+								onPriceLevelsChange={(changed) => changeLevels(value, changed)}
+							/>
+						</Tabs.Panel>
+					))}
 				</Tabs>
 			</Stack>
 		</Paper>

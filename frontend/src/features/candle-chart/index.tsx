@@ -38,9 +38,11 @@ import { usePriceHistory } from "@/features/candle-chart/use-price-history";
 import { createIndicatorLegend } from "@/features/candle-chart/utils";
 import { VolumeSeries } from "@/features/candle-chart/volume-series";
 
+export { createChartPriceLevels } from "@/features/candle-chart/utils";
 export type {
 	ChartIndicatorLayout,
 	ChartIntervalOption,
+	ChartPriceLevels,
 	ChartReadoutOptions,
 	PriceHistorySnapshot,
 	PriceHistorySource,
@@ -62,6 +64,7 @@ export function PriceHistoryChart({
 	intervals,
 	live = true,
 	paperPadding,
+	priceLevels,
 	source,
 	symbol,
 }: PriceHistoryChartProps) {
@@ -172,9 +175,11 @@ export function PriceHistoryChart({
 							onBeforeDataChange={onBeforeDataChange}
 						/>
 						<CandleSeries
+							currentPrice={candles.at(-1)?.close}
 							data={series.candles}
 							markers={markers}
 							onActiveCandleChange={setActiveCandle}
+							priceLevels={priceLevels}
 							priceResolution={series.priceResolution}
 							visibleRange={visibleRange}
 						/>

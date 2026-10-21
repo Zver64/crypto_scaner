@@ -1,4 +1,5 @@
 import { Center, Loader, Stack } from "@mantine/core";
+import { useState } from "react";
 
 import type { CriterionRequest } from "@/api/generated/models";
 import { useBusinessRequestPermission } from "@/app/business-request-context";
@@ -6,6 +7,10 @@ import { RefreshingOverlay } from "@/components/refreshing-overlay";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { criterionKeys } from "@/features/analysis/identifiers";
+import {
+	type ChartPriceLevels,
+	createChartPriceLevels,
+} from "@/features/candle-chart";
 import { CoinBackButton } from "@/features/instrument-analysis/coin-back-button";
 import { CoinChart } from "@/features/instrument-analysis/coin-chart";
 import { CurrentPrice } from "@/features/instrument-analysis/current-price";
@@ -46,6 +51,13 @@ export function InstrumentAnalysisScreen({
 	const chart = useChartIndicators(permission.allowed);
 	// Shared by the chart and the price alerts, which show its current price.
 	const chartSource = useCoinChartData(symbol, chart.catalogs);
+	// The calculator grid drawn on the chart, kept with its symbol: the screen
+	// stays mounted when the symbol changes.
+	const [grid, setGrid] = useState<{
+		levels: ChartPriceLevels | null;
+		symbol: string;
+	}>({ levels: null, symbol });
+	const gridLevels = grid.symbol === symbol ? grid.levels : null;
 
 	// The previous symbol's result stays visible while refetching; the spot grid
 	// only uses a result for this symbol.
@@ -83,6 +95,12 @@ export function InstrumentAnalysisScreen({
 								)}
 								gridLimits={recommendationReady ? gridLimits.limits : undefined}
 								key={`binance:spot:USDT:${symbol}:${recommendationReady ? "ready" : "pending"}`}
+								onPriceLevelsChange={(levels) =>
+									setGrid({
+										levels: levels && createChartPriceLevels(levels),
+										symbol,
+									})
+								}
 								paperPadding={paperPadding}
 							/>
 						</RefreshingOverlay>
@@ -118,6 +136,7 @@ export function InstrumentAnalysisScreen({
 							failed={chart.failed}
 							fillHeight={fillChart}
 							indicators={chart.indicators}
+							priceLevels={gridLevels ?? undefined}
 							source={chartSource}
 							symbol={symbol}
 						/>

@@ -83,3 +83,21 @@ func TestNewRedactsOpaqueValuesAndSensitiveKeyVariants(t *testing.T) {
 		}
 	}
 }
+
+func TestWarningsAreForwardedBelowTheConfiguredLevel(t *testing.T) {
+	var output bytes.Buffer
+	var forwarded []string
+	logger := logging.New(&output, "error", logging.Options{Forward: func(record slog.Record) {
+		forwarded = append(forwarded, record.Message)
+	}})
+
+	logger.Info("not forwarded")
+	logger.Warn("sync delayed")
+
+	if output.Len() != 0 {
+		t.Fatalf("output = %q, want nothing below the configured level", output.String())
+	}
+	if len(forwarded) != 1 || forwarded[0] != "sync delayed" {
+		t.Fatalf("forwarded = %q, want the warning", forwarded)
+	}
+}

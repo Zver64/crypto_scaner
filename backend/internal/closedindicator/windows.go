@@ -41,7 +41,7 @@ func (all windows) plan(tracked map[pairKey]Subscription) {
 		current.pairs, current.depth = nil, 0
 	}
 	for key, subscription := range tracked {
-		at := historyKey{subscription.InstrumentID, subscription.Target.Interval}
+		at := subscription.history()
 		current := all[at]
 		if current == nil {
 			current = &window{}

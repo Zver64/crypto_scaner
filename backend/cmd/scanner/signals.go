@@ -311,7 +311,7 @@ func (c *cli) updateSignalCommand() *cobra.Command {
 			// edits are the flags that change the signal.
 			edits := []string{"expr", "target-ratio", "window", "min-market-cap", "max-market-cap", "name", "message"}
 			edited := slices.ContainsFunc(edits, flags.Changed) || coins.changed()
-			if !edited && !flags.Changed("add-indicators") {
+			if !edited && !addIndicators {
 				return usageError("specify at least one of --expr, --coin, --favorites, --coin-m, --track-favorites, --all-coins, --target-ratio, --window, --min-market-cap, --max-market-cap, --name, --message, or --add-indicators")
 			}
 			if err := settings.check(flags); err != nil {

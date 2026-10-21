@@ -128,6 +128,17 @@ FROM app.users
 WHERE strategy_alerts OR telegram_id = @administrator_telegram_id::BIGINT
 ORDER BY telegram_id;
 
+-- name: LockStrategyCoinInstruments :exec
+-- Locks the instruments a strategy's coins will reference in id order, the
+-- order of the other instrument row locks, before its coin rows change, so
+-- the rewrite cannot deadlock with the deletion of delisted instruments,
+-- whose cascade deletes coin rows. KEY SHARE is the lock the coin inserts
+-- take themselves.
+SELECT i.id FROM binance_spot.instruments i
+WHERE i.symbol = ANY(@symbols::TEXT[])
+ORDER BY i.id
+FOR KEY SHARE;
+
 -- name: DeleteStrategyCoins :exec
 DELETE FROM app.strategy_coins WHERE strategy_id = $1;
 

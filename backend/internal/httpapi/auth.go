@@ -53,19 +53,8 @@ func requireSession(sessions Sessions, logger *slog.Logger) func(http.Handler) h
 				return
 			}
 			user, err := sessions.Authenticate(request.Context(), token)
-			switch {
-			case errors.Is(err, auth.ErrUnauthenticated):
-				writeAPIError(response, http.StatusUnauthorized, "unauthenticated", sessionInvalidMessage, nil)
-				return
-			case err != nil:
-				attributes := append([]any{"module", "httpapi", "operation", "authenticate"}, requestAttributes(request.Context())...)
-				attributes = append(attributes, "error", err)
-				if clientGone(request.Context(), err) {
-					logger.InfoContext(request.Context(), "session authentication canceled by the client", attributes...)
-				} else {
-					logger.ErrorContext(request.Context(), "session authentication failed", attributes...)
-				}
-				writeAPIError(response, http.StatusInternalServerError, "internal_error", "Internal server error", nil)
+			if err != nil {
+				writeAuthenticationError(response, request, logger, err)
 				return
 			}
 			ctx := context.WithValue(request.Context(), userContextKey{}, user)
@@ -73,6 +62,24 @@ func requireSession(sessions Sessions, logger *slog.Logger) func(http.Handler) h
 			next.ServeHTTP(response, request.WithContext(ctx))
 		})
 	}
+}
+
+// writeAuthenticationError answers a request whose token Sessions.Authenticate
+// rejected: 401 for an invalid token, 500 for any other failure, which is
+// logged.
+func writeAuthenticationError(response http.ResponseWriter, request *http.Request, logger *slog.Logger, err error) {
+	if errors.Is(err, auth.ErrUnauthenticated) {
+		writeAPIError(response, http.StatusUnauthorized, "unauthenticated", sessionInvalidMessage, nil)
+		return
+	}
+	attributes := append([]any{"module", "httpapi", "operation", "authenticate"}, requestAttributes(request.Context())...)
+	attributes = append(attributes, "error", err)
+	if clientGone(request.Context(), err) {
+		logger.InfoContext(request.Context(), "session authentication canceled by the client", attributes...)
+	} else {
+		logger.ErrorContext(request.Context(), "session authentication failed", attributes...)
+	}
+	writeAPIError(response, http.StatusInternalServerError, "internal_error", "Internal server error", nil)
 }
 
 // requireInitData passes "Authorization: tma <init data>" to the session
@@ -125,6 +132,9 @@ func (api *api) CreateSession(ctx context.Context, _ CreateSessionRequestObject)
 }
 
 func (api *api) DeleteSession(ctx context.Context, _ DeleteSessionRequestObject) (DeleteSessionResponseObject, error) {
+	if apiTokenUsed(ctx) {
+		return DeleteSession403JSONResponse{sessionRequired(ctx, "An API token is not a session and cannot be revoked here")}, nil
+	}
 	if err := api.sessions.Revoke(ctx, credentialFromContext(ctx)); err != nil {
 		return DeleteSession500JSONResponse{api.internalError(ctx, "delete_session", err)}, nil
 	}

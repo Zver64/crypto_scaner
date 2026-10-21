@@ -114,7 +114,6 @@ WHERE instrument_id = ANY($1::bigint[])
   AND interval = $2
   AND open_time >= $3
   AND open_time <= $4
-  AND close_time < $5
 ORDER BY instrument_id, open_time
 `
 
@@ -123,7 +122,6 @@ type ListClosePricesParams struct {
 	Interval      string
 	FromTime      pgtype.Timestamptz
 	ToTime        pgtype.Timestamptz
-	ClosesBefore  pgtype.Timestamptz
 }
 
 type ListClosePricesRow struct {
@@ -138,7 +136,6 @@ func (q *Queries) ListClosePrices(ctx context.Context, arg ListClosePricesParams
 		arg.Interval,
 		arg.FromTime,
 		arg.ToTime,
-		arg.ClosesBefore,
 	)
 	if err != nil {
 		return nil, err

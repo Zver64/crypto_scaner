@@ -442,6 +442,23 @@ func (q *Queries) ListStrategyStates(ctx context.Context) ([]ListStrategyStatesR
 	return items, nil
 }
 
+const lockStrategyCoinInstruments = `-- name: LockStrategyCoinInstruments :exec
+SELECT i.id FROM binance_spot.instruments i
+WHERE i.symbol = ANY($1::TEXT[])
+ORDER BY i.id
+FOR KEY SHARE
+`
+
+// Locks the instruments a strategy's coins will reference in id order, the
+// order of the other instrument row locks, before its coin rows change, so
+// the rewrite cannot deadlock with the deletion of delisted instruments,
+// whose cascade deletes coin rows. KEY SHARE is the lock the coin inserts
+// take themselves.
+func (q *Queries) LockStrategyCoinInstruments(ctx context.Context, symbols []string) error {
+	_, err := q.db.Exec(ctx, lockStrategyCoinInstruments, symbols)
+	return err
+}
+
 const saveStrategyStates = `-- name: SaveStrategyStates :many
 INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at, take_profit, stop_loss)
 SELECT s.id, v.instrument_id, v.open_time, v.entry, v.buys, v.filled, v.quantity, v.opened_at, v.take_profit, v.stop_loss

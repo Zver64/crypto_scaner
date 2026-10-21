@@ -4,7 +4,6 @@
 package candle
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 
@@ -13,9 +12,6 @@ import (
 
 // Type is the registry identifier of the candle fields.
 const Type indicator.Type = "candle"
-
-// ErrInvalidRequest indicates parameters or inputs the module rejects.
-var ErrInvalidRequest = errors.New("invalid candle request")
 
 // New returns the candle field module.
 func New() indicator.Implementation { return module{} }
@@ -36,7 +32,7 @@ func (module) Describe() indicator.Descriptor {
 
 func (module) Normalize(parameters indicator.Parameters) (indicator.Parameters, error) {
 	if len(parameters) > 0 {
-		return nil, fmt.Errorf("%w: candle fields have no parameters", ErrInvalidRequest)
+		return nil, fmt.Errorf("%w: candle fields have no parameters", indicator.ErrInvalidRequest)
 	}
 	return indicator.Parameters{}, nil
 }
@@ -57,13 +53,13 @@ func (m module) Calculate(parameters indicator.Parameters, inputs indicator.Inpu
 	if _, err := m.Normalize(parameters); err != nil {
 		return indicator.Result{}, err
 	}
+	series, err := indicator.ReadInputs(inputs, indicator.CandleFields)
+	if err != nil {
+		return indicator.Result{}, fmt.Errorf("%w: %w", indicator.ErrInvalidRequest, err)
+	}
 	outputs := make(indicator.Outputs, len(indicator.CandleFields))
-	for _, field := range indicator.CandleFields {
-		values, ok := inputs[field]
-		if !ok {
-			return indicator.Result{}, fmt.Errorf("%w: %s input is required", ErrInvalidRequest, field)
-		}
-		outputs[field] = indicator.Series{Values: slices.Clone(values)}
+	for index, field := range indicator.CandleFields {
+		outputs[field] = indicator.Series{Values: slices.Clone(series[index])}
 	}
 	return indicator.Result{Outputs: outputs}, nil
 }

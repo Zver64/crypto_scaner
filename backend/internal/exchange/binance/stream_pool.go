@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/logging"
 
 	"github.com/gorilla/websocket"
 	"golang.org/x/time/rate"
@@ -42,10 +43,12 @@ type streamKind[K comparable] struct {
 	module string
 	event  string // envelope "e" value of data messages
 	name   func(K) string
-	// handle decodes one data message of connection epoch and delivers it.
-	handle func(ctx context.Context, payload []byte, epoch int64) error
-	// status reports the keys of one connection going up or down.
-	status func(keys []K, connected bool, err error) bool
+	// handle decodes one data message of connection epoch, delivers it, and
+	// returns the name of its stream, as far as it is known; an error rejects
+	// only that message.
+	handle func(ctx context.Context, payload []byte, epoch int64) (string, error)
+	// status reports the keys of connection epoch going up or down.
+	status func(keys []K, connected bool, epoch int64, err error) bool
 }
 
 // streamPool is a dynamically subscribed pool of Binance connections. Each key
@@ -69,10 +72,14 @@ type streamPool[K comparable] struct {
 	workers []*streamWorker[K]
 	started int // workers[:started] run under the current Run's context
 	running bool
+
+	// rejected are the streams whose last data message was rejected, so a
+	// run of rejected messages warns once.
+	rejected *logging.Failures[string]
 }
 
 func newStreamPool[K comparable](url string, dialer *websocket.Dialer, logger *slog.Logger, dialLimiter *rate.Limiter, kind streamKind[K]) *streamPool[K] {
-	return &streamPool[K]{url: url, dialer: dialer, logger: logger, dialLimiter: dialLimiter, kind: kind, added: make(chan struct{}, 1)}
+	return &streamPool[K]{url: url, dialer: dialer, logger: logger, dialLimiter: dialLimiter, kind: kind, added: make(chan struct{}, 1), rejected: logging.NewFailures[string](logger)}
 }
 
 // Run owns all upstream connections until ctx is cancelled. Workers are only
@@ -169,8 +176,8 @@ func (worker *streamWorker[K]) keys() []K {
 	return keys
 }
 
-func (worker *streamWorker[K]) publishStatus(connected bool, err error) {
-	if !worker.pool.kind.status(worker.keys(), connected, err) {
+func (worker *streamWorker[K]) publishStatus(connected bool, epoch int64, err error) {
+	if !worker.pool.kind.status(worker.keys(), connected, epoch, err) {
 		worker.pool.logger.Warn("Binance status queue full", "module", worker.pool.kind.module, "operation", "status")
 	}
 }
@@ -178,6 +185,8 @@ func (worker *streamWorker[K]) publishStatus(connected bool, err error) {
 // run keeps one connection open while the worker has subscriptions.
 func (worker *streamWorker[K]) run(ctx context.Context) {
 	failures := 0
+	// reconnects warns once while connections keep failing within a minute.
+	reconnects := logging.NewFailure(worker.pool.logger)
 	for ctx.Err() == nil {
 		if worker.count() == 0 {
 			select {
@@ -188,22 +197,24 @@ func (worker *streamWorker[K]) run(ctx context.Context) {
 			}
 		}
 		connectedAt := time.Now()
-		err := worker.connect(ctx)
+		epoch, err := worker.connect(ctx)
 		if ctx.Err() != nil {
 			return
 		}
 		if errors.Is(err, errStreamWorkerIdle) || time.Since(connectedAt) >= time.Minute {
 			failures = 0
+			reconnects.Forget()
 		}
 		if errors.Is(err, errStreamWorkerIdle) {
 			continue
 		}
-		worker.publishStatus(false, err)
-		level := slog.LevelWarn
+		worker.publishStatus(false, epoch, err)
+		args := []any{"module", worker.pool.kind.module, "operation", "reconnect", "stream", worker.pool.kind.label, "error", err}
 		if errors.Is(err, errStreamRotation) {
-			level = slog.LevelInfo
+			worker.pool.logger.InfoContext(ctx, "Binance WebSocket reconnecting", args...)
+		} else {
+			reconnects.Warn(ctx, "Binance WebSocket reconnecting", args...)
 		}
-		worker.pool.logger.Log(ctx, level, "Binance WebSocket reconnecting", "module", worker.pool.kind.module, "operation", "reconnect", "stream", worker.pool.kind.label, "error", err)
 		if backoff.Sleep(ctx, backoff.Jitter(backoff.Exponential(time.Second, 30*time.Second, failures), 0.5)) != nil {
 			return
 		}
@@ -211,13 +222,16 @@ func (worker *streamWorker[K]) run(ctx context.Context) {
 	}
 }
 
-func (worker *streamWorker[K]) connect(ctx context.Context) error {
+// connect serves one connection attempt until it ends and returns the
+// attempt's epoch. Every attempt, even a failed dial, takes a new epoch, so a
+// later status always carries a larger one than data of an earlier connection.
+func (worker *streamWorker[K]) connect(ctx context.Context) (int64, error) {
 	pool := worker.pool
+	epoch := pool.epoch.Add(1)
 	conn, err := dialBinanceStream(ctx, pool.url, pool.dialer, pool.dialLimiter, pool.kind.label)
 	if err != nil {
-		return err
+		return epoch, err
 	}
-	epoch := pool.epoch.Add(1)
 	readResult := make(chan error, 1)
 	readDone := make(chan struct{})
 	acks := make(chan controlReply, 16)
@@ -238,26 +252,26 @@ func (worker *streamWorker[K]) connect(ctx context.Context) error {
 	rotation := time.NewTimer(streamRotation)
 	defer rotation.Stop()
 	if err := worker.reconcile(ctx, conn, limiter, active, acks); err != nil {
-		return err
+		return epoch, err
 	}
 	if len(active) == 0 {
-		return errStreamWorkerIdle
+		return epoch, errStreamWorkerIdle
 	}
-	worker.publishStatus(true, nil)
+	worker.publishStatus(true, epoch, nil)
 	for {
 		select {
 		case <-ctx.Done():
-			return nil
+			return epoch, nil
 		case err := <-readResult:
-			return err
+			return epoch, err
 		case <-rotation.C:
-			return errStreamRotation
+			return epoch, errStreamRotation
 		case <-worker.changes:
 			if err := worker.reconcile(ctx, conn, limiter, active, acks); err != nil {
-				return err
+				return epoch, err
 			}
 			if len(active) == 0 {
-				return errStreamWorkerIdle
+				return epoch, errStreamWorkerIdle
 			}
 		}
 	}
@@ -323,8 +337,20 @@ func (worker *streamWorker[K]) readLoop(ctx context.Context, conn *websocket.Con
 		if envelope.Event != worker.pool.kind.event {
 			continue
 		}
-		if err := worker.pool.kind.handle(ctx, payload, epoch); err != nil {
-			return err
-		}
+		stream, err := worker.pool.kind.handle(ctx, payload, epoch)
+		worker.pool.noteData(ctx, stream, err)
+	}
+}
+
+// noteData records the outcome of one data message of stream: a rejected
+// message is skipped, and only the first of a stream's consecutive
+// rejections is logged, since every message, not a retry, repeats it.
+func (pool *streamPool[K]) noteData(ctx context.Context, stream string, err error) {
+	if err == nil {
+		pool.rejected.Forget(stream)
+		return
+	}
+	if pool.rejected.Mark(stream) {
+		pool.logger.WarnContext(ctx, "Binance stream message skipped", "module", pool.kind.module, "operation", "decode", "stream", stream, "error", err)
 	}
 }

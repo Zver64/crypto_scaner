@@ -79,7 +79,8 @@ func (c *chartClient) Wait() { c.group.Wait() }
 
 // Enqueue hands a live-service message to the stream of its key. A stream
 // exists before its live subscription starts, so messages for keys without
-// one are late deliveries of an ended subscription and are dropped.
+// one are late deliveries of an ended subscription and are dropped. On false
+// the live service closes the client.
 func (c *chartClient) Enqueue(message marketlive.Message) bool {
 	c.mu.Lock()
 	closed, entry := c.closed, c.streams[message.Key]
@@ -87,14 +88,7 @@ func (c *chartClient) Enqueue(message marketlive.Message) bool {
 	if closed {
 		return false
 	}
-	if entry.stream == nil {
-		return true
-	}
-	if !entry.stream.Enqueue(message) {
-		c.Close()
-		return false
-	}
-	return true
+	return entry.stream == nil || entry.stream.Enqueue(message)
 }
 
 // setRange sets the chart range of key. A new key starts a stream whose first

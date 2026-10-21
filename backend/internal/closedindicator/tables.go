@@ -30,6 +30,7 @@ func (tracker *Tracker) SetTargets(targets []Target) error {
 	tracker.mu.Lock()
 	tracker.targets = slices.Clone(targets)
 	tracker.tableKeys = keysByInterval(targets)
+	tracker.forgetFailures()
 	for pair := range tracker.values {
 		if _, ok := kept[pair.target]; !ok {
 			if _, tracked := tracker.tracked[pair]; !tracked {
@@ -42,7 +43,9 @@ func (tracker *Tracker) SetTargets(targets []Target) error {
 }
 
 // Latest returns the table targets for each instrument, in target order. A
-// value that cannot be loaded has no outputs, so a table shows it as missing.
+// value that cannot be loaded has no outputs, so a table shows it as missing;
+// the other values are served and cached all the same. A failing pair is
+// warned about once until it succeeds.
 func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[int64][]Value {
 	result := make(map[int64][]Value, len(instrumentIDs))
 	var missing []Subscription
@@ -54,27 +57,26 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 	}
 	for _, id := range instrumentIDs {
 		for index, target := range targets {
-			if _, ok := tracker.values[pairKey{id, keys[index]}]; !ok {
+			if _, ok := tracker.values[tablePair(id, keys[index])]; !ok {
 				missing = append(missing, Subscription{InstrumentID: id, Target: target})
 			}
 		}
 	}
 	versions := tracker.versionSnapshot(missing)
 	tracker.mu.Unlock()
-	computed := map[pairKey]Value{}
-	failed := false
+	computed, failed := map[pairKey]Value{}, map[pairKey]error{}
 	if len(missing) > 0 {
-		var err error
-		if computed, err = tracker.calculate(ctx, missing); err != nil {
-			tracker.logger.WarnContext(ctx, "load closed indicators failed", "module", "closed_indicator", "error", err)
-			failed = true
-		}
+		computed, failed = tracker.calculate(ctx, missing)
+	}
+	// The caller left, so its reads failed on its context, not on the pairs.
+	if ctx.Err() != nil {
+		failed = nil
 	}
 	tracker.mu.Lock()
-	defer tracker.mu.Unlock()
+	failures := tracker.settle(computed, failed)
 	for _, subscription := range missing {
-		key := pairKey{subscription.InstrumentID, subscription.Target.Key()}
-		history := historyKey{subscription.InstrumentID, subscription.Target.Interval}
+		key := subscription.pair()
+		history := subscription.history()
 		// A value calculated before a history change is stale; a newer
 		// cached value or none is returned instead.
 		if tracker.versions[history] != versions[history] {
@@ -83,15 +85,15 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 		}
 		// Only values of current targets are cached, so history changes
 		// expire every cached value.
-		current := slices.Contains(tracker.tableKeys[subscription.Target.Interval], key.target)
-		if _, exists := tracker.values[key]; !failed && !exists && current {
-			tracker.values[key] = computed[key]
+		value, ok := computed[key]
+		if _, exists := tracker.values[key]; ok && !exists && tracker.isTablePair(key) {
+			tracker.values[key] = value
 		}
 	}
 	for _, id := range instrumentIDs {
 		values := make([]Value, len(targets))
 		for index, target := range targets {
-			key := pairKey{id, keys[index]}
+			key := tablePair(id, keys[index])
 			if value, ok := computed[key]; ok {
 				values[index] = value
 			} else if value, ok := tracker.values[key]; ok {
@@ -102,6 +104,8 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 		}
 		result[id] = values
 	}
+	tracker.mu.Unlock()
+	tracker.warn(ctx, "load closed indicators failed", failures)
 	return result
 }
 
@@ -109,7 +113,7 @@ func (tracker *Tracker) Latest(ctx context.Context, instrumentIDs []int64) map[i
 func (tracker *Tracker) versionSnapshot(subscriptions []Subscription) map[historyKey]uint64 {
 	result := make(map[historyKey]uint64, len(subscriptions))
 	for _, subscription := range subscriptions {
-		key := historyKey{subscription.InstrumentID, subscription.Target.Interval}
+		key := subscription.history()
 		result[key] = tracker.versions[key]
 	}
 	return result

@@ -10,7 +10,11 @@ import (
 	"time"
 
 	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/indicator"
+	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/delivery"
+	"crypto-scanner/internal/platform/logging"
 
 	"github.com/google/uuid"
 )
@@ -20,6 +24,9 @@ const (
 	// retryDelay and maxRetryDelay space the rounds after a failed one.
 	retryDelay    = 10 * time.Second
 	maxRetryDelay = 5 * time.Minute
+	// catchUpLimit bounds the instruments whose missed candles one round
+	// catches up, over all strategies; the rest wait for the next rounds.
+	catchUpLimit = 20
 )
 
 // Instrument is one active instrument strategies may evaluate.
@@ -56,18 +63,26 @@ type Values interface {
 	// Listen receives the changes of each tracker step at once.
 	Listen(func([]closedindicator.Change))
 	// Snapshot returns the value of each subscription and also lists the
-	// targets some subscribed instrument has no value for yet, or none
-	// calculated with the subscribed points.
+	// targets some subscription has no value for yet.
 	Snapshot([]closedindicator.Subscription) ([]closedindicator.Value, []closedindicator.Target)
 }
 
 // Strategies supplies the current strategies. A change requests its
 // baseline before List can return the changed strategy. DisableAtRevision
 // disables a strategy that a rule error halts, only while it still has the
-// revision that failed, and reports whether it did.
+// revision that failed, and reports whether it did. ReloadFavorites rereads
+// the administrator's favorites when their last read failed.
 type Strategies interface {
 	List() []Entry
 	DisableAtRevision(ctx context.Context, id uuid.UUID, revision int64) (bool, error)
+	ReloadFavorites(ctx context.Context) error
+}
+
+// CandleStore reads the stored candles that catch-ups and backtests replay.
+type CandleStore interface {
+	// ListLatestCandles returns up to limit latest closed candles per
+	// instrument in chronological order.
+	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
 }
 
 type Sender interface {
@@ -79,11 +94,15 @@ type Sender interface {
 // per instrument, and alerts on the buys and sells it signals.
 type Monitor struct {
 	store      MonitorStore
+	candles    CandleStore
+	registry   *indicator.Registry
 	values     Values
 	strategies Strategies
 	sender     Sender
 	logger     *slog.Logger
 	now        func() time.Time
+	// catchUpLimit is catchUpLimit, which tests lower.
+	catchUpLimit int
 	// administratorID always receives strategy messages.
 	administratorID int64
 
@@ -93,6 +112,11 @@ type Monitor struct {
 	// write failed, conflicted, or was rejected; failed delays the next round
 	// after a failed store call, but not after a conflict. Only Run's goroutine uses them.
 	resync, failed bool
+	// catchUps are the catch-up retries of the instruments of each
+	// strategy. Only Run's goroutine uses it.
+	catchUps map[uuid.UUID]map[int64]*catchUpRetry
+	// failures warns once about each failure that keeps recurring.
+	failures *logging.Failures[failureKey]
 
 	mu sync.Mutex
 	// pending are instruments with changed values; full requests evaluating
@@ -107,13 +131,28 @@ type message struct {
 	text       string
 }
 
+// failureKey names a recurring failure of the monitor: an operation and the
+// strategy and instrument it concerns, if any.
+type failureKey struct {
+	operation  string
+	strategy   uuid.UUID
+	instrument int64
+}
+
+// loadStatesFailure is the failure of loading the stored states.
+var loadStatesFailure = failureKey{operation: "load states"}
+
 // NewMonitor creates a monitor and subscribes it to value changes. Messages
 // go to administratorID and to users with strategy alerts.
-func NewMonitor(store MonitorStore, values Values, strategies Strategies, sender Sender, administratorID int64, logger *slog.Logger) *Monitor {
+// Missed candles are replayed over the candles stored in candles with the
+// indicators of registry.
+func NewMonitor(store MonitorStore, candles CandleStore, registry *indicator.Registry, values Values, strategies Strategies, sender Sender, administratorID int64, logger *slog.Logger) *Monitor {
+	logger = logger.With("module", "strategy")
 	monitor := &Monitor{
-		store: store, values: values, strategies: strategies, sender: sender, administratorID: administratorID, logger: logger.With("module", "strategy"), now: time.Now,
+		store: store, candles: candles, registry: registry, values: values, strategies: strategies, sender: sender, administratorID: administratorID,
+		logger: logger, failures: logging.NewFailures[failureKey](logger), now: time.Now, catchUpLimit: catchUpLimit,
 		wake: make(chan struct{}, 1), sends: make(chan message, 256),
-		pending: map[int64]struct{}{}, baselines: map[uuid.UUID]struct{}{},
+		pending: map[int64]struct{}{}, baselines: map[uuid.UUID]struct{}{}, catchUps: map[uuid.UUID]map[int64]*catchUpRetry{},
 	}
 	// A tracker step, such as that of a synchronization round, is
 	// evaluated as one round, so its alerts of a strategy go together.
@@ -151,21 +190,28 @@ func (monitor *Monitor) signal() {
 	}
 }
 
-// Run evaluates strategies until ctx is cancelled.
+// Run evaluates strategies until ctx is cancelled. It retries loading the
+// stored states until it succeeds.
 func (monitor *Monitor) Run(ctx context.Context) error {
 	state := map[uuid.UUID]map[int64]TradeState{}
-	if err := monitor.loadStates(ctx, state); err != nil {
+	for failures := 0; ; failures++ {
+		err := monitor.loadStates(ctx, state)
+		if err == nil {
+			break
+		}
 		if ctx.Err() != nil {
 			return nil
 		}
-		return err
+		monitor.failures.Warn(ctx, loadStatesFailure, "initial strategy states load failed", "error", err)
+		if backoff.Sleep(ctx, backoff.Exponential(retryDelay, maxRetryDelay, failures)) != nil {
+			return nil
+		}
 	}
-	var workers sync.WaitGroup
-	for range sendWorkers {
-		workers.Add(1)
-		go func() { defer workers.Done(); monitor.sendLoop(ctx) }()
-	}
-	defer workers.Wait()
+	monitor.failures.Recover(ctx, loadStatesFailure, "strategy states load recovered")
+	// The alerts queued at shutdown, whose states are stored, are still
+	// sent.
+	waitSends := delivery.Start(ctx, sendWorkers, monitor.sends, monitor.deliver)
+	defer waitSends()
 	// Baselines requested before a restart start now.
 	var pending []uuid.UUID
 	for _, entry := range monitor.strategies.List() {
@@ -177,6 +223,10 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 	retry := time.NewTimer(retryDelay)
 	retry.Stop()
 	defer retry.Stop()
+	// catchUp fires at the earliest retry of a delayed catch-up.
+	catchUp := time.NewTimer(retryDelay)
+	catchUp.Stop()
+	defer catchUp.Stop()
 	// failures counts the failed rounds in a row; while any, only the retry
 	// starts the next round.
 	failures := 0
@@ -189,8 +239,18 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 				continue
 			}
 		case <-retry.C:
+		case <-catchUp.C:
+			// The retried catch-ups evaluate every instrument, once no
+			// failed round delays them.
+			monitor.Changed()
+			continue
 		}
 		monitor.round(ctx, state)
+		if at, ok := monitor.nextCatchUp(); ok {
+			catchUp.Reset(at.Sub(monitor.now()))
+		} else {
+			catchUp.Stop()
+		}
 		if !monitor.failed {
 			failures = 0
 			continue
@@ -201,15 +261,25 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 	}
 }
 
-// round reloads the stored states when they may differ and evaluates the
-// pending work.
+// round reloads the stored states when they may differ and the favorites
+// when their last read failed, and evaluates the pending work, with the
+// favorites last read when they cannot be reloaded.
 func (monitor *Monitor) round(ctx context.Context, state map[uuid.UUID]map[int64]TradeState) {
+	// Stale favorites do not hold up the round; its failure, which the
+	// strategies log, only retries it.
+	favoritesErr := monitor.strategies.ReloadFavorites(ctx)
+	defer func() {
+		if favoritesErr != nil {
+			monitor.failed = true
+		}
+	}()
 	if monitor.resync {
 		if err := monitor.loadStates(ctx, state); err != nil {
-			monitor.logger.WarnContext(ctx, "reload strategy states failed", "error", err)
+			monitor.failures.Warn(ctx, loadStatesFailure, "reload strategy states failed", "error", err)
 			monitor.failed = true
 			return
 		}
+		monitor.failures.Recover(ctx, loadStatesFailure, "strategy states load recovered")
 		monitor.resync = false
 	}
 	monitor.evaluate(ctx, state)
@@ -274,29 +344,35 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[uuid.UUID]map[in
 		}
 	}
 	monitor.mu.Unlock()
-	// Disabled and deleted strategies forget their states in the store.
-	for id := range state {
-		if !slices.ContainsFunc(strategies, func(entry Entry) bool { return entry.ID == id }) {
-			delete(state, id)
-		}
+	// Disabled and deleted strategies forget their states in the store,
+	// and their catch-ups.
+	evaluated := func(id uuid.UUID) bool {
+		return slices.ContainsFunc(strategies, func(entry Entry) bool { return entry.ID == id })
 	}
+	maps.DeleteFunc(state, func(id uuid.UUID, _ map[int64]TradeState) bool { return !evaluated(id) })
+	maps.DeleteFunc(monitor.catchUps, func(id uuid.UUID, _ map[int64]*catchUpRetry) bool { return !evaluated(id) })
+	monitor.failures.Retain(func(key failureKey) bool { return key.strategy == uuid.Nil || evaluated(key.strategy) })
 	if len(strategies) == 0 {
 		return
 	}
+	instrumentsFailure := failureKey{operation: "load instruments"}
 	instruments, err := monitor.store.ListStrategyInstruments(ctx)
 	if err != nil {
-		monitor.logger.WarnContext(ctx, "load monitored instruments failed", "error", err)
+		monitor.failures.Warn(ctx, instrumentsFailure, "load monitored instruments failed", "error", err)
 		requeue()
 		return
 	}
+	monitor.failures.Recover(ctx, instrumentsFailure, "load monitored instruments recovered")
 	// Recipients are known before any state is stored, so a stored signal is
 	// never left without its alert.
+	recipientsFailure := failureKey{operation: "load recipients"}
 	recipients, err := monitor.store.ListStrategyRecipients(ctx, monitor.administratorID)
 	if err != nil {
-		monitor.logger.WarnContext(ctx, "load strategy recipients failed", "error", err)
+		monitor.failures.Warn(ctx, recipientsFailure, "load strategy recipients failed", "error", err)
 		requeue()
 		return
 	}
+	monitor.failures.Recover(ctx, recipientsFailure, "load strategy recipients recovered")
 	active := make(map[int64]Instrument, len(instruments))
 	for _, instrument := range instruments {
 		active[instrument.ID] = instrument
@@ -307,7 +383,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[uuid.UUID]map[in
 			changed = append(changed, instrument)
 		}
 	}
-	work := roundWork{instruments: instruments, changed: changed, full: full, baselines: baselines, recipients: recipients}
+	work := roundWork{instruments: instruments, changed: changed, full: full, baselines: baselines, recipients: recipients, catchUpLeft: new(monitor.catchUpLimit)}
 	work.current = snapshot{reads: readsOf(strategies, Entry.instruments, instruments), now: monitor.now(), bySymbol: bySymbol(instruments)}
 	work.current.values, work.missing = monitor.values.Snapshot(work.current.reads.subscriptions)
 	for _, entry := range strategies {
@@ -325,18 +401,8 @@ func (monitor *Monitor) send(ctx context.Context, recipients []int64, text strin
 	}
 }
 
-func (monitor *Monitor) sendLoop(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case item := <-monitor.sends:
-			sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err := monitor.sender.SendStrategyMessage(sendCtx, item.telegramID, item.text)
-			cancel()
-			if err != nil {
-				monitor.logger.WarnContext(ctx, "strategy Telegram delivery failed", "error", err)
-			}
-		}
+func (monitor *Monitor) deliver(ctx context.Context, item message) {
+	if err := monitor.sender.SendStrategyMessage(ctx, item.telegramID, item.text); err != nil {
+		monitor.logger.WarnContext(ctx, "strategy Telegram delivery failed", "error", err)
 	}
 }

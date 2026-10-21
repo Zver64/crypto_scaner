@@ -28,12 +28,14 @@ import (
 const requestTimeout = time.Minute
 
 // cli holds the global flags and the profile and server a command talks to,
-// which error messages name.
+// which error messages name. running is set once cobra's flag and argument
+// checks have passed and a command runs.
 type cli struct {
 	profileName string
 	json        bool
 	profile     string
 	server      string
+	running     bool
 }
 
 // run executes the command line and prints its error on stderr: with --json
@@ -144,7 +146,22 @@ API error shape {"error":{"code","message","details"},"request_id"}.`,
 	_ = root.RegisterFlagCompletionFunc("profile", completeProfiles)
 	root.AddCommand(c.loginCommand(), c.profilesCommand(), c.useCommand(),
 		c.varsCommand(), c.validateCommand(), c.favoritesCommand(), c.strategiesCommand(), c.signalsCommand(), c.indicatorsCommand(), c.backtestCommand())
+	c.markRunning(root)
 	return root
+}
+
+// markRunning makes every command of the tree set running before its RunE,
+// so describe tells cobra's check errors from the command's own.
+func (c *cli) markRunning(command *cobra.Command) {
+	if run := command.RunE; run != nil {
+		command.RunE = func(command *cobra.Command, args []string) error {
+			c.running = true
+			return run(command, args)
+		}
+	}
+	for _, child := range command.Commands() {
+		c.markRunning(child)
+	}
 }
 
 // completeProfiles completes the profile names of the local configuration.

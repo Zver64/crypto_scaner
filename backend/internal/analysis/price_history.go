@@ -15,14 +15,11 @@ type PriceHistories struct {
 	ThirtyDay []*float64
 }
 
-func (service *Service) priceHistories(ctx context.Context, instruments []market.Instrument, windows market.PriceWindows) (map[int64]PriceHistories, error) {
-	histories := make(map[int64]PriceHistories, len(instruments))
-	if len(instruments) == 0 {
+// PriceHistories loads the price histories of the instruments over windows.
+func (service *Service) PriceHistories(ctx context.Context, ids []int64, windows market.PriceWindows) (map[int64]PriceHistories, error) {
+	histories := make(map[int64]PriceHistories, len(ids))
+	if len(ids) == 0 {
 		return histories, nil
-	}
-	ids := make([]int64, len(instruments))
-	for i, instrument := range instruments {
-		ids[i] = instrument.ID
 	}
 	hourly, err := service.closes(ctx, ids, market.IntervalHour, windows.SevenDay.From, windows.SevenDay.To, market.SevenDayPriceSlots)
 	if err != nil {

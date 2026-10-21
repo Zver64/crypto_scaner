@@ -226,13 +226,13 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 		candidates = next
 	}
 	result.AnalyzedCount = len(instruments) - result.InsufficientDataCount - len(result.Unresolved)
-	histories, err := service.priceHistories(ctx, candidates, windows)
-	if err != nil {
-		return SearchResult{}, err
-	}
 	ids := make([]int64, len(candidates))
 	for index, instrument := range candidates {
 		ids[index] = instrument.ID
+	}
+	histories, err := service.PriceHistories(ctx, ids, windows)
+	if err != nil {
+		return SearchResult{}, err
 	}
 	closed := service.closed.Latest(ctx, ids)
 	for _, instrument := range candidates {

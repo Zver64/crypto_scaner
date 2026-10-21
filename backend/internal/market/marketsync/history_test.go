@@ -68,12 +68,8 @@ func TestSyncEnsuresHistoryDepthForEverySupportedInterval(t *testing.T) {
 						t.Fatal(err)
 					}
 					assertContinuousHistory(t, store, interval, want)
-					wantRecheck := 1
-					if scenario == "no closed history" {
-						wantRecheck = 0
-					}
-					if len(exchange.requests)-requestsAfterRepair != wantRecheck {
-						t.Fatalf("completed repair made %d requests, want %d latest-close recheck", len(exchange.requests)-requestsAfterRepair, wantRecheck)
+					if len(exchange.requests)-requestsAfterRepair != 1 {
+						t.Fatalf("completed repair made %d requests, want one latest-close recheck", len(exchange.requests)-requestsAfterRepair)
 					}
 					if scenario == "short" {
 						last := exchange.requests[requestsAfterRepair-1]
@@ -208,6 +204,27 @@ func TestEmptyGapIsNotRequestedAgainBeforeItsRetry(t *testing.T) {
 	})
 }
 
+func TestInstrumentWithoutClosedCandlesIsRequestedAgainNextRun(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
+		exchange := &historyExchange{instrument: instrument, candles: intervalCandles(market.IntervalHour, 1)}
+		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}}
+		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
+		if err := synchronizer.Sync(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if len(store.coverage) != 0 {
+			t.Fatalf("an instrument without candles was recorded as exhausted: %#v", store.coverage)
+		}
+
+		time.Sleep(time.Hour)
+		if err := synchronizer.Sync(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		assertContinuousHistory(t, store, market.IntervalHour, 1)
+	})
+}
+
 func TestUnchangedHistoryIsSummarizedOncePerRun(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
@@ -313,9 +330,9 @@ func (s *historyStore) ListLatestCandles(_ context.Context, instrumentIDs []int6
 	return map[int64][]market.Candle{instrumentIDs[0]: result[max(len(result)-limit, 0):]}, nil
 }
 
-func (s *historyStore) UpsertCandlesWithChanges(ctx context.Context, candles []market.Candle) ([]market.Candle, error) {
+func (s *historyStore) UpsertCandlesWithChanges(_ context.Context, candles []market.Candle) ([]market.Candle, error) {
 	previous := cloneCandles(s.candles)
-	if err := s.UpsertCandles(ctx, candles); err != nil {
+	if err := s.upsert(candles); err != nil {
 		return nil, err
 	}
 	changed := make([]market.Candle, 0, len(candles))
@@ -337,7 +354,7 @@ func (s *historyStore) UpsertCandlesWithChanges(ctx context.Context, candles []m
 	return changed, nil
 }
 
-func (s *historyStore) UpsertCandles(_ context.Context, candles []market.Candle) error {
+func (s *historyStore) upsert(candles []market.Candle) error {
 	if len(candles) > 0 && s.upsertErrOnce != nil {
 		err := s.upsertErrOnce
 		s.upsertErrOnce = nil

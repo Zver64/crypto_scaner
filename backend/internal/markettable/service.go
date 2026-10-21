@@ -19,6 +19,7 @@ type Result struct {
 type Analyzer interface {
 	Search(context.Context, analysis.SearchRequest) (analysis.SearchResult, error)
 	SearchSymbols(context.Context, analysis.SearchRequest, []string) (analysis.SearchResult, error)
+	PriceHistories(context.Context, []int64, market.PriceWindows) (map[int64]analysis.PriceHistories, error)
 }
 
 // CoinMPerpetuals lists the stored base assets of Binance COIN-M perpetual
@@ -106,7 +107,8 @@ func searchResult(search analysis.SearchResult, catalog Catalog, coinM []string)
 
 // Favorites analyzes the active favorites and returns a table row for every
 // favorite, in favorites order. Favorites the analysis skipped or rejected keep
-// the cells that do not depend on it, such as closed indicator values.
+// the cells that do not depend on it, such as closed indicator values and
+// price histories.
 func (service *Service) Favorites(ctx context.Context, items []favorites.Favorite, request analysis.SearchRequest) (Result, error) {
 	symbols := make([]string, 0, len(items))
 	for _, item := range items {
@@ -129,13 +131,17 @@ func (service *Service) Favorites(ctx context.Context, items []favorites.Favorit
 		}
 	}
 	closed := service.closed.Latest(ctx, missing)
+	histories, err := service.analyzer.PriceHistories(ctx, missing, search.PriceWindows)
+	if err != nil {
+		return Result{}, err
+	}
 	coinM, err := service.CoinMSymbols(ctx)
 	if err != nil {
 		return Result{}, err
 	}
 	rows := make([]Row, len(items))
 	for i, item := range items {
-		row := Row{Symbol: item.Symbol, ClosedIndicators: closed[item.InstrumentID]}
+		row := Row{Symbol: item.Symbol, PriceHistories: histories[item.InstrumentID], ClosedIndicators: closed[item.InstrumentID]}
 		if analyzedItem, ok := analyzed[item.Symbol]; ok {
 			row = RowFromSearchItem(analyzedItem)
 		}

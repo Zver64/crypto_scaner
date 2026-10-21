@@ -13,6 +13,7 @@ import (
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/market/kline"
 	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/logging"
 
 	"golang.org/x/time/rate"
 )
@@ -23,7 +24,8 @@ const (
 	recoveryPagesPerBatch = 16
 	recoveryQueryRate     = 20
 	// recoveryQuietFailures are logged at INFO: the newest closed candle is
-	// usually just not synchronized yet. Recovery ends after maxRecoveryFailures
+	// usually just not synchronized yet; of the later ones only the first
+	// warns. Recovery ends after maxRecoveryFailures
 	// consecutive failed batches; a batch that advances resets the count.
 	recoveryQuietFailures = 4
 	maxRecoveryFailures   = 8
@@ -77,6 +79,9 @@ type Message struct {
 // Client receives manager messages without ever blocking the upstream reader.
 type Client interface {
 	ID() string
+	// Enqueue reports false when the client cannot keep up. It runs under the
+	// service lock and must not close the client: the service removes it and
+	// calls Close after unlocking.
 	Enqueue(Message) bool
 	Close()
 }
@@ -91,7 +96,6 @@ type keyState struct {
 	clients         map[string]Client
 	candles         map[time.Time]CandleState
 	latestConfirmed time.Time // REST-confirmed high-water mark; independent of clock skew
-	freshness       Freshness
 	// releaseAt is when Run releases the key if it still has no clients; zero
 	// while clients remain.
 	releaseAt time.Time
@@ -100,27 +104,96 @@ type keyState struct {
 	recoveryGeneration uint64
 	recoveryStart      time.Time // inclusive
 	recoveryThrough    time.Time // inclusive
-	reconnectFrom      *time.Time
-	upstreamConnected  bool
+	// recoveryRequested asks Run to start the recovery goroutine of the
+	// current generation; set when a recovery starts outside Run's goroutine.
+	recoveryRequested bool
+	reconnectFrom     *time.Time
+	// link is the upstream connectivity of the key. Only connections newer
+	// than disconnectEpoch, the newest connection reported down, connect it,
+	// so buffered events of a dead connection never do.
+	link            upstreamLink
+	disconnectEpoch int64
 	// unrecoveredStart and unrecoveredThrough (inclusive) are the range of an
-	// abandoned recovery. The key stays stale until a later recovery, started by
-	// the next gap or reconnect, covers it.
+	// abandoned or parked recovery. The key stays stale until a later recovery,
+	// started by the next gap or reconnect, covers it.
 	unrecoveredStart   time.Time
 	unrecoveredThrough time.Time
+	// parked marks an unrecovered range left because the key had no clients;
+	// the next subscription resumes it. An abandoned range is not parked.
+	parked bool
 }
 
-// delivery is one message for a set of clients, published outside the lock.
-type delivery struct {
-	clients []Client
-	message Message
-}
+type upstreamLink int
 
-// settledFreshness is the freshness of a key that is not recovering.
-func (state *keyState) settledFreshness() Freshness {
-	if state.upstreamConnected && state.unrecoveredStart.IsZero() {
+const (
+	linkWaiting upstreamLink = iota
+	linkConnected
+	linkDisconnected
+)
+
+// freshness derives the freshness clients see from the key's state.
+func (state *keyState) freshness() Freshness {
+	switch {
+	case state.link == linkDisconnected:
+		return FreshnessStale
+	case state.link == linkWaiting || len(state.candles) == 0:
+		return FreshnessWaiting
+	case state.recovering || state.reconnectFrom != nil:
+		return FreshnessRecovering
+	case !state.unrecoveredStart.IsZero():
+		return FreshnessStale
+	default:
 		return FreshnessFresh
 	}
-	return FreshnessStale
+}
+
+// connectedBy marks the key connected by data or a status of connection
+// epoch, unless a connection at least as new was reported down. A reconnect
+// recovers from the latest buffered candle, whichever signal proved it.
+func (state *keyState) connectedBy(interval market.CandleInterval, epoch int64) {
+	if epoch <= state.disconnectEpoch {
+		return
+	}
+	if state.link == linkDisconnected && len(state.candles) != 0 {
+		latest := latestOpen(state.candles)
+		from := latest
+		if state.candles[latest].Final {
+			from = interval.NextOpenTime(latest)
+		}
+		state.reconnectFrom = &from
+	}
+	state.link = linkConnected
+}
+
+// accepts reports whether incoming may enter the buffer.
+func (state *keyState) accepts(incoming CandleState) bool {
+	open := incoming.Candle.OpenTime
+	if incoming.Final && !state.latestConfirmed.IsZero() && !open.After(state.latestConfirmed) {
+		return false
+	}
+	current, exists := state.candles[open]
+	if exists {
+		// A final candle is never rolled back to an open one.
+		return !current.Final || incoming.Final
+	}
+	// Old packets cannot re-enter the bounded buffer after their REST
+	// confirmation has been evicted and replace persisted chart history.
+	if len(state.candles) < maxRetainedCandles {
+		return true
+	}
+	for buffered := range state.candles {
+		if buffered.Before(open) {
+			return true
+		}
+	}
+	return false
+}
+
+func (state *keyState) endRecovery() {
+	state.recovering = false
+	state.recoveryRequested = false
+	state.recoveryStart = time.Time{}
+	state.recoveryThrough = time.Time{}
 }
 
 type Options struct {
@@ -138,11 +211,15 @@ type Service struct {
 	recoveryRetryDelay func(failures int) time.Duration
 
 	// recoveries tracks recovery goroutines. They are started only from Run's
-	// goroutine (via apply) with Run's context, and Run waits for them.
+	// goroutine (via apply or startRequestedRecoveries) with Run's context, and
+	// Run waits for them.
 	recoveries sync.WaitGroup
 	// releases wakes Run to reschedule its release timer; capacity 1 keeps the
 	// send non-blocking, and a pending wake-up covers every later deadline.
 	releases chan struct{}
+	// recoveryRequests wakes Run to start requested recoveries; capacity 1
+	// keeps the send non-blocking, and Run starts every requested one per wake-up.
+	recoveryRequests chan struct{}
 
 	mu      sync.Mutex
 	states  map[kline.Key]*keyState
@@ -156,7 +233,7 @@ func New(upstream kline.Feed, store HistoryStore, logger *slog.Logger, options O
 	if delay <= 0 {
 		delay = defaultReleaseDelay
 	}
-	return &Service{upstream: upstream, store: store, logger: logger, delay: delay, recoveryLimiter: rate.NewLimiter(rate.Limit(recoveryQueryRate), 4), recoveryRetryDelay: defaultRecoveryRetryDelay, releases: make(chan struct{}, 1), states: make(map[kline.Key]*keyState), clients: make(map[string]*clientState)}
+	return &Service{upstream: upstream, store: store, logger: logger, delay: delay, recoveryLimiter: rate.NewLimiter(rate.Limit(recoveryQueryRate), 4), recoveryRetryDelay: defaultRecoveryRetryDelay, releases: make(chan struct{}, 1), recoveryRequests: make(chan struct{}, 1), states: make(map[kline.Key]*keyState), clients: make(map[string]*clientState)}
 }
 
 func defaultRecoveryRetryDelay(failures int) time.Duration {
@@ -189,8 +266,27 @@ func (service *Service) Run(ctx context.Context) error {
 			service.applyStatus(status)
 		case <-service.releases:
 			service.releaseDue(releaseTimer)
+		case <-service.recoveryRequests:
+			service.startRequestedRecoveries(ctx)
 		case <-releaseTimer.C:
 			service.releaseDue(releaseTimer)
+		}
+	}
+}
+
+// startRequestedRecoveries starts the recoveries requested outside Run's
+// goroutine; ctx bounds them.
+func (service *Service) startRequestedRecoveries(ctx context.Context) {
+	service.mu.Lock()
+	defer service.mu.Unlock()
+	for key, state := range service.states {
+		if !state.recoveryRequested {
+			continue
+		}
+		state.recoveryRequested = false
+		if state.recovering {
+			generation := state.recoveryGeneration
+			service.recoveries.Go(func() { service.recover(ctx, key, generation) })
 		}
 	}
 }
@@ -268,13 +364,9 @@ func (service *Service) Subscribe(ctx context.Context, client Client, symbol str
 		}
 		state = service.states[key]
 		if state == nil {
-			state = &keyState{instrument: instrument, clients: make(map[string]Client), candles: make(map[time.Time]CandleState), freshness: FreshnessWaiting}
+			state = &keyState{instrument: instrument, clients: make(map[string]Client), candles: make(map[time.Time]CandleState)}
 			service.states[key] = state
-			if err := service.upstream.Subscribe(key); err != nil {
-				delete(service.states, key)
-				service.mu.Unlock()
-				return fmt.Errorf("subscribe upstream: %w", err)
-			}
+			service.upstream.Subscribe(key)
 		}
 	}
 	state.releaseAt = time.Time{}
@@ -285,12 +377,17 @@ func (service *Service) Subscribe(ctx context.Context, client Client, symbol str
 		service.clients[client.ID()] = registration
 	}
 	registration.keys[key] = struct{}{}
-	message := snapshotMessage(key, state)
-	service.mu.Unlock()
-	if !client.Enqueue(Message{Kind: KindSubscribed, Key: key}) || !client.Enqueue(message) {
-		service.RemoveClient(client.ID())
-		client.Close()
+	// A recovery parked while the key had no clients resumes.
+	if state.parked && !state.recovering {
+		service.requestRecoveryLocked(state)
 	}
+	var dropped []Client
+	if !client.Enqueue(Message{Kind: KindSubscribed, Key: key}) || !client.Enqueue(snapshotMessage(key, state)) {
+		service.removeClientLocked(client.ID())
+		dropped = append(dropped, client)
+	}
+	service.mu.Unlock()
+	service.closeClients(dropped)
 	service.logCounts("subscribe")
 	return nil
 }
@@ -322,6 +419,12 @@ func (service *Service) Unsubscribe(clientID string, key kline.Key) {
 
 func (service *Service) RemoveClient(clientID string) {
 	service.mu.Lock()
+	service.removeClientLocked(clientID)
+	service.mu.Unlock()
+	service.logCounts("disconnect")
+}
+
+func (service *Service) removeClientLocked(clientID string) {
 	clientState := service.clients[clientID]
 	var keys []kline.Key
 	if clientState != nil {
@@ -334,8 +437,6 @@ func (service *Service) RemoveClient(clientID string) {
 		service.unsubscribeLocked(clientID, key)
 	}
 	delete(service.clients, clientID)
-	service.mu.Unlock()
-	service.logCounts("disconnect")
 }
 
 func (service *Service) unsubscribeLocked(clientID string, key kline.Key) {
@@ -368,37 +469,26 @@ func (service *Service) apply(ctx context.Context, event kline.Event) {
 		service.mu.Unlock()
 		return
 	}
-	if event.Final && !state.latestConfirmed.IsZero() && !event.Candle.OpenTime.After(state.latestConfirmed) {
-		service.mu.Unlock()
-		return
-	}
-	// Old packets cannot re-enter the bounded buffer after their REST
-	// confirmation has been evicted and replace persisted chart history.
-	if _, exists := state.candles[event.Candle.OpenTime]; !exists && len(state.candles) >= maxRetainedCandles {
-		older := false
-		for open := range state.candles {
-			if open.Before(event.Candle.OpenTime) {
-				older = true
-				break
-			}
-		}
-		if !older {
-			service.mu.Unlock()
-			return
-		}
-	}
+	// Data proves its connection alive, even if the packet itself is dropped;
+	// a dropped packet still publishes the connectivity it changed.
+	before := state.freshness()
+	state.connectedBy(event.Key.Interval, event.Epoch)
 	incoming := CandleState{Candle: event.Candle, Final: event.Final}
-	if state.freshness != FreshnessStale {
-		state.upstreamConnected = true
-	}
-	if current, exists := state.candles[event.Candle.OpenTime]; exists && current.Final && !incoming.Final {
+	if !state.accepts(incoming) {
+		var dropped []Client
+		if freshness := state.freshness(); freshness != before {
+			dropped = service.publishLocked(nil, state.clients, Message{Kind: KindStatus, Key: event.Key, Freshness: freshness})
+		}
 		service.mu.Unlock()
+		service.closeClients(dropped)
 		return
 	}
 	previousLatest := latestOpen(state.candles)
 	previous, hadPrevious := state.candles[previousLatest]
 	state.candles[event.Candle.OpenTime] = incoming
-	evicted := trimCandles(state.candles)
+	// Evicted candles need no recovery: their corrections arrive through
+	// HistoryChanged.
+	trimCandles(state.candles)
 
 	var recoveryStart, recoveryThrough time.Time
 	if state.reconnectFrom != nil {
@@ -412,14 +502,6 @@ func (service *Service) apply(ctx context.Context, event kline.Event) {
 		}
 		recoveryThrough = closedThrough(event.Key.Interval, incoming)
 	}
-	if !evicted.IsZero() {
-		if recoveryStart.IsZero() || evicted.Before(recoveryStart) {
-			recoveryStart = evicted
-		}
-		if recoveryThrough.Before(evicted) {
-			recoveryThrough = evicted
-		}
-	}
 	if state.recovering {
 		through := closedThrough(event.Key.Interval, incoming)
 		if through.After(state.recoveryThrough) {
@@ -430,16 +512,14 @@ func (service *Service) apply(ctx context.Context, event kline.Event) {
 		}
 	}
 	generation, recoverNow := service.startRecoveryLocked(state, recoveryStart, recoveryThrough)
-	if !state.recovering {
-		state.freshness = state.settledFreshness()
-	}
-	clients := clientSlice(state.clients)
-	freshness := state.freshness
-	service.mu.Unlock()
-	service.publish(clients, Message{Kind: KindUpdate, Key: event.Key, Candle: &incoming, Freshness: freshness})
 	if recoverNow {
+		// This goroutine serves the current generation, also a requested one.
+		state.recoveryRequested = false
 		service.recoveries.Go(func() { service.recover(ctx, event.Key, generation) })
 	}
+	dropped := service.publishLocked(nil, state.clients, Message{Kind: KindUpdate, Key: event.Key, Candle: &incoming, Freshness: state.freshness()})
+	service.mu.Unlock()
+	service.closeClients(dropped)
 }
 
 // HistoryChanged publishes committed REST closures and corrections to active
@@ -461,54 +541,37 @@ func (service *Service) HistoryChanged(candles []market.Candle) {
 			changed[key] = struct{}{}
 		}
 	}
-	messages := make([]delivery, 0, len(changed))
+	var dropped []Client
 	for key := range changed {
 		state := service.states[key]
-		messages = append(messages, delivery{clientSlice(state.clients), snapshotMessage(key, state)})
+		dropped = service.publishLocked(dropped, state.clients, snapshotMessage(key, state))
 	}
 	service.mu.Unlock()
-	for _, item := range messages {
-		service.publish(item.clients, item.message)
-	}
+	service.closeClients(dropped)
 }
 
 func (service *Service) applyStatus(status kline.Status) {
 	service.mu.Lock()
-	messages := make([]delivery, 0, len(status.Keys))
+	var dropped []Client
 	for _, key := range status.Keys {
 		state := service.states[key]
 		if state == nil {
 			continue
 		}
-		state.upstreamConnected = status.Connected
-		if status.Connected {
-			if len(state.candles) == 0 {
-				state.freshness = FreshnessWaiting
-			} else {
-				state.freshness = FreshnessRecovering
-				latest := latestOpen(state.candles)
-				from := latest
-				if state.candles[latest].Final {
-					from = key.Interval.NextOpenTime(latest)
-				}
-				state.reconnectFrom = &from
-			}
+		if !status.Connected {
+			state.link = linkDisconnected
+			state.disconnectEpoch = max(state.disconnectEpoch, status.Epoch)
 		} else {
-			state.freshness = FreshnessStale
+			state.connectedBy(key.Interval, status.Epoch)
 		}
-		messages = append(messages, delivery{clientSlice(state.clients), Message{Kind: KindStatus, Key: key, Freshness: state.freshness, Reason: errorString(status.Err)}})
+		dropped = service.publishLocked(dropped, state.clients, Message{Kind: KindStatus, Key: key, Freshness: state.freshness(), Reason: errorString(status.Err)})
 	}
 	service.mu.Unlock()
-	for _, item := range messages {
-		service.publish(item.clients, item.message)
-	}
+	service.closeClients(dropped)
 }
 
 func (service *Service) startRecoveryLocked(state *keyState, start, through time.Time) (uint64, bool) {
 	if start.IsZero() || through.Before(start) {
-		if state.reconnectFrom == nil && !state.recovering {
-			state.freshness = FreshnessFresh
-		}
 		return 0, false
 	}
 	// A new recovery also retries the range an abandoned one left behind.
@@ -525,16 +588,31 @@ func (service *Service) startRecoveryLocked(state *keyState, start, through time
 		}
 	}
 	state.recovering = true
-	state.freshness = FreshnessRecovering
+	state.parked = false
 	state.recoveryStart = start
 	state.recoveryThrough = through
 	state.recoveryGeneration++
 	return state.recoveryGeneration, true
 }
 
+// requestRecoveryLocked starts a recovery of the parked range outside
+// Run's goroutine: Run starts its goroutine. service.mu must be held.
+func (service *Service) requestRecoveryLocked(state *keyState) {
+	if _, ok := service.startRecoveryLocked(state, state.unrecoveredStart, state.unrecoveredThrough); !ok {
+		return
+	}
+	state.recoveryRequested = true
+	select {
+	case service.recoveryRequests <- struct{}{}:
+	default:
+	}
+}
+
 func (service *Service) recover(ctx context.Context, key kline.Key, generation uint64) {
 	delay := time.Duration(0)
 	failures := 0
+	// incomplete warns once while batches past the quiet ones keep failing.
+	incomplete := logging.NewFailure(service.logger)
 	var progress recoveryProgress
 	for {
 		if delay > 0 && backoff.Sleep(ctx, delay) != nil {
@@ -542,7 +620,15 @@ func (service *Service) recover(ctx context.Context, key kline.Key, generation u
 		}
 		service.mu.Lock()
 		state := service.states[key]
-		if state == nil || !state.recovering || state.recoveryGeneration != generation || len(state.clients) == 0 {
+		if state == nil || !state.recovering || state.recoveryGeneration != generation {
+			service.mu.Unlock()
+			return
+		}
+		if len(state.clients) == 0 {
+			// Park the range; the next subscription resumes it.
+			state.unrecoveredStart, state.unrecoveredThrough = state.recoveryStart, state.recoveryThrough
+			state.parked = true
+			state.endRecovery()
 			service.mu.Unlock()
 			return
 		}
@@ -560,6 +646,7 @@ func (service *Service) recover(ctx context.Context, key kline.Key, generation u
 		// it then failed: only consecutive fruitless batches count toward giving up.
 		if !stalled && (len(progress.recent) != recentBefore || progress.before != cursorBefore) {
 			failures = 0
+			incomplete.Forget()
 		}
 		service.mu.Lock()
 		state = service.states[key]
@@ -588,14 +675,11 @@ func (service *Service) recover(ctx context.Context, key kline.Key, generation u
 			} else {
 				state.unrecoveredStart, state.unrecoveredThrough = state.recoveryStart, state.recoveryThrough
 			}
-			state.recovering = false
-			state.recoveryStart = time.Time{}
-			state.recoveryThrough = time.Time{}
-			state.freshness = state.settledFreshness()
+			state.endRecovery()
 		}
-		clients, snapshot := clientSlice(state.clients), snapshotMessage(key, state)
+		dropped := service.publishLocked(nil, state.clients, snapshotMessage(key, state))
 		service.mu.Unlock()
-		service.publish(clients, snapshot)
+		service.closeClients(dropped)
 		if complete {
 			return
 		}
@@ -613,11 +697,12 @@ func (service *Service) recover(ctx context.Context, key kline.Key, generation u
 			progress = newRecoveryProgress(through)
 		}
 		delay = service.recoveryRetryDelay(failures)
-		level := slog.LevelInfo
+		args := []any{"module", "market_live", "operation", "recover", "symbol", key.Symbol, "interval", key.Interval, "attempt", failures, "error", errorString(err), "retry_in", delay}
 		if failures > recoveryQuietFailures {
-			level = slog.LevelWarn
+			incomplete.Warn(ctx, "live candle history recovery incomplete", args...)
+		} else {
+			service.logger.InfoContext(ctx, "live candle history recovery incomplete", args...)
 		}
-		service.logger.Log(ctx, level, "live candle history recovery incomplete", "module", "market_live", "operation", "recover", "symbol", key.Symbol, "interval", key.Interval, "attempt", failures, "error", errorString(err), "retry_in", delay)
 	}
 }
 
@@ -682,12 +767,26 @@ func closedThrough(interval market.CandleInterval, candle CandleState) time.Time
 	return interval.PreviousOpenTime(candle.Candle.OpenTime)
 }
 
-func (service *Service) publish(clients []Client, message Message) {
-	for _, client := range clients {
+// publishLocked enqueues message to clients while service.mu is held, so each
+// client receives the messages of a key in the order of its state changes.
+// Clients that cannot keep up are removed and appended to dropped, which the
+// caller closes with closeClients after unlocking.
+func (service *Service) publishLocked(dropped []Client, clients map[string]Client, message Message) []Client {
+	for id, client := range clients {
 		if !client.Enqueue(message) {
-			client.Close()
-			service.RemoveClient(client.ID())
+			service.removeClientLocked(id)
+			dropped = append(dropped, client)
 		}
+	}
+	return dropped
+}
+
+func (service *Service) closeClients(clients []Client) {
+	for _, client := range clients {
+		client.Close()
+	}
+	if len(clients) != 0 {
+		service.logCounts("disconnect")
 	}
 }
 
@@ -697,15 +796,7 @@ func snapshotMessage(key kline.Key, state *keyState) Message {
 		candles = append(candles, candle)
 	}
 	slices.SortFunc(candles, func(left, right CandleState) int { return left.Candle.OpenTime.Compare(right.Candle.OpenTime) })
-	return Message{Kind: KindSnapshot, Key: key, Candles: candles, Freshness: state.freshness}
-}
-
-func clientSlice(values map[string]Client) []Client {
-	result := make([]Client, 0, len(values))
-	for _, value := range values {
-		result = append(result, value)
-	}
-	return result
+	return Message{Kind: KindSnapshot, Key: key, Candles: candles, Freshness: state.freshness()}
 }
 
 func latestOpen(values map[time.Time]CandleState) time.Time {
@@ -718,20 +809,18 @@ func latestOpen(values map[time.Time]CandleState) time.Time {
 	return latest
 }
 
-func trimCandles(values map[time.Time]CandleState) time.Time {
+func trimCandles(values map[time.Time]CandleState) {
 	if len(values) <= maxRetainedCandles {
-		return time.Time{}
+		return
 	}
 	keys := make([]time.Time, 0, len(values))
 	for key := range values {
 		keys = append(keys, key)
 	}
 	slices.SortFunc(keys, time.Time.Compare)
-	removed := keys[:len(keys)-maxRetainedCandles]
-	for _, key := range removed {
+	for _, key := range keys[:len(keys)-maxRetainedCandles] {
 		delete(values, key)
 	}
-	return removed[len(removed)-1]
 }
 
 func minTime(left, right time.Time) time.Time {

@@ -15,18 +15,26 @@ import (
 const MaxLength = 4000
 
 // Symbol links symbol to its Binance Spot pair, or only escapes it when it
-// has none.
+// has none, on one line.
 func Symbol(symbol string) string {
-	text := html.EscapeString(symbol)
+	text := OneLine(symbol)
 	if url, ok := market.BinanceSpotURL(symbol); ok {
 		return `<a href="` + html.EscapeString(url) + `">` + text + "</a>"
 	}
 	return text
 }
 
-// Title writes text as a bold message title, escaped.
+// Title writes text as a bold message title, escaped and on one line.
 func Title(text string) string {
-	return "<b>" + html.EscapeString(text) + "</b>"
+	return "<b>" + OneLine(text) + "</b>"
+}
+
+// lineBreaks are replaced by spaces in text that must stay on one line.
+var lineBreaks = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ")
+
+// OneLine escapes text and joins its lines, so Truncate never cuts it.
+func OneLine(text string) string {
+	return html.EscapeString(lineBreaks.Replace(text))
 }
 
 // Truncate ends text, whose tags each open and close within one line, at the

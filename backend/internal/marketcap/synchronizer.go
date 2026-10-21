@@ -2,12 +2,14 @@ package marketcap
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"time"
 
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/logging"
 )
 
 // InstrumentSource supplies the active exchange universe to the background
@@ -22,7 +24,10 @@ type InstrumentSource interface {
 // stablecoin-classification refreshes, retry timing, and observable outcomes.
 const defaultStateSaveTimeout = 2 * time.Second
 
-var errInstrumentCatalogEmpty = fmt.Errorf("active instrument catalog is empty")
+var (
+	errInstrumentCatalogEmpty = errors.New("active instrument catalog is empty")
+	errProviderUnavailable    = errors.New("market cap provider temporarily unavailable")
+)
 
 type CoinMetadataSynchronizer struct {
 	resolver         *Resolver
@@ -41,6 +46,9 @@ func NewCoinMetadataSynchronizer(resolver *Resolver, source InstrumentSource, lo
 }
 
 func (s *CoinMetadataSynchronizer) Run(ctx context.Context) error {
+	// Each failure warns once while it keeps recurring, such as during a
+	// provider outage.
+	bootstrapFailure, refreshFailure := logging.NewFailure(s.logger), logging.NewFailure(s.logger)
 	for {
 		err := s.runOperation(ctx, "bootstrap", s.resolver.Bootstrap)
 		if ctx.Err() != nil {
@@ -49,22 +57,30 @@ func (s *CoinMetadataSynchronizer) Run(ctx context.Context) error {
 		if err == nil {
 			break
 		}
-		s.logger.WarnContext(ctx, "coin metadata mapping bootstrap failed", "module", "coin_metadata", "error", err)
+		bootstrapFailure.Warn(ctx, "coin metadata mapping bootstrap failed", "module", "coin_metadata", "error", err)
 		if backoff.Sleep(ctx, s.retryDelay) != nil {
 			return nil
 		}
 	}
 
+	bootstrapFailure.Recover(ctx, "coin metadata mapping bootstrap recovered", "module", "coin_metadata")
 	for {
 		delay := s.interval
-		if err := s.runRefresh(ctx); err != nil {
-			if ctx.Err() != nil {
-				return nil
-			}
+		err := s.runRefresh(ctx)
+		if err != nil && ctx.Err() != nil {
+			return nil
+		}
+		if err != nil {
 			delay = s.retryDelay
-			s.logger.WarnContext(ctx, "coin metadata refresh failed", "module", "coin_metadata", "error", err)
-		} else {
+		}
+		switch {
+		case err == nil:
+			refreshFailure.Forget()
 			s.logger.InfoContext(ctx, "coin metadata refresh completed", "module", "coin_metadata")
+		case errors.Is(err, errInstrumentCatalogEmpty):
+			s.logger.InfoContext(ctx, "coin metadata refresh not ready yet", "module", "coin_metadata", "error", err)
+		default:
+			refreshFailure.Warn(ctx, "coin metadata refresh failed", "module", "coin_metadata", "error", err)
 		}
 		if backoff.Sleep(ctx, delay) != nil {
 			return nil
@@ -118,7 +134,7 @@ func (s *CoinMetadataSynchronizer) Refresh(ctx context.Context) error {
 		return fmt.Errorf("refresh stablecoin classifications: %w", err)
 	}
 	if batch.ProviderWarning {
-		return fmt.Errorf("market cap provider temporarily unavailable")
+		return errProviderUnavailable
 	}
 	return nil
 }

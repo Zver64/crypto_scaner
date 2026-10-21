@@ -47,9 +47,8 @@ type HistoryLoad struct {
 func (synchronizer *Synchronizer) LoadHistory(ctx context.Context, instrument market.Instrument, depth int, changed func([]market.Candle)) (HistoryLoad, error) {
 	interval := synchronizer.profile.Interval
 	// Coverage is shared with Sync, so it is read and written under its
-	// policy: the oldest open time the exchange has does not depend on the
+	// depth: the oldest open time the exchange has does not depend on the
 	// depth requested.
-	policy := policyForInterval(interval, synchronizer.depth)
 	startedAt := time.Now().UTC()
 	history, err := synchronizer.summary(ctx, instrument, market.RetentionDepth)
 	if err != nil {
@@ -63,7 +62,7 @@ func (synchronizer *Synchronizer) LoadHistory(ctx context.Context, instrument ma
 		return HistoryLoad{}, fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
 	}
 	coverage, covered := coverages[instrument.ID]
-	exhausted := covered && coverageCurrent(coverage, policy, startedAt) && coverage.VerifiedOldestOpenTime.Equal(history.Oldest)
+	exhausted := covered && coverageCurrent(coverage, synchronizer.depth, startedAt) && coverage.VerifiedOldestOpenTime.Equal(history.Oldest)
 	historyChanged := false
 	// Stop at the live-depth boundary before fetching deeper pages. This
 	// reuses committed-change notifications without notifying for a page's
@@ -76,7 +75,7 @@ func (synchronizer *Synchronizer) LoadHistory(ctx context.Context, instrument ma
 		if target <= market.SyncDepth {
 			store = &ObservableStore{Store: store, Changed: changed}
 		}
-		loaded, ranOut := synchronizer.loadOlder(ctx, store, instrument, policy, history.Oldest.UTC(), target-history.Count, startedAt)
+		loaded, ranOut := synchronizer.loadOlder(ctx, store, instrument, history.Oldest.UTC(), target-history.Count, startedAt)
 		historyChanged, exhausted = historyChanged || loaded.rowsChanged > 0, ranOut
 		if loaded.err != nil {
 			return HistoryLoad{Changed: historyChanged}, loaded.err

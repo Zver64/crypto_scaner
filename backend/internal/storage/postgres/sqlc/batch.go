@@ -174,7 +174,12 @@ func (b *UpsertCandleBatchResults) Close() error {
 const upsertCoinGeckoMapping = `-- name: UpsertCoinGeckoMapping :batchexec
 INSERT INTO app.coingecko_asset_mappings (base_asset, coin_id, quote_asset, source_symbol, status, reason, observed_at, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (base_asset) DO UPDATE SET coin_id=EXCLUDED.coin_id, quote_asset=EXCLUDED.quote_asset, source_symbol=EXCLUDED.source_symbol, status=EXCLUDED.status, reason=EXCLUDED.reason, observed_at=EXCLUDED.observed_at, expires_at=EXCLUDED.expires_at
+ON CONFLICT (base_asset) DO UPDATE SET coin_id=EXCLUDED.coin_id, quote_asset=EXCLUDED.quote_asset, source_symbol=EXCLUDED.source_symbol, status=EXCLUDED.status, reason=EXCLUDED.reason, observed_at=EXCLUDED.observed_at, expires_at=EXCLUDED.expires_at,
+    -- A changed coin is unclassified until the next classification refresh.
+    is_stablecoin = CASE
+        WHEN coingecko_asset_mappings.coin_id IS DISTINCT FROM EXCLUDED.coin_id OR coingecko_asset_mappings.status <> EXCLUDED.status THEN NULL
+        ELSE coingecko_asset_mappings.is_stablecoin
+    END
 `
 
 type UpsertCoinGeckoMappingBatchResults struct {

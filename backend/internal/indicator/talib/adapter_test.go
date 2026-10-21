@@ -43,7 +43,7 @@ func TestAdapterValidatesParametersAndInputs(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			_, err := registry.Calculate(indicator.Request{Type: test.indicatorType, Parameters: test.parameters, Inputs: test.inputs})
-			if !errors.Is(err, indicatortalib.ErrInvalidRequest) {
+			if !errors.Is(err, indicator.ErrInvalidRequest) {
 				t.Fatalf("Calculate() error = %v, want ErrInvalidRequest", err)
 			}
 		})

@@ -43,7 +43,8 @@ import (
 type app struct {
 	handler  http.Handler
 	services []service
-	// notifier is also one of services; run flushes it after they stop.
+	// notifier runs apart from services: run stops it after them and the HTTP
+	// server, so it delivers the records they log while stopping.
 	notifier *opsnotify.Notifier
 }
 
@@ -72,6 +73,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	// Strategies read the configured indicators, which stay while in use.
 	var strategies *strategy.Service
 	var strategyMonitor *strategy.Monitor
+	var alertMonitor *alerts.Monitor
 	var scannerIndicators *scannerindicator.Service
 	scannerIndicators, err = scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func() {
 		if closedIndicators == nil {
@@ -130,7 +132,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	dialLimiter := binance.NewDialLimiter()
 	klineStream := binance.NewKlineStream(logger, dialLimiter)
 	liveService := marketlive.New(klineStream, store, logger, marketlive.Options{})
-	exchange := binance.New(binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
+	exchange := binance.New(logger, binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
 	syncStore := &marketsync.ObservableStore{Store: store, Changed: func(candles []market.Candle) {
 		liveService.HistoryChanged(candles)
 		closedIndicators.HistoryChanged(candles)
@@ -138,6 +140,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		// Synchronization runs only once every service exists.
 		strategies.InstrumentsChanged(instruments)
 		strategyMonitor.Changed()
+		alertMonitor.Changed()
 	}}
 	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
 	// History loads notify only when completing a partial live history;
@@ -181,8 +184,8 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		return app{}, err
 	}
 	tradeStream := binance.NewTradeStream(logger, dialLimiter)
-	alertMonitor := alerts.NewMonitor(store, tradeStream, botService, logger)
-	strategyMonitor = strategy.NewMonitor(store, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
+	alertMonitor = alerts.NewMonitor(store, tradeStream, botService, logger)
+	strategyMonitor = strategy.NewMonitor(store, store, indicatorRegistry, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
 	monitoredChanged = append(monitoredChanged, alertMonitor.Changed)
 	// Favorites change the monitored instruments, and the administrator's
 	// those signals of the favorites evaluate.
@@ -242,6 +245,5 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		{"market history loader", historyLoader},
 		{"market retention", retention.New(store, logger, market.RetentionDepth)},
 		{"session pruner", sessions},
-		{"operations notifier", notifier},
 	}}, nil
 }

@@ -1,11 +1,13 @@
 package strategy
 
 import (
+	"cmp"
 	"fmt"
 	"html"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"crypto-scanner/internal/telegramhtml"
 )
@@ -83,35 +85,69 @@ func entryTitle(mark string, entry Entry, kind string) string {
 	return telegramhtml.Title(mark + " " + entry.Name + " · " + string(entry.Interval) + " · " + kind)
 }
 
-// alert is one event of a strategy on one instrument.
+// alert is one event of a strategy on one instrument. past is the open time
+// of the candle of a caught-up event older than the latest closed candle,
+// zero for the latest one.
 type alert struct {
 	instrument Instrument
 	event      TradeEvent
+	past       time.Time
 }
 
-// alertText announces the events of one round of entry: under a title per
-// kind of event, naming the strategy, its interval, and the kind, come the
-// strategy message and a line per instrument. A message too long for
-// Telegram ends at the last line that fits.
+// alertText announces the events of one round of entry in the order of
+// their candles, those of the latest candle last: under a title per kind of
+// event, naming the strategy, its interval, and the kind, come the strategy
+// message and a line per instrument. Events of one candle share a title per
+// kind, and so do those of consecutive candles of one kind. A message too
+// long for Telegram ends at the last line that fits.
 func alertText(entry Entry, alerts []alert) string {
-	var titles []string
-	lines := map[string][]string{}
-	for _, item := range alerts {
-		title := alertTitle(entry, item.event)
-		if _, ok := lines[title]; !ok {
-			titles = append(titles, title)
+	alerts = slices.Clone(alerts)
+	// Events of the latest candle have no past time.
+	latest := func(item alert) int {
+		if item.past.IsZero() {
+			return 1
 		}
-		lines[title] = append(lines[title], alertLine(item))
+		return 0
 	}
-	blocks := make([]string, len(titles))
-	for i, title := range titles {
-		block := []string{title}
+	slices.SortStableFunc(alerts, func(a, b alert) int { return cmp.Or(latest(a)-latest(b), a.past.Compare(b.past)) })
+	type block struct {
+		title string
+		lines []string
+	}
+	var blocks []block
+	for start := 0; start < len(alerts); {
+		end := start + 1
+		for end < len(alerts) && alerts[end].past.Equal(alerts[start].past) {
+			end++
+		}
+		var kinds []block
+		for _, item := range alerts[start:end] {
+			title := alertTitle(entry, item.event)
+			index := slices.IndexFunc(kinds, func(kind block) bool { return kind.title == title })
+			if index < 0 {
+				index = len(kinds)
+				kinds = append(kinds, block{title: title})
+			}
+			kinds[index].lines = append(kinds[index].lines, alertLine(item))
+		}
+		for _, kind := range kinds {
+			if last := len(blocks) - 1; last >= 0 && blocks[last].title == kind.title {
+				blocks[last].lines = append(blocks[last].lines, kind.lines...)
+			} else {
+				blocks = append(blocks, kind)
+			}
+		}
+		start = end
+	}
+	texts := make([]string, len(blocks))
+	for i, item := range blocks {
+		lines := []string{item.title}
 		if entry.Message != "" {
-			block = append(block, html.EscapeString(entry.Message))
+			lines = append(lines, html.EscapeString(entry.Message))
 		}
-		blocks[i] = strings.Join(append(block, lines[title]...), "\n")
+		texts[i] = strings.Join(append(lines, item.lines...), "\n")
 	}
-	return telegramhtml.Truncate(strings.Join(blocks, "\n\n"), "\n…message too long")
+	return telegramhtml.Truncate(strings.Join(texts, "\n\n"), "\n…message too long")
 }
 
 // alertTitle names entry, its interval, and the kind of event, such as
@@ -136,8 +172,22 @@ func alertTitle(entry Entry, event TradeEvent) string {
 // signal; the price, the buy number past the first, the take profit, and the
 // stop loss of a buy or short; or the price, what closed it, the return, the
 // entry price, and the buys past one of a sell or cover. The symbol links
-// to its Binance Spot pair.
+// to its Binance Spot pair. A caught-up event of a past candle ends with the
+// candle's open time in UTC.
 func alertLine(item alert) string {
+	line := eventLine(item)
+	if !item.past.IsZero() {
+		line += " · candle " + candleTime(item.past)
+	}
+	return line
+}
+
+// candleTime formats the open time of a candle, such as
+// "2026-03-02 10:00 UTC".
+func candleTime(at time.Time) string { return at.UTC().Format("2006-01-02 15:04 UTC") }
+
+// eventLine is alertLine without the candle time.
+func eventLine(item alert) string {
 	event := item.event
 	symbol := telegramhtml.Symbol(item.instrument.Symbol)
 	switch event.Kind {

@@ -1,9 +1,11 @@
 package binance_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"reflect"
 	"strconv"
@@ -19,6 +21,8 @@ import (
 )
 
 var _ marketsync.Exchange = (*binance.Exchange)(nil)
+
+var discardLogger = slog.New(slog.DiscardHandler)
 
 func TestExchangeListInstrumentsMapsCompleteSpotUSDTSnapshot(t *testing.T) {
 	httpClient := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
@@ -40,7 +44,7 @@ func TestExchangeListInstrumentsMapsCompleteSpotUSDTSnapshot(t *testing.T) {
 		return jsonResponse(body), nil
 	})}
 
-	exchange := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient})
+	exchange := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient})
 	got, err := exchange.ListInstruments(context.Background())
 	if err != nil {
 		t.Fatalf("ListInstruments() error = %v", err)
@@ -59,7 +63,7 @@ func TestExchangeListInstrumentsRejectsIncompleteSnapshot(t *testing.T) {
 		return jsonResponse(`{"timezone":"UTC","symbols":[]}`), nil
 	})}
 
-	if _, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListInstruments(context.Background()); err == nil {
+	if _, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListInstruments(context.Background()); err == nil {
 		t.Fatal("ListInstruments() accepted an empty discovery snapshot")
 	}
 }
@@ -84,7 +88,7 @@ func TestExchangeListInstrumentsRejectsSnapshotContainingMalformedEntry(t *testi
 			httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				return jsonResponse(body), nil
 			})}
-			if _, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListInstruments(context.Background()); err == nil {
+			if _, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListInstruments(context.Background()); err == nil {
 				t.Fatal("ListInstruments() accepted a partially malformed discovery snapshot")
 			}
 		})
@@ -106,7 +110,7 @@ func TestExchangeListInstrumentsMapsEveryKnownInactiveStatus(t *testing.T) {
 		return jsonResponse(body), nil
 	})}
 
-	got, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListInstruments(context.Background())
+	got, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListInstruments(context.Background())
 	if err != nil {
 		t.Fatalf("ListInstruments() error = %v", err)
 	}
@@ -121,23 +125,45 @@ func TestExchangeListInstrumentsMapsEveryKnownInactiveStatus(t *testing.T) {
 	}
 }
 
-func TestExchangeListInstrumentsRejectsUnknownStatusWithoutReturningPartialSnapshot(t *testing.T) {
+func TestExchangeListInstrumentsKeepsUnknownStatusInactiveAndWarnsOnce(t *testing.T) {
 	body := `{
 		"symbols":[
 			{"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT","permissions":["SPOT"]},
-			{"symbol":"TYPOUSDT","status":"TRAIDNG","baseAsset":"TYPO","quoteAsset":"USDT","permissions":["SPOT"]}
+			{"symbol":"TYPOUSDT","status":"TRAIDNG","baseAsset":"TYPO","quoteAsset":"USDT","permissions":["SPOT"]},
+			{"symbol":"NEXTUSDT","status":"TRAIDNG","baseAsset":"NEXT","quoteAsset":"USDT","permissions":["SPOT"]}
+		]
+	}`
+	httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+		return jsonResponse(body), nil
+	})}
+	var logs bytes.Buffer
+	exchange := binance.New(slog.New(slog.NewTextHandler(&logs, nil)), binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient})
+
+	for range 2 {
+		items, err := exchange.ListInstruments(context.Background())
+		if err != nil || len(items) != 3 || !items[0].Active || items[1].Active || items[2].Active {
+			t.Fatalf("ListInstruments() = %#v, %v; want TRADING active and unknown statuses inactive", items, err)
+		}
+	}
+	if warnings := strings.Count(logs.String(), "level=WARN"); warnings != 1 {
+		t.Fatalf("warnings = %d, want 1 per unknown status:\n%s", warnings, logs.String())
+	}
+}
+
+func TestExchangeListInstrumentsIgnoresUnknownStatusOfIneligibleSymbols(t *testing.T) {
+	body := `{
+		"symbols":[
+			{"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT","permissions":["SPOT"]},
+			{"symbol":"BTCEUR","status":"NEW_STATUS","baseAsset":"BTC","quoteAsset":"EUR","permissions":["SPOT"]}
 		]
 	}`
 	httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return jsonResponse(body), nil
 	})}
 
-	items, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListInstruments(context.Background())
-	if err == nil {
-		t.Fatalf("ListInstruments() = %#v, want unknown-status error and no snapshot", items)
-	}
-	if items != nil {
-		t.Fatalf("ListInstruments() returned partial snapshot %#v after unknown status", items)
+	items, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListInstruments(context.Background())
+	if err != nil || len(items) != 1 || items[0].Symbol != "BTCUSDT" {
+		t.Fatalf("ListInstruments() = %#v, %v; want only BTCUSDT", items, err)
 	}
 }
 
@@ -157,7 +183,7 @@ func TestExchangeListClosedCandlesRequestsLatestDailyHistoryAndMapsValues(t *tes
 		return jsonResponse(`[[1785801600000,"114325.12345678","115000.87654321","112900.00000001","113750.99999999","1234.56789012",1785887999999,"140000000.12345678",98765,"600.1","68000000.2","0"]]`), nil
 	})}
 
-	got, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
+	got, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
 		Symbol: "BTCUSDT", Interval: "1d", Limit: 30, ClosedBefore: cutoff,
 	})
 	if err != nil {
@@ -189,7 +215,7 @@ func TestExchangeListClosedCandlesRequestsLatestHourlyHistoryAtHourBoundary(t *t
 		return jsonResponse(`[]`), nil
 	})}
 
-	_, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
+	_, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
 		Symbol: "BTCUSDT", Interval: "1h", Limit: 60, ClosedBefore: cutoff,
 	})
 	if err != nil {
@@ -219,7 +245,7 @@ func TestExchangeListClosedCandlesUsesUTCWeeklyAndMonthlyBoundaries(t *testing.T
 				}
 				return jsonResponse(`[]`), nil
 			})}
-			_, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
+			_, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
 				Symbol: "BTCUSDT", Interval: test.interval, Limit: 1000, ClosedBefore: test.cutoff,
 			})
 			if err != nil {
@@ -238,7 +264,7 @@ func TestExchangeListClosedCandlesExcludesFormingCandleAndAcceptsShortHistory(t 
 		]`), nil
 	})}
 
-	got, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
+	got, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
 		Symbol: "NEWUSDT", Interval: "1d", Limit: 30, ClosedBefore: cutoff,
 	})
 	if err != nil {
@@ -258,7 +284,7 @@ func TestExchangeListClosedCandlesStartsAfterLatestStoredOpenTime(t *testing.T) 
 		return jsonResponse(`[]`), nil
 	})}
 
-	_, err := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
+	_, err := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient}).ListClosedCandles(context.Background(), market.CandleRequest{
 		Symbol: "BTCUSDT", Interval: "1d", Limit: 1000,
 		ClosedBefore: time.Date(2026, time.August, 5, 0, 0, 30, 0, time.UTC), AfterOpenTime: &latest,
 	})
@@ -270,7 +296,7 @@ func TestExchangeListClosedCandlesStartsAfterLatestStoredOpenTime(t *testing.T) 
 func TestExchangeHistoryRepairLimiterAppliesToEveryRetryAttempt(t *testing.T) {
 	calls := 0
 	repairLimiter := rate.NewLimiter(rate.Limit(20), 1)
-	exchange := binance.New(binance.Options{
+	exchange := binance.New(discardLogger, binance.Options{
 		BaseURL: "https://fixture.invalid", RetryAttempts: 2, RetryBaseDelay: time.Millisecond,
 		Limiter: rate.NewLimiter(rate.Inf, 1), HistoryRepairLimiter: repairLimiter,
 		HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
@@ -297,7 +323,7 @@ func TestExchangeHistoryRepairLimiterAppliesToEveryRetryAttempt(t *testing.T) {
 func TestExchangeRetriesServerFailuresButNotPermanentClientFailures(t *testing.T) {
 	t.Run("server failure", func(t *testing.T) {
 		calls := 0
-		exchange := binance.New(binance.Options{
+		exchange := binance.New(discardLogger, binance.Options{
 			BaseURL: "https://fixture.invalid", RetryAttempts: 3, RetryBaseDelay: time.Millisecond,
 			Limiter: rate.NewLimiter(rate.Inf, 1), HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				calls++
@@ -320,7 +346,7 @@ func TestExchangeRetriesServerFailuresButNotPermanentClientFailures(t *testing.T
 
 	t.Run("permanent client failure", func(t *testing.T) {
 		calls := 0
-		exchange := binance.New(binance.Options{
+		exchange := binance.New(discardLogger, binance.Options{
 			BaseURL: "https://fixture.invalid", RetryAttempts: 5, RetryBaseDelay: time.Millisecond,
 			Limiter: rate.NewLimiter(rate.Inf, 1), HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 				calls++
@@ -338,7 +364,7 @@ func TestExchangeRetriesServerFailuresButNotPermanentClientFailures(t *testing.T
 
 func TestExchangeRetriesHungAttemptAfterRequestTimeout(t *testing.T) {
 	calls := 0
-	exchange := binance.New(binance.Options{
+	exchange := binance.New(discardLogger, binance.Options{
 		BaseURL: "https://fixture.invalid", RetryAttempts: 2, RetryBaseDelay: time.Millisecond, RequestTimeout: 20 * time.Millisecond,
 		Limiter: rate.NewLimiter(rate.Inf, 1), HTTPClient: &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
 			calls++
@@ -362,7 +388,7 @@ func TestExchangeUsesDiscoveryRequestWeightMetadata(t *testing.T) {
 	httpClient := &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return jsonResponse(`{"rateLimits":[{"rateLimitType":"REQUEST_WEIGHT","interval":"MINUTE","limit":1200}],"symbols":[{"symbol":"BTCUSDT","status":"TRADING","baseAsset":"BTC","quoteAsset":"USDT","permissions":["SPOT"]}]}`), nil
 	})}
-	exchange := binance.New(binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient, Limiter: limiter})
+	exchange := binance.New(discardLogger, binance.Options{BaseURL: "https://fixture.invalid", HTTPClient: httpClient, Limiter: limiter})
 
 	if _, err := exchange.ListInstruments(context.Background()); err != nil {
 		t.Fatalf("ListInstruments() error = %v", err)
@@ -374,7 +400,7 @@ func TestExchangeUsesDiscoveryRequestWeightMetadata(t *testing.T) {
 
 func TestExchangeRetryBackoffHonorsCancellation(t *testing.T) {
 	called := make(chan struct{}, 1)
-	exchange := binance.New(binance.Options{
+	exchange := binance.New(discardLogger, binance.Options{
 		BaseURL: "https://fixture.invalid", RetryAttempts: 5, RetryBaseDelay: time.Hour,
 		Limiter: rate.NewLimiter(rate.Inf, 1), HTTPClient: &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 			called <- struct{}{}

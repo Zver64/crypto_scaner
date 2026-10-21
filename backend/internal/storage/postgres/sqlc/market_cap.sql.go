@@ -20,6 +20,15 @@ func (q *Queries) ClearMappings(ctx context.Context) error {
 	return err
 }
 
+const deleteCoinGeckoMarketCaps = `-- name: DeleteCoinGeckoMarketCaps :exec
+DELETE FROM app.coingecko_market_caps WHERE coin_id = ANY($1::text[])
+`
+
+func (q *Queries) DeleteCoinGeckoMarketCaps(ctx context.Context, coinIds []string) error {
+	_, err := q.db.Exec(ctx, deleteCoinGeckoMarketCaps, coinIds)
+	return err
+}
+
 const listCoinGeckoMappings = `-- name: ListCoinGeckoMappings :many
 SELECT base_asset, coin_id, quote_asset, source_symbol, status, reason, observed_at, expires_at
 FROM app.coingecko_asset_mappings WHERE base_asset = ANY($1::text[])
@@ -67,9 +76,10 @@ func (q *Queries) ListCoinGeckoMappings(ctx context.Context, baseAssets []string
 
 const listCoinGeckoMarketCaps = `-- name: ListCoinGeckoMarketCaps :many
 SELECT coin_id, market_cap_usd, fetched_at, observed_at
-FROM app.coingecko_market_caps WHERE coin_id = ANY($1::text[])
+FROM app.coingecko_market_caps WHERE coin_id = ANY($1::text[]) AND market_cap_usd > 0
 `
 
+// Rows from before only positive caps were stored are not available caps.
 func (q *Queries) ListCoinGeckoMarketCaps(ctx context.Context, coinIds []string) ([]AppCoingeckoMarketCap, error) {
 	rows, err := q.db.Query(ctx, listCoinGeckoMarketCaps, coinIds)
 	if err != nil {

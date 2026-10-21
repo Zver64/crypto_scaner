@@ -12,8 +12,11 @@ import (
 )
 
 const (
-	negativeTTL     = 24 * time.Hour
-	failureCooldown = time.Second
+	negativeTTL = 24 * time.Hour
+	// resolvedMappingTTL bounds how long a resolved mapping is trusted before a
+	// scan re-resolves it, so retired CoinGecko IDs and reused tickers are remapped.
+	resolvedMappingTTL = 7 * 24 * time.Hour
+	failureCooldown    = time.Second
 	// mappingRescanInterval spaces full ticker scans, which page through every
 	// Binance ticker, however many new or expired bases appear in between.
 	mappingRescanInterval = 6 * time.Hour
@@ -42,6 +45,8 @@ type Store interface {
 	// ListCaps returns the persisted caps of coin IDs; absent ones are omitted.
 	ListCaps(context.Context, []string) (map[string]Cap, error)
 	SaveCaps(context.Context, []Cap) error
+	// DeleteCaps removes the persisted caps of coin IDs the provider no longer reports.
+	DeleteCaps(context.Context, []string) error
 }
 type Provider interface {
 	Tickers(context.Context, int) ([]Ticker, error)
@@ -58,12 +63,7 @@ type Ticker struct {
 	IsStale      bool
 	IsAnomaly    bool
 }
-type Fact struct {
-	USD    *float64
-	Reason string
-}
 type Batch struct {
-	Facts           map[string]Fact
 	ProviderWarning bool
 }
 type Resolver struct {
@@ -138,7 +138,6 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 			return Batch{}, mappingErr
 		}
 	}
-	result := Batch{Facts: map[string]Fact{}}
 	r.refresh.Lock()
 	defer r.refresh.Unlock()
 	cooldown := !r.refreshFailedAt.IsZero() && r.now().Sub(r.refreshFailedAt) < failureCooldown
@@ -153,9 +152,8 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 		return Batch{}, err
 	}
 	fetch := map[string]bool{}
-	for base, m := range mappings {
+	for _, m := range mappings {
 		if m.Status != "resolved" {
-			result.Facts[base] = Fact{Reason: m.Reason}
 			continue
 		}
 		if cap, ok := caps[m.CoinID]; ok && cap.Available {
@@ -166,8 +164,8 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 			fetch[m.CoinID] = true
 		}
 	}
-	fetched := map[string]Cap{}
 	var available []Cap
+	var unavailable []string
 	providerFailed := cooldown
 	ids := make([]string, 0, len(fetch))
 	for id := range fetch {
@@ -188,9 +186,9 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 				cap.FetchedAt = r.now()
 				available = append(available, cap)
 				delete(r.unavailableAt, cap.CoinID)
-				fetched[cap.CoinID] = cap
 			} else {
 				r.unavailableAt[cap.CoinID] = r.now()
+				unavailable = append(unavailable, cap.CoinID)
 			}
 		}
 	}
@@ -199,32 +197,23 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 			providerFailed = true
 		}
 	}
+	// A cap the provider no longer reports is unknown, not its last value.
+	if len(unavailable) > 0 {
+		if err := r.store.DeleteCaps(ctx, unavailable); err != nil {
+			providerFailed = true
+		}
+	}
 	if providerFailed {
 		r.refreshFailedAt = r.now()
 	} else {
 		r.refreshFailedAt = time.Time{}
 	}
-	for base, m := range mappings {
-		if m.Status != "resolved" {
-			continue
-		}
-		cap, ok := fetched[m.CoinID]
-		if !ok {
-			cap, ok = caps[m.CoinID]
-		}
-		if !ok || !cap.Available {
-			result.Facts[base] = Fact{Reason: "market_cap_missing"}
-			continue
-		}
-		value := cap.USD
-		result.Facts[base] = Fact{USD: &value}
-	}
-	result.ProviderWarning = providerFailed || mappingProviderWarning
-	return result, nil
+	return Batch{ProviderWarning: providerFailed || mappingProviderWarning}, nil
 }
 
-// cachedMappings adds the valid persisted mappings of bases to mappings and
-// returns the bases that still need a scan.
+// cachedMappings adds the persisted mappings of bases to mappings and returns
+// the bases that still need a scan. An expired resolved mapping stays in use
+// until a scan replaces it.
 func (r *Resolver) cachedMappings(ctx context.Context, bases map[string]market.Instrument, mappings map[string]Mapping) (map[string]market.Instrument, error) {
 	keys := make([]string, 0, len(bases))
 	for base := range bases {
@@ -236,9 +225,11 @@ func (r *Resolver) cachedMappings(ctx context.Context, bases map[string]market.I
 	}
 	missing := map[string]market.Instrument{}
 	for base, i := range bases {
-		if m, ok := stored[base]; ok && r.mappingCacheValid(m) {
+		m, ok := stored[base]
+		if ok && (m.Status == "resolved" || r.mappingCacheValid(m)) {
 			mappings[base] = m
-		} else {
+		}
+		if !ok || !r.mappingCacheValid(m) {
 			missing[base] = i
 		}
 	}
@@ -258,38 +249,33 @@ func (r *Resolver) resolveMappings(ctx context.Context, missing map[string]marke
 	}
 	if !r.scannedAt.IsZero() && r.now().Sub(r.scannedAt) < mappingRescanInterval {
 		// New or expired bases wait for the next scheduled scan.
-		for base, instrument := range still {
-			mappings[base] = Mapping{BaseAsset: base, QuoteAsset: instrument.QuoteAsset, SourceSymbol: base + instrument.QuoteAsset, Status: "unresolved", Reason: "mapping_not_found"}
-		}
 		return false, nil
 	}
 	if !r.scanFailedAt.IsZero() && r.now().Sub(r.scanFailedAt) < mappingScanRetryDelay {
-		for base, instrument := range still {
-			mappings[base] = Mapping{BaseAsset: base, QuoteAsset: instrument.QuoteAsset, SourceSymbol: base + instrument.QuoteAsset, Status: "unresolved", Reason: "mapping_provider_unavailable"}
-		}
 		return true, nil
 	}
 	all, err := r.allMappings(ctx)
 	if err != nil {
 		r.scanFailedAt = r.now()
-		for base, instrument := range still {
-			unresolved := Mapping{BaseAsset: base, QuoteAsset: instrument.QuoteAsset, SourceSymbol: base + instrument.QuoteAsset, Status: "unresolved", Reason: "mapping_provider_unavailable"}
-			mappings[base] = unresolved
-		}
 		return true, nil
 	}
 	r.scanFailedAt = time.Time{}
 	r.scannedAt = r.now()
+	byBase := make(map[string]Mapping, len(all))
+	for _, m := range all {
+		byBase[m.BaseAsset] = m
+	}
 	selections := make([]Mapping, 0, len(still))
 	for base, i := range still {
-		var selected Mapping
-		for _, m := range all {
-			if m.BaseAsset == base && (m.Status != "resolved" || m.QuoteAsset == i.QuoteAsset) {
-				selected = m
-				break
-			}
-		}
-		if selected.BaseAsset == "" {
+		// The scan selects as the bootstrap does, whatever the quote.
+		selected, found := byBase[base]
+		switch {
+		case found:
+		case mappings[base].Status == "resolved":
+			// A ticker missing from one scan does not unmap a resolved coin.
+			selected = mappings[base]
+			selected.ExpiresAt = ptr(r.now().Add(resolvedMappingTTL))
+		default:
 			selected = Mapping{BaseAsset: base, QuoteAsset: i.QuoteAsset, SourceSymbol: base + i.QuoteAsset, Status: "unresolved", Reason: "mapping_not_found", ExpiresAt: ptr(r.now().Add(negativeTTL))}
 		}
 		selections = append(selections, selected)
@@ -298,7 +284,7 @@ func (r *Resolver) resolveMappings(ctx context.Context, missing map[string]marke
 	return false, r.store.SaveMappings(ctx, selections)
 }
 func (r *Resolver) mappingCacheValid(mapping Mapping) bool {
-	return mapping.Status == "resolved" || mapping.ExpiresAt == nil || mapping.ExpiresAt.After(r.now())
+	return mapping.ExpiresAt != nil && mapping.ExpiresAt.After(r.now())
 }
 
 func (r *Resolver) allMappings(ctx context.Context) ([]Mapping, error) {
@@ -312,7 +298,7 @@ func (r *Resolver) allMappings(ctx context.Context) ([]Mapping, error) {
 			if t.Base == "" || t.Target == "" || t.CoinID == "" || t.IsStale || t.IsAnomaly {
 				continue
 			}
-			candidate := Mapping{BaseAsset: t.Base, QuoteAsset: t.Target, SourceSymbol: t.Base + t.Target, CoinID: t.CoinID, Status: "resolved"}
+			candidate := Mapping{BaseAsset: t.Base, QuoteAsset: t.Target, SourceSymbol: t.Base + t.Target, CoinID: t.CoinID, Status: "resolved", ExpiresAt: ptr(r.now().Add(resolvedMappingTTL))}
 			previous, exists := byBase[t.Base]
 			if exists && previous.CoinID != candidate.CoinID {
 				byBase[t.Base] = Mapping{BaseAsset: t.Base, QuoteAsset: previous.QuoteAsset, SourceSymbol: previous.SourceSymbol, Status: "unresolved", Reason: "mapping_conflict", ExpiresAt: ptr(r.now().Add(negativeTTL))}

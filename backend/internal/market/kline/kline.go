@@ -19,18 +19,23 @@ type Event struct {
 	Candle    market.Candle
 	Final     bool
 	EventTime time.Time
+	// Epoch identifies the upstream connection that delivered the event.
+	Epoch int64
 }
 
 // Status reports freshness for the keys owned by one upstream connection.
 type Status struct {
 	Keys      []Key
 	Connected bool
-	Err       error
+	// Epoch identifies the connection attempt the status is about; a later
+	// attempt has a larger epoch.
+	Epoch int64
+	Err   error
 }
 
 // Feed is a dynamically subscribed live candle source.
 type Feed interface {
-	Subscribe(Key) error
+	Subscribe(Key)
 	Unsubscribe(Key)
 	Events() <-chan Event
 	Statuses() <-chan Status

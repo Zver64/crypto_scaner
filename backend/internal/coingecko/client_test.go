@@ -63,3 +63,14 @@ func TestClientMarketsRejectsNullResponse(t *testing.T) {
 		t.Fatal("Markets() accepted a null response")
 	}
 }
+
+func TestClientMarketsTreatsZeroMarketCapAsMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[{"id":"bitcoin","market_cap":0,"last_updated":"2026-01-01T00:00:00Z"}]`))
+	}))
+	defer server.Close()
+	values, err := NewClient(server.URL, "").Markets(context.Background(), []string{"bitcoin"})
+	if err != nil || len(values) != 1 || values[0].Available {
+		t.Fatalf("values=%+v err=%v", values, err)
+	}
+}

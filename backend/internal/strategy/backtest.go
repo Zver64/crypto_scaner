@@ -276,17 +276,8 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 	if err != nil {
 		return Backtest{}, err
 	}
-	ids := map[market.CandleInterval][]int64{}
-	for _, subscription := range replay.current.reads.subscriptions {
-		if read := subscription.Target.Interval; !slices.Contains(ids[read], subscription.InstrumentID) {
-			ids[read] = append(ids[read], subscription.InstrumentID)
-		}
-	}
-	replay.histories = make(map[market.CandleInterval]map[int64][]market.Candle, len(ids))
-	for read, readIDs := range ids {
-		if replay.histories[read], err = service.store.ListLatestCandles(ctx, readIDs, read, market.RetentionDepth); err != nil {
-			return Backtest{}, fmt.Errorf("load backtest %s history: %w", read, err)
-		}
+	if err := loadHistories(ctx, service.store, func(market.CandleInterval) int { return market.RetentionDepth }, replay); err != nil {
+		return Backtest{}, fmt.Errorf("load backtest history: %w", err)
 	}
 	displayed, err := service.displayedIndicators(entry)
 	if err != nil {
@@ -295,7 +286,7 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 	replay.displayed = displayed
 	if withChart {
 		replay.chartInstrumentID = instrument.ID
-		replay.chartValues = make(map[string]map[time.Time][]closedindicator.Output)
+		replay.chartValues = make(map[pair]map[time.Time][]closedindicator.Output)
 		for _, interval := range market.CandleIntervals() {
 			if slices.Index(market.CandleIntervals(), interval) < slices.Index(market.CandleIntervals(), entry.Interval) {
 				continue
@@ -318,7 +309,7 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 		return Backtest{}, err
 	}
 	if withChart {
-		result.Charts, err = replay.chartSnapshot(ctx, instrument.ID, result)
+		result.Charts, err = replay.chartSnapshot(ctx, entry, instrument.ID, result)
 		if err != nil {
 			return Backtest{}, err
 		}
@@ -411,7 +402,7 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 				signals = append(signals, index)
 				occurrences = append(occurrences, SignalOccurrence{
 					Time: candle.OpenTime.UTC(), Close: candle.Close, Values: entry.Compiled.Values(current.resolver(entry, instrument.ID, nil)),
-					IndicatorValues: current.indicatorValues(instrument.ID, replay.displayed),
+					IndicatorValues: current.indicatorValues(entry, instrument.ID, replay.displayed),
 				})
 			case TradeSell:
 				trade := Trade{
@@ -422,8 +413,9 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 				}
 				if event.Reason == ExitRuleSignal {
 					trade.ExitValues = entry.Exit.Values(current.resolver(entry, instrument.ID, entry.positions(event.Trade, candle.OpenTime, candle.Close)))
-					// The sell fills at the next open, or at this close when
-					// the history ends here.
+					// The sell fills at the next open, or at this close on
+					// the last candle of the period, which closes open trades
+					// at its last close.
 					trade.ExitPrice = candle.Close
 					if index+1 < len(candles) && candles[index+1].Open > 0 {
 						trade.ExitTime, trade.ExitPrice = candles[index+1].OpenTime.UTC(), candles[index+1].Open
@@ -465,37 +457,39 @@ func (replay *replay) run(ctx context.Context, entry Entry, instrument Instrumen
 // history, candles of interval, setting their evaluations, and every
 // evaluated candle, from first through last (none when first is negative).
 func judgeSignal(registry *indicator.Registry, signal Strategy, interval market.CandleInterval, history []market.Candle, occurrences []SignalOccurrence, signals []int, first, last int) (*SignalJudgement, error) {
-	// Use the existing TA-Lib module, once over each contiguous history run.
-	// ATR at a candle reads only that candle and its preceding history.
-	selection := indicator.Selection{Type: "atr", Parameters: indicator.Parameters{"period": signalATRPeriod}}
-	depth, err := closedindicator.Depth(registry, closedindicator.Target{Interval: interval, Selection: selection}, 1)
+	// The ATR at a candle is calculated over its Depth window, the warm-up
+	// policy of the replayed values, so it does not depend on how much
+	// history is stored before that window.
+	target := closedindicator.Target{Interval: interval, Selection: indicator.Selection{Type: "atr", Parameters: indicator.Parameters{"period": signalATRPeriod}}}
+	depth, err := closedindicator.Depth(registry, target, 1)
 	if err != nil {
 		return nil, fmt.Errorf("signal ATR warm-up: %w", err)
-	}
-	calculated, err := registry.CalculateCandles(interval, history, []indicator.Selection{selection})
-	if err != nil {
-		return nil, fmt.Errorf("calculate signal ATR: %w", err)
-	}
-	atr := make(map[time.Time]float64, len(history))
-	for _, series := range calculated[0].Series {
-		for _, point := range series.Points {
-			atr[point.Time] = point.Value
-		}
 	}
 	// Match replay.at: a retained history may lack older seed candles;
 	// a short history is the instrument's complete history and needs only
 	// the indicator's minimum lookback. Apply this to both statistics alike.
-	evaluate := func(at int) *SignalEvaluation {
+	evaluate := func(at int) (*SignalEvaluation, error) {
 		if len(history) >= market.SyncDepth && at+1 < depth {
-			return nil
+			return nil, nil
 		}
-		return evaluateSignal(signal.Direction, interval, history, at, signal.Window, signal.TargetRatio, atr[history[at].OpenTime.UTC()])
+		value, err := closedindicator.Calculate(registry, target, history[max(0, at+1-depth):at+1], 1)
+		if err != nil {
+			return nil, fmt.Errorf("calculate signal ATR: %w", err)
+		}
+		var atr float64
+		if len(value.Outputs) > 0 {
+			atr = value.Outputs[0].Value
+		}
+		return evaluateSignal(signal.Direction, interval, history, at, signal.Window, signal.TargetRatio, atr), nil
 	}
 	report := &SignalJudgement{Window: signal.Window, TargetRatio: signal.TargetRatio}
 	var moves []float64
 	next := 0
 	for index, at := range signals {
-		evaluation := evaluate(at)
+		evaluation, err := evaluate(at)
+		if err != nil {
+			return nil, err
+		}
 		if evaluation == nil {
 			continue
 		}
@@ -514,7 +508,11 @@ func judgeSignal(registry *indicator.Registry, signal Strategy, interval market.
 	}
 	moves = nil
 	for at := first; at <= last; at++ {
-		if evaluation := evaluate(at); evaluation != nil {
+		evaluation, err := evaluate(at)
+		if err != nil {
+			return nil, err
+		}
+		if evaluation != nil {
 			report.All.record(evaluation)
 			moves = append(moves, evaluation.Move)
 		}
@@ -727,15 +725,20 @@ type replay struct {
 	registry *indicator.Registry
 	// histories hold the subscribed pairs and are only read.
 	histories map[market.CandleInterval]map[int64][]market.Candle
-	current   snapshot
-	depths    []int
+	// limits are the numbers of candles the histories were loaded with, by
+	// interval; a history that fills its limit may lack older candles.
+	limits  map[market.CandleInterval]int
+	current snapshot
+	depths  []int
 	// opens are the open times the values were calculated at, so a coarser
 	// interval is calculated once per its candle; cut marks values left
 	// unknown because the stored history ends inside their window.
-	opens             []time.Time
-	cut               []bool
-	displayed         []scannerindicator.Entry
-	chartValues       map[string]map[time.Time][]closedindicator.Output
+	opens     []time.Time
+	cut       []bool
+	displayed []scannerindicator.Entry
+	// chartValues are the displayed values of the chart instrument by
+	// their UTC open time.
+	chartValues       map[pair]map[time.Time][]closedindicator.Output
 	chartInstrumentID int64
 }
 
@@ -760,13 +763,41 @@ func newReplay(registry *indicator.Registry, entry Entry, instrument Instrument,
 	}, nil
 }
 
+// loadHistories reads the latest limit(interval) stored candles of every
+// pair replays subscribe, one query per interval, and gives the replays these
+// histories.
+func loadHistories(ctx context.Context, store CandleStore, limit func(market.CandleInterval) int, replays ...*replay) error {
+	ids := map[market.CandleInterval][]int64{}
+	for _, replay := range replays {
+		for _, subscription := range replay.current.reads.subscriptions {
+			if read := subscription.Target.Interval; !slices.Contains(ids[read], subscription.InstrumentID) {
+				ids[read] = append(ids[read], subscription.InstrumentID)
+			}
+		}
+	}
+	histories := make(map[market.CandleInterval]map[int64][]market.Candle, len(ids))
+	limits := make(map[market.CandleInterval]int, len(ids))
+	for read, readIDs := range ids {
+		limits[read] = limit(read)
+		var err error
+		if histories[read], err = store.ListLatestCandles(ctx, readIDs, read, limits[read]); err != nil {
+			return fmt.Errorf("load %s history: %w", read, err)
+		}
+	}
+	for _, replay := range replays {
+		replay.histories, replay.limits = histories, limits
+	}
+	return nil
+}
+
 // calculateAt applies the replay window and retained-history warm-up policy
 // to one subscription at an exclusive end index. Snapshots use the same policy.
 func (replay *replay) calculateAt(index, end int) (closedindicator.Value, bool, error) {
 	subscription := replay.current.reads.subscriptions[index]
 	candles := replay.histories[subscription.Target.Interval][subscription.InstrumentID]
 	depth := replay.depths[index]
-	if end < depth && len(candles) >= market.SyncDepth {
+	limit, limited := replay.limits[subscription.Target.Interval]
+	if end < depth && (len(candles) >= market.SyncDepth || limited && len(candles) >= limit) {
 		return closedindicator.Value{Target: subscription.Target}, false, nil
 	}
 	value, err := closedindicator.Calculate(replay.registry, subscription.Target, candles[max(0, end-depth):end], subscription.Points)
@@ -776,9 +807,9 @@ func (replay *replay) calculateAt(index, end int) (closedindicator.Value, bool, 
 // at returns the values the monitor would have evaluated at now, valid until
 // the next call. A window that reaches before the stored history leaves its
 // value unknown and warm false when the history holds at least
-// market.SyncDepth candles: older candles existed then but may be missing or
-// pruned now, whether the history was synchronized, loaded deeper on demand,
-// or grew since. A shorter history is the whole history of the instrument,
+// market.SyncDepth candles, or as many as it was loaded with: older candles
+// existed then but may be missing, pruned, or not loaded now, whether the
+// history was synchronized, loaded deeper on demand, or grew since. A shorter history is the whole history of the instrument,
 // which the tracker read the same way.
 func (replay *replay) at(now time.Time) (snapshot, bool, error) {
 	for index, subscription := range replay.current.reads.subscriptions {
@@ -802,7 +833,7 @@ func (replay *replay) at(now time.Time) (snapshot, bool, error) {
 			continue
 		}
 		if replay.chartValues != nil && subscription.InstrumentID == replay.chartInstrumentID && slices.ContainsFunc(replay.displayed, func(item scannerindicator.Entry) bool { return item.Target().Equal(subscription.Target) }) {
-			key := fmt.Sprintf("%d|%s", subscription.InstrumentID, subscription.Target.Key())
+			key := pair{instrumentID: subscription.InstrumentID, target: subscription.Target.Key()}
 			if replay.chartValues[key] == nil {
 				replay.chartValues[key] = map[time.Time][]closedindicator.Output{}
 			}
@@ -810,7 +841,7 @@ func (replay *replay) at(now time.Time) (snapshot, bool, error) {
 			for i, output := range value.Outputs {
 				outputs[i] = closedindicator.Output{Name: output.Name, Value: output.Value}
 			}
-			replay.chartValues[key][value.OpenTime] = outputs
+			replay.chartValues[key][value.OpenTime.UTC()] = outputs
 		}
 	}
 	replay.current.now = now

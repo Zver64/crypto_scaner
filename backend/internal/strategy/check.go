@@ -3,6 +3,7 @@ package strategy
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"time"
 
@@ -22,12 +23,16 @@ type roundWork struct {
 	missing    []closedindicator.Target
 	current    snapshot
 	recipients []int64
+	// catchUpLeft is how many more instruments may catch up this round.
+	catchUpLeft *int
 }
 
 // check evaluates entry in one round: it halts a strategy whose coins are
 // delisted, forgets the states of instruments it no longer evaluates, starts
 // a requested baseline, or advances the candidates and alerts on the events
-// it stores.
+// it stores. Lagging candidates first catch up their missed candles, within
+// the limit of the round and unless they wait for a catch-up retry; the
+// others wait, neither caught up nor evaluated.
 func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64]TradeState, entry Entry, work roundWork) {
 	// A delisted coin disables the strategy, which then waits for the
 	// coin to be replaced.
@@ -53,10 +58,12 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 		}
 	}
 	if len(left) > 0 {
+		forgetFailure := failureKey{operation: "forget states", strategy: entry.ID}
 		if err := monitor.store.DeleteStrategyStates(ctx, entry.ID, left); err != nil {
-			monitor.logger.WarnContext(ctx, "forget strategy states failed", "strategy_id", entry.ID, "error", err)
+			monitor.failures.Warn(ctx, forgetFailure, "forget strategy states failed", "strategy_id", entry.ID, "error", err)
 			monitor.storeFailed()
 		} else {
+			monitor.failures.Recover(ctx, forgetFailure, "forget strategy states recovered", "strategy_id", entry.ID)
 			for _, id := range left {
 				delete(states, id)
 			}
@@ -86,27 +93,77 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 			return !ok
 		})
 	}
+	latest := entry.Interval.LastClosedOpenTime(work.current.now)
+	retries := monitor.catchUps[entry.ID]
+	// Instruments it no longer evaluates forget their catch-up retries.
+	maps.DeleteFunc(retries, func(id int64, _ *catchUpRetry) bool {
+		_, ok := evaluates[id]
+		return !ok
+	})
+	plan := lagging(entry, candidates, states, latest, *work.catchUpLeft, func(id int64) bool {
+		retry := retries[id]
+		return retry != nil && work.current.now.Before(retry.at)
+	})
+	*work.catchUpLeft -= len(plan.behind)
+	replays, loadErr := monitor.replays(ctx, entry, plan.behind, work.instruments, plan.from, latest)
 	changes := map[int64]TradeState{}
-	signals := map[int64][]TradeEvent{}
+	signals := map[int64][]alert{}
 	var failure error
 	for _, instrument := range candidates {
-		next, events, processed, err := work.current.advance(entry, instrument.ID, states[instrument.ID], !entry.MarketCap.Contains(instrument.MarketCapUSD))
-		if err != nil {
-			failure = fmt.Errorf("%s %w", instrument.Symbol, err)
-			break
-		}
-		if !processed {
+		if _, held := plan.held[instrument.ID]; held {
 			continue
 		}
-		changes[instrument.ID] = next
+		lags := slices.ContainsFunc(plan.behind, func(item Instrument) bool { return item.ID == instrument.ID })
+		// A lagging instrument whose catch-up fails waits for its retry
+		// instead of skipping its missed candles.
+		if lags && loadErr != nil {
+			monitor.catchUpFailed(ctx, entry, instrument, loadErr)
+			continue
+		}
+		outOfRange := !entry.MarketCap.Contains(instrument.MarketCapUSD)
+		result, err := monitor.catchUp(ctx, replays[instrument.ID], entry, instrument, states[instrument.ID], plan.from, latest, outOfRange)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			monitor.catchUpFailed(ctx, entry, instrument, err)
+			continue
+		}
+		if result.halt == nil {
+			result = result.advance(work.current, entry, instrument, outOfRange)
+		}
+		if result.halt != nil {
+			failure = fmt.Errorf("%s %w", instrument.Symbol, result.halt)
+			break
+		}
+		if lags {
+			if result.processed {
+				monitor.caughtUp(entry, instrument)
+			} else {
+				monitor.catchUpStalled(ctx, entry, instrument)
+			}
+		}
+		if !result.processed {
+			continue
+		}
+		changes[instrument.ID] = result.state
 		// A coin new to the favorites starts silently from its entry now.
 		if _, known := states[instrument.ID]; known || entry.CoinSource != CoinsFavorites {
-			signals[instrument.ID] = events
+			signals[instrument.ID] = result.alerts
 		}
 	}
 	if failure != nil {
 		monitor.halt(ctx, entry, failure)
 		return
+	}
+	if len(plan.later) > 0 {
+		// The instruments over the limit catch up in the next round.
+		monitor.mu.Lock()
+		for _, id := range plan.later {
+			monitor.pending[id] = struct{}{}
+		}
+		monitor.mu.Unlock()
+		monitor.signal()
 	}
 	if len(changes) == 0 {
 		return
@@ -115,10 +172,11 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 	// meanwhile, or a repeated evaluation, never alerts.
 	stored, err := monitor.store.SaveStrategyStates(ctx, entry.ID, entry.Revision, changes)
 	if err != nil {
-		monitor.logger.WarnContext(ctx, "store strategy states failed", "strategy_id", entry.ID, "error", err)
+		monitor.failures.Warn(ctx, storeFailure(entry), "store strategy states failed", "strategy_id", entry.ID, "error", err)
 		monitor.storeFailed()
 		return
 	}
+	monitor.failures.Recover(ctx, storeFailure(entry), "store strategy states recovered", "strategy_id", entry.ID)
 	// States not stored, or a rejected stale revision, mean the local
 	// state differs from the store.
 	if len(stored) < len(changes) {
@@ -130,9 +188,9 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 			continue
 		}
 		states[instrument.ID] = changes[instrument.ID]
-		for _, event := range signals[instrument.ID] {
-			if event.Kind != TradeSkip {
-				alerts = append(alerts, alert{instrument, event})
+		for _, item := range signals[instrument.ID] {
+			if item.event.Kind != TradeSkip {
+				alerts = append(alerts, item)
 			}
 		}
 	}
@@ -167,11 +225,12 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[uuid.UUID]map[in
 	if err != nil {
 		// The transaction may have committed; the stored flag decides
 		// whether the retry is still needed.
-		monitor.logger.WarnContext(ctx, "store strategy states failed", "strategy_id", entry.ID, "error", err)
+		monitor.failures.Warn(ctx, storeFailure(entry), "store strategy states failed", "strategy_id", entry.ID, "error", err)
 		monitor.StrategiesChanged([]uuid.UUID{entry.ID})
 		monitor.storeFailed()
 		return
 	}
+	monitor.failures.Recover(ctx, storeFailure(entry), "store strategy states recovered", "strategy_id", entry.ID)
 	if !replaced {
 		// A newer change requested its own baseline, or an earlier attempt of
 		// this one committed; either way the stored states are current.
@@ -189,11 +248,13 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[uuid.UUID]map[in
 // A strategy changed since entry was listed stays enabled and is evaluated
 // afresh. Its trading states go as a manual disable removes them.
 func (monitor *Monitor) halt(ctx context.Context, entry Entry, err error) {
+	disableFailure := failureKey{operation: "disable", strategy: entry.ID}
 	disabled, disableErr := monitor.strategies.DisableAtRevision(ctx, entry.ID, entry.Revision)
 	if disableErr != nil {
-		monitor.logger.WarnContext(ctx, "disable halted strategy failed", "strategy_id", entry.ID, "reason", err, "error", disableErr)
+		monitor.failures.Warn(ctx, disableFailure, "disable halted strategy failed", "strategy_id", entry.ID, "reason", err, "error", disableErr)
 		return
 	}
+	monitor.failures.Forget(disableFailure)
 	if !disabled {
 		return
 	}
@@ -205,5 +266,10 @@ func (monitor *Monitor) halt(ctx context.Context, entry Entry, err error) {
 // err, such as "at the candle opening 2026-03-02 10:00 UTC, the entry rule:
 // the prev shift is 0, …".
 func ruleError(at time.Time, rule string, err error) error {
-	return fmt.Errorf("at the candle opening %s, %s: %w", at.UTC().Format("2006-01-02 15:04 UTC"), rule, err)
+	return fmt.Errorf("at the candle opening %s, %s: %w", candleTime(at), rule, err)
+}
+
+// storeFailure is the failure of storing the states of entry.
+func storeFailure(entry Entry) failureKey {
+	return failureKey{operation: "store states", strategy: entry.ID}
 }

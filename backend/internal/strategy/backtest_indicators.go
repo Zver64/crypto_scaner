@@ -63,10 +63,10 @@ func indicatorColumns(items []scannerindicator.Entry) []IndicatorColumn {
 	return columns
 }
 
-func (current snapshot) indicatorValues(instrumentID int64, items []scannerindicator.Entry) map[string]float64 {
+func (current snapshot) indicatorValues(entry Entry, instrumentID int64, items []scannerindicator.Entry) map[string]float64 {
 	result := make(map[string]float64)
 	for _, item := range items {
-		position, found := current.reads.positions[pair{instrumentID, item.Target().Key()}]
+		position, found := current.reads.position(entry.ID, instrumentID, instrumentID, item.Target().Key())
 		if !found {
 			continue
 		}
@@ -84,7 +84,7 @@ func (current snapshot) indicatorValues(instrumentID int64, items []scannerindic
 // chartSnapshot uses the same per-candle windows as replay. Values already
 // calculated by replay are reused; gaps in the base interval do not lose points
 // of coarser intervals. No snapshot reads history again after the replay.
-func (replay *replay) chartSnapshot(ctx context.Context, instrumentID int64, result Backtest) ([]BacktestChart, error) {
+func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrumentID int64, result Backtest) ([]BacktestChart, error) {
 	charts := make([]BacktestChart, 0)
 	if result.From.IsZero() {
 		return charts, nil
@@ -131,17 +131,17 @@ func (replay *replay) chartSnapshot(ctx context.Context, instrumentID int64, res
 				calculation.Series[i] = indicator.NamedSeries{Name: drawn.Output, Points: make([]indicator.Point, 0)}
 			}
 			target := item.Target()
-			position, subscribed := replay.current.reads.positions[pair{instrumentID, target.Key()}]
+			position, subscribed := replay.current.reads.position(entry.ID, instrumentID, instrumentID, target.Key())
 			if !subscribed {
 				return nil, fmt.Errorf("backtest chart target %s is not subscribed", target.Key())
 			}
-			cached := replay.chartValues[fmt.Sprintf("%d|%s", instrumentID, target.Key())]
+			cached := replay.chartValues[pair{instrumentID: instrumentID, target: target.Key()}]
 			for i := first; first >= 0 && i <= last; i++ {
 				if err := ctx.Err(); err != nil {
 					return nil, err
 				}
 				candle := history[i]
-				outputs, found := cached[candle.OpenTime]
+				outputs, found := cached[candle.OpenTime.UTC()]
 				if !found {
 					value, warm, err := replay.calculateAt(position, i+1)
 					if err != nil {

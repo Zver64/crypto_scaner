@@ -3,9 +3,7 @@ package volatility
 
 import (
 	"context"
-	"fmt"
 	"math"
-	"time"
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/market"
@@ -60,11 +58,15 @@ func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.E
 		return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Criterion: c.Name(), Unit: c.unit, Required: c.period, Available: len(candles)}
 	}
 	candles = candles[len(candles)-c.period:]
+	// A candle without a positive open has no range, so only the candles
+	// after the latest such one are valid history.
+	for i := len(candles) - 1; i >= 0; i-- {
+		if !(candles[i].Open > 0) {
+			return analysis.Evaluation{}, &analysis.InsufficientHistoryError{Criterion: c.Name(), Unit: c.unit, Required: c.period, Available: len(candles) - 1 - i}
+		}
+	}
 	ranges := make([]float64, len(candles))
 	for i, candle := range candles {
-		if !(candle.Open > 0) {
-			return analysis.Evaluation{}, fmt.Errorf("invalid %s candle at %s: open %v is not positive", c.unit, candle.OpenTime.UTC().Format(time.RFC3339), candle.Open)
-		}
 		ranges[i] = ((candle.High - candle.Low) / candle.Open) * 100
 	}
 	value := exceedancePercentile(ranges, c.percentile)

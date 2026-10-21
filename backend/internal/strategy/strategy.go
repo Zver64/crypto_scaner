@@ -14,11 +14,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"unicode/utf8"
 
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/platform/numeric"
 	"crypto-scanner/internal/scannerindicator"
 
@@ -313,6 +315,11 @@ type Service struct {
 	// favorites are the symbols of the administrator's favorites, as last
 	// read, ascending.
 	favorites []string
+	// favoritesStale reports that the latest read of favorites failed, so
+	// they may miss a committed change; it changes only under writes.
+	favoritesStale atomic.Bool
+	// favoritesFailure warns once while reads of favorites keep failing.
+	favoritesFailure *logging.Failure
 	// backtests holds a slot per running backtest.
 	backtests chan struct{}
 }
@@ -336,7 +343,8 @@ func NewService(store Store, indicators Indicators, registry *indicator.Registry
 	if store == nil || indicators == nil || registry == nil || tracker == nil || logger == nil || changed == nil {
 		return nil, errors.New("strategy store, indicators, registry, tracker, logger, and change listener are required")
 	}
-	return &Service{store: store, indicators: indicators, registry: registry, tracker: tracker, logger: logger.With("module", "strategy"), administratorUserID: administratorUserID, changed: changed, backtests: make(chan struct{}, maxBacktests)}, nil
+	logger = logger.With("module", "strategy")
+	return &Service{store: store, indicators: indicators, registry: registry, tracker: tracker, logger: logger, administratorUserID: administratorUserID, changed: changed, favoritesFailure: logging.NewFailure(logger), backtests: make(chan struct{}, maxBacktests)}, nil
 }
 
 // RuleKind tells what an expression is to a strategy.
@@ -596,7 +604,9 @@ func (service *Service) Load(ctx context.Context) error {
 
 // FavoritesChanged rereads the administrator's favorites after the favorites
 // of the user userID changed, so signals of CoinsFavorites evaluate them from
-// now on; other users' favorites play no part.
+// now on; other users' favorites play no part. A failed read is not retried
+// here: it marks the favorites stale and wakes the monitor, whose rounds
+// retry ReloadFavorites, so the committed change is not lost.
 func (service *Service) FavoritesChanged(ctx context.Context, userID int64) {
 	if userID != service.administratorUserID {
 		return
@@ -605,11 +615,37 @@ func (service *Service) FavoritesChanged(ctx context.Context, userID int64) {
 	defer service.writes.Unlock()
 	// Read under writes, so the read after the latest change applies last,
 	// and to the end even when the request that changed them ends.
-	favorites, err := service.store.ListStrategyFavorites(context.WithoutCancel(ctx), service.administratorUserID)
-	if err != nil {
-		service.logger.WarnContext(ctx, "load favorites failed", "error", err)
-		return
+	if err := service.readFavorites(context.WithoutCancel(ctx)); err != nil {
+		service.favoritesStale.Store(true)
+		service.changed(nil)
 	}
+}
+
+// ReloadFavorites rereads the administrator's favorites when the last read
+// failed, and does nothing otherwise. A failed read is logged here.
+func (service *Service) ReloadFavorites(ctx context.Context) error {
+	if !service.favoritesStale.Load() {
+		return nil
+	}
+	service.writes.Lock()
+	defer service.writes.Unlock()
+	if !service.favoritesStale.Load() {
+		return nil
+	}
+	return service.readFavorites(ctx)
+}
+
+// readFavorites logs a failed read, warning once while reads keep failing.
+// It must be called with writes held.
+func (service *Service) readFavorites(ctx context.Context) error {
+	favorites, err := service.store.ListStrategyFavorites(ctx, service.administratorUserID)
+	if err != nil {
+		err = fmt.Errorf("load favorites: %w", err)
+		service.favoritesFailure.Warn(ctx, "load favorites failed", "error", err)
+		return err
+	}
+	service.favoritesFailure.Recover(ctx, "load favorites recovered")
+	service.favoritesStale.Store(false)
 	service.mu.Lock()
 	unchanged := slices.Equal(service.favorites, favorites)
 	service.favorites = favorites
@@ -617,6 +653,7 @@ func (service *Service) FavoritesChanged(ctx context.Context, userID int64) {
 	if !unchanged {
 		service.replace(service.List(), nil)
 	}
+	return nil
 }
 
 // InstrumentsChanged replaces the active instruments after the catalog

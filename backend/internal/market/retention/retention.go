@@ -11,6 +11,7 @@ import (
 
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/logging"
 )
 
 const (
@@ -47,6 +48,8 @@ func New(store Store, logger *slog.Logger, keep int) *Pruner {
 // Run prunes shortly after startup and then weekly until ctx is cancelled.
 func (pruner *Pruner) Run(ctx context.Context) error {
 	delay := startupDelay
+	// pruneFailure warns once while pruning keeps failing.
+	pruneFailure := logging.NewFailure(pruner.logger)
 	for {
 		if backoff.Sleep(ctx, delay) != nil {
 			return nil
@@ -56,9 +59,11 @@ func (pruner *Pruner) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			pruner.logger.WarnContext(ctx, "market history pruning failed", "operation", "prune", "outcome", "failure", "retry_after", retryDelay, "error", err)
+			pruneFailure.Warn(ctx, "market history pruning failed", "operation", "prune", "outcome", "failure", "retry_after", retryDelay, "error", err)
 			delay = retryDelay
+			continue
 		}
+		pruneFailure.Forget()
 	}
 }
 

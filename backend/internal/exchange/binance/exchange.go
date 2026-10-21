@@ -3,12 +3,14 @@ package binance
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"net/http"
 	"strings"
 	"time"
 
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/platform/numeric"
 
 	connector "github.com/binance/binance-connector-go"
@@ -22,6 +24,9 @@ const spotPermission = "SPOT"
 type Exchange struct {
 	client    *connector.Client
 	transport *retryTransport
+	logger    *slog.Logger
+	// unknownStatuses are the unknown statuses met, each warned about once.
+	unknownStatuses *logging.Failures[string]
 }
 
 // Options configures the shared public Binance HTTP policy.
@@ -40,7 +45,7 @@ type Options struct {
 
 // New creates a Binance Spot adapter whose discovery and candle calls share
 // one limiter and retry policy. Zero options select the official endpoint.
-func New(options Options) *Exchange {
+func New(logger *slog.Logger, options Options) *Exchange {
 	if options.BaseURL == "" {
 		options.BaseURL = "https://api.binance.com"
 	}
@@ -77,7 +82,8 @@ func New(options Options) *Exchange {
 	}
 	httpClient.Transport = transport
 	client.HTTPClient = &httpClient
-	return &Exchange{client: client, transport: transport}
+	logger = logger.With("module", "binance_exchange")
+	return &Exchange{client: client, transport: transport, logger: logger, unknownStatuses: logging.NewFailures[string](logger)}
 }
 
 // RetryCount returns the cumulative number of retry attempts made by this adapter.
@@ -106,10 +112,6 @@ func (exchange *Exchange) ListInstruments(ctx context.Context) ([]market.Instrum
 		if item.Symbol == "" || item.BaseAsset == "" || item.QuoteAsset == "" || item.Status == "" {
 			return nil, fmt.Errorf("Binance Spot exchange information contains an incomplete symbol at index %d", index)
 		}
-		active, knownStatus := spotStatusActive(item.Status)
-		if !knownStatus {
-			return nil, fmt.Errorf("Binance Spot exchange information contains symbol %q with unknown status %q", item.Symbol, item.Status)
-		}
 		if item.QuoteAsset != "USDT" {
 			continue
 		}
@@ -124,6 +126,11 @@ func (exchange *Exchange) ListInstruments(ctx context.Context) ([]market.Instrum
 			return nil, fmt.Errorf("Binance Spot exchange information contains duplicate symbol %q", item.Symbol)
 		}
 		seen[item.Symbol] = struct{}{}
+		active, knownStatus := spotStatusActive(item.Status)
+		if !knownStatus {
+			// A status Binance introduces later keeps the symbol inactive.
+			exchange.unknownStatuses.Warn(ctx, item.Status, "Binance Spot symbol has an unknown status and stays inactive", "operation", "list_instruments", "symbol", item.Symbol, "status", item.Status)
+		}
 		item.Active = active
 		items = append(items, item)
 	}

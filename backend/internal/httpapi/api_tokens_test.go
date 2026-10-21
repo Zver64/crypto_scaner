@@ -84,6 +84,7 @@ func TestAPITokenAuthenticatesAsItsAdministratorUntilDeleted(t *testing.T) {
 	if item := list.Items[0]; item.ID != issued.ID || item.Token != nil || item.LastUsedAt == nil || !item.LastUsedAt.Equal(fixtureNow) {
 		t.Fatalf("listed token = %+v, want id %d last used at %s without the secret", item, issued.ID, fixtureNow)
 	}
+	assertErrorResponse(t, call(t, handler, http.MethodDelete, "/api/v1/auth/session", issued.Token, ""), http.StatusForbidden, "session_required")
 	// Only a person starts history loads.
 	assertErrorResponse(t, call(t, handler, http.MethodPost, "/api/v1/admin/candle-history-loads", issued.Token, `{"symbols":["BTCUSDT"],"intervals":["1h"],"depth":20000}`), http.StatusForbidden, "session_required")
 	if store.touches != 1 {

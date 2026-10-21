@@ -8,6 +8,7 @@ import (
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/favorites"
+	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/markettable"
 )
 
@@ -24,6 +25,20 @@ func (stub *analyzerStub) SearchSymbols(_ context.Context, _ analysis.SearchRequ
 		items[i] = analysis.SearchItem{Symbol: symbol}
 	}
 	return analysis.SearchResult{Items: items}, nil
+}
+
+// PriceHistories gives each instrument a seven-day series whose closes are
+// its id.
+func (*analyzerStub) PriceHistories(_ context.Context, ids []int64, _ market.PriceWindows) (map[int64]analysis.PriceHistories, error) {
+	histories := map[int64]analysis.PriceHistories{}
+	for _, id := range ids {
+		closes := make([]*float64, market.SevenDayPriceSlots)
+		for slot := range closes {
+			closes[slot] = new(float64(id))
+		}
+		histories[id] = analysis.PriceHistories{SevenDay: closes}
+	}
+	return histories, nil
 }
 
 // noConfiguredColumns is a table without admin-configured indicator columns.
@@ -43,6 +58,7 @@ func TestFavoritesAnalyzesActiveFavoritesAndKeepsEveryRow(t *testing.T) {
 	table, err := markettable.NewCatalog(noConfiguredColumns{}, markettable.Sort{Column: "alert_count", Direction: markettable.Descending},
 		markettable.Column{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
 		markettable.Column{ID: "alert_count", Title: "Alerts", Kind: markettable.KindCount, Sortable: true, Source: markettable.AlertCount{}},
+		markettable.Column{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{Period: markettable.SevenDays}},
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -69,6 +85,10 @@ func TestFavoritesAnalyzesActiveFavoritesAndKeepsEveryRow(t *testing.T) {
 	}
 	if count := result.Table.Rows[2].Cells["alert_count"].Value; count == nil || *count != 2 {
 		t.Fatalf("alert count = %v, want 2", count)
+	}
+	// A favorite the analysis does not return keeps its price history.
+	if series := result.Table.Rows[2].Cells["price_history"].Series; len(series) == 0 || series[0] == nil || *series[0] != 3 {
+		t.Fatalf("price history = %v, want the closes of the favorite", series)
 	}
 }
 

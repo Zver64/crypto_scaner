@@ -5,7 +5,6 @@
 package pivot
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -28,9 +27,6 @@ const (
 	// reach is the lookback for which chart.Window loads that window.
 	reach = window/chart.SettleFactor - 1
 )
-
-// ErrInvalidRequest indicates parameters or inputs the modules reject.
-var ErrInvalidRequest = errors.New("invalid pivot request")
 
 // sides are the TradingView pivot lookbacks: the candles before and after a
 // pivot that it must stand out from.
@@ -97,7 +93,7 @@ func (pivots) Calculate(parameters indicator.Parameters, inputs indicator.Inputs
 	}
 	series, err := indicator.ReadInputs(inputs, []string{"high", "low"})
 	if err != nil {
-		return indicator.Result{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		return indicator.Result{}, fmt.Errorf("%w: %w", indicator.ErrInvalidRequest, err)
 	}
 	left, right := values[0], values[1]
 	highs := confirmed(series[0], left, right, isHigh)
@@ -227,7 +223,7 @@ func canonical(params []param, values []int) indicator.Parameters {
 func parse(params []param, parameters indicator.Parameters) ([]int, error) {
 	for key := range parameters {
 		if !slices.ContainsFunc(params, func(p param) bool { return p.key == key }) {
-			return nil, fmt.Errorf("%w: no parameter %q", ErrInvalidRequest, key)
+			return nil, fmt.Errorf("%w: no parameter %q", indicator.ErrInvalidRequest, key)
 		}
 	}
 	values := make([]int, len(params))
@@ -239,10 +235,10 @@ func parse(params []param, parameters indicator.Parameters) ([]int, error) {
 		}
 		value, err := indicator.ParseNumber(raw)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s %w", ErrInvalidRequest, p.key, err)
+			return nil, fmt.Errorf("%w: %s %w", indicator.ErrInvalidRequest, p.key, err)
 		}
 		if math.Trunc(value) != value || value < float64(p.minimum) || value > float64(p.maximum) {
-			return nil, fmt.Errorf("%w: %s must be an integer between %d and %d", ErrInvalidRequest, p.key, p.minimum, p.maximum)
+			return nil, fmt.Errorf("%w: %s must be an integer between %d and %d", indicator.ErrInvalidRequest, p.key, p.minimum, p.maximum)
 		}
 		values[index] = int(value)
 	}

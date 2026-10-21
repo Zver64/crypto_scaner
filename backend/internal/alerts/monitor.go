@@ -2,14 +2,22 @@ package alerts
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"math/big"
 	"slices"
-	"sync"
 	"time"
 
 	markettrade "crypto-scanner/internal/market/trade"
+	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/delivery"
+	"crypto-scanner/internal/platform/logging"
+)
+
+const (
+	sendWorkers = 4
+	// retryDelay and maxRetryDelay space the retries of a failed load.
+	retryDelay    = 10 * time.Second
+	maxRetryDelay = 5 * time.Minute
 )
 
 type TriggerStore interface {
@@ -36,6 +44,10 @@ type symbolState struct {
 	epoch         int64
 	fresh         bool
 	alerts        map[int64]Alert
+	// armedAfterBaseline holds the alerts applied after the current baseline
+	// trade; the next trade checks them without the baseline price, which
+	// precedes them.
+	armedAfterBaseline map[int64]struct{}
 	// targets caches parsed alert targets, which are compared on every trade.
 	targets map[string]*big.Rat
 }
@@ -43,6 +55,7 @@ type symbolState struct {
 // reset drops the trade baseline; the next trade establishes a new one.
 func (s *symbolState) reset() {
 	s.fresh, s.lastPrice, s.last, s.lastTradeID, s.lastEventTime = false, "", nil, 0, time.Time{}
+	s.armedAfterBaseline = nil
 }
 
 // target returns the parsed target of a, or nil when it is not a decimal.
@@ -69,10 +82,13 @@ type Monitor struct {
 	ops     chan liveOperation
 	refresh chan struct{}
 	sends   chan Fired
+	// loadFailure warns once while loads of the alerts keep failing.
+	loadFailure *logging.Failure
 }
 
 func NewMonitor(store MonitorStore, feed markettrade.Feed, sender AlertSender, logger *slog.Logger) *Monitor {
-	return &Monitor{store: store, feed: feed, sender: sender, logger: logger.With("module", "alerts"), ops: make(chan liveOperation, 128), refresh: make(chan struct{}, 1), sends: make(chan Fired, 128)}
+	logger = logger.With("module", "alerts")
+	return &Monitor{store: store, feed: feed, sender: sender, logger: logger, loadFailure: logging.NewFailure(logger), ops: make(chan liveOperation, 128), refresh: make(chan struct{}, 1), sends: make(chan Fired, 128)}
 }
 func (m *Monitor) Apply(a Alert) { copy := a; m.enqueue(liveOperation{apply: &copy}) }
 func (m *Monitor) Remove(userID, id int64) {
@@ -89,39 +105,61 @@ func (m *Monitor) enqueue(op liveOperation) {
 		m.Changed()
 	}
 }
+
+// Changed reloads the alerts and the monitored symbols, such as after access,
+// favorites, or the active instruments change.
 func (m *Monitor) Changed() {
 	select {
 	case m.refresh <- struct{}{}:
 	default:
 	}
 }
+
+// Run monitors price alerts until ctx is cancelled. It retries loading them
+// until it succeeds.
 func (m *Monitor) Run(ctx context.Context) error {
 	states := map[string]*symbolState{}
 	subscribed := []string(nil)
-	if err := m.reload(ctx, states, &subscribed); err != nil {
+	for failures := 0; ; failures++ {
+		err := m.reload(ctx, states, &subscribed)
+		if err == nil {
+			break
+		}
 		if ctx.Err() != nil {
 			return nil
 		}
-		return fmt.Errorf("load price alerts: %w", err)
+		m.loadFailure.Warn(ctx, "initial price alerts load failed", "error", err)
+		if backoff.Sleep(ctx, backoff.Exponential(retryDelay, maxRetryDelay, failures)) != nil {
+			return nil
+		}
 	}
-	var workers sync.WaitGroup
-	for range 4 {
-		workers.Add(1)
-		go func() { defer workers.Done(); m.sendLoop(ctx) }()
+	m.loadFailure.Recover(ctx, "price alerts load recovered")
+	// The alerts queued at shutdown are still fired and sent.
+	waitSends := delivery.Start(ctx, sendWorkers, m.sends, m.deliver)
+	defer waitSends()
+	// A failed refresh is retried until one succeeds; a refresh that a
+	// change requests meanwhile replaces the pending retry.
+	retry := time.NewTimer(retryDelay)
+	retry.Stop()
+	defer retry.Stop()
+	failures := 0
+	refresh := func() {
+		if m.refreshAll(ctx, states, &subscribed) {
+			retry.Stop()
+			failures = 0
+			return
+		}
+		retry.Reset(backoff.Exponential(retryDelay, maxRetryDelay, failures))
+		failures++
 	}
-	defer workers.Wait()
-	// Mutations trigger immediate refreshes. This infrequent poll is only a
-	// safety net for external access and favorite changes.
-	ticker := time.NewTicker(5 * time.Minute)
-	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return nil
-		case <-ticker.C:
-			m.refreshAll(ctx, states, &subscribed)
+		case <-retry.C:
+			refresh()
 		case <-m.refresh:
-			m.refreshAll(ctx, states, &subscribed)
+			refresh()
 		case op := <-m.ops:
 			m.operation(ctx, states, op)
 			m.syncSubscriptions(states, &subscribed)
@@ -143,7 +181,8 @@ func (m *Monitor) Run(ctx context.Context) error {
 
 // refreshAll applies queued operations before reloading, so an operation
 // enqueued before a newer committed change can never overwrite the reload.
-func (m *Monitor) refreshAll(ctx context.Context, states map[string]*symbolState, subscribed *[]string) {
+// It reports whether the reload succeeded.
+func (m *Monitor) refreshAll(ctx context.Context, states map[string]*symbolState, subscribed *[]string) bool {
 	for drained := false; !drained; {
 		select {
 		case op := <-m.ops:
@@ -153,8 +192,11 @@ func (m *Monitor) refreshAll(ctx context.Context, states map[string]*symbolState
 		}
 	}
 	if err := m.reload(ctx, states, subscribed); err != nil {
-		m.logger.WarnContext(ctx, "refresh price alerts failed", "error", err)
+		m.loadFailure.Warn(ctx, "refresh price alerts failed", "error", err)
+		return false
 	}
+	m.loadFailure.Recover(ctx, "price alerts load recovered")
+	return true
 }
 
 func (m *Monitor) reload(ctx context.Context, states map[string]*symbolState, subscribed *[]string) error {
@@ -245,16 +287,21 @@ func (m *Monitor) operation(ctx context.Context, states map[string]*symbolState,
 
 // applied handles new or re-versioned alerts of s: a target equal to the
 // current price fires at once, and no target may use the pre-change side of a
-// crossing, so the next trade establishes a new baseline.
+// crossing, so the next trade checks them without the baseline price. The
+// baseline itself stays for the other alerts of the symbol.
 func (m *Monitor) applied(ctx context.Context, s *symbolState, alerts ...Alert) {
-	if s.fresh {
-		for _, a := range alerts {
-			if cmp, err := Compare(a.Target, s.lastPrice); err == nil && cmp == 0 {
-				m.fire(ctx, s, a, s.lastPrice, s.lastEventTime)
-			}
+	if !s.fresh {
+		return
+	}
+	if s.armedAfterBaseline == nil {
+		s.armedAfterBaseline = map[int64]struct{}{}
+	}
+	for _, a := range alerts {
+		s.armedAfterBaseline[a.ID] = struct{}{}
+		if cmp, err := Compare(a.Target, s.lastPrice); err == nil && cmp == 0 {
+			m.fire(ctx, s, a, s.lastPrice, s.lastEventTime)
 		}
 	}
-	s.reset()
 }
 
 // trade fires every alert whose target lies in the price range traded since
@@ -279,6 +326,7 @@ func (m *Monitor) trade(ctx context.Context, states map[string]*symbolState, e m
 		m.logger.WarnContext(ctx, "invalid trade event", "symbol", e.Symbol)
 		return
 	}
+	tradedLow, tradedHigh := low, high
 	if s.fresh {
 		if s.last.Cmp(low) < 0 {
 			low = s.last
@@ -287,9 +335,15 @@ func (m *Monitor) trade(ctx context.Context, states map[string]*symbolState, e m
 			high = s.last
 		}
 	}
+	armedAfterBaseline := s.armedAfterBaseline
 	s.lastPrice, s.last, s.lastTradeID, s.lastEventTime, s.fresh = e.Price, last, e.TradeID, e.EventTime, true
+	s.armedAfterBaseline = nil
 	for _, a := range s.alerts {
-		if target := s.target(a); target != nil && target.Cmp(low) >= 0 && target.Cmp(high) <= 0 {
+		from, to := low, high
+		if _, ok := armedAfterBaseline[a.ID]; ok {
+			from, to = tradedLow, tradedHigh
+		}
+		if target := s.target(a); target != nil && target.Cmp(from) >= 0 && target.Cmp(to) <= 0 {
 			m.fire(ctx, s, a, e.Price, e.EventTime)
 		}
 	}
@@ -303,30 +357,22 @@ func (m *Monitor) fire(ctx context.Context, s *symbolState, a Alert, price strin
 	select {
 	case m.sends <- Fired{Alert: a, Price: price, EventTime: at}:
 	case <-ctx.Done():
-		m.logger.WarnContext(ctx, "price alert delivery cancelled during shutdown", "alert_id", a.ID)
+		m.logger.InfoContext(ctx, "price alert delivery cancelled during shutdown", "alert_id", a.ID)
 	}
 }
-func (m *Monitor) sendLoop(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case item := <-m.sends:
-			// The version check makes a repeated fire of one alert a no-op.
-			fired, err := m.store.FireAlert(ctx, item.Alert.ID, item.Alert.Version)
-			if err != nil {
-				m.logger.WarnContext(ctx, "fire price alert failed", "alert_id", item.Alert.ID, "error", err)
-				continue
-			}
-			if !fired {
-				continue
-			}
-			sendCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-			err = m.sender.SendPriceAlert(sendCtx, item)
-			cancel()
-			if err != nil {
-				m.logger.WarnContext(ctx, "price alert Telegram delivery failed", "alert_id", item.Alert.ID, "error", err)
-			}
-		}
+
+// deliver persists the fired alert and sends it. The version check makes a
+// repeated fire of one alert a no-op.
+func (m *Monitor) deliver(ctx context.Context, item Fired) {
+	fired, err := m.store.FireAlert(ctx, item.Alert.ID, item.Alert.Version)
+	if err != nil {
+		m.logger.WarnContext(ctx, "fire price alert failed", "alert_id", item.Alert.ID, "error", err)
+		return
+	}
+	if !fired {
+		return
+	}
+	if err := m.sender.SendPriceAlert(ctx, item); err != nil {
+		m.logger.WarnContext(ctx, "price alert Telegram delivery failed", "alert_id", item.Alert.ID, "error", err)
 	}
 }

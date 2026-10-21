@@ -2,7 +2,6 @@ package main
 
 import (
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -55,13 +54,13 @@ func (e *cliError) response() apiclient.ErrorResponse {
 	}
 }
 
-// describe returns err as a cliError. Transport errors name the server, and
-// any other error comes from cobra's flag and argument checks.
+// describe returns err as a cliError. Transport errors name the server.
+// Errors from cobra's flag and argument checks, which come before a command
+// runs, are usage errors; any other error a running command returns comes
+// from a request or from reading or decoding its response.
 func (c *cli) describe(err error) *cliError {
 	var failed *cliError
 	var transport *url.Error
-	var syntax *json.SyntaxError
-	var mistyped *json.UnmarshalTypeError
 	switch {
 	case errors.As(err, &failed):
 		return failed
@@ -71,10 +70,10 @@ func (c *cli) describe(err error) *cliError {
 			server += " (profile " + c.profile + ")"
 		}
 		return &cliError{code: "unreachable", message: fmt.Sprintf("cannot reach %s: %v; is the backend running?", server, transport.Err)}
-	case errors.As(err, &syntax) || errors.As(err, &mistyped):
-		return &cliError{code: "unexpected_response", message: fmt.Sprintf("unexpected API response from %s: %v; check the profile's server URL", c.server, err)}
+	case !c.running:
+		return &cliError{code: "usage", message: err.Error()}
 	}
-	return &cliError{code: "usage", message: err.Error()}
+	return &cliError{code: "unexpected_response", message: fmt.Sprintf("unexpected API response from %s: %v; check the profile's server URL", c.server, err)}
 }
 
 // apiResponse is a generated response; every operation declares these errors.

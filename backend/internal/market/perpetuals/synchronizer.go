@@ -12,6 +12,7 @@ import (
 
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/logging"
 )
 
 // Exchange lists the base assets of trading COIN-M perpetual contracts.
@@ -55,6 +56,8 @@ func (s *Synchronizer) Run(ctx context.Context) error {
 	case state.LastSucceededAt != nil:
 		delay = s.interval - time.Since(*state.LastSucceededAt)
 	}
+	// refreshFailure warns once while refreshes keep failing.
+	refreshFailure := logging.NewFailure(s.logger)
 	for failures := 0; ; {
 		if backoff.Sleep(ctx, max(delay, 0)) != nil {
 			return nil
@@ -63,11 +66,12 @@ func (s *Synchronizer) Run(ctx context.Context) error {
 			if ctx.Err() != nil {
 				return nil
 			}
-			s.logger.WarnContext(ctx, "COIN-M perpetuals refresh failed", "error", err)
+			refreshFailure.Warn(ctx, "COIN-M perpetuals refresh failed", "error", err)
 			delay = backoff.Exponential(s.retryDelay, s.interval, failures)
 			failures++
 			continue
 		}
+		refreshFailure.Recover(ctx, "COIN-M perpetuals refresh recovered")
 		failures = 0
 		delay = s.interval
 	}

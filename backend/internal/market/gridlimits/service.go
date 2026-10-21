@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/platform/logging"
 
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/singleflight"
@@ -119,10 +120,12 @@ func (cache *cache[T]) get(ctx context.Context, now func() time.Time, symbol str
 type Service struct {
 	exchange    Exchange
 	instruments Instruments
-	logger      *slog.Logger
 	now         func() time.Time
 	prices      cache[float64]
 	filters     cache[PriceFilters]
+	// filterFailures warns once per symbol while its filters refresh keeps
+	// failing.
+	filterFailures *logging.Failures[string]
 }
 
 func New(exchange Exchange, instruments Instruments, logger *slog.Logger, options Options) *Service {
@@ -131,7 +134,7 @@ func New(exchange Exchange, instruments Instruments, logger *slog.Logger, option
 		now = time.Now
 	}
 	return &Service{
-		exchange: exchange, instruments: instruments, logger: logger.With("module", "gridlimits"), now: now,
+		exchange: exchange, instruments: instruments, now: now, filterFailures: logging.NewFailures[string](logger.With("module", "gridlimits")),
 		prices:  cache[float64]{ttl: averagePriceTTL, entries: make(map[string]cached[float64])},
 		filters: cache[PriceFilters]{ttl: filtersTTL, entries: make(map[string]cached[PriceFilters])},
 	}
@@ -156,8 +159,10 @@ func (service *Service) Limits(ctx context.Context, symbol string) (Limits, erro
 	group.Go(func() error {
 		value, expired, err := service.filters.get(groupCtx, service.now, symbol, service.exchange.PriceFilters)
 		if err != nil && expired {
-			service.logger.WarnContext(ctx, "price filters refresh failed; using the expired filters", "symbol", symbol, "error", err)
+			service.filterFailures.Warn(ctx, symbol, "price filters refresh failed; using the expired filters", "symbol", symbol, "error", err)
 			err = nil
+		} else if err == nil {
+			service.filterFailures.Forget(symbol)
 		}
 		filters = value
 		return err

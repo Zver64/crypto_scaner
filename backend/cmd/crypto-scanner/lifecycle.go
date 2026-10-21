@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -82,9 +83,9 @@ func runServices(ctx context.Context, listener net.Listener, handler http.Handle
 	case httpDone:
 		return httpErr
 	case first >= 0 && errs[first] != nil:
-		return fmt.Errorf("run %s: %w", services[first].name, errs[first])
+		return errors.Join(fmt.Errorf("run %s: %w", services[first].name, errs[first]), httpErr)
 	case first >= 0:
-		return fmt.Errorf("%s stopped unexpectedly", services[first].name)
+		return errors.Join(fmt.Errorf("%s stopped unexpectedly", services[first].name), httpErr)
 	}
 	for index, err := range errs {
 		if err != nil {

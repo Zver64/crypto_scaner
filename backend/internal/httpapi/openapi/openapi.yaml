@@ -10,9 +10,13 @@ info:
     `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
     other operation. A request rejected with `401` needs a new session.
 
-    The client first sends `LiveCandleClientMessage` with type `authenticate` and
-    the session token; the token is never placed in the URL. After `authenticated`, the
-    connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
+    The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
+    its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
+    never placed in the URL. The handshake fails with `401` for a missing or invalid
+    token, `403` (`session_required`) for an API token, `429` (`rate_limited`) when the
+    user holds the most live connections, and `503` (`unavailable`) when the server
+    does; on success the server selects
+    `crypto-scanner.live.v1`. The connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
     `LiveCandleServerMessage` snapshots, updates, freshness changes, acknowledgements,
     and bounded errors. One connection may switch subscriptions without reconnecting.
 servers:
@@ -97,7 +101,7 @@ paths:
       responses:
         "204": { description: Session revoked. }
         "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/AccessDenied" }
+        "403": { $ref: "#/components/responses/SessionRequired" }
         "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/analysis/instruments/{symbol}:
     post:
@@ -1874,11 +1878,7 @@ components:
       properties:
         type:
           type: string
-          enum: [authenticate, subscribe, unsubscribe]
-        token:
-          type: string
-          minLength: 1
-          description: Session token of an `authenticate` message.
+          enum: [subscribe, unsubscribe]
         symbol:
           type: string
           minLength: 1
@@ -1902,7 +1902,7 @@ components:
       properties:
         type:
           type: string
-          enum: [authenticated, subscribed, unsubscribed, snapshot, update, status, error]
+          enum: [subscribed, unsubscribed, snapshot, update, status, error]
         symbol:
           type: string
         interval:
@@ -1923,7 +1923,7 @@ components:
           enum: [waiting, fresh, stale, recovering]
         code:
           type: string
-          enum: [unauthenticated, access_denied, invalid_message, invalid_argument, symbol_not_found, rate_limited, subscription_limit, unavailable, slow_client]
+          enum: [unauthenticated, invalid_message, invalid_argument, symbol_not_found, rate_limited, subscription_limit, unavailable]
         message:
           type: string
     APIError:
@@ -1955,6 +1955,7 @@ components:
             - market_cap_missing
             - market_cap_unavailable
             - market_data_unavailable
+            - rate_limited
             - scanner_indicator_exists
             - scanner_indicator_in_use
             - scanner_indicator_limit
@@ -1964,6 +1965,7 @@ components:
             - strategy_not_found
             - symbol_not_found
             - unauthenticated
+            - unavailable
             - user_not_found
         message:
           type: string

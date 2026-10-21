@@ -1554,7 +1554,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1573,7 +1573,7 @@ var functions = []spec{
 		group:         "Statistic Functions",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1593,7 +1593,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1612,7 +1612,7 @@ var functions = []spec{
 		group:         "Statistic Functions",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1654,7 +1654,7 @@ var functions = []spec{
 		params: []param{
 			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
 			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
-			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1703,7 +1703,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2439,7 +2439,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{

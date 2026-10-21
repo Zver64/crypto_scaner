@@ -389,7 +389,7 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			// edits are the flags that change the strategy.
 			edits := []string{"expr", "exit", "take-profit", "stop-loss", "name", "message"}
 			edited := slices.ContainsFunc(edits, flags.Changed) || coins.changed()
-			if !edited && !flags.Changed("add-indicators") {
+			if !edited && !addIndicators {
 				return usageError("specify at least one of --expr, --exit, --take-profit, --stop-loss, --coin, --favorites, --coin-m, --name, --message, or --add-indicators")
 			}
 			client, err := c.client()

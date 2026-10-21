@@ -40,9 +40,9 @@ func newKlineStream(url string, dialer *websocket.Dialer, logger *slog.Logger, d
 	stream.streamPool = newStreamPool(url, dialer, logger, dialLimiter, streamKind[kline.Key]{
 		label: "kline", module: "binance_kline", event: "kline", name: klineStreamName,
 		handle: stream.handle,
-		status: func(keys []kline.Key, connected bool, err error) bool {
+		status: func(keys []kline.Key, connected bool, epoch int64, err error) bool {
 			select {
-			case stream.statuses <- kline.Status{Keys: keys, Connected: connected, Err: err}:
+			case stream.statuses <- kline.Status{Keys: keys, Connected: connected, Epoch: epoch, Err: err}:
 				return true
 			default:
 				return false
@@ -55,13 +55,13 @@ func newKlineStream(url string, dialer *websocket.Dialer, logger *slog.Logger, d
 func (stream *KlineStream) Events() <-chan kline.Event    { return stream.events }
 func (stream *KlineStream) Statuses() <-chan kline.Status { return stream.statuses }
 
-func (stream *KlineStream) Subscribe(key kline.Key) error {
+func (stream *KlineStream) Subscribe(key kline.Key) {
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
 	var target *streamWorker[kline.Key]
 	for _, worker := range stream.workers {
 		if worker.has(key) {
-			return nil
+			return
 		}
 		if target == nil && worker.count() < maxStreamsPerConnection {
 			target = worker
@@ -71,7 +71,6 @@ func (stream *KlineStream) Subscribe(key kline.Key) error {
 		target = stream.addWorkerLocked()
 	}
 	target.update(func(desired map[kline.Key]struct{}) { desired[key] = struct{}{} })
-	return nil
 }
 
 func (stream *KlineStream) Unsubscribe(key kline.Key) {
@@ -85,24 +84,34 @@ func (stream *KlineStream) Unsubscribe(key kline.Key) {
 	}
 }
 
-func (stream *KlineStream) handle(ctx context.Context, payload []byte, _ int64) error {
+func (stream *KlineStream) handle(ctx context.Context, payload []byte, epoch int64) (string, error) {
 	var message struct {
 		Event     string    `json:"e"`
 		EventTime int64     `json:"E"`
 		Kline     wireKline `json:"k"`
 	}
 	if err := json.Unmarshal(payload, &message); err != nil {
-		return fmt.Errorf("decode Binance kline stream: %w", err)
+		// A failed decode may leave the stream's fields unset; read them alone.
+		var identity struct {
+			Kline struct {
+				Symbol   string `json:"s"`
+				Interval string `json:"i"`
+			} `json:"k"`
+		}
+		_ = json.Unmarshal(payload, &identity)
+		return klineStreamName(kline.Key{Symbol: identity.Kline.Symbol, Interval: market.CandleInterval(identity.Kline.Interval)}), fmt.Errorf("decode Binance kline stream: %w", err)
 	}
+	name := klineStreamName(kline.Key{Symbol: message.Kline.Symbol, Interval: market.CandleInterval(message.Kline.Interval)})
 	event, err := decodeKline(message.EventTime, message.Kline)
 	if err != nil {
-		return err
+		return name, err
 	}
+	event.Epoch = epoch
 	select {
 	case stream.events <- event:
 	case <-ctx.Done():
 	}
-	return nil
+	return name, nil
 }
 
 type wireDecimal string

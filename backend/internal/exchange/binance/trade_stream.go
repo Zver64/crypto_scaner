@@ -53,7 +53,7 @@ func newTradeStream(url string, dialer *websocket.Dialer, logger *slog.Logger, d
 	stream.streamPool = newStreamPool(url, dialer, logger, dialLimiter, streamKind[string]{
 		label: "trade", module: "binance_trade", event: "trade", name: tradeStreamName,
 		handle: stream.handle,
-		status: func(symbols []string, connected bool, err error) bool {
+		status: func(symbols []string, connected bool, _ int64, err error) bool {
 			select {
 			case stream.statuses <- markettrade.Status{Symbols: symbols, Connected: connected, Err: err}:
 				return true
@@ -136,7 +136,7 @@ func (stream *TradeStream) SetSymbols(symbols []string) {
 	}
 }
 
-func (stream *TradeStream) handle(ctx context.Context, payload []byte, epoch int64) error {
+func (stream *TradeStream) handle(ctx context.Context, payload []byte, epoch int64) (string, error) {
 	// Case-only duplicates ("e"/"E", "t"/"T", "m"/"M") need their own fields
 	// because encoding/json matches keys case-insensitively.
 	var message struct {
@@ -150,11 +150,17 @@ func (stream *TradeStream) handle(ctx context.Context, payload []byte, epoch int
 		Ignore    bool   `json:"M"`
 	}
 	if err := json.Unmarshal(payload, &message); err != nil {
-		return fmt.Errorf("decode Binance trade stream: %w", err)
+		// A failed decode may leave the symbol unset; read it alone.
+		var identity struct {
+			Symbol string `json:"s"`
+		}
+		_ = json.Unmarshal(payload, &identity)
+		return tradeStreamName(identity.Symbol), fmt.Errorf("decode Binance trade stream: %w", err)
 	}
+	name := tradeStreamName(message.Symbol)
 	price, validPrice := new(big.Rat).SetString(message.Price)
 	if message.Symbol == "" || message.TradeID < 0 || !validPrice || price.Sign() <= 0 || message.EventTime <= 0 {
-		return errors.New("invalid Binance trade event")
+		return name, errors.New("invalid Binance trade event")
 	}
 	symbol := market.NormalizeSymbol(message.Symbol)
 	eventTime := time.UnixMilli(message.EventTime).UTC()
@@ -180,5 +186,5 @@ func (stream *TradeStream) handle(ctx context.Context, payload []byte, epoch int
 	case stream.ready <- struct{}{}:
 	default:
 	}
-	return nil
+	return name, nil
 }

@@ -26,11 +26,10 @@ type upstreamStub struct {
 func newUpstreamStub() *upstreamStub {
 	return &upstreamStub{events: make(chan kline.Event, 8), statuses: make(chan kline.Status, 8), subscribes: make(map[kline.Key]int), unsubscribes: make(map[kline.Key]int)}
 }
-func (stub *upstreamStub) Subscribe(key kline.Key) error {
+func (stub *upstreamStub) Subscribe(key kline.Key) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
 	stub.subscribes[key]++
-	return nil
 }
 func (stub *upstreamStub) Unsubscribe(key kline.Key) {
 	stub.mu.Lock()
@@ -243,13 +242,13 @@ func TestReconnectRestoresMissedFinalBeforeFresh(t *testing.T) {
 	if err := service.Subscribe(ctx, client, key.Symbol, key.Interval); err != nil {
 		t.Fatal(err)
 	}
-	upstream.events <- kline.Event{Key: key, Candle: testCandle(open, key.Interval, 10), Final: false}
+	upstream.events <- kline.Event{Key: key, Candle: testCandle(open, key.Interval, 10), Final: false, Epoch: 1}
 	waitForMessage(t, client.messages, func(message Message) bool { return message.Kind == KindUpdate })
-	upstream.statuses <- kline.Status{Keys: []kline.Key{key}, Connected: false}
+	upstream.statuses <- kline.Status{Keys: []kline.Key{key}, Connected: false, Epoch: 1}
 	waitForMessage(t, client.messages, func(message Message) bool { return message.Freshness == FreshnessStale })
-	upstream.statuses <- kline.Status{Keys: []kline.Key{key}, Connected: true}
+	upstream.statuses <- kline.Status{Keys: []kline.Key{key}, Connected: true, Epoch: 2}
 	waitForMessage(t, client.messages, func(message Message) bool { return message.Freshness == FreshnessRecovering })
-	upstream.events <- kline.Event{Key: key, Candle: testCandle(open.Add(time.Hour), key.Interval, 12), Final: false}
+	upstream.events <- kline.Event{Key: key, Candle: testCandle(open.Add(time.Hour), key.Interval, 12), Final: false, Epoch: 2}
 	message := waitForMessage(t, client.messages, func(message Message) bool {
 		return message.Kind == KindSnapshot && message.Freshness == FreshnessFresh
 	})
@@ -402,18 +401,18 @@ func TestAbandonedRecoveryStaysStaleUntilRecovered(t *testing.T) {
 	store := &flakyHistory{historyStub: &historyStub{candles: []market.Candle{hour(0), hour(1), hour(2), hour(3), hour(4), hour(5)}}, broken: true}
 	service, key, client := recoveringService(t, store)
 	ctx := context.Background()
-	service.apply(ctx, kline.Event{Key: key, Candle: hour(0), Final: true})
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(0), Final: true, Epoch: 1})
 	// The gap after hour 0 starts a recovery that keeps failing.
-	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Final: false})
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Final: false, Epoch: 1})
 	service.recoveries.Wait()
 	service.mu.Lock()
-	recovering, freshness := service.states[key].recovering, service.states[key].freshness
+	recovering, freshness := service.states[key].recovering, service.states[key].freshness()
 	service.mu.Unlock()
 	if recovering || freshness != FreshnessStale {
 		t.Fatalf("abandoned recovery: recovering=%v freshness=%s, want stale", recovering, freshness)
 	}
 	// Further packets without a gap do not make the key look healthy.
-	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Final: true})
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Final: true, Epoch: 1})
 	if message := waitForMessage(t, client.messages, func(message Message) bool {
 		return message.Kind == KindUpdate && message.Candle.Final && message.Candle.Candle.OpenTime.Equal(hour(3).OpenTime)
 	}); message.Freshness != FreshnessStale {
@@ -423,7 +422,7 @@ func TestAbandonedRecoveryStaysStaleUntilRecovered(t *testing.T) {
 	store.mu.Lock()
 	store.broken = false
 	store.mu.Unlock()
-	service.apply(ctx, kline.Event{Key: key, Candle: hour(5), Final: true})
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(5), Final: true, Epoch: 1})
 	service.recoveries.Wait()
 	message := waitForMessage(t, client.messages, func(message Message) bool {
 		return message.Kind == KindSnapshot && message.Freshness == FreshnessFresh
@@ -437,6 +436,114 @@ func TestAbandonedRecoveryStaysStaleUntilRecovered(t *testing.T) {
 			t.Fatalf("hour %d missing or not final after recovery", index)
 		}
 	}
+}
+
+func TestEvictionFromLiveBufferDoesNotRecover(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	service, key, client := recoveringService(t, &historyStub{})
+	ctx := context.Background()
+	for index := range maxRetainedCandles + 1 {
+		service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start.Add(time.Duration(index)*time.Hour), key.Interval, 1), Final: true, Epoch: 1})
+	}
+	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start.Add(time.Duration(maxRetainedCandles+1)*time.Hour), key.Interval, 1), Epoch: 1})
+	service.recoveries.Wait()
+	service.mu.Lock()
+	generation := service.states[key].recoveryGeneration
+	service.mu.Unlock()
+	if generation != 0 {
+		t.Fatalf("eviction started %d recoveries", generation)
+	}
+	for len(client.messages) > 0 {
+		if message := <-client.messages; message.Kind == KindUpdate && message.Freshness != FreshnessFresh {
+			t.Fatalf("update freshness = %s, want fresh", message.Freshness)
+		}
+	}
+}
+
+func TestResubscribeResumesRecoveryParkedWithoutClients(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	hour := func(index int) market.Candle {
+		candle := testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
+		candle.InstrumentID = 1
+		return candle
+	}
+	service, key, client := recoveringService(t, &historyStub{candles: []market.Candle{hour(0), hour(1), hour(2)}})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(0), Final: true, Epoch: 1})
+	service.Unsubscribe(client.ID(), key)
+	// The gap starts a recovery that finds no clients and parks.
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Epoch: 1})
+	service.recoveries.Wait()
+	go func() { _ = service.Run(ctx) }()
+	if err := service.Subscribe(ctx, client, key.Symbol, key.Interval); err != nil {
+		t.Fatal(err)
+	}
+	message := waitForMessage(t, client.messages, func(message Message) bool {
+		return message.Kind == KindSnapshot && message.Freshness == FreshnessFresh
+	})
+	recovered := make(map[time.Time]bool)
+	for _, candle := range message.Candles {
+		recovered[candle.Candle.OpenTime] = candle.Final
+	}
+	if !recovered[hour(1).OpenTime] || !recovered[hour(2).OpenTime] {
+		t.Fatal("resumed recovery did not restore the gap")
+	}
+}
+
+func TestEventProvenReconnectRecoversLikeStatus(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	service, key, _ := recoveringService(t, &historyStub{})
+	ctx := context.Background()
+	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start, key.Interval, 1), Epoch: 1})
+	service.applyStatus(kline.Status{Keys: []kline.Key{key}, Connected: false, Epoch: 1})
+	// The connected status of epoch 2 was lost; its first packet reconnects.
+	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start.Add(time.Hour), key.Interval, 2), Epoch: 2})
+	service.mu.Lock()
+	state := service.states[key]
+	recovering, recoveryStart := state.recovering, state.recoveryStart
+	service.mu.Unlock()
+	service.recoveries.Wait()
+	if !recovering || !recoveryStart.Equal(start) {
+		t.Fatalf("reconnect recovery: recovering=%v start=%s, want from %s", recovering, recoveryStart, start)
+	}
+}
+
+func TestDeadConnectionEventsKeepKeyStale(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	service, key, client := recoveringService(t, &historyStub{})
+	ctx := context.Background()
+	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start, key.Interval, 1), Epoch: 1})
+	service.applyStatus(kline.Status{Keys: []kline.Key{key}, Connected: false, Epoch: 1})
+	// A packet of the dead connection still buffered after its status.
+	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start, key.Interval, 2), Epoch: 1})
+	update := waitForMessage(t, client.messages, func(message Message) bool {
+		return message.Kind == KindUpdate && message.Candle.Candle.Close == 2
+	})
+	if update.Freshness != FreshnessStale {
+		t.Fatalf("freshness after dead-connection packet = %s, want stale", update.Freshness)
+	}
+	// Data of a newer connection proves it alive, even if its status was lost.
+	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start, key.Interval, 3), Epoch: 2})
+	update = waitForMessage(t, client.messages, func(message Message) bool {
+		return message.Kind == KindUpdate && message.Candle.Candle.Close == 3
+	})
+	if update.Freshness != FreshnessFresh {
+		t.Fatalf("freshness after newer connection packet = %s, want fresh", update.Freshness)
+	}
+}
+
+func TestDroppedPacketPublishesReconnect(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	service, key, client := recoveringService(t, &historyStub{})
+	ctx := context.Background()
+	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start, key.Interval, 1), Final: true, Epoch: 1})
+	service.applyStatus(kline.Status{Keys: []kline.Key{key}, Connected: false, Epoch: 1})
+	// An open packet of the final candle is dropped, but its connection is new.
+	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start, key.Interval, 2), Epoch: 2})
+	waitForMessage(t, client.messages, func(message Message) bool {
+		return message.Kind == KindStatus && message.Freshness == FreshnessRecovering
+	})
 }
 
 func waitForMessage(t *testing.T, messages <-chan Message, matches func(Message) bool) Message {

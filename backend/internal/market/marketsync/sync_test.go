@@ -535,14 +535,14 @@ func (store *fakeMarketStore) summarizeLatest(latest map[int64][]market.Candle, 
 	return histories
 }
 
-func (store *fakeMarketStore) UpsertCandlesWithChanges(ctx context.Context, items []market.Candle) ([]market.Candle, error) {
+func (store *fakeMarketStore) UpsertCandlesWithChanges(_ context.Context, items []market.Candle) ([]market.Candle, error) {
 	store.mu.Lock()
 	existing := make(map[int64][]market.Candle, len(store.latest))
 	for id, candles := range store.latest {
 		existing[id] = append([]market.Candle(nil), candles...)
 	}
 	store.mu.Unlock()
-	if err := store.UpsertCandles(ctx, items); err != nil {
+	if err := store.upsert(items); err != nil {
 		return nil, err
 	}
 	changed := make([]market.Candle, 0, len(items))
@@ -564,7 +564,7 @@ func (store *fakeMarketStore) UpsertCandlesWithChanges(ctx context.Context, item
 	return changed, nil
 }
 
-func (store *fakeMarketStore) UpsertCandles(_ context.Context, items []market.Candle) error {
+func (store *fakeMarketStore) upsert(items []market.Candle) error {
 	store.mu.Lock()
 	defer store.mu.Unlock()
 	store.upserted = append(store.upserted, append([]market.Candle(nil), items...))

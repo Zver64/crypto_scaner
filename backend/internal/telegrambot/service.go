@@ -12,10 +12,13 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/auth"
+	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/telegramhtml"
 
 	telegram "github.com/go-telegram/bot"
@@ -29,13 +32,21 @@ const (
 	callbackConfirm = "confirm"
 	callbackCancel  = "cancel"
 	menuText        = "Add users here. Delete them in the Mini App settings."
+	// sendTimeout bounds the recipient lookup and the Telegram API call of a
+	// notification. Rate-limit waits, the bot-wide limiter's and Telegram's
+	// retry_after, are not bounded, so a burst is delayed, never dropped.
+	sendTimeout = 10 * time.Second
+	// clientQuietPeriod re-arms the client failure warning: while polling
+	// fails, errors follow each other within the client's backoff (at most
+	// 5s), and a successful long poll lasts its timeout (1 minute), so an
+	// error after a longer silence starts a new failure.
+	clientQuietPeriod = 2 * time.Minute
 )
 
 // Options makes the bot boundary testable without changing its production
 // transport. ServerURL is only useful for a fake Telegram endpoint in tests.
 type Options struct {
-	ServerURL   string
-	Synchronous bool
+	ServerURL string
 }
 
 // Service owns one long-polling Telegram Bot API consumer and its ephemeral
@@ -51,8 +62,15 @@ type Service struct {
 	nextPicker    int32
 	operations    map[string]*operation
 	sendLimiter   *rate.Limiter
-	userLimiters  [4096]*rate.Limiter
 	accessChanged func()
+	// runDone holds the Done channel of Run's context, so the errors handler
+	// tells the errors of the shutdown apart the moment it begins.
+	runDone atomic.Pointer[<-chan struct{}]
+	// clientFailure warns once while the client keeps failing; lastClientError
+	// is when it last reported an error. clientMu guards both.
+	clientMu        sync.Mutex
+	clientFailure   *logging.Failure
+	lastClientError time.Time
 }
 
 // operation is one Add user flow: a picker request, then the chosen person
@@ -84,16 +102,25 @@ func New(token string, administratorID int64, store auth.AccessStore, logger *sl
 	if accessChanged == nil {
 		return nil, fmt.Errorf("access change listener is required")
 	}
-	service := &Service{store: store, administratorID: administratorID, logger: logger, operations: map[string]*operation{}, sendLimiter: rate.NewLimiter(rate.Limit(25), 25), accessChanged: accessChanged}
+	service := &Service{store: store, administratorID: administratorID, logger: logger, clientFailure: logging.NewFailure(logger), operations: map[string]*operation{}, sendLimiter: rate.NewLimiter(rate.Limit(25), 25), accessChanged: accessChanged}
 	botOptions := []telegram.Option{
 		telegram.WithAllowedUpdates(telegram.AllowedUpdates{"message", "callback_query"}),
 		telegram.WithDefaultHandler(service.handleUpdate),
+		// Handlers run on the polling workers, so none outlives Run.
+		telegram.WithNotAsyncHandlers(),
+		// The client reports polling errors, such as a conflicting consumer or
+		// a revoked token, here instead of the standard logger.
+		// Errors of the shutdown are not reported to the administrator.
+		telegram.WithErrorsHandler(func(err error) {
+			if service.stopping() || errors.Is(err, context.Canceled) {
+				service.logger.Info("Telegram Bot API client failed", "module", "telegram_bot", "error", err)
+				return
+			}
+			service.clientFailed(err)
+		}),
 	}
 	if options.ServerURL != "" {
 		botOptions = append(botOptions, telegram.WithServerURL(options.ServerURL))
-	}
-	if options.Synchronous {
-		botOptions = append(botOptions, telegram.WithNotAsyncHandlers())
 	}
 	client, err := telegram.New(token, botOptions...)
 	if err != nil {
@@ -106,8 +133,37 @@ func New(token string, administratorID int64, store auth.AccessStore, logger *sl
 // Run consumes Telegram updates until context cancellation. The Bot API client
 // owns long polling; this service never configures a webhook or BotFather menu.
 func (service *Service) Run(ctx context.Context) error {
+	done := ctx.Done()
+	service.runDone.Store(&done)
 	service.bot.Start(ctx)
 	return nil
+}
+
+// clientFailed logs an error of the Bot API client, warning once while
+// errors keep following each other within clientQuietPeriod.
+func (service *Service) clientFailed(err error) {
+	service.clientMu.Lock()
+	defer service.clientMu.Unlock()
+	now := time.Now()
+	if !service.lastClientError.IsZero() && now.Sub(service.lastClientError) > clientQuietPeriod {
+		service.clientFailure.Forget()
+	}
+	service.lastClientError = now
+	service.clientFailure.Warn(context.Background(), "Telegram Bot API client failed", "module", "telegram_bot", "error", err)
+}
+
+// stopping reports that Run's context is done.
+func (service *Service) stopping() bool {
+	done := service.runDone.Load()
+	if done == nil {
+		return false
+	}
+	select {
+	case <-*done:
+		return true
+	default:
+		return false
+	}
 }
 
 // ProcessUpdate is the update-processing seam used by the feature harness.
@@ -373,8 +429,8 @@ func newToken() string {
 	return hex.EncodeToString(bytes)
 }
 
-// SendPriceAlert performs one best-effort Telegram API request. It rechecks
-// access immediately before sending and intentionally has no retry.
+// SendPriceAlert delivers a price alert. It rechecks access immediately
+// before sending and retries only once, after a Telegram 429.
 func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) error {
 	return service.deliver(ctx, fired.Alert.TelegramID, priceAlertText(fired))
 }
@@ -385,13 +441,10 @@ func (service *Service) SendStrategyMessage(ctx context.Context, telegramID int6
 }
 
 // SendAdministratorMessage sends an operational message to the configured
-// administrator within the bot-wide rate limit.
+// administrator within the bot-wide rate limit. The administrator is
+// configured, so access is not rechecked.
 func (service *Service) SendAdministratorMessage(ctx context.Context, text string) error {
-	if err := service.sendLimiter.Wait(ctx); err != nil {
-		return err
-	}
-	_, err := service.bot.SendMessage(ctx, notification(service.administratorID, text))
-	return err
+	return service.notify(ctx, service.administratorID, text, false)
 }
 
 // notification builds the parameters of text, written in Telegram HTML,
@@ -402,30 +455,43 @@ func notification(chatID int64, text string) *telegram.SendMessageParams {
 	return &telegram.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML, LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: &disabled}}
 }
 
-// deliver respects the bot-wide and per-user rate limits and rechecks access.
+// deliver sends a notification to a user, rechecking access before sending.
 func (service *Service) deliver(ctx context.Context, telegramID int64, text string) error {
-	service.mu.Lock()
-	// A fixed shard set keeps limiter memory bounded. Hash collisions only make
-	// delivery more conservative; they can never let one user exceed the limit.
-	shard := uint64(telegramID) % uint64(len(service.userLimiters))
-	limiter := service.userLimiters[shard]
-	if limiter == nil {
-		limiter = rate.NewLimiter(rate.Every(time.Second), 1)
-		service.userLimiters[shard] = limiter
+	return service.notify(ctx, telegramID, text, true)
+}
+
+// notify sends text to chatID and, when Telegram answers 429, waits its
+// retry_after with the caller's context and tries once more.
+func (service *Service) notify(ctx context.Context, chatID int64, text string, recheckAccess bool) error {
+	for retried := false; ; retried = true {
+		err := service.sendNotification(ctx, chatID, text, recheckAccess)
+		var tooMany *telegram.TooManyRequestsError
+		if retried || !errors.As(err, &tooMany) {
+			return err
+		}
+		if err := backoff.Sleep(ctx, time.Duration(tooMany.RetryAfter)*time.Second); err != nil {
+			return err
+		}
 	}
-	service.mu.Unlock()
+}
+
+// sendNotification waits for the bot-wide rate limit with the caller's
+// context, so only its cancellation ends the wait, and then sends text,
+// rechecking the recipient's access first when asked.
+func (service *Service) sendNotification(ctx context.Context, chatID int64, text string, recheckAccess bool) error {
 	if err := service.sendLimiter.Wait(ctx); err != nil {
 		return err
 	}
-	if err := limiter.Wait(ctx); err != nil {
-		return err
+	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
+	defer cancel()
+	if recheckAccess {
+		if _, err := service.store.FindByTelegramID(ctx, chatID); errors.Is(err, auth.ErrUserNotFound) {
+			return fmt.Errorf("recipient no longer has access")
+		} else if err != nil {
+			return fmt.Errorf("look up recipient: %w", err)
+		}
 	}
-	if _, err := service.store.FindByTelegramID(ctx, telegramID); errors.Is(err, auth.ErrUserNotFound) {
-		return fmt.Errorf("recipient no longer has access")
-	} else if err != nil {
-		return fmt.Errorf("look up recipient: %w", err)
-	}
-	_, err := service.bot.SendMessage(ctx, notification(telegramID, text))
+	_, err := service.bot.SendMessage(ctx, notification(chatID, text))
 	return err
 }
 

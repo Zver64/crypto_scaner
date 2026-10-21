@@ -8,7 +8,7 @@ import (
 )
 
 // ParseNumber reads a parameter value supplied as any Go number. Modules wrap
-// its error in their own invalid request error.
+// its error in ErrInvalidRequest.
 func ParseNumber(raw any) (float64, error) {
 	var value float64
 	switch typed := raw.(type) {
@@ -31,7 +31,7 @@ func ParseNumber(raw any) (float64, error) {
 
 // ReadInputs returns the named input series in names order, checking that
 // each is present, finite, and as long as the others. Modules wrap its error
-// in their own invalid request error.
+// in ErrInvalidRequest.
 func ReadInputs(inputs Inputs, names []string) ([][]float64, error) {
 	result := make([][]float64, len(names))
 	for index, name := range names {

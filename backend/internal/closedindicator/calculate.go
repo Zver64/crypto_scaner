@@ -2,7 +2,6 @@ package closedindicator
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"maps"
 	"slices"
@@ -12,7 +11,6 @@ import (
 	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
-	"crypto-scanner/internal/platform/numeric"
 )
 
 // Target is an indicator selection calculated on one candle interval.
@@ -60,8 +58,6 @@ type Value struct {
 	Target   Target
 	OpenTime time.Time
 	Outputs  []Output
-	// points is the number of points the value was calculated for.
-	points int
 }
 
 func (value Value) equal(other Value) bool {
@@ -87,46 +83,51 @@ func Depth(registry *indicator.Registry, target Target, points int) (int, error)
 }
 
 // calculate reads the closed histories of table values from the store, as
-// deep as their deepest pair needs, and evaluates every pair.
-func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscription) (map[pairKey]Value, error) {
+// deep as their deepest pair needs, and evaluates every pair. The pairs whose
+// history cannot be read or whose calculation fails are left out, and failed
+// holds their errors.
+func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscription) (values map[pairKey]Value, failed map[pairKey]error) {
+	failed = map[pairKey]error{}
+	checked := make([]Subscription, 0, len(subscriptions))
 	depths := map[historyKey]int{}
-	for index, subscription := range subscriptions {
+	for _, subscription := range subscriptions {
 		depth, err := Depth(tracker.registry, subscription.Target, subscription.points())
 		if err != nil {
-			return nil, err
+			failed[subscription.pair()] = err
+			continue
 		}
-		subscriptions[index].depth = depth
-		key := historyKey{subscription.InstrumentID, subscription.Target.Interval}
+		subscription.depth = depth
+		checked = append(checked, subscription)
+		key := subscription.history()
 		depths[key] = max(depths[key], depth)
 	}
-	histories, failed := tracker.readLatest(ctx, depths)
-	if len(failed) > 0 {
-		return nil, errors.Join(slices.Collect(maps.Values(failed))...)
-	}
-	values, failures := tracker.evaluate(subscriptions, histories)
-	if len(failures) > 0 {
-		errs := make([]error, 0, len(failures))
-		for _, key := range slices.Sorted(maps.Keys(failures)) {
-			errs = append(errs, failures[key])
+	histories, unread := tracker.readLatest(ctx, depths)
+	readable := make([]Subscription, 0, len(checked))
+	for _, subscription := range checked {
+		if err, ok := unread[readGroup{subscription.Target.Interval, depths[subscription.history()]}]; ok {
+			failed[subscription.pair()] = err
+			continue
 		}
-		return nil, errors.Join(errs...)
+		readable = append(readable, subscription)
 	}
-	return values, nil
+	values, failures := tracker.evaluate(readable, histories)
+	maps.Copy(failed, failures)
+	return values, failed
 }
 
 // evaluate calculates every checked pair over the latest candles of its
 // history, as deep as the pair needs. The pairs whose calculation fails are
-// left out, and failed holds one error per target key of them.
-func (tracker *Tracker) evaluate(subscriptions []Subscription, histories map[historyKey][]market.Candle) (values map[pairKey]Value, failed map[string]error) {
-	values, failed = make(map[pairKey]Value, len(subscriptions)), map[string]error{}
+// left out, and failed holds their errors.
+func (tracker *Tracker) evaluate(subscriptions []Subscription, histories map[historyKey][]market.Candle) (values map[pairKey]Value, failed map[pairKey]error) {
+	values, failed = make(map[pairKey]Value, len(subscriptions)), map[pairKey]error{}
 	for _, subscription := range subscriptions {
-		candles := histories[historyKey{subscription.InstrumentID, subscription.Target.Interval}]
+		candles := histories[subscription.history()]
 		value, err := Calculate(tracker.registry, subscription.Target, candles[max(0, len(candles)-subscription.depth):], subscription.points())
 		if err != nil {
-			failed[subscription.Target.Key()] = err
+			failed[subscription.pair()] = err
 			continue
 		}
-		values[pairKey{subscription.InstrumentID, subscription.Target.Key()}] = value
+		values[subscription.pair()] = value
 	}
 	return values, failed
 }
@@ -136,7 +137,7 @@ func (tracker *Tracker) evaluate(subscriptions []Subscription, histories map[his
 // passing the same window ending at an earlier candle reproduces the value
 // the tracker had then.
 func Calculate(registry *indicator.Registry, target Target, candles []market.Candle, points int) (Value, error) {
-	value := Value{Target: target, points: points}
+	value := Value{Target: target}
 	if len(candles) == 0 {
 		return value, nil
 	}
@@ -148,7 +149,7 @@ func Calculate(registry *indicator.Registry, target Target, candles []market.Can
 	}
 	for _, series := range results[0].Series {
 		count := len(series.Points)
-		if count == 0 || !series.Points[count-1].Time.Equal(last) || !numeric.Finite(series.Points[count-1].Value) {
+		if count == 0 || !series.Points[count-1].Time.Equal(last) {
 			continue
 		}
 		output := Output{Name: series.Name, Value: series.Points[count-1].Value}
@@ -156,7 +157,7 @@ func Calculate(registry *indicator.Registry, target Target, candles []market.Can
 		for index := count - 2; index >= 0 && len(output.Earlier) < points-1; index-- {
 			expected = target.Interval.PreviousOpenTime(expected)
 			point := series.Points[index]
-			if !point.Time.Equal(expected) || !numeric.Finite(point.Value) {
+			if !point.Time.Equal(expected) {
 				break
 			}
 			output.Earlier = append(output.Earlier, point.Value)
@@ -166,25 +167,29 @@ func Calculate(registry *indicator.Registry, target Target, candles []market.Can
 	return value, nil
 }
 
+// readGroup is one store read: the histories of an interval read as deep as
+// depth.
+type readGroup struct {
+	interval market.CandleInterval
+	depth    int
+}
+
 // readLatest reads the latest candles of each history in depths, as deep as
-// its depth, one query per interval and depth, and reports the intervals
-// that failed.
-func (tracker *Tracker) readLatest(ctx context.Context, depths map[historyKey]int) (map[historyKey][]market.Candle, map[market.CandleInterval]error) {
-	type group struct {
-		interval market.CandleInterval
-		depth    int
-	}
-	groups := map[group][]int64{}
+// its depth, one query per interval and depth, and reports the reads that
+// failed, so a history failed only when failed holds
+// readGroup{key.interval, depths[key]}.
+func (tracker *Tracker) readLatest(ctx context.Context, depths map[historyKey]int) (map[historyKey][]market.Candle, map[readGroup]error) {
+	groups := map[readGroup][]int64{}
 	for key, depth := range depths {
-		at := group{key.interval, depth}
+		at := readGroup{key.interval, depth}
 		groups[at] = append(groups[at], key.instrumentID)
 	}
 	result := make(map[historyKey][]market.Candle, len(depths))
-	failed := map[market.CandleInterval]error{}
+	failed := map[readGroup]error{}
 	for at, ids := range groups {
 		candles, err := tracker.store.ListLatestCandles(ctx, ids, at.interval, at.depth)
 		if err != nil {
-			failed[at.interval] = fmt.Errorf("load closed %s history: %w", at.interval, err)
+			failed[at] = fmt.Errorf("load closed %s history of %d candles: %w", at.interval, at.depth, err)
 			continue
 		}
 		for _, id := range ids {

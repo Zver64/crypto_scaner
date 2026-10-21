@@ -9,6 +9,7 @@ import (
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	marketlive "crypto-scanner/internal/market/live"
+	"crypto-scanner/internal/platform/logging"
 )
 
 const (
@@ -40,6 +41,20 @@ const (
 	TriggerRange
 )
 
+func (trigger Trigger) String() string {
+	switch trigger {
+	case TriggerTrade:
+		return "trade"
+	case TriggerClose:
+		return "close"
+	case TriggerStream:
+		return "stream"
+	case TriggerRange:
+		return "range"
+	}
+	return fmt.Sprintf("trigger(%d)", int(trigger))
+}
+
 // Frame is one chart delivery. A snapshot replaces the client chart; a tail
 // carries only candles and indicator points opened at or after From.
 type Frame struct {
@@ -57,13 +72,15 @@ type LiveSession struct {
 	states   map[time.Time]marketlive.CandleState
 	closed   *Page
 	retryAt  time.Time
+	// failure warns once while history builds keep failing.
+	failure *logging.Failure
 	// instrument is resolved by the first successful load.
 	instrument *market.Instrument
 }
 
 // NewLiveSession starts an empty session for one symbol and interval.
 func (service *Service) NewLiveSession(symbol string, interval market.CandleInterval) *LiveSession {
-	return &LiveSession{service: service, symbol: symbol, interval: interval, states: map[time.Time]marketlive.CandleState{}}
+	return &LiveSession{service: service, symbol: symbol, interval: interval, states: map[time.Time]marketlive.CandleState{}, failure: logging.NewFailure(service.logger)}
 }
 
 // Apply records a live-service message and returns the trigger for the next
@@ -104,6 +121,7 @@ func (session *LiveSession) observe(state marketlive.CandleState) {
 func (session *LiveSession) Forget() {
 	session.DropRange()
 	session.retryAt = time.Time{}
+	session.failure.Forget()
 }
 
 // DropRange drops the closed range, e.g. after the client range changed, so
@@ -140,9 +158,7 @@ func (session *LiveSession) Next(ctx context.Context, trigger Trigger, limit int
 		if err != nil {
 			failing := !session.retryAt.IsZero()
 			session.retryAt = time.Now().Add(liveRetryDelay)
-			if !failing {
-				session.service.logger.WarnContext(ctx, "chart history build failed", "symbol", session.symbol, "interval", session.interval, "error", err)
-			}
+			session.failure.Warn(ctx, "chart history build failed", "symbol", session.symbol, "interval", session.interval, "error", err)
 			if !cached || trigger == TriggerRange {
 				if !failing || trigger == TriggerRange {
 					return Frame{}, false, err
@@ -154,6 +170,7 @@ func (session *LiveSession) Next(ctx context.Context, trigger Trigger, limit int
 			loaded = page
 		} else {
 			session.retryAt = time.Time{}
+			session.failure.Forget()
 		}
 		page = loaded
 	}
@@ -177,6 +194,7 @@ func (session *LiveSession) Next(ctx context.Context, trigger Trigger, limit int
 		if trigger == TriggerRange {
 			return Frame{}, false, fmt.Errorf("%w: calculate: %w", ErrInvalidRequest, err)
 		}
+		session.service.logger.DebugContext(ctx, "chart calculation failed", "symbol", session.symbol, "interval", session.interval, "trigger", trigger, "error", err)
 		return Frame{}, false, nil
 	}
 	frame = Frame{Page: extended, Snapshot: rebuild}

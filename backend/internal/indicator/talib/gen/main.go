@@ -49,6 +49,22 @@ var skippedFunctions = map[string]bool{
 	"MAVP": true,
 }
 
+// optionLimits narrow the metadata ranges of options whose ends TA-Lib
+// calculates wrongly, by function and option name.
+var optionLimits = map[string]map[string][2]float64{
+	// A signal period of 1 makes the lookback 2 candles short, so every
+	// output is shifted and its last values are NaN.
+	"MACD":    {"Signal Period": {2, 100000}},
+	"MACDFIX": {"Signal Period": {2, 100000}},
+	// The sum of squared positions overflows a signed int from a period of
+	// 1025, which is undefined behaviour in C and may yield wrong values.
+	"LINEARREG":           {"Time Period": {2, 1024}},
+	"LINEARREG_ANGLE":     {"Time Period": {2, 1024}},
+	"LINEARREG_INTERCEPT": {"Time Period": {2, 1024}},
+	"LINEARREG_SLOPE":     {"Time Period": {2, 1024}},
+	"TSF":                 {"Time Period": {2, 1024}},
+}
+
 // paneFunctions carry the Overlap flag although their values are not price
 // levels, so on the candle scale they would squash the candles.
 var paneFunctions = map[string]bool{
@@ -156,16 +172,23 @@ func main() {
 	body.WriteString("import (\n\t\"crypto-scanner/internal/indicator\"\n\n\tta \"" + wrapperModule + "\"\n)\n\n")
 	body.WriteString("var functions = []spec{\n")
 	generated := 0
+	names := map[string]bool{}
 	for _, fn := range functions.Functions {
 		if skip(fn) {
 			continue
 		}
+		names[fn.Abbreviation] = true
 		if err := writeSpec(&body, fn, signatures); err != nil {
 			log.Fatalf("%s: %v", fn.Abbreviation, err)
 		}
 		generated++
 	}
 	body.WriteString("}\n")
+	for name := range optionLimits {
+		if !names[name] {
+			log.Fatalf("limited function %q is not generated", name)
+		}
+	}
 
 	formatted, err := format.Source(body.Bytes())
 	if err != nil {
@@ -317,8 +340,13 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 	// lookback and call.
 	if len(fn.Options) > 0 || len(sources) > 0 {
 		body.WriteString("\tparams: []param{\n")
+		for name := range optionLimits[fn.Abbreviation] {
+			if !slices.ContainsFunc(fn.Options, func(option option) bool { return option.Name == name }) {
+				return fmt.Errorf("limited option %q is not an option", name)
+			}
+		}
 		for _, option := range fn.Options {
-			if err := writeParam(body, option); err != nil {
+			if err := writeParam(body, option, optionLimits[fn.Abbreviation][option.Name]); err != nil {
 				return err
 			}
 		}
@@ -434,7 +462,9 @@ func optionKey(name string) string {
 
 var nonAlphanumeric = regexp.MustCompile(`[^a-z0-9]+`)
 
-func writeParam(body *bytes.Buffer, option option) error {
+// writeParam writes option within limits, its metadata range unless limits
+// is set.
+func writeParam(body *bytes.Buffer, option option, limits [2]float64) error {
 	key := strings.Trim(nonAlphanumeric.ReplaceAllString(strings.ToLower(option.Name), "_"), "_")
 	if option.Name == "Time Period" {
 		key = "period"
@@ -455,6 +485,12 @@ func writeParam(body *bytes.Buffer, option option) error {
 	maximum, err := strconv.ParseFloat(option.Maximum, 64)
 	if err != nil {
 		return fmt.Errorf("option %q maximum: %w", option.Name, err)
+	}
+	if limits != [2]float64{} {
+		if limits[0] < minimum || limits[1] > maximum || defaultValue < limits[0] || defaultValue > limits[1] {
+			return fmt.Errorf("option %q limits %v leave its range [%g, %g] or default %g", option.Name, limits, minimum, maximum, defaultValue)
+		}
+		minimum, maximum = limits[0], limits[1]
 	}
 	kind := "paramInteger"
 	if option.Type == "Double" {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/logging"
 )
 
 const (
@@ -181,6 +182,8 @@ func (sessions *Sessions) Revoke(ctx context.Context, token string) error {
 
 // Run deletes expired sessions hourly until ctx is cancelled.
 func (sessions *Sessions) Run(ctx context.Context) error {
+	// pruneFailure warns once while pruning keeps failing.
+	pruneFailure := logging.NewFailure(sessions.logger)
 	for {
 		if backoff.Sleep(ctx, prunePeriod) != nil {
 			return nil
@@ -192,9 +195,12 @@ func (sessions *Sessions) Run(ctx context.Context) error {
 		case ctx.Err() != nil:
 			return nil
 		case err != nil:
-			sessions.logger.WarnContext(ctx, "expired session pruning failed", "operation", "prune_sessions", "outcome", "failure", "error", err)
-		case deleted > 0:
-			sessions.logger.InfoContext(ctx, "expired sessions pruned", "operation", "prune_sessions", "outcome", "success", "deleted", deleted)
+			pruneFailure.Warn(ctx, "expired session pruning failed", "operation", "prune_sessions", "outcome", "failure", "error", err)
+		default:
+			pruneFailure.Recover(ctx, "expired session pruning recovered", "operation", "prune_sessions")
+			if deleted > 0 {
+				sessions.logger.InfoContext(ctx, "expired sessions pruned", "operation", "prune_sessions", "outcome", "success", "deleted", deleted)
+			}
 		}
 	}
 }

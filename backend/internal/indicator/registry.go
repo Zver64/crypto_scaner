@@ -20,6 +20,8 @@ var (
 	// ErrInvalidResult indicates that an implementation violated the common
 	// lookback or output contract.
 	ErrInvalidResult = errors.New("invalid indicator result")
+	// ErrInvalidRequest indicates parameters or inputs a module rejects.
+	ErrInvalidRequest = errors.New("invalid indicator request")
 )
 
 // Registry dispatches generic requests to registered implementations. A

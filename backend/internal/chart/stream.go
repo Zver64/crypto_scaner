@@ -94,8 +94,9 @@ func (stream *LiveStream) Enqueue(message marketlive.Message) bool {
 func (stream *LiveStream) SetRange(limit int, configs []indicator.Selection) bool {
 	stream.mu.Lock()
 	stream.limit, stream.configs = limit, configs
+	queued := stream.queueLocked(streamEvent{message: marketlive.Message{Key: stream.key()}, rangeChanged: true})
 	stream.mu.Unlock()
-	return stream.enqueue(streamEvent{message: marketlive.Message{Key: stream.key()}, rangeChanged: true})
+	return stream.notify(queued)
 }
 
 func (stream *LiveStream) key() kline.Key {
@@ -104,12 +105,25 @@ func (stream *LiveStream) key() kline.Key {
 
 func (stream *LiveStream) enqueue(event streamEvent) bool {
 	stream.mu.Lock()
+	queued := stream.queueLocked(event)
+	stream.mu.Unlock()
+	return stream.notify(queued)
+}
+
+// queueLocked appends event unless too many are pending; the caller holds mu.
+func (stream *LiveStream) queueLocked(event streamEvent) bool {
 	if len(stream.pending) >= maxPendingEvents {
-		stream.mu.Unlock()
 		return false
 	}
 	stream.pending = append(stream.pending, event)
-	stream.mu.Unlock()
+	return true
+}
+
+// notify wakes run after an event was queued and returns queued.
+func (stream *LiveStream) notify(queued bool) bool {
+	if !queued {
+		return false
+	}
 	select {
 	case stream.wake <- struct{}{}:
 	default:

@@ -75,7 +75,7 @@ npm -C frontend run quality
 npm -C frontend run test
 ```
 
-Verify only with tests and static analysis: `make check`, the Makefile targets, and the scripts in `frontend/package.json`. Never invoke tools directly (`npx tsc`, `npx oxlint`, `npx oxfmt`, `npx vitest`, and so on); use the matching script. Never build anything (`npm run build`, `vite build`, `tsc -b`, `go build`, Docker image builds) unless the user explicitly asks for a build.
+Verify only with tests and static analysis: `make check`, the Makefile targets, and the scripts in `frontend/package.json`. When a script in `frontend/package.json` or a Makefile target runs a tool, run it through that script or target, never directly (`npx tsc`, `npx oxlint`, `npx oxfmt`, `npx vitest`, and so on). Tools with no matching script, such as the TanStack Intent guidance commands in `frontend/AGENTS.md`, may run directly. Never build anything (`npm run build`, `vite build`, `tsc -b`, `go build`, Docker image builds) unless the user explicitly asks for a build.
 
 Pre-commit hooks run the checks relevant to staged changes, so do not routinely run those checks separately before committing. Run checks manually only when diagnosing a failure, when no commit will be created, or when explicitly requested. Use `make check` for manual verification of cross-cutting changes.
 
@@ -98,7 +98,7 @@ Create commits only when the user asks.
 - A user question (in chat or a review comment, even a challenge such as "why do we need that?") wants an answer and a recommendation, not a code change. "Can we…" is a question, not approval; change code only after the user agrees.
 - In design discussions, answer the point raised and wait for the user's decision; do not rewrite the plan or pick a solution on your own.
 - Keep plans in the conversation; write plan files only when asked.
-- Never deviate from an agreed plan on your own: when the implementation needs a deviation, or a behaviour-changing decision the plan left open, stop and ask the user first. Subagents return such points as questions instead of deciding them, and every subagent brief says so.
+- Never deviate from an agreed plan on your own: when the implementation needs a deviation, or a behaviour-changing decision the plan left open, stop and ask the user first. Subagents return such points as questions instead of deciding them, and every subagent brief says so; the orchestrating agent decides purely technical questions itself and brings only behaviour or user-facing ones to the user.
 - After implementing an agreed plan or change, report only what differs from it and what was not discussed before (deviations, new findings, open risks, check results); do not restate what was agreed.
 - Commit on the current branch (usually `main`); create a branch only when asked.
 - Do not trace authorship with `git blame` or history, and never answer "I didn't write this": treat all code in the repository as your own and judge it on its merits.

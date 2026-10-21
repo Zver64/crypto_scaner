@@ -71,11 +71,6 @@ func (c *cli) runBacktests(command *cobra.Command, target backtestFlags, request
 		if err != nil {
 			failed = true
 			failure := c.describe(err)
-			// Request/read errors are not Cobra argument errors, even when
-			// describe has no more specific classification for them.
-			if !failure.api && failure.code == "usage" {
-				failure = &cliError{code: "unexpected_response", message: fmt.Sprintf("cannot read backtest response: %v", err)}
-			}
 			response := failure.response()
 			items[i].Status, items[i].Error = "failed", &response
 			if !c.json {

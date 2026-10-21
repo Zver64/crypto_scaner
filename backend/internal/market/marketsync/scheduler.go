@@ -10,6 +10,7 @@ import (
 
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/backoff"
+	"crypto-scanner/internal/platform/logging"
 )
 
 // Runner is the synchronization operation scheduled at process and time boundaries.
@@ -110,6 +111,10 @@ func NextRun(interval market.CandleInterval, now time.Time) time.Time {
 // work, and waits for its worker and timer goroutines during cancellation.
 func (scheduler *Scheduler) Run(ctx context.Context) error {
 	queue := newJobQueue()
+	// failed and partial report a profile's lasting failure, and its
+	// instruments' lasting failure, once until a run of it succeeds.
+	failed := logging.NewFailures[string](scheduler.logger)
+	partial := logging.NewFailures[string](scheduler.logger)
 	var runs sync.WaitGroup
 	runs.Add(1)
 	go func() {
@@ -125,18 +130,24 @@ func (scheduler *Scheduler) Run(ctx context.Context) error {
 				}
 				err := job.runner.Sync(ctx)
 				generation := queue.complete(job.profile)
+				if err == nil || errors.Is(err, ErrInstrumentsFailed) {
+					failed.Forget(job.profile)
+				}
+				if err == nil {
+					partial.Forget(job.profile)
+				}
 				if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, ErrSyncInProgress) {
 					delay := retryDelay(scheduler.retryDelay, job.retryAttempt)
 					if errors.Is(err, ErrInstrumentsFailed) {
 						// The profile succeeded; only its failed instruments are retried,
 						// a few times before the next scheduled run takes over.
 						if job.retryAttempt >= maxInstrumentRetries {
-							scheduler.logger.WarnContext(ctx, "market synchronization instruments still failing", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "partial", "error", err)
+							partial.Warn(ctx, job.profile, "market synchronization instruments still failing", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "partial", "error", err)
 							continue
 						}
 						scheduler.logger.InfoContext(ctx, "market synchronization instruments failed", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "partial", "retry_after", delay, "error", err)
 					} else {
-						scheduler.logger.ErrorContext(ctx, "scheduled market synchronization failed", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "failure", "retry_after", delay, "error", err)
+						failed.Error(ctx, job.profile, "scheduled market synchronization failed", "module", "market_sync", "operation", "scheduled_sync", "profile", job.profile, "outcome", "failure", "retry_after", delay, "error", err)
 					}
 					retryJob := job
 					retryJob.retryAttempt++

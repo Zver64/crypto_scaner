@@ -1,7 +1,6 @@
 package talib
 
 import (
-	"errors"
 	"fmt"
 	"math"
 	"slices"
@@ -18,10 +17,6 @@ const (
 	// EMAType is the stable registry identifier for the exponential moving average.
 	EMAType indicator.Type = "ema"
 )
-
-// ErrInvalidRequest indicates invalid parameters or inputs supplied to a
-// TA-Lib-backed indicator.
-var ErrInvalidRequest = errors.New("invalid TA-Lib indicator request")
 
 // maTypes are the TA-Lib moving average types in TA_MAType order.
 var maTypes = []indicator.Choice{
@@ -189,7 +184,7 @@ func (f *function) Lookback(parameters indicator.Parameters) (int, error) {
 func (f *function) lookback(values []float64) (int, error) {
 	lookback := f.spec.lookback(values)
 	if lookback < 0 {
-		return 0, fmt.Errorf("%w: %s rejected parameters %v", ErrInvalidRequest, f.spec.name, values)
+		return 0, fmt.Errorf("%w: %s rejected parameters %v", indicator.ErrInvalidRequest, f.spec.name, values)
 	}
 	return lookback, nil
 }
@@ -201,7 +196,7 @@ func (f *function) Calculate(parameters indicator.Parameters, inputs indicator.I
 	}
 	series, err := indicator.ReadInputs(inputs, f.fields(values))
 	if err != nil {
-		return indicator.Result{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		return indicator.Result{}, fmt.Errorf("%w: %w", indicator.ErrInvalidRequest, err)
 	}
 	length := len(series[0])
 
@@ -222,7 +217,7 @@ func (f *function) Calculate(parameters indicator.Parameters, inputs indicator.I
 	}
 	for index, o := range f.spec.outputs {
 		if len(calculated[index]) != length {
-			return indicator.Result{}, fmt.Errorf("%w: %s returned %d values for %d inputs", ErrInvalidRequest, f.spec.name, len(calculated[index]), length)
+			return indicator.Result{}, fmt.Errorf("%w: %s returned %d values for %d inputs", indicator.ErrInvalidRequest, f.spec.name, len(calculated[index]), length)
 		}
 		outputs[o.name] = indicator.Series{Offset: offset, Values: calculated[index][offset:]}
 	}
@@ -238,7 +233,7 @@ func (f *function) invoke(series [][]float64, values []float64) (calculated [][]
 			if !ok {
 				panic(recovered)
 			}
-			err = fmt.Errorf("%w: %s: %v", ErrInvalidRequest, f.spec.name, taErr)
+			err = fmt.Errorf("%w: %s: %v", indicator.ErrInvalidRequest, f.spec.name, taErr)
 		}
 	}()
 	return f.spec.call(series, values), nil
@@ -249,7 +244,7 @@ func (f *function) invoke(series [][]float64, values []float64) (calculated [][]
 func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 	for key := range parameters {
 		if !slices.ContainsFunc(f.spec.params, func(p param) bool { return p.key == key }) {
-			return nil, fmt.Errorf("%w: %s has no parameter %q", ErrInvalidRequest, f.spec.indicatorType, key)
+			return nil, fmt.Errorf("%w: %s has no parameter %q", indicator.ErrInvalidRequest, f.spec.indicatorType, key)
 		}
 	}
 	values := make([]float64, len(f.spec.params))
@@ -261,25 +256,25 @@ func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 		}
 		value, err := indicator.ParseNumber(raw)
 		if err != nil {
-			return nil, fmt.Errorf("%w: %s %w", ErrInvalidRequest, p.key, err)
+			return nil, fmt.Errorf("%w: %s %w", indicator.ErrInvalidRequest, p.key, err)
 		}
 		switch p.kind {
 		case paramInteger:
 			if math.Trunc(value) != value || value < p.minimum || value > integerMaximum(p) {
-				return nil, fmt.Errorf("%w: %s must be an integer between %g and %g", ErrInvalidRequest, p.key, p.minimum, integerMaximum(p))
+				return nil, fmt.Errorf("%w: %s must be an integer between %g and %g", indicator.ErrInvalidRequest, p.key, p.minimum, integerMaximum(p))
 			}
 		case paramReal:
 			if value < p.minimum || value > p.maximum {
-				return nil, fmt.Errorf("%w: %s must be between %g and %g", ErrInvalidRequest, p.key, p.minimum, p.maximum)
+				return nil, fmt.Errorf("%w: %s must be between %g and %g", indicator.ErrInvalidRequest, p.key, p.minimum, p.maximum)
 			}
 		case paramMAType:
 			// Compared before converting, which could overflow.
 			if math.Trunc(value) != value || value < 0 || value >= float64(len(maTypes)) {
-				return nil, fmt.Errorf("%w: %s must be a moving average type between 0 and %d", ErrInvalidRequest, p.key, len(maTypes)-1)
+				return nil, fmt.Errorf("%w: %s must be a moving average type between 0 and %d", indicator.ErrInvalidRequest, p.key, len(maTypes)-1)
 			}
 		case paramSource:
 			if math.Trunc(value) != value || value < 0 || value >= float64(len(sourceChoices)) {
-				return nil, fmt.Errorf("%w: %s must be a candle field between 0 and %d", ErrInvalidRequest, p.key, len(sourceChoices)-1)
+				return nil, fmt.Errorf("%w: %s must be a candle field between 0 and %d", indicator.ErrInvalidRequest, p.key, len(sourceChoices)-1)
 			}
 		}
 		values[index] = value

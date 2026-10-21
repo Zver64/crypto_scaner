@@ -16,7 +16,7 @@ import (
 func (store *Store) ListScannerIndicators(ctx context.Context) ([]scannerindicator.Indicator, error) {
 	rows, err := store.queries.ListScannerIndicators(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list scanner indicators: %w", err)
 	}
 	items := make([]scannerindicator.Indicator, 0, len(rows))
 	for _, row := range rows {
@@ -42,7 +42,7 @@ func (store *Store) CreateScannerIndicators(ctx context.Context, items []scanner
 	}
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("begin scanner indicator creation: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
@@ -84,7 +84,7 @@ func (store *Store) CreateScannerIndicators(ctx context.Context, items []scanner
 		return nil, insertErr
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, err
+		return nil, fmt.Errorf("commit scanner indicator creation: %w", err)
 	}
 	return ids, nil
 }
@@ -99,7 +99,7 @@ func (store *Store) UpdateScannerIndicator(ctx context.Context, item scannerindi
 		ScaleLevels: append([]float64{}, item.Scale.Levels...),
 	})
 	if err != nil {
-		return err
+		return fmt.Errorf("update scanner indicator: %w", err)
 	}
 	if updated == 0 {
 		return scannerindicator.ErrNotFound
@@ -112,7 +112,7 @@ func (store *Store) UpdateScannerIndicator(ctx context.Context, item scannerindi
 func (store *Store) ReorderScannerIndicators(ctx context.Context, ids []int64) error {
 	reordered, err := store.queries.ReorderScannerIndicators(ctx, ids)
 	if err != nil {
-		return err
+		return fmt.Errorf("reorder scanner indicators: %w", err)
 	}
 	if reordered != int64(len(ids)) {
 		return scannerindicator.ErrNotFound
@@ -127,7 +127,10 @@ func (store *Store) DeleteUnusedScannerIndicators(ctx context.Context) ([]int64,
 	if foreignKeyViolation(err) {
 		return nil, scannerindicator.ErrInUse
 	}
-	return deleted, err
+	if err != nil {
+		return nil, fmt.Errorf("delete unused scanner indicators: %w", err)
+	}
+	return deleted, nil
 }
 
 func (store *Store) DeleteScannerIndicator(ctx context.Context, id int64) error {
@@ -136,7 +139,7 @@ func (store *Store) DeleteScannerIndicator(ctx context.Context, id int64) error 
 		return scannerindicator.ErrInUse
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("delete scanner indicator: %w", err)
 	}
 	if deleted == 0 {
 		return scannerindicator.ErrNotFound

@@ -492,6 +492,11 @@ func compileExpression(source string, variables []Variable, price bool) (*Expres
 	if issues.Err() != nil {
 		return nil, invalidExpression(issueMessages(issues)...)
 	}
+	// The macros expand percentile windows and crossings, so the expanded
+	// expression is bounded before it is type-checked.
+	if nodeCount(parsed.NativeRep().Expr()) > maxNodes {
+		return nil, invalidExpression("the expression is too large")
+	}
 	identifiers := map[string]Read{}
 	rewrite(parsed.NativeRep().Expr(), ast.NewExprFactory(), byName, identifiers)
 	// Every identifier is declared, so the walker names unknown ones.
@@ -511,16 +516,12 @@ func compileExpression(source string, variables []Variable, price bool) (*Expres
 		if !checked.OutputType().IsExactType(cel.DoubleType) {
 			return nil, invalidExpression("the price must be calculated from indicators, candle fields, and numbers")
 		}
-		if err := walker.value(checked.NativeRep().Expr(), ""); err != nil {
-			return nil, invalidExpression(err.Error())
-		}
+		walker.value(checked.NativeRep().Expr(), "")
 	} else {
 		if !checked.OutputType().IsExactType(cel.BoolType) {
 			return nil, invalidExpression("the expression must be a condition")
 		}
-		if err := walker.condition(checked.NativeRep().Expr(), true); err != nil {
-			return nil, invalidExpression(err.Error())
-		}
+		walker.condition(checked.NativeRep().Expr(), true)
 	}
 	problems := walker.problems
 	if walker.comparisons > maxComparisons {
@@ -695,7 +696,7 @@ func modulo(left, right ref.Val) ref.Val {
 func divide(left, right ref.Val) ref.Val {
 	dividend, divisor := float64(left.(types.Double)), float64(right.(types.Double))
 	quotient := dividend / divisor
-	if divisor == 0 || math.IsNaN(quotient) || math.IsInf(quotient, 0) {
+	if divisor == 0 || !numeric.Finite(quotient) {
 		return types.NewErr("division by zero")
 	}
 	return types.Double(quotient)
@@ -941,7 +942,7 @@ var (
 
 // expressionWalker rejects everything but the strategy language and collects
 // the variables it reads. It reports every problem in problems and keeps
-// walking the other branches; only an expression too large stops it.
+// walking the other branches.
 type expressionWalker struct {
 	info        *ast.SourceInfo
 	identifiers map[string]Read
@@ -953,7 +954,6 @@ type expressionWalker struct {
 	// shift is set while walking a calculated prev shift.
 	shift       bool
 	comparisons int
-	nodes       int
 	// variables counts the variables read by the current comparison.
 	variables int
 	// unknown is set when the current comparison reads an unknown name.
@@ -971,23 +971,12 @@ func (walker *expressionWalker) report(format string, args ...any) {
 	}
 }
 
-func (walker *expressionWalker) visit() error {
-	walker.nodes++
-	if walker.nodes > maxNodes {
-		return errors.New("the expression is too large")
-	}
-	return nil
-}
-
 // condition accepts &&, ||, and ! over comparisons. A comparison counts
 // toward maxComparisons when count is set; a crossing counts once.
-func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
-	if err := walker.visit(); err != nil {
-		return err
-	}
+func (walker *expressionWalker) condition(expr ast.Expr, count bool) {
 	if expr.Kind() != ast.CallKind || expr.AsCall().IsMemberFunction() {
 		walker.report("combine comparisons with &&, || and !")
-		return nil
+		return
 	}
 	call := expr.AsCall()
 	name := call.FunctionName()
@@ -998,11 +987,8 @@ func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
 			count = false
 		}
 		for _, arg := range call.Args() {
-			if err := walker.condition(arg, count); err != nil {
-				return err
-			}
+			walker.condition(arg, count)
 		}
-		return nil
 	case slices.Contains(comparisonOperators, name):
 		if count {
 			walker.comparisons++
@@ -1010,21 +996,16 @@ func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
 		walker.variables = 0
 		walker.unknown = false
 		for _, arg := range call.Args() {
-			if err := walker.value(arg, ""); err != nil {
-				return err
-			}
+			walker.value(arg, "")
 		}
 		// An unknown name reads no variable but is already reported.
 		if walker.variables == 0 && !walker.unknown {
 			walker.report("each comparison reads an indicator or a candle field")
 		}
-		return nil
 	case slices.Contains(arithmeticOperators, name) || name == operators.Negate || name == percentileFunction || name == prevFunction:
 		walker.report("compare values with >, >=, < or <=")
-		return nil
 	default:
 		walker.report("%s is not supported", strings.Trim(name, "_"))
-		return nil
 	}
 }
 
@@ -1033,10 +1014,7 @@ func (walker *expressionWalker) condition(expr ast.Expr, count bool) error {
 // names the percentile or calculated prev whose operand expr is part of,
 // empty outside; they cannot nest. A calculated prev shift is walked outside
 // its window.
-func (walker *expressionWalker) value(expr ast.Expr, window string) error {
-	if err := walker.visit(); err != nil {
-		return err
-	}
+func (walker *expressionWalker) value(expr ast.Expr, window string) {
 	switch expr.Kind() {
 	case ast.IdentKind:
 		read := walker.identifiers[expr.AsIdent()]
@@ -1045,14 +1023,14 @@ func (walker *expressionWalker) value(expr ast.Expr, window string) error {
 			if slices.ContainsFunc(PositionVariables(), func(variable Variable) bool { return variable.Name == name }) {
 				walker.report("%s is available only in the exit rule", name)
 				walker.unknown = true
-				return nil
+				return
 			}
 			walker.report("%s is not a configured indicator or candle field", name)
 			walker.unknown = true
 			if !slices.Contains(walker.unknownNames, name) {
 				walker.unknownNames = append(walker.unknownNames, name)
 			}
-			return nil
+			return
 		}
 		// Position variables exist only at the latest candle, so not in the
 		// operand of a calculated prev either, which is read earlier.
@@ -1067,64 +1045,57 @@ func (walker *expressionWalker) value(expr ast.Expr, window string) error {
 			walker.shown[expr.AsIdent()] = struct{}{}
 		}
 		walker.variables++
-		return nil
+		return
 	case ast.LiteralKind:
 		if number, ok := expr.AsLiteral().(types.Double); ok {
 			if walker.shift && math.Trunc(float64(number)) != float64(number) {
 				walker.report(shiftProblem)
 			}
-			return nil
+			return
 		}
 	case ast.CallKind:
 		call := expr.AsCall()
 		if call.IsMemberFunction() {
 			walker.report("functions are not supported")
-			return nil
+			return
 		}
 		name := call.FunctionName()
 		if walker.shift && name != operators.Add && name != operators.Subtract && name != operators.Negate {
 			walker.report(shiftProblem)
-			return nil
+			return
 		}
 		switch {
 		case slices.Contains(arithmeticOperators, name) || name == operators.Negate:
 			for _, arg := range call.Args() {
-				if err := walker.value(arg, window); err != nil {
-					return err
-				}
+				walker.value(arg, window)
 			}
-			return nil
+			return
 		case name == percentileFunction:
 			if window != "" {
 				walker.report("%s cannot contain percentile", window)
-				return nil
+				return
 			}
 			for _, element := range call.Args()[1].AsList().Elements() {
-				if err := walker.value(element, "percentile"); err != nil {
-					return err
-				}
+				walker.value(element, "percentile")
 			}
-			return nil
+			return
 		case name == prevFunction:
 			if window != "" {
 				walker.report("%s cannot contain prev with a calculated shift", window)
-				return nil
+				return
 			}
 			walker.shift = true
-			err := walker.value(call.Args()[0], "")
+			walker.value(call.Args()[0], "")
 			walker.shift = false
-			if err != nil {
-				return err
-			}
-			return walker.value(call.Args()[1], "prev with a calculated shift")
+			walker.value(call.Args()[1], "prev with a calculated shift")
+			return
 		case slices.Contains(comparisonOperators, name), name == operators.LogicalAnd, name == operators.LogicalOr, name == operators.LogicalNot:
 			walker.report("comparisons cannot be compared or calculated with")
-			return nil
+			return
 		default:
 			walker.report("%s is not supported", strings.Trim(name, "_"))
-			return nil
+			return
 		}
 	}
 	walker.report("calculate with indicators, candle fields, and numbers")
-	return nil
 }

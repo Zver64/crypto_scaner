@@ -55,10 +55,13 @@ func (liveTestSessions) Exchange(context.Context, string) (auth.IssuedSession, e
 }
 
 func (liveTestSessions) Authenticate(_ context.Context, token string) (auth.User, error) {
-	if token != "valid" {
-		return auth.User{}, auth.ErrUnauthenticated
+	switch token {
+	case "valid":
+		return auth.User{ID: 1}, nil
+	case "cst_valid":
+		return auth.User{ID: 1, APIToken: true}, nil
 	}
-	return auth.User{ID: 1}, nil
+	return auth.User{}, auth.ErrUnauthenticated
 }
 
 func (liveTestSessions) Revoke(context.Context, string) error { return nil }
@@ -72,9 +75,9 @@ func (liveTestService) Subscribe(context.Context, marketlive.Client, string, mar
 func (liveTestService) Unsubscribe(string, kline.Key) {}
 func (liveTestService) RemoveClient(string)           {}
 
-// A socket that has not authenticated never takes a live connection slot, so
-// it cannot keep users out of their charts.
-func TestUnauthenticatedSocketsDoNotTakeLiveConnectionSlots(t *testing.T) {
+// The handshake authenticates the session token offered after the live
+// protocol, so no unauthenticated or API token socket is ever upgraded.
+func TestLiveCandleHandshakeAuthenticatesSession(t *testing.T) {
 	registry, err := indicator.NewRegistry(indicatortalib.New()...)
 	if err != nil {
 		t.Fatal(err)
@@ -83,30 +86,93 @@ func TestUnauthenticatedSocketsDoNotTakeLiveConnectionSlots(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	handler := newLiveCandleHandler(liveTestSessions{}, liveTestService{}, charts, slog.New(slog.DiscardHandler)).(*liveCandleHandler)
-	handler.connections = make(chan struct{}, 1)
-	server := httptest.NewServer(handler)
+	server := httptest.NewServer(newLiveCandleHandler(liveTestSessions{}, liveTestService{}, charts, slog.New(slog.DiscardHandler)))
 	defer server.Close()
-	dial := func() *websocket.Conn {
-		t.Helper()
-		url := "ws" + strings.TrimPrefix(server.URL, "http")
-		connection, _, err := websocket.DefaultDialer.Dial(url, http.Header{"Origin": {server.URL}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = connection.Close() })
-		return connection
+	url := "ws" + strings.TrimPrefix(server.URL, "http")
+	tests := []struct {
+		name      string
+		protocols []string
+		status    int
+	}{
+		{name: "session", protocols: []string{liveCandleProtocol, "valid"}, status: http.StatusSwitchingProtocols},
+		{name: "missing token", protocols: []string{liveCandleProtocol}, status: http.StatusUnauthorized},
+		{name: "unknown protocol", protocols: []string{"other", "valid"}, status: http.StatusUnauthorized},
+		{name: "invalid token", protocols: []string{liveCandleProtocol, "expired"}, status: http.StatusUnauthorized},
+		{name: "API token", protocols: []string{liveCandleProtocol, "cst_valid"}, status: http.StatusForbidden},
 	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dialer := websocket.Dialer{Subprotocols: test.protocols, HandshakeTimeout: 2 * time.Second}
+			connection, response, err := dialer.Dial(url, http.Header{"Origin": {server.URL}})
+			if response == nil {
+				t.Fatalf("Dial() error = %v", err)
+			}
+			if response.StatusCode != test.status {
+				t.Fatalf("status = %d, want %d", response.StatusCode, test.status)
+			}
+			if connection != nil {
+				defer connection.Close()
+				if connection.Subprotocol() != liveCandleProtocol {
+					t.Fatalf("subprotocol = %q, want %q", connection.Subprotocol(), liveCandleProtocol)
+				}
+			}
+		})
+	}
+}
 
-	// The silent socket waits for authentication while a user connects.
-	dial()
-	connection := dial()
-	if err := connection.WriteJSON(map[string]any{"type": "authenticate", "token": "valid"}); err != nil {
+// Connection limits reject the handshake, so a client at a limit never sees
+// an open socket, and a rejected or failed upgrade keeps no slot.
+func TestLiveCandleHandshakeEnforcesConnectionLimits(t *testing.T) {
+	registry, err := indicator.NewRegistry(indicatortalib.New()...)
+	if err != nil {
 		t.Fatal(err)
 	}
-	_ = connection.SetReadDeadline(time.Now().Add(2 * time.Second))
-	var message LiveCandleServerMessage
-	if err := connection.ReadJSON(&message); err != nil || message.Type != Authenticated {
-		t.Fatalf("first message = %+v, error %v; want authenticated", message, err)
+	charts, err := chart.NewService(newChartHistoryStub(), registry, emptyChartCatalog{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		name        string
+		connections int
+		user        int
+		origin      bool
+		status      int
+	}{
+		{name: "user limit", connections: maxLiveConnectionsPerUser, user: maxLiveConnectionsPerUser, origin: true, status: http.StatusTooManyRequests},
+		{name: "server limit", connections: maxLiveConnections, origin: true, status: http.StatusServiceUnavailable},
+		{name: "failed upgrade", status: http.StatusForbidden},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			handler := newLiveCandleHandler(liveTestSessions{}, liveTestService{}, charts, slog.New(slog.DiscardHandler)).(*liveCandleHandler)
+			handler.connections = test.connections
+			if test.user > 0 {
+				handler.userConnections[1] = test.user
+			}
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			header := http.Header{}
+			if test.origin {
+				header.Set("Origin", server.URL)
+			}
+			dialer := websocket.Dialer{Subprotocols: []string{liveCandleProtocol, "valid"}, HandshakeTimeout: 2 * time.Second}
+			connection, response, err := dialer.Dial("ws"+strings.TrimPrefix(server.URL, "http"), header)
+			if connection != nil {
+				connection.Close()
+			}
+			if response == nil {
+				t.Fatalf("Dial() error = %v", err)
+			}
+			if response.StatusCode != test.status {
+				t.Fatalf("status = %d, want %d", response.StatusCode, test.status)
+			}
+			// Close waits for the handler, which releases its slot on return.
+			server.Close()
+			handler.connectionsMu.Lock()
+			defer handler.connectionsMu.Unlock()
+			if handler.connections != test.connections || handler.userConnections[1] != test.user {
+				t.Fatalf("slots = %d (user %d), want %d (user %d)", handler.connections, handler.userConnections[1], test.connections, test.user)
+			}
+		})
 	}
 }

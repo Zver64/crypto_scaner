@@ -166,7 +166,7 @@ func (c *Client) Markets(ctx context.Context, ids []string) ([]marketcap.Cap, er
 			if v.ID == "" || !requested[v.ID] || seen[v.ID] {
 				continue
 			}
-			if v.MarketCap == nil || !numeric.Finite(*v.MarketCap) || *v.MarketCap < 0 || v.LastUpdated.IsZero() {
+			if v.MarketCap == nil || !numeric.Finite(*v.MarketCap) || *v.MarketCap <= 0 || v.LastUpdated.IsZero() {
 				continue
 			}
 			seen[v.ID] = true
@@ -211,45 +211,51 @@ func idChunks(ids []string) []idChunk {
 	return chunks
 }
 
-// get decodes one rate-limited request, retrying 429 and 5xx responses.
+// get decodes one rate-limited request, retrying 429 and 5xx responses after
+// their Retry-After delay or, without one, an exponential backoff.
 func (c *Client) get(ctx context.Context, path string, destination any) error {
 	for attempt := 0; ; attempt++ {
-		retry, err := c.getOnce(ctx, path, destination)
-		if err == nil || retry == 0 || attempt == requestAttempts-1 {
+		retryable, retryAfter, err := c.getOnce(ctx, path, destination)
+		if err == nil || !retryable || attempt == requestAttempts-1 {
 			return err
 		}
-		if err := backoff.Sleep(ctx, retry); err != nil {
+		delay := backoff.Exponential(retryBaseDelay, maxRetryDelay, attempt)
+		if retryAfter > 0 {
+			delay = min(retryAfter, maxRetryDelay)
+		}
+		if err := backoff.Sleep(ctx, delay); err != nil {
 			return err
 		}
 	}
 }
 
-// getOnce returns the delay before a retry, or 0 when err is not retryable.
-func (c *Client) getOnce(ctx context.Context, path string, destination any) (time.Duration, error) {
+// getOnce reports whether err is retryable and the response's Retry-After
+// delay, or 0 when it has none.
+func (c *Client) getOnce(ctx context.Context, path string, destination any) (bool, time.Duration, error) {
 	if err := c.limiter.Wait(ctx); err != nil {
-		return 0, err
+		return false, 0, err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+path, nil)
 	if err != nil {
-		return 0, err
+		return false, 0, err
 	}
 	if c.key != "" && c.keyAllowed {
 		req.Header.Set("x-cg-demo-api-key", c.key)
 	}
 	response, err := c.http.Do(req)
 	if err != nil {
-		return 0, err
+		return false, 0, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode == http.StatusTooManyRequests || response.StatusCode >= http.StatusInternalServerError {
-		delay := retryBaseDelay
+		var retryAfter time.Duration
 		if seconds, parseErr := strconv.Atoi(response.Header.Get("Retry-After")); parseErr == nil && seconds > 0 {
-			delay = time.Duration(seconds) * time.Second
+			retryAfter = time.Duration(seconds) * time.Second
 		}
-		return min(delay, maxRetryDelay), fmt.Errorf("CoinGecko status %d", response.StatusCode)
+		return true, retryAfter, fmt.Errorf("CoinGecko status %d", response.StatusCode)
 	}
 	if response.StatusCode/100 != 2 {
-		return 0, fmt.Errorf("CoinGecko status %d", response.StatusCode)
+		return false, 0, fmt.Errorf("CoinGecko status %d", response.StatusCode)
 	}
-	return 0, json.NewDecoder(response.Body).Decode(destination)
+	return false, 0, json.NewDecoder(response.Body).Decode(destination)
 }

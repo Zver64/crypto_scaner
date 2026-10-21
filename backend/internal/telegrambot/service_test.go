@@ -5,15 +5,17 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
-	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/telegrambot"
 
@@ -24,7 +26,7 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{}
 	accessChanges := 0
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() { accessChanges++ }, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() { accessChanges++ }, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -81,7 +83,7 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 
 func TestAddUserCancelReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -105,7 +107,7 @@ func TestAddUserCancelReturnsToMenu(t *testing.T) {
 func TestAddUserGrantErrorReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{grantErr: errors.New("storage unavailable")}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -128,7 +130,7 @@ func TestAddUserGrantErrorReturnsToMenu(t *testing.T) {
 
 func TestStaleAddUserSelectionReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -149,7 +151,7 @@ func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
 	transport := newTelegramTransport(t)
 	transport.setGetMeResponse(`{"ok":false,"error_code":401,"description":"Unauthorized"}`)
 
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err == nil {
 		t.Fatal("New() error = nil, want Telegram initialization failure")
 	}
@@ -170,7 +172,7 @@ func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
 func TestAccessAdministrationIsPrivateAndAdministratorOnly(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{users: map[int64]auth.User{300: {ID: 1, TelegramID: 300}}}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -196,33 +198,42 @@ func TestAccessAdministrationIsPrivateAndAdministratorOnly(t *testing.T) {
 	}
 }
 
-func TestPriceAlertRechecksAccessAfterRateLimitWait(t *testing.T) {
+// A notification Telegram rejects with 429 is sent again after retry_after.
+func TestNotificationIsRetriedAfterTooManyRequests(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &synchronizedAccessStore{user: auth.User{ID: 1, TelegramID: 200}}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL, Synchronous: true})
+	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
-	fired := alerts.Fired{Alert: alerts.Alert{ID: 1, TelegramID: 200, Symbol: "BTCUSDT", Target: "100"}, Price: "100", EventTime: time.Now()}
-	if err := service.SendPriceAlert(context.Background(), fired); err != nil {
-		t.Fatalf("first SendPriceAlert: %v", err)
-	}
-	result := make(chan error, 1)
-	go func() { result <- service.SendPriceAlert(context.Background(), fired) }()
-	time.Sleep(100 * time.Millisecond)
-	store.delete()
-	select {
-	case err := <-result:
-		if err == nil {
-			t.Fatal("notification sent after the user was deleted during limiter wait")
+	// The fake clock skips retry_after without slowing the test.
+	synctest.Test(t, func(t *testing.T) {
+		var sent atomic.Int32
+		err = telegrambot.UseHTTPClient(service, "123456:test-token", httpClientFunc(func(request *http.Request) (*http.Response, error) {
+			_, _ = io.Copy(io.Discard, request.Body)
+			if strings.HasSuffix(request.URL.Path, "/sendMessage") && sent.Add(1) == 1 {
+				body := `{"ok":false,"error_code":429,"description":"Too Many Requests: retry after 30","parameters":{"retry_after":30}}`
+				return &http.Response{StatusCode: http.StatusTooManyRequests, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			}
+			body := `{"ok":true,"result":{"message_id":1,"date":0,"chat":{"id":200,"type":"private"}}}`
+			return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+		}))
+		if err != nil {
+			t.Fatal(err)
 		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("SendPriceAlert did not finish after limiter wait")
-	}
-	if got := transport.messageCount(); got != 1 {
-		t.Fatalf("Telegram sendMessage requests = %d, want 1", got)
-	}
+		start := time.Now()
+		if err := service.SendStrategyMessage(context.Background(), 200, "alert"); err != nil {
+			t.Fatalf("SendStrategyMessage: %v", err)
+		}
+		if got := sent.Load(); got != 2 || time.Since(start) < 30*time.Second {
+			t.Fatalf("Telegram sendMessage requests = %d after %v, want 2 after retry_after", got, time.Since(start))
+		}
+	})
 }
+
+type httpClientFunc func(*http.Request) (*http.Response, error)
+
+func (do httpClientFunc) Do(request *http.Request) (*http.Response, error) { return do(request) }
 
 type synchronizedAccessStore struct {
 	mu      sync.Mutex

@@ -114,3 +114,10 @@ func (store *Store) SaveCaps(ctx context.Context, caps []marketcap.Cap) error {
 	})
 	return batchErr
 }
+
+func (store *Store) DeleteCaps(ctx context.Context, ids []string) error {
+	if err := store.queries.DeleteCoinGeckoMarketCaps(ctx, ids); err != nil {
+		return fmt.Errorf("delete CoinGecko market caps: %w", err)
+	}
+	return nil
+}

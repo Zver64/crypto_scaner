@@ -487,6 +487,8 @@ func TestLocalErrors(t *testing.T) {
 		{args: []string{"typo"}, code: "usage", prefix: `unknown command "typo" for "scanner"`},
 		{args: []string{"backtest", "--strategy", "0", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "0" must be a UUID`},
 		{args: []string{"backtest", "--strategy", "abc", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "abc" must be a UUID`},
+		{args: []string{"strategies", "update", "00000000-0000-7000-8000-000000000006", "--add-indicators=false"}, code: "usage", prefix: "specify at least one of"},
+		{args: []string{"signals", "update", "00000000-0000-7000-8000-000000000006", "--add-indicators=false"}, code: "usage", prefix: "specify at least one of"},
 	} {
 		got := runCLI(t, home, "", test.args...)
 		if got.code != 1 || got.stdout != "" || !strings.HasPrefix(got.stderr, "scanner: "+test.prefix) {

@@ -19,7 +19,7 @@ func TestResolveBatchChunksAndUsesStaleFallbackOnProviderFailure(t *testing.T) {
 		base := fmt.Sprintf("A%d", i)
 		id := fmt.Sprintf("id%d", i)
 		instruments[i] = market.Instrument{BaseAsset: base, QuoteAsset: "USDT"}
-		store.mappings[base] = Mapping{BaseAsset: base, CoinID: id, Status: "resolved"}
+		store.mappings[base] = Mapping{BaseAsset: base, CoinID: id, Status: "resolved", ExpiresAt: freshUntil}
 		store.caps[id] = Cap{CoinID: id, USD: float64(i), Available: true, FetchedAt: now.Add(-2 * time.Hour)}
 	}
 	provider := &fakeProvider{marketErr: errors.New("down")}
@@ -32,19 +32,59 @@ func TestResolveBatchChunksAndUsesStaleFallbackOnProviderFailure(t *testing.T) {
 	if provider.marketCalls != 2 || !batch.ProviderWarning {
 		t.Fatalf("calls=%d warning=%v", provider.marketCalls, batch.ProviderWarning)
 	}
-	if batch.Facts["A1"].USD == nil || *batch.Facts["A1"].USD != 1 {
-		t.Fatalf("facts=%+v", batch.Facts["A1"])
+	if store.caps["id1"].USD != 1 {
+		t.Fatalf("cap=%+v", store.caps["id1"])
 	}
 }
-func TestResolveBatchTreatsMissingCapAsUnresolved(t *testing.T) {
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{}}
-	r := New(store, &fakeProvider{})
+func TestResolveBatchDeletesCapTheProviderNoLongerReports(t *testing.T) {
+	now := time.Now()
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: ptr(now.Add(time.Hour))}}, caps: map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now.Add(-2 * time.Hour)}}}
+	r := New(store, &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", Reason: "market_cap_missing"}}})
+	r.now = func() time.Time { return now }
 	batch, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}})
-	if err != nil {
+	if err != nil || batch.ProviderWarning {
+		t.Fatalf("batch=%+v err=%v", batch, err)
+	}
+	if _, ok := store.caps["bitcoin"]; ok {
+		t.Fatalf("caps=%+v", store.caps)
+	}
+}
+func TestResolveBatchRemapsExpiredResolvedMapping(t *testing.T) {
+	now := time.Now()
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"POL": {BaseAsset: "POL", QuoteAsset: "USDT", CoinID: "matic-network", Status: "resolved", ExpiresAt: ptr(now.Add(-time.Second))}}, caps: map[string]Cap{}}
+	provider := &fakeProvider{tickers: []Ticker{{Base: "POL", Target: "USDT", CoinID: "polygon-ecosystem-token"}}}
+	r := New(store, provider)
+	r.now = func() time.Time { return now }
+	if _, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "POL", QuoteAsset: "USDT"}}); err != nil {
 		t.Fatal(err)
 	}
-	if batch.Facts["BTC"].USD != nil || batch.Facts["BTC"].Reason != "market_cap_missing" {
-		t.Fatalf("fact=%+v", batch.Facts["BTC"])
+	mapping := store.mappings["POL"]
+	if provider.tickerCalls != 1 || mapping.CoinID != "polygon-ecosystem-token" || mapping.ExpiresAt == nil || !mapping.ExpiresAt.Equal(now.Add(resolvedMappingTTL)) {
+		t.Fatalf("ticker calls=%d mapping=%+v", provider.tickerCalls, mapping)
+	}
+}
+func TestResolveBatchRemapsExpiredMappingLikeBootstrap(t *testing.T) {
+	now := time.Now()
+	for _, test := range []struct {
+		name    string
+		tickers []Ticker
+		coinID  string
+	}{
+		{name: "other quote", tickers: []Ticker{{Base: "ABC", Target: "FDUSD", CoinID: "abc-new"}}, coinID: "abc-new"},
+		{name: "missing from scan", tickers: []Ticker{{Base: "OTHER", Target: "USDT", CoinID: "other"}}, coinID: "abc"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			store := &fakeStore{done: true, mappings: map[string]Mapping{"ABC": {BaseAsset: "ABC", QuoteAsset: "BTC", CoinID: "abc", Status: "resolved", ExpiresAt: ptr(now.Add(-time.Second))}}, caps: map[string]Cap{}}
+			r := New(store, &fakeProvider{tickers: test.tickers})
+			r.now = func() time.Time { return now }
+			if _, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "ABC", QuoteAsset: "USDT"}}); err != nil {
+				t.Fatal(err)
+			}
+			mapping := store.mappings["ABC"]
+			if mapping.Status != "resolved" || mapping.CoinID != test.coinID || mapping.ExpiresAt == nil || !mapping.ExpiresAt.Equal(now.Add(resolvedMappingTTL)) {
+				t.Fatalf("mapping=%+v", mapping)
+			}
+		})
 	}
 }
 func TestBootstrapSkipsProviderWhenAlreadyComplete(t *testing.T) {
@@ -82,7 +122,7 @@ func TestBootstrapSkipsNullableCoinIDTicker(t *testing.T) {
 }
 func TestResolvedMappingIsReusedAcrossQuotes(t *testing.T) {
 	now := time.Now()
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", QuoteAsset: "USDT", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now}}}
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", QuoteAsset: "USDT", CoinID: "bitcoin", Status: "resolved", ExpiresAt: ptr(now.Add(time.Hour))}}, caps: map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now}}}
 	provider := &fakeProvider{}
 	r := New(store, provider)
 	r.now = func() time.Time { return now }
@@ -94,21 +134,18 @@ func TestResolvedMappingIsReusedAcrossQuotes(t *testing.T) {
 		t.Fatalf("ticker calls=%d", provider.tickerCalls)
 	}
 }
-func TestMappingProviderFailureOnlyUnresolvesMissingBases(t *testing.T) {
+func TestMappingProviderFailureKeepsExpiredResolvedMapping(t *testing.T) {
 	now := time.Now()
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 10, Available: true, FetchedAt: now}}}
-	provider := &fakeProvider{tickerErr: errors.New("ticker unavailable")}
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: ptr(now.Add(-time.Second))}}, caps: map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 10, Available: true, FetchedAt: now.Add(-2 * time.Hour)}}}
+	provider := &fakeProvider{tickerErr: errors.New("ticker unavailable"), marketValues: []Cap{{CoinID: "bitcoin", USD: 20, Available: true, ObservedAt: now}}}
 	r := New(store, provider)
 	r.now = func() time.Time { return now }
 	batch, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}, {BaseAsset: "NEW", QuoteAsset: "USDT"}})
 	if err != nil || !batch.ProviderWarning {
 		t.Fatalf("batch=%+v err=%v", batch, err)
 	}
-	if batch.Facts["BTC"].USD == nil || *batch.Facts["BTC"].USD != 10 {
-		t.Fatalf("known fact=%+v", batch.Facts["BTC"])
-	}
-	if batch.Facts["NEW"].Reason != "mapping_provider_unavailable" {
-		t.Fatalf("missing fact=%+v", batch.Facts["NEW"])
+	if store.caps["bitcoin"].USD != 20 || store.mappings["BTC"].CoinID != "bitcoin" {
+		t.Fatalf("cap=%+v mapping=%+v", store.caps["bitcoin"], store.mappings["BTC"])
 	}
 }
 func TestAllMappingsDoesNotHideConflictBehindUSDTPreference(t *testing.T) {
@@ -142,7 +179,7 @@ func TestRefreshStablecoinClassificationsRejectsEmptySnapshot(t *testing.T) {
 
 func TestConcurrentStaleRefreshIsDeduplicated(t *testing.T) {
 	now := time.Now()
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now.Add(-2 * time.Hour)}}}
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: freshUntil}}, caps: map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now.Add(-2 * time.Hour)}}}
 	provider := &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", USD: 2, Available: true, ObservedAt: now}}, marketDelay: 20 * time.Millisecond}
 	r := New(store, provider)
 	r.now = func() time.Time { return now }
@@ -175,12 +212,13 @@ func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
 		// A store failure is returned instead of being treated as absence.
 		wantErr bool
 	}{
-		{name: "resolved", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}, valid: true},
-		{name: "resolved past expiry", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: &past}, valid: true},
+		{name: "resolved future expiry", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: &future}, valid: true},
+		{name: "resolved past expiry", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: &past}},
+		{name: "resolved nil expiry", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}},
 		{name: "unresolved future expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found", ExpiresAt: &future}, valid: true},
 		{name: "unresolved exact expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found", ExpiresAt: &exact}},
 		{name: "unresolved past expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found", ExpiresAt: &past}},
-		{name: "unresolved nil expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found"}, valid: true},
+		{name: "unresolved nil expiry", entry: Mapping{BaseAsset: "BTC", Status: "unresolved", Reason: "not found"}},
 		{name: "store error", err: storeErr, wantErr: true},
 		{name: "store error with resolved mapping", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}, err: storeErr, wantErr: true},
 	}
@@ -238,13 +276,13 @@ func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
 
 func TestMissingCapIsCooledPerIDWithoutGlobalWarning(t *testing.T) {
 	now := time.Now()
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"NULL": {BaseAsset: "NULL", CoinID: "null", Status: "resolved"}, "OK": {BaseAsset: "OK", CoinID: "ok", Status: "resolved"}, "OTHER": {BaseAsset: "OTHER", CoinID: "other", Status: "resolved"}}, caps: map[string]Cap{}}
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"NULL": {BaseAsset: "NULL", CoinID: "null", Status: "resolved", ExpiresAt: freshUntil}, "OK": {BaseAsset: "OK", CoinID: "ok", Status: "resolved", ExpiresAt: freshUntil}, "OTHER": {BaseAsset: "OTHER", CoinID: "other", Status: "resolved", ExpiresAt: freshUntil}}, caps: map[string]Cap{}}
 	provider := &fakeProvider{marketValues: []Cap{{CoinID: "null"}, {CoinID: "ok", USD: 5, Available: true, ObservedAt: now}}}
 	r := New(store, provider)
 	r.now = func() time.Time { return now }
 	items := []market.Instrument{{BaseAsset: "NULL"}, {BaseAsset: "OK"}}
 	batch, err := r.ResolveBatch(context.Background(), items)
-	if err != nil || batch.ProviderWarning || batch.Facts["NULL"].Reason != "market_cap_missing" {
+	if err != nil || batch.ProviderWarning {
 		t.Fatalf("batch=%+v err=%v", batch, err)
 	}
 	_, err = r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "NULL"}, {BaseAsset: "OTHER"}})
@@ -252,6 +290,9 @@ func TestMissingCapIsCooledPerIDWithoutGlobalWarning(t *testing.T) {
 		t.Fatalf("calls=%d err=%v", provider.marketCalls, err)
 	}
 }
+
+// freshUntil keeps a resolved test mapping from expiring.
+var freshUntil = ptr(time.Now().Add(24 * time.Hour))
 
 type fakeStore struct {
 	done          bool
@@ -316,6 +357,12 @@ func (s *fakeStore) ListCaps(_ context.Context, ids []string) (map[string]Cap, e
 		}
 	}
 	return result, nil
+}
+func (s *fakeStore) DeleteCaps(_ context.Context, ids []string) error {
+	for _, id := range ids {
+		delete(s.caps, id)
+	}
+	return nil
 }
 func (s *fakeStore) SaveCaps(_ context.Context, caps []Cap) error {
 	for _, c := range caps {

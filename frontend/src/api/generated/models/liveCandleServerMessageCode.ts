@@ -9,9 +9,13 @@
  * `POST /api/v1/auth/session` and send `Authorization: Bearer <token>` to every
  * other operation. A request rejected with `401` needs a new session.
  *
- * The client first sends `LiveCandleClientMessage` with type `authenticate` and
- * the session token; the token is never placed in the URL. After `authenticated`, the
- * connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
+ * The client offers the WebSocket subprotocol `crypto-scanner.live.v1` followed by
+ * its session token as a second subprotocol (`Sec-WebSocket-Protocol`); the token is
+ * never placed in the URL. The handshake fails with `401` for a missing or invalid
+ * token, `403` (`session_required`) for an API token, `429` (`rate_limited`) when the
+ * user holds the most live connections, and `503` (`unavailable`) when the server
+ * does; on success the server selects
+ * `crypto-scanner.live.v1`. The connection accepts dynamic `subscribe` and `unsubscribe` messages and emits
  * `LiveCandleServerMessage` snapshots, updates, freshness changes, acknowledgements,
  * and bounded errors. One connection may switch subscriptions without reconnecting.
  *
@@ -23,12 +27,10 @@ export type LiveCandleServerMessageCode = typeof LiveCandleServerMessageCode[key
 
 export const LiveCandleServerMessageCode = {
   unauthenticated: 'unauthenticated',
-  access_denied: 'access_denied',
   invalid_message: 'invalid_message',
   invalid_argument: 'invalid_argument',
   symbol_not_found: 'symbol_not_found',
   rate_limited: 'rate_limited',
   subscription_limit: 'subscription_limit',
   unavailable: 'unavailable',
-  slow_client: 'slow_client',
 } as const;

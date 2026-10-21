@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"reflect"
+	"slices"
 	"strconv"
 	"sync"
 	"testing"
@@ -407,12 +408,12 @@ func TestPostgresStoreContracts(t *testing.T) {
 			for _, hour := range []int{-1, 0, 168, 169} {
 				open := start.Add(time.Duration(hour) * time.Hour)
 				candle := market.Candle{InstrumentID: instrument.ID, Interval: "1h", OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 10, High: 12, Low: 9, Close: 10.12345678}
-				if err := store.UpsertCandles(ctx, []market.Candle{candle, candle}); err != nil {
+				if _, err := store.UpsertCandlesWithChanges(ctx, []market.Candle{candle, candle}); err != nil {
 					t.Fatal(err)
 				}
 				candle.Interval = "1d"
 				candle.CloseTime = open.Add(24*time.Hour - time.Millisecond)
-				if err := store.UpsertCandles(ctx, []market.Candle{candle}); err != nil {
+				if _, err := store.UpsertCandlesWithChanges(ctx, []market.Candle{candle}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -448,11 +449,11 @@ func TestPostgresStoreContracts(t *testing.T) {
 		instrumentID := instruments[0].ID
 		openTime := time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC)
 		candle := market.Candle{InstrumentID: instrumentID, Interval: "1d", OpenTime: openTime, CloseTime: openTime.Add(24*time.Hour - time.Millisecond), Open: 100.125, High: 110.5, Low: 90.25, Close: 105.75, Volume: 1234.5, QuoteAssetVolume: 130000.25, TradeCount: 42}
-		if err := store.UpsertCandles(ctx, []market.Candle{candle}); err != nil {
+		if _, err := store.UpsertCandlesWithChanges(ctx, []market.Candle{candle}); err != nil {
 			t.Fatalf("first candle upsert: %v", err)
 		}
 		candle.Close = 106.25
-		if err := store.UpsertCandles(ctx, []market.Candle{candle}); err != nil {
+		if _, err := store.UpsertCandlesWithChanges(ctx, []market.Candle{candle}); err != nil {
 			t.Fatalf("second candle upsert: %v", err)
 		}
 		batch, err := store.ListLatestCandles(ctx, []int64{instrumentID}, market.IntervalDay, 30)
@@ -470,7 +471,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 			next[i].CloseTime = next[i].OpenTime.Add(24*time.Hour - time.Millisecond)
 			next[i].Close = float64(101 + i)
 		}
-		if err := store.UpsertCandles(ctx, next); err != nil {
+		if _, err := store.UpsertCandlesWithChanges(ctx, next); err != nil {
 			t.Fatalf("consecutive candle upsert: %v", err)
 		}
 		latest, err := store.ListLatestCandles(ctx, []int64{instrumentID}, market.IntervalDay, 2)
@@ -483,12 +484,6 @@ func TestPostgresStoreContracts(t *testing.T) {
 			t.Fatalf("latest candles = %#v, want the two newest in ascending open time", candles)
 		}
 
-		if _, err := db.Exec(ctx, `UPDATE binance_spot.candles SET high = 'Infinity' WHERE instrument_id = $1`, instrumentID); err != nil {
-			t.Fatalf("seed non-finite value: %v", err)
-		}
-		if _, err := store.ListLatestCandles(ctx, []int64{instrumentID}, market.IntervalDay, 30); err == nil {
-			t.Fatal("ListLatestCandles() accepted a non-finite candle value")
-		}
 	})
 
 	t.Run("candle history summary reports bounds, gaps, empty gaps and coverage", func(t *testing.T) {
@@ -514,7 +509,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 		for _, index := range []int{0, 1, 3, 5, 6} {
 			open := week(index)
 			candle := market.Candle{InstrumentID: instrumentID, Interval: market.IntervalWeek, OpenTime: open, CloseTime: week(index + 1).Add(-time.Millisecond), Open: 1, High: 2, Low: 1, Close: 1}
-			if err := store.UpsertCandles(ctx, []market.Candle{candle}); err != nil {
+			if _, err := store.UpsertCandlesWithChanges(ctx, []market.Candle{candle}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -627,12 +622,15 @@ func TestPostgresStoreContracts(t *testing.T) {
 			t.Fatalf("create indicators: %v", err)
 		}
 		table, chart, read, unused := ids[0], ids[1], ids[2], ids[3]
-		strategyID, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Reads RSI 13", Expression: "d_rsi_13 > 1", CoinSource: strategy.CoinsSelected}, []int64{read})
+		strategyID, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Reads RSI 13", Direction: strategy.DirectionLong, Expression: "d_rsi_13 > 1", CoinSource: strategy.CoinsSelected}, []int64{read})
 		if err != nil {
 			t.Fatalf("create strategy: %v", err)
 		}
 		t.Cleanup(func() {
-			if _, err := db.Exec(ctx, `DELETE FROM app.strategies WHERE id = $1; DELETE FROM app.scanner_indicators WHERE id = ANY($2)`, strategyID, ids); err != nil {
+			if _, err := db.Exec(ctx, `DELETE FROM app.strategies WHERE id = $1`, strategyID); err != nil {
+				t.Errorf("clean strategy fixture: %v", err)
+			}
+			if _, err := db.Exec(ctx, `DELETE FROM app.scanner_indicators WHERE id = ANY($1)`, ids); err != nil {
 				t.Errorf("clean indicator fixtures: %v", err)
 			}
 		})
@@ -640,6 +638,212 @@ func TestPostgresStoreContracts(t *testing.T) {
 		deleted, err := store.DeleteUnusedScannerIndicators(ctx)
 		if err != nil || !reflect.DeepEqual(deleted, []int64{unused}) {
 			t.Fatalf("deleted = %v, error = %v; want only %d, keeping table %d, chart %d and strategy %d", deleted, err, unused, table, chart, read)
+		}
+	})
+
+	t.Run("candle pruning keeps the newest candles per instrument and interval", func(t *testing.T) {
+		instruments, err := store.ListActiveInstruments(ctx)
+		if err != nil || len(instruments) < 2 {
+			t.Fatalf("list active instruments = %v, %v", instruments, err)
+		}
+		many, few := instruments[0].ID, instruments[1].ID
+		t.Cleanup(func() {
+			if _, err := db.Exec(ctx, `DELETE FROM binance_spot.candles WHERE interval = '1M'`); err != nil {
+				t.Errorf("clean monthly candles: %v", err)
+			}
+		})
+		month := func(index int) time.Time {
+			return time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC).AddDate(0, index, 0)
+		}
+		for instrumentID, count := range map[int64]int{many: 5, few: 2} {
+			for index := range count {
+				candle := market.Candle{InstrumentID: instrumentID, Interval: market.IntervalMonth, OpenTime: month(index), CloseTime: month(index + 1).Add(-time.Millisecond), Open: 1, High: 1, Low: 1, Close: 1}
+				if _, err := store.UpsertCandlesWithChanges(ctx, []market.Candle{candle}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		deleted, err := store.PruneCandles(ctx, market.IntervalMonth, 3)
+		if err != nil || deleted != 2 {
+			t.Fatalf("PruneCandles() = %d, %v; want 2", deleted, err)
+		}
+		kept, err := store.ListLatestCandles(ctx, []int64{many, few}, market.IntervalMonth, 10)
+		if err != nil || len(kept[many]) != 3 || !kept[many][0].OpenTime.Equal(month(2)) || len(kept[few]) != 2 {
+			t.Fatalf("kept candles = %+v, %v; want the 3 newest and both of the shorter history", kept, err)
+		}
+		var otherIntervals int
+		if err := db.QueryRow(ctx, `SELECT count(*) FROM binance_spot.candles WHERE interval <> '1M'`).Scan(&otherIntervals); err != nil || otherIntervals == 0 {
+			t.Fatalf("other intervals = %d, %v; pruning must not touch them", otherIntervals, err)
+		}
+	})
+
+	t.Run("delisted instruments are deleted after the grace period unless favorited", func(t *testing.T) {
+		active, err := store.ListActiveInstruments(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		listed := make([]market.Instrument, len(active))
+		for i, instrument := range active {
+			listed[i] = market.Instrument{Symbol: instrument.Symbol, BaseAsset: instrument.BaseAsset, QuoteAsset: instrument.QuoteAsset, Status: "TRADING", Active: true}
+		}
+		delisted := market.Instrument{Symbol: "GONEUSDT", BaseAsset: "GONE", QuoteAsset: "USDT", Status: "TRADING", Active: true}
+		kept := market.Instrument{Symbol: "KEPTUSDT", BaseAsset: "KEPT", QuoteAsset: "USDT", Status: "TRADING", Active: true}
+		if err := store.ApplyInstrumentSnapshot(ctx, append(slices.Clone(listed), delisted, kept)); err != nil {
+			t.Fatal(err)
+		}
+		owner, err := store.FindByTelegramID(ctx, 202)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if _, err := db.Exec(ctx, `DELETE FROM app.favorites WHERE user_id = $1`, owner.ID); err != nil {
+				t.Errorf("clean favorite fixture: %v", err)
+			}
+			if _, err := db.Exec(ctx, `DELETE FROM binance_spot.instruments WHERE symbol IN ('GONEUSDT', 'KEPTUSDT')`); err != nil {
+				t.Errorf("clean delisted instrument fixtures: %v", err)
+			}
+		})
+		if _, err := store.AddFavorite(ctx, owner.ID, kept.Symbol); err != nil {
+			t.Fatal(err)
+		}
+		var goneID int64
+		if err := db.QueryRow(ctx, `SELECT id FROM binance_spot.instruments WHERE symbol = 'GONEUSDT'`).Scan(&goneID); err != nil {
+			t.Fatal(err)
+		}
+		open := time.Date(2026, time.March, 1, 0, 0, 0, 0, time.UTC)
+		if _, err := store.UpsertCandlesWithChanges(ctx, []market.Candle{{InstrumentID: goneID, Interval: market.IntervalDay, OpenTime: open, CloseTime: open.Add(24*time.Hour - time.Millisecond), Open: 1, High: 1, Low: 1, Close: 1}}); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.ApplyInstrumentSnapshot(ctx, listed); err != nil {
+			t.Fatal(err)
+		}
+		if symbols, err := store.DeleteDelistedInstruments(ctx, time.Now().Add(-time.Hour)); err != nil || len(symbols) != 0 {
+			t.Fatalf("deletion within the grace period = %v, %v", symbols, err)
+		}
+		symbols, err := store.DeleteDelistedInstruments(ctx, time.Now().Add(time.Minute))
+		if err != nil || !reflect.DeepEqual(symbols, []string{"GONEUSDT"}) {
+			t.Fatalf("deletion after the grace period = %v, %v; want only GONEUSDT", symbols, err)
+		}
+		var remaining, candles int
+		if err := db.QueryRow(ctx, `SELECT count(*) FILTER (WHERE symbol = 'KEPTUSDT'), (SELECT count(*) FROM binance_spot.candles WHERE instrument_id = $1) FROM binance_spot.instruments`, goneID).Scan(&remaining, &candles); err != nil || remaining != 1 || candles != 0 {
+			t.Fatalf("favorited instrument kept = %d, candles of the deleted one = %d, %v", remaining, candles, err)
+		}
+	})
+
+	t.Run("strategy states are saved only for the current announced revision and later candles", func(t *testing.T) {
+		instruments, err := store.ListActiveInstruments(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		instrument := instruments[0]
+		id, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "States", Direction: strategy.DirectionLong, Expression: "h_close > 1", Coins: []string{instrument.Symbol}, CoinSource: strategy.CoinsSelected}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if _, err := db.Exec(ctx, `DELETE FROM app.strategies WHERE id = $1`, id); err != nil {
+				t.Errorf("clean strategy fixture: %v", err)
+			}
+		})
+		revision, err := store.SetStrategyEnabled(ctx, id, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		at := func(hour int) map[int64]strategy.TradeState {
+			return map[int64]strategy.TradeState{instrument.ID: {OpenTime: time.Date(2026, time.May, 1, hour, 0, 0, 0, time.UTC), Entry: true}}
+		}
+		if saved, err := store.SaveStrategyStates(ctx, id, revision, at(1)); err != nil || len(saved) != 0 {
+			t.Fatalf("save while the baseline is pending = %v, %v", saved, err)
+		}
+		if replaced, err := store.ReplaceStrategyStates(ctx, id, revision, at(1)); err != nil || !replaced {
+			t.Fatalf("ReplaceStrategyStates() = %t, %v", replaced, err)
+		}
+		if saved, err := store.SaveStrategyStates(ctx, id, revision-1, at(2)); err != nil || len(saved) != 0 {
+			t.Fatalf("save of a stale revision = %v, %v", saved, err)
+		}
+		if saved, err := store.SaveStrategyStates(ctx, id, revision, at(3)); err != nil || !reflect.DeepEqual(saved, []int64{instrument.ID}) {
+			t.Fatalf("save of a later candle = %v, %v", saved, err)
+		}
+		if saved, err := store.SaveStrategyStates(ctx, id, revision, at(2)); err != nil || len(saved) != 0 {
+			t.Fatalf("save of an earlier candle = %v, %v", saved, err)
+		}
+		states, err := store.ListStrategyStates(ctx)
+		if err != nil || !states[id][instrument.ID].OpenTime.Equal(at(3)[instrument.ID].OpenTime) {
+			t.Fatalf("stored states = %+v, %v; want the later candle", states[id], err)
+		}
+	})
+
+	// Runs last: it migrates the schema down and up again.
+	t.Run("strategy UUID migration round trip keeps strategies and their rows", func(t *testing.T) {
+		indicatorIDs, err := store.CreateScannerIndicators(ctx, []scannerindicator.Indicator{{Interval: market.IntervalDay, Selection: indicator.Selection{Type: "rsi", Parameters: indicator.Parameters{"period": 21}}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		instruments, err := store.ListActiveInstruments(ctx)
+		if err != nil || len(instruments) < 2 {
+			t.Fatalf("list active instruments = %v, %v", instruments, err)
+		}
+		id, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Round trip", Direction: strategy.DirectionLong, Expression: "d_rsi_21 > 1",
+			Coins: []string{instruments[0].Symbol, instruments[1].Symbol}, CoinSource: strategy.CoinsSelected}, indicatorIDs)
+		if err != nil {
+			t.Fatal(err)
+		}
+		revision, err := store.SetStrategyEnabled(ctx, id, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		open := time.Date(2026, time.May, 1, 0, 0, 0, 0, time.UTC)
+		if replaced, err := store.ReplaceStrategyStates(ctx, id, revision, map[int64]strategy.TradeState{instruments[0].ID: {OpenTime: open}}); err != nil || !replaced {
+			t.Fatalf("ReplaceStrategyStates() = %t, %v", replaced, err)
+		}
+		// Each row is identified by the strategy name, since the round trip
+		// gives the strategies new ids.
+		const snapshot = `SELECT
+			(SELECT string_agg(name || ':' || enabled || ':' || revision, ',' ORDER BY name) FROM app.strategies),
+			(SELECT string_agg(s.name || ':' || c.instrument_id, ',' ORDER BY s.name, c.instrument_id) FROM app.strategy_coins c JOIN app.strategies s ON s.id = c.strategy_id),
+			(SELECT string_agg(s.name || ':' || c.indicator_id, ',' ORDER BY s.name, c.indicator_id) FROM app.strategy_indicators c JOIN app.strategies s ON s.id = c.strategy_id),
+			(SELECT string_agg(s.name || ':' || c.instrument_id || ':' || c.open_time, ',' ORDER BY s.name, c.instrument_id) FROM app.strategy_states c JOIN app.strategies s ON s.id = c.strategy_id)`
+		read := func(stage string) [4]string {
+			var rows [4]*string
+			if err := db.QueryRow(ctx, snapshot+` -- `+stage).Scan(&rows[0], &rows[1], &rows[2], &rows[3]); err != nil {
+				t.Fatalf("read strategies %s: %v", stage, err)
+			}
+			var values [4]string
+			for i, row := range rows {
+				if row != nil {
+					values[i] = *row
+				}
+			}
+			return values
+		}
+		before := read("before")
+		if before[1] == "" || before[2] == "" || before[3] == "" {
+			t.Fatalf("fixture has no child rows: %v", before)
+		}
+		version := func() int {
+			var current int
+			if err := db.QueryRow(ctx, `SELECT version FROM public.crypto_scanner_schema_versions`).Scan(&current); err != nil {
+				t.Fatal(err)
+			}
+			return current
+		}
+		for version() >= 33 {
+			if err := migrate.Run(ctx, []string{"down"}, loadURL); err != nil {
+				t.Fatalf("migrate down: %v", err)
+			}
+		}
+		if down := read("down"); down != before {
+			t.Fatalf("strategies after migrating down = %v, want %v", down, before)
+		}
+		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
+			t.Fatalf("migrate up: %v", err)
+		}
+		if up := read("up"); up != before {
+			t.Fatalf("strategies after migrating up again = %v, want %v", up, before)
+		}
+		var uuidIDs bool
+		if err := db.QueryRow(ctx, `SELECT bool_and(pg_typeof(id) = 'uuid'::regtype) FROM app.strategies`).Scan(&uuidIDs); err != nil || !uuidIDs {
+			t.Fatalf("strategy ids are UUIDs again = %t, %v", uuidIDs, err)
 		}
 	})
 }

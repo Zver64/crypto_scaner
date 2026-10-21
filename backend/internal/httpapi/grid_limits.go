@@ -24,7 +24,12 @@ func (api *api) GetInstrumentGridLimits(ctx context.Context, request GetInstrume
 		return GetInstrumentGridLimits404JSONResponse{symbolNotFound(ctx).symbolNotFound()}, nil
 	}
 	if err != nil {
-		api.logger.WarnContext(ctx, "grid limits unavailable", "module", "httpapi", "request_id", RequestIdentifier(ctx), "symbol", symbol, "error", err)
+		attributes := []any{"module", "httpapi", "request_id", RequestIdentifier(ctx), "symbol", symbol, "error", err}
+		if clientGone(ctx, err) {
+			api.logger.InfoContext(ctx, "grid limits request canceled by the client", attributes...)
+		} else {
+			api.logger.WarnContext(ctx, "grid limits unavailable", attributes...)
+		}
 		return GetInstrumentGridLimits503JSONResponse{newAPIError(ctx, http.StatusServiceUnavailable, "market_data_unavailable", "Grid limits are unavailable", nil).unavailable()}, nil
 	}
 	return GetInstrumentGridLimits200JSONResponse{

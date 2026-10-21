@@ -141,11 +141,6 @@ func instrumentFromRow(row generated.BinanceSpotInstrument) market.Instrument {
 	return market.Instrument{ID: row.ID, Symbol: row.Symbol, BaseAsset: row.BaseAsset, QuoteAsset: row.QuoteAsset, Status: row.ExchangeStatus, Active: row.IsActive}
 }
 
-func (store *Store) UpsertCandles(ctx context.Context, items []market.Candle) error {
-	_, err := store.UpsertCandlesWithChanges(ctx, items)
-	return err
-}
-
 // UpsertCandlesWithChanges reports only rows inserted or materially corrected
 // after the entire batch has committed.
 func (store *Store) UpsertCandlesWithChanges(ctx context.Context, items []market.Candle) ([]market.Candle, error) {
@@ -416,10 +411,9 @@ func (store *Store) GetSyncState(ctx context.Context, profile market.SyncProfile
 // ListClosePrices returns the closes of the interval candles opening from
 // through to, in chronological order per instrument.
 func (store *Store) ListClosePrices(ctx context.Context, instrumentIDs []int64, interval market.CandleInterval, from, to time.Time) ([]market.ClosePrice, error) {
-	closesBefore := interval.NextOpenTime(to)
 	rows, err := store.queries.ListClosePrices(ctx, generated.ListClosePricesParams{
 		InstrumentIds: instrumentIDs, Interval: string(interval),
-		FromTime: timestamptz(&from), ToTime: timestamptz(&to), ClosesBefore: timestamptz(&closesBefore),
+		FromTime: timestamptz(&from), ToTime: timestamptz(&to),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("list %s close prices: %w", interval, err)

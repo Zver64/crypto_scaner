@@ -19,7 +19,7 @@ import (
 func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, error) {
 	rows, err := store.queries.ListStrategies(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list strategies: %w", err)
 	}
 	items := make([]strategy.Strategy, len(rows))
 	for i, row := range rows {
@@ -38,7 +38,7 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64) (uuid.UUID, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return uuid.Nil, err
+		return uuid.Nil, fmt.Errorf("begin strategy creation: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
@@ -50,15 +50,18 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 		Message: item.Message, Enabled: item.Enabled,
 	})
 	if err != nil {
-		return uuid.Nil, strategyWriteError(err)
+		return uuid.Nil, strategyWriteError("insert strategy", err)
 	}
 	if err := queries.InsertStrategyIndicators(ctx, generated.InsertStrategyIndicatorsParams{StrategyID: id, IndicatorIds: indicatorIDs}); err != nil {
-		return uuid.Nil, strategyWriteError(err)
+		return uuid.Nil, strategyWriteError("insert strategy indicators", err)
 	}
-	if err := queries.InsertStrategyCoins(ctx, generated.InsertStrategyCoinsParams{StrategyID: id, Symbols: item.Coins}); err != nil {
+	if err := replaceStrategyCoins(ctx, queries, id, item.Coins); err != nil {
 		return uuid.Nil, err
 	}
-	return id, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return uuid.Nil, fmt.Errorf("commit strategy creation: %w", err)
+	}
+	return id, nil
 }
 
 // UpdateStrategy replaces the name, expressions, coins, trading settings,
@@ -67,7 +70,7 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64, retrade, baseline bool) (int64, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("begin strategy update: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
@@ -82,21 +85,39 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 		return 0, strategy.ErrNotFound
 	}
 	if err != nil {
-		return 0, strategyWriteError(err)
+		return 0, strategyWriteError("update strategy", err)
 	}
 	if err := queries.DeleteStrategyIndicators(ctx, item.ID); err != nil {
-		return 0, err
+		return 0, fmt.Errorf("delete strategy indicators: %w", err)
 	}
 	if err := queries.InsertStrategyIndicators(ctx, generated.InsertStrategyIndicatorsParams{StrategyID: item.ID, IndicatorIds: indicatorIDs}); err != nil {
-		return 0, strategyWriteError(err)
+		return 0, strategyWriteError("insert strategy indicators", err)
 	}
-	if err := queries.DeleteStrategyCoins(ctx, item.ID); err != nil {
+	if err := replaceStrategyCoins(ctx, queries, item.ID, item.Coins); err != nil {
 		return 0, err
 	}
-	if err := queries.InsertStrategyCoins(ctx, generated.InsertStrategyCoinsParams{StrategyID: item.ID, Symbols: item.Coins}); err != nil {
-		return 0, err
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit strategy update: %w", err)
 	}
-	return revision, tx.Commit(ctx)
+	return revision, nil
+}
+
+// replaceStrategyCoins replaces the coins of a strategy; a new strategy has
+// none to delete. It first locks the coins' instruments in id
+// order, the order of the other instrument row locks, so the rewrite cannot
+// deadlock with the deletion of delisted instruments, whose cascade deletes
+// coin rows.
+func replaceStrategyCoins(ctx context.Context, queries *generated.Queries, id uuid.UUID, symbols []string) error {
+	if err := queries.LockStrategyCoinInstruments(ctx, symbols); err != nil {
+		return fmt.Errorf("lock strategy coin instruments: %w", err)
+	}
+	if err := queries.DeleteStrategyCoins(ctx, id); err != nil {
+		return fmt.Errorf("delete strategy coins: %w", err)
+	}
+	if err := queries.InsertStrategyCoins(ctx, generated.InsertStrategyCoinsParams{StrategyID: id, Symbols: symbols}); err != nil {
+		return fmt.Errorf("insert strategy coins: %w", err)
+	}
+	return nil
 }
 
 // optionalInt2 stores 0, which a trading strategy has for the settings of
@@ -115,7 +136,10 @@ func (store *Store) SetStrategyEnabled(ctx context.Context, id uuid.UUID, enable
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, strategy.ErrNotFound
 	}
-	return revision, err
+	if err != nil {
+		return 0, fmt.Errorf("set strategy enabled: %w", err)
+	}
+	return revision, nil
 }
 
 // DisableStrategyAtRevision disables the strategy like SetStrategyEnabled,
@@ -128,7 +152,10 @@ func (store *Store) DisableStrategyAtRevision(ctx context.Context, id uuid.UUID,
 	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, false, nil
 	}
-	return next, err == nil, err
+	if err != nil {
+		return 0, false, fmt.Errorf("disable strategy at revision: %w", err)
+	}
+	return next, true, nil
 }
 
 // setStrategyEnabled runs update, which returns the new revision or
@@ -137,26 +164,29 @@ func (store *Store) DisableStrategyAtRevision(ctx context.Context, id uuid.UUID,
 func (store *Store) setStrategyEnabled(ctx context.Context, id uuid.UUID, enabled bool, update func(*generated.Queries) (int64, error)) (int64, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("begin: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
 	revision, err := update(queries)
 	if err != nil {
-		return 0, err
+		return 0, fmt.Errorf("update: %w", err)
 	}
 	if !enabled {
 		if err := queries.DeleteAllStrategyStates(ctx, id); err != nil {
-			return 0, err
+			return 0, fmt.Errorf("delete strategy states: %w", err)
 		}
 	}
-	return revision, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return 0, fmt.Errorf("commit: %w", err)
+	}
+	return revision, nil
 }
 
 func (store *Store) DeleteStrategy(ctx context.Context, id uuid.UUID) error {
 	deleted, err := store.queries.DeleteStrategy(ctx, id)
 	if err != nil {
-		return err
+		return fmt.Errorf("delete strategy: %w", err)
 	}
 	if deleted == 0 {
 		return strategy.ErrNotFound
@@ -169,7 +199,7 @@ func (store *Store) DeleteStrategy(ctx context.Context, id uuid.UUID) error {
 func (store *Store) ListStrategyStates(ctx context.Context) (map[uuid.UUID]map[int64]strategy.TradeState, error) {
 	rows, err := store.queries.ListStrategyStates(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list strategy states: %w", err)
 	}
 	result := map[uuid.UUID]map[int64]strategy.TradeState{}
 	for _, row := range rows {
@@ -193,16 +223,19 @@ func (store *Store) ListStrategyStates(ctx context.Context) (map[uuid.UUID]map[i
 func (store *Store) ReplaceStrategyStates(ctx context.Context, strategyID uuid.UUID, revision int64, states map[int64]strategy.TradeState) (bool, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return false, err
+		return false, fmt.Errorf("begin strategy baseline: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
 	current, err := queries.CompleteStrategyBaseline(ctx, generated.CompleteStrategyBaselineParams{ID: strategyID, Revision: revision})
-	if err != nil || current == 0 {
-		return false, err
+	if err != nil {
+		return false, fmt.Errorf("complete strategy baseline: %w", err)
+	}
+	if current == 0 {
+		return false, nil
 	}
 	if err := queries.DeleteAllStrategyStates(ctx, strategyID); err != nil {
-		return false, err
+		return false, fmt.Errorf("delete strategy states: %w", err)
 	}
 	params := generated.InsertStrategyStatesParams{StrategyID: strategyID}
 	for _, id := range slices.Sorted(maps.Keys(states)) {
@@ -211,9 +244,12 @@ func (store *Store) ReplaceStrategyStates(ctx context.Context, strategyID uuid.U
 		params.Entries = append(params.Entries, states[id].Entry)
 	}
 	if err := queries.InsertStrategyStates(ctx, params); err != nil {
-		return false, err
+		return false, fmt.Errorf("insert strategy states: %w", err)
 	}
-	return true, tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("commit strategy baseline: %w", err)
+	}
+	return true, nil
 }
 
 // SaveStrategyStates stores states of later candles than the stored ones
@@ -233,17 +269,28 @@ func (store *Store) SaveStrategyStates(ctx context.Context, strategyID uuid.UUID
 		params.TakeProfits = append(params.TakeProfits, state.TakeProfit)
 		params.StopLosses = append(params.StopLosses, state.StopLoss)
 	}
-	return store.queries.SaveStrategyStates(ctx, params)
+	saved, err := store.queries.SaveStrategyStates(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("save strategy states: %w", err)
+	}
+	return saved, nil
 }
 
 func (store *Store) DeleteStrategyStates(ctx context.Context, strategyID uuid.UUID, instrumentIDs []int64) error {
-	return store.queries.DeleteStrategyStates(ctx, generated.DeleteStrategyStatesParams{StrategyID: strategyID, InstrumentIds: instrumentIDs})
+	if err := store.queries.DeleteStrategyStates(ctx, generated.DeleteStrategyStatesParams{StrategyID: strategyID, InstrumentIds: instrumentIDs}); err != nil {
+		return fmt.Errorf("delete strategy states: %w", err)
+	}
+	return nil
 }
 
 // ListStrategyFavorites returns the symbols of the user's favorites, active
 // or not, ascending.
 func (store *Store) ListStrategyFavorites(ctx context.Context, userID int64) ([]string, error) {
-	return store.queries.ListStrategyFavorites(ctx, userID)
+	symbols, err := store.queries.ListStrategyFavorites(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list strategy favorites: %w", err)
+	}
+	return symbols, nil
 }
 
 // ListStrategyInstruments returns the active instruments, which strategies
@@ -251,7 +298,7 @@ func (store *Store) ListStrategyFavorites(ctx context.Context, userID int64) ([]
 func (store *Store) ListStrategyInstruments(ctx context.Context) ([]strategy.Instrument, error) {
 	rows, err := store.queries.ListStrategyInstruments(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list strategy instruments: %w", err)
 	}
 	items := make([]strategy.Instrument, len(rows))
 	for i, row := range rows {
@@ -264,19 +311,24 @@ func (store *Store) ListStrategyInstruments(ctx context.Context) ([]strategy.Ins
 }
 
 func (store *Store) ListStrategyRecipients(ctx context.Context, administratorTelegramID int64) ([]int64, error) {
-	return store.queries.ListStrategyRecipients(ctx, administratorTelegramID)
+	recipients, err := store.queries.ListStrategyRecipients(ctx, administratorTelegramID)
+	if err != nil {
+		return nil, fmt.Errorf("list strategy recipients: %w", err)
+	}
+	return recipients, nil
 }
 
 // strategyWriteError maps a taken name to strategy.ErrConflict and an
-// indicator deleted meanwhile to strategy.ErrInvalidArgument.
-func strategyWriteError(err error) error {
+// indicator deleted meanwhile to strategy.ErrInvalidArgument, and wraps any
+// other error with operation.
+func strategyWriteError(operation string, err error) error {
 	if duplicateViolation(err) {
 		return strategy.ErrConflict
 	}
 	if foreignKeyViolation(err) {
 		return fmt.Errorf("%w: an indicator it reads no longer exists", strategy.ErrInvalidArgument)
 	}
-	return err
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func foreignKeyViolation(err error) bool {

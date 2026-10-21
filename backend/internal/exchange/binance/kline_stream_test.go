@@ -1,12 +1,14 @@
 package binance
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -49,9 +51,7 @@ func TestKlineStreamClosesIdleUpstreamAfterAcknowledgedUnsubscribe(t *testing.T)
 	defer server.Close()
 	stream := newKlineStream("ws"+strings.TrimPrefix(server.URL, "http"), websocket.DefaultDialer, slog.New(slog.NewTextHandler(io.Discard, nil)), NewDialLimiter())
 	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
-	if err := stream.Subscribe(key); err != nil {
-		t.Fatal(err)
-	}
+	stream.Subscribe(key)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = stream.Run(ctx) }()
@@ -73,6 +73,30 @@ func TestKlineStreamClosesIdleUpstreamAfterAcknowledgedUnsubscribe(t *testing.T)
 	case <-closed:
 	case <-time.After(2 * time.Second):
 		t.Fatal("idle upstream connection remained open")
+	}
+}
+
+func TestKlineStreamReportsInvalidMessagesOncePerStream(t *testing.T) {
+	var logs bytes.Buffer
+	stream := newKlineStream("ws://unused.invalid", websocket.DefaultDialer, slog.New(slog.NewTextHandler(&logs, nil)), NewDialLimiter())
+	payload := func(interval market.CandleInterval, high string) []byte {
+		open := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		return []byte(`{"e":"kline","E":1,"s":"BTCUSDT","k":{"t":` + strconv.FormatInt(open.UnixMilli(), 10) + `,"T":` + strconv.FormatInt(interval.NextOpenTime(open).UnixMilli()-1, 10) +
+			`,"s":"BTCUSDT","i":"` + string(interval) + `","o":"10","c":"11","h":"` + high + `","l":"9","v":"1","q":"1","n":1,"x":false}}`)
+	}
+	ctx := context.Background()
+	// Broken 1h messages interleaved with valid 1d ones of the same symbol.
+	for range 3 {
+		for _, message := range [][]byte{payload(market.IntervalHour, "1"), payload(market.IntervalDay, "12")} {
+			name, err := stream.handle(ctx, message, 1)
+			stream.noteData(ctx, name, err)
+		}
+	}
+	if got := strings.Count(logs.String(), "level=WARN msg=\"Binance stream message skipped\""); got != 1 {
+		t.Fatalf("skipped-message warnings = %d, want 1:\n%s", got, logs.String())
+	}
+	if !strings.Contains(logs.String(), "stream=btcusdt@kline_1h") {
+		t.Fatalf("warning does not name the stream:\n%s", logs.String())
 	}
 }
 

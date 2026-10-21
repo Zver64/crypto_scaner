@@ -1,6 +1,6 @@
 -- name: LockSnapshotInstruments :exec
 -- Locks every row the snapshot may update in id order, the order of the
--- other instrument row locks (strategy symbols, delisted instrument
+-- other instrument row locks (strategy coins, delisted instrument
 -- retention), so these transactions cannot deadlock. NO KEY UPDATE is the
 -- lock the updates take themselves and does not block the KEY SHARE locks of
 -- foreign key inserts such as candles and favorites.
@@ -73,8 +73,10 @@ FROM binance_spot.instruments AS instrument
 LEFT JOIN app.coingecko_asset_mappings AS mapping
   ON mapping.base_asset = instrument.base_asset
  AND mapping.status = 'resolved'
+-- Only a positive market cap is available.
 LEFT JOIN app.coingecko_market_caps AS market_cap
   ON market_cap.coin_id = mapping.coin_id
+ AND market_cap.market_cap_usd > 0
 WHERE instrument.is_active = TRUE
   AND (sqlc.arg(symbol)::text = '' OR instrument.symbol = sqlc.arg(symbol)::text)
   AND (COALESCE(cardinality(sqlc.arg(symbols)::text[]), 0) = 0 OR instrument.symbol = ANY(sqlc.arg(symbols)::text[]))

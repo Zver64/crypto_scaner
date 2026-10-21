@@ -126,17 +126,13 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 	try {
 		source.show("1h");
 		source.start();
+		await vi.waitFor(() => expect(FakeSocket.current).toBeDefined());
 		const socket = FakeSocket.current;
 		if (!socket) throw new Error("Missing socket");
 		socket.emitOpen();
-		await vi.waitFor(() => expect(socket.sent).not.toHaveLength(0));
-		socket.emitMessage({ type: "authenticated" });
 		expect(
 			socket.sent.map(({ type, interval, limit }) => [type, interval, limit]),
-		).toEqual([
-			["authenticate", undefined, undefined],
-			["subscribe", "1h", 200],
-		]);
+		).toEqual([["subscribe", "1h", 200]]);
 		expect(source.getSnapshot("1h").isLoading).toBe(true);
 
 		const base = { type: "snapshot", symbol: "BTCUSDT", interval: "1h" };
@@ -200,11 +196,10 @@ it("streams only the interval on screen and keeps the last chart of others as st
 	try {
 		source.show("1h");
 		source.start();
+		await vi.waitFor(() => expect(FakeSocket.current).toBeDefined());
 		const socket = FakeSocket.current;
 		if (!socket) throw new Error("Missing socket");
 		socket.emitOpen();
-		await vi.waitFor(() => expect(socket.sent).not.toHaveLength(0));
-		socket.emitMessage({ type: "authenticated" });
 		socket.emitMessage({
 			type: "snapshot",
 			symbol: "BTCUSDT",
@@ -217,7 +212,6 @@ it("streams only the interval on screen and keeps the last chart of others as st
 		expect(
 			socket.sent.map(({ type, interval, limit }) => [type, interval, limit]),
 		).toEqual([
-			["authenticate", undefined, undefined],
 			["subscribe", "1h", 200],
 			["unsubscribe", "1h", 200],
 			["subscribe", "1d", 200],

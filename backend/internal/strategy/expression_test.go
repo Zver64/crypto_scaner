@@ -34,6 +34,12 @@ func TestCompileListsEveryProblem(t *testing.T) {
 			problems: []string{"1:4: undeclared reference to 'foo' (in container '')"},
 		},
 		{
+			// Each window stays under the limit; together they expand past it.
+			name:     "expanded past the node limit",
+			source:   strings.Repeat("percentile(h_close + h_open, 500, 50) > 1 && ", 15) + "h_close > 1",
+			problems: []string{"the expression is too large"},
+		},
+		{
 			name:     "comparison of numbers only",
 			source:   "1 > 0 && h_close > 1",
 			problems: []string{"each comparison reads an indicator or a candle field"},

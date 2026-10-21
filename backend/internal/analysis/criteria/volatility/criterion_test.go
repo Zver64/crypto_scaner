@@ -167,7 +167,9 @@ func TestPercentileRejectsInsufficientHistory(t *testing.T) {
 	}
 }
 
-func TestPercentileRejectsInvalidCandleWithSufficientHistory(t *testing.T) {
+// A candle without a positive open leaves the instrument without enough
+// valid history, never failing the whole search.
+func TestPercentileTreatsAnInvalidCandleAsInsufficientHistory(t *testing.T) {
 	c, err := volatility.New().Build(map[string]any{"unit": "days", "period": float64(2), "percentile": float64(50), "minimum_range_percent": float64(0)})
 	if err != nil {
 		t.Fatal(err)
@@ -176,8 +178,9 @@ func TestPercentileRejectsInvalidCandleWithSufficientHistory(t *testing.T) {
 	data := []market.Candle{candle(start, 1), candle(start.AddDate(0, 0, 1), 2)}
 	data[0].Open = 0
 	_, err = c.Evaluate(context.Background(), analysis.Input{Candles: map[analysis.Unit][]market.Candle{analysis.UnitDays: data}})
-	if err == nil {
-		t.Fatal("expected an invalid candle error")
+	var insufficient *analysis.InsufficientHistoryError
+	if !errors.As(err, &insufficient) || insufficient.Available != 1 {
+		t.Fatalf("err = %v, want insufficient history with 1 valid candle", err)
 	}
 }
 func TestPercentileRejectsInvalidParameters(t *testing.T) {

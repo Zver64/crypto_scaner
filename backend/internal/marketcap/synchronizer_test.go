@@ -1,10 +1,12 @@
 package marketcap
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -14,7 +16,7 @@ import (
 )
 
 func TestSynchronizerRefreshesPersistedFactsAndRecordsStatus(t *testing.T) {
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{}}
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: freshUntil}}, caps: map[string]Cap{}}
 	provider := &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", USD: 100, Available: true, ObservedAt: time.Now()}}}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
 	synchronizer, err := NewCoinMetadataSynchronizer(New(store, provider), source, slog.New(slog.NewTextHandler(io.Discard, nil)), time.Hour, time.Minute)
@@ -37,7 +39,7 @@ func TestSynchronizerRefreshesPersistedFactsAndRecordsStatus(t *testing.T) {
 }
 
 func TestSynchronizerFirstFailureHasNoSuccessfulTimestamp(t *testing.T) {
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{}}
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: freshUntil}}, caps: map[string]Cap{}}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
 	synchronizer, _ := NewCoinMetadataSynchronizer(New(store, &fakeProvider{marketErr: io.ErrUnexpectedEOF}), source, slog.New(slog.DiscardHandler), time.Hour, time.Minute)
 	if err := synchronizer.runRefresh(context.Background()); err == nil {
@@ -51,7 +53,7 @@ func TestSynchronizerFirstFailureHasNoSuccessfulTimestamp(t *testing.T) {
 }
 
 func TestSynchronizerFailurePreservesPriorSuccessfulTimestampAndCap(t *testing.T) {
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{}}
+	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: freshUntil}}, caps: map[string]Cap{}}
 	provider := &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", USD: 100, Available: true, ObservedAt: time.Now()}}}
 	source := &syncSource{instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}}
 	resolver := New(store, provider)
@@ -96,7 +98,7 @@ func TestSynchronizerRetriesObservableBootstrapThenRefreshes(t *testing.T) {
 
 func TestSynchronizerRetriesEmptyCatalogBeforeRefreshInterval(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}}, caps: map[string]Cap{}}
+		store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: freshUntil}}, caps: map[string]Cap{}}
 		provider := &catalogProvider{refreshed: make(chan struct{})}
 		source := newDelayedCatalogSource()
 		const retryDelay = 40 * time.Millisecond
@@ -129,6 +131,38 @@ func TestSynchronizerRetriesEmptyCatalogBeforeRefreshInterval(t *testing.T) {
 			t.Fatalf("empty catalog retry states=%+v", states)
 		}
 	})
+}
+
+func TestSynchronizerWarnsOnceWhileProviderIsDegradedAndNeverForEmptyCatalog(t *testing.T) {
+	cases := []struct {
+		name        string
+		instruments []market.Instrument
+		wantWarns   int
+	}{
+		{name: "provider degraded", instruments: []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}}, wantWarns: 1},
+		{name: "empty catalog"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: freshUntil}}, caps: map[string]Cap{}}
+				var logs bytes.Buffer
+				logger := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelWarn}))
+				synchronizer, _ := NewCoinMetadataSynchronizer(New(store, &fakeProvider{marketErr: io.ErrUnexpectedEOF}), &syncSource{instruments: tc.instruments}, logger, time.Hour, 2*time.Second)
+				ctx, cancel := context.WithCancel(context.Background())
+				result := make(chan error, 1)
+				go func() { result <- synchronizer.Run(ctx) }()
+				time.Sleep(time.Minute)
+				cancel()
+				if err := <-result; err != nil {
+					t.Fatal(err)
+				}
+				if warns := strings.Count(logs.String(), "level=WARN"); warns != tc.wantWarns {
+					t.Fatalf("warnings=%d, want %d:\n%s", warns, tc.wantWarns, logs.String())
+				}
+			})
+		})
+	}
 }
 
 func TestSynchronizerCancellationResultPersistenceIsBounded(t *testing.T) {

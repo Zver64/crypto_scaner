@@ -79,7 +79,7 @@ func (m divergence) parse(parameters indicator.Parameters) (settings, error) {
 	}
 	result := settings{period: values[0], left: values[1], right: values[2], lower: values[3], upper: values[4]}
 	if result.lower > result.upper {
-		return settings{}, fmt.Errorf("%w: range_lower must not exceed range_upper", ErrInvalidRequest)
+		return settings{}, fmt.Errorf("%w: range_lower must not exceed range_upper", indicator.ErrInvalidRequest)
 	}
 	result.lookback, err = m.rsi.Lookback(rsiParameters(result))
 	if err != nil {
@@ -122,7 +122,7 @@ func (m divergence) Calculate(parameters indicator.Parameters, inputs indicator.
 	}
 	series, err := indicator.ReadInputs(inputs, []string{"close", "high", "low"})
 	if err != nil {
-		return indicator.Result{}, fmt.Errorf("%w: %w", ErrInvalidRequest, err)
+		return indicator.Result{}, fmt.Errorf("%w: %w", indicator.ErrInvalidRequest, err)
 	}
 	closes, highs, lows := series[0], series[1], series[2]
 	marks := map[string][]float64{}

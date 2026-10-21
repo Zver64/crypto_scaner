@@ -50,7 +50,7 @@ func TestTradeStreamPartitionsSymbolsAcrossConnectionLimit(t *testing.T) {
 	}
 }
 
-func TestTradeStreamWaitsForAcknowledgementBeforeConnectedAndDeliversTrade(t *testing.T) {
+func TestTradeStreamWaitsForAcknowledgementBeforeConnectedAndSkipsInvalidTrade(t *testing.T) {
 	type tradeCommand struct {
 		ID     int64  `json:"id"`
 		Method string `json:"method"`
@@ -77,6 +77,8 @@ func TestTradeStreamWaitsForAcknowledgementBeforeConnectedAndDeliversTrade(t *te
 		if err := connection.WriteJSON(map[string]any{"result": nil, "id": value.ID}); err != nil {
 			return
 		}
+		// An invalid data message is skipped without dropping the connection.
+		_ = connection.WriteJSON(map[string]any{"e": "trade", "E": time.Now().UnixMilli(), "s": "BTCUSDT", "t": 41, "p": "0"})
 		_ = connection.WriteJSON(map[string]any{"e": "trade", "E": time.Now().UnixMilli(), "s": "BTCUSDT", "t": 42, "p": "100.25"})
 		<-request.Context().Done()
 	}))
@@ -121,5 +123,10 @@ func TestTradeStreamWaitsForAcknowledgementBeforeConnectedAndDeliversTrade(t *te
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("trade event not delivered")
+	}
+	select {
+	case status := <-stream.Statuses():
+		t.Fatalf("status after a skipped invalid trade: %+v", status)
+	case <-time.After(100 * time.Millisecond):
 	}
 }

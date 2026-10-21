@@ -1,3 +1,4 @@
+import { getCurrentUser } from "@/api/generated/api";
 import type { CandleInterval } from "@/api/generated/models";
 import { LiveCandlesClient } from "@/api/live-candles";
 import { getSessionToken, invalidateSessionToken } from "@/api/session";
@@ -122,6 +123,7 @@ export function createCoinChartData(
 			connection = new LiveCandlesClient({
 				getToken: getSessionToken,
 				invalidateToken: invalidateSessionToken,
+				checkSession: getCurrentUser,
 				onConnectionChange: live.connection,
 				onMessage: live.message,
 			});

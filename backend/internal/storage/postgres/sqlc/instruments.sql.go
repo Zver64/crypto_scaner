@@ -222,7 +222,7 @@ FOR NO KEY UPDATE
 `
 
 // Locks every row the snapshot may update in id order, the order of the
-// other instrument row locks (strategy symbols, delisted instrument
+// other instrument row locks (strategy coins, delisted instrument
 // retention), so these transactions cannot deadlock. NO KEY UPDATE is the
 // lock the updates take themselves and does not block the KEY SHARE locks of
 // foreign key inserts such as candles and favorites.
@@ -241,6 +241,7 @@ LEFT JOIN app.coingecko_asset_mappings AS mapping
  AND mapping.status = 'resolved'
 LEFT JOIN app.coingecko_market_caps AS market_cap
   ON market_cap.coin_id = mapping.coin_id
+ AND market_cap.market_cap_usd > 0
 WHERE instrument.is_active = TRUE
   AND ($1::text = '' OR instrument.symbol = $1::text)
   AND (COALESCE(cardinality($2::text[]), 0) = 0 OR instrument.symbol = ANY($2::text[]))
@@ -268,6 +269,7 @@ type SelectActiveInstrumentsRow struct {
 	MarketCapUsd          string
 }
 
+// Only a positive market cap is available.
 func (q *Queries) SelectActiveInstruments(ctx context.Context, arg SelectActiveInstrumentsParams) ([]SelectActiveInstrumentsRow, error) {
 	rows, err := q.db.Query(ctx, selectActiveInstruments,
 		arg.Symbol,

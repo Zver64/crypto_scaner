@@ -19,9 +19,9 @@ import (
 	"crypto-scanner/internal/storage/postgres"
 )
 
-// failureNotificationTimeout bounds the delivery of the failure that stops the
-// process to the administrator.
-const failureNotificationTimeout = 10 * time.Second
+// notificationFlushTimeout bounds the delivery of the records queued when
+// the process stops, its failure included, to the administrator.
+const notificationFlushTimeout = 10 * time.Second
 
 func main() {
 	if err := envfile.LoadRoot(); err != nil {
@@ -70,21 +70,21 @@ func validateArgs(args []string) error {
 	return nil
 }
 
-// run logs its own failure. Once the application is built, the failure and
-// any records still queued are also sent to the administrator, because the
-// notifier has already stopped with the other services.
+// run logs its own failure. A shutdown signal before the services start is
+// not a failure. Once the application is built, the notifier runs until
+// everything else has stopped and then delivers the records still queued, the
+// failure included, within notificationFlushTimeout.
 func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger, queue *opsnotify.Queue, notifierLogger *slog.Logger) (err error) {
-	var notifier *opsnotify.Notifier
+	started := false
+	stopNotifier := func() {}
 	defer func() {
-		if err == nil {
-			return
+		if err != nil && !started && ctx.Err() != nil {
+			err = nil
 		}
-		logFailure(logger, "run", err)
-		if notifier != nil {
-			flushCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), failureNotificationTimeout)
-			defer cancel()
-			notifier.Flush(flushCtx)
+		if err != nil {
+			logFailure(logger, "run", err)
 		}
+		stopNotifier()
 	}()
 	database, err := postgres.OpenVerified(ctx, cfg.DatabaseURL)
 	if err != nil {
@@ -99,7 +99,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger, queu
 	if err != nil {
 		return err
 	}
-	notifier = application.notifier
+	stopNotifier = startNotifier(ctx, application.notifier)
 	listener, err := net.Listen("tcp", cfg.HTTPAddress)
 	if err != nil {
 		return fmt.Errorf("listen for HTTP: %w", err)
@@ -110,6 +110,7 @@ func run(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger, queu
 		"operation", "start",
 		"address", listener.Addr().String(),
 	)
+	started = true
 	if err := runServices(ctx, listener, application.handler, logger, cfg.ShutdownTimeout, application.services...); err != nil {
 		return err
 	}
@@ -126,6 +127,25 @@ func logFailure(logger *slog.Logger, operation string, err error) {
 		"module", "lifecycle",
 		"operation", operation,
 		"outcome", "failure",
-		"error", err.Error(),
+		"error", err,
 	)
+}
+
+// startNotifier runs notifier apart from ctx; the returned stop ends it and
+// flushes what is still queued, the delivery the stop aborted included, within
+// notificationFlushTimeout.
+func startNotifier(ctx context.Context, notifier *opsnotify.Notifier) (stop func()) {
+	notifierCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = notifier.Run(notifierCtx)
+	}()
+	return func() {
+		cancel()
+		<-done
+		flushCtx, cancelFlush := context.WithTimeout(context.WithoutCancel(ctx), notificationFlushTimeout)
+		defer cancelFlush()
+		notifier.Flush(flushCtx)
+	}
 }

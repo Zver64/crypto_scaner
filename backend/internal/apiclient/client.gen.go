@@ -41,6 +41,7 @@ const (
 	APIErrorCodeMarketCapMissing           APIErrorCode = "market_cap_missing"
 	APIErrorCodeMarketCapUnavailable       APIErrorCode = "market_cap_unavailable"
 	APIErrorCodeMarketDataUnavailable      APIErrorCode = "market_data_unavailable"
+	APIErrorCodeRateLimited                APIErrorCode = "rate_limited"
 	APIErrorCodeScannerIndicatorExists     APIErrorCode = "scanner_indicator_exists"
 	APIErrorCodeScannerIndicatorInUse      APIErrorCode = "scanner_indicator_in_use"
 	APIErrorCodeScannerIndicatorLimit      APIErrorCode = "scanner_indicator_limit"
@@ -50,6 +51,7 @@ const (
 	APIErrorCodeStrategyNotFound           APIErrorCode = "strategy_not_found"
 	APIErrorCodeSymbolNotFound             APIErrorCode = "symbol_not_found"
 	APIErrorCodeUnauthenticated            APIErrorCode = "unauthenticated"
+	APIErrorCodeUnavailable                APIErrorCode = "unavailable"
 	APIErrorCodeUserNotFound               APIErrorCode = "user_not_found"
 )
 
@@ -98,6 +100,8 @@ func (e APIErrorCode) Valid() bool {
 		return true
 	case APIErrorCodeMarketDataUnavailable:
 		return true
+	case APIErrorCodeRateLimited:
+		return true
 	case APIErrorCodeScannerIndicatorExists:
 		return true
 	case APIErrorCodeScannerIndicatorInUse:
@@ -115,6 +119,8 @@ func (e APIErrorCode) Valid() bool {
 	case APIErrorCodeSymbolNotFound:
 		return true
 	case APIErrorCodeUnauthenticated:
+		return true
+	case APIErrorCodeUnavailable:
 		return true
 	case APIErrorCodeUserNotFound:
 		return true
@@ -1966,6 +1972,9 @@ type ScannerIndicatorInUse = ErrorResponse
 
 // ScannerIndicatorNotFound defines model for ScannerIndicatorNotFound.
 type ScannerIndicatorNotFound = ErrorResponse
+
+// SessionRequired defines model for SessionRequired.
+type SessionRequired = ErrorResponse
 
 // StrategyConflict defines model for StrategyConflict.
 type StrategyConflict = ErrorResponse
@@ -8322,7 +8331,7 @@ type DeleteSessionResponse struct {
 	// JSON401 the response for an HTTP 401 `application/json` response
 	JSON401 *Unauthenticated
 	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *AccessDenied
+	JSON403 *SessionRequired
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
 	// Headers401 the parsed response headers for an HTTP 401 response
@@ -8339,7 +8348,7 @@ func (r DeleteSessionResponse) GetJSON401() *Unauthenticated {
 }
 
 // GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r DeleteSessionResponse) GetJSON403() *AccessDenied {
+func (r DeleteSessionResponse) GetJSON403() *SessionRequired {
 	return r.JSON403
 }
 
@@ -12888,7 +12897,7 @@ func ParseDeleteSessionResponse(rsp *http.Response) (*DeleteSessionResponse, err
 		response.JSON401 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest AccessDenied
+		var dest SessionRequired
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

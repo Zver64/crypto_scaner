@@ -51,7 +51,7 @@ func New(store Store, administratorID int64, changed func()) *Service {
 func (service *Service) List(ctx context.Context) ([]User, error) {
 	items, err := service.store.ListUsers(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("list users: %w", err)
 	}
 	for i := range items {
 		items[i].Administrator = items[i].TelegramID == service.administratorID

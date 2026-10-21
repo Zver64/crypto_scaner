@@ -5,6 +5,10 @@ import type {
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
 
+// The backend authenticates the WebSocket handshake by the session token
+// offered after this subprotocol, and selects only this one.
+const liveCandleProtocol = "crypto-scanner.live.v1";
+
 export type LiveCandleConnection = "connecting" | "connected" | "disconnected";
 
 export interface LiveCandleSubscription {
@@ -18,19 +22,23 @@ interface LiveCandlesClientOptions {
 	getToken(): Promise<string | undefined>;
 	// Forgets a token the server rejected, so the reconnect gets a new one.
 	invalidateToken(token: string): void;
+	// Sends an authenticated request, which renews a rejected session. The
+	// browser hides why a handshake failed, so a socket that closes before it
+	// opens checks the session this way before reconnecting.
+	checkSession(): Promise<unknown>;
 	onConnectionChange(connection: LiveCandleConnection): void;
 	onMessage(message: LiveCandleServerMessage): void;
 }
 
 export class LiveCandlesClient {
-	// The socket sent authenticate. The server reads messages in order, so
-	// subscriptions follow it at once instead of waiting for authenticated.
+	// Counts open() calls, so a token resolved for a stale one is dropped.
+	private generation = 0;
+	// The socket is open: the handshake authenticated it.
 	private ready = false;
 	private reconnectAttempt = 0;
 	private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 	private socket: WebSocket | undefined;
 	private stopped = true;
-	private token: string | undefined;
 	private subscriptions: readonly LiveCandleSubscription[] = [];
 
 	constructor(private readonly options: LiveCandlesClientOptions) {}
@@ -39,7 +47,7 @@ export class LiveCandlesClient {
 		if (!this.stopped) return;
 		this.stopped = false;
 		this.reconnectAttempt = 0;
-		this.open();
+		void this.open();
 	}
 
 	setSubscriptions(subscriptions: readonly LiveCandleSubscription[]): void {
@@ -79,6 +87,7 @@ export class LiveCandlesClient {
 	disconnect(): void {
 		if (this.stopped) return;
 		this.stopped = true;
+		this.generation += 1;
 		if (this.reconnectTimer) clearTimeout(this.reconnectTimer);
 		this.reconnectTimer = undefined;
 		if (this.ready) {
@@ -92,62 +101,81 @@ export class LiveCandlesClient {
 		socket?.close(1000, "Page closed");
 	}
 
-	private open(): void {
+	private async open(): Promise<void> {
 		if (this.stopped) return;
+		const generation = ++this.generation;
 		this.options.onConnectionChange("connecting");
-		const socket = new WebSocket(liveWebSocketURL());
+		const token = await this.options.getToken().catch(() => undefined);
+		if (generation !== this.generation || this.stopped) return;
+		if (!token) {
+			this.reconnect();
+			return;
+		}
+		let socket: WebSocket;
+		try {
+			socket = new WebSocket(liveWebSocketURL(), [liveCandleProtocol, token]);
+		} catch {
+			// A token that is not a valid subprotocol can never authenticate.
+			this.options.invalidateToken(token);
+			this.handshakeFailed(generation);
+			return;
+		}
 		this.socket = socket;
 		socket.addEventListener("open", () => {
-			void this.authenticate(socket);
+			if (this.socket !== socket || this.stopped) return;
+			this.ready = true;
+			this.reconnectAttempt = 0;
+			this.options.onConnectionChange("connected");
+			for (const subscription of this.subscriptions) {
+				this.send({ type: "subscribe", ...subscription });
+			}
 		});
 		socket.addEventListener("message", (event) => {
 			if (this.socket !== socket || this.stopped) return;
 			const message = parseLiveMessage(event.data);
 			if (!message) return;
-			if (message.type === "authenticated") {
-				this.reconnectAttempt = 0;
-				this.options.onConnectionChange("connected");
-				return;
-			}
-			if (
-				message.type === "error" &&
-				message.code === "unauthenticated" &&
-				this.token
-			) {
-				this.options.invalidateToken(this.token);
+			if (message.type === "error" && message.code === "unauthenticated") {
+				this.options.invalidateToken(token);
 			}
 			this.options.onMessage(message);
 		});
 		socket.addEventListener("close", () => {
 			if (this.socket !== socket) return;
+			const opened = this.ready;
 			this.socket = undefined;
 			this.ready = false;
 			if (this.stopped) return;
-			this.options.onConnectionChange("disconnected");
-			const delay = Math.min(30_000, 1_000 * 2 ** this.reconnectAttempt);
-			this.reconnectAttempt += 1;
-			this.reconnectTimer = setTimeout(() => this.open(), delay);
+			if (opened) {
+				this.reconnect();
+				return;
+			}
+			this.handshakeFailed(generation);
 		});
 	}
 
-	private async authenticate(socket: WebSocket): Promise<void> {
-		let token: string | undefined;
-		try {
-			token = await this.options.getToken();
-		} catch {
-			token = undefined;
-		}
-		if (this.socket !== socket || this.stopped) return;
-		if (!token) {
-			socket.close(1008, "Authentication is required");
-			return;
-		}
-		this.token = token;
-		this.send({ type: "authenticate", token });
-		this.ready = true;
-		for (const subscription of this.subscriptions) {
-			this.send({ type: "subscribe", ...subscription });
-		}
+	// A failed handshake keeps growing the reconnect delay: only an opened
+	// socket resets it.
+	private handshakeFailed(generation: number): void {
+		this.options.onConnectionChange("disconnected");
+		void this.options
+			.checkSession()
+			.catch(() => undefined)
+			.then(() => {
+				if (generation === this.generation && !this.stopped) {
+					this.scheduleOpen();
+				}
+			});
+	}
+
+	private reconnect(): void {
+		this.options.onConnectionChange("disconnected");
+		this.scheduleOpen();
+	}
+
+	private scheduleOpen(): void {
+		const delay = Math.min(30_000, 1_000 * 2 ** this.reconnectAttempt);
+		this.reconnectAttempt += 1;
+		this.reconnectTimer = setTimeout(() => void this.open(), delay);
 	}
 
 	private send(message: LiveCandleClientMessage): void {

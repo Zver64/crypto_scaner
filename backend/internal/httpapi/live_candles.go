@@ -29,20 +29,25 @@ import (
 const (
 	maxLiveConnections        = 128
 	maxLiveConnectionsPerUser = 4
-	// maxUnauthenticatedLiveConnections bounds the sockets that have not
-	// authenticated yet. They never hold a slot of maxLiveConnections, so
-	// unauthenticated clients cannot take live charts from users.
-	maxUnauthenticatedLiveConnections = 16
-	clientWriteTimeout                = 5 * time.Second
-	clientPongTimeout                 = 60 * time.Second
-	clientPingPeriod                  = 25 * time.Second
-	clientAuthTimeout                 = 5 * time.Second
+	// liveCandleProtocol is the WebSocket subprotocol of live candles. The
+	// client offers it followed by its session token, which the handshake
+	// authenticates, so no unauthenticated socket is ever upgraded and the
+	// token never appears in the URL. The server selects only this protocol.
+	liveCandleProtocol = "crypto-scanner.live.v1"
+	clientWriteTimeout = 5 * time.Second
+	clientPongTimeout  = 60 * time.Second
+	clientPingPeriod   = 25 * time.Second
 	// sessionCheckPeriod bounds how long a connection outlives its session,
 	// for example after the user is deleted.
 	sessionCheckPeriod  = time.Minute
 	sessionCheckTimeout = 5 * time.Second
 	maxClientMessage    = 16 << 10
+	maxSymbolLength     = 32
 )
+
+// errSessionRequired rejects an API token: live candles need a Mini App
+// session.
+var errSessionRequired = errors.New("live candles need a Mini App session")
 
 type LiveCandles interface {
 	RegisterClient(marketlive.Client) bool
@@ -52,22 +57,23 @@ type LiveCandles interface {
 }
 
 type liveCandleHandler struct {
-	sessions    Sessions
-	service     LiveCandles
-	charts      ChartService
-	logger      *slog.Logger
-	upgrader    websocket.Upgrader
-	connections chan struct{}
-	pending     chan struct{}
-	userMu      sync.Mutex
-	userCounts  map[int64]int
+	sessions Sessions
+	service  LiveCandles
+	charts   ChartService
+	logger   *slog.Logger
+	upgrader websocket.Upgrader
+	// connectionsMu guards connections and userConnections, the slots
+	// reserved before an upgrade and released when its handler returns.
+	connectionsMu   sync.Mutex
+	connections     int
+	userConnections map[int64]int
 }
 
 func newLiveCandleHandler(sessions Sessions, service LiveCandles, charts ChartService, logger *slog.Logger) http.Handler {
-	handler := &liveCandleHandler{sessions: sessions, service: service, charts: charts, logger: logger, connections: make(chan struct{}, maxLiveConnections), pending: make(chan struct{}, maxUnauthenticatedLiveConnections), userCounts: make(map[int64]int)}
+	handler := &liveCandleHandler{sessions: sessions, service: service, charts: charts, logger: logger, userConnections: make(map[int64]int)}
 	// Chart snapshots are large, repetitive JSON; compressing them saves round
 	// trips on high-latency links, where TCP slow start dominates delivery.
-	handler.upgrader = websocket.Upgrader{HandshakeTimeout: 5 * time.Second, CheckOrigin: sameWebSocketOrigin, EnableCompression: true}
+	handler.upgrader = websocket.Upgrader{HandshakeTimeout: 5 * time.Second, CheckOrigin: sameWebSocketOrigin, EnableCompression: true, Subprotocols: []string{liveCandleProtocol}}
 	return handler
 }
 
@@ -81,33 +87,38 @@ func sameWebSocketOrigin(request *http.Request) bool {
 }
 
 func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, request *http.Request) {
-	select {
-	case handler.pending <- struct{}{}:
-	default:
-		http.Error(response, "Live connection limit reached", http.StatusServiceUnavailable)
-		return
-	}
-	connection, client, user, token, ok := handler.authenticate(response, request)
-	<-handler.pending
-	if connection == nil {
-		return
-	}
-	defer client.Close()
+	token, ok := liveCandleToken(request)
 	if !ok {
+		writeAPIError(response, http.StatusUnauthorized, "unauthenticated", authenticationRequiredMessage, nil)
 		return
 	}
-	select {
-	case handler.connections <- struct{}{}:
-		defer func() { <-handler.connections }()
-	default:
-		client.writeError("unavailable", "Live connection limit reached")
+	user, err := handler.authenticate(request.Context(), token)
+	if errors.Is(err, errSessionRequired) {
+		writeAPIError(response, http.StatusForbidden, "session_required", "Live candles need a Mini App session, not an API token", nil)
 		return
 	}
-	if !handler.acquireUser(user.ID) {
-		client.writeError("rate_limited", "Live connection limit exceeded")
+	if err != nil {
+		writeAuthenticationError(response, request, handler.logger, err)
 		return
 	}
-	defer handler.releaseUser(user.ID)
+	// Limits are checked before the upgrade, so a client at a limit sees a
+	// failed handshake instead of an open socket that closes at once.
+	switch handler.reserve(user.ID) {
+	case reservedUserLimit:
+		writeAPIError(response, http.StatusTooManyRequests, "rate_limited", "Live connection limit exceeded", nil)
+		return
+	case reservedServerLimit:
+		writeAPIError(response, http.StatusServiceUnavailable, "unavailable", "Live connection limit reached", nil)
+		return
+	}
+	defer handler.release(user.ID)
+	connection, err := handler.upgrader.Upgrade(response, request, nil)
+	if err != nil {
+		return
+	}
+	connection.SetReadLimit(maxClientMessage)
+	client := newLiveSocketClient(newRequestID(), connection)
+	defer client.Close()
 	subscriber := newChartClient(client, handler.charts, handler.logger)
 	// Chart streams may read storage until they stop, so the handler waits
 	// for them before it returns.
@@ -128,9 +139,6 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 	}()
 	// Closing the client unblocks the read loop; cancelling stops the watch.
 	defer func() { client.Close(); cancelWatch(); <-sessionWatched }()
-	if !client.enqueueWire(LiveCandleServerMessage{Type: Authenticated}) {
-		return
-	}
 	limiter := rate.NewLimiter(rate.Limit(10), 20)
 	for {
 		if !limiter.Allow() {
@@ -141,11 +149,7 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 		if err != nil {
 			return
 		}
-		if message.Type == Authenticate {
-			client.enqueueError("invalid_message", "The connection is already authenticated")
-			continue
-		}
-		if message.Symbol == nil || message.Interval == nil || strings.TrimSpace(*message.Symbol) == "" || !market.CandleInterval(*message.Interval).Valid() {
+		if message.Symbol == nil || message.Interval == nil || strings.TrimSpace(*message.Symbol) == "" || len(*message.Symbol) > maxSymbolLength || !market.CandleInterval(*message.Interval).Valid() {
 			client.enqueueError("invalid_argument", "A valid symbol and interval are required")
 			continue
 		}
@@ -201,29 +205,24 @@ func (handler *liveCandleHandler) ServeHTTP(response http.ResponseWriter, reques
 	}
 }
 
-// authenticate upgrades the request and reads its authenticate message. The
-// connection is nil when the upgrade failed; ok is false when authentication
-// failed, which has been reported to the client.
-func (handler *liveCandleHandler) authenticate(response http.ResponseWriter, request *http.Request) (connection *websocket.Conn, client *liveSocketClient, user auth.User, token string, ok bool) {
-	connection, err := handler.upgrader.Upgrade(response, request, nil)
-	if err != nil {
-		return nil, nil, auth.User{}, "", false
+// liveCandleToken reads the session token the client offers after
+// liveCandleProtocol in Sec-WebSocket-Protocol.
+func liveCandleToken(request *http.Request) (string, bool) {
+	protocols := websocket.Subprotocols(request)
+	if len(protocols) != 2 || protocols[0] != liveCandleProtocol || protocols[1] == "" {
+		return "", false
 	}
-	client = newLiveSocketClient(newRequestID(), connection)
-	connection.SetReadLimit(maxClientMessage)
-	_ = connection.SetReadDeadline(time.Now().Add(clientAuthTimeout))
-	message, err := readLiveClientMessage(connection)
-	if err != nil || message.Type != Authenticate || message.Token == nil {
-		client.writeError("unauthenticated", authenticationRequiredMessage)
-		return connection, client, auth.User{}, "", false
+	return protocols[1], true
+}
+
+// authenticate returns the user of a session token; it fails with
+// errSessionRequired for an API token.
+func (handler *liveCandleHandler) authenticate(ctx context.Context, token string) (auth.User, error) {
+	user, err := handler.sessions.Authenticate(ctx, token)
+	if err == nil && user.APIToken {
+		return auth.User{}, errSessionRequired
 	}
-	token = *message.Token
-	user, err = handler.sessions.Authenticate(request.Context(), token)
-	if err != nil {
-		handler.writeAuthenticationError(request.Context(), client, err)
-		return connection, client, auth.User{}, "", false
-	}
-	return connection, client, user, token, true
+	return user, err
 }
 
 // watchSession closes the connection once its session is no longer valid. It
@@ -239,47 +238,58 @@ func (handler *liveCandleHandler) watchSession(ctx context.Context, client *live
 			return
 		case <-ticker.C:
 			checkCtx, cancel := context.WithTimeout(ctx, sessionCheckTimeout)
-			_, err := handler.sessions.Authenticate(checkCtx, token)
+			_, err := handler.authenticate(checkCtx, token)
 			cancel()
 			if ctx.Err() != nil {
 				return
 			}
-			if err != nil {
-				handler.writeAuthenticationError(ctx, client, err)
+			switch {
+			case errors.Is(err, auth.ErrUnauthenticated), errors.Is(err, errSessionRequired):
+				client.writeError("unauthenticated", sessionInvalidMessage)
 				client.Close()
 				return
+			case err != nil:
+				// A failed check, such as a database outage, is retried on
+				// the next tick instead of closing every live chart.
+				handler.logger.InfoContext(ctx, "live candle session check failed", "module", "httpapi", "operation", "authenticate", "error", err)
 			}
 		}
 	}
 }
 
-func (handler *liveCandleHandler) writeAuthenticationError(ctx context.Context, client *liveSocketClient, err error) {
-	if errors.Is(err, auth.ErrUnauthenticated) {
-		client.writeError("unauthenticated", sessionInvalidMessage)
-		return
+type reservation int
+
+const (
+	reserved reservation = iota
+	reservedUserLimit
+	reservedServerLimit
+)
+
+// reserve takes a connection slot of the user unless the user or the server
+// is at its limit.
+func (handler *liveCandleHandler) reserve(userID int64) reservation {
+	handler.connectionsMu.Lock()
+	defer handler.connectionsMu.Unlock()
+	switch {
+	case handler.userConnections[userID] >= maxLiveConnectionsPerUser:
+		return reservedUserLimit
+	case handler.connections >= maxLiveConnections:
+		return reservedServerLimit
 	}
-	handler.logger.ErrorContext(ctx, "live candle authentication failed", "module", "httpapi", "operation", "authenticate", "error", err)
-	client.writeError("unavailable", "Live candles are temporarily unavailable")
+	handler.connections++
+	handler.userConnections[userID]++
+	return reserved
 }
 
-func (handler *liveCandleHandler) acquireUser(userID int64) bool {
-	handler.userMu.Lock()
-	defer handler.userMu.Unlock()
-	if handler.userCounts[userID] >= maxLiveConnectionsPerUser {
-		return false
-	}
-	handler.userCounts[userID]++
-	return true
-}
-
-func (handler *liveCandleHandler) releaseUser(userID int64) {
-	handler.userMu.Lock()
-	defer handler.userMu.Unlock()
-	if handler.userCounts[userID] <= 1 {
-		delete(handler.userCounts, userID)
+func (handler *liveCandleHandler) release(userID int64) {
+	handler.connectionsMu.Lock()
+	defer handler.connectionsMu.Unlock()
+	handler.connections--
+	if handler.userConnections[userID] <= 1 {
+		delete(handler.userConnections, userID)
 		return
 	}
-	handler.userCounts[userID]--
+	handler.userConnections[userID]--
 }
 
 func readLiveClientMessage(connection *websocket.Conn) (LiveCandleClientMessage, error) {

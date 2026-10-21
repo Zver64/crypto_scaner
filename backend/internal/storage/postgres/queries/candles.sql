@@ -143,5 +143,4 @@ WHERE instrument_id = ANY(sqlc.arg(instrument_ids)::bigint[])
   AND interval = sqlc.arg(interval)
   AND open_time >= sqlc.arg(from_time)
   AND open_time <= sqlc.arg(to_time)
-  AND close_time < sqlc.arg(closes_before)
 ORDER BY instrument_id, open_time;

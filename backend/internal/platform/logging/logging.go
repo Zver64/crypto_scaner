@@ -13,7 +13,8 @@ const redacted = "[REDACTED]"
 // Options are the optional logger settings.
 type Options struct {
 	// Forward receives a copy of every redacted record at warning level or
-	// above, with the attributes added through With. It must not block.
+	// above, with the attributes added through With, whatever the configured
+	// level. It must not block.
 	Forward func(slog.Record)
 }
 
@@ -33,8 +34,14 @@ type safeHandler struct {
 	attrs []slog.Attr
 }
 
+// Enabled reports levels the output writes and, with forwarding, every
+// warning or above, because the configured level limits only the output.
 func (h *safeHandler) Enabled(ctx context.Context, level slog.Level) bool {
-	return h.next.Enabled(ctx, level)
+	return h.forwards(level) || h.next.Enabled(ctx, level)
+}
+
+func (h *safeHandler) forwards(level slog.Level) bool {
+	return h.forward != nil && level >= slog.LevelWarn
 }
 
 func (h *safeHandler) Handle(ctx context.Context, record slog.Record) error {
@@ -43,10 +50,13 @@ func (h *safeHandler) Handle(ctx context.Context, record slog.Record) error {
 		safeRecord.AddAttrs(h.cleanAttr(attr))
 		return true
 	})
-	if h.forward != nil && record.Level >= slog.LevelWarn {
+	if h.forwards(record.Level) {
 		forwarded := safeRecord.Clone()
 		forwarded.AddAttrs(h.attrs...)
 		h.forward(forwarded)
+	}
+	if !h.next.Enabled(ctx, record.Level) {
+		return nil
 	}
 	return h.next.Handle(ctx, safeRecord)
 }

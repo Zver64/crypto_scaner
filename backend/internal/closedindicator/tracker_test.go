@@ -324,7 +324,8 @@ func TestTrackerLoadsAFailedWindowOnTheNextStep(t *testing.T) {
 }
 
 // A failed calculation keeps its histories dirty, without a timer: the next
-// round of their interval recalculates them.
+// round of their interval recalculates them, not a step another change
+// starts, and it is warned about once.
 func TestTrackerRecalculatesAFailedCalculationOnTheNextRound(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fail := &atomic.Bool{}
@@ -344,8 +345,14 @@ func TestTrackerRecalculatesAFailedCalculationOnTheNextRound(t *testing.T) {
 		if open, _ := latest(); !open.Equal(windowStart) {
 			t.Fatalf("after the failure: %s", open)
 		}
+		tracker.Subscribe("other", nil)
+		tracker.HistorySynced(market.IntervalHour)
+		if latest(); tracker.warnings.count.Load() != 1 {
+			t.Fatalf("warnings = %d, want 1 while the pair keeps failing", tracker.warnings.count.Load())
+		}
 		fail.Store(false)
 		time.Sleep(time.Hour)
+		tracker.Subscribe("other", nil)
 		if open, _ := latest(); !open.Equal(windowStart) {
 			t.Fatalf("recalculated without a round: %s", open)
 		}
@@ -499,8 +506,9 @@ func TestTrackerKeepsWindowsCurrentWithoutTheStore(t *testing.T) {
 		if open, close := latest(); !open.Equal(next) || close != 4 || store.readCount() != 1 {
 			t.Fatalf("after a correction: %s close %v, reads %d", open, close, store.readCount())
 		}
-		pair.Points = 3
-		tracker.Subscribe("test", []closedindicator.Subscription{pair})
+		deeper := pair
+		deeper.Points = 3
+		tracker.Subscribe("test", []closedindicator.Subscription{pair, deeper})
 		if open, close := latest(); !open.Equal(next) || close != 4 || store.readCount() != 2 {
 			t.Fatalf("after a deeper subscription: %s close %v, reads %d", open, close, store.readCount())
 		}
@@ -536,8 +544,24 @@ func windowBar(open time.Time, close float64) market.Candle {
 // runningTracker is a tracker whose Run stops with stop.
 type runningTracker struct {
 	*closedindicator.Tracker
-	stop func()
+	stop     func()
+	warnings *warningCounter
 }
+
+// warningCounter is a log handler counting WARN and higher records.
+type warningCounter struct{ count atomic.Int64 }
+
+func (*warningCounter) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= slog.LevelWarn
+}
+
+func (counter *warningCounter) Handle(context.Context, slog.Record) error {
+	counter.count.Add(1)
+	return nil
+}
+
+func (counter *warningCounter) WithAttrs([]slog.Attr) slog.Handler { return counter }
+func (counter *warningCounter) WithGroup(string) slog.Handler      { return counter }
 
 // newWindowTracker runs a tracker over a store holding one hourly candle and
 // returns a pair of its candles and a reader of the pair's latest close.
@@ -556,7 +580,8 @@ func runWindowTracker(t *testing.T, registry *indicator.Registry) (runningTracke
 	t.Helper()
 	store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
 	store.add(windowBar(windowStart, 2))
-	tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
+	warnings := &warningCounter{}
+	tracker, err := closedindicator.New(store, registry, nil, slog.New(warnings))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -574,5 +599,81 @@ func runWindowTracker(t *testing.T, registry *indicator.Registry) (runningTracke
 		}
 		return values[0].OpenTime, 0
 	}
-	return runningTracker{tracker, func() { cancel(); <-done }}, store, pair, latest
+	return runningTracker{tracker, func() { cancel(); <-done }, warnings}, store, pair, latest
+}
+
+// A table value whose calculation fails leaves the other values of the
+// request served and cached, and is warned about once while it fails.
+func TestLatestServesThePairsThatCalculate(t *testing.T) {
+	registry, err := indicator.NewRegistry(candle.New(), brokenModule{candle.New()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	working := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}
+	broken := working
+	broken.Selection.Type = brokenType
+	store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
+	store.add(windowBar(windowStart, 2))
+	warnings := &warningCounter{}
+	tracker, err := closedindicator.New(store, registry, []closedindicator.Target{working, broken}, slog.New(warnings))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		values := tracker.Latest(context.Background(), []int64{1})[1]
+		if len(values[0].Outputs) == 0 || len(values[1].Outputs) != 0 {
+			t.Fatalf("values = %+v, want only the working one", values)
+		}
+	}
+	if _, missing := tracker.Snapshot([]closedindicator.Subscription{{InstrumentID: 1, Target: working}}); len(missing) != 0 {
+		t.Fatal("the working value is not cached")
+	}
+	if count := warnings.count.Load(); count != 1 {
+		t.Fatalf("warnings = %d, want 1", count)
+	}
+}
+
+// A read that fails because the caller left neither warns nor marks the
+// pair failing, so a later real failure is warned about.
+func TestLatestIgnoresTheCallerLeaving(t *testing.T) {
+	registry, err := indicator.NewRegistry(candle.New())
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}
+	store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}, failures: 1}
+	warnings := &warningCounter{}
+	tracker, err := closedindicator.New(store, registry, []closedindicator.Target{target}, slog.New(warnings))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	tracker.Latest(ctx, []int64{1})
+	if count := warnings.count.Load(); count != 0 {
+		t.Fatalf("warnings after the caller left = %d, want 0", count)
+	}
+	store.failures = 1
+	tracker.Latest(context.Background(), []int64{1})
+	if count := warnings.count.Load(); count != 1 {
+		t.Fatalf("warnings after a real failure = %d, want 1", count)
+	}
+}
+
+// An invalid target is warned about when it becomes invalid, not on every
+// resubscription.
+func TestTrackerWarnsAboutAnInvalidTargetOnce(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		tracker, _, pair, _ := newWindowTracker(t)
+		defer tracker.stop()
+		invalid := pair
+		invalid.Target.Interval = "2h"
+		for range 2 {
+			tracker.Subscribe("test", []closedindicator.Subscription{pair, invalid})
+		}
+		synctest.Wait()
+		if count := tracker.warnings.count.Load(); count != 1 {
+			t.Fatalf("warnings = %d, want 1", count)
+		}
+	})
 }

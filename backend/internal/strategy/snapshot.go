@@ -95,7 +95,7 @@ func (current snapshot) advance(entry Entry, instrumentID int64, state TradeStat
 // candle returns the latest closed candle of the interval of entry on one
 // instrument, when it is fresh.
 func (current snapshot) candle(entry Entry, instrumentID int64) (closedindicator.Value, bool) {
-	position, ok := current.reads.positions[pair{instrumentID, CandleTarget(entry.Interval).Key()}]
+	position, ok := current.reads.position(entry.ID, instrumentID, instrumentID, CandleTarget(entry.Interval).Key())
 	if !ok || !current.values[position].OpenTime.Equal(entry.Interval.LastClosedOpenTime(current.now)) {
 		return closedindicator.Value{}, false
 	}
@@ -129,14 +129,15 @@ func (current snapshot) price(expression *Expression, entry Entry, instrumentID 
 // output returns the fresh output read reads of the evaluated instrument or
 // of the instrument read names. Values whose latest candle is older are stale
 // and left out.
-func (current snapshot) output(entry Entry, read Read, instrumentID int64) (closedindicator.Output, bool) {
+func (current snapshot) output(entry Entry, read Read, evaluated int64) (closedindicator.Output, bool) {
+	instrumentID := evaluated
 	if read.Symbol != "" {
 		var ok bool
 		if instrumentID, ok = current.bySymbol[read.Symbol]; !ok {
 			return closedindicator.Output{}, false
 		}
 	}
-	position, ok := current.reads.positions[pair{instrumentID, current.reads.keys[entry.ID][read.Variable.Name]}]
+	position, ok := current.reads.position(entry.ID, evaluated, instrumentID, current.reads.keys[entry.ID][read.Variable.Name])
 	if !ok {
 		return closedindicator.Output{}, false
 	}
@@ -158,57 +159,94 @@ type pair struct {
 	target       string
 }
 
+// slot identifies a pair read in the evaluation of one instrument.
+type slot struct {
+	evaluated int64
+	pair
+}
+
 // reads are the values strategies read in one round.
 type reads struct {
-	// subscriptions are the distinct pairs, each with the points its deepest
-	// read needs.
+	// subscriptions are the distinct subscriptions; the evaluation of each
+	// instrument by each strategy reads a pair with the points its own
+	// deepest read of that pair needs, as the backtest of that instrument
+	// does, so no other evaluation's deeper reads change its values.
 	subscriptions []closedindicator.Subscription
-	positions     map[pair]int
+	// positions finds, for each strategy, the subscription of every slot it
+	// reads.
+	positions map[uuid.UUID]map[slot]int
 	// keys maps the variables of each strategy to the keys of their targets.
 	keys map[uuid.UUID]map[string]string
 }
 
-// readsOf subscribes every read of the evaluated instrument on each
-// instrument evaluated lists among active for its strategy, and every read
-// through of only on the instrument it names among active.
+// position finds the subscription strategy reads for the target key of
+// instrumentID when it evaluates evaluated.
+func (all reads) position(strategy uuid.UUID, evaluated, instrumentID int64, key string) (int, bool) {
+	position, ok := all.positions[strategy][slot{evaluated, pair{instrumentID, key}}]
+	return position, ok
+}
+
+// readsOf subscribes, for each instrument evaluated lists among active for
+// its strategy, every read of the evaluated instrument on it and every read
+// through of on the instrument it names among active. Points are merged only
+// within the evaluation of one instrument, as its backtest merges them;
+// evaluations share a subscription only when it is identical.
 func readsOf(strategies []Entry, evaluated func(Entry, []Instrument) []Instrument, active []Instrument) reads {
-	result := reads{positions: map[pair]int{}, keys: make(map[uuid.UUID]map[string]string, len(strategies))}
+	result := reads{positions: make(map[uuid.UUID]map[slot]int, len(strategies)), keys: make(map[uuid.UUID]map[string]string, len(strategies))}
 	symbols := bySymbol(active)
-	subscribe := func(instrumentID int64, read Read, key string) {
-		at := pair{instrumentID, key}
-		position, ok := result.positions[at]
-		if !ok {
-			position = len(result.subscriptions)
-			result.positions[at] = position
-			result.subscriptions = append(result.subscriptions, closedindicator.Subscription{InstrumentID: instrumentID, Target: read.Variable.Target})
-		}
-		result.subscriptions[position].Points = max(result.subscriptions[position].Points, read.Shift+1)
+	type identity struct {
+		pair
+		points int
 	}
+	shared := map[identity]int{}
 	for _, entry := range strategies {
-		instruments := evaluated(entry, active)
 		keys := map[string]string{}
-		result.keys[entry.ID] = keys
-		// The candles of the interval of entry price its trades.
-		candles := Read{Variable: Variable{Target: CandleTarget(entry.Interval)}}
-		for _, instrument := range instruments {
-			subscribe(instrument.ID, candles, candles.Variable.Target.Key())
-		}
 		for _, read := range entry.reads {
-			key, ok := keys[read.Variable.Name]
-			if !ok {
-				key = read.Variable.Target.Key()
-				keys[read.Variable.Name] = key
-			}
-			if read.Symbol != "" {
-				if id, ok := symbols[read.Symbol]; ok {
-					subscribe(id, read, key)
-				}
-				continue
-			}
-			for _, instrument := range instruments {
-				subscribe(instrument.ID, read, key)
+			if _, ok := keys[read.Variable.Name]; !ok {
+				keys[read.Variable.Name] = read.Variable.Target.Key()
 			}
 		}
+		result.keys[entry.ID] = keys
+		positions := map[slot]int{}
+		// The candles of the interval of entry price its trades.
+		candles := CandleTarget(entry.Interval)
+		for _, instrument := range evaluated(entry, active) {
+			// order keeps the pairs in the order first read, so the
+			// subscriptions are deterministic.
+			var order []pair
+			points := map[pair]int{}
+			targets := map[string]closedindicator.Target{}
+			need := func(instrumentID int64, target closedindicator.Target, key string, shift int) {
+				at := pair{instrumentID, key}
+				if _, ok := points[at]; !ok {
+					order = append(order, at)
+				}
+				points[at] = max(points[at], shift+1)
+				targets[key] = target
+			}
+			need(instrument.ID, candles, candles.Key(), 0)
+			for _, read := range entry.reads {
+				id := instrument.ID
+				if read.Symbol != "" {
+					var ok bool
+					if id, ok = symbols[read.Symbol]; !ok {
+						continue
+					}
+				}
+				need(id, read.Variable.Target, keys[read.Variable.Name], read.Shift)
+			}
+			for _, at := range order {
+				id := identity{at, points[at]}
+				position, ok := shared[id]
+				if !ok {
+					position = len(result.subscriptions)
+					shared[id] = position
+					result.subscriptions = append(result.subscriptions, closedindicator.Subscription{InstrumentID: at.instrumentID, Target: targets[at.target], Points: points[at]})
+				}
+				positions[slot{instrument.ID, at}] = position
+			}
+		}
+		result.positions[entry.ID] = positions
 	}
 	return result
 }

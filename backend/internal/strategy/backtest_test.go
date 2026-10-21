@@ -426,7 +426,117 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 		t.Fatalf("at() warm = %v, error = %v", warm, err)
 	}
 
-	tracked := snapshot{reads: readsOf([]Entry{entry}, func(Entry, []Instrument) []Instrument { return instruments }, instruments), bySymbol: bySymbol(instruments), now: now}
+	tracked := trackedSnapshot(t, store, registry, []Entry{entry}, instruments, now)
+
+	for _, read := range compiled.Reads() {
+		want, wantOK := tracked.output(entry, read, 1)
+		got, gotOK := replayed.output(entry, read, 1)
+		if !wantOK || !gotOK {
+			t.Fatalf("%s: tracked fresh = %v, replayed fresh = %v", read.Variable.Name, wantOK, gotOK)
+		}
+		wantValue, wantKnown := want.At(read.Shift)
+		gotValue, gotKnown := got.At(read.Shift)
+		if wantValue != gotValue || wantKnown != gotKnown || !wantKnown {
+			t.Fatalf("%s shift %d of %q = %v (%v), tracked %v (%v)", read.Variable.Name, read.Shift, read.Symbol, gotValue, gotKnown, wantValue, wantKnown)
+		}
+	}
+	wantResult, wantKnown, _ := tracked.match(compiled, entry, 1, nil)
+	gotResult, gotKnown, _ := replayed.match(compiled, entry, 1, nil)
+	if gotResult != wantResult || gotKnown != wantKnown || !wantKnown {
+		t.Fatalf("replayed match = %v (%v), tracked %v (%v)", gotResult, gotKnown, wantResult, wantKnown)
+	}
+}
+
+// Strategies reading one target with different prev depths each get the
+// values of their own backtest, however deep the other one reads.
+func TestTrackedValuesOfEachStrategyMatchItsBacktest(t *testing.T) {
+	registry := testRegistry(t)
+	indicators := testIndicators{entries: []scannerindicator.Entry{testEMA(t, registry, 1, market.IntervalHour, 10)}}
+	var hourly []market.Candle
+	for index := range 700 {
+		hourly = append(hourly, testCandle(1, market.IntervalHour, backtestHour(index), 100+10*math.Sin(float64(index)/7)))
+	}
+	store := newBacktestStore(market.IntervalHour, hourly)
+	instruments := []Instrument{{ID: 1, Symbol: "BTCUSDT"}}
+	var entries []Entry
+	for index, source := range []string{"h_ema_10 > prev(h_ema_10)", "h_ema_10 > prev(h_ema_10, 400)"} {
+		compiled, err := Compile(source, Variables(indicators.entries))
+		if err != nil {
+			t.Fatal(err)
+		}
+		entries = append(entries, Entry{Strategy: Strategy{ID: testID(byte(index + 1)), Enabled: true}, Compiled: compiled, Interval: market.IntervalHour, reads: compiled.Reads()})
+	}
+	now := backtestHour(len(hourly))
+	tracked := trackedSnapshot(t, store, registry, entries, instruments, now)
+	for _, entry := range entries {
+		replay, err := newReplay(registry, entry, instruments[0], instruments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		replay.histories = store.candles
+		replayed, warm, err := replay.at(now)
+		if err != nil || !warm {
+			t.Fatalf("at() warm = %v, error = %v", warm, err)
+		}
+		for _, read := range entry.reads {
+			want, _ := replayed.output(entry, read, 1)
+			got, _ := tracked.output(entry, read, 1)
+			wantValue, wantKnown := want.At(read.Shift)
+			gotValue, gotKnown := got.At(read.Shift)
+			if gotValue != wantValue || gotKnown != wantKnown || !wantKnown {
+				t.Fatalf("strategy %s: %s shift %d tracked %v (%v), backtest %v (%v)", entry.ID, read.Variable.Name, read.Shift, gotValue, gotKnown, wantValue, wantKnown)
+			}
+		}
+	}
+}
+
+// A value read through of on a coin the strategy also evaluates keeps the
+// depth of the backtest of each coin, however deep that coin reads its own.
+func TestTrackedValuesReadThroughOfMatchTheBacktestOfEachCoin(t *testing.T) {
+	registry := testRegistry(t)
+	indicators := testIndicators{entries: []scannerindicator.Entry{testEMA(t, registry, 1, market.IntervalHour, 10)}}
+	var btc, eth []market.Candle
+	for index := range 700 {
+		btc = append(btc, testCandle(1, market.IntervalHour, backtestHour(index), 100+10*math.Sin(float64(index)/7)))
+		eth = append(eth, testCandle(2, market.IntervalHour, backtestHour(index), 50+5*math.Cos(float64(index)/5)))
+	}
+	store := newBacktestStore(market.IntervalHour, btc)
+	store.candles[market.IntervalHour][2] = eth
+	instruments := []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}}
+	compiled, err := Compile(`h_ema_10 > prev(h_ema_10, 400) && of("BTCUSDT", h_ema_10) > 0`, Variables(indicators.entries))
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := Entry{Strategy: Strategy{ID: testID(1), Enabled: true}, Compiled: compiled, Interval: market.IntervalHour, reads: compiled.Reads()}
+	now := backtestHour(len(btc))
+	tracked := trackedSnapshot(t, store, registry, []Entry{entry}, instruments, now)
+	for _, instrument := range instruments {
+		replay, err := newReplay(registry, entry, instrument, instruments)
+		if err != nil {
+			t.Fatal(err)
+		}
+		replay.histories = store.candles
+		replayed, warm, err := replay.at(now)
+		if err != nil || !warm {
+			t.Fatalf("at() warm = %v, error = %v", warm, err)
+		}
+		for _, read := range entry.reads {
+			want, _ := replayed.output(entry, read, instrument.ID)
+			got, _ := tracked.output(entry, read, instrument.ID)
+			wantValue, wantKnown := want.At(read.Shift)
+			gotValue, gotKnown := got.At(read.Shift)
+			if gotValue != wantValue || gotKnown != wantKnown || !wantKnown {
+				t.Fatalf("%s: %s shift %d of %q tracked %v (%v), backtest %v (%v)", instrument.Symbol, read.Variable.Name, read.Shift, read.Symbol, gotValue, gotKnown, wantValue, wantKnown)
+			}
+		}
+	}
+}
+
+// trackedSnapshot is the snapshot the monitor evaluates strategies with at
+// now, once a running tracker has calculated everything they read.
+func trackedSnapshot(t *testing.T, store *backtestStore, registry *indicator.Registry, strategies []Entry, instruments []Instrument, now time.Time) snapshot {
+	t.Helper()
+	tracked := snapshot{reads: readsOf(strategies, func(Entry, []Instrument) []Instrument { return instruments }, instruments), bySymbol: bySymbol(instruments), now: now}
 	tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
@@ -447,31 +557,13 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 	for {
 		var missing []closedindicator.Target
 		if tracked.values, missing = tracker.Snapshot(tracked.reads.subscriptions); len(missing) == 0 {
-			break
+			return tracked
 		}
 		select {
 		case <-changed:
 		case <-deadline:
 			t.Fatalf("tracker values missing: %v", missing)
 		}
-	}
-
-	for _, read := range compiled.Reads() {
-		want, wantOK := tracked.output(entry, read, 1)
-		got, gotOK := replayed.output(entry, read, 1)
-		if !wantOK || !gotOK {
-			t.Fatalf("%s: tracked fresh = %v, replayed fresh = %v", read.Variable.Name, wantOK, gotOK)
-		}
-		wantValue, wantKnown := want.At(read.Shift)
-		gotValue, gotKnown := got.At(read.Shift)
-		if wantValue != gotValue || wantKnown != gotKnown || !wantKnown {
-			t.Fatalf("%s shift %d of %q = %v (%v), tracked %v (%v)", read.Variable.Name, read.Shift, read.Symbol, gotValue, gotKnown, wantValue, wantKnown)
-		}
-	}
-	wantResult, wantKnown, _ := tracked.match(compiled, entry, 1, nil)
-	gotResult, gotKnown, _ := replayed.match(compiled, entry, 1, nil)
-	if gotResult != wantResult || gotKnown != wantKnown || !wantKnown {
-		t.Fatalf("replayed match = %v (%v), tracked %v (%v)", gotResult, gotKnown, wantResult, wantKnown)
 	}
 }
 

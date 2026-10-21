@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.2.0](https://github.com/Zver64/crypto_scaner/compare/v4.1.0...v4.2.0) (2026-10-21)
+
+
+### Features
+
+* draw calculator grid levels on the coin chart ([727023a](https://github.com/Zver64/crypto_scaner/commit/727023aca8867134ed8693aac526d7bb0b424d84))
+
 ## [4.1.0](https://github.com/Zver64/crypto_scaner/compare/v4.0.0...v4.1.0) (2026-10-21)
 
 

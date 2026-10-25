@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.3.0](https://github.com/Zver64/crypto_scaner/compare/v4.2.0...v4.3.0) (2026-10-25)
+
+
+### Features
+
+* raise the futures grid maximum leverage from 3 to 15 ([0fb90a6](https://github.com/Zver64/crypto_scaner/commit/0fb90a6b8c776086c871839509aa631885a30271))
+
+
+### Bug Fixes
+
+* keep the grid on the chart when switching calculator tabs ([d01be17](https://github.com/Zver64/crypto_scaner/commit/d01be17b04c00ada7702e61a5ee3303afe154ef1))
+
 ## [4.2.0](https://github.com/Zver64/crypto_scaner/compare/v4.1.0...v4.2.0) (2026-10-21)
 
 

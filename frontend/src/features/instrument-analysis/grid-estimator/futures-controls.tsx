@@ -5,6 +5,8 @@ import { DIRECTION_OPTIONS } from "@/features/instrument-analysis/grid-estimator
 import { FUTURES_GRID_MAX_LEVERAGE } from "@/utils/calculator/futures-grid";
 import type { PositionDirection } from "@/utils/calculator/types";
 
+const LEVERAGE_SCALE_VALUES = [1, 5, 10, FUTURES_GRID_MAX_LEVERAGE];
+
 interface FuturesControlsProps {
 	direction: PositionDirection;
 	disabled: boolean;
@@ -38,13 +40,10 @@ export function FuturesControls({
 				max={FUTURES_GRID_MAX_LEVERAGE}
 				min={1}
 				onChange={onLeverageChange}
-				scaleLabels={Array.from(
-					{ length: FUTURES_GRID_MAX_LEVERAGE },
-					(_, index) => ({
-						label: `${index + 1}×`,
-						position: (index / (FUTURES_GRID_MAX_LEVERAGE - 1)) * 100,
-					}),
-				)}
+				scaleLabels={LEVERAGE_SCALE_VALUES.map((value) => ({
+					label: `${value}×`,
+					position: ((value - 1) / (FUTURES_GRID_MAX_LEVERAGE - 1)) * 100,
+				}))}
 				step={1}
 				value={leverage}
 			/>

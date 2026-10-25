@@ -102,7 +102,7 @@ describe("calculateFuturesGrid", () => {
 
 	it.each([
 		{ ...longFixture, leverage: 0 },
-		{ ...longFixture, leverage: 4 },
+		{ ...longFixture, leverage: 16 },
 		{ ...longFixture, currentPrice: 0 },
 		{ ...longFixture, currentPrice: Number.NaN },
 		{ ...longFixture, upperPrice: "100" },

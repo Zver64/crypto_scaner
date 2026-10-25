@@ -18,7 +18,7 @@ export const FUTURES_GRID_FEE_RATE = new GridDecimal("0.0002");
 // A general maintenance margin rate rather than a per-symbol exchange bracket,
 // conservative for most symbols' first bracket.
 export const FUTURES_GRID_MAINTENANCE_MARGIN_RATE = new GridDecimal("0.01");
-export const FUTURES_GRID_MAX_LEVERAGE = 3;
+export const FUTURES_GRID_MAX_LEVERAGE = 15;
 
 // Linear contracts are margined and settled in the quote currency; inverse
 // contracts have a fixed USD notional and are margined and settled in the coin.

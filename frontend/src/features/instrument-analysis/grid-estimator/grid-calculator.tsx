@@ -12,9 +12,10 @@ interface GridCalculatorProps extends GridEstimatorProps {
 	paperPadding: string;
 }
 
-// Spot, USDT-M, and COIN-M grid calculators in tabs. Inactive panels stay mounted, so
-// each calculator keeps its inputs across tab switches. Reports the price
-// levels of the selected tab's grid.
+// Spot, USDT-M, and COIN-M grid calculators in tabs. Inactive panels stay mounted
+// and keep their effects running (display-none, not Activity), so each
+// calculator keeps its inputs and has reported its levels before its tab is
+// selected. Reports the price levels of the selected tab's grid.
 export function GridCalculator({
 	onPriceLevelsChange,
 	paperPadding,
@@ -53,7 +54,11 @@ export function GridCalculator({
 						Calculator
 					</Title>
 				</Center>
-				<Tabs onChange={selectMarket} value={market}>
+				<Tabs
+					keepMountedMode="display-none"
+					onChange={selectMarket}
+					value={market}
+				>
 					<Tabs.List grow>
 						{GRID_MARKET_TABS.map(({ label, value }) => (
 							<Tabs.Tab key={value} value={value}>

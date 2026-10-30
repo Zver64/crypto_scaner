@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.5.0](https://github.com/Zver64/crypto_scaner/compare/v4.4.0...v4.5.0) (2026-10-30)
+
+
+### Features
+
+* **backend:** star and list favorite coins first in strategy alerts ([f7a9ea9](https://github.com/Zver64/crypto_scaner/commit/f7a9ea9b714834b90bfc75b19f5bf676488bc9bf))
+
 ## [4.4.0](https://github.com/Zver64/crypto_scaner/compare/v4.3.0...v4.4.0) (2026-10-30)
 
 

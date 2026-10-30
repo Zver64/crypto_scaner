@@ -15,7 +15,7 @@ const criteria = {
 	hourlyPeriod: 72,
 	minimumMarketCapMillions: 1,
 	minimumRangePercent: 5.5,
-	percentile: 70,
+	percentile: 75,
 	period: 12,
 };
 
@@ -25,7 +25,7 @@ const search = {
 	hourly_period: 72,
 	minimum_market_cap_millions: 1,
 	minimum_range_percent: 5.5,
-	percentile: 70,
+	percentile: 75,
 	period: 12,
 };
 
@@ -51,11 +51,11 @@ describe("scan criteria URL state", () => {
 		],
 		[
 			"percentile",
-			[undefined, "30", -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "30", -1, 0.5, 85, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 		[
 			"minimum_range_percent",
-			[undefined, "30", -1, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "30", -1, 10.1, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 		[
 			"hourly_period",
@@ -63,11 +63,11 @@ describe("scan criteria URL state", () => {
 		],
 		[
 			"hourly_percentile",
-			[undefined, "30", -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "30", -1, 0.5, 85, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 		[
 			"hourly_minimum_range_percent",
-			[undefined, "30", -1, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "30", -1, 3.1, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 	] as const)("rejects missing or invalid %s", (field, values) => {
 		for (const value of values) {
@@ -95,12 +95,12 @@ describe("scan criteria URL state", () => {
 	it("accepts valid daily and hourly limits and rejects values past them", () => {
 		const boundaries = {
 			...search,
-			hourly_minimum_range_percent: 0,
-			hourly_percentile: 100,
+			hourly_minimum_range_percent: 3,
+			hourly_percentile: 95,
 			hourly_period: 2000,
 			minimum_market_cap_millions: 0,
 			minimum_range_percent: 0,
-			percentile: 0,
+			percentile: 75,
 			period: 2000,
 		};
 		expect(parseOptionalScanCriteriaSearch(boundaries)).toEqual(boundaries);

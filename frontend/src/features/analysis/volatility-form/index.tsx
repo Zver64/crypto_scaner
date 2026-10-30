@@ -2,7 +2,11 @@ import { Fieldset, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 
 import { withFieldGroup } from "@/components/form";
-import { analysisCriteriaConstraints } from "@/features/analysis/criteria";
+import { applicationConfig } from "@/config";
+import {
+	type AnalysisUnit,
+	analysisCriteriaConstraints,
+} from "@/features/analysis/criteria";
 import { presetOptions } from "@/features/analysis/volatility-form/utils";
 import type { VolatilitySettingsDraft } from "@/features/analysis/volatility-settings-form/types";
 
@@ -17,23 +21,19 @@ interface VolatilityFieldsProps {
 	// Fields of the criterion's own, shown after the shared ones.
 	children?: ReactNode;
 	legend: string;
-	percentilePresets: readonly number[];
-	periodPresets: readonly number[];
+	unit: AnalysisUnit;
 }
 
 // One volatility criterion: its period and percentile, followed by any
-// fields of its own. The form validates them.
+// fields of its own, with the unit's presets. The percentile takes only its
+// presets. The form validates them.
 export const VolatilityFields = withFieldGroup({
 	defaultValues: volatilityDraft,
 	// Only types the props; every caller passes them.
 	props: {} as VolatilityFieldsProps,
-	render: function VolatilityFields({
-		children,
-		group,
-		legend,
-		percentilePresets,
-		periodPresets,
-	}) {
+	render: function VolatilityFields({ children, group, legend, unit }) {
+		const { percentilePresets } = applicationConfig.volatility;
+		const { periodPresets } = applicationConfig.volatility[unit];
 		return (
 			<Fieldset legend={legend}>
 				<Stack gap="xs">
@@ -50,12 +50,12 @@ export const VolatilityFields = withFieldGroup({
 					</group.AppField>
 					<group.AppField name="percentile">
 						{(field) => (
-							<field.NumberField
-								allowDecimal={false}
+							<field.SliderField
 								label="Percentile"
-								max={analysisCriteriaConstraints.percentile.maximum}
-								min={analysisCriteriaConstraints.percentile.minimum}
-								presets={presetOptions(percentilePresets)}
+								marks={presetOptions(percentilePresets)}
+								max={Math.max(...percentilePresets)}
+								min={Math.min(...percentilePresets)}
+								restrictToMarks
 							/>
 						)}
 					</group.AppField>

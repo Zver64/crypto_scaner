@@ -40,20 +40,19 @@ export function MarketScanForm({
 }: MarketScanFormProps) {
 	const contentSpacing = useMatches({ base: "xs", sm: "sm" });
 	const paperPadding = useMatches({ base: "xs", sm: "md" });
-	const volatilityPresets = applicationConfig.volatility;
 	// The daily and the hourly criterion, each with its own candle range.
 	const volatilityCriteria = [
 		{
 			fields: { percentile: "percentile", period: "period" },
 			legend: "Daily Volatility",
-			presets: volatilityPresets.days,
 			rangeField: "minimumRangePercent",
+			unit: "days",
 		},
 		{
 			fields: { percentile: "hourlyPercentile", period: "hourlyPeriod" },
 			legend: "Hourly Volatility",
-			presets: volatilityPresets.hours,
 			rangeField: "hourlyMinimumRangePercent",
+			unit: "hours",
 		},
 	] as const;
 	// The inputs may hold strings while being typed.
@@ -81,23 +80,35 @@ export function MarketScanForm({
 							form={form}
 							key={criterion.legend}
 							legend={criterion.legend}
-							percentilePresets={volatilityPresets.percentilePresets}
-							periodPresets={criterion.presets.periodPresets}
+							unit={criterion.unit}
 						>
 							<form.AppField name={criterion.rangeField}>
-								{(field) => (
-									<field.NumberField
-										decimalScale={10}
-										label="Candle Range (%)"
-										min={
-											marketScanCriteriaConstraints.minimumRangePercent.minimum
-										}
-										presets={presetOptions(
-											criterion.presets.candleRangePresets,
-										)}
-										step={0.1}
-									/>
-								)}
+								{(field) => {
+									const { candleRangeMaximum, candleRangePresets } =
+										applicationConfig.volatility[criterion.unit];
+									return (
+										<field.SliderField
+											label="Candle Range (%)"
+											// The minimum range lets every candle pass.
+											marks={[
+												{
+													label: "Off",
+													value:
+														marketScanCriteriaConstraints.minimumRangePercent
+															.minimum,
+												},
+												...presetOptions(candleRangePresets),
+											]}
+											max={candleRangeMaximum}
+											min={
+												marketScanCriteriaConstraints.minimumRangePercent
+													.minimum
+											}
+											precision={1}
+											step={0.1}
+										/>
+									);
+								}}
 							</form.AppField>
 						</VolatilityFields>
 					))}

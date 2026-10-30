@@ -7,7 +7,6 @@ import {
 } from "@mantine/core";
 
 import { useAppForm } from "@/components/form";
-import { applicationConfig } from "@/config";
 import { volatilitySettingsSchema } from "@/features/analysis/schemas";
 import { VolatilityFields } from "@/features/analysis/volatility-form";
 import type {
@@ -33,7 +32,6 @@ export function VolatilitySettingsForm({
 }: VolatilitySettingsFormProps) {
 	const spacing = useMatches({ base: "xs", sm: "sm" });
 	const padding = useMatches({ base: "xs", sm: "md" });
-	const presets = applicationConfig.volatility;
 	// The inputs may hold strings while being typed.
 	const defaultValues: VolatilitySettingsDraft = initialSettings;
 	const form = useAppForm({
@@ -56,15 +54,13 @@ export function VolatilitySettingsForm({
 						fields={{ percentile: "percentile", period: "period" }}
 						form={form}
 						legend="Daily Volatility"
-						percentilePresets={presets.percentilePresets}
-						periodPresets={presets.days.periodPresets}
+						unit="days"
 					/>
 					<VolatilityFields
 						fields={{ percentile: "hourlyPercentile", period: "hourlyPeriod" }}
 						form={form}
 						legend="Hourly Volatility"
-						percentilePresets={presets.percentilePresets}
-						periodPresets={presets.hours.periodPresets}
+						unit="hours"
 					/>
 				</SimpleGrid>
 				<form.AppForm>

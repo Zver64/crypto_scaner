@@ -1,12 +1,13 @@
 import { z } from "zod";
 
+import { applicationConfig } from "@/config";
 import {
 	type AnalysisUnit,
 	analysisCriteriaConstraints,
 } from "@/features/analysis/criteria";
 import { numberInputSchema } from "@/utils/number-input-schema";
 
-const { percentile, period } = analysisCriteriaConstraints;
+const { period } = analysisCriteriaConstraints;
 
 // The analysis period in candles of the unit.
 export function periodSchema(unit: AnalysisUnit) {
@@ -19,15 +20,17 @@ export function periodSchema(unit: AnalysisUnit) {
 	);
 }
 
-const percentileRange = `Range percentile must be between ${percentile.minimum} and ${percentile.maximum}`;
+const percentilePresets: readonly number[] =
+	applicationConfig.volatility.percentilePresets;
 
+// Picked on a slider of its presets, so it is one of them.
 export const percentileSchema = numberInputSchema(
 	"Range percentile",
 	(number) =>
-		number
-			.int("Range percentile must be a whole number")
-			.min(percentile.minimum, percentileRange)
-			.max(percentile.maximum, percentileRange),
+		number.refine(
+			(value) => percentilePresets.includes(value),
+			`Range percentile must be one of ${percentilePresets.join(", ")}`,
+		),
 );
 
 // The daily and the hourly volatility criterion of Top Market Cap and

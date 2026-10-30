@@ -16,9 +16,9 @@ describe("volatility settings", () => {
 		expect(fieldErrors(defaultSettings)).toEqual({});
 		expect(
 			fieldErrors({
-				hourlyPercentile: 100,
+				hourlyPercentile: 95,
 				hourlyPeriod: 2000,
-				percentile: 0,
+				percentile: 75,
 				period: 1,
 			}),
 		).toEqual({});
@@ -36,17 +36,17 @@ describe("volatility settings", () => {
 	it("rejects values outside the analysis constraints", () => {
 		expect(
 			fieldErrors({
-				hourlyPercentile: 80.5,
+				hourlyPercentile: 85,
 				hourlyPeriod: 2001,
 				percentile: 101,
 				period: 0,
 			}),
 		).toEqual({
-			hourlyPercentile: ["Range percentile must be a whole number"],
+			hourlyPercentile: ["Range percentile must be one of 75, 80, 90, 95"],
 			hourlyPeriod: [
 				"Analysis period must be a whole number between 1 and 2000 hours",
 			],
-			percentile: ["Range percentile must be between 0 and 100"],
+			percentile: ["Range percentile must be one of 75, 80, 90, 95"],
 			period: [
 				"Analysis period must be a whole number between 1 and 2000 days",
 			],

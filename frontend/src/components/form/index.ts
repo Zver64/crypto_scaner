@@ -5,6 +5,7 @@ import { MultiSelectField } from "@/components/form/multi-select-field";
 import { NativeSelectField } from "@/components/form/native-select-field";
 import { NumberField } from "@/components/form/number-field";
 import { SelectField } from "@/components/form/select-field";
+import { SliderField } from "@/components/form/slider-field";
 import { SubmitButton } from "@/components/form/submit-button";
 import { TagsField } from "@/components/form/tags-field";
 import { TextField } from "@/components/form/text-field";
@@ -22,6 +23,7 @@ export const { useAppForm, withFieldGroup, withForm } = createFormHook({
 		NativeSelectField,
 		NumberField,
 		SelectField,
+		SliderField,
 		TagsField,
 		TextareaField,
 		TextField,

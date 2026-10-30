@@ -33,12 +33,12 @@ it("validates both mandatory volatility instances independently", () => {
 		}),
 	).toEqual({
 		period: ["Analysis period must be a whole number between 1 and 2000 days"],
-		percentile: ["Range percentile must be between 0 and 100"],
-		minimumRangePercent: ["Minimum range must be zero or greater"],
+		percentile: ["Range percentile must be one of 75, 80, 90, 95"],
+		minimumRangePercent: ["Minimum range must be between 0 and 10"],
 		hourlyPeriod: [
 			"Analysis period must be a whole number between 1 and 2000 hours",
 		],
-		hourlyPercentile: ["Range percentile must be between 0 and 100"],
+		hourlyPercentile: ["Range percentile must be one of 75, 80, 90, 95"],
 		hourlyMinimumRangePercent: ["Minimum range is required"],
 		minimumMarketCapMillions: ["Minimum market cap is required"],
 	});

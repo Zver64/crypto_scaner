@@ -5,7 +5,9 @@ import {
 	Input,
 	NumberInput,
 	type NumberInputProps,
+	useMantineTheme,
 } from "@mantine/core";
+import { themeToVars } from "@mantine/vanilla-extract";
 import { useId } from "react";
 
 import { useFieldContext } from "@/components/form/form-context";
@@ -46,6 +48,7 @@ export function NumberField({
 }: NumberFieldProps) {
 	const field = useFieldContext<number | string>();
 	const id = useId();
+	const { spacing } = themeToVars(useMantineTheme());
 	const input: NumberInputProps = {
 		...props,
 		error: fieldError(field.state.meta.errors),
@@ -67,10 +70,15 @@ export function NumberField({
 	const wrapper = { description, label, required, withAsterisk };
 	if (!presets?.length) return <NumberInput {...input} {...wrapper} />;
 	// The label and description stand above the row, so the buttons line up
-	// with the input.
+	// with the input. The row keeps the gap Mantine leaves below a label.
 	return (
 		<Input.Wrapper {...wrapper} id={id}>
-			<Group align="flex-start" gap="xs" wrap="nowrap">
+			<Group
+				align="flex-start"
+				gap="xs"
+				mt={`calc(${spacing.xs} / 2)`}
+				wrap="nowrap"
+			>
 				<Box flex={1}>
 					<NumberInput {...input} />
 				</Box>
@@ -83,7 +91,8 @@ export function NumberField({
 								field.handleChange(preset.value);
 								event.currentTarget.blur();
 							}}
-							size="xs"
+							// The input's size, so both are equally tall.
+							size="sm"
 							variant="default"
 						>
 							{preset.label}

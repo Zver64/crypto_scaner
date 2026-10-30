@@ -123,10 +123,16 @@ WHERE i.is_active
 ORDER BY i.id;
 
 -- name: ListStrategyRecipients :many
-SELECT telegram_id
-FROM app.users
-WHERE strategy_alerts OR telegram_id = @administrator_telegram_id::BIGINT
-ORDER BY telegram_id;
+-- Each recipient with the symbols of their favorites, active or not, in byte
+-- order, as the strategy package sorts symbols.
+SELECT u.telegram_id,
+       COALESCE(array_agg(i.symbol ORDER BY i.symbol COLLATE "C") FILTER (WHERE i.symbol IS NOT NULL), '{}')::TEXT[] AS favorites
+FROM app.users u
+LEFT JOIN app.favorites f ON f.user_id = u.id
+LEFT JOIN binance_spot.instruments i ON i.id = f.instrument_id
+WHERE u.strategy_alerts OR u.telegram_id = @administrator_telegram_id::BIGINT
+GROUP BY u.id
+ORDER BY u.telegram_id;
 
 -- name: LockStrategyCoinInstruments :exec
 -- Locks the instruments a strategy's coins will reference in id order, the

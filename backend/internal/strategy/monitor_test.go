@@ -32,7 +32,7 @@ func TestAlertTextGroupsEventsByKind(t *testing.T) {
 		return alert{instrument: Instrument{Symbol: symbol}, event: TradeEvent{Kind: TradeBuy, Buy: number, Close: 1.5, Trade: TradeState{TakeProfit: 2, StopLoss: 1}}}
 	}
 	sell := alert{instrument: Instrument{Symbol: "SOLUSDT"}, event: TradeEvent{Kind: TradeSell, Reason: ExitTakeProfit, Price: 152, Return: 0.038, Trade: TradeState{Buys: 2, Filled: 2, Quantity: 0.01}}}
-	got := alertText(entry, []alert{buy("BTCUSDT", 1), sell, buy("ETHUSDT", 2)})
+	got := alertText(entry, []alert{buy("BTCUSDT", 1), sell, buy("ETHUSDT", 2)}, noFavorites)
 	want := "<b>🟢 Trend · 1h · buy</b>\nCheck volume\n<a href=\"https://www.binance.com/en/trade/BTC_USDT?type=spot\">BTCUSDT</a> at 1.5 · TP 2 · SL 1\n<a href=\"https://www.binance.com/en/trade/ETH_USDT?type=spot\">ETHUSDT</a> #2 at 1.5 · TP 2 · SL 1\n\n" +
 		"<b>🔴 Trend · 1h · sell</b>\nCheck volume\n<a href=\"https://www.binance.com/en/trade/SOL_USDT?type=spot\">SOLUSDT</a> at 152 by take profit · +3.80% · entry 200 · 2 buys"
 	if got != want {
@@ -43,7 +43,7 @@ func TestAlertTextGroupsEventsByKind(t *testing.T) {
 	for i := range many {
 		many[i] = buy("BTCUSDT", 1)
 	}
-	got = alertText(entry, many)
+	got = alertText(entry, many, noFavorites)
 	if len(got) > telegramhtml.MaxLength || !strings.HasSuffix(got, "SL 1\n…message too long") {
 		t.Fatalf("long alertText() ends %q after %d bytes", got[max(0, len(got)-40):], len(got))
 	}
@@ -63,7 +63,7 @@ func TestAlertTextOrdersEventsByCandle(t *testing.T) {
 		event("BTCUSDT", TradeBuy, backtestHour(1)),
 		event("SOLUSDT", TradeBuy, backtestHour(2)),
 		event("BTCUSDT", TradeSell, backtestHour(4)),
-	})
+	}, noFavorites)
 	var order []string
 	for _, line := range strings.Split(got, "\n") {
 		if strings.HasPrefix(line, "<b>") {
@@ -76,6 +76,49 @@ func TestAlertTextOrdersEventsByCandle(t *testing.T) {
 		t.Fatalf("alertText() order = %v, want %v\n%s", order, want, got)
 	}
 }
+
+// Each message puts the coins among the recipient's favorites first and
+// stars them, keeping the order of titles; a long summary cuts the others.
+func TestMessagesPutFavoritesFirst(t *testing.T) {
+	entry := Entry{Strategy: Strategy{Name: "Trend", Direction: DirectionLong, CoinSource: CoinsAll}, Interval: market.IntervalHour}
+	favorite := Recipient{Favorites: []string{"ETHUSDT", "SOLUSDT"}}.favorite
+	lines := func(text string) []string {
+		var symbols []string
+		for _, line := range strings.Split(text, "\n") {
+			if end := strings.Index(line, "</a>"); end >= 0 {
+				symbols = append(symbols, strings.TrimSuffix(line[:strings.Index(line, "<a ")], " ")+line[strings.Index(line, ">")+1:end])
+			} else if strings.HasPrefix(line, "<b>") {
+				symbols = append(symbols, line[strings.LastIndex(line, " ")+1:len(line)-len("</b>")])
+			}
+		}
+		return symbols
+	}
+	event := func(symbol string, kind TradeEventKind) alert {
+		return alert{instrument: Instrument{Symbol: symbol}, event: TradeEvent{Kind: kind, Close: 1}}
+	}
+	got := alertText(entry, []alert{event("BTCUSDT", TradeSell), event("ADAUSDT", TradeBuy), event("SOLUSDT", TradeBuy), event("ETHUSDT", TradeSell)}, favorite)
+	if want := []string{"sell", "⭐ETHUSDT", "BTCUSDT", "buy", "⭐SOLUSDT", "ADAUSDT"}; !slices.Equal(lines(got), want) {
+		t.Fatalf("alertText() = %v, want %v\n%s", lines(got), want, got)
+	}
+
+	matching := []Instrument{{Symbol: "BTCUSDT"}, {Symbol: "SOLUSDT"}, {Symbol: "ADAUSDT"}, {Symbol: "ETHUSDT"}}
+	got = summaryText(entry, matching, snapshot{}, favorite)
+	if want := []string{"⭐ETHUSDT", "⭐SOLUSDT", "ADAUSDT", "BTCUSDT"}; !slices.Equal(lines(got)[1:], want) {
+		t.Fatalf("summaryText() = %v, want %v\n%s", lines(got), want, got)
+	}
+
+	many := []Instrument{{Symbol: "SOLUSDT"}}
+	for i := range 200 {
+		many = append(many, Instrument{Symbol: fmt.Sprintf("A%03dUSDT", i)})
+	}
+	got = summaryText(entry, many, snapshot{}, favorite)
+	if listed := lines(got); len(got) > telegramhtml.MaxLength || listed[1] != "⭐SOLUSDT" || !strings.HasSuffix(got, " more") {
+		t.Fatalf("long summaryText() lists %v", listed[:2])
+	}
+}
+
+// noFavorites stands for a recipient without favorites.
+func noFavorites(string) bool { return false }
 
 // A halt disables only the revision that failed: a strategy changed since
 // stays enabled.
@@ -183,8 +226,8 @@ func (monitorStore) ListStrategyStates(context.Context) (map[uuid.UUID]map[int64
 	return nil, nil
 }
 
-func (monitorStore) ListStrategyRecipients(context.Context, int64) ([]int64, error) {
-	return []int64{7}, nil
+func (monitorStore) ListStrategyRecipients(context.Context, int64) ([]Recipient, error) {
+	return []Recipient{{TelegramID: 7}}, nil
 }
 
 func (monitorStore) ReplaceStrategyStates(context.Context, uuid.UUID, int64, map[int64]TradeState) (bool, error) {

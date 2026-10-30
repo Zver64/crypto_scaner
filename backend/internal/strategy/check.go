@@ -22,7 +22,7 @@ type roundWork struct {
 	// missing are the targets some subscription has no value for yet.
 	missing    []closedindicator.Target
 	current    snapshot
-	recipients []int64
+	recipients []Recipient
 	// catchUpLeft is how many more instruments may catch up this round.
 	catchUpLeft *int
 }
@@ -195,7 +195,7 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 		}
 	}
 	if len(alerts) > 0 {
-		monitor.send(ctx, work.recipients, alertText(entry, alerts))
+		monitor.send(ctx, work.recipients, func(favorite func(string) bool) string { return alertText(entry, alerts, favorite) })
 	}
 }
 
@@ -203,7 +203,7 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 // now, without trades, and announces the instruments within its market cap
 // range whose entry is true. Instruments with unknown entries are left out and signal once their entry
 // turns true.
-func (monitor *Monitor) baseline(ctx context.Context, state map[uuid.UUID]map[int64]TradeState, entry Entry, instruments []Instrument, current snapshot, recipients []int64) {
+func (monitor *Monitor) baseline(ctx context.Context, state map[uuid.UUID]map[int64]TradeState, entry Entry, instruments []Instrument, current snapshot, recipients []Recipient) {
 	at := entry.Interval.LastClosedOpenTime(current.now)
 	states := map[int64]TradeState{}
 	var matching []Instrument
@@ -238,7 +238,7 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[uuid.UUID]map[in
 		return
 	}
 	state[entry.ID] = states
-	monitor.send(ctx, recipients, summaryText(entry, matching, current))
+	monitor.send(ctx, recipients, func(favorite func(string) bool) string { return summaryText(entry, matching, current, favorite) })
 }
 
 // halt disables entry after err, a rule error or a coin that is no longer
@@ -259,7 +259,7 @@ func (monitor *Monitor) halt(ctx context.Context, entry Entry, err error) {
 		return
 	}
 	monitor.logger.InfoContext(ctx, "strategy halted", "strategy_id", entry.ID, "error", err)
-	monitor.send(ctx, []int64{monitor.administratorID}, haltText(entry, err))
+	monitor.send(ctx, []Recipient{{TelegramID: monitor.administratorID}}, func(func(string) bool) string { return haltText(entry, err) })
 }
 
 // ruleError names the rule and the candle, opening at at, of the rule error

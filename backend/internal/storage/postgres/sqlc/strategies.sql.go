@@ -366,25 +366,36 @@ func (q *Queries) ListStrategyInstruments(ctx context.Context) ([]ListStrategyIn
 }
 
 const listStrategyRecipients = `-- name: ListStrategyRecipients :many
-SELECT telegram_id
-FROM app.users
-WHERE strategy_alerts OR telegram_id = $1::BIGINT
-ORDER BY telegram_id
+SELECT u.telegram_id,
+       COALESCE(array_agg(i.symbol ORDER BY i.symbol COLLATE "C") FILTER (WHERE i.symbol IS NOT NULL), '{}')::TEXT[] AS favorites
+FROM app.users u
+LEFT JOIN app.favorites f ON f.user_id = u.id
+LEFT JOIN binance_spot.instruments i ON i.id = f.instrument_id
+WHERE u.strategy_alerts OR u.telegram_id = $1::BIGINT
+GROUP BY u.id
+ORDER BY u.telegram_id
 `
 
-func (q *Queries) ListStrategyRecipients(ctx context.Context, administratorTelegramID int64) ([]int64, error) {
+type ListStrategyRecipientsRow struct {
+	TelegramID int64
+	Favorites  []string
+}
+
+// Each recipient with the symbols of their favorites, active or not, in byte
+// order, as the strategy package sorts symbols.
+func (q *Queries) ListStrategyRecipients(ctx context.Context, administratorTelegramID int64) ([]ListStrategyRecipientsRow, error) {
 	rows, err := q.db.Query(ctx, listStrategyRecipients, administratorTelegramID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []int64
+	var items []ListStrategyRecipientsRow
 	for rows.Next() {
-		var telegram_id int64
-		if err := rows.Scan(&telegram_id); err != nil {
+		var i ListStrategyRecipientsRow
+		if err := rows.Scan(&i.TelegramID, &i.Favorites); err != nil {
 			return nil, err
 		}
-		items = append(items, telegram_id)
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

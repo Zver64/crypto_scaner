@@ -17,9 +17,9 @@ import (
 // summaryText announces an enabled or changed strategy: under its title come
 // the strategy message, its coins and market cap range, and a line per
 // instrument within it whose entry is true now, which buys only once it
-// turns true again. A message too long for Telegram ends at the last
-// instrument that fits.
-func summaryText(entry Entry, matching []Instrument, current snapshot) string {
+// turns true again, the favorite ones first and starred. A message too long
+// for Telegram ends at the last instrument that fits.
+func summaryText(entry Entry, matching []Instrument, current snapshot, favorite func(symbol string) bool) string {
 	var coins string
 	switch {
 	case entry.CoinSource == CoinsAll:
@@ -49,7 +49,9 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	if len(matching) == 0 {
 		return strings.Join(append(lines, "No coin's entry is true now."), "\n")
 	}
-	matching = slices.SortedFunc(slices.Values(matching), func(a, b Instrument) int { return strings.Compare(a.Symbol, b.Symbol) })
+	matching = slices.SortedFunc(slices.Values(matching), func(a, b Instrument) int {
+		return cmp.Or(favoriteRank(favorite, a.Symbol)-favoriteRank(favorite, b.Symbol), strings.Compare(a.Symbol, b.Symbol))
+	})
 	switch {
 	case entry.Signal:
 		lines = append(lines, "Entry true now, signaling once it turns true again:")
@@ -60,7 +62,7 @@ func summaryText(entry Entry, matching []Instrument, current snapshot) string {
 	}
 	text := strings.Join(lines, "\n")
 	for i, instrument := range matching {
-		line := telegramhtml.Symbol(instrument.Symbol)
+		line := star(favorite, instrument.Symbol, telegramhtml.Symbol(instrument.Symbol))
 		if price, ok := current.closePrice(entry, instrument.ID); ok {
 			line += " " + formatNumber(price)
 		}
@@ -97,10 +99,11 @@ type alert struct {
 // alertText announces the events of one round of entry in the order of
 // their candles, those of the latest candle last: under a title per kind of
 // event, naming the strategy, its interval, and the kind, come the strategy
-// message and a line per instrument. Events of one candle share a title per
-// kind, and so do those of consecutive candles of one kind. A message too
-// long for Telegram ends at the last line that fits.
-func alertText(entry Entry, alerts []alert) string {
+// message and a line per instrument, the favorite ones first and starred.
+// Events of one candle share a title per kind, and so do those of
+// consecutive candles of one kind. A message too long for Telegram ends at
+// the last line that fits.
+func alertText(entry Entry, alerts []alert, favorite func(symbol string) bool) string {
 	alerts = slices.Clone(alerts)
 	// Events of the latest candle have no past time.
 	latest := func(item alert) int {
@@ -111,8 +114,8 @@ func alertText(entry Entry, alerts []alert) string {
 	}
 	slices.SortStableFunc(alerts, func(a, b alert) int { return cmp.Or(latest(a)-latest(b), a.past.Compare(b.past)) })
 	type block struct {
-		title string
-		lines []string
+		title  string
+		alerts []alert
 	}
 	var blocks []block
 	for start := 0; start < len(alerts); {
@@ -128,11 +131,11 @@ func alertText(entry Entry, alerts []alert) string {
 				index = len(kinds)
 				kinds = append(kinds, block{title: title})
 			}
-			kinds[index].lines = append(kinds[index].lines, alertLine(item))
+			kinds[index].alerts = append(kinds[index].alerts, item)
 		}
 		for _, kind := range kinds {
 			if last := len(blocks) - 1; last >= 0 && blocks[last].title == kind.title {
-				blocks[last].lines = append(blocks[last].lines, kind.lines...)
+				blocks[last].alerts = append(blocks[last].alerts, kind.alerts...)
 			} else {
 				blocks = append(blocks, kind)
 			}
@@ -145,9 +148,31 @@ func alertText(entry Entry, alerts []alert) string {
 		if entry.Message != "" {
 			lines = append(lines, html.EscapeString(entry.Message))
 		}
-		texts[i] = strings.Join(append(lines, item.lines...), "\n")
+		slices.SortStableFunc(item.alerts, func(a, b alert) int {
+			return favoriteRank(favorite, a.instrument.Symbol) - favoriteRank(favorite, b.instrument.Symbol)
+		})
+		for _, event := range item.alerts {
+			lines = append(lines, star(favorite, event.instrument.Symbol, alertLine(event)))
+		}
+		texts[i] = strings.Join(lines, "\n")
 	}
 	return telegramhtml.Truncate(strings.Join(texts, "\n\n"), "\n…message too long")
+}
+
+// favoriteRank orders the lines of favorite coins before the others.
+func favoriteRank(favorite func(symbol string) bool, symbol string) int {
+	if favorite(symbol) {
+		return 0
+	}
+	return 1
+}
+
+// star marks line, about the coin of symbol, when the coin is a favorite.
+func star(favorite func(symbol string) bool, symbol, line string) string {
+	if favorite(symbol) {
+		return "⭐ " + line
+	}
+	return line
 }
 
 // alertTitle names entry, its interval, and the kind of event, such as

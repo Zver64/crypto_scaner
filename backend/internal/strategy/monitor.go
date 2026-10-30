@@ -53,9 +53,23 @@ type MonitorStore interface {
 	// stored.
 	SaveStrategyStates(ctx context.Context, strategyID uuid.UUID, revision int64, states map[int64]TradeState) ([]int64, error)
 	DeleteStrategyStates(ctx context.Context, strategyID uuid.UUID, instrumentIDs []int64) error
-	// ListStrategyRecipients returns the Telegram IDs that receive strategy
-	// messages: the administrator and users with strategy alerts.
-	ListStrategyRecipients(ctx context.Context, administratorTelegramID int64) ([]int64, error)
+	// ListStrategyRecipients returns those who receive strategy messages:
+	// the administrator and users with strategy alerts.
+	ListStrategyRecipients(ctx context.Context, administratorTelegramID int64) ([]Recipient, error)
+}
+
+// Recipient receives strategy messages, which put the coins among their
+// favorites first.
+type Recipient struct {
+	TelegramID int64
+	// Favorites are the symbols of the recipient's favorites, ascending.
+	Favorites []string
+}
+
+// favorite reports whether symbol is among the recipient's favorites.
+func (recipient Recipient) favorite(symbol string) bool {
+	_, found := slices.BinarySearch(recipient.Favorites, symbol)
+	return found
 }
 
 // Values supplies the tracked closed indicator values.
@@ -391,10 +405,11 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[uuid.UUID]map[in
 	}
 }
 
-func (monitor *Monitor) send(ctx context.Context, recipients []int64, text string) {
-	for _, telegramID := range recipients {
+// send queues to each recipient the text built for their favorites.
+func (monitor *Monitor) send(ctx context.Context, recipients []Recipient, text func(favorite func(symbol string) bool) string) {
+	for _, recipient := range recipients {
 		select {
-		case monitor.sends <- message{telegramID: telegramID, text: text}:
+		case monitor.sends <- message{telegramID: recipient.TelegramID, text: text(recipient.favorite)}:
 		case <-ctx.Done():
 			return
 		}

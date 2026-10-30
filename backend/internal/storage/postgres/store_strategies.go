@@ -310,10 +310,14 @@ func (store *Store) ListStrategyInstruments(ctx context.Context) ([]strategy.Ins
 	return items, nil
 }
 
-func (store *Store) ListStrategyRecipients(ctx context.Context, administratorTelegramID int64) ([]int64, error) {
-	recipients, err := store.queries.ListStrategyRecipients(ctx, administratorTelegramID)
+func (store *Store) ListStrategyRecipients(ctx context.Context, administratorTelegramID int64) ([]strategy.Recipient, error) {
+	rows, err := store.queries.ListStrategyRecipients(ctx, administratorTelegramID)
 	if err != nil {
 		return nil, fmt.Errorf("list strategy recipients: %w", err)
+	}
+	recipients := make([]strategy.Recipient, len(rows))
+	for i, row := range rows {
+		recipients[i] = strategy.Recipient{TelegramID: row.TelegramID, Favorites: row.Favorites}
 	}
 	return recipients, nil
 }

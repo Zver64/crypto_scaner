@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applicationConfig } from "@/config";
+import { defaultVolatilitySettings } from "@/features/analysis/criteria";
 import { marketScanSortFromSearch } from "@/routes/-market-scan-search";
 import {
 	parseVolatilitySettingsSearch,
@@ -27,7 +27,7 @@ describe("Top Market Cap URL state", () => {
 		expect(parseVolatilitySettingsSearch({})).toEqual(defaultSearch);
 		expect(
 			volatilitySettingsFromSearch(parseVolatilitySettingsSearch({})),
-		).toEqual(applicationConfig.topMarketCap.defaultSettings);
+		).toEqual(defaultVolatilitySettings);
 	});
 
 	it("accepts a complete valid settings group", () => {

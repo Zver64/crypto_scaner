@@ -1,3 +1,6 @@
+import { applicationConfig } from "@/config";
+import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
+
 export type AnalysisUnit = "days" | "hours";
 
 export interface AnalysisCriteria {
@@ -6,10 +9,13 @@ export interface AnalysisCriteria {
 	unit: AnalysisUnit;
 }
 
-export const defaultAnalysisCriteria: AnalysisCriteria = {
-	percentile: 80,
-	period: 30,
-	unit: "days",
+const { days, hours } = applicationConfig.volatility;
+
+export const defaultVolatilitySettings: VolatilitySettings = {
+	hourlyPercentile: hours.defaultPercentile,
+	hourlyPeriod: hours.defaultPeriod,
+	percentile: days.defaultPercentile,
+	period: days.defaultPeriod,
 };
 
 export const analysisCriteriaConstraints = {
@@ -17,7 +23,3 @@ export const analysisCriteriaConstraints = {
 	// Mirrors the backend market.SyncDepth.
 	period: { maximum: 2000, minimum: 1 },
 } as const;
-
-export function defaultPeriodForUnit(unit: AnalysisUnit): number {
-	return unit === "hours" ? 60 : 30;
-}

@@ -2,9 +2,9 @@ import type { z } from "zod";
 
 import type { CriterionRequest } from "@/api/generated/models";
 import { applicationConfig } from "@/config";
+import { defaultVolatilitySettings } from "@/features/analysis/criteria";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import {
-	defaultMarketScanCriteria as singleVolatilityDefaults,
 	criterionSelections as singleVolatilitySelections,
 	volatilityCriterionSelection,
 } from "@/features/market-scan/criteria";
@@ -16,14 +16,11 @@ export type MarketScanCriteria = z.output<typeof marketScanCriteriaSchema>;
 export type MarketScanDraft = z.input<typeof marketScanCriteriaSchema>;
 
 export const defaultMarketScanCriteria: MarketScanCriteria = {
-	period: 30,
-	percentile: 80,
+	...defaultVolatilitySettings,
 	minimumRangePercent: applicationConfig.volatility.days.defaultCandleRange,
-	hourlyPeriod: 60,
-	hourlyPercentile: 80,
 	hourlyMinimumRangePercent:
 		applicationConfig.volatility.hours.defaultCandleRange,
-	minimumMarketCapMillions: singleVolatilityDefaults.minimumMarketCapMillions,
+	minimumMarketCapMillions: applicationConfig.marketCap.defaultMinimumMillions,
 };
 
 export function criterionSelections(

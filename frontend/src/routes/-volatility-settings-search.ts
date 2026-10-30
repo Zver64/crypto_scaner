@@ -1,4 +1,4 @@
-import { applicationConfig } from "@/config";
+import { defaultVolatilitySettings } from "@/features/analysis/criteria";
 import { volatilitySettingsSchema } from "@/features/analysis/schemas";
 import type {
 	VolatilitySettings,
@@ -30,9 +30,7 @@ export function parseVolatilitySettingsSearch(
 	const settings = volatilitySettingsFromUnknownSearch(search);
 
 	return {
-		...volatilitySettingsToSearch(
-			settings ?? applicationConfig.topMarketCap.defaultSettings,
-		),
+		...volatilitySettingsToSearch(settings ?? defaultVolatilitySettings),
 		...parseMarketScanSortSearch(search),
 		...parseSymbolFilterSearch(search),
 	};

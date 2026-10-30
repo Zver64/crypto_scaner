@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
 
-import { applicationConfig } from "@/config";
+import { defaultVolatilitySettings } from "@/features/analysis/criteria";
 import { volatilitySettingsSchema } from "@/features/analysis/schemas";
 
-const defaultSettings = applicationConfig.topMarketCap.defaultSettings;
+const defaultSettings = defaultVolatilitySettings;
 
 function fieldErrors(values: z.input<typeof volatilitySettingsSchema>) {
 	const result = volatilitySettingsSchema.safeParse(values);

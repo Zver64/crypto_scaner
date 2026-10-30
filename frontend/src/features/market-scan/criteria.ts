@@ -1,8 +1,5 @@
 import type { CriterionRequest, Evaluation } from "@/api/generated/models";
-import {
-	type AnalysisCriteria,
-	defaultAnalysisCriteria,
-} from "@/features/analysis/criteria";
+import type { AnalysisCriteria } from "@/features/analysis/criteria";
 import {
 	criterionKeys,
 	criterionNames,
@@ -14,12 +11,6 @@ export interface MarketScanCriteria extends AnalysisCriteria {
 	minimumMarketCapMillions: number;
 	minimumRangePercent: number;
 }
-
-export const defaultMarketScanCriteria: MarketScanCriteria = {
-	...defaultAnalysisCriteria,
-	minimumMarketCapMillions: 500,
-	minimumRangePercent: 3,
-};
 
 export const marketScanCriteriaConstraints = {
 	minimumMarketCapMillions: { minimum: 0 },

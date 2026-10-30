@@ -1,7 +1,6 @@
 import type {
 	FuturesMarket,
 	GridMarket,
-	GridMarkups,
 } from "@/features/instrument-analysis/grid-estimator/types";
 import type { FuturesContract } from "@/utils/calculator/futures-grid";
 import { GridDecimal } from "@/utils/calculator/grid";
@@ -15,13 +14,8 @@ export const GRID_MARKET_TABS: readonly { label: string; value: GridMarket }[] =
 		{ label: "COIN-M", value: "coinm" },
 	];
 
-// Starting markups of each market. Without a lower markup, the lower price
-// starts as low as the range allows.
-export const DEFAULT_MARKUPS: Record<GridMarket, GridMarkups> = {
-	spot: { upper: 5 },
-	usdm: { lower: 10, upper: 10 },
-	coinm: { lower: 10, upper: 10 },
-};
+// Starting markup of both the upper and the lower price, in percent.
+export const DEFAULT_MARKUP_PERCENT = 10;
 export const UPPER_MARKUP_MAX_PERCENT = 50;
 export const LOWER_MARKUP_MAX_PERCENT = 50;
 // Slider caps when the Binance limits allow more: the lower price stays above

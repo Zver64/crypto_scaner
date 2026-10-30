@@ -6,7 +6,7 @@ import {
 	BINANCE_GRID_FILTER_SHARE,
 	DEFAULT_GRID_COUNT,
 	DEFAULT_INVESTMENT,
-	DEFAULT_MARKUPS,
+	DEFAULT_MARKUP_PERCENT,
 	FUTURES_CONTRACTS,
 	LOWER_MARKUP_LIMIT_PERCENT,
 	LOWER_MARKUP_MAX_PERCENT,
@@ -23,7 +23,6 @@ import type {
 	GridEstimateValues,
 	GridMarket,
 	GridMarketEstimate,
-	GridMarkups,
 	GridProfitSplit,
 	GridRangeCount,
 	GridRangeValues,
@@ -419,23 +418,18 @@ export function gridCountForRange(
 }
 
 /**
- * Starts both prices at the given markups, within the range, and the lower
- * price as low as the range allows without a lower markup; the grid count is
+ * Starts both prices at the default markup within the range; the grid count is
  * the largest that keeps the hourly step.
  */
 export function gridRecommendation(
 	bounds: GridBounds,
 	hourlyVolatilityPercent: number | undefined,
 	gridType: GridType = "geometric",
-	markups: GridMarkups = DEFAULT_MARKUPS.spot,
 	investment = DEFAULT_INVESTMENT,
 ): GridRecommendation {
-	const upperMarkup = Math.min(markups.upper, bounds.upperMarkupMax);
+	const upperMarkup = Math.min(DEFAULT_MARKUP_PERCENT, bounds.upperMarkupMax);
 	const upperPrice = upperPriceFromMarkup(bounds, upperMarkup) ?? "";
-	const lowerMarkup = Math.min(
-		markups.lower ?? bounds.lowerMarkupMax,
-		bounds.lowerMarkupMax,
-	);
+	const lowerMarkup = Math.min(DEFAULT_MARKUP_PERCENT, bounds.lowerMarkupMax);
 	const lowerPrice = lowerPriceFromMarkup(bounds, lowerMarkup) ?? "";
 	const gridCount =
 		gridCountForStep(
@@ -813,11 +807,11 @@ export function gridMarketEstimate(
  */
 export function markupScaleLabels(
 	maxPercent: number,
-	defaultPercent?: number,
+	defaultPercent = DEFAULT_MARKUP_PERCENT,
 ): { label: string; position: number }[] {
 	return [
 		{ label: "0%", position: 0 },
-		...(defaultPercent !== undefined && maxPercent > defaultPercent
+		...(maxPercent > defaultPercent
 			? [
 					{
 						label: formatRangePercent(defaultPercent),

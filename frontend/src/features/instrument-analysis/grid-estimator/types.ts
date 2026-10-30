@@ -116,12 +116,6 @@ export interface GridMarketEstimate {
 	values: GridEstimateValues;
 }
 
-/** Markups from the anchor price, in percent. */
-export interface GridMarkups {
-	lower?: number;
-	upper: number;
-}
-
 export type GridEstimatorFormValues = GridInput & {
 	// Futures only.
 	direction: PositionDirection;

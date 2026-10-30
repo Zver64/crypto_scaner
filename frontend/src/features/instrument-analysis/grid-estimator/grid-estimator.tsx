@@ -9,10 +9,7 @@ import { themeToVars } from "@mantine/vanilla-extract";
 
 import { SegmentedValueGroup } from "@/components/segmented-value-group";
 import { SliderField } from "@/components/slider-field";
-import {
-	DEFAULT_MARKUPS,
-	GRID_TYPE_OPTIONS,
-} from "@/features/instrument-analysis/grid-estimator/config";
+import { GRID_TYPE_OPTIONS } from "@/features/instrument-analysis/grid-estimator/config";
 import { FuturesControls } from "@/features/instrument-analysis/grid-estimator/futures-controls";
 import { GridPriceInputs } from "@/features/instrument-analysis/grid-estimator/grid-price-inputs";
 import { InvestmentPresets } from "@/features/instrument-analysis/grid-estimator/investment-presets";
@@ -91,7 +88,6 @@ export function GridEstimator({
 			<Stack gap="sm">
 				<MarkupSliders
 					bounds={bounds}
-					defaultMarkups={DEFAULT_MARKUPS[market]}
 					disabled={disabled || !hasAnchor}
 					lowerMarkup={formValues.lowerMarkup}
 					onLowerMarkupChange={changeLowerMarkup}

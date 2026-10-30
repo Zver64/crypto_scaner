@@ -1,14 +1,10 @@
 import { SliderField } from "@/components/slider-field";
-import type {
-	GridBounds,
-	GridMarkups,
-} from "@/features/instrument-analysis/grid-estimator/types";
+import type { GridBounds } from "@/features/instrument-analysis/grid-estimator/types";
 import { markupScaleLabels } from "@/features/instrument-analysis/grid-estimator/utils";
 import { formatRangePercent } from "@/utils/range-percent";
 
 interface MarkupSlidersProps {
 	bounds: GridBounds;
-	defaultMarkups: GridMarkups;
 	disabled: boolean;
 	lowerMarkup: number;
 	onLowerMarkupChange: (markup: number) => void;
@@ -19,7 +15,6 @@ interface MarkupSlidersProps {
 // How far the upper and lower prices sit from the anchor price.
 export function MarkupSliders({
 	bounds,
-	defaultMarkups,
 	disabled,
 	lowerMarkup,
 	onLowerMarkupChange,
@@ -36,10 +31,7 @@ export function MarkupSliders({
 				min={0}
 				onChange={onUpperMarkupChange}
 				precision={2}
-				scaleLabels={markupScaleLabels(
-					bounds.upperMarkupMax,
-					defaultMarkups.upper,
-				)}
+				scaleLabels={markupScaleLabels(bounds.upperMarkupMax)}
 				step={0.01}
 				value={upperMarkup}
 			/>
@@ -51,10 +43,7 @@ export function MarkupSliders({
 				min={0}
 				onChange={onLowerMarkupChange}
 				precision={2}
-				scaleLabels={markupScaleLabels(
-					bounds.lowerMarkupMax,
-					defaultMarkups.lower,
-				)}
+				scaleLabels={markupScaleLabels(bounds.lowerMarkupMax)}
 				step={0.01}
 				value={lowerMarkup}
 			/>

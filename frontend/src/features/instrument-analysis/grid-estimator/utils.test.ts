@@ -2,7 +2,6 @@ import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
 import {
-	DEFAULT_MARKUPS,
 	LOWER_MARKUP_MAX_PERCENT,
 	UPPER_MARKUP_MAX_PERCENT,
 } from "@/features/instrument-analysis/grid-estimator/config";
@@ -81,39 +80,23 @@ describe("spot grid recommendations", () => {
 		return spotGridMinimumStepPercent(calculation.estimate);
 	}
 
-	it("starts the lower price as low as the range allows", () => {
+	it("starts both prices at the default markup within the range", () => {
 		const recommendation = gridRecommendation(bounds, 1);
 		expect(latestAvailableCandle([candle, null])).toEqual(candle);
-		expect(recommendation.lowerMarkup).toBe(LOWER_MARKUP_MAX_PERCENT);
+		expect(recommendation).toMatchObject({ lowerMarkup: 10, upperMarkup: 10 });
 		expect(recommendation.input).toEqual({
-			lowerPrice: "50",
-			upperPrice: "105",
-			gridCount: "74",
+			lowerPrice: "90",
+			upperPrice: "110",
+			gridCount: "20",
 			investment: "1000",
 		});
 		expect(
 			minimumStep(recommendation.input, "geometric"),
 		).toBeGreaterThanOrEqual(1);
-	});
-
-	it("starts both USDT-M prices at the default markups within the range", () => {
-		const recommendation = gridRecommendation(
-			bounds,
-			1,
-			"geometric",
-			DEFAULT_MARKUPS.usdm,
-		);
-		expect(recommendation.input).toMatchObject({
-			lowerPrice: "90",
-			upperPrice: "110",
-			gridCount: "20",
-		});
 		expect(
 			gridRecommendation(
 				{ ...bounds, lowerMarkupMax: 4, upperMarkupMax: 6 },
 				1,
-				"geometric",
-				DEFAULT_MARKUPS.usdm,
 			),
 		).toMatchObject({ lowerMarkup: 4, upperMarkup: 6 });
 	});
@@ -121,8 +104,8 @@ describe("spot grid recommendations", () => {
 	it("derives the arithmetic grid count from the same range", () => {
 		const recommendation = gridRecommendation(bounds, 1, "arithmetic");
 		expect(recommendation.input).toMatchObject({
-			lowerPrice: "50",
-			gridCount: "52",
+			lowerPrice: "90",
+			gridCount: "18",
 		});
 		expect(
 			minimumStep(recommendation.input, "arithmetic"),
@@ -192,7 +175,7 @@ describe("spot grid recommendations", () => {
 	it("returns partial fallbacks for missing market data and unsupported values", () => {
 		expect(latestAvailableCandle([null, null])).toBeNull();
 		expect(gridRecommendation(bounds, 0)).toMatchObject({
-			input: { lowerPrice: "50", upperPrice: "105", gridCount: "40" },
+			input: { lowerPrice: "90", upperPrice: "110", gridCount: "40" },
 		});
 		expect(
 			gridRecommendation(

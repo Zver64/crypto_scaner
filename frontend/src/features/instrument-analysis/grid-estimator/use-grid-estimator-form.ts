@@ -3,7 +3,6 @@ import { useState } from "react";
 
 import { useAppForm } from "@/components/form";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
-import { DEFAULT_MARKUPS } from "@/features/instrument-analysis/grid-estimator/config";
 import type {
 	GridEstimatorFormValues,
 	GridInputField,
@@ -65,7 +64,6 @@ export function useGridEstimatorForm({
 			bounds,
 			hourlyVolatilityPercent,
 			"geometric",
-			DEFAULT_MARKUPS[market],
 			defaultInvestment(market, bounds.anchor),
 		),
 	);

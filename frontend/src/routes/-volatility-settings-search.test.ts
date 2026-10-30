@@ -8,17 +8,12 @@ import {
 	volatilitySettingsToSearch,
 } from "@/routes/-volatility-settings-search";
 
-const defaultSearch = {
-	hourly_percentile: 80,
-	hourly_period: 60,
-	percentile: 80,
-	period: 30,
-};
+const defaultSearch = volatilitySettingsToSearch(defaultVolatilitySettings);
 
 const customSearch = {
 	hourly_percentile: 95,
 	hourly_period: 72,
-	percentile: 90,
+	percentile: 75,
 	period: 60,
 };
 
@@ -37,7 +32,7 @@ describe("Top Market Cap URL state", () => {
 		expect(volatilitySettingsFromSearch(parsed)).toEqual({
 			hourlyPercentile: 95,
 			hourlyPeriod: 72,
-			percentile: 90,
+			percentile: 75,
 			period: 60,
 		});
 	});
@@ -47,11 +42,11 @@ describe("Top Market Cap URL state", () => {
 			"missing",
 			{
 				hourly_percentile: 95,
-				percentile: 90,
+				percentile: 75,
 				period: 60,
 			},
 		],
-		["partial", { period: 60, percentile: 90 }],
+		["partial", { period: 60, percentile: 75 }],
 		["nonnumeric", { ...customSearch, hourly_period: "72" }],
 		["invalid", { ...customSearch, percentile: 101 }],
 	] as const)(
@@ -89,7 +84,7 @@ describe("Top Market Cap URL state", () => {
 		const settingsUpdate = volatilitySettingsToSearch({
 			hourlyPercentile: 95,
 			hourlyPeriod: 72,
-			percentile: 90,
+			percentile: 75,
 			period: 60,
 		});
 

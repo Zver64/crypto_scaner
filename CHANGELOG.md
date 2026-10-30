@@ -1,5 +1,14 @@
 # Changelog
 
+## [4.4.0](https://github.com/Zver64/crypto_scaner/compare/v4.3.0...v4.4.0) (2026-10-30)
+
+
+### Features
+
+* better settings ([62d0e12](https://github.com/Zver64/crypto_scaner/commit/62d0e1261e8bfaa2cdbd7ecc5fe0b0dc11f3cf0e))
+* **frontend:** pick percentile and candle range on sliders ([cd05fcc](https://github.com/Zver64/crypto_scaner/commit/cd05fcc4f9d5685eeb35131fdd298b8d749a79c6))
+* **frontend:** start grid markups at ±10% on every market ([22f050f](https://github.com/Zver64/crypto_scaner/commit/22f050f2bce7cb6f3f48bf561baa330ca31776b7))
+
 ## [4.3.0](https://github.com/Zver64/crypto_scaner/compare/v4.2.0...v4.3.0) (2026-10-25)
 
 

@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.6.0](https://github.com/Zver64/crypto_scaner/compare/v4.5.0...v4.6.0) (2026-10-31)
+
+
+### Features
+
+* **frontend:** align grid bounds to the selected step ([89df83f](https://github.com/Zver64/crypto_scaner/commit/89df83f169efb94d2254ff67de91bb48ff1398db))
+
+
+### Bug Fixes
+
+* **frontend:** align price alert buttons with the target input ([b1e4d79](https://github.com/Zver64/crypto_scaner/commit/b1e4d79038bdebadbc31b1681f9df4d232ae33df))
+
 ## [4.5.0](https://github.com/Zver64/crypto_scaner/compare/v4.4.0...v4.5.0) (2026-10-30)
 
 

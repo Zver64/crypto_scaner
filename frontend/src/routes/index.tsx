@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 
+import { defaultVolatilitySettings } from "@/features/analysis/criteria";
 import { MarketScanScreen } from "@/features/market-scan/market-scan-screen";
-import { defaultMarketScanCriteria } from "@/features/market-scan/pipeline";
 import { parseLaunchSearch } from "@/routes/-launch-search";
 import {
 	parseMarketScanSearch,
@@ -11,6 +11,7 @@ import {
 	scanCriteriaFromSearch,
 	scanCriteriaToSearch,
 } from "@/routes/-scan-criteria-search";
+import { volatilitySettingsToSearch } from "@/routes/-volatility-settings-search";
 import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export const Route = createFileRoute("/")({
@@ -20,14 +21,14 @@ export const Route = createFileRoute("/")({
 		...parseLaunchSearch(search),
 	}),
 	// A coin link from a bot message opens the Mini App here; it shows the
-	// coin with the default criteria, replacing the launch URL, so a reload
+	// coin with the default volatility settings, replacing the launch URL, so a reload
 	// stays on the page shown then.
 	beforeLoad: ({ search }) => {
 		if (search.tgWebAppStartParam) {
 			throw redirect({
 				to: "/instruments/$symbol",
 				params: { symbol: search.tgWebAppStartParam },
-				search: scanCriteriaToSearch(defaultMarketScanCriteria),
+				search: volatilitySettingsToSearch(defaultVolatilitySettings),
 				replace: true,
 			});
 		}

@@ -27,13 +27,21 @@ export interface VolatilitySettingsSearchWithSort
 export function parseVolatilitySettingsSearch(
 	search: Record<string, unknown>,
 ): VolatilitySettingsSearchWithSort {
-	const settings = volatilitySettingsFromUnknownSearch(search);
-
 	return {
-		...volatilitySettingsToSearch(settings ?? defaultVolatilitySettings),
+		...parseVolatilitySettingsOnlySearch(search),
 		...parseMarketScanSortSearch(search),
 		...parseSymbolFilterSearch(search),
 	};
+}
+
+// The volatility settings of search, or the default ones when they are
+// missing or invalid.
+export function parseVolatilitySettingsOnlySearch(
+	search: Record<string, unknown>,
+): VolatilitySettingsSearch {
+	return volatilitySettingsToSearch(
+		volatilitySettingsFromUnknownSearch(search) ?? defaultVolatilitySettings,
+	);
 }
 
 // Binds a page's volatility settings and results table state to its URL

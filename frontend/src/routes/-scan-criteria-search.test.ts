@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest";
 import { defaultMarketScanCriteria } from "@/features/market-scan/pipeline";
 import {
 	parseOptionalScanCriteriaSearch,
-	parseRequiredScanCriteriaSearch,
 	scanCriteriaFromSearch,
 	scanCriteriaToSearch,
 } from "@/routes/-scan-criteria-search";
@@ -73,9 +72,6 @@ describe("scan criteria URL state", () => {
 		for (const value of values) {
 			const invalidSearch = { ...search, [field]: value };
 			expect(parseOptionalScanCriteriaSearch(invalidSearch)).toEqual({});
-			expect(parseRequiredScanCriteriaSearch(invalidSearch)).toEqual(
-				scanCriteriaToSearch(defaultMarketScanCriteria),
-			);
 		}
 	});
 

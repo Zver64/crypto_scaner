@@ -14,7 +14,7 @@ import {
 	resolveTableSort,
 	sortTableRows,
 } from "@/features/market-scan/sort";
-import { scanCriteriaToSearch } from "@/routes/-scan-criteria-search";
+import { volatilitySettingsToSearch } from "@/routes/-volatility-settings-search";
 
 interface MarketScanResultsTableProps {
 	criteria: MarketScanCriteria;
@@ -89,7 +89,7 @@ export function MarketScanResultsTable({
 				}
 				void navigate({
 					params: { symbol: row.symbol },
-					search: scanCriteriaToSearch(criteria),
+					search: volatilitySettingsToSearch(criteria),
 					to: "/instruments/$symbol",
 				});
 			}}

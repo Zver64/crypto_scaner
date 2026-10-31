@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import {
-	buildTopCoinsCriteria,
-	buildTopCoinsScanCriteria,
-} from "@/features/top-coins/top-coins";
+import { unfilteredScanCriteria } from "@/features/market-scan/pipeline";
+import { buildTopCoinsCriteria } from "@/features/top-coins/top-coins";
 
 describe("Top Market Cap criteria", () => {
 	it("uses non-default periods and percentiles without introducing filters", () => {
@@ -14,7 +12,7 @@ describe("Top Market Cap criteria", () => {
 			period: 60,
 		};
 
-		expect(buildTopCoinsScanCriteria(settings)).toEqual({
+		expect(unfilteredScanCriteria(settings)).toEqual({
 			...settings,
 			hourlyMinimumRangePercent: 0,
 			minimumMarketCapMillions: 0,

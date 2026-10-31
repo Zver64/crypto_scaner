@@ -3,24 +3,13 @@ import { applicationConfig } from "@/config";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import {
 	criterionSelections,
-	type MarketScanCriteria,
+	unfilteredScanCriteria,
 } from "@/features/market-scan/pipeline";
-
-export function buildTopCoinsScanCriteria(
-	settings: VolatilitySettings,
-): MarketScanCriteria {
-	return {
-		...settings,
-		hourlyMinimumRangePercent: 0,
-		minimumMarketCapMillions: 0,
-		minimumRangePercent: 0,
-	};
-}
 
 export function buildTopCoinsCriteria(
 	settings: VolatilitySettings,
 ): CriterionRequest[] {
-	return criterionSelections(buildTopCoinsScanCriteria(settings));
+	return criterionSelections(unfilteredScanCriteria(settings));
 }
 
 const marketCapSort = { direction: "desc", field: "market_cap_usd" } as const;

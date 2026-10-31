@@ -4,6 +4,7 @@ import type { CriterionRequest } from "@/api/generated/models";
 import { applicationConfig } from "@/config";
 import { defaultVolatilitySettings } from "@/features/analysis/criteria";
 import { criterionKeys } from "@/features/analysis/identifiers";
+import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import {
 	criterionSelections as singleVolatilitySelections,
 	volatilityCriterionSelection,
@@ -48,12 +49,26 @@ export function criterionSelections(
 	];
 }
 
-// The daily and hourly volatility criteria without Market Cap, for the coin
-// page, which reads only the volatility.
+// The criteria of settings without filters: every coin matches, so pages
+// that only read the volatility, such as Top Market Cap, Favorites, and the
+// coin page, get both ranges of every coin.
+export function unfilteredScanCriteria(
+	settings: VolatilitySettings,
+): MarketScanCriteria {
+	return {
+		...settings,
+		hourlyMinimumRangePercent: 0,
+		minimumMarketCapMillions: 0,
+		minimumRangePercent: 0,
+	};
+}
+
+// The unfiltered daily and hourly volatility criteria without Market Cap,
+// for the coin page, which reads only the volatility.
 export function volatilityCriterionSelections(
-	criteria: MarketScanCriteria,
+	settings: VolatilitySettings,
 ): CriterionRequest[] {
-	return criterionSelections(criteria).filter(
+	return criterionSelections(unfilteredScanCriteria(settings)).filter(
 		({ key }) => key !== criterionKeys.marketCap,
 	);
 }

@@ -16,9 +16,9 @@ import {
 	scopedUserQueryKey,
 	telegramUserScope,
 } from "@/features/favorites/user-query-scope";
+import { unfilteredScanCriteria } from "@/features/market-scan/pipeline";
 import {
 	buildTopCoinsCriteria,
-	buildTopCoinsScanCriteria,
 	topCoinsRequestOptions,
 } from "@/features/top-coins/top-coins";
 
@@ -32,7 +32,7 @@ export function useFavoritesAnalysis(settings: VolatilitySettings) {
 	const permission = useBusinessRequestPermission();
 	const { favorites, isError, isLoading } = useFavorites();
 	const hasFavorites = favorites.size > 0;
-	const scanCriteria = buildTopCoinsScanCriteria(settings);
+	const scanCriteria = unfilteredScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
 	const request = { criteria, ...topCoinsRequestOptions };
 	const query = useAnalyzeFavorites(request, {

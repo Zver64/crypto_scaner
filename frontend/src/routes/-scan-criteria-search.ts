@@ -1,7 +1,4 @@
-import {
-	defaultMarketScanCriteria,
-	type MarketScanCriteria,
-} from "@/features/market-scan/pipeline";
+import type { MarketScanCriteria } from "@/features/market-scan/pipeline";
 import { marketScanCriteriaSchema } from "@/features/market-scan/schemas";
 
 export interface ScanCriteriaSearch {
@@ -19,14 +16,6 @@ export function parseOptionalScanCriteriaSearch(
 ): ScanCriteriaSearch {
 	const criteria = scanCriteriaFromSearch(search);
 	return criteria ? scanCriteriaToSearch(criteria) : {};
-}
-
-export function parseRequiredScanCriteriaSearch(
-	search: Record<string, unknown>,
-): Required<ScanCriteriaSearch> {
-	return scanCriteriaToSearch(
-		scanCriteriaFromSearch(search) ?? defaultMarketScanCriteria,
-	);
 }
 
 export function scanCriteriaToSearch(
@@ -58,10 +47,4 @@ export function scanCriteriaFromSearch(
 		percentile: search.percentile,
 		period: search.period,
 	}).data;
-}
-
-export function requiredScanCriteriaFromSearch(
-	search: Required<ScanCriteriaSearch>,
-): MarketScanCriteria {
-	return scanCriteriaFromSearch(search) ?? defaultMarketScanCriteria;
 }

@@ -18,12 +18,12 @@ import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { VolatilitySettingsForm } from "@/features/analysis/volatility-settings-form";
 import type { VolatilitySettingsStateProps } from "@/features/analysis/volatility-settings-form/types";
+import { unfilteredScanCriteria } from "@/features/market-scan/pipeline";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
 import { filterMarketScanRows } from "@/features/market-scan/results-table/utils";
 import {
 	buildTopCoinsCriteria,
-	buildTopCoinsScanCriteria,
 	topCoinsPages,
 } from "@/features/top-coins/top-coins";
 
@@ -53,7 +53,7 @@ export function TopCoinsScreen({
 	const wide = useWideLayout();
 	const permission = useBusinessRequestPermission();
 	const [settings, setSettings] = useState(initialSettings);
-	const scanCriteria = buildTopCoinsScanCriteria(settings);
+	const scanCriteria = unfilteredScanCriteria(settings);
 	const criteria = buildTopCoinsCriteria(settings);
 	const request = { criteria, ...requestOptions };
 	const query = useAnalyzeMarket(request, {

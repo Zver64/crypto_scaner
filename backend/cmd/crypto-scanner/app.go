@@ -175,17 +175,17 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 
 	// Access and favorite changes both change the monitored instrument set.
 	var monitoredChanged listeners
-	botService, err := telegrambot.New(cfg.TelegramBotToken, cfg.AdminTelegramID, store, logger, monitoredChanged.notify, telegrambot.Options{})
+	botService, err := telegrambot.New(ctx, cfg.TelegramBotToken, cfg.AdminTelegramID, store, logger, monitoredChanged.notify, telegrambot.Options{})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize Telegram bot: %w", err)
 	}
-	notifier, err := opsnotify.New(queue, botService, notifierLogger)
+	notifier, err := opsnotify.New(queue, botService, botService.Coins(), notifierLogger)
 	if err != nil {
 		return app{}, err
 	}
 	tradeStream := binance.NewTradeStream(logger, dialLimiter)
 	alertMonitor = alerts.NewMonitor(store, tradeStream, botService, logger)
-	strategyMonitor = strategy.NewMonitor(store, store, indicatorRegistry, closedIndicators, strategies, botService, cfg.AdminTelegramID, logger)
+	strategyMonitor = strategy.NewMonitor(store, store, indicatorRegistry, closedIndicators, strategies, botService, botService.Coins(), cfg.AdminTelegramID, logger)
 	monitoredChanged = append(monitoredChanged, alertMonitor.Changed)
 	// Favorites change the monitored instruments, and the administrator's
 	// those signals of the favorites evaluate.

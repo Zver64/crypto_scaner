@@ -41,6 +41,9 @@ const (
 	// 5s), and a successful long poll lasts its timeout (1 minute), so an
 	// error after a longer silence starts a new failure.
 	clientQuietPeriod = 2 * time.Minute
+	// getMeTimeout bounds the getMe call that names the bot, the Bot API
+	// client's own default for it.
+	getMeTimeout = 5 * time.Second
 )
 
 // Options makes the bot boundary testable without changing its production
@@ -54,6 +57,7 @@ type Options struct {
 // invalidates every previously rendered button.
 type Service struct {
 	bot             *telegram.Bot
+	coins           telegramhtml.Coins
 	store           auth.AccessStore
 	administratorID int64
 	logger          *slog.Logger
@@ -89,7 +93,7 @@ type operation struct {
 // settings. The configured administrator ID is the only authority for granting
 // access; other application users never gain that authority. accessChanged
 // runs after the bot grants access.
-func New(token string, administratorID int64, store auth.AccessStore, logger *slog.Logger, accessChanged func(), options Options) (*Service, error) {
+func New(ctx context.Context, token string, administratorID int64, store auth.AccessStore, logger *slog.Logger, accessChanged func(), options Options) (*Service, error) {
 	if administratorID <= 0 {
 		return nil, fmt.Errorf("administrator Telegram ID must be positive")
 	}
@@ -122,13 +126,27 @@ func New(token string, administratorID int64, store auth.AccessStore, logger *sl
 	if options.ServerURL != "" {
 		botOptions = append(botOptions, telegram.WithServerURL(options.ServerURL))
 	}
-	client, err := telegram.New(token, botOptions...)
+	// The bot's own getMe is skipped: the one below also learns its username.
+	client, err := telegram.New(token, append(botOptions, telegram.WithSkipGetMe())...)
 	if err != nil {
 		return nil, fmt.Errorf("create Telegram bot: %w", err)
 	}
+	getMeCtx, cancel := context.WithTimeout(ctx, getMeTimeout)
+	defer cancel()
+	me, err := client.GetMe(getMeCtx)
+	if err != nil {
+		return nil, fmt.Errorf("get Telegram bot: %w", err)
+	}
+	if me.Username == "" {
+		return nil, fmt.Errorf("get Telegram bot: no username")
+	}
 	service.bot = client
+	service.coins = telegramhtml.NewCoins(me.Username)
 	return service, nil
 }
+
+// Coins links coins in messages to the bot's Mini App.
+func (service *Service) Coins() telegramhtml.Coins { return service.coins }
 
 // Run consumes Telegram updates until context cancellation. The Bot API client
 // owns long polling; this service never configures a webhook or BotFather menu.
@@ -432,7 +450,7 @@ func newToken() string {
 // SendPriceAlert delivers a price alert. It rechecks access immediately
 // before sending and retries only once, after a Telegram 429.
 func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) error {
-	return service.deliver(ctx, fired.Alert.TelegramID, priceAlertText(fired))
+	return service.deliver(ctx, fired.Alert.TelegramID, priceAlertText(service.coins, fired))
 }
 
 // SendStrategyMessage delivers a strategy alert or summary like a price alert.
@@ -510,7 +528,7 @@ func trimDecimal(price string) string {
 
 // priceAlertText names the symbol, the price that hit the alert, and its
 // target.
-func priceAlertText(fired alerts.Fired) string {
+func priceAlertText(coins telegramhtml.Coins, fired alerts.Fired) string {
 	return telegramhtml.Title("🔔 "+fired.Alert.Symbol+" · price alert") + "\n" +
-		telegramhtml.Symbol(fired.Alert.Symbol) + " " + html.EscapeString(trimDecimal(fired.Price)) + " · target " + html.EscapeString(fired.Alert.Target)
+		coins.Symbol(fired.Alert.Symbol) + " " + html.EscapeString(trimDecimal(fired.Price)) + " · target " + html.EscapeString(fired.Alert.Target)
 }

@@ -19,20 +19,20 @@ import (
 // instrument within it whose entry is true now, which buys only once it
 // turns true again, the favorite ones first and starred. A message too long
 // for Telegram ends at the last instrument that fits.
-func summaryText(entry Entry, matching []Instrument, current snapshot, favorite func(symbol string) bool) string {
-	var coins string
+func summaryText(entry Entry, matching []Instrument, current snapshot, coins telegramhtml.Coins, favorite func(symbol string) bool) string {
+	var scope string
 	switch {
 	case entry.CoinSource == CoinsAll:
-		coins = "all coins"
+		scope = "all coins"
 	case entry.CoinSource == CoinsFavorites:
-		coins = "favorites"
+		scope = "favorites"
 	case len(entry.Coins) == 1:
-		coins = "1 coin"
+		scope = "1 coin"
 	default:
-		coins = strconv.Itoa(len(entry.Coins)) + " coins"
+		scope = strconv.Itoa(len(entry.Coins)) + " coins"
 	}
 	if bounds := entry.MarketCap.String(); bounds != "" {
-		coins += " · market cap " + bounds
+		scope += " · market cap " + bounds
 	}
 	kind := string(entry.Direction) + " strategy active"
 	if entry.Signal {
@@ -42,7 +42,7 @@ func summaryText(entry Entry, matching []Instrument, current snapshot, favorite 
 	if entry.Message != "" {
 		lines = append(lines, html.EscapeString(entry.Message))
 	}
-	lines = append(lines, coins)
+	lines = append(lines, scope)
 	if !entry.Signal && !entry.Exits() {
 		lines = append(lines, "No exit: every entry signal buys.")
 	}
@@ -62,7 +62,7 @@ func summaryText(entry Entry, matching []Instrument, current snapshot, favorite 
 	}
 	text := strings.Join(lines, "\n")
 	for i, instrument := range matching {
-		line := star(favorite, instrument.Symbol, telegramhtml.Symbol(instrument.Symbol))
+		line := star(favorite, instrument.Symbol, coins.Symbol(instrument.Symbol))
 		if price, ok := current.closePrice(entry, instrument.ID); ok {
 			line += " " + formatNumber(price)
 		}
@@ -103,7 +103,7 @@ type alert struct {
 // Events of one candle share a title per kind, and so do those of
 // consecutive candles of one kind. A message too long for Telegram ends at
 // the last line that fits.
-func alertText(entry Entry, alerts []alert, favorite func(symbol string) bool) string {
+func alertText(entry Entry, alerts []alert, coins telegramhtml.Coins, favorite func(symbol string) bool) string {
 	alerts = slices.Clone(alerts)
 	// Events of the latest candle have no past time.
 	latest := func(item alert) int {
@@ -152,7 +152,7 @@ func alertText(entry Entry, alerts []alert, favorite func(symbol string) bool) s
 			return favoriteRank(favorite, a.instrument.Symbol) - favoriteRank(favorite, b.instrument.Symbol)
 		})
 		for _, event := range item.alerts {
-			lines = append(lines, star(favorite, event.instrument.Symbol, alertLine(event)))
+			lines = append(lines, star(favorite, event.instrument.Symbol, alertLine(coins, event)))
 		}
 		texts[i] = strings.Join(lines, "\n")
 	}
@@ -197,10 +197,10 @@ func alertTitle(entry Entry, event TradeEvent) string {
 // signal; the price, the buy number past the first, the take profit, and the
 // stop loss of a buy or short; or the price, what closed it, the return, the
 // entry price, and the buys past one of a sell or cover. The symbol links
-// to its Binance Spot pair. A caught-up event of a past candle ends with the
-// candle's open time in UTC.
-func alertLine(item alert) string {
-	line := eventLine(item)
+// to its page in the Mini App and to its Binance Spot pair. A caught-up
+// event of a past candle ends with the candle's open time in UTC.
+func alertLine(coins telegramhtml.Coins, item alert) string {
+	line := eventLine(coins, item)
 	if !item.past.IsZero() {
 		line += " · candle " + candleTime(item.past)
 	}
@@ -212,9 +212,9 @@ func alertLine(item alert) string {
 func candleTime(at time.Time) string { return at.UTC().Format("2006-01-02 15:04 UTC") }
 
 // eventLine is alertLine without the candle time.
-func eventLine(item alert) string {
+func eventLine(coins telegramhtml.Coins, item alert) string {
 	event := item.event
-	symbol := telegramhtml.Symbol(item.instrument.Symbol)
+	symbol := coins.Symbol(item.instrument.Symbol)
 	switch event.Kind {
 	case TradeSignal:
 		return symbol + " " + formatNumber(event.Close)

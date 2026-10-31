@@ -4,6 +4,7 @@ package telegramhtml
 
 import (
 	"html"
+	"net/url"
 	"strings"
 
 	"crypto-scanner/internal/market"
@@ -14,14 +15,31 @@ import (
 // Telegram counts, so messages are cut earlier than they must be.
 const MaxLength = 4000
 
-// Symbol links symbol to its Binance Spot pair, or only escapes it when it
-// has none, on one line.
-func Symbol(symbol string) string {
+// Coins links the coins of messages to the Main Mini App of a bot.
+type Coins struct {
+	appURL string
+}
+
+// NewCoins links coins to the Main Mini App of the bot named botUsername,
+// which opens the coin passed as its start parameter.
+func NewCoins(botUsername string) Coins {
+	return Coins{appURL: "https://t.me/" + url.PathEscape(botUsername) + "?startapp="}
+}
+
+// Symbol links symbol to its page in the Mini App, followed by a link to its
+// Binance Spot pair, on one line; a symbol without a Spot pair is only
+// escaped.
+func (coins Coins) Symbol(symbol string) string {
 	text := OneLine(symbol)
-	if url, ok := market.BinanceSpotURL(symbol); ok {
-		return `<a href="` + html.EscapeString(url) + `">` + text + "</a>"
+	binance, ok := market.BinanceSpotURL(symbol)
+	if !ok {
+		return text
 	}
-	return text
+	return link(coins.appURL+url.QueryEscape(market.NormalizeSymbol(symbol)), text) + " · " + link(binance, "Binance")
+}
+
+func link(href, text string) string {
+	return `<a href="` + html.EscapeString(href) + `">` + text + "</a>"
 }
 
 // Title writes text as a bold message title, escaped and on one line.

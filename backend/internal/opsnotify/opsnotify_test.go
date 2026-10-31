@@ -16,7 +16,7 @@ import (
 func TestFormatCapsLongLines(t *testing.T) {
 	record := slog.NewRecord(time.Now(), slog.LevelWarn, strings.Repeat("refresh\nfailed ", 400), 0)
 	record.AddAttrs(slog.String("module", "coin_metadata"), slog.String("error", "upstream status 502:"+strings.Repeat("<html>\nbad gateway\n", 400)))
-	got := format(record, 0)
+	got := format(telegramhtml.Coins{}, record, 0)
 	lines := strings.Split(got, "\n")
 	if len(got) > telegramhtml.MaxLength || len(lines) != 3 || lines[0] != "<b>⚠️ WARN · coin_metadata</b>" ||
 		!strings.HasPrefix(lines[1], "refresh failed refresh") || !strings.HasSuffix(lines[1], "…") ||
@@ -29,7 +29,7 @@ func TestFormatCapsLongLines(t *testing.T) {
 func TestFlushSendsQueuedRecordsAndPendingSummaries(t *testing.T) {
 	queue := NewQueue()
 	sender := &recordingSender{}
-	notifier, err := New(queue, sender, slog.New(slog.DiscardHandler))
+	notifier, err := New(queue, sender, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ func TestFlushSendsQueuedRecordsAndPendingSummaries(t *testing.T) {
 func TestFlushSendsErrorsFirst(t *testing.T) {
 	queue := NewQueue()
 	sender := &recordingSender{}
-	notifier, err := New(queue, sender, slog.New(slog.DiscardHandler))
+	notifier, err := New(queue, sender, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +66,7 @@ func TestFlushSendsErrorsFirst(t *testing.T) {
 func TestFlushSendsRecordAbortedByStop(t *testing.T) {
 	queue := NewQueue()
 	sender := &blockingSender{started: make(chan struct{}, 1), block: true}
-	notifier, err := New(queue, sender, slog.New(slog.DiscardHandler))
+	notifier, err := New(queue, sender, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}

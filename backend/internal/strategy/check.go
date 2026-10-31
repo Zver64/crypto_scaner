@@ -195,7 +195,7 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 		}
 	}
 	if len(alerts) > 0 {
-		monitor.send(ctx, work.recipients, func(favorite func(string) bool) string { return alertText(entry, alerts, favorite) })
+		monitor.send(ctx, work.recipients, func(favorite func(string) bool) string { return alertText(entry, alerts, monitor.coins, favorite) })
 	}
 }
 
@@ -238,7 +238,9 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[uuid.UUID]map[in
 		return
 	}
 	state[entry.ID] = states
-	monitor.send(ctx, recipients, func(favorite func(string) bool) string { return summaryText(entry, matching, current, favorite) })
+	monitor.send(ctx, recipients, func(favorite func(string) bool) string {
+		return summaryText(entry, matching, current, monitor.coins, favorite)
+	})
 }
 
 // halt disables entry after err, a rule error or a coin that is no longer

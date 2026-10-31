@@ -26,7 +26,7 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{}
 	accessChanges := 0
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() { accessChanges++ }, telegrambot.Options{ServerURL: transport.URL})
+	service, err := telegrambot.New(t.Context(), "123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() { accessChanges++ }, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -83,7 +83,7 @@ func TestAdministratorCanAddAndConfirmUserAccess(t *testing.T) {
 
 func TestAddUserCancelReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
+	service, err := telegrambot.New(t.Context(), "123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -107,7 +107,7 @@ func TestAddUserCancelReturnsToMenu(t *testing.T) {
 func TestAddUserGrantErrorReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{grantErr: errors.New("storage unavailable")}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
+	service, err := telegrambot.New(t.Context(), "123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -130,7 +130,7 @@ func TestAddUserGrantErrorReturnsToMenu(t *testing.T) {
 
 func TestStaleAddUserSelectionReturnsToMenu(t *testing.T) {
 	transport := newTelegramTransport(t)
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
+	service, err := telegrambot.New(t.Context(), "123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -151,14 +151,14 @@ func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
 	transport := newTelegramTransport(t)
 	transport.setGetMeResponse(`{"ok":false,"error_code":401,"description":"Unauthorized"}`)
 
-	service, err := telegrambot.New("123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
+	service, err := telegrambot.New(t.Context(), "123456:test-token", 100, &accessStore{}, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err == nil {
 		t.Fatal("New() error = nil, want Telegram initialization failure")
 	}
 	if service != nil {
 		t.Fatal("New() service != nil after Telegram initialization failure")
 	}
-	if !strings.Contains(err.Error(), "create Telegram bot") || !strings.Contains(err.Error(), "unauthorized") {
+	if !strings.Contains(err.Error(), "get Telegram bot") || !strings.Contains(err.Error(), "unauthorized") {
 		t.Fatalf("New() error = %v", err)
 	}
 	if strings.Contains(err.Error(), "test-token") {
@@ -172,7 +172,7 @@ func TestNewRejectsTelegramInitializationFailure(t *testing.T) {
 func TestAccessAdministrationIsPrivateAndAdministratorOnly(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &accessStore{users: map[int64]auth.User{300: {ID: 1, TelegramID: 300}}}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
+	service, err := telegrambot.New(t.Context(), "123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatalf("create bot service: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestAccessAdministrationIsPrivateAndAdministratorOnly(t *testing.T) {
 func TestNotificationIsRetriedAfterTooManyRequests(t *testing.T) {
 	transport := newTelegramTransport(t)
 	store := &synchronizedAccessStore{user: auth.User{ID: 1, TelegramID: 200}}
-	service, err := telegrambot.New("123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
+	service, err := telegrambot.New(t.Context(), "123456:test-token", 100, store, slog.New(slog.DiscardHandler), func() {}, telegrambot.Options{ServerURL: transport.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ type answerCallback struct {
 
 func newTelegramTransport(t *testing.T) *telegramTransport {
 	t.Helper()
-	transport := &telegramTransport{t: t, getMeResponse: `{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Scanner"}}`}
+	transport := &telegramTransport{t: t, getMeResponse: `{"ok":true,"result":{"id":123456,"is_bot":true,"first_name":"Scanner","username":"scanner_bot"}}`}
 	transport.Server = httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
 		switch request.URL.Path {
 		case "/bot123456:test-token/getMe":

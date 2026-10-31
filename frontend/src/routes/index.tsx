@@ -1,6 +1,8 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, redirect } from "@tanstack/react-router";
 
 import { MarketScanScreen } from "@/features/market-scan/market-scan-screen";
+import { defaultMarketScanCriteria } from "@/features/market-scan/pipeline";
+import { parseLaunchSearch } from "@/routes/-launch-search";
 import {
 	parseMarketScanSearch,
 	resultsTableSearchProps,
@@ -13,7 +15,23 @@ import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export const Route = createFileRoute("/")({
 	component: Home,
-	validateSearch: parseMarketScanSearch,
+	validateSearch: (search) => ({
+		...parseMarketScanSearch(search),
+		...parseLaunchSearch(search),
+	}),
+	// A coin link from a bot message opens the Mini App here; it shows the
+	// coin with the default criteria, replacing the launch URL, so a reload
+	// stays on the page shown then.
+	beforeLoad: ({ search }) => {
+		if (search.tgWebAppStartParam) {
+			throw redirect({
+				to: "/instruments/$symbol",
+				params: { symbol: search.tgWebAppStartParam },
+				search: scanCriteriaToSearch(defaultMarketScanCriteria),
+				replace: true,
+			});
+		}
+	},
 });
 
 function Home() {

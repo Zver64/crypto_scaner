@@ -24,6 +24,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// testCoins links coins to the Mini App of a test bot.
+var testCoins = telegramhtml.NewCoins("scanner_bot")
+
 // Events of one round share a title per kind, followed by the message and a
 // line per coin; a message too long for Telegram ends at a whole line.
 func TestAlertTextGroupsEventsByKind(t *testing.T) {
@@ -32,9 +35,9 @@ func TestAlertTextGroupsEventsByKind(t *testing.T) {
 		return alert{instrument: Instrument{Symbol: symbol}, event: TradeEvent{Kind: TradeBuy, Buy: number, Close: 1.5, Trade: TradeState{TakeProfit: 2, StopLoss: 1}}}
 	}
 	sell := alert{instrument: Instrument{Symbol: "SOLUSDT"}, event: TradeEvent{Kind: TradeSell, Reason: ExitTakeProfit, Price: 152, Return: 0.038, Trade: TradeState{Buys: 2, Filled: 2, Quantity: 0.01}}}
-	got := alertText(entry, []alert{buy("BTCUSDT", 1), sell, buy("ETHUSDT", 2)}, noFavorites)
-	want := "<b>🟢 Trend · 1h · buy</b>\nCheck volume\n<a href=\"https://www.binance.com/en/trade/BTC_USDT?type=spot\">BTCUSDT</a> at 1.5 · TP 2 · SL 1\n<a href=\"https://www.binance.com/en/trade/ETH_USDT?type=spot\">ETHUSDT</a> #2 at 1.5 · TP 2 · SL 1\n\n" +
-		"<b>🔴 Trend · 1h · sell</b>\nCheck volume\n<a href=\"https://www.binance.com/en/trade/SOL_USDT?type=spot\">SOLUSDT</a> at 152 by take profit · +3.80% · entry 200 · 2 buys"
+	got := alertText(entry, []alert{buy("BTCUSDT", 1), sell, buy("ETHUSDT", 2)}, testCoins, noFavorites)
+	want := "<b>🟢 Trend · 1h · buy</b>\nCheck volume\n<a href=\"https://t.me/scanner_bot?startapp=BTCUSDT\">BTCUSDT</a> · <a href=\"https://www.binance.com/en/trade/BTC_USDT?type=spot\">Binance</a> at 1.5 · TP 2 · SL 1\n<a href=\"https://t.me/scanner_bot?startapp=ETHUSDT\">ETHUSDT</a> · <a href=\"https://www.binance.com/en/trade/ETH_USDT?type=spot\">Binance</a> #2 at 1.5 · TP 2 · SL 1\n\n" +
+		"<b>🔴 Trend · 1h · sell</b>\nCheck volume\n<a href=\"https://t.me/scanner_bot?startapp=SOLUSDT\">SOLUSDT</a> · <a href=\"https://www.binance.com/en/trade/SOL_USDT?type=spot\">Binance</a> at 152 by take profit · +3.80% · entry 200 · 2 buys"
 	if got != want {
 		t.Fatalf("alertText() = %q, want %q", got, want)
 	}
@@ -43,7 +46,7 @@ func TestAlertTextGroupsEventsByKind(t *testing.T) {
 	for i := range many {
 		many[i] = buy("BTCUSDT", 1)
 	}
-	got = alertText(entry, many, noFavorites)
+	got = alertText(entry, many, testCoins, noFavorites)
 	if len(got) > telegramhtml.MaxLength || !strings.HasSuffix(got, "SL 1\n…message too long") {
 		t.Fatalf("long alertText() ends %q after %d bytes", got[max(0, len(got)-40):], len(got))
 	}
@@ -63,7 +66,7 @@ func TestAlertTextOrdersEventsByCandle(t *testing.T) {
 		event("BTCUSDT", TradeBuy, backtestHour(1)),
 		event("SOLUSDT", TradeBuy, backtestHour(2)),
 		event("BTCUSDT", TradeSell, backtestHour(4)),
-	}, noFavorites)
+	}, testCoins, noFavorites)
 	var order []string
 	for _, line := range strings.Split(got, "\n") {
 		if strings.HasPrefix(line, "<b>") {
@@ -96,13 +99,13 @@ func TestMessagesPutFavoritesFirst(t *testing.T) {
 	event := func(symbol string, kind TradeEventKind) alert {
 		return alert{instrument: Instrument{Symbol: symbol}, event: TradeEvent{Kind: kind, Close: 1}}
 	}
-	got := alertText(entry, []alert{event("BTCUSDT", TradeSell), event("ADAUSDT", TradeBuy), event("SOLUSDT", TradeBuy), event("ETHUSDT", TradeSell)}, favorite)
+	got := alertText(entry, []alert{event("BTCUSDT", TradeSell), event("ADAUSDT", TradeBuy), event("SOLUSDT", TradeBuy), event("ETHUSDT", TradeSell)}, testCoins, favorite)
 	if want := []string{"sell", "⭐ETHUSDT", "BTCUSDT", "buy", "⭐SOLUSDT", "ADAUSDT"}; !slices.Equal(lines(got), want) {
 		t.Fatalf("alertText() = %v, want %v\n%s", lines(got), want, got)
 	}
 
 	matching := []Instrument{{Symbol: "BTCUSDT"}, {Symbol: "SOLUSDT"}, {Symbol: "ADAUSDT"}, {Symbol: "ETHUSDT"}}
-	got = summaryText(entry, matching, snapshot{}, favorite)
+	got = summaryText(entry, matching, snapshot{}, testCoins, favorite)
 	if want := []string{"⭐ETHUSDT", "⭐SOLUSDT", "ADAUSDT", "BTCUSDT"}; !slices.Equal(lines(got)[1:], want) {
 		t.Fatalf("summaryText() = %v, want %v\n%s", lines(got), want, got)
 	}
@@ -111,7 +114,7 @@ func TestMessagesPutFavoritesFirst(t *testing.T) {
 	for i := range 200 {
 		many = append(many, Instrument{Symbol: fmt.Sprintf("A%03dUSDT", i)})
 	}
-	got = summaryText(entry, many, snapshot{}, favorite)
+	got = summaryText(entry, many, snapshot{}, testCoins, favorite)
 	if listed := lines(got); len(got) > telegramhtml.MaxLength || listed[1] != "⭐SOLUSDT" || !strings.HasSuffix(got, " more") {
 		t.Fatalf("long summaryText() lists %v", listed[:2])
 	}
@@ -209,7 +212,7 @@ func TestMonitorHaltsStrategiesOfInactiveCoins(t *testing.T) {
 		disabling := &disablingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
 		service := newBacktestService(t, disabling.backtestStore, item)
 		service.store = disabling
-		monitor := NewMonitor(monitorStore{disabling.backtestStore}, disabling.backtestStore, testRegistry(t), noValues{}, service, nil, 7, slog.New(slog.DiscardHandler))
+		monitor := NewMonitor(monitorStore{disabling.backtestStore}, disabling.backtestStore, testRegistry(t), noValues{}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 		monitor.evaluate(context.Background(), map[uuid.UUID]map[int64]TradeState{})
 		if disabling.calls != 1 || service.List()[0].Enabled {
 			t.Fatalf("%s: disable calls %d, entry %+v", item.Name, disabling.calls, service.List()[0])
@@ -259,7 +262,7 @@ func TestMonitorStartsCoinsNewToTheFavoritesSilently(t *testing.T) {
 		alert  bool
 	}{{map[int64]TradeState{}, false}, {map[int64]TradeState{1: {}}, true}} {
 		saving := &savingStore{monitorStore: monitorStore{store}}
-		monitor := NewMonitor(saving, store, testRegistry(t), closingValues{}, service, nil, 7, slog.New(slog.DiscardHandler))
+		monitor := NewMonitor(saving, store, testRegistry(t), closingValues{}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 		monitor.full = true
 		monitor.evaluate(context.Background(), map[uuid.UUID]map[int64]TradeState{testID(1): test.states})
 		if !reflect.DeepEqual(saving.saved, []int64{1}) || (len(monitor.sends) > 0) != test.alert {
@@ -301,7 +304,7 @@ func TestMonitorRetriesAFailedRoundLater(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: testID(1), Name: "Hold", Expression: "h_close > 5", Coins: []string{"BTCUSDT"}, Enabled: true})
 		store := &failingStore{monitorStore: monitorStore{newBacktestStore(market.IntervalHour, nil)}}
-		monitor := NewMonitor(store, store.backtestStore, testRegistry(t), noValues{}, service, nil, 7, slog.New(slog.DiscardHandler))
+		monitor := NewMonitor(store, store.backtestStore, testRegistry(t), noValues{}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 		ctx, cancel := context.WithCancel(context.Background())
 		done := make(chan error)
 		go func() { done <- monitor.Run(ctx) }()
@@ -469,7 +472,7 @@ func TestMonitorCatchesUpMissedCandlesLikeTheBacktest(t *testing.T) {
 		ID: testID(1), Name: "Range", Expression: "h_close > 5", TakeProfitExpression: "h_close * 1.2", StopLossExpression: "h_close * 0.9",
 		Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 1,
 	}
-	link := `<a href="https://www.binance.com/en/trade/BTC_USDT?type=spot">BTCUSDT</a>`
+	link := testCoins.Symbol("BTCUSDT")
 	// signal is the close of the signal at hour 4, whose levels the stored
 	// trade holds.
 	signal := 12.0
@@ -519,7 +522,7 @@ func TestMonitorCatchesUpMissedCandlesLikeTheBacktest(t *testing.T) {
 				}
 			}
 			saving := &statesStore{monitorStore: monitorStore{store}}
-			monitor := NewMonitor(saving, store, testRegistry(t), storedValues{testRegistry(t), store}, service, nil, 7, slog.New(slog.DiscardHandler))
+			monitor := NewMonitor(saving, store, testRegistry(t), storedValues{testRegistry(t), store}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 			monitor.now = func() time.Time { return backtestHour(test.latest + 1) }
 			monitor.full = test.full
 			monitor.pending[1] = struct{}{}
@@ -618,7 +621,7 @@ func TestMonitorCatchesUpDeepSpansFromTheFirstWarmCandle(t *testing.T) {
 			}
 
 			saving := &statesStore{monitorStore: monitorStore{store}}
-			monitor := NewMonitor(saving, store, registry, storedValues{registry, store}, service, nil, 7, slog.New(slog.DiscardHandler))
+			monitor := NewMonitor(saving, store, registry, storedValues{registry, store}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 			monitor.now = func() time.Time { return backtestHour(latest + 1) }
 			monitor.full = true
 			monitor.evaluate(context.Background(), map[uuid.UUID]map[int64]TradeState{testID(1): {1: {OpenTime: backtestHour(stored)}}})
@@ -656,7 +659,7 @@ func TestMonitorRetriesACatchUpPerInstrument(t *testing.T) {
 			// Only the catch-ups of BTCUSDT fail.
 			candles := &countingCandles{err: test.err}
 			saving := &twoCoinsStore{statesStore: statesStore{monitorStore: monitorStore{store}}}
-			monitor := NewMonitor(saving, candles, testRegistry(t), test.values, service, nil, 7, slog.New(slog.DiscardHandler))
+			monitor := NewMonitor(saving, candles, testRegistry(t), test.values, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 			monitor.catchUpLimit = 1
 			start := time.Now()
 			latest := market.IntervalHour.LastClosedOpenTime(start)
@@ -710,7 +713,7 @@ func TestMonitorCatchesUpInChunks(t *testing.T) {
 	}
 	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Hold", Expression: "h_close > 1", Coins: []string{"BTCUSDT", "ETHUSDT"}, Enabled: true, Revision: 1})
 	saving := &twoCoinsStore{statesStore: statesStore{monitorStore: monitorStore{store}}}
-	monitor := NewMonitor(saving, store, testRegistry(t), storedValues{testRegistry(t), store}, service, nil, 7, slog.New(slog.DiscardHandler))
+	monitor := NewMonitor(saving, store, testRegistry(t), storedValues{testRegistry(t), store}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 	monitor.now = func() time.Time { return backtestHour(10) }
 	monitor.catchUpLimit = 1
 	monitor.full = true

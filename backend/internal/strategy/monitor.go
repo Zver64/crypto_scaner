@@ -15,6 +15,7 @@ import (
 	"crypto-scanner/internal/platform/backoff"
 	"crypto-scanner/internal/platform/delivery"
 	"crypto-scanner/internal/platform/logging"
+	"crypto-scanner/internal/telegramhtml"
 
 	"github.com/google/uuid"
 )
@@ -113,6 +114,7 @@ type Monitor struct {
 	values     Values
 	strategies Strategies
 	sender     Sender
+	coins      telegramhtml.Coins
 	logger     *slog.Logger
 	now        func() time.Time
 	// catchUpLimit is catchUpLimit, which tests lower.
@@ -160,10 +162,10 @@ var loadStatesFailure = failureKey{operation: "load states"}
 // go to administratorID and to users with strategy alerts.
 // Missed candles are replayed over the candles stored in candles with the
 // indicators of registry.
-func NewMonitor(store MonitorStore, candles CandleStore, registry *indicator.Registry, values Values, strategies Strategies, sender Sender, administratorID int64, logger *slog.Logger) *Monitor {
+func NewMonitor(store MonitorStore, candles CandleStore, registry *indicator.Registry, values Values, strategies Strategies, sender Sender, coins telegramhtml.Coins, administratorID int64, logger *slog.Logger) *Monitor {
 	logger = logger.With("module", "strategy")
 	monitor := &Monitor{
-		store: store, candles: candles, registry: registry, values: values, strategies: strategies, sender: sender, administratorID: administratorID,
+		store: store, candles: candles, registry: registry, values: values, strategies: strategies, sender: sender, coins: coins, administratorID: administratorID,
 		logger: logger, failures: logging.NewFailures[failureKey](logger), now: time.Now, catchUpLimit: catchUpLimit,
 		wake: make(chan struct{}, 1), sends: make(chan message, 256),
 		pending: map[int64]struct{}{}, baselines: map[uuid.UUID]struct{}{}, catchUps: map[uuid.UUID]map[int64]*catchUpRetry{},

@@ -67,6 +67,7 @@ type group struct {
 type Notifier struct {
 	queue  *Queue
 	sender Sender
+	coins  telegramhtml.Coins
 	// logger must not forward to queue, or a failed delivery would be queued.
 	logger *slog.Logger
 	groups map[string]*group
@@ -75,11 +76,11 @@ type Notifier struct {
 	unsent []message
 }
 
-func New(queue *Queue, sender Sender, logger *slog.Logger) (*Notifier, error) {
+func New(queue *Queue, sender Sender, coins telegramhtml.Coins, logger *slog.Logger) (*Notifier, error) {
 	if queue == nil || sender == nil || logger == nil {
 		return nil, fmt.Errorf("invalid operations notifier")
 	}
-	return &Notifier{queue: queue, sender: sender, logger: logger.With("module", "ops_notify"), groups: map[string]*group{}}, nil
+	return &Notifier{queue: queue, sender: sender, coins: coins, logger: logger.With("module", "ops_notify"), groups: map[string]*group{}}, nil
 }
 
 func (n *Notifier) Run(ctx context.Context) error {
@@ -136,7 +137,7 @@ func (n *Notifier) receive(record slog.Record) (message, bool) {
 		return message{}, false
 	}
 	n.groups[key] = &group{since: time.Now(), latest: record}
-	return message{level: record.Level, text: format(record, 0)}, true
+	return message{level: record.Level, text: format(n.coins, record, 0)}, true
 }
 
 // summaries returns the summaries of the repeats of groups older than window
@@ -151,7 +152,7 @@ func (n *Notifier) summaries(now time.Time, window time.Duration) []message {
 			delete(n.groups, key)
 			continue
 		}
-		result = append(result, message{level: existing.latest.Level, text: format(existing.latest, existing.repeats)})
+		result = append(result, message{level: existing.latest.Level, text: format(n.coins, existing.latest, existing.repeats)})
 		existing.since, existing.repeats = now, 0
 	}
 	return result
@@ -193,7 +194,7 @@ func module(record slog.Record) string {
 // a symbol, linked to the coin. The message and values are joined into one
 // line each and capped, so a message too long for Telegram ends at a whole
 // line and keeps the message and the first attributes.
-func format(record slog.Record, repeats int) string {
+func format(coins telegramhtml.Coins, record slog.Record, repeats int) string {
 	icon := "⚠️"
 	if record.Level >= slog.LevelError {
 		icon = "🛑"
@@ -210,7 +211,7 @@ func format(record slog.Record, repeats int) string {
 		switch attr.Key {
 		case "module": // in the title
 		case "symbol":
-			lines = append(lines, "symbol: "+telegramhtml.Symbol(attr.Value.String()))
+			lines = append(lines, "symbol: "+coins.Symbol(attr.Value.String()))
 		default:
 			lines = append(lines, line(attr.Key)+": <code>"+line(attr.Value.String())+"</code>")
 		}

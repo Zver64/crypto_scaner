@@ -64,6 +64,8 @@ export function useInstrumentAnalysis(
 	return {
 		insufficientHistory,
 		isFetching: query.isFetching,
+		// The result shown is that of earlier criteria or another symbol.
+		isPlaceholderData: query.isPlaceholderData,
 		result: query.data,
 	};
 }

@@ -6,14 +6,12 @@ import {
 } from "@tanstack/react-router";
 
 import { InstrumentAnalysisScreen } from "@/features/instrument-analysis/instrument-analysis-screen";
-import {
-	defaultMarketScanCriteria,
-	volatilityCriterionSelections,
-} from "@/features/market-scan/pipeline";
+import { defaultMarketScanCriteria } from "@/features/market-scan/pipeline";
 import { scanCriteriaToSearch } from "@/routes/-scan-criteria-search";
 import {
 	parseVolatilitySettingsOnlySearch,
 	volatilitySettingsFromSearch,
+	volatilitySettingsToSearch,
 } from "@/routes/-volatility-settings-search";
 
 export const Route = createFileRoute("/instruments/$symbol")({
@@ -26,12 +24,11 @@ function InstrumentRoute() {
 	const { symbol } = Route.useParams();
 	const settings = volatilitySettingsFromSearch(Route.useSearch());
 	const router = useRouter();
-	const navigate = useNavigate();
+	const navigate = useNavigate({ from: Route.fullPath });
 	const canGoBack = useCanGoBack();
 
 	return (
 		<InstrumentAnalysisScreen
-			criterionSelections={volatilityCriterionSelections(settings)}
 			// A coin opened directly (a link or a reload) has no page to go back
 			// to, so it returns to the Market Scan with its volatility settings
 			// and the default filters.
@@ -48,6 +45,15 @@ function InstrumentRoute() {
 					});
 				}
 			}}
+			// The settings live only in the URL; applying them keeps the scroll.
+			onSettingsCommit={(nextSettings) => {
+				void navigate({
+					search: volatilitySettingsToSearch(nextSettings),
+					replace: true,
+					resetScroll: false,
+				});
+			}}
+			settings={settings}
 			symbol={symbol}
 		/>
 	);

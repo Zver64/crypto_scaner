@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.7.0](https://github.com/Zver64/crypto_scaner/compare/v4.6.0...v4.7.0) (2026-10-31)
+
+
+### Features
+
+* link coins in Telegram notifications to the Mini App ([0e4e9c2](https://github.com/Zver64/crypto_scaner/commit/0e4e9c2800ddc6c43f1b5ca825be84ea13a09fee))
+
 ## [4.6.0](https://github.com/Zver64/crypto_scaner/compare/v4.5.0...v4.6.0) (2026-10-31)
 
 

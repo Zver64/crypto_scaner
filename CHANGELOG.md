@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.8.0](https://github.com/Zver64/crypto_scaner/compare/v4.7.0...v4.8.0) (2026-10-31)
+
+
+### Features
+
+* **frontend:** change volatility settings on the coin page ([3d532a9](https://github.com/Zver64/crypto_scaner/commit/3d532a9c9fc8d6aec2473da9c51eb2135341044c))
+
+
+### Bug Fixes
+
+* **frontend:** analyze the coin page without scan filters ([533844e](https://github.com/Zver64/crypto_scaner/commit/533844e52e50cb98958759d70870844ab2c1976d))
+
 ## [4.7.0](https://github.com/Zver64/crypto_scaner/compare/v4.6.0...v4.7.0) (2026-10-31)
 
 

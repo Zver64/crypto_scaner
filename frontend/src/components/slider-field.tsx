@@ -1,4 +1,11 @@
-import { Box, Slider, type SliderProps, Stack, Text } from "@mantine/core";
+import {
+	Box,
+	Group,
+	Slider,
+	type SliderProps,
+	Stack,
+	Text,
+} from "@mantine/core";
 import type { ReactNode } from "react";
 
 interface SliderScaleLabel {
@@ -12,6 +19,8 @@ interface SliderFieldProps extends Omit<
 > {
 	formatValue: (value: number) => string;
 	label: string;
+	// Shown at the right end of the label row.
+	labelAction?: ReactNode;
 	scaleLabels: readonly SliderScaleLabel[];
 	value: number;
 }
@@ -19,15 +28,19 @@ interface SliderFieldProps extends Omit<
 export function SliderField({
 	formatValue,
 	label,
+	labelAction,
 	scaleLabels,
 	value,
 	...sliderProps
 }: SliderFieldProps) {
 	return (
 		<Stack gap={4}>
-			<Text fw={500} size="sm">
-				{label}: {formatValue(value)}
-			</Text>
+			<Group justify="space-between" wrap="nowrap">
+				<Text fw={500} size="sm">
+					{label}: {formatValue(value)}
+				</Text>
+				{labelAction}
+			</Group>
 			<Slider
 				{...sliderProps}
 				label={formatValue}

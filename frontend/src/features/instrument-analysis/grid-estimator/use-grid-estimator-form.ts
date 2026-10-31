@@ -13,6 +13,8 @@ import type {
 import {
 	calculateSpotGridInput,
 	defaultInvestment,
+	evenLowerBound,
+	evenUpperBound,
 	gridBounds,
 	gridCountForRange,
 	gridMarketEstimate,
@@ -179,6 +181,25 @@ export function useGridEstimatorForm({
 		};
 	}
 
+	// Moves a range bound to where the grid is even; null when the range is
+	// already even or the bound cannot move.
+	const evenUpper = evenUpperBound(bounds, currentRange(), values.lowerMarkup);
+	const alignUpperPrice =
+		evenUpper &&
+		(() =>
+			applyRange(
+				{ ...currentRange(), upperPrice: evenUpper.upperPrice },
+				{ markup: evenUpper.markup },
+			));
+	const evenLower = evenLowerBound(bounds, currentRange(), values.lowerMarkup);
+	const alignLowerPrice =
+		evenLower &&
+		(() =>
+			applyRange(
+				{ ...currentRange(), lowerPrice: evenLower.lowerPrice },
+				{ lowerMarkup: evenLower.lowerMarkup },
+			));
+
 	function changeMarkup(markup: number) {
 		const upperPrice = upperPriceFromMarkup(bounds, markup);
 		if (!upperPrice) return;
@@ -290,6 +311,8 @@ export function useGridEstimatorForm({
 	}
 
 	return {
+		alignLowerPrice,
+		alignUpperPrice,
 		applyInvestment,
 		bounds,
 		changeGridType,

@@ -16,7 +16,7 @@ export const GRID_MARKET_TABS: readonly { label: string; value: GridMarket }[] =
 
 // Starting markup of both the upper and the lower price, in percent.
 export const DEFAULT_MARKUP_PERCENT = 10;
-export const UPPER_MARKUP_MAX_PERCENT = 50;
+export const UPPER_MARKUP_MAX_PERCENT = 100;
 export const LOWER_MARKUP_MAX_PERCENT = 50;
 // Slider caps when the Binance limits allow more: the lower price stays above
 // zero, and the upper price goes no further than triple the average price.

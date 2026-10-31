@@ -37,6 +37,8 @@ export function GridEstimator({
 	...formOptions
 }: GridEstimatorProps & { market: GridMarket }) {
 	const {
+		alignLowerPrice,
+		alignUpperPrice,
 		applyInvestment,
 		bounds,
 		changeGridType,
@@ -90,7 +92,9 @@ export function GridEstimator({
 					bounds={bounds}
 					disabled={disabled || !hasAnchor}
 					lowerMarkup={formValues.lowerMarkup}
+					onLowerAlign={alignLowerPrice}
 					onLowerMarkupChange={changeLowerMarkup}
+					onUpperAlign={alignUpperPrice}
 					onUpperMarkupChange={changeMarkup}
 					upperMarkup={formValues.markup}
 				/>

@@ -9,6 +9,8 @@ import {
 	calculateFuturesGridInput,
 	calculateSpotGridInput,
 	defaultInvestment,
+	evenLowerBound,
+	evenUpperBound,
 	futuresGridEstimateValues,
 	gridBounds,
 	gridCountForRange,
@@ -170,6 +172,159 @@ describe("spot grid recommendations", () => {
 			investment: "1000",
 		};
 		expect(minimumStep(input, "geometric")).toBeGreaterThanOrEqual(0.722);
+	});
+
+	it.each(["geometric", "arithmetic"] as const)(
+		"moves a %s range bound inward until the grid is even",
+		(gridType) => {
+			const range = {
+				gridType,
+				lowerPrice: "90",
+				rangePercent: 1,
+				upperPrice: "110.5",
+			};
+			const ticked = { ...bounds, tickSize: new Decimal("0.0001") };
+			const gridCount = gridCountForStep("110.5", "90", 1, gridType);
+			const upper = evenUpperBound(ticked, range, 10);
+			const lower = evenLowerBound(ticked, range, 10);
+			if (!upper || !lower || !gridCount) throw new Error("missing bound");
+			expect(Number(upper.upperPrice)).toBeLessThan(110.5);
+			expect(Number(lower.lowerPrice)).toBeGreaterThan(90);
+
+			for (const even of [
+				{ ...range, upperPrice: upper.upperPrice },
+				{ ...range, lowerPrice: lower.lowerPrice },
+			]) {
+				const markup = lowerMarkupPercent(100, even.lowerPrice, "ceil") ?? 0;
+				expect(
+					gridCountForStep(even.upperPrice, even.lowerPrice, 1, gridType),
+				).toBe(gridCount);
+				expect(
+					minimumStep(
+						{
+							gridCount,
+							investment: "1000",
+							lowerPrice: even.lowerPrice,
+							upperPrice: even.upperPrice,
+						},
+						gridType,
+					),
+				).toBeCloseTo(1, 4);
+				expect(evenUpperBound(ticked, even, markup)).toBeNull();
+				expect(evenLowerBound(ticked, even, markup)).toBeNull();
+			}
+		},
+	);
+
+	it("aligns the upper price above a lower price rounded down from its markup", () => {
+		const ticked = {
+			...bounds,
+			anchor: 2.13,
+			tickSize: new Decimal("0.0001"),
+		};
+		const lowerPrice = lowerPriceFromMarkup(ticked, 14.56);
+		if (!lowerPrice) throw new Error("missing lower price");
+		const range = {
+			gridType: "geometric" as const,
+			lowerPrice,
+			rangePercent: 0.722,
+			upperPrice: "2.4469",
+		};
+		const upper = evenUpperBound(ticked, range, 14.56);
+		if (!upper) throw new Error("missing upper bound");
+		const even = { ...range, upperPrice: upper.upperPrice };
+		expect(
+			gridCountForStep(
+				even.upperPrice,
+				lowerPrice,
+				0.722,
+				"geometric",
+				2.13,
+				14.56,
+			),
+		).toBe(
+			gridCountForStep(
+				range.upperPrice,
+				lowerPrice,
+				0.722,
+				"geometric",
+				2.13,
+				14.56,
+			),
+		);
+		expect(evenUpperBound(ticked, even, 14.56)).toBeNull();
+	});
+
+	it("keeps a range bound when an even grid would cross the anchor or fit no step", () => {
+		const range = {
+			gridType: "geometric" as const,
+			lowerPrice: "90",
+			rangePercent: 1,
+			upperPrice: "100.2",
+		};
+		expect(evenUpperBound(bounds, range, 10)).toBeNull();
+		expect(
+			evenLowerBound(
+				bounds,
+				{ ...range, lowerPrice: "99.9", upperPrice: "100.5" },
+				0.1,
+			),
+		).toBeNull();
+		// More than the maximum grid count fits, so the steps stay wider.
+		const capped = { ...range, rangePercent: 0.1, upperPrice: "100" };
+		expect(
+			evenUpperBound(at(10), { ...capped, lowerPrice: "9" }, 10),
+		).toBeNull();
+	});
+
+	it("treats a range within price rounding of even as even", () => {
+		expect(
+			evenLowerBound(
+				at(18.65),
+				{
+					gridType: "arithmetic",
+					lowerPrice: "10.02",
+					rangePercent: 2.768,
+					upperPrice: "33.47",
+				},
+				46.23,
+			),
+		).toBeNull();
+		const ticked = {
+			...at(18.125),
+			tickSize: new Decimal("0.0001"),
+		};
+		expect(
+			evenUpperBound(
+				ticked,
+				{
+					gridType: "geometric",
+					lowerPrice: "17.9387",
+					rangePercent: 1.442,
+					upperPrice: "24.9346",
+				},
+				lowerMarkupPercent(18.125, "17.9387", "ceil") ?? 0,
+			),
+		).toBeNull();
+	});
+
+	it("keeps a typed grid count and its even range", () => {
+		const input = {
+			gridCount: "3",
+			investment: "1000",
+			lowerPrice: "90",
+			upperPrice: "110",
+		};
+		const stepPercent = minimumStep(input, "geometric");
+		expect(gridCountForStep("110", "90", stepPercent, "geometric")).toBe("3");
+		const range = {
+			gridType: "geometric" as const,
+			lowerPrice: "90",
+			rangePercent: stepPercent,
+			upperPrice: "110",
+		};
+		expect(evenUpperBound(bounds, range, 10)).toBeNull();
+		expect(evenLowerBound(bounds, range, 10)).toBeNull();
 	});
 
 	it("returns partial fallbacks for missing market data and unsupported values", () => {

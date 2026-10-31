@@ -11,6 +11,9 @@ export const GridDecimal = Decimal.clone({
 });
 
 export const GRID_MAX_COUNT = 1000;
+// Lets a grid count survive the floating-point rounding of a step that was
+// itself derived from that count, such as a typed grid count's step.
+const GRID_COUNT_TOLERANCE = new GridDecimal("1e-9");
 
 const MAX_INPUT_LENGTH = 80;
 const MAX_SIGNIFICANT_DIGITS = 50;
@@ -126,8 +129,9 @@ export function gridLevels(
 
 /**
  * Returns the largest grid count whose smallest step between neighbouring
- * levels, as a fraction of the lower level, stays at or above `minimumStep`.
- * The result is a whole Decimal, possibly zero or not finite.
+ * levels, as a fraction of the lower level, stays at or above `minimumStep`,
+ * up to rounding noise. The result is a whole Decimal, possibly zero or not
+ * finite.
  */
 export function gridCountForMinimumStep(
 	lowerPrice: Decimal,
@@ -143,7 +147,26 @@ export function gridCountForMinimumStep(
 					.times(one.plus(minimumStep))
 					.div(minimumStep.times(upperPrice))
 			: upperPrice.div(lowerPrice).ln().div(one.plus(minimumStep).ln())
-	).floor();
+	)
+		.plus(GRID_COUNT_TOLERANCE)
+		.floor();
+}
+
+/**
+ * Returns the ratio of the upper to the lower price of a grid of `gridCount`
+ * levels whose smallest step, as a fraction of the lower level, is exactly
+ * `minimumStep`; the inverse of `gridCountForMinimumStep`. Returns null when
+ * no arithmetic grid has that many such steps.
+ */
+export function gridRangeRatio(
+	minimumStep: Decimal,
+	gridCount: number,
+	gridType: GridType,
+): Decimal | null {
+	const one = new GridDecimal(1);
+	if (gridType === "geometric") return one.plus(minimumStep).pow(gridCount);
+	const share = minimumStep.times(gridCount).div(one.plus(minimumStep));
+	return share.lt(1) ? one.div(one.minus(share)) : null;
 }
 
 /**

@@ -19,6 +19,7 @@ import {
 import type {
 	FuturesGridOptions,
 	GridBounds,
+	GridEstimatorFormValues,
 	GridCalculation,
 	GridEstimateValues,
 	GridMarket,
@@ -48,6 +49,7 @@ import {
 	GridDecimal,
 	gridCountForMinimumStep,
 	gridLevels,
+	gridRangeRatio,
 	parseGridCount,
 	parseGridDecimal,
 } from "@/utils/calculator/grid";
@@ -266,8 +268,14 @@ export function lowerPriceFromMarkup(
 	}
 }
 
-function percentNumber(value: Decimal): number | null {
-	const percent = value.times(100).toDecimalPlaces(2).toNumber();
+function percentNumber(
+	value: Decimal,
+	rounding?: PriceRounding,
+): number | null {
+	const percent = value
+		.times(100)
+		.toDecimalPlaces(2, tickRounding[rounding ?? "halfExpand"])
+		.toNumber();
 	return Number.isFinite(percent) ? percent : null;
 }
 
@@ -275,11 +283,12 @@ function percentNumber(value: Decimal): number | null {
 export function lowerMarkupPercent(
 	anchor: number | null,
 	lowerPrice: string,
+	rounding?: PriceRounding,
 ): number | null {
 	if (!validPositiveNumber(anchor)) return null;
 	try {
 		const lower = parseGridDecimal(lowerPrice, "Lower price");
-		return percentNumber(new GridDecimal(1).minus(lower.div(anchor)));
+		return percentNumber(new GridDecimal(1).minus(lower.div(anchor)), rounding);
 	} catch {
 		return null;
 	}
@@ -345,6 +354,52 @@ function parsedRange(
 	}
 }
 
+// Returns the lower price a grid count is derived from: the exact price
+// `lowerMarkupPercent` below `anchor` when the lower price was rounded down
+// from it, so the rounding never adds a grid, or else the lower price.
+function countedLowerPrice(
+	lower: Decimal,
+	upper: Decimal,
+	anchor: number | null | undefined,
+	lowerMarkupPercent: number | undefined,
+): Decimal {
+	if (
+		!validPositiveNumber(anchor) ||
+		!validPositiveNumber(lowerMarkupPercent) ||
+		lowerMarkupPercent >= 100
+	)
+		return lower;
+	const markupLower = new GridDecimal(anchor).times(
+		new GridDecimal(1).minus(new GridDecimal(lowerMarkupPercent).div(100)),
+	);
+	return upper.gt(markupLower) ? GridDecimal.max(lower, markupLower) : lower;
+}
+
+// Returns the uncapped grid count of a range and the lower price it is derived
+// from, or null when not even one step fits.
+function rangeGridCount(
+	lower: Decimal,
+	upper: Decimal,
+	stepPercent: number,
+	gridType: GridType,
+	anchor: number | null | undefined,
+	lowerMarkupPercent: number | undefined,
+): { count: Decimal; countedLower: Decimal } | null {
+	const countedLower = countedLowerPrice(
+		lower,
+		upper,
+		anchor,
+		lowerMarkupPercent,
+	);
+	const count = gridCountForMinimumStep(
+		countedLower,
+		upper,
+		new GridDecimal(stepPercent).div(100),
+		gridType,
+	);
+	return count.isFinite() && count.gte(1) ? { count, countedLower } : null;
+}
+
 /**
  * Returns the largest grid count whose minimum step stays at or above
  * `stepPercent` for the given price range. When the lower price was derived
@@ -362,26 +417,164 @@ export function gridCountForStep(
 	if (!validPositiveNumber(stepPercent)) return null;
 	const range = parsedRange(lowerPrice, upperPrice);
 	if (!range) return null;
-	const { lower, upper } = range;
 	try {
-		const target = new GridDecimal(stepPercent).div(100);
-		let count = gridCountForMinimumStep(lower, upper, target, gridType);
-		if (
-			validPositiveNumber(anchor) &&
-			validPositiveNumber(lowerMarkupPercent) &&
-			lowerMarkupPercent < 100
-		) {
-			const markupLower = new GridDecimal(anchor).times(
-				new GridDecimal(1).minus(new GridDecimal(lowerMarkupPercent).div(100)),
-			);
-			if (upper.gt(markupLower))
-				count = GridDecimal.min(
-					count,
-					gridCountForMinimumStep(markupLower, upper, target, gridType),
-				);
+		const derived = rangeGridCount(
+			range.lower,
+			range.upper,
+			stepPercent,
+			gridType,
+			anchor,
+			lowerMarkupPercent,
+		);
+		return derived && GridDecimal.min(derived.count, GRID_MAX_COUNT).toString();
+	} catch {
+		return null;
+	}
+}
+
+// Returns a range with its grid count, the lower price that count is derived
+// from, and the ratio of the upper to the lower price at which that many grids
+// keep their minimum step exactly at `rangePercent`. Returns null when the
+// range has no such grid, or when the grid count is capped, which keeps the
+// steps wider than the selected one.
+function evenGridRange(
+	bounds: GridBounds,
+	range: GridRangeValues,
+	lowerMarkup: number,
+) {
+	const { anchor } = bounds;
+	const parsed = parsedRange(range.lowerPrice, range.upperPrice);
+	if (
+		!validPositiveNumber(anchor) ||
+		!validPositiveNumber(range.rangePercent) ||
+		!parsed
+	)
+		return null;
+	const derived = rangeGridCount(
+		parsed.lower,
+		parsed.upper,
+		range.rangePercent,
+		range.gridType,
+		anchor,
+		lowerMarkup,
+	);
+	if (!derived || derived.count.gt(GRID_MAX_COUNT)) return null;
+	const ratio = gridRangeRatio(
+		new GridDecimal(range.rangePercent).div(100),
+		derived.count.toNumber(),
+		range.gridType,
+	);
+	return (
+		ratio && {
+			...parsed,
+			anchor: new GridDecimal(anchor),
+			countedLower: derived.countedLower,
+			gridCount: derived.count.toString(),
+			ratio,
 		}
-		if (!count.isFinite() || count.lt(1)) return null;
-		return GridDecimal.min(count, GRID_MAX_COUNT).toString();
+	);
+}
+
+// Returns the resolution formatCalculatorInput rounds a price to: the tick
+// size, or else the last of four significant digits but at least a whole unit.
+function priceUnit(bounds: GridBounds, price: Decimal): Decimal {
+	return (
+		bounds.tickSize ??
+		new GridDecimal(10).pow(Math.max(-18, Math.min(0, price.e - 3)))
+	);
+}
+
+/**
+ * Returns the upper price moved down to where the grid's minimum step is
+ * exactly `rangePercent` with its grid count kept, and its markup. Returns
+ * null when the range is already even up to price rounding, narrower than one
+ * step, or capped at the maximum grid count, or when the price would fall
+ * below the anchor.
+ */
+export function evenUpperBound(
+	bounds: GridBounds,
+	range: GridRangeValues,
+	lowerMarkup: number,
+): Pick<GridEstimatorFormValues, "markup" | "upperPrice"> | null {
+	try {
+		const even = evenGridRange(bounds, range, lowerMarkup);
+		if (!even) return null;
+		// Measure from the lower price the grid count is derived from, and round
+		// up so the rounding never takes a grid away.
+		const upperPrice = formatCalculatorInput(
+			bounds,
+			even.countedLower.times(even.ratio),
+			"ceil",
+		);
+		const upper = new GridDecimal(upperPrice);
+		const markup = upperMarkupPercent(bounds.anchor, upperPrice);
+		// A move within the rounding of both prices leaves the grid as even.
+		const rounding = priceUnit(bounds, even.upper).plus(
+			priceUnit(bounds, even.lower).times(even.ratio),
+		);
+		if (
+			markup === null ||
+			even.upper.minus(upper).lte(rounding) ||
+			upper.lt(even.anchor) ||
+			gridCountForStep(
+				upperPrice,
+				range.lowerPrice,
+				range.rangePercent,
+				range.gridType,
+				bounds.anchor,
+				lowerMarkup,
+			) !== even.gridCount
+		)
+			return null;
+		return { markup, upperPrice };
+	} catch {
+		return null;
+	}
+}
+
+/**
+ * Returns the lower price moved up to where the grid's minimum step is exactly
+ * `rangePercent` with its grid count kept, and its markup. Returns null when
+ * the range is already even up to price rounding, narrower than one step, or
+ * capped at the maximum grid count, or when the price would rise above the
+ * anchor.
+ */
+export function evenLowerBound(
+	bounds: GridBounds,
+	range: GridRangeValues,
+	lowerMarkup: number,
+): Pick<GridEstimatorFormValues, "lowerMarkup" | "lowerPrice"> | null {
+	try {
+		const even = evenGridRange(bounds, range, lowerMarkup);
+		if (!even) return null;
+		// Round the price down and its markup up, so neither the rounding nor
+		// the markup cap of gridCountForStep takes a grid away.
+		const lowerPrice = formatCalculatorInput(
+			bounds,
+			even.upper.div(even.ratio),
+			"floor",
+		);
+		const lower = new GridDecimal(lowerPrice);
+		const markup = lowerMarkupPercent(bounds.anchor, lowerPrice, "ceil");
+		// A move within the rounding of both prices leaves the grid as even.
+		const rounding = priceUnit(bounds, even.lower).plus(
+			priceUnit(bounds, even.upper).div(even.ratio),
+		);
+		if (
+			markup === null ||
+			lower.minus(even.lower).lte(rounding) ||
+			lower.gt(even.anchor) ||
+			gridCountForStep(
+				range.upperPrice,
+				lowerPrice,
+				range.rangePercent,
+				range.gridType,
+				bounds.anchor,
+				markup,
+			) !== even.gridCount
+		)
+			return null;
+		return { lowerMarkup: markup, lowerPrice };
 	} catch {
 		return null;
 	}

@@ -44,7 +44,7 @@ export function PriceAlertForm({
 					disabled={isSaving || formLocked}
 					error={targetError}
 					inputContainer={(input) => (
-						<Group gap="xs" wrap="nowrap">
+						<Group align="flex-end" gap="xs" wrap="nowrap">
 							<Box flex={1} miw={0}>
 								{input}
 							</Box>

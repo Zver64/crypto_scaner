@@ -264,6 +264,21 @@ func (source CriterionMetric) cell(row Row) (Cell, bool) {
 	return Cell{}, true
 }
 
+// MetricRatio divides two criterion metrics; unavailable when a metric is
+// missing or the denominator is zero.
+type MetricRatio struct{ Numerator, Denominator CriterionMetric }
+
+func (MetricRatio) data() data { return dataValue }
+func (source MetricRatio) cell(row Row) (Cell, bool) {
+	numerator, _ := source.Numerator.cell(row)
+	denominator, _ := source.Denominator.cell(row)
+	if numerator.Value == nil || denominator.Value == nil || *denominator.Value == 0 {
+		return Cell{}, true
+	}
+	ratio := *numerator.Value / *denominator.Value
+	return Cell{Value: &ratio}, true
+}
+
 // ClosedIndicator is an output of a background indicator at the latest closed
 // candle.
 type ClosedIndicator struct {

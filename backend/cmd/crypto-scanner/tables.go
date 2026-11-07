@@ -14,14 +14,16 @@ import (
 // background. Criterion columns read the evaluation of that criterion,
 // whatever key the client gave it. link opens the instrument on Binance.
 func marketTableColumns(link markettable.Source) []markettable.Column {
+	dailyRange := markettable.CriterionMetric{Criterion: volatility.Name, Unit: analysis.UnitDays, Metric: volatility.RangePercentMetric}
+	hourlyRange := markettable.CriterionMetric{Criterion: volatility.Name, Unit: analysis.UnitHours, Metric: volatility.RangePercentMetric}
 	return []markettable.Column{
 		{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
 		{ID: "market_cap_usd", Title: "MCap", Kind: markettable.KindUSDCompact, Sortable: true,
 			Source: markettable.CriterionMetric{Criterion: marketcapcriterion.Name, Metric: marketcapcriterion.USDMetric}},
-		{ID: "daily_range_percent", Title: "D Range", Kind: markettable.KindRangePercent, Sortable: true,
-			Source: markettable.CriterionMetric{Criterion: volatility.Name, Unit: analysis.UnitDays, Metric: volatility.RangePercentMetric}},
-		{ID: "hourly_range_percent", Title: "H Range", Kind: markettable.KindRangePercent, Sortable: true,
-			Source: markettable.CriterionMetric{Criterion: volatility.Name, Unit: analysis.UnitHours, Metric: volatility.RangePercentMetric}},
+		{ID: "daily_range_percent", Title: "D Range", Kind: markettable.KindRangePercent, Sortable: true, Source: dailyRange},
+		{ID: "hourly_range_percent", Title: "H Range", Kind: markettable.KindRangePercent, Sortable: true, Source: hourlyRange},
+		{ID: "daily_hourly_range_ratio", Title: "D/H", Kind: markettable.KindNumber, Sortable: true,
+			Source: markettable.MetricRatio{Numerator: dailyRange, Denominator: hourlyRange}},
 		{ID: "seven_day_change_percent", Title: "7d %", Kind: markettable.KindPercentChange, Sortable: true, Source: markettable.PriceChangePercent{Period: markettable.SevenDays}},
 		{ID: "price_history", Title: "7d chart", Kind: markettable.KindSparkline, Source: markettable.PriceHistory{Period: markettable.SevenDays}},
 		{ID: "thirty_day_change_percent", Title: "30d %", Kind: markettable.KindPercentChange, Sortable: true, Source: markettable.PriceChangePercent{Period: markettable.ThirtyDays}},

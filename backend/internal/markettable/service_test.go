@@ -140,3 +140,32 @@ func TestFavoritesMarkTheMarketsOfEveryCoin(t *testing.T) {
 		}
 	}
 }
+
+func TestMetricRatioIsUnavailableWithoutAPositiveDenominator(t *testing.T) {
+	daily := markettable.CriterionMetric{Criterion: "volatility", Unit: analysis.UnitDays, Metric: "range_percent"}
+	hourly := markettable.CriterionMetric{Criterion: "volatility", Unit: analysis.UnitHours, Metric: "range_percent"}
+	catalog, err := markettable.NewCatalog(noConfiguredColumns{}, markettable.Sort{Column: "ratio", Direction: markettable.Descending},
+		markettable.Column{ID: "ratio", Title: "Ratio", Kind: markettable.KindNumber, Sortable: true, Source: markettable.MetricRatio{Numerator: daily, Denominator: hourly}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	evaluations := func(dailyRange, hourlyRange float64) []analysis.Evaluation {
+		return []analysis.Evaluation{
+			{Name: "volatility", Unit: analysis.UnitDays, Metrics: map[string]float64{"range_percent": dailyRange}},
+			{Name: "volatility", Unit: analysis.UnitHours, Metrics: map[string]float64{"range_percent": hourlyRange}},
+		}
+	}
+	table := catalog.Build([]markettable.Row{
+		{Symbol: "RATIO", Evaluations: evaluations(6, 1.5)},
+		{Symbol: "FLAT", Evaluations: evaluations(6, 0)},
+		{Symbol: "MISSING", Evaluations: evaluations(6, 1.5)[:1]},
+	}, market.PriceWindows{})
+	if value := table.Rows[0].Cells["ratio"].Value; value == nil || *value != 4 {
+		t.Fatalf("ratio = %v, want 4", value)
+	}
+	for _, row := range table.Rows[1:] {
+		if value := row.Cells["ratio"].Value; value != nil {
+			t.Fatalf("%s ratio = %v, want unavailable", row.Symbol, *value)
+		}
+	}
+}

@@ -77,7 +77,7 @@ function calculateGrid<Estimate>(
 
 export function calculateSpotGridInput(
 	input: GridInput,
-	gridType: GridType = "arithmetic",
+	gridType: GridType,
 ): SpotGridCalculation | null {
 	return calculateGrid(input, () =>
 		gridType === "geometric"
@@ -89,7 +89,7 @@ export function calculateSpotGridInput(
 export function calculateFuturesGridInput(
 	input: GridInput,
 	{ currentPrice, ...options }: FuturesGridOptions,
-	contract: FuturesContract = "linear",
+	contract: FuturesContract,
 ): GridCalculation<FuturesGridEstimate> | null {
 	return calculateGrid(input, () => {
 		if (currentPrice === null)

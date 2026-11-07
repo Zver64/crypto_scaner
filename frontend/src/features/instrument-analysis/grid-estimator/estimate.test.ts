@@ -37,10 +37,13 @@ describe("calculateSpotGridInput", () => {
 	it.each(Object.keys(validInput) as (keyof typeof validInput)[])(
 		"clears the estimate for partial input missing %s",
 		(field) => {
-			const calculation = calculateSpotGridInput({
-				...validInput,
-				[field]: "",
-			});
+			const calculation = calculateSpotGridInput(
+				{
+					...validInput,
+					[field]: "",
+				},
+				"arithmetic",
+			);
 
 			expect(calculation).toBeNull();
 			expect(spotGridEstimateValues(calculation?.estimate ?? null)).toEqual(
@@ -148,23 +151,29 @@ describe("calculateSpotGridInput", () => {
 	});
 
 	it("clears a valid estimate after cleared or invalid input", () => {
-		const validCalculation = calculateSpotGridInput(validInput);
+		const validCalculation = calculateSpotGridInput(validInput, "arithmetic");
 
 		expect(validCalculation?.estimate).not.toBeNull();
 
-		const clearedCalculation = calculateSpotGridInput({
-			...validInput,
-			investment: "",
-		});
+		const clearedCalculation = calculateSpotGridInput(
+			{
+				...validInput,
+				investment: "",
+			},
+			"arithmetic",
+		);
 		expect(clearedCalculation).toBeNull();
 		expect(
 			spotGridEstimateValues(clearedCalculation?.estimate ?? null),
 		).toEqual(zeroValues);
 
-		const invalidCalculation = calculateSpotGridInput({
-			...validInput,
-			upperPrice: "100",
-		});
+		const invalidCalculation = calculateSpotGridInput(
+			{
+				...validInput,
+				upperPrice: "100",
+			},
+			"arithmetic",
+		);
 		expect(invalidCalculation?.estimate).toBeNull();
 		expect(invalidCalculation?.error).toContain("Upper price");
 		expect(
@@ -183,7 +192,11 @@ describe("calculateFuturesGridInput", () => {
 	const futuresInput = { ...validInput, upperPrice: "121", gridCount: "2" };
 
 	it("shows one geometric trade", () => {
-		const calculation = calculateFuturesGridInput(futuresInput, options);
+		const calculation = calculateFuturesGridInput(
+			futuresInput,
+			options,
+			"linear",
+		);
 		const values = futuresGridEstimateValues(
 			calculation?.estimate ?? null,
 			"USDT",
@@ -196,10 +209,14 @@ describe("calculateFuturesGridInput", () => {
 	});
 
 	it("pairs the lowest- and highest-profit arithmetic trades", () => {
-		const calculation = calculateFuturesGridInput(futuresInput, {
-			...options,
-			gridType: "arithmetic",
-		});
+		const calculation = calculateFuturesGridInput(
+			futuresInput,
+			{
+				...options,
+				gridType: "arithmetic",
+			},
+			"linear",
+		);
 
 		expect(
 			futuresGridEstimateValues(
@@ -230,10 +247,14 @@ describe("calculateFuturesGridInput", () => {
 	});
 
 	it("reports a missing current price as an input error", () => {
-		const calculation = calculateFuturesGridInput(futuresInput, {
-			...options,
-			currentPrice: null,
-		});
+		const calculation = calculateFuturesGridInput(
+			futuresInput,
+			{
+				...options,
+				currentPrice: null,
+			},
+			"linear",
+		);
 
 		expect(calculation?.estimate).toBeNull();
 		expect(calculation?.error).toBe("The current price is unavailable");

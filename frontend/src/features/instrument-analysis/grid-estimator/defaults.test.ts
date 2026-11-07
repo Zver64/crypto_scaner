@@ -9,6 +9,7 @@ import {
 	upperMarkupPercent,
 	upperPriceFromMarkup,
 } from "@/features/instrument-analysis/grid-estimator/bounds";
+import { DEFAULT_INVESTMENT } from "@/features/instrument-analysis/grid-estimator/config";
 import {
 	defaultGridStepPercent,
 	defaultInvestment,
@@ -25,7 +26,16 @@ import {
 	evenUpperBound,
 	gridCountForStep,
 } from "@/features/instrument-analysis/grid-estimator/grid-range";
+import type { GridBounds } from "@/features/instrument-analysis/grid-estimator/types";
 import type { GridType } from "@/utils/calculator/types";
+
+function recommend(
+	bounds: GridBounds,
+	stepPercent: number | undefined,
+	gridType: GridType = "geometric",
+) {
+	return gridRecommendation(bounds, stepPercent, gridType, DEFAULT_INVESTMENT);
+}
 
 describe("defaultGridStepPercent", () => {
 	it.each([
@@ -101,7 +111,7 @@ describe("default range", () => {
 	it.each(["geometric", "arithmetic"] as const)(
 		"widens a %s range to fit two steps",
 		(gridType) => {
-			const { input, lowerMarkup, upperMarkup } = gridRecommendation(
+			const { input, lowerMarkup, upperMarkup } = recommend(
 				bounds,
 				25,
 				gridType,
@@ -113,7 +123,7 @@ describe("default range", () => {
 	);
 
 	it("stays at the minimum markup when two steps fit", () => {
-		expect(gridRecommendation(bounds, 9)).toMatchObject({
+		expect(recommend(bounds, 9)).toMatchObject({
 			lowerMarkup: 10,
 			upperMarkup: 10,
 		});
@@ -121,10 +131,7 @@ describe("default range", () => {
 
 	it("stops at the limits, where the step may not fit", () => {
 		expect(
-			gridRecommendation(
-				{ ...bounds, lowerMarkupMax: 12, upperMarkupMax: 15 },
-				90,
-			),
+			recommend({ ...bounds, lowerMarkupMax: 12, upperMarkupMax: 15 }, 90),
 		).toMatchObject({ lowerMarkup: 12, upperMarkup: 15 });
 	});
 });
@@ -157,7 +164,7 @@ describe("spot grid recommendations", () => {
 	}
 
 	it("starts both prices at the default markup within the range", () => {
-		const recommendation = gridRecommendation(bounds, 1);
+		const recommendation = recommend(bounds, 1);
 		expect(latestAvailableCandle([candle, null])).toEqual(candle);
 		expect(recommendation).toMatchObject({ lowerMarkup: 10, upperMarkup: 10 });
 		expect(recommendation.input).toEqual({
@@ -170,15 +177,12 @@ describe("spot grid recommendations", () => {
 			minimumStep(recommendation.input, "geometric"),
 		).toBeGreaterThanOrEqual(1);
 		expect(
-			gridRecommendation(
-				{ ...bounds, lowerMarkupMax: 4, upperMarkupMax: 6 },
-				1,
-			),
+			recommend({ ...bounds, lowerMarkupMax: 4, upperMarkupMax: 6 }, 1),
 		).toMatchObject({ lowerMarkup: 4, upperMarkup: 6 });
 	});
 
 	it("derives the arithmetic grid count from the same range", () => {
-		const recommendation = gridRecommendation(bounds, 1, "arithmetic");
+		const recommendation = recommend(bounds, 1, "arithmetic");
 		expect(recommendation.input).toMatchObject({
 			lowerPrice: "90",
 			gridCount: "18",
@@ -403,14 +407,12 @@ describe("spot grid recommendations", () => {
 
 	it("returns partial fallbacks for missing market data and unsupported values", () => {
 		expect(latestAvailableCandle([null, null])).toBeNull();
-		expect(gridRecommendation(bounds, 0)).toMatchObject({
+		expect(recommend(bounds, 0)).toMatchObject({
 			input: { lowerPrice: "90", upperPrice: "110", gridCount: "40" },
 		});
 		expect(
-			gridRecommendation(
-				gridBounds("spot", [{ ...candle, close: Number.NaN }], null),
-				1,
-			).input,
+			recommend(gridBounds("spot", [{ ...candle, close: Number.NaN }], null), 1)
+				.input,
 		).toEqual({
 			lowerPrice: "",
 			upperPrice: "",

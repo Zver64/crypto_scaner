@@ -106,8 +106,8 @@ function defaultMarkupPercent(
 export function gridRecommendation(
 	bounds: GridBounds,
 	stepPercent: number | undefined,
-	gridType: GridType = "geometric",
-	investment = DEFAULT_INVESTMENT,
+	gridType: GridType,
+	investment: string,
 ): GridRecommendation {
 	const markup = defaultMarkupPercent(stepPercent, gridType);
 	const upperMarkup = Math.min(markup, bounds.upperMarkupMax);

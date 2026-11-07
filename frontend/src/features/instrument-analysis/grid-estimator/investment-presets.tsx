@@ -1,8 +1,8 @@
 import { Button, Group, Text } from "@mantine/core";
 
 import { INVESTMENT_PRESETS } from "@/features/instrument-analysis/grid-estimator/config";
+import { investmentFromUsdt } from "@/features/instrument-analysis/grid-estimator/defaults";
 import type { GridMarket } from "@/features/instrument-analysis/grid-estimator/types";
-import { investmentFromUsdt } from "@/features/instrument-analysis/grid-estimator/utils";
 import { formatNumber } from "@/utils/number-format";
 
 interface InvestmentPresetsProps {

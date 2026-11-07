@@ -3,6 +3,34 @@ import { useEffect, useState } from "react";
 
 import { useAppForm } from "@/components/form";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
+import {
+	gridBounds,
+	lowerMarkupPercent,
+	lowerPriceFromMarkup,
+	lowerPriceLimitError,
+	upperMarkupPercent,
+	upperPriceFromMarkup,
+	upperPriceLimitError,
+	validPositiveNumber,
+} from "@/features/instrument-analysis/grid-estimator/bounds";
+import {
+	defaultGridStepPercent,
+	defaultInvestment,
+	gridRecommendation,
+	savedGridFormValues,
+} from "@/features/instrument-analysis/grid-estimator/defaults";
+import {
+	gridMarketEstimate,
+	gridPriceLevels,
+	priceAsset,
+} from "@/features/instrument-analysis/grid-estimator/estimate";
+import {
+	evenLowerBound,
+	evenUpperBound,
+	gridCountForRange,
+	gridCountStepError,
+	gridCountStepPercent,
+} from "@/features/instrument-analysis/grid-estimator/grid-range";
 import type {
 	GridEstimatorFormValues,
 	GridInputField,
@@ -11,28 +39,6 @@ import type {
 	SavedGridForm,
 	SpotGridLimits,
 } from "@/features/instrument-analysis/grid-estimator/types";
-import {
-	defaultGridStepPercent,
-	defaultInvestment,
-	evenLowerBound,
-	evenUpperBound,
-	gridBounds,
-	gridCountForRange,
-	gridCountStepError,
-	gridCountStepPercent,
-	gridMarketEstimate,
-	gridPriceLevels,
-	gridRecommendation,
-	lowerMarkupPercent,
-	lowerPriceFromMarkup,
-	lowerPriceLimitError,
-	priceAsset,
-	savedGridFormValues,
-	upperMarkupPercent,
-	upperPriceFromMarkup,
-	upperPriceLimitError,
-	validPositiveNumber,
-} from "@/features/instrument-analysis/grid-estimator/utils";
 import type { GridInput, GridType } from "@/utils/calculator/types";
 
 export interface GridEstimatorFormOptions {

@@ -10,6 +10,10 @@ import { themeToVars } from "@mantine/vanilla-extract";
 import { SegmentedValueGroup } from "@/components/segmented-value-group";
 import { SliderField } from "@/components/slider-field";
 import { GRID_TYPE_OPTIONS } from "@/features/instrument-analysis/grid-estimator/config";
+import {
+	marginAsset,
+	profitSplitRows,
+} from "@/features/instrument-analysis/grid-estimator/estimate";
 import { FuturesControls } from "@/features/instrument-analysis/grid-estimator/futures-controls";
 import { GridPriceInputs } from "@/features/instrument-analysis/grid-estimator/grid-price-inputs";
 import { InvestmentPresets } from "@/features/instrument-analysis/grid-estimator/investment-presets";
@@ -20,10 +24,6 @@ import {
 	type GridEstimatorFormOptions,
 	useGridEstimatorForm,
 } from "@/features/instrument-analysis/grid-estimator/use-grid-estimator-form";
-import {
-	marginAsset,
-	profitSplitRows,
-} from "@/features/instrument-analysis/grid-estimator/utils";
 import { FUTURES_GRID_MAINTENANCE_MARGIN_RATE } from "@/utils/calculator/futures-grid";
 import { formatRangePercent } from "@/utils/range-percent";
 

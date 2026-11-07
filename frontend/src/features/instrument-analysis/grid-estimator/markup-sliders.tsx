@@ -1,7 +1,7 @@
 import { SliderField } from "@/components/slider-field";
 import { AlignBoundButton } from "@/features/instrument-analysis/grid-estimator/align-bound-button";
+import { markupScaleLabels } from "@/features/instrument-analysis/grid-estimator/bounds";
 import type { GridBounds } from "@/features/instrument-analysis/grid-estimator/types";
-import { markupScaleLabels } from "@/features/instrument-analysis/grid-estimator/utils";
 import { formatRangePercent } from "@/utils/range-percent";
 
 interface MarkupSlidersProps {

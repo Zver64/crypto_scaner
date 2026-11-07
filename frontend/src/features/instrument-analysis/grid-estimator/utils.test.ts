@@ -16,7 +16,11 @@ import {
 	gridCountForRange,
 	gridCountForStep,
 	gridMarketEstimate,
+	defaultGridStepPercent,
+	gridCountStepError,
+	gridCountStepPercent,
 	gridRecommendation,
+	savedGridFormValues,
 	investmentFromUsdt,
 	latestAvailableCandle,
 	liquidationRangeBar,
@@ -54,6 +58,124 @@ const zeroValues = {
 		},
 	],
 };
+
+describe("defaultGridStepPercent", () => {
+	it.each([
+		["stays at the hourly range up to the low ratio", 1, 3, 1],
+		["moves towards the daily range with the ratio", 1, 5.5, 2.6875],
+		["stops at its maximum position from the high ratio", 1, 8, 6.25],
+		["keeps the maximum position above the high ratio", 1, 21, 16],
+		["stays at the hourly range without a larger daily range", 2, 1, 2],
+	])("%s", (_, hourly, daily, expected) => {
+		expect(defaultGridStepPercent(hourly, daily)).toBeCloseTo(expected);
+	});
+
+	it("falls back to the hourly range without a daily range", () => {
+		expect(defaultGridStepPercent(1, undefined)).toBe(1);
+		expect(defaultGridStepPercent(undefined, 5)).toBeUndefined();
+	});
+});
+
+describe("savedGridFormValues", () => {
+	it("keeps the values and takes the grid count of the new step", () => {
+		const bounds = gridBounds("usdm", undefined, undefined);
+		const values = {
+			direction: "long",
+			gridCount: "99",
+			gridType: "geometric",
+			investment: "2000",
+			leverage: 3,
+			lowerMarkup: 10,
+			lowerPrice: "90",
+			markup: 10,
+			rangePercent: 1,
+			upperPrice: "110",
+		} as const;
+
+		expect(savedGridFormValues({ bounds, values }, 5)).toEqual({
+			...values,
+			gridCount: "4",
+			rangePercent: 5,
+		});
+	});
+
+	it("restores a typed price outside the limits from its markup", () => {
+		const bounds = {
+			...gridBounds("usdm", undefined, undefined),
+			anchor: 100,
+			minPrice: new Decimal(32),
+		};
+		const { lowerPrice } = savedGridFormValues(
+			{
+				bounds,
+				values: {
+					direction: "long",
+					gridCount: "99",
+					gridType: "geometric",
+					investment: "2000",
+					leverage: 1,
+					lowerMarkup: 10,
+					lowerPrice: "1",
+					markup: 10,
+					rangePercent: 1,
+					upperPrice: "110",
+				},
+			},
+			1,
+		);
+		expect(lowerPrice).toBe("90");
+	});
+});
+
+describe("default range", () => {
+	const bounds = { ...gridBounds("usdm", undefined, undefined), anchor: 100 };
+
+	it.each(["geometric", "arithmetic"] as const)(
+		"widens a %s range to fit two steps",
+		(gridType) => {
+			const { input, lowerMarkup, upperMarkup } = gridRecommendation(
+				bounds,
+				25,
+				gridType,
+			);
+			expect(input.gridCount).toBe("2");
+			expect(lowerMarkup).toBe(upperMarkup);
+			expect(lowerMarkup).toBeGreaterThan(10);
+		},
+	);
+
+	it("stays at the minimum markup when two steps fit", () => {
+		expect(gridRecommendation(bounds, 9)).toMatchObject({
+			lowerMarkup: 10,
+			upperMarkup: 10,
+		});
+	});
+
+	it("stops at the limits, where the step may not fit", () => {
+		expect(
+			gridRecommendation(
+				{ ...bounds, lowerMarkupMax: 12, upperMarkupMax: 15 },
+				90,
+			),
+		).toMatchObject({ lowerMarkup: 12, upperMarkup: 15 });
+	});
+});
+
+describe("grid count step", () => {
+	const range = { gridCount: "4", lowerPrice: "90", upperPrice: "110" };
+
+	it("does not depend on the investment", () => {
+		expect(gridCountStepPercent(range, "geometric")).toBeGreaterThan(5);
+	});
+
+	it("rejects a step outside the hourly-to-daily range", () => {
+		expect(gridCountStepError(2, 1, 3)).toBeNull();
+		expect(gridCountStepError(0.5, 1, 3)).toContain("from 1% to 3%");
+		expect(gridCountStepError(4, 1, null)).toBeNull();
+		expect(gridCountStepError(0.5, 1, null)).toContain("at least 1%");
+		expect(gridCountStepError(0.5, null, 3)).toBeNull();
+	});
+});
 
 describe("spot grid recommendations", () => {
 	const candle = {

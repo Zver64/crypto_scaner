@@ -23,6 +23,14 @@ export const LOWER_MARKUP_MAX_PERCENT = 50;
 export const LOWER_MARKUP_LIMIT_PERCENT = 99;
 export const UPPER_MARKUP_LIMIT_PERCENT = 200;
 export const DEFAULT_GRID_COUNT = "40";
+// The default range widens beyond the default markup to fit this many steps.
+export const DEFAULT_RANGE_MINIMUM_GRIDS = 2;
+// The default minimum step moves from the hourly range towards the daily range
+// as their ratio grows from the low to the high value, up to this share of the
+// way.
+export const DEFAULT_STEP_LOW_RANGE_RATIO = 3;
+export const DEFAULT_STEP_HIGH_RANGE_RATIO = 8;
+export const DEFAULT_STEP_MAX_POSITION = 0.75;
 export const DEFAULT_INVESTMENT = "1000";
 // Investment buttons, in USDT; COIN-M grids invest their worth in the coin.
 export const INVESTMENT_PRESETS = ["500", "1000", "2000"] as const;

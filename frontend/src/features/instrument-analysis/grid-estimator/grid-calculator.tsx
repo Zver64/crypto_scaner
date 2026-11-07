@@ -6,9 +6,18 @@ import {
 	GridEstimator,
 	type GridEstimatorProps,
 } from "@/features/instrument-analysis/grid-estimator/grid-estimator";
-import type { GridMarket } from "@/features/instrument-analysis/grid-estimator/types";
+import type {
+	GridMarket,
+	SavedGridForm,
+} from "@/features/instrument-analysis/grid-estimator/types";
 
-interface GridCalculatorProps extends GridEstimatorProps {
+interface GridCalculatorProps extends Omit<
+	GridEstimatorProps,
+	"onFormChange" | "saved"
+> {
+	// Identifies the volatility ranges: each calculator is built anew for other
+	// ones, keeping its form.
+	formKey: string;
 	paperPadding: string;
 }
 
@@ -17,11 +26,14 @@ interface GridCalculatorProps extends GridEstimatorProps {
 // calculator keeps its inputs and has reported its levels before its tab is
 // selected. Reports the price levels of the selected tab's grid.
 export function GridCalculator({
+	formKey,
 	onPriceLevelsChange,
 	paperPadding,
 	...estimatorProps
 }: GridCalculatorProps) {
 	const [market, setMarket] = useState<GridMarket>("spot");
+	// Read only when a calculator is built, so a change does not render them.
+	const [savedForms] = useState(() => new Map<GridMarket, SavedGridForm>());
 	// The latest levels of every market, read only when a tab is selected.
 	const levelsRef = useRef<
 		Partial<Record<GridMarket, readonly number[] | null>>
@@ -70,8 +82,11 @@ export function GridCalculator({
 						<Tabs.Panel key={value} pt="md" value={value}>
 							<GridEstimator
 								{...estimatorProps}
+								key={formKey}
 								market={value}
+								onFormChange={(saved) => savedForms.set(value, saved)}
 								onPriceLevelsChange={(changed) => changeLevels(value, changed)}
+								saved={savedForms.get(value)}
 							/>
 						</Tabs.Panel>
 					))}

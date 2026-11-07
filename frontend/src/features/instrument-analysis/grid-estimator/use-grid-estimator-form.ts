@@ -1,5 +1,5 @@
 import { useSelector } from "@tanstack/react-form";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useAppForm } from "@/components/form";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
@@ -8,15 +8,18 @@ import type {
 	GridInputField,
 	GridMarket,
 	GridRangeValues,
+	SavedGridForm,
 	SpotGridLimits,
 } from "@/features/instrument-analysis/grid-estimator/types";
 import {
-	calculateSpotGridInput,
+	defaultGridStepPercent,
 	defaultInvestment,
 	evenLowerBound,
 	evenUpperBound,
 	gridBounds,
 	gridCountForRange,
+	gridCountStepError,
+	gridCountStepPercent,
 	gridMarketEstimate,
 	gridPriceLevels,
 	gridRecommendation,
@@ -24,14 +27,13 @@ import {
 	lowerPriceFromMarkup,
 	lowerPriceLimitError,
 	priceAsset,
-	spotGridMinimumStepPercent,
+	savedGridFormValues,
 	upperMarkupPercent,
 	upperPriceFromMarkup,
 	upperPriceLimitError,
 	validPositiveNumber,
 } from "@/features/instrument-analysis/grid-estimator/utils";
 import type { GridInput, GridType } from "@/utils/calculator/types";
-import { formatRangePercent } from "@/utils/range-percent";
 
 export interface GridEstimatorFormOptions {
 	baseAsset: string;
@@ -40,9 +42,14 @@ export interface GridEstimatorFormOptions {
 	gridLimits?: SpotGridLimits | null;
 	hourlyVolatilityPercent?: number;
 	market: GridMarket;
+	// Called with the form whenever it changes.
+	onFormChange(saved: SavedGridForm): void;
 	// Called with the levels of the committed grid when the form mounts and
 	// whenever they are committed.
 	onPriceLevelsChange(levels: readonly number[] | null): void;
+	// The form this calculator replaces, whose values it keeps except for the
+	// step and the grid count, which follow the new ranges.
+	saved?: SavedGridForm;
 }
 
 /**
@@ -56,43 +63,64 @@ export function useGridEstimatorForm({
 	gridLimits,
 	hourlyVolatilityPercent,
 	market,
+	onFormChange,
 	onPriceLevelsChange,
+	saved,
 }: GridEstimatorFormOptions) {
 	// The parent remounts the calculator once its data is ready, so the price
 	// both markups are measured from stays fixed while it is being edited.
-	const [bounds] = useState(() => gridBounds(market, candles, gridLimits));
-	const [recommendation] = useState(() =>
-		gridRecommendation(
+	const [bounds] = useState(
+		() => saved?.bounds ?? gridBounds(market, candles, gridLimits),
+	);
+	const [defaultStepPercent] = useState(() =>
+		defaultGridStepPercent(hourlyVolatilityPercent, dailyVolatilityPercent),
+	);
+	const [defaultValues] = useState((): GridEstimatorFormValues => {
+		const rangePercent = defaultStepPercent ?? 0;
+		if (saved) return savedGridFormValues(saved, rangePercent);
+		const recommendation = gridRecommendation(
 			bounds,
-			hourlyVolatilityPercent,
+			defaultStepPercent,
 			"geometric",
 			defaultInvestment(market, bounds.anchor),
-		),
-	);
-	const [defaultValues] = useState((): GridEstimatorFormValues => ({
-		...recommendation.input,
-		direction: "short",
-		gridType: "geometric",
-		leverage: 1,
-		lowerMarkup: recommendation.lowerMarkup,
-		markup: recommendation.upperMarkup,
-		rangePercent: hourlyVolatilityPercent ?? 0,
-	}));
+		);
+		return {
+			...recommendation.input,
+			direction: "short",
+			gridType: "geometric",
+			leverage: 1,
+			lowerMarkup: recommendation.lowerMarkup,
+			markup: recommendation.upperMarkup,
+			rangePercent,
+		};
+	});
 	const form = useAppForm({
 		defaultValues,
 		listeners: {
 			onMount: () =>
 				onPriceLevelsChange(
-					gridPriceLevels(recommendation.input, defaultValues.gridType),
+					gridPriceLevels(defaultValues, defaultValues.gridType),
 				),
 		},
 	});
+	useEffect(() => {
+		// Untouched values stay defaults, which follow the next ranges.
+		const subscription = form.store.subscribe(() => {
+			if (form.state.isDirty) {
+				onFormChange({ bounds, values: form.state.values });
+			}
+		});
+		return () => subscription.unsubscribe();
+	}, [bounds, form, onFormChange]);
 	// The sliders, markups, futures options, and estimate follow the values as
 	// they change.
 	const values = useSelector(form.store, (state) => state.values);
-	const [committedInput, setCommittedInput] = useState<GridInput>(
-		recommendation.input,
-	);
+	const [committedInput, setCommittedInput] = useState<GridInput>({
+		gridCount: defaultValues.gridCount,
+		investment: defaultValues.investment,
+		lowerPrice: defaultValues.lowerPrice,
+		upperPrice: defaultValues.upperPrice,
+	});
 	// Commits an input and reports the levels when the range changes. applyRange
 	// passes the grid type it has just set; other commits keep the current one.
 	const commitInput = (
@@ -141,7 +169,7 @@ export function useGridEstimatorForm({
 			Pick<GridEstimatorFormValues, "lowerMarkup" | "markup">
 		> = {},
 	) {
-		const { error, gridCount } = gridCountForRange(
+		const { gridCount } = gridCountForRange(
 			range,
 			committedInput.gridCount,
 			anchor,
@@ -158,7 +186,7 @@ export function useGridEstimatorForm({
 		if (markups.markup !== undefined) {
 			form.setFieldValue("markup", markups.markup);
 		}
-		setBlurError("gridCount", error ?? undefined);
+		setBlurError("gridCount", undefined);
 		setBlurError("lowerPrice", undefined);
 		setBlurError("upperPrice", undefined);
 		commitInput(
@@ -180,6 +208,14 @@ export function useGridEstimatorForm({
 			upperPrice: committedInput.upperPrice,
 		};
 	}
+
+	// Why the selected step does not fit the range, however it came about.
+	const { error: rangeError } = gridCountForRange(
+		currentRange(),
+		committedInput.gridCount,
+		anchor,
+		values.lowerMarkup,
+	);
 
 	// Moves a range bound to where the grid is even; null when the range is
 	// already even or the bound cannot move.
@@ -241,42 +277,15 @@ export function useGridEstimatorForm({
 		applyRange({ ...currentRange(), lowerPrice }, { lowerMarkup });
 	}
 
-	// The minimum step of a typed grid count, when the hourly range bounds
-	// it. Spot and futures grids share their levels, so the spot estimate
-	// gives the step.
-	function gridCountStepPercent(gridCount: string): number | null {
-		const spotEstimate = calculateSpotGridInput(
-			{ ...committedInput, gridCount },
-			values.gridType,
-		)?.estimate;
-		return spotEstimate && hourlyRange !== null
-			? spotGridMinimumStepPercent(spotEstimate)
-			: null;
-	}
-
-	// Accepts a typed grid count only when its minimum step stays within the
-	// hourly-to-daily range.
-	function gridCountError(gridCount: string): string | undefined {
-		const stepPercent = gridCountStepPercent(gridCount);
-		if (
-			stepPercent === null ||
-			hourlyRange === null ||
-			(stepPercent >= hourlyRange &&
-				(dailyRange === null || stepPercent <= dailyRange))
-		) {
-			return undefined;
-		}
-		return `Minimum grid step would be ${formatRangePercent(stepPercent)}; it must be ${
-			dailyRange === null
-				? `at least ${formatRangePercent(hourlyRange)}`
-				: `from ${formatRangePercent(hourlyRange)} to ${formatRangePercent(dailyRange)}`
-		}`;
-	}
+	const typedCountStep = (gridCount: string) =>
+		gridCountStepPercent({ ...committedInput, gridCount }, values.gridType);
 
 	// Commits an accepted grid count and moves the step slider to its step.
 	function commitGridCount(gridCount: string) {
-		const stepPercent = gridCountStepPercent(gridCount);
-		if (stepPercent !== null) form.setFieldValue("rangePercent", stepPercent);
+		const stepPercent = typedCountStep(gridCount);
+		if (stepPercent !== null && hourlyRange !== null) {
+			form.setFieldValue("rangePercent", stepPercent);
+		}
 		commitInput({ ...committedInput, gridCount });
 	}
 
@@ -306,7 +315,12 @@ export function useGridEstimatorForm({
 		if (field === "lowerPrice") {
 			return lowerPriceLimitError(bounds, value, priceUnit) ?? undefined;
 		}
-		if (field === "gridCount") return gridCountError(value);
+		if (field === "gridCount") {
+			return (
+				gridCountStepError(typedCountStep(value), hourlyRange, dailyRange) ??
+				undefined
+			);
+		}
 		return undefined;
 	}
 
@@ -320,6 +334,7 @@ export function useGridEstimatorForm({
 		changeMarkup,
 		changeRange,
 		dailyRange,
+		defaultRangePercent: defaultValues.rangePercent,
 		estimate,
 		commitError,
 		commitField,
@@ -327,6 +342,7 @@ export function useGridEstimatorForm({
 		form,
 		hourlyRange,
 		priceUnit,
+		rangeError,
 		values,
 	};
 }

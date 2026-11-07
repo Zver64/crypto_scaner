@@ -127,6 +127,12 @@ export type GridEstimatorFormValues = GridInput & {
 	rangePercent: number;
 };
 
+// What a calculator keeps when it is built anew for other volatility settings.
+export interface SavedGridForm {
+	bounds: GridBounds;
+	values: GridEstimatorFormValues;
+}
+
 export type GridInputField = keyof GridInput;
 
 export type GridRangeValues = Pick<

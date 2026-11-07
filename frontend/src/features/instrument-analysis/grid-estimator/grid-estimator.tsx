@@ -49,10 +49,12 @@ export function GridEstimator({
 		commitField,
 		committedInput,
 		dailyRange,
+		defaultRangePercent,
 		estimate,
 		form,
 		hourlyRange,
 		priceUnit,
+		rangeError,
 		values: formValues,
 	} = useGridEstimatorForm({ ...formOptions, market });
 	const { colors } = themeToVars(useMantineTheme());
@@ -102,6 +104,7 @@ export function GridEstimator({
 					disabled={disabled || !canSelectRange}
 					formatValue={formatRangePercent}
 					label="Minimum grid step"
+					marks={canSelectRange ? [{ value: defaultRangePercent }] : undefined}
 					max={canSelectRange ? dailyRange : selectedRangePercent + 1}
 					min={selectedRangePercent > 0 ? (hourlyRange ?? 0) : 0}
 					onChange={changeRange}
@@ -112,6 +115,11 @@ export function GridEstimator({
 					step={canSelectRange ? (dailyRange - hourlyRange) / 100 : 1}
 					value={selectedRangePercent}
 				/>
+				{rangeError ? (
+					<Text c="red" size="sm">
+						{rangeError}
+					</Text>
+				) : null}
 				{!hasAnchor ? (
 					<Text c="dimmed" size="sm">
 						Price markups need the current price.

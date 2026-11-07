@@ -37,16 +37,8 @@ export function useCoinPage(symbol: string, settings: VolatilitySettings) {
 		symbol: string;
 	}>({ levels: null, symbol });
 
-	// The previous result stays visible while refetching; the spot grid only
-	// uses the result of this symbol and these settings, so the calculator is
-	// built anew once they change.
 	const current =
 		analysis.result?.symbol === symbol ? analysis.result : undefined;
-	const recommendationReady =
-		current !== undefined &&
-		!analysis.isPlaceholderData &&
-		!hourlyHistory.pending &&
-		!gridLimits.pending;
 	const rangePercent = (key: string) => {
 		const range = current && volatilityEvaluation(current.evaluations, key);
 		return range && Number.isFinite(range.rangePercent)
@@ -58,14 +50,19 @@ export function useCoinPage(symbol: string, settings: VolatilitySettings) {
 		allowed: permission.allowed,
 		analysis,
 		calculator: {
-			candles: recommendationReady ? hourlyHistory.candles : undefined,
+			candles: hourlyHistory.candles,
 			dailyVolatilityPercent: rangePercent(criterionKeys.dailyVolatility),
 			disabled: analysis.isFetching || hourlyHistory.pending,
-			gridLimits: recommendationReady ? gridLimits.limits : undefined,
+			// The ranges of other settings may already be cached, so the settings
+			// identify them along with where the result comes from: the previous
+			// one stays visible while refetching, and a failure has none.
+			formKey: `${JSON.stringify(settings)}:${analysis.isPlaceholderData ? "previous" : current ? "current" : "none"}`,
+			gridLimits: gridLimits.limits,
 			hourlyVolatilityPercent: rangePercent(criterionKeys.hourlyVolatility),
 		},
-		// The calculator is built anew once its recommendation is ready.
-		calculatorKey: `binance:spot:USDT:${symbol}:${recommendationReady ? "ready" : "pending"}`,
+		// Built once its prices are known, and anew for another symbol.
+		calculatorKey: `binance:spot:USDT:${symbol}`,
+		calculatorReady: !hourlyHistory.pending && !gridLimits.pending,
 		chartSource,
 		indicators,
 		gridLevels: grid.symbol === symbol ? grid.levels : null,

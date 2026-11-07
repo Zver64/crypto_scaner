@@ -6,18 +6,14 @@ import {
 	useAnalyzeInstrument,
 } from "@/api/generated/api";
 import type { CriterionRequest } from "@/api/generated/models";
-import {
-	apiErrorCode,
-	unexpectedApiError,
-} from "@/features/analysis/api-error";
+import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedInstrumentAnalysisEvaluations } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 
 const selectAnalysis = (response: analyzeInstrumentResponseSuccess) =>
 	response.data;
 
-// Analyzes the instrument and reports failures, except missing history, which
-// the page shows in place.
+// Analyzes the instrument and reports failures, except missing history.
 export function useInstrumentAnalysis(
 	symbol: string,
 	criterionSelections: readonly CriterionRequest[],
@@ -55,14 +51,11 @@ export function useInstrumentAnalysis(
 			select: selectAnalysis,
 		},
 	});
-	const insufficientHistory =
-		query.isError && apiErrorCode(query.error) === "insufficient_data";
 	useAnalysisWarningNotification(
 		query.data?.warnings,
 		"Instrument Analysis warning",
 	);
 	return {
-		insufficientHistory,
 		isFetching: query.isFetching,
 		// The result shown is that of earlier criteria or another symbol.
 		isPlaceholderData: query.isPlaceholderData,

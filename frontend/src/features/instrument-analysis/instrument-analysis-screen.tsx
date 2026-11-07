@@ -34,7 +34,7 @@ export function InstrumentAnalysisScreen({
 	// above the chart.
 	const wide = useWideLayout();
 	const page = useCoinPage(symbol, settings);
-	const { insufficientHistory, isFetching, result } = page.analysis;
+	const { isFetching, result } = page.analysis;
 
 	const back = <CoinBackButton onBack={onBack} />;
 	const settingsForm = (
@@ -72,21 +72,20 @@ export function InstrumentAnalysisScreen({
 			) : null}
 		</>
 	);
-	const calculator =
-		result || insufficientHistory ? (
-			<RefreshingOverlay
-				label="Refreshing the grid calculator"
-				visible={isFetching}
-			>
-				<GridCalculator
-					{...page.calculator}
-					baseAsset={baseAssetOfUsdtSymbol(symbol)}
-					key={page.calculatorKey}
-					onPriceLevelsChange={page.setGridLevels}
-					paperPadding={paperPadding}
-				/>
-			</RefreshingOverlay>
-		) : null;
+	const calculator = page.calculatorReady ? (
+		<RefreshingOverlay
+			label="Refreshing the grid calculator"
+			visible={isFetching}
+		>
+			<GridCalculator
+				{...page.calculator}
+				baseAsset={baseAssetOfUsdtSymbol(symbol)}
+				key={page.calculatorKey}
+				onPriceLevelsChange={page.setGridLevels}
+				paperPadding={paperPadding}
+			/>
+		</RefreshingOverlay>
+	) : null;
 	const alerts = page.allowed ? (
 		<PriceAlertsPanel
 			currentPrice={

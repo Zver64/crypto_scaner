@@ -68,6 +68,14 @@ export function GridEstimator({
 
 	return (
 		<Stack gap="md">
+			<SegmentedControl
+				aria-label="Grid type"
+				data={GRID_TYPE_OPTIONS}
+				disabled={disabled}
+				fullWidth
+				onChange={changeGridType}
+				value={formValues.gridType}
+			/>
 			{isFutures ? (
 				<FuturesControls
 					direction={formValues.direction}
@@ -81,14 +89,6 @@ export function GridEstimator({
 					}
 				/>
 			) : null}
-			<SegmentedControl
-				aria-label="Grid type"
-				data={GRID_TYPE_OPTIONS}
-				disabled={disabled}
-				fullWidth
-				onChange={changeGridType}
-				value={formValues.gridType}
-			/>
 			<Stack gap="sm">
 				<MarkupSliders
 					bounds={bounds}

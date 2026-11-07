@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.9.0](https://github.com/Zver64/crypto_scaner/compare/v4.8.0...v4.9.0) (2026-11-07)
+
+
+### Features
+
+* **frontend:** derive the default grid step from the range ratio ([47aeaf5](https://github.com/Zver64/crypto_scaner/commit/47aeaf5804e199013940ab339e9c694d20e5371b))
+* show the daily to hourly range ratio in market tables ([fa63ed7](https://github.com/Zver64/crypto_scaner/commit/fa63ed70cc52e8676f060cb431346307faa53bef))
+
 ## [4.8.0](https://github.com/Zver64/crypto_scaner/compare/v4.7.0...v4.8.0) (2026-10-31)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.10.0](https://github.com/Zver64/crypto_scaner/compare/v4.9.0...v4.10.0) (2026-11-09)
+
+
+### Features
+
+* **backend:** show the price and 24-hour range of coins in signal messages ([3ef2102](https://github.com/Zver64/crypto_scaner/commit/3ef2102cfa5a0d5c8afa69a1f1dc47af4f579b35))
+
 ## [4.9.0](https://github.com/Zver64/crypto_scaner/compare/v4.8.0...v4.9.0) (2026-11-07)
 
 

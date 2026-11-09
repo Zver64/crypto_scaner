@@ -1,4 +1,4 @@
-package volatility
+package numeric
 
 import "testing"
 
@@ -15,8 +15,8 @@ func TestExceedancePercentileReturnsObservedThreshold(t *testing.T) {
 		{name: "one hundred percent", values: []float64{2, 1, 8, 4}, percentile: 100, want: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			if got := exceedancePercentile(test.values, test.percentile); got != test.want {
-				t.Fatalf("exceedancePercentile() = %v, want %v", got, test.want)
+			if got := ExceedancePercentile(test.values, test.percentile); got != test.want {
+				t.Fatalf("ExceedancePercentile() = %v, want %v", got, test.want)
 			}
 		})
 	}

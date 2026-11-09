@@ -1,4 +1,5 @@
-// Package numeric validates floating-point values crossing process boundaries.
+// Package numeric validates floating-point values crossing process boundaries
+// and computes percentiles.
 package numeric
 
 import (

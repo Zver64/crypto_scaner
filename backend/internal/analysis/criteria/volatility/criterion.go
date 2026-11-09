@@ -67,9 +67,9 @@ func (c criterion) Evaluate(_ context.Context, input analysis.Input) (analysis.E
 	}
 	ranges := make([]float64, len(candles))
 	for i, candle := range candles {
-		ranges[i] = ((candle.High - candle.Low) / candle.Open) * 100
+		ranges[i] = candle.RangePercent()
 	}
-	value := exceedancePercentile(ranges, c.percentile)
+	value := numeric.ExceedancePercentile(ranges, c.percentile)
 	return analysis.Evaluation{Name: c.Name(), Unit: c.unit, Matched: value >= c.minimum, Metrics: map[string]float64{RangePercentMetric: value}, CandleCount: len(candles), From: candles[0].OpenTime.UTC(), To: candles[len(candles)-1].OpenTime.UTC()}, nil
 }
 

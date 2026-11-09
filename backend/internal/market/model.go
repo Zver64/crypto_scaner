@@ -29,6 +29,12 @@ type Candle struct {
 	TradeCount       int64
 }
 
+// RangePercent is the range of candle as a percentage of its open; the
+// caller must ensure a positive open.
+func (candle Candle) RangePercent() float64 {
+	return (candle.High - candle.Low) / candle.Open * 100
+}
+
 // CandlePage is a chronological page of closed candles. HasMore reports that
 // an older page exists before Candles[0].OpenTime.
 type CandlePage struct {

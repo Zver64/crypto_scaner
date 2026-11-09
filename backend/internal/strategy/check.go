@@ -195,7 +195,16 @@ func (monitor *Monitor) check(ctx context.Context, state map[uuid.UUID]map[int64
 		}
 	}
 	if len(alerts) > 0 {
-		monitor.send(ctx, work.recipients, func(favorite func(string) bool) string { return alertText(entry, alerts, monitor.coins, favorite) })
+		ranges := monitor.signalRanges(ctx, entry, work.current.now, func(yield func(Instrument) bool) {
+			for _, item := range alerts {
+				if !yield(item.instrument) {
+					return
+				}
+			}
+		})
+		monitor.send(ctx, work.recipients, func(favorite func(string) bool) string {
+			return alertText(entry, alerts, ranges, monitor.coins, favorite)
+		})
 	}
 }
 
@@ -238,8 +247,9 @@ func (monitor *Monitor) baseline(ctx context.Context, state map[uuid.UUID]map[in
 		return
 	}
 	state[entry.ID] = states
+	ranges := monitor.signalRanges(ctx, entry, current.now, slices.Values(matching))
 	monitor.send(ctx, recipients, func(favorite func(string) bool) string {
-		return summaryText(entry, matching, current, monitor.coins, favorite)
+		return summaryText(entry, matching, current, ranges, monitor.coins, favorite)
 	})
 }
 

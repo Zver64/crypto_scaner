@@ -17,9 +17,10 @@ import (
 // summaryText announces an enabled or changed strategy: under its title come
 // the strategy message, its coins and market cap range, and a line per
 // instrument within it whose entry is true now, which buys only once it
-// turns true again, the favorite ones first and starred. A message too long
-// for Telegram ends at the last instrument that fits.
-func summaryText(entry Entry, matching []Instrument, current snapshot, coins telegramhtml.Coins, favorite func(symbol string) bool) string {
+// turns true again, the favorite ones first and starred; a signal describes
+// each with signalCoin and ranges. A message too long for Telegram ends at
+// the last instrument that fits.
+func summaryText(entry Entry, matching []Instrument, current snapshot, ranges coinRanges, coins telegramhtml.Coins, favorite func(symbol string) bool) string {
 	var scope string
 	switch {
 	case entry.CoinSource == CoinsAll:
@@ -62,10 +63,15 @@ func summaryText(entry Entry, matching []Instrument, current snapshot, coins tel
 	}
 	text := strings.Join(lines, "\n")
 	for i, instrument := range matching {
-		line := star(favorite, instrument.Symbol, coins.Symbol(instrument.Symbol))
-		if price, ok := current.closePrice(entry, instrument.ID); ok {
+		price, known := current.closePrice(entry, instrument.ID)
+		line := coins.Symbol(instrument.Symbol)
+		switch {
+		case entry.Signal:
+			line = signalCoin(coins, instrument, price, known, ranges)
+		case known:
 			line += " " + formatNumber(price)
 		}
+		line = star(favorite, instrument.Symbol, line)
 		more := fmt.Sprintf("\n…and %d more", len(matching)-i)
 		if len(text)+1+len(line)+len(more) > telegramhtml.MaxLength {
 			return text + more
@@ -102,8 +108,8 @@ type alert struct {
 // message and a line per instrument, the favorite ones first and starred.
 // Events of one candle share a title per kind, and so do those of
 // consecutive candles of one kind. A message too long for Telegram ends at
-// the last line that fits.
-func alertText(entry Entry, alerts []alert, coins telegramhtml.Coins, favorite func(symbol string) bool) string {
+// the last line that fits. ranges are those of the coins of signals.
+func alertText(entry Entry, alerts []alert, ranges coinRanges, coins telegramhtml.Coins, favorite func(symbol string) bool) string {
 	alerts = slices.Clone(alerts)
 	// Events of the latest candle have no past time.
 	latest := func(item alert) int {
@@ -152,7 +158,7 @@ func alertText(entry Entry, alerts []alert, coins telegramhtml.Coins, favorite f
 			return favoriteRank(favorite, a.instrument.Symbol) - favoriteRank(favorite, b.instrument.Symbol)
 		})
 		for _, event := range item.alerts {
-			lines = append(lines, star(favorite, event.instrument.Symbol, alertLine(coins, event)))
+			lines = append(lines, star(favorite, event.instrument.Symbol, alertLine(coins, ranges, event)))
 		}
 		texts[i] = strings.Join(lines, "\n")
 	}
@@ -193,14 +199,14 @@ func alertTitle(entry Entry, event TradeEvent) string {
 	return entryTitle(mark, entry, kind)
 }
 
-// alertLine describes the event on the instrument of item: the close of a
-// signal; the price, the buy number past the first, the take profit, and the
+// alertLine describes the event on the instrument of item: the signalCoin
+// of a signal; the price, the buy number past the first, the take profit, and the
 // stop loss of a buy or short; or the price, what closed it, the return, the
 // entry price, and the buys past one of a sell or cover. The symbol links
 // to its page in the Mini App and to its Binance Spot pair. A caught-up
 // event of a past candle ends with the candle's open time in UTC.
-func alertLine(coins telegramhtml.Coins, item alert) string {
-	line := eventLine(coins, item)
+func alertLine(coins telegramhtml.Coins, ranges coinRanges, item alert) string {
+	line := eventLine(coins, ranges, item)
 	if !item.past.IsZero() {
 		line += " · candle " + candleTime(item.past)
 	}
@@ -212,12 +218,12 @@ func alertLine(coins telegramhtml.Coins, item alert) string {
 func candleTime(at time.Time) string { return at.UTC().Format("2006-01-02 15:04 UTC") }
 
 // eventLine is alertLine without the candle time.
-func eventLine(coins telegramhtml.Coins, item alert) string {
+func eventLine(coins telegramhtml.Coins, ranges coinRanges, item alert) string {
 	event := item.event
 	symbol := coins.Symbol(item.instrument.Symbol)
 	switch event.Kind {
 	case TradeSignal:
-		return symbol + " " + formatNumber(event.Close)
+		return signalCoin(coins, item.instrument, event.Close, true, ranges)
 	case TradeSell:
 		price, reason := event.Close, "exit rule"
 		switch event.Reason {
@@ -241,6 +247,19 @@ func eventLine(coins telegramhtml.Coins, item alert) string {
 	}
 	if event.Trade.StopLoss > 0 {
 		parts = append(parts, "SL "+formatNumber(event.Trade.StopLoss))
+	}
+	return strings.Join(parts, " · ")
+}
+
+// signalCoin describes a coin in every message of a signal: its links, its
+// price when known, and its range when loaded.
+func signalCoin(coins telegramhtml.Coins, instrument Instrument, price float64, known bool, ranges coinRanges) string {
+	parts := []string{coins.Symbol(instrument.Symbol)}
+	if known {
+		parts = append(parts, "price "+formatNumber(price))
+	}
+	if text := ranges.text(instrument.ID); text != "" {
+		parts = append(parts, text)
 	}
 	return strings.Join(parts, " · ")
 }

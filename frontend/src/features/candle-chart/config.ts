@@ -35,6 +35,10 @@ export const defaultChartInterval: ChartInterval = "1d";
 // serve as the pane stretch factors.
 export const candlePaneHeight = 200;
 export const indicatorPaneHeight = 50;
+// Phones size the candle pane as this share of the screen height, never below
+// candlePaneHeight, and use taller indicator panes.
+export const compactCandlePaneShare = 0.45;
+export const compactIndicatorPaneHeight = 70;
 // Request older candles when fewer than this many bars remain on the left.
 export const loadOlderThreshold = 10;
 export const minVisibleBars = 24;

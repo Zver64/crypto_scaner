@@ -14,7 +14,7 @@ interface ChartReadoutProps {
 export function ChartReadout({ candle, extra }: ChartReadoutProps) {
 	const { fontWeights } = useMantineTheme();
 	return (
-		<Text aria-live="polite" ff="monospace" mb="xs" size="xs">
+		<Text aria-live="polite" ff="monospace" size="xs">
 			{formatOhlc(candle)}
 			{extra ? (
 				<>

@@ -7,6 +7,7 @@ import {
 	Stack,
 	Text,
 	useComputedColorScheme,
+	useMatches,
 } from "@mantine/core";
 import { type CSSProperties, useState } from "react";
 
@@ -18,6 +19,8 @@ import {
 	barSpacing,
 	candlePaneHeight,
 	chartIntervalOptions,
+	compactCandlePaneShare,
+	compactIndicatorPaneHeight,
 	defaultChartInterval,
 	indicatorPaneHeight,
 	loadOlderThreshold,
@@ -48,8 +51,9 @@ export type {
 	PriceHistorySource,
 } from "@/features/candle-chart/types";
 
-const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
-	label,
+// The switch shows the short interval codes to stay compact.
+const intervalControlData = chartIntervalOptions.map(({ value }) => ({
+	label: value,
 	value,
 }));
 
@@ -77,6 +81,13 @@ export function PriceHistoryChart({
 	const [activeCandle, setActiveCandle] = useState<ChartCandle | null>(null);
 	const { indicators, panes } = layouts[interval];
 	const colorScheme = useComputedColorScheme("dark");
+	// Phones give the chart the full card width and size it from the screen.
+	// The height is read once, so an opening keyboard does not resize the chart.
+	const compact = useMatches(
+		{ base: true, sm: false },
+		{ getInitialValueInEffect: false },
+	);
+	const [screenHeight] = useState(() => window.innerHeight);
 	const {
 		candles,
 		connection,
@@ -122,32 +133,35 @@ export function PriceHistoryChart({
 		legendSlotIndex,
 	);
 	const hasCandles = candles.length > 0;
-	const chartHeight = candlePaneHeight + panes.length * indicatorPaneHeight;
+	const candleHeight = compact
+		? Math.max(
+				candlePaneHeight,
+				Math.round(screenHeight * compactCandlePaneShare),
+			)
+		: candlePaneHeight;
+	const paneHeight = compact ? compactIndicatorPaneHeight : indicatorPaneHeight;
+	const chartHeight = candleHeight + panes.length * paneHeight;
 	const fillStyle: CSSProperties | undefined = fillHeight
 		? { display: "flex", flex: 1, flexDirection: "column" }
 		: undefined;
 
 	return (
-		<Paper component="section" p={paperPadding} style={fillStyle}>
-			<Stack gap="md" style={fillStyle}>
+		<Paper
+			component="section"
+			px={compact ? 0 : paperPadding}
+			py={paperPadding}
+			style={fillStyle}
+		>
+			<Stack gap="xs" style={fillStyle}>
 				<SegmentedControl<ChartInterval>
 					data={intervalOptions}
-					fullWidth
+					mx={compact ? paperPadding : 0}
 					onChange={selectInterval}
+					size="xs"
+					style={{ alignSelf: "flex-start" }}
 					value={interval}
 				/>
 				<Box pos="relative" style={fillStyle}>
-					{live ? (
-						<LiveStatus
-							connection={connection}
-							error={error}
-							freshness={freshness}
-						/>
-					) : null}
-					{readoutCandle ? (
-						<ChartReadout candle={readoutCandle} extra={extraReadout} />
-					) : null}
-					{readoutCandle ? <IndicatorLegend items={legendItems} /> : null}
 					{!hasCandles && !isLoading ? (
 						<Text c="dimmed">No closed candles are available.</Text>
 					) : null}
@@ -156,10 +170,7 @@ export function PriceHistoryChart({
 						aria-label={`${symbol}: ${interval} candlestick history${live ? " with the current live candle" : " of the completed backtest"}. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
 						onVisibleLogicalRangeChange={onVisibleLogicalRangeChange}
 						options={timeChartOptions[colorScheme][interval]}
-						paneStretchFactors={[
-							candlePaneHeight,
-							...panes.map(() => indicatorPaneHeight),
-						]}
+						paneStretchFactors={[candleHeight, ...panes.map(() => paneHeight)]}
 						ref={chartRef}
 						role="img"
 						style={
@@ -213,6 +224,29 @@ export function PriceHistoryChart({
 								),
 						)}
 					</ChartCanvas>
+					{/* The status, readout and legend lie over the chart, so they take
+					no height of their own and let the pointer through. */}
+					<Stack
+						gap={2}
+						left={0}
+						maw="75%"
+						pl={compact ? paperPadding : 0}
+						pos="absolute"
+						style={{ pointerEvents: "none", zIndex: 3 }}
+						top={0}
+					>
+						{live ? (
+							<LiveStatus
+								connection={connection}
+								error={error}
+								freshness={freshness}
+							/>
+						) : null}
+						{readoutCandle ? (
+							<ChartReadout candle={readoutCandle} extra={extraReadout} />
+						) : null}
+						{readoutCandle ? <IndicatorLegend items={legendItems} /> : null}
+					</Stack>
 					{isLoading && !hasCandles ? (
 						<Center inset={0} pos="absolute">
 							<Loader aria-label={`Loading ${interval} candle history`} />

@@ -20,7 +20,7 @@ export function LiveStatus({ connection, freshness, error }: LiveStatusProps) {
 					? "Recovering missed candle history…"
 					: "Waiting for the current live candle…");
 	return (
-		<Group gap="xs" mb="xs" wrap="nowrap">
+		<Group gap="xs" wrap="nowrap">
 			{connection !== "disconnected" && freshness !== "stale" ? (
 				<Loader size="xs" />
 			) : null}

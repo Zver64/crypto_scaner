@@ -164,7 +164,7 @@ export type ChartIndicatorSlot =
 	| LineData<UTCTimestamp>
 	| WhitespaceData<UTCTimestamp>;
 
-// One entry of the indicator legend above the chart.
+// One entry of the indicator legend over the chart.
 export interface ChartLegendItem {
 	key: string;
 	placement: ChartIndicatorOptions["placement"];

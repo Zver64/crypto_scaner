@@ -195,31 +195,63 @@ func (exchange *Exchange) ListClosedCandles(ctx context.Context, request market.
 
 	items := make([]market.Candle, 0, len(response))
 	for index, kline := range response {
-		if kline == nil {
-			return nil, fmt.Errorf("list Binance candles for %s: empty kline at index %d", symbol, index)
+		candle, err := candleFromKline(kline, request.Interval)
+		if err != nil {
+			return nil, fmt.Errorf("list Binance candles for %s: kline %d: %w", symbol, index, err)
 		}
-		closeTime := time.UnixMilli(int64(kline.CloseTime)).UTC()
-		if !closeTime.Before(request.ClosedBefore) {
-			continue
+		if candle.CloseTime.Before(request.ClosedBefore) {
+			items = append(items, candle)
 		}
-		values := []string{kline.Open, kline.High, kline.Low, kline.Close, kline.Volume, kline.QuoteAssetVolume}
-		converted := make([]float64, len(values))
-		for valueIndex, value := range values {
-			converted[valueIndex], err = numeric.ParseFinite(value)
-			if err != nil {
-				return nil, fmt.Errorf("list Binance candles for %s: invalid numeric value %q at kline %d", symbol, value, index)
-			}
-		}
-		if kline.NumberOfTrades > math.MaxInt64 {
-			return nil, fmt.Errorf("list Binance candles for %s: trade count at kline %d exceeds int64", symbol, index)
-		}
-		items = append(items, market.Candle{
-			Interval: request.Interval, OpenTime: time.UnixMilli(int64(kline.OpenTime)).UTC(), CloseTime: closeTime,
-			Open: converted[0], High: converted[1], Low: converted[2], Close: converted[3], Volume: converted[4],
-			QuoteAssetVolume: converted[5], TradeCount: int64(kline.NumberOfTrades),
-		})
 	}
 	return items, nil
+}
+
+// CurrentCandle returns the newest Binance kline of the symbol, which is the
+// forming one while the symbol trades.
+func (exchange *Exchange) CurrentCandle(ctx context.Context, symbol string, interval market.CandleInterval) (market.Candle, error) {
+	symbol = market.NormalizeSymbol(symbol)
+	if symbol == "" {
+		return market.Candle{}, fmt.Errorf("get current Binance candle: symbol is required")
+	}
+	if !interval.Valid() {
+		return market.Candle{}, fmt.Errorf("get current Binance candle for %s: unsupported interval %q", symbol, interval)
+	}
+	response, err := exchange.client.NewKlinesService().Symbol(symbol).Interval(string(interval)).Limit(1).Do(ctx)
+	if err != nil {
+		return market.Candle{}, fmt.Errorf("get current Binance candle for %s: %w", symbol, err)
+	}
+	if len(response) == 0 {
+		return market.Candle{}, fmt.Errorf("get current Binance candle for %s: no klines", symbol)
+	}
+	candle, err := candleFromKline(response[len(response)-1], interval)
+	if err != nil {
+		return market.Candle{}, fmt.Errorf("get current Binance candle for %s: %w", symbol, err)
+	}
+	return candle, nil
+}
+
+// candleFromKline converts a connector kline to a domain candle.
+func candleFromKline(kline *connector.KlinesResponse, interval market.CandleInterval) (market.Candle, error) {
+	if kline == nil {
+		return market.Candle{}, fmt.Errorf("empty kline")
+	}
+	values := []string{kline.Open, kline.High, kline.Low, kline.Close, kline.Volume, kline.QuoteAssetVolume}
+	converted := make([]float64, len(values))
+	for index, value := range values {
+		number, err := numeric.ParseFinite(value)
+		if err != nil {
+			return market.Candle{}, fmt.Errorf("invalid numeric value %q", value)
+		}
+		converted[index] = number
+	}
+	if kline.NumberOfTrades > math.MaxInt64 {
+		return market.Candle{}, fmt.Errorf("trade count exceeds int64")
+	}
+	return market.Candle{
+		Interval: interval, OpenTime: time.UnixMilli(int64(kline.OpenTime)).UTC(), CloseTime: time.UnixMilli(int64(kline.CloseTime)).UTC(),
+		Open: converted[0], High: converted[1], Low: converted[2], Close: converted[3], Volume: converted[4],
+		QuoteAssetVolume: converted[5], TradeCount: int64(kline.NumberOfTrades),
+	}, nil
 }
 
 func spotStatusActive(status string) (active, known bool) {

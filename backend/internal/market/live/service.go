@@ -31,6 +31,8 @@ const (
 	maxRecoveryFailures   = 8
 	// maxClientSubscriptions bounds the live keys of one client connection.
 	maxClientSubscriptions = 8
+	// seedTimeout bounds reading the forming candle of a new subscription.
+	seedTimeout = 5 * time.Second
 )
 
 var (
@@ -42,6 +44,11 @@ var (
 type HistoryStore interface {
 	GetActiveInstrumentBySymbol(context.Context, string) (market.Instrument, error)
 	ListCandlePage(context.Context, int64, market.CandleInterval, *time.Time, int) (market.CandlePage, error)
+}
+
+// CurrentCandles reads the newest candle of a symbol from the exchange.
+type CurrentCandles interface {
+	CurrentCandle(context.Context, string, market.CandleInterval) (market.Candle, error)
 }
 
 type Freshness string
@@ -99,6 +106,8 @@ type keyState struct {
 	// releaseAt is when Run releases the key if it still has no clients; zero
 	// while clients remain.
 	releaseAt time.Time
+	// seedRequested asks Run to read the forming candle of a new key.
+	seedRequested bool
 
 	recovering         bool
 	recoveryGeneration uint64
@@ -202,6 +211,7 @@ type Options struct {
 
 type Service struct {
 	upstream        kline.Feed
+	current         CurrentCandles
 	store           HistoryStore
 	logger          *slog.Logger
 	delay           time.Duration
@@ -210,16 +220,16 @@ type Service struct {
 	// failed recovery batches.
 	recoveryRetryDelay func(failures int) time.Duration
 
-	// recoveries tracks recovery goroutines. They are started only from Run's
-	// goroutine (via apply or startRequestedRecoveries) with Run's context, and
-	// Run waits for them.
-	recoveries sync.WaitGroup
+	// workers tracks recovery and seed goroutines. They are started only from
+	// Run's goroutine (via apply or startRequested) with Run's context, and Run
+	// waits for them.
+	workers sync.WaitGroup
 	// releases wakes Run to reschedule its release timer; capacity 1 keeps the
 	// send non-blocking, and a pending wake-up covers every later deadline.
 	releases chan struct{}
-	// recoveryRequests wakes Run to start requested recoveries; capacity 1
+	// requests wakes Run to start requested recoveries and seeds; capacity 1
 	// keeps the send non-blocking, and Run starts every requested one per wake-up.
-	recoveryRequests chan struct{}
+	requests chan struct{}
 
 	mu      sync.Mutex
 	states  map[kline.Key]*keyState
@@ -228,12 +238,12 @@ type Service struct {
 	stopped bool
 }
 
-func New(upstream kline.Feed, store HistoryStore, logger *slog.Logger, options Options) *Service {
+func New(upstream kline.Feed, current CurrentCandles, store HistoryStore, logger *slog.Logger, options Options) *Service {
 	delay := options.ReleaseDelay
 	if delay <= 0 {
 		delay = defaultReleaseDelay
 	}
-	return &Service{upstream: upstream, store: store, logger: logger, delay: delay, recoveryLimiter: rate.NewLimiter(rate.Limit(recoveryQueryRate), 4), recoveryRetryDelay: defaultRecoveryRetryDelay, releases: make(chan struct{}, 1), recoveryRequests: make(chan struct{}, 1), states: make(map[kline.Key]*keyState), clients: make(map[string]*clientState)}
+	return &Service{upstream: upstream, current: current, store: store, logger: logger, delay: delay, recoveryLimiter: rate.NewLimiter(rate.Limit(recoveryQueryRate), 4), recoveryRetryDelay: defaultRecoveryRetryDelay, releases: make(chan struct{}, 1), requests: make(chan struct{}, 1), states: make(map[kline.Key]*keyState), clients: make(map[string]*clientState)}
 }
 
 func defaultRecoveryRetryDelay(failures int) time.Duration {
@@ -251,7 +261,7 @@ func (service *Service) Run(ctx context.Context) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer func() {
 		cancel()
-		service.recoveries.Wait()
+		service.workers.Wait()
 		service.shutdown()
 	}()
 	releaseTimer := time.NewTimer(0)
@@ -266,29 +276,59 @@ func (service *Service) Run(ctx context.Context) error {
 			service.applyStatus(status)
 		case <-service.releases:
 			service.releaseDue(releaseTimer)
-		case <-service.recoveryRequests:
-			service.startRequestedRecoveries(ctx)
+		case <-service.requests:
+			service.startRequested(ctx)
 		case <-releaseTimer.C:
 			service.releaseDue(releaseTimer)
 		}
 	}
 }
 
-// startRequestedRecoveries starts the recoveries requested outside Run's
+// startRequested starts the recoveries and seeds requested outside Run's
 // goroutine; ctx bounds them.
-func (service *Service) startRequestedRecoveries(ctx context.Context) {
+func (service *Service) startRequested(ctx context.Context) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	for key, state := range service.states {
+		if state.seedRequested {
+			state.seedRequested = false
+			service.workers.Go(func() { service.seed(ctx, key) })
+		}
 		if !state.recoveryRequested {
 			continue
 		}
 		state.recoveryRequested = false
 		if state.recovering {
 			generation := state.recoveryGeneration
-			service.recoveries.Go(func() { service.recover(ctx, key, generation) })
+			service.workers.Go(func() { service.recover(ctx, key, generation) })
 		}
 	}
+}
+
+// seed publishes the forming candle of key read from the exchange, so a new
+// subscription shows it before the stream's first event: the exchange sends
+// one only when a trade changes the candle.
+func (service *Service) seed(ctx context.Context, key kline.Key) {
+	ctx, cancel := context.WithTimeout(ctx, seedTimeout)
+	defer cancel()
+	candle, err := service.current.CurrentCandle(ctx, key.Symbol, key.Interval)
+	if err != nil {
+		service.logger.InfoContext(ctx, "live candle seed failed", "module", "market_live", "operation", "seed", "symbol", key.Symbol, "interval", key.Interval, "error", err)
+		return
+	}
+	service.mu.Lock()
+	state := service.states[key]
+	// A closed candle is history, and the stream may already be ahead.
+	if state == nil || candle.OpenTime.Before(key.Interval.OpenTime(time.Now())) || !latestOpen(state.candles).Before(candle.OpenTime) {
+		service.mu.Unlock()
+		return
+	}
+	incoming := CandleState{Candle: candle}
+	state.candles[candle.OpenTime] = incoming
+	trimCandles(state.candles)
+	dropped := service.publishLocked(nil, state.clients, Message{Kind: KindUpdate, Key: key, Candle: &incoming, Freshness: state.freshness()})
+	service.mu.Unlock()
+	service.closeClients(dropped)
 }
 
 // releaseDue releases keys whose release delay passed without clients and
@@ -364,9 +404,10 @@ func (service *Service) Subscribe(ctx context.Context, client Client, symbol str
 		}
 		state = service.states[key]
 		if state == nil {
-			state = &keyState{instrument: instrument, clients: make(map[string]Client), candles: make(map[time.Time]CandleState)}
+			state = &keyState{instrument: instrument, clients: make(map[string]Client), candles: make(map[time.Time]CandleState), seedRequested: true}
 			service.states[key] = state
 			service.upstream.Subscribe(key)
+			service.wakeRequestsLocked()
 		}
 	}
 	state.releaseAt = time.Time{}
@@ -515,7 +556,7 @@ func (service *Service) apply(ctx context.Context, event kline.Event) {
 	if recoverNow {
 		// This goroutine serves the current generation, also a requested one.
 		state.recoveryRequested = false
-		service.recoveries.Go(func() { service.recover(ctx, event.Key, generation) })
+		service.workers.Go(func() { service.recover(ctx, event.Key, generation) })
 	}
 	dropped := service.publishLocked(nil, state.clients, Message{Kind: KindUpdate, Key: event.Key, Candle: &incoming, Freshness: state.freshness()})
 	service.mu.Unlock()
@@ -602,8 +643,13 @@ func (service *Service) requestRecoveryLocked(state *keyState) {
 		return
 	}
 	state.recoveryRequested = true
+	service.wakeRequestsLocked()
+}
+
+// wakeRequestsLocked wakes Run to start what was requested; it never blocks.
+func (service *Service) wakeRequestsLocked() {
 	select {
-	case service.recoveryRequests <- struct{}{}:
+	case service.requests <- struct{}{}:
 	default:
 	}
 }

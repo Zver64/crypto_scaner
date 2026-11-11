@@ -131,8 +131,8 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	// Kline and trade connections share the process-wide Binance dial budget.
 	dialLimiter := binance.NewDialLimiter()
 	klineStream := binance.NewKlineStream(logger, dialLimiter)
-	liveService := marketlive.New(klineStream, store, logger, marketlive.Options{})
 	exchange := binance.New(logger, binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
+	liveService := marketlive.New(klineStream, exchange, store, logger, marketlive.Options{})
 	syncStore := &marketsync.ObservableStore{Store: store, Changed: func(candles []market.Candle) {
 		liveService.HistoryChanged(candles)
 		closedIndicators.HistoryChanged(candles)

@@ -68,6 +68,13 @@ func (stub *historyStub) ListCandlePage(_ context.Context, _ int64, _ market.Can
 	return market.CandlePage{Candles: eligible, HasMore: hasMore}, nil
 }
 
+// currentStub returns its candle as the exchange's newest one.
+type currentStub struct{ candle market.Candle }
+
+func (stub *currentStub) CurrentCandle(context.Context, string, market.CandleInterval) (market.Candle, error) {
+	return stub.candle, nil
+}
+
 type clientStub struct {
 	id       string
 	messages chan Message
@@ -91,7 +98,7 @@ func (client *clientStub) Enqueue(message Message) bool {
 }
 
 func TestShutdownClosesRegisteredClientWithoutSubscriptions(t *testing.T) {
-	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	service := New(newUpstreamStub(), &currentStub{}, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	client := &clientStub{id: "idle", messages: make(chan Message, 1), closed: make(chan struct{})}
 	service.RegisterClient(client)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -111,7 +118,7 @@ func TestShutdownClosesRegisteredClientWithoutSubscriptions(t *testing.T) {
 
 func TestServiceSharesUpstreamAndCancelsDelayedRelease(t *testing.T) {
 	upstream := newUpstreamStub()
-	service := New(upstream, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: 25 * time.Millisecond})
+	service := New(upstream, &currentStub{}, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: 25 * time.Millisecond})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = service.Run(ctx) }()
@@ -153,7 +160,7 @@ func TestServiceSharesUpstreamAndCancelsDelayedRelease(t *testing.T) {
 
 func TestServiceDoesNotRollFinalCandleBack(t *testing.T) {
 	upstream := newUpstreamStub()
-	service := New(upstream, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: time.Second})
+	service := New(upstream, &currentStub{}, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: time.Second})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = service.Run(ctx) }()
@@ -193,7 +200,7 @@ func TestServiceDoesNotRollFinalCandleBack(t *testing.T) {
 }
 
 func TestHistoryCorrectionRefreshesActiveGraph(t *testing.T) {
-	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	service := New(newUpstreamStub(), &currentStub{}, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	client := &clientStub{id: "graph", messages: make(chan Message, 16)}
 	ctx := context.Background()
 	if err := service.Subscribe(ctx, client, "BTCUSDT", market.IntervalDay); err != nil {
@@ -233,7 +240,7 @@ func TestReconnectRestoresMissedFinalBeforeFresh(t *testing.T) {
 	open := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	finalA := testCandle(open, market.IntervalHour, 11)
 	history := &historyStub{candles: []market.Candle{finalA}}
-	service := New(upstream, history, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: time.Second})
+	service := New(upstream, &currentStub{}, history, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{ReleaseDelay: time.Second})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = service.Run(ctx) }()
@@ -269,7 +276,7 @@ func TestLoadRecoveryPaginatesBeyondLiveBuffer(t *testing.T) {
 	for index := range candles {
 		candles[index] = testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
 	}
-	service := New(newUpstreamStub(), &historyStub{candles: candles}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	service := New(newUpstreamStub(), &currentStub{}, &historyStub{candles: candles}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	service.recoveryLimiter = rate.NewLimiter(rate.Inf, 0)
 	progress := newRecoveryProgress(candles[len(candles)-1].OpenTime)
 	for {
@@ -295,7 +302,7 @@ func TestLoadRecoveryToleratesExchangeGapsButWaitsForNewestCandle(t *testing.T) 
 		return testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
 	}
 	// Hours 2 and 3 have no exchange data.
-	service := New(newUpstreamStub(), &historyStub{candles: []market.Candle{hour(0), hour(1), hour(4), hour(5)}}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	service := New(newUpstreamStub(), &currentStub{}, &historyStub{candles: []market.Candle{hour(0), hour(1), hour(4), hour(5)}}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	service.recoveryLimiter = rate.NewLimiter(rate.Inf, 0)
 	progress := newRecoveryProgress(hour(5).OpenTime)
 	complete, stalled, err := service.loadRecoveryBatch(context.Background(), 1, market.IntervalHour, hour(1).OpenTime, &progress)
@@ -314,7 +321,7 @@ func TestLoadRecoveryToleratesExchangeGapsButWaitsForNewestCandle(t *testing.T) 
 }
 
 func TestNewerRecoveryGenerationSupersedesOlderRange(t *testing.T) {
-	service := New(newUpstreamStub(), &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	service := New(newUpstreamStub(), &currentStub{}, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	state := &keyState{}
 	start := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
 	first, ok := service.startRecoveryLocked(state, start, start.Add(time.Hour))
@@ -354,7 +361,7 @@ func (stub *flakyHistory) ListCandlePage(ctx context.Context, id int64, interval
 // service with instant retries.
 func recoveringService(t *testing.T, store HistoryStore) (*Service, kline.Key, *clientStub) {
 	t.Helper()
-	service := New(newUpstreamStub(), store, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	service := New(newUpstreamStub(), &currentStub{}, store, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
 	service.recoveryLimiter = rate.NewLimiter(rate.Inf, 0)
 	service.recoveryRetryDelay = func(int) time.Duration { return 0 }
 	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
@@ -404,7 +411,7 @@ func TestAbandonedRecoveryStaysStaleUntilRecovered(t *testing.T) {
 	service.apply(ctx, kline.Event{Key: key, Candle: hour(0), Final: true, Epoch: 1})
 	// The gap after hour 0 starts a recovery that keeps failing.
 	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Final: false, Epoch: 1})
-	service.recoveries.Wait()
+	service.workers.Wait()
 	service.mu.Lock()
 	recovering, freshness := service.states[key].recovering, service.states[key].freshness()
 	service.mu.Unlock()
@@ -423,7 +430,7 @@ func TestAbandonedRecoveryStaysStaleUntilRecovered(t *testing.T) {
 	store.broken = false
 	store.mu.Unlock()
 	service.apply(ctx, kline.Event{Key: key, Candle: hour(5), Final: true, Epoch: 1})
-	service.recoveries.Wait()
+	service.workers.Wait()
 	message := waitForMessage(t, client.messages, func(message Message) bool {
 		return message.Kind == KindSnapshot && message.Freshness == FreshnessFresh
 	})
@@ -446,7 +453,7 @@ func TestEvictionFromLiveBufferDoesNotRecover(t *testing.T) {
 		service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start.Add(time.Duration(index)*time.Hour), key.Interval, 1), Final: true, Epoch: 1})
 	}
 	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start.Add(time.Duration(maxRetainedCandles+1)*time.Hour), key.Interval, 1), Epoch: 1})
-	service.recoveries.Wait()
+	service.workers.Wait()
 	service.mu.Lock()
 	generation := service.states[key].recoveryGeneration
 	service.mu.Unlock()
@@ -474,7 +481,7 @@ func TestResubscribeResumesRecoveryParkedWithoutClients(t *testing.T) {
 	service.Unsubscribe(client.ID(), key)
 	// The gap starts a recovery that finds no clients and parks.
 	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Epoch: 1})
-	service.recoveries.Wait()
+	service.workers.Wait()
 	go func() { _ = service.Run(ctx) }()
 	if err := service.Subscribe(ctx, client, key.Symbol, key.Interval); err != nil {
 		t.Fatal(err)
@@ -503,7 +510,7 @@ func TestEventProvenReconnectRecoversLikeStatus(t *testing.T) {
 	state := service.states[key]
 	recovering, recoveryStart := state.recovering, state.recoveryStart
 	service.mu.Unlock()
-	service.recoveries.Wait()
+	service.workers.Wait()
 	if !recovering || !recoveryStart.Equal(start) {
 		t.Fatalf("reconnect recovery: recovering=%v start=%s, want from %s", recovering, recoveryStart, start)
 	}
@@ -563,4 +570,31 @@ func waitForMessage(t *testing.T, messages <-chan Message, matches func(Message)
 
 func testCandle(open time.Time, interval market.CandleInterval, closePrice float64) market.Candle {
 	return market.Candle{Interval: interval, OpenTime: open, CloseTime: interval.NextOpenTime(open).Add(-time.Millisecond), Open: closePrice - 1, High: closePrice + 1, Low: closePrice - 2, Close: closePrice, Volume: 1, QuoteAssetVolume: 1, TradeCount: 1}
+}
+
+func TestSubscribePublishesFormingCandleBeforeAnyStreamEvent(t *testing.T) {
+	open := market.IntervalHour.OpenTime(time.Now())
+	forming := market.Candle{Interval: market.IntervalHour, OpenTime: open, CloseTime: open.Add(time.Hour - time.Millisecond), Open: 1, High: 2, Low: 1, Close: 2}
+	service := New(newUpstreamStub(), &currentStub{candle: forming}, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() { _ = service.Run(ctx) }()
+	client := &clientStub{id: "viewer", messages: make(chan Message, 16)}
+	if err := service.Subscribe(ctx, client, "BTCUSDT", market.IntervalHour); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		select {
+		case message := <-client.messages:
+			if message.Kind != KindUpdate {
+				continue
+			}
+			if message.Candle == nil || message.Candle.Final || message.Candle.Candle != forming {
+				t.Fatalf("update = %+v, want the forming candle", message.Candle)
+			}
+			return
+		case <-time.After(time.Second):
+			t.Fatal("forming candle was not published without a stream event")
+		}
+	}
 }

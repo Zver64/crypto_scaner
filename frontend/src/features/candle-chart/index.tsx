@@ -51,9 +51,8 @@ export type {
 	PriceHistorySource,
 } from "@/features/candle-chart/types";
 
-// The switch shows the short interval codes to stay compact.
-const intervalControlData = chartIntervalOptions.map(({ value }) => ({
-	label: value,
+const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
+	label,
 	value,
 }));
 
@@ -155,10 +154,9 @@ export function PriceHistoryChart({
 			<Stack gap="xs" style={fillStyle}>
 				<SegmentedControl<ChartInterval>
 					data={intervalOptions}
+					fullWidth
 					mx={compact ? paperPadding : 0}
 					onChange={selectInterval}
-					size="xs"
-					style={{ alignSelf: "flex-start" }}
 					value={interval}
 				/>
 				<Box pos="relative" style={fillStyle}>

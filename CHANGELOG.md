@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.11.0](https://github.com/Zver64/crypto_scaner/compare/v4.10.0...v4.11.0) (2026-11-11)
+
+
+### Features
+
+* **frontend:** give the chart more room on phones ([217d85c](https://github.com/Zver64/crypto_scaner/commit/217d85c78b9ab8b2314287020cad17027f80420b))
+
+
+### Bug Fixes
+
+* **backend:** show the forming candle on a new chart subscription at once ([5b4317c](https://github.com/Zver64/crypto_scaner/commit/5b4317c5db6c5e8fcb55395e3a38188ada14e6fa))
+
 ## [4.10.0](https://github.com/Zver64/crypto_scaner/compare/v4.9.0...v4.10.0) (2026-11-09)
 
 

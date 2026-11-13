@@ -1,5 +1,21 @@
 # Changelog
 
+## [5.0.0](https://github.com/Zver64/crypto_scaner/compare/v4.12.0...v5.0.0) (2026-11-13)
+
+
+### ⚠ BREAKING CHANGES
+
+* expressions in the old syntax (h_rsi, prev, of) are no longer accepted. The CLI flag --add-indicators and the command "scanner indicators prune" are removed.
+
+### Features
+
+* write indicators as calls and configure them without periods ([fb52abd](https://github.com/Zver64/crypto_scaner/commit/fb52abd8b18d8b0d1d99f4f722d71806457db5f8))
+
+
+### Bug Fixes
+
+* keep strategy validation and the syntax rewrite reliable ([d8abdd4](https://github.com/Zver64/crypto_scaner/commit/d8abdd4f4a08769a0514b04ef66b1c386ae11585))
+
 ## [4.12.0](https://github.com/Zver64/crypto_scaner/compare/v4.11.0...v4.12.0) (2026-11-13)
 
 

@@ -136,17 +136,12 @@ export interface ChartTradeMarkers {
 	exits: readonly string[];
 	marks?: readonly string[];
 }
-export interface ChartReadoutOptions {
-	label: string;
-	format(candle: Pick<PriceCandle, "open" | "high" | "low" | "close">): string;
-}
 export interface PriceHistoryChartProps {
 	// Immutable snapshots have no connection status or current live candle.
 	live?: boolean;
 	enabled: boolean;
 	// Indicators drawn on the chart of each interval.
 	indicators: Readonly<Record<ChartInterval, ChartIndicatorLayout>>;
-	extraReadout?: ChartReadoutOptions;
 	// Stretches the chart over the free height of its flex column parent,
 	// keeping its fixed height as the minimum.
 	fillHeight?: boolean;

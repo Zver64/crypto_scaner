@@ -1,35 +1,27 @@
 import { Text, useMantineTheme } from "@mantine/core";
 
-import type {
-	ChartReadoutOptions,
-	PriceCandle,
-} from "@/features/candle-chart/types";
-import { formatOhlc } from "@/features/candle-chart/utils";
+import type { PriceCandle } from "@/features/candle-chart/types";
+import { formatCandleRange, formatOhlc } from "@/features/candle-chart/utils";
 
 interface ChartReadoutProps {
 	candle: Pick<PriceCandle, "open" | "high" | "low" | "close">;
-	extra?: ChartReadoutOptions;
 }
 
-export function ChartReadout({ candle, extra }: ChartReadoutProps) {
+export function ChartReadout({ candle }: ChartReadoutProps) {
 	const { fontWeights } = useMantineTheme();
 	return (
 		<Text aria-live="polite" ff="monospace" size="xs">
 			{formatOhlc(candle)}
-			{extra ? (
-				<>
-					{" · "}
-					<Text
-						c="blue.4"
-						component="span"
-						fw={fontWeights.bold}
-						inherit
-						style={{ whiteSpace: "nowrap" }}
-					>
-						{extra.label} {extra.format(candle)}
-					</Text>
-				</>
-			) : null}
+			{" · "}
+			<Text
+				c="blue.4"
+				component="span"
+				fw={fontWeights.bold}
+				inherit
+				style={{ whiteSpace: "nowrap" }}
+			>
+				R {formatCandleRange(candle)}
+			</Text>
 		</Text>
 	);
 }

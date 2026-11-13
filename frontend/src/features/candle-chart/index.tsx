@@ -47,7 +47,6 @@ export type {
 	ChartIndicatorLayout,
 	ChartIntervalOption,
 	ChartPriceLevels,
-	ChartReadoutOptions,
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart/types";
@@ -63,7 +62,6 @@ const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
 export function PriceHistoryChart({
 	enabled,
 	indicators: layouts,
-	extraReadout,
 	fillHeight = false,
 	intervals,
 	live = true,
@@ -253,9 +251,7 @@ export function PriceHistoryChart({
 								freshness={freshness}
 							/>
 						) : null}
-						{readoutCandle ? (
-							<ChartReadout candle={readoutCandle} extra={extraReadout} />
-						) : null}
+						{readoutCandle ? <ChartReadout candle={readoutCandle} /> : null}
 						{readoutCandle ? <IndicatorLegend items={legendItems} /> : null}
 					</Stack>
 					{isLoading && !hasCandles ? (

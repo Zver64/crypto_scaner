@@ -5,6 +5,7 @@ import {
 	createIndicatorData,
 	createMarkerDataSelector,
 	fitScaleToLevels,
+	formatCandleRange,
 	formatChartTime,
 	formatOhlc,
 	formatPrice,
@@ -122,6 +123,10 @@ describe("price history chart data", () => {
 		expect(formatOhlc({ open: 1, high: 2, low: 0.5, close: 1.5 })).toBe(
 			"O 1  H 2  L 0.5  C 1.5",
 		);
+	});
+
+	it("formats the candle range relative to its open", () => {
+		expect(formatCandleRange({ open: 1, high: 2, low: 0.5 })).toBe("150%");
 	});
 
 	it("formats UTC labels for each interval", () => {

@@ -6,7 +6,6 @@ import {
 } from "@/features/candle-chart";
 import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { CoinChartPlaceholder } from "@/features/instrument-analysis/coin-chart-placeholder";
-import { rangeReadout } from "@/features/instrument-analysis/coin-chart-presentation";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 
 interface CoinChartProps {
@@ -39,7 +38,6 @@ export function CoinChart({
 	return (
 		<PriceHistoryChart
 			enabled={enabled}
-			extraReadout={rangeReadout}
 			fillHeight={fillHeight}
 			indicators={indicators}
 			key={symbol}

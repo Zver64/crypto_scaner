@@ -44,6 +44,7 @@ import type {
 	ValueResolution,
 } from "@/features/candle-chart/types";
 import { formatNumber } from "@/utils/number-format";
+import { formatRangePercent } from "@/utils/range-percent";
 
 // Results arrive in catalog order. Both chart sources use the same id/output
 // mapping.
@@ -334,6 +335,12 @@ export function formatOhlc(
 	candle: Pick<PriceCandle, "open" | "high" | "low" | "close">,
 ): string {
 	return `O ${formatPrice(candle.open)}  H ${formatPrice(candle.high)}  L ${formatPrice(candle.low)}  C ${formatPrice(candle.close)}`;
+}
+
+export function formatCandleRange(
+	candle: Pick<PriceCandle, "open" | "high" | "low">,
+): string {
+	return formatRangePercent(((candle.high - candle.low) / candle.open) * 100);
 }
 
 export function isChartCandle(value: unknown): value is ChartCandle {

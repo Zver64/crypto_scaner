@@ -107,16 +107,13 @@ Create commits only when the user asks.
 
 - A user question (in chat or a review comment, even a challenge such as "why do we need that?") wants an answer and a recommendation, not a code change. "Can we…" is a question, not approval; change code only after the user agrees.
 - In design discussions, answer the point raised and wait for the user's decision; do not rewrite the plan or pick a solution on your own.
-- Keep plans in the conversation; write plan files only when asked.
 - Never deviate from an agreed plan on your own: when the implementation needs a deviation, or a behaviour-changing decision the plan left open, stop and ask the user first. Subagents return such points as questions instead of deciding them, and every subagent brief says so; the orchestrating agent decides purely technical questions itself and brings only behaviour or user-facing ones to the user.
 - After implementing an agreed plan or change, report only what differs from it and what was not discussed before (deviations, new findings, open risks, check results); do not restate what was agreed.
 - Commit on the current branch (usually `main`); create a branch only when asked.
-- Do not trace authorship with `git blame` or history, and never answer "I didn't write this": treat all code in the repository as your own and judge it on its merits.
 - Do not drive a browser to check UI changes; finish with the static checks and let the user review visually.
 - Do not add UI texts, hints, captions, or warnings the user did not ask for; when asked for a visual cue such as a color, add only that cue.
 - Prefer established, community-standard libraries to hand-written code, and keep own code minimal.
 - Use subagents at your discretion for large or parallel work; do small tasks such as a commit or a one-file fix directly. Give each new task a new subagent with a self-contained brief; resume a subagent only for fixes to its own just-finished work. Start a review, in a separate subagent, only after the user approves it.
-- Review changes made by the herdr pi agent strictly: demand KISS, DRY, and correct module placement, call out pointless fixes bluntly, and send fixes back to it until the diff is clean.
 
 ## Generated files
 
@@ -133,16 +130,3 @@ Create commits only when the user asks.
 - Keep public defaults and documentation in `.env.example`.
 - Frontend API requests use relative `/api` and `/health` paths; Vite proxies them to the backend during development.
 
-## Agent skills
-
-### Issue tracker
-
-Issues are tracked in this repository's GitHub Issues. See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Triage uses the five default canonical labels. See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-This repository uses a single-context domain documentation layout. See `docs/agents/domain.md`.

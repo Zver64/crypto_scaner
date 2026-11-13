@@ -460,9 +460,9 @@ func (language *language) options() []cel.EnvOption {
 		crossesMacro("CrossesAbove", operators.LessEquals, operators.Greater),
 		crossesMacro("CrossesBelow", operators.GreaterEquals, operators.Less),
 	}
-	for _, field := range candleFields {
-		macros = append(macros, parser.NewGlobalVarArgMacro(field.name, language.callMacro(field.name, func(args []ast.Expr) (call, string) {
-			return resolveCandleCall(field.name, field.output, args)
+	for _, field := range indicator.CandleFields {
+		macros = append(macros, parser.NewGlobalVarArgMacro(field, language.callMacro(field, func(args []ast.Expr) (call, string) {
+			return resolveCandleCall(field, args)
 		})))
 	}
 	for _, descriptor := range language.registry.Descriptors() {

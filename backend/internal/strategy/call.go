@@ -15,22 +15,6 @@ import (
 	"cel.dev/cel-go/common/types"
 )
 
-// candleFields are the candle fields expressions read as calls of their
-// name, such as close("1h"), with the output each reads.
-var candleFields = []struct{ name, output string }{
-	{"open", "open"}, {"high", "high"}, {"low", "low"}, {"close", "close"},
-	{"volume", "volume"}, {"quote_volume", "quote_asset_volume"}, {"trades", "trade_count"},
-}
-
-// CandleFields names the candle fields expressions read, such as close.
-func CandleFields() []string {
-	names := make([]string, len(candleFields))
-	for i, field := range candleFields {
-		names[i] = field.name
-	}
-	return names
-}
-
 // CandleTarget is the closed-candle calculation of the candle fields of
 // interval.
 func CandleTarget(interval market.CandleInterval) closedindicator.Target {
@@ -77,9 +61,9 @@ func outputFunctions(descriptor indicator.Descriptor) []string {
 	return names
 }
 
-// resolveCandleCall resolves the call of the candle field name with args:
-// the period only.
-func resolveCandleCall(name, output string, args []ast.Expr) (call, string) {
+// resolveCandleCall resolves the call of the candle field name, such as
+// close("1h"), with args: the period only.
+func resolveCandleCall(name string, args []ast.Expr) (call, string) {
 	interval, problem := callInterval(name, args)
 	if problem != "" {
 		return call{}, problem
@@ -87,7 +71,7 @@ func resolveCandleCall(name, output string, args []ast.Expr) (call, string) {
 	if len(args) > 1 {
 		return call{}, fmt.Sprintf("%s takes only the period", name)
 	}
-	return call{target: CandleTarget(interval), spelling: fmt.Sprintf("%s(%q)", name, interval), output: output, candle: true}, ""
+	return call{target: CandleTarget(interval), spelling: fmt.Sprintf("%s(%q)", name, interval), output: name, candle: true}, ""
 }
 
 // resolveCall resolves the call of output of the indicator descriptor

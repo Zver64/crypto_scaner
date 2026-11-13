@@ -60,8 +60,8 @@ describe("importedStrategyQuery", () => {
 		],
 		['close("1h") > sma("1h", 20)', 'close("1h") > sma("1h", 20)'],
 		[
-			'sma("1h", 20, volume) < sma("1w", 3, trade_count)',
-			'sma("1h", 20, volume) < sma("1w", 3, trade_count)',
+			'sma("1h", 20, volume) < sma("1w", 3, trades)',
+			'sma("1h", 20, volume) < sma("1w", 3, trades)',
 		],
 		[
 			'Of("BTCUSDT", roc("1h", 12)) < 0\n&& CrossesAbove(close("1h"), Prev(max("1h", 12, high)))',

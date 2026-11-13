@@ -105,8 +105,8 @@ func TestCompileRejectsInvalidCalls(t *testing.T) {
 		`rsi("1h", 14, close, 2) > 1`: "1:4: rsi takes the period and at most 2 parameters",
 		`rsi("1h", 1) > 1`:            "1:4: rsi: invalid indicator request: period must be an integer between 2 and 2000",
 		`rsi("1h", close("1h")) > 1`:  "1:4: the period of rsi is a number",
-		`sma("1h", 20, closing) > 1`:  "1:4: the source of sma is one of open, high, low, close, volume, quote_asset_volume, trade_count",
-		`sma("1h", 20, 4) > 1`:        "1:4: the source of sma is one of open, high, low, close, volume, quote_asset_volume, trade_count",
+		`sma("1h", 20, closing) > 1`:  "1:4: the source of sma is one of open, high, low, close, volume, quote_volume, trades",
+		`sma("1h", 20, 4) > 1`:        "1:4: the source of sma is one of open, high, low, close, volume, quote_volume, trades",
 	} {
 		_, err := Compile(source, registry, EntryRule)
 		var invalid *InvalidExpressionError

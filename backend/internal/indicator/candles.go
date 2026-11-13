@@ -9,7 +9,7 @@ import (
 )
 
 // CandleFields are the candle fields indicators can read, in display order.
-var CandleFields = []string{"open", "high", "low", "close", "volume", "quote_asset_volume", "trade_count"}
+var CandleFields = []string{"open", "high", "low", "close", "volume", "quote_volume", "trades"}
 
 // PriceField reports whether field is on the candle price scale.
 func PriceField(field string) bool {
@@ -77,9 +77,9 @@ func (r *Registry) CalculateCandles(interval market.CandleInterval, candles []ma
 						values[i-start] = candles[i].Close
 					case "volume":
 						values[i-start] = candles[i].Volume
-					case "quote_asset_volume":
+					case "quote_volume":
 						values[i-start] = candles[i].QuoteAssetVolume
-					case "trade_count":
+					case "trades":
 						values[i-start] = float64(candles[i].TradeCount)
 					}
 				}

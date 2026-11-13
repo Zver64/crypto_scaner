@@ -409,7 +409,7 @@ type Catalog struct {
 // Catalog lists what expressions can read; indicators that are not
 // configured are read all the same.
 func (service *Service) Catalog() (Catalog, error) {
-	catalog := Catalog{CandleFields: CandleFields(), Intervals: market.CandleIntervals(), Positions: PositionVariables()}
+	catalog := Catalog{CandleFields: slices.Clone(indicator.CandleFields), Intervals: market.CandleIntervals(), Positions: PositionVariables()}
 	for _, entry := range service.indicators.List() {
 		call, err := service.indicatorCall(entry)
 		if err != nil {

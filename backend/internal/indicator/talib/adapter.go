@@ -30,7 +30,7 @@ var maTypes = []indicator.Choice{
 var sourceChoices = func() []indicator.Choice {
 	titles := map[string]string{
 		"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume",
-		"quote_asset_volume": "Quote Asset Volume", "trade_count": "Trade Count",
+		"quote_volume": "Quote Volume", "trades": "Trades",
 	}
 	choices := make([]indicator.Choice, len(indicator.CandleFields))
 	for index, field := range indicator.CandleFields {

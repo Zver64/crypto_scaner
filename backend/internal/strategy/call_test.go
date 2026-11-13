@@ -35,7 +35,7 @@ func TestFunctionNamesAreUnique(t *testing.T) {
 	for _, function := range []string{"Abs", "Mod", "Min", "Max", "Prev", "Percentile", "Of", "CrossesAbove", "CrossesBelow"} {
 		add(function, "function "+function)
 	}
-	for _, field := range CandleFields() {
+	for _, field := range indicator.CandleFields {
 		add(field, "candle field "+field)
 	}
 	for _, variable := range PositionVariables() {

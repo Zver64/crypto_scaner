@@ -35,8 +35,8 @@ func TestPreviewPlacesIndicatorsByTheirSourceUnits(t *testing.T) {
 	}{
 		{name: "overlay of prices", indicatorType: talib.EMAType, field: "close", want: chart.PlacementOverlay},
 		{name: "overlay of volumes", indicatorType: talib.EMAType, field: "volume", want: chart.PlacementVolume},
-		{name: "overlay of quote volumes", indicatorType: talib.EMAType, field: "quote_asset_volume", want: chart.PlacementPane},
-		{name: "overlay of trade counts", indicatorType: talib.EMAType, field: "trade_count", want: chart.PlacementPane},
+		{name: "overlay of quote volumes", indicatorType: talib.EMAType, field: "quote_volume", want: chart.PlacementPane},
+		{name: "overlay of trade counts", indicatorType: talib.EMAType, field: "trades", want: chart.PlacementPane},
 		{name: "oscillator of volumes", indicatorType: talib.RSIType, field: "volume", want: chart.PlacementPane},
 	}
 	for _, test := range tests {

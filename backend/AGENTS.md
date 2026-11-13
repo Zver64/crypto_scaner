@@ -47,7 +47,7 @@ Rules:
 ## Storage
 
 - Write SQL in `internal/storage/postgres/queries/` and regenerate. Prefer batch queries (`:batchone`, `unnest` joins) over per-row round trips, and `sqlc.embed` with shared row mappers such as `instrumentFromRow` over repeated field-by-field conversions. Cast computed columns so sqlc generates typed fields.
-- Database integration tests run only when `CRYPTO_SCANNER_TEST_DATABASE_URL` points to a disposable empty database and `CRYPTO_SCANNER_TEST_DATABASE_RESET_OK=1` is set. They reset the schema, so never point them at the Compose database.
+- Database integration tests run only when `CRYPTO_SCANNER_TEST_DATABASE_URL` points to a disposable empty database and `CRYPTO_SCANNER_TEST_DATABASE_RESET_OK=1` is set. They reset the schema, so never point them at the Compose database. Run them with `make test-db`, which uses the separate `scanner_test` database of the running Compose PostgreSQL and runs one package at a time; the Lefthook `pre-push` hook runs it when pushed commits change `backend/` and fails when the Compose PostgreSQL is not running.
 
 
 ## Testing

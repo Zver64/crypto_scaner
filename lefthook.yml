@@ -42,7 +42,7 @@ pre-push:
   jobs:
     - name: backend tests
       glob: "backend/**/*"
-      run: go -C backend test ./...
+      run: make test-db
 
     - name: frontend
       root: "frontend/"

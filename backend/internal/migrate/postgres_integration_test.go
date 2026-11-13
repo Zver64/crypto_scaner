@@ -2,12 +2,16 @@ package migrate_test
 
 import (
 	"context"
+	"io/fs"
 	"os"
 	"sort"
+	"strconv"
+	"strings"
 	"testing"
 
 	"crypto-scanner/internal/migrate"
 	"crypto-scanner/internal/storage/postgres"
+	"crypto-scanner/migrations"
 )
 
 func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
@@ -62,15 +66,24 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	}
 
 	wantRelations := []string{
+		"app.api_tokens",
 		"app.coingecko_asset_mappings",
 		"app.coingecko_mapping_bootstrap",
 		"app.coingecko_market_caps",
 		"app.favorites",
 		"app.price_alerts",
+		"app.scanner_indicator_intervals",
+		"app.scanner_indicators",
 		"app.schema_migrations",
+		"app.sessions",
+		"app.strategies",
+		"app.strategy_coins",
+		"app.strategy_states",
 		"app.users",
 		"binance_spot.candle_history_coverage",
 		"binance_spot.candles",
+		"binance_spot.coinm_perpetuals",
+		"binance_spot.empty_candle_gaps",
 		"binance_spot.instruments",
 		"binance_spot.sync_state",
 	}
@@ -102,20 +115,39 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	}
 
 	wantConstraints := []string{
+		"api_tokens_name_check", "api_tokens_pkey", "api_tokens_token_hash_check",
+		"api_tokens_token_hash_key", "api_tokens_user_id_fkey",
 		"candle_history_coverage_instrument_id_fkey", "candle_history_coverage_pkey",
 		"candle_history_coverage_policy_positive", "candle_history_coverage_supported_interval",
-		"candle_history_coverage_target_positive", "candles_high_valid", "candles_instrument_id_fkey",
-		"candles_low_valid", "candles_open_positive", "candles_pkey", "candles_quote_volume_nonnegative",
-		"candles_supported_interval", "candles_time_order", "candles_trade_count_nonnegative",
-		"candles_volume_nonnegative", "coingecko_asset_mappings_pkey",
-		"coingecko_asset_mappings_status_check", "coingecko_mapping_bootstrap_id_check",
-		"coingecko_mapping_bootstrap_pkey", "coingecko_market_caps_market_cap_usd_check",
-		"coingecko_market_caps_pkey", "favorites_instrument_id_fkey", "favorites_pkey",
-		"favorites_user_id_fkey", "instruments_base_nonempty", "instruments_deactivated_at_matches_activity", "instruments_pkey",
-		"instruments_quote_nonempty", "instruments_symbol_key", "instruments_symbol_nonempty",
-		"price_alerts_favorite_fk", "price_alerts_pkey", "price_alerts_target_positive",
-		"price_alerts_unique_target", "schema_migrations_pkey", "sync_state_pkey",
-		"sync_state_status", "users_pkey", "users_telegram_id_key",
+		"candle_history_coverage_target_positive", "candles_close_positive", "candles_high_valid",
+		"candles_instrument_id_fkey", "candles_low_positive", "candles_low_valid", "candles_open_positive",
+		"candles_pkey", "candles_quote_volume_nonnegative", "candles_supported_interval",
+		"candles_time_order", "candles_trade_count_nonnegative", "candles_values_finite",
+		"candles_volume_nonnegative", "coingecko_asset_mappings_coin_id_matches_status",
+		"coingecko_asset_mappings_pkey", "coingecko_asset_mappings_status_check",
+		"coingecko_mapping_bootstrap_id_check", "coingecko_mapping_bootstrap_pkey",
+		"coingecko_market_caps_market_cap_usd_check", "coingecko_market_caps_pkey", "coinm_perpetuals_pkey",
+		"empty_candle_gaps_instrument_id_fkey", "empty_candle_gaps_ordered", "empty_candle_gaps_pkey",
+		"empty_candle_gaps_supported_interval", "favorites_instrument_id_fkey", "favorites_pkey",
+		"favorites_user_id_fkey", "instruments_base_nonempty",
+		"instruments_deactivated_at_matches_activity", "instruments_pkey", "instruments_quote_nonempty",
+		"instruments_symbol_key", "instruments_symbol_nonempty", "price_alerts_favorite_fk",
+		"price_alerts_pkey", "price_alerts_target_positive", "price_alerts_unique_target",
+		"scanner_indicator_intervals_indicator_id_fkey", "scanner_indicator_intervals_pkey",
+		"scanner_indicator_intervals_supported_interval", "scanner_indicators_pkey",
+		"scanner_indicators_unique_selection", "schema_migrations_pkey", "sessions_check", "sessions_pkey",
+		"sessions_token_hash_check", "sessions_user_id_fkey", "strategies_coin_source",
+		"strategies_coin_source_signal", "strategies_direction_check", "strategies_market_cap_range",
+		"strategies_market_cap_signal", "strategies_max_market_cap_usd_check",
+		"strategies_min_market_cap_usd_check", "strategies_name_key", "strategies_pkey",
+		"strategies_short_levels", "strategies_signal_evaluation", "strategies_signal_without_trading",
+		"strategies_target_ratio_check", "strategies_trading_direction", "strategies_window_candles_check",
+		"strategy_coins_instrument_id_fkey", "strategy_coins_pkey", "strategy_coins_strategy_id_fkey",
+		"strategy_states_buys_check", "strategy_states_check", "strategy_states_instrument_id_fkey",
+		"strategy_states_opened_when_filled", "strategy_states_pkey", "strategy_states_quantity_check",
+		"strategy_states_stop_loss_check", "strategy_states_strategy_id_fkey",
+		"strategy_states_take_profit_check", "sync_state_pkey", "sync_state_status", "users_pkey",
+		"users_telegram_id_key",
 	}
 	constraintRows, err := db.Query(ctx, `
 		SELECT con.conname
@@ -142,6 +174,13 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	}
 	if !equalStrings(constraints, wantConstraints) {
 		t.Fatalf("constraints = %v, want %v", constraints, wantConstraints)
+	}
+
+	latest := latestMigrationVersion(t)
+	for version := latest; version > 9; version-- {
+		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
+			t.Fatalf("migrate v%d to v%d down: %v", version, version-1, err)
+		}
 	}
 
 	var indexExists bool
@@ -223,7 +262,7 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate absent schemas up: %v", err)
 	}
-	for version := 9; version >= 1; version-- {
+	for version := latest; version >= 1; version-- {
 		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 			t.Fatalf("migrate absent schemas v%d down: %v", version, err)
 		}
@@ -250,13 +289,13 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if err := migrate.Run(ctx, []string{"up"}, loadDatabaseURL); err != nil {
 		t.Fatalf("migrate pre-existing schemas up: %v", err)
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 10 WHERE version = 9"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = version + 1"); err != nil {
 		t.Fatalf("create future migration metadata: %v", err)
 	}
 	if err := postgres.VerifySchema(ctx, db, databaseURL); err == nil {
 		t.Fatal("VerifySchema() accepted future migration metadata")
 	}
-	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = 9 WHERE version = 10"); err != nil {
+	if _, err := db.Exec(ctx, "UPDATE public.crypto_scanner_schema_versions SET version = version - 1"); err != nil {
 		t.Fatalf("restore current migration metadata: %v", err)
 	}
 	if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
@@ -268,7 +307,7 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if !appSchema || !binanceSchema {
 		t.Fatalf("pre-existing schemas removed on down: app=%t binance_spot=%t", appSchema, binanceSchema)
 	}
-	for version := 8; version >= 1; version-- {
+	for version := latest - 1; version >= 1; version-- {
 		if err := migrate.Run(ctx, []string{"down"}, loadDatabaseURL); err != nil {
 			t.Fatalf("migrate pre-existing schemas v%d down: %v", version, err)
 		}
@@ -286,6 +325,21 @@ func TestPostgresMigrationLifecycleAndSchemaOwnership(t *testing.T) {
 	if _, err := db.Exec(ctx, "DROP TABLE IF EXISTS public.crypto_scanner_schema_versions"); err != nil {
 		t.Fatalf("clean up migration metadata: %v", err)
 	}
+}
+
+// latestMigrationVersion is the version of the newest embedded migration.
+func latestMigrationVersion(t *testing.T) int64 {
+	t.Helper()
+	names, err := fs.Glob(migrations.Files, "*.up.sql")
+	if err != nil || len(names) == 0 {
+		t.Fatalf("list embedded migrations: %v", err)
+	}
+	sort.Strings(names)
+	version, err := strconv.ParseInt(strings.SplitN(names[len(names)-1], "_", 2)[0], 10, 64)
+	if err != nil {
+		t.Fatalf("parse newest migration version: %v", err)
+	}
+	return version
 }
 
 func equalStrings(got, want []string) bool {

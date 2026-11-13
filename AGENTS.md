@@ -51,6 +51,8 @@ Use `make migrate-up` and `make migrate-down` for manual migration control.
 
 `make install-cli` installs the `scanner` CLI and its zsh completion; `make uninstall-cli` removes them. User instructions live in `backend/cmd/scanner/README.md`, and the backtest workflow in the `.agents/skills/backtest/SKILL.md` skill. The CLI creates strategies (always disabled) and backtests saved or unsaved ones over stored history; it cannot start Binance history loads or manage API tokens, which happen only in the Mini App.
 
+After a change to `backend/cmd/scanner` or to the OpenAPI contract, run `make install-cli` so the installed `scanner` matches the code. This is the one build allowed without an explicit request.
+
 Shared repository skills live in `.agents/skills/`; always create and edit them there, never under `.claude/skills/` (a symlink kept for Claude Code discovery).
 
 ## Verification
@@ -67,6 +69,14 @@ Backend-only verification:
 go -C backend vet ./...
 go -C backend test ./...
 ```
+
+Database integration tests (backend tests against the `scanner_test` database of the running Compose PostgreSQL, which `make test-db` creates when absent; it never starts Compose and fails when PostgreSQL is not running):
+
+```sh
+make test-db
+```
+
+The Lefthook `pre-push` hook runs `make test-db` when the pushed commits change `backend/`; when the Compose PostgreSQL is not running, the push fails. CI does not run the database tests.
 
 Frontend-only verification:
 

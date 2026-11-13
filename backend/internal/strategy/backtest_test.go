@@ -629,7 +629,9 @@ func testCandle(instrumentID int64, interval market.CandleInterval, open time.Ti
 
 func testRegistry(t *testing.T) *indicator.Registry {
 	t.Helper()
-	registry, err := indicator.NewRegistry(append(indicatortalib.New(), candle.New(), pivot.New())...)
+	modules := indicatortalib.New()
+	rsi := slices.IndexFunc(modules, func(module indicator.Implementation) bool { return module.Describe().Type == indicatortalib.RSIType })
+	registry, err := indicator.NewRegistry(append(modules, candle.New(), pivot.New(), pivot.NewDivergence(modules[rsi]))...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -841,7 +843,7 @@ func TestEvaluateSignalNeedsConsecutiveCandles(t *testing.T) {
 func evaluateTestSignal(t *testing.T, direction Direction, interval market.CandleInterval, history []market.Candle, at, window, ratio int) *SignalEvaluation {
 	t.Helper()
 	occurrences := []SignalOccurrence{{}}
-	if _, err := judgeSignal(testRegistry(t), Strategy{Direction: direction, Window: window, TargetRatio: ratio}, interval, history, occurrences, []int{at}, -1, -1); err != nil {
+	if _, err := (&replay{registry: testRegistry(t)}).judgeSignal(Strategy{Direction: direction, Window: window, TargetRatio: ratio}, interval, history, occurrences, []int{at}, -1, -1); err != nil {
 		t.Fatal(err)
 	}
 	return occurrences[0].Evaluation
@@ -888,7 +890,7 @@ func TestSignalATRWarmsUpPrunedHistory(t *testing.T) {
 	signal := Strategy{Direction: DirectionLong, Window: 6, TargetRatio: 2}
 	signals := []int{14, depth - 2, depth - 1}
 	occurrences := make([]SignalOccurrence, len(signals))
-	report, err := judgeSignal(registry, signal, market.IntervalHour, history, occurrences, signals, 0, len(history)-1)
+	report, err := (&replay{registry: registry}).judgeSignal(signal, market.IntervalHour, history, occurrences, signals, 0, len(history)-1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -918,7 +920,7 @@ func TestJudgeSignalCountsSignalsAWindowApart(t *testing.T) {
 	history := signalHistory(future...)
 	signals := []int{100, 103, 106, 107, 112}
 	occurrences := make([]SignalOccurrence, len(signals))
-	report, err := judgeSignal(testRegistry(t), Strategy{Direction: DirectionSideways, TargetRatio: 2, Window: 6}, market.IntervalHour, history, occurrences, signals, 100, 105)
+	report, err := (&replay{registry: testRegistry(t)}).judgeSignal(Strategy{Direction: DirectionSideways, TargetRatio: 2, Window: 6}, market.IntervalHour, history, occurrences, signals, 100, 105)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -91,7 +91,7 @@ func TestJudgeSignalCountsNeutralsAndSpacing(t *testing.T) {
 	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
 	at := signalHistoryCandles
 	occurrences := []SignalOccurrence{{}, {}, {}}
-	report, err := judgeSignal(testRegistry(t), Strategy{Direction: DirectionLong, Window: 3, TargetRatio: 2}, market.IntervalHour, history,
+	report, err := (&replay{registry: testRegistry(t)}).judgeSignal(Strategy{Direction: DirectionLong, Window: 3, TargetRatio: 2}, market.IntervalHour, history,
 		occurrences, []int{at, at + 1, at + 3}, at, at+3)
 	if err != nil {
 		t.Fatal(err)

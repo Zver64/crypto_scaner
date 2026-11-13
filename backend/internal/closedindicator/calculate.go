@@ -137,32 +137,52 @@ func (tracker *Tracker) evaluate(subscriptions []Subscription, histories map[his
 // passing the same window ending at an earlier candle reproduces the value
 // the tracker had then.
 func Calculate(registry *indicator.Registry, target Target, candles []market.Candle, points int) (Value, error) {
+	return CalculateRange(registry, target, indicator.NewHistory(target.Interval, candles), 0, len(candles), points)
+}
+
+// CalculateRange is Calculate over the window of history, candles of the
+// target's interval, from index from through to−1, so a replay prepares its
+// history once for the windows of all its candles.
+func CalculateRange(registry *indicator.Registry, target Target, history *indicator.History, from, to, points int) (Value, error) {
 	value := Value{Target: target}
-	if len(candles) == 0 {
+	if to <= from {
 		return value, nil
 	}
-	last := candles[len(candles)-1].OpenTime.UTC()
+	last := history.OpenTime(to - 1).UTC()
 	value.OpenTime = last
-	results, err := registry.CalculateCandles(target.Interval, candles, []indicator.Selection{target.Selection})
+	outputs, err := registry.CalculateRange(history, from, to, target.Selection)
 	if err != nil {
 		return Value{}, fmt.Errorf("calculate closed %s: %w", target.Selection.Type, err)
 	}
-	for _, series := range results[0].Series {
-		count := len(series.Points)
-		if count == 0 || !series.Points[count-1].Time.Equal(last) {
-			continue
-		}
-		output := Output{Name: series.Name, Value: series.Points[count-1].Value}
-		expected := last
-		for index := count - 2; index >= 0 && len(output.Earlier) < points-1; index-- {
-			expected = target.Interval.PreviousOpenTime(expected)
-			point := series.Points[index]
-			if !point.Time.Equal(expected) {
-				break
+	for _, calculated := range outputs {
+		// The values are read from the latest one back, run by run.
+		var output Output
+		found, expected := false, last
+	walk:
+		for run := len(calculated.Runs) - 1; run >= 0; run-- {
+			series := calculated.Runs[run]
+			for index := len(series.Values) - 1; index >= 0; index-- {
+				openTime := history.OpenTime(series.Offset + index)
+				if !found {
+					if !openTime.Equal(last) {
+						break walk
+					}
+					output, found = Output{Name: calculated.Name, Value: series.Values[index]}, true
+					continue
+				}
+				if len(output.Earlier) >= points-1 {
+					break walk
+				}
+				expected = target.Interval.PreviousOpenTime(expected)
+				if !openTime.Equal(expected) {
+					break walk
+				}
+				output.Earlier = append(output.Earlier, series.Values[index])
 			}
-			output.Earlier = append(output.Earlier, point.Value)
 		}
-		value.Outputs = append(value.Outputs, output)
+		if found {
+			value.Outputs = append(value.Outputs, output)
+		}
 	}
 	return value, nil
 }

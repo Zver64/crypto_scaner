@@ -18,7 +18,8 @@ type Parameters map[string]any
 
 // Inputs contains numeric input series keyed by their implementation-defined
 // names, for example "close". The core does not require all series to have the
-// same length; that is part of each implementation's contract.
+// same length; that is part of each implementation's contract. Inputs are
+// shared with the caller: implementations read them and never modify them.
 type Inputs map[string][]float64
 
 // Request describes one indicator calculation.

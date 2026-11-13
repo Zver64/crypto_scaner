@@ -1,5 +1,22 @@
 # Changelog
 
+## [5.1.0](https://github.com/Zver64/crypto_scaner/compare/v5.0.0...v5.1.0) (2026-11-13)
+
+
+### Features
+
+* **frontend:** show the candle range on the backtest chart ([fa02732](https://github.com/Zver64/crypto_scaner/commit/fa027324393279970139943571cb68523456d1bf))
+
+
+### Bug Fixes
+
+* name candle fields the same wherever a source is written ([beb7866](https://github.com/Zver64/crypto_scaner/commit/beb7866ac3b4579356996ef1eb0df96d5855978c))
+
+
+### Performance Improvements
+
+* **backend:** prepare a candle history once for a whole backtest ([6c6ddc6](https://github.com/Zver64/crypto_scaner/commit/6c6ddc6cd0a4e7fa4554404fb7365295841864e9))
+
 ## [5.0.0](https://github.com/Zver64/crypto_scaner/compare/v4.12.0...v5.0.0) (2026-11-13)
 
 

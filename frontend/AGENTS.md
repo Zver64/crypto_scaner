@@ -134,7 +134,7 @@ tanstackIntent:
 - Coin charts arrive only over the live WebSocket; backtest charts only as immutable snapshots in the backtest response (`chart: true`).
 - Chart indicators, scanner indicator types and parameters, the strategy catalog, and `Of` coins come from backend catalogs and descriptors; never hardcode indicator types, names, parameters, validation, colors, or per-indicator code. A catalog may be empty.
 - Strategy expressions are CEL strings: `strategyExpression` and `strategyQuery` convert the builder query, and the functions in `expressions.ts` must match what the backend `strategy.Compile` accepts and `docs/strategy-language.md` describes.
-- After changing scanner indicators, invalidate the scanner indicator list, chart catalogs, strategies and strategy variables, and market and favorites analyses; after changing strategies, the strategies and scanner indicator lists.
+- After changing scanner indicators, invalidate the scanner indicator list, chart catalogs, strategies and strategy variables, and market and favorites analyses; after changing strategies, the strategies list.
 - Backtests run only through the Run button (`useBacktestRun`, outside query caches); selection changes, visits, focus, reconnects, and cache invalidation never start one, and shown results are never cleared automatically. Backtest parameters live in the URL search.
 - The plaintext API token exists only in the create mutation's result (`gcTime: 0`); never put it in query caches, the URL, storage, or logs.
 - Candle history loads start only from the Commands page.

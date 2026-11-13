@@ -5,7 +5,6 @@ import { useRef, useState } from "react";
 
 import type { ErrorType } from "@/api/fetch";
 import {
-	getListScannerIndicatorsQueryKey,
 	getListStrategiesQueryKey,
 	type getStrategyCatalogResponseSuccess,
 	type listStrategiesResponseSuccess,
@@ -84,15 +83,8 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 			select: selectStrategyCatalog,
 		},
 	});
-	// Strategies decide which indicators are in use.
-	const refresh = () => {
-		void queryClient.invalidateQueries({
-			queryKey: getListScannerIndicatorsQueryKey(),
-		});
-		return queryClient.invalidateQueries({
-			queryKey: getListStrategiesQueryKey(),
-		});
-	};
+	const refresh = () =>
+		queryClient.invalidateQueries({ queryKey: getListStrategiesQueryKey() });
 	const failed = (error: ErrorType<ErrorResponse>) => {
 		notifications.show({
 			color: "red",

@@ -24,76 +24,66 @@ func (store *Store) ListScannerIndicators(ctx context.Context) ([]scannerindicat
 		if err := json.Unmarshal(row.Parameters, &parameters); err != nil {
 			return nil, fmt.Errorf("decode scanner indicator %d parameters: %w", row.ID, err)
 		}
+		periods := make([]scannerindicator.Period, len(row.Intervals))
+		for i, interval := range row.Intervals {
+			periods[i] = scannerindicator.Period{Interval: market.CandleInterval(interval), ShowInTable: row.ShowInTable[i], ShowInChart: row.ShowInChart[i]}
+		}
 		items = append(items, scannerindicator.Indicator{
-			ID:          row.ID,
-			Interval:    market.CandleInterval(row.Interval),
-			Selection:   indicator.Selection{Type: indicator.Type(row.IndicatorType), Parameters: parameters},
-			ShowInTable: row.ShowInTable,
-			ShowInChart: row.ShowInChart,
-			Scale:       scannerindicator.Scale{Min: float8Pointer(row.ScaleMin), Max: float8Pointer(row.ScaleMax), Levels: row.ScaleLevels},
+			ID:        row.ID,
+			Selection: indicator.Selection{Type: indicator.Type(row.IndicatorType), Parameters: parameters},
+			Periods:   periods,
+			Scale:     scannerindicator.Scale{Min: float8Pointer(row.ScaleMin), Max: float8Pointer(row.ScaleMax), Levels: row.ScaleLevels},
 		})
 	}
 	return items, nil
 }
 
-func (store *Store) CreateScannerIndicators(ctx context.Context, items []scannerindicator.Indicator) ([]int64, error) {
-	if len(items) == 0 {
-		return []int64{}, nil
+func (store *Store) CreateScannerIndicator(ctx context.Context, item scannerindicator.Indicator) (int64, error) {
+	parameters, err := json.Marshal(item.Selection.Parameters)
+	if err != nil {
+		return 0, fmt.Errorf("encode scanner indicator parameters: %w", err)
 	}
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("begin scanner indicator creation: %w", err)
+		return 0, fmt.Errorf("begin scanner indicator creation: %w", err)
 	}
 	defer func() { _ = tx.Rollback(context.Background()) }()
 	queries := store.queries.WithTx(tx)
-	params := make([]generated.InsertScannerIndicatorParams, len(items))
-	for i, item := range items {
-		parameters, err := json.Marshal(item.Selection.Parameters)
-		if err != nil {
-			return nil, fmt.Errorf("encode scanner indicator parameters: %w", err)
-		}
-		params[i] = generated.InsertScannerIndicatorParams{
-			Interval:      string(item.Interval),
-			IndicatorType: string(item.Selection.Type),
-			Parameters:    parameters,
-			ShowInTable:   item.ShowInTable,
-			ShowInChart:   item.ShowInChart,
-			ScaleMin:      float8(item.Scale.Min),
-			ScaleMax:      float8(item.Scale.Max),
-			ScaleLevels:   append([]float64{}, item.Scale.Levels...),
-		}
-	}
 	if err := queries.LockScannerIndicators(ctx); err != nil {
-		return nil, fmt.Errorf("lock scanner indicators: %w", err)
+		return 0, fmt.Errorf("lock scanner indicators: %w", err)
 	}
-	// One round trip; each insert takes the position after the previous one.
-	ids := make([]int64, len(items))
-	var insertErr error
-	queries.InsertScannerIndicator(ctx, params).QueryRow(func(i int, id int64, err error) {
-		switch {
-		case insertErr != nil:
-		case duplicateViolation(err):
-			insertErr = scannerindicator.ErrConflict
-		case err != nil:
-			insertErr = fmt.Errorf("insert scanner indicator: %w", err)
-		default:
-			ids[i] = id
-		}
+	id, err := queries.InsertScannerIndicator(ctx, generated.InsertScannerIndicatorParams{
+		IndicatorType: string(item.Selection.Type),
+		Parameters:    parameters,
+		ScaleMin:      float8(item.Scale.Min),
+		ScaleMax:      float8(item.Scale.Max),
+		ScaleLevels:   append([]float64{}, item.Scale.Levels...),
 	})
-	if insertErr != nil {
-		return nil, insertErr
+	if duplicateViolation(err) {
+		return 0, scannerindicator.ErrConflict
+	}
+	if err != nil {
+		return 0, fmt.Errorf("insert scanner indicator: %w", err)
+	}
+	if err := queries.InsertScannerIndicatorIntervals(ctx, scannerIndicatorIntervals(id, item.Periods)); err != nil {
+		return 0, fmt.Errorf("insert scanner indicator periods: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit scanner indicator creation: %w", err)
+		return 0, fmt.Errorf("commit scanner indicator creation: %w", err)
 	}
-	return ids, nil
+	return id, nil
 }
 
+// UpdateScannerIndicator replaces the periods and the scale of the indicator.
 func (store *Store) UpdateScannerIndicator(ctx context.Context, item scannerindicator.Indicator) error {
-	updated, err := store.queries.UpdateScannerIndicator(ctx, generated.UpdateScannerIndicatorParams{
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin scanner indicator update: %w", err)
+	}
+	defer func() { _ = tx.Rollback(context.Background()) }()
+	queries := store.queries.WithTx(tx)
+	updated, err := queries.UpdateScannerIndicator(ctx, generated.UpdateScannerIndicatorParams{
 		ID:          item.ID,
-		ShowInTable: item.ShowInTable,
-		ShowInChart: item.ShowInChart,
 		ScaleMin:    float8(item.Scale.Min),
 		ScaleMax:    float8(item.Scale.Max),
 		ScaleLevels: append([]float64{}, item.Scale.Levels...),
@@ -104,7 +94,29 @@ func (store *Store) UpdateScannerIndicator(ctx context.Context, item scannerindi
 	if updated == 0 {
 		return scannerindicator.ErrNotFound
 	}
+	if err := queries.DeleteScannerIndicatorIntervals(ctx, item.ID); err != nil {
+		return fmt.Errorf("delete scanner indicator periods: %w", err)
+	}
+	if err := queries.InsertScannerIndicatorIntervals(ctx, scannerIndicatorIntervals(item.ID, item.Periods)); err != nil {
+		return fmt.Errorf("insert scanner indicator periods: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit scanner indicator update: %w", err)
+	}
 	return nil
+}
+
+func scannerIndicatorIntervals(id int64, periods []scannerindicator.Period) generated.InsertScannerIndicatorIntervalsParams {
+	params := generated.InsertScannerIndicatorIntervalsParams{
+		IndicatorID: id,
+		Intervals:   make([]string, len(periods)),
+		ShowInTable: make([]bool, len(periods)),
+		ShowInChart: make([]bool, len(periods)),
+	}
+	for i, period := range periods {
+		params.Intervals[i], params.ShowInTable[i], params.ShowInChart[i] = string(period.Interval), period.ShowInTable, period.ShowInChart
+	}
+	return params
 }
 
 // ReorderScannerIndicators stores ids, which must name every indicator, as
@@ -120,24 +132,8 @@ func (store *Store) ReorderScannerIndicators(ctx context.Context, ids []int64) e
 	return nil
 }
 
-// DeleteUnusedScannerIndicators removes every indicator that no strategy
-// references and no market table or chart shows, and returns the removed ids.
-func (store *Store) DeleteUnusedScannerIndicators(ctx context.Context) ([]int64, error) {
-	deleted, err := store.queries.DeleteUnusedScannerIndicators(ctx)
-	if foreignKeyViolation(err) {
-		return nil, scannerindicator.ErrInUse
-	}
-	if err != nil {
-		return nil, fmt.Errorf("delete unused scanner indicators: %w", err)
-	}
-	return deleted, nil
-}
-
 func (store *Store) DeleteScannerIndicator(ctx context.Context, id int64) error {
 	deleted, err := store.queries.DeleteScannerIndicator(ctx, id)
-	if foreignKeyViolation(err) {
-		return scannerindicator.ErrInUse
-	}
 	if err != nil {
 		return fmt.Errorf("delete scanner indicator: %w", err)
 	}

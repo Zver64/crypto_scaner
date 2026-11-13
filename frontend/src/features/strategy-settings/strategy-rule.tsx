@@ -16,6 +16,7 @@ import { firstField } from "@/features/strategy-settings/expressions";
 import { StrategyVariablesContext } from "@/features/strategy-settings/strategy-variables-context";
 import type { StrategyOperator } from "@/features/strategy-settings/types";
 import {
+	defaultVariableCall,
 	isCrossOperator,
 	isRangeOperator,
 	valueForOperator,
@@ -162,9 +163,7 @@ export function StrategyRule({ actions, disabled, path, rule }: RuleProps) {
 							? "Crossed value"
 							: "Value compared with"
 					}
-					defaultField={
-						operandVariables.find(({ name }) => name !== rule.field)?.name
-					}
+					defaultField={defaultVariableCall(operandVariables, rule.field)}
 					node={right}
 					onChange={changeRight}
 					variables={operandVariables}

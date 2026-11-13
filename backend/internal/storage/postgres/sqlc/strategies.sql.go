@@ -63,15 +63,6 @@ func (q *Queries) DeleteStrategyCoins(ctx context.Context, strategyID uuid.UUID)
 	return err
 }
 
-const deleteStrategyIndicators = `-- name: DeleteStrategyIndicators :exec
-DELETE FROM app.strategy_indicators WHERE strategy_id = $1
-`
-
-func (q *Queries) DeleteStrategyIndicators(ctx context.Context, strategyID uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteStrategyIndicators, strategyID)
-	return err
-}
-
 const deleteStrategyStates = `-- name: DeleteStrategyStates :exec
 DELETE FROM app.strategy_states
 WHERE strategy_id = $1::UUID AND instrument_id = ANY($2::BIGINT[])
@@ -171,22 +162,6 @@ func (q *Queries) InsertStrategyCoins(ctx context.Context, arg InsertStrategyCoi
 	return err
 }
 
-const insertStrategyIndicators = `-- name: InsertStrategyIndicators :exec
-INSERT INTO app.strategy_indicators (strategy_id, indicator_id)
-SELECT $1::UUID, indicator_id
-FROM unnest($2::BIGINT[]) AS ids(indicator_id)
-`
-
-type InsertStrategyIndicatorsParams struct {
-	StrategyID   uuid.UUID
-	IndicatorIds []int64
-}
-
-func (q *Queries) InsertStrategyIndicators(ctx context.Context, arg InsertStrategyIndicatorsParams) error {
-	_, err := q.db.Exec(ctx, insertStrategyIndicators, arg.StrategyID, arg.IndicatorIds)
-	return err
-}
-
 const insertStrategyStates = `-- name: InsertStrategyStates :exec
 INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry)
 SELECT $1::UUID, v.instrument_id, v.open_time, v.entry
@@ -212,6 +187,52 @@ func (q *Queries) InsertStrategyStates(ctx context.Context, arg InsertStrategySt
 		arg.Entries,
 	)
 	return err
+}
+
+const listLegacyStrategyRules = `-- name: ListLegacyStrategyRules :many
+SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression
+FROM app.strategies
+WHERE syntax = 1
+ORDER BY id
+FOR UPDATE
+`
+
+type ListLegacyStrategyRulesRow struct {
+	ID                   uuid.UUID
+	Name                 string
+	Expression           string
+	ExitExpression       string
+	TakeProfitExpression string
+	StopLossExpression   string
+}
+
+// Locks the strategies whose rules are in the syntax before indicator calls
+// while they are rewritten.
+func (q *Queries) ListLegacyStrategyRules(ctx context.Context) ([]ListLegacyStrategyRulesRow, error) {
+	rows, err := q.db.Query(ctx, listLegacyStrategyRules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLegacyStrategyRulesRow
+	for rows.Next() {
+		var i ListLegacyStrategyRulesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Expression,
+			&i.ExitExpression,
+			&i.TakeProfitExpression,
+			&i.StopLossExpression,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listStrategies = `-- name: ListStrategies :many
@@ -467,6 +488,40 @@ FOR KEY SHARE
 // take themselves.
 func (q *Queries) LockStrategyCoinInstruments(ctx context.Context, symbols []string) error {
 	_, err := q.db.Exec(ctx, lockStrategyCoinInstruments, symbols)
+	return err
+}
+
+const rewriteLegacyStrategyRules = `-- name: RewriteLegacyStrategyRules :exec
+UPDATE app.strategies s
+SET expression = v.expression, exit_expression = v.exit_expression,
+    take_profit_expression = v.take_profit_expression, stop_loss_expression = v.stop_loss_expression, syntax = 2
+FROM (
+    SELECT unnest($1::UUID[]) AS id, unnest($2::TEXT[]) AS expression,
+           unnest($3::TEXT[]) AS exit_expression,
+           unnest($4::TEXT[]) AS take_profit_expression,
+           unnest($5::TEXT[]) AS stop_loss_expression
+) AS v
+WHERE s.id = v.id
+`
+
+type RewriteLegacyStrategyRulesParams struct {
+	Ids                   []uuid.UUID
+	Expressions           []string
+	ExitExpressions       []string
+	TakeProfitExpressions []string
+	StopLossExpressions   []string
+}
+
+// Replaces the rules and marks them rewritten; revisions, trading states,
+// and baselines stay as they are.
+func (q *Queries) RewriteLegacyStrategyRules(ctx context.Context, arg RewriteLegacyStrategyRulesParams) error {
+	_, err := q.db.Exec(ctx, rewriteLegacyStrategyRules,
+		arg.Ids,
+		arg.Expressions,
+		arg.ExitExpressions,
+		arg.TakeProfitExpressions,
+		arg.StopLossExpressions,
+	)
 	return err
 }
 

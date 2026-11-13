@@ -58,7 +58,7 @@ func TestMarketCapRange(t *testing.T) {
 
 func TestSummaryTextNamesTheMarketCapRange(t *testing.T) {
 	minimum := 50e6
-	entry := Entry{Strategy: Strategy{Name: "Small caps", Expression: "h_close > 1", MarketCap: MarketCapRange{MinUSD: &minimum}}, Compiled: &Expression{}}
+	entry := Entry{Strategy: Strategy{Name: "Small caps", Expression: `close("1h") > 1`, MarketCap: MarketCapRange{MinUSD: &minimum}}, Compiled: &Expression{}}
 	if got := summaryText(entry, nil, snapshot{}, coinRanges{}, testCoins, noFavorites); !strings.Contains(got, " · market cap ≥ $50M\n") {
 		t.Fatalf("summaryText() = %q", got)
 	}

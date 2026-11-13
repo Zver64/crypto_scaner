@@ -1,4 +1,4 @@
-import { Button, Loader, Stack, Text } from "@mantine/core";
+import { Loader, Stack, Text } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -9,7 +9,6 @@ import {
 	type listScannerIndicatorsResponseSuccess,
 	useCreateScannerIndicator,
 	useDeleteScannerIndicator,
-	useDeleteUnusedScannerIndicators,
 	useListIndicatorTypes,
 	useListScannerIndicators,
 	useReorderScannerIndicators,
@@ -34,7 +33,6 @@ const selectIndicators = (response: listScannerIndicatorsResponseSuccess) =>
 export function ScannerSettings() {
 	const queryClient = useQueryClient();
 	const [removing, setRemoving] = useState<ScannerIndicator>();
-	const [clearing, setClearing] = useState(false);
 	const types = useListIndicatorTypes({
 		query: {
 			retry: false,
@@ -68,14 +66,6 @@ export function ScannerSettings() {
 		},
 	});
 
-	const clearMutation = useDeleteUnusedScannerIndicators({
-		mutation: {
-			onError: failed,
-			onSettled: () => setClearing(false),
-			onSuccess: refresh,
-		},
-	});
-
 	if (types.isPending || indicators.isPending) {
 		return <Loader aria-label="Loading scanner settings" />;
 	}
@@ -90,39 +80,17 @@ export function ScannerSettings() {
 		<SidebarLayout
 			gap="md"
 			sidebar={
-				<Stack gap="md">
-					<ScannerIndicatorForm
-						isSaving={createMutation.isPending}
-						onSubmit={(data) => createMutation.mutate({ data })}
-						types={types.data}
-					/>
-					{/* Mirrors the backend rule only to hide a button that would
-					delete nothing. */}
-					{indicators.data.some(
-						({ show_in_chart, show_in_table, strategies }) =>
-							strategies.length === 0 && !show_in_table && !show_in_chart,
-					) ? (
-						<Button
-							color="red"
-							disabled={clearMutation.isPending}
-							fullWidth
-							onClick={() => setClearing(true)}
-							variant="light"
-						>
-							Remove unused
-						</Button>
-					) : null}
-				</Stack>
+				<ScannerIndicatorForm
+					isSaving={createMutation.isPending}
+					onSubmit={(data) => createMutation.mutate({ data })}
+					types={types.data}
+				/>
 			}
 			sidebarPosition="start"
 		>
 			<Stack gap="md">
 				<ScannerIndicatorList
-					disabled={
-						deleteMutation.isPending ||
-						reorderMutation.isPending ||
-						clearMutation.isPending
-					}
+					disabled={deleteMutation.isPending || reorderMutation.isPending}
 					indicators={orderIndicators(
 						indicators.data,
 						reorderMutation.isPending
@@ -139,13 +107,6 @@ export function ScannerSettings() {
 						if (removing) deleteMutation.mutate({ indicatorId: removing.id });
 					}}
 					subject={removing?.title}
-				/>
-				<ScannerIndicatorRemovalConfirmation
-					description="Deletes every indicator that no strategy reads and no table or chart shows."
-					isPending={clearMutation.isPending}
-					onCancel={() => setClearing(false)}
-					onConfirm={() => clearMutation.mutate()}
-					subject={clearing ? "unused indicators" : undefined}
 				/>
 			</Stack>
 		</SidebarLayout>

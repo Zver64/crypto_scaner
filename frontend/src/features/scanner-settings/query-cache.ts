@@ -5,7 +5,7 @@ import {
 	getListChartIndicatorsQueryKey,
 	getListScannerIndicatorsQueryKey,
 	getListStrategiesQueryKey,
-	getListStrategyVariablesQueryKey,
+	getGetStrategyCatalogQueryKey,
 } from "@/api/generated/api";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 
@@ -20,7 +20,7 @@ export function invalidateScannerIndicatorQueries(queryClient: QueryClient) {
 		queryKey: getListChartIndicatorsQueryKey(),
 	});
 	const variables = queryClient.invalidateQueries({
-		queryKey: getListStrategyVariablesQueryKey(),
+		queryKey: getGetStrategyCatalogQueryKey(),
 	});
 	void queryClient.invalidateQueries({
 		queryKey: getListStrategiesQueryKey(),

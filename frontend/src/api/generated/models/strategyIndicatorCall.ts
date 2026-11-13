@@ -21,12 +21,24 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { CandleInterval } from './candleInterval.ts';
 
-export interface ScannerIndicatorIntervalInput {
-  interval: CandleInterval;
-  /** Only indicators with one output can be table columns. */
-  show_in_table?: boolean;
-  /** Whether the charts of the interval draw the indicator. */
-  show_in_chart?: boolean;
+/**
+ * An indicator as calls write it, such as `bbands_upperband("1h", 20, 2.5)`.
+ */
+export interface StrategyIndicatorCall {
+  /** The indicator type, such as `bbands`, which names its calls. */
+  type: string;
+  /**
+     * The parameters as they follow the period in the canonical call:
+     * in descriptor order up to the last one that differs from its
+     * default, numbers without trailing zeros and named choices by
+     * name, such as `["20", "2.5"]` or `["20", "volume"]`.
+     */
+  parameters: string[];
+  /** Indicator title without a period, such as `bbands-20-2.5`. */
+  title: string;
+  /** The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone. */
+  outputs: string[];
+  /** The outputs that count candles, which a calculated `Prev` shift may read. */
+  count_outputs: string[];
 }

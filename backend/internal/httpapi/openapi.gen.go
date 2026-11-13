@@ -49,7 +49,6 @@ const (
 	APIErrorCodeMarketDataUnavailable      APIErrorCode = "market_data_unavailable"
 	APIErrorCodeRateLimited                APIErrorCode = "rate_limited"
 	APIErrorCodeScannerIndicatorExists     APIErrorCode = "scanner_indicator_exists"
-	APIErrorCodeScannerIndicatorInUse      APIErrorCode = "scanner_indicator_in_use"
 	APIErrorCodeScannerIndicatorLimit      APIErrorCode = "scanner_indicator_limit"
 	APIErrorCodeScannerIndicatorNotFound   APIErrorCode = "scanner_indicator_not_found"
 	APIErrorCodeSessionRequired            APIErrorCode = "session_required"
@@ -109,8 +108,6 @@ func (e APIErrorCode) Valid() bool {
 	case APIErrorCodeRateLimited:
 		return true
 	case APIErrorCodeScannerIndicatorExists:
-		return true
-	case APIErrorCodeScannerIndicatorInUse:
 		return true
 	case APIErrorCodeScannerIndicatorLimit:
 		return true
@@ -796,6 +793,7 @@ type BacktestFill struct {
 
 // BacktestIndicatorColumn defines model for BacktestIndicatorColumn.
 type BacktestIndicatorColumn struct {
+	// Key The canonical call of the output, such as `rsi("1h")` or `bbands_upperband("1h", 20)`.
 	Key   string `json:"key"`
 	Title string `json:"title"`
 }
@@ -987,9 +985,9 @@ type BacktestTradeStats struct {
 	WinRate *float64 `json:"win_rate"`
 }
 
-// BacktestValues Values a rule read, named as its source writes them, such as `h_rsi`,
-// `prev(h_rsi, 2)`, or `of("BTCUSDT", h_close)`; reads inside
-// percentile windows and unknown values are left out.
+// BacktestValues Values a rule read, named by their canonical calls, such as
+// `rsi("1h")`, `Prev(rsi("1h"), 2)`, or `Of("BTCUSDT", close("1h"))`;
+// reads inside percentile windows and unknown values are left out.
 type BacktestValues map[string]float64
 
 // Candle defines model for Candle.
@@ -1456,23 +1454,20 @@ type ReadinessResponseStatus string
 
 // ScannerIndicator defines model for ScannerIndicator.
 type ScannerIndicator struct {
-	Id       int64          `json:"id"`
-	Interval CandleInterval `json:"interval"`
-	Outputs  []string       `json:"outputs"`
+	Id      int64    `json:"id"`
+	Outputs []string `json:"outputs"`
 
 	// Parameters Canonical parameters with defaults filled in.
-	Parameters map[string]interface{}    `json:"parameters"`
-	Placement  ScannerIndicatorPlacement `json:"placement"`
+	Parameters map[string]interface{} `json:"parameters"`
+
+	// Periods Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+	Periods   ScannerIndicatorPeriods   `json:"periods"`
+	Placement ScannerIndicatorPlacement `json:"placement"`
 
 	// Scale Optional value axis of a pane indicator; overlays have none.
-	Scale       ScannerIndicatorScale `json:"scale"`
-	ShowInChart bool                  `json:"show_in_chart"`
-	ShowInTable bool                  `json:"show_in_table"`
+	Scale ScannerIndicatorScale `json:"scale"`
 
-	// Strategies Names of the strategies that read the indicator, which cannot be removed meanwhile.
-	Strategies []string `json:"strategies"`
-
-	// Title Table column title, such as `d-rsi`.
+	// Title Title without a period, such as `rsi-21`; table columns prefix the interval, as in `d-rsi-21`.
 	Title string `json:"title"`
 	Type  string `json:"type"`
 }
@@ -1480,42 +1475,17 @@ type ScannerIndicator struct {
 // ScannerIndicatorPlacement defines model for ScannerIndicator.Placement.
 type ScannerIndicatorPlacement string
 
-// ScannerIndicatorBatch defines model for ScannerIndicatorBatch.
-type ScannerIndicatorBatch struct {
-	Items []ScannerIndicatorBatchItem `json:"items"`
-}
-
-// ScannerIndicatorBatchItem defines model for ScannerIndicatorBatchItem.
-type ScannerIndicatorBatchItem struct {
-	Interval CandleInterval `json:"interval"`
-
-	// Parameters Parameter values by key; omitted keys take their defaults.
-	Parameters map[string]interface{} `json:"parameters"`
-	Type       string                 `json:"type"`
-}
-
 // ScannerIndicatorInput defines model for ScannerIndicatorInput.
 type ScannerIndicatorInput struct {
-	// Intervals Intervals to add the indicator on, each once.
-	Intervals []ScannerIndicatorIntervalInput `json:"intervals"`
-
 	// Parameters Parameter values by key; omitted keys take their defaults.
 	Parameters map[string]interface{} `json:"parameters"`
+
+	// Periods Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+	Periods ScannerIndicatorPeriods `json:"periods"`
 
 	// Scale Optional value axis of a pane indicator; overlays have none.
 	Scale *ScannerIndicatorScale `json:"scale,omitempty"`
 	Type  string                 `json:"type"`
-}
-
-// ScannerIndicatorIntervalInput defines model for ScannerIndicatorIntervalInput.
-type ScannerIndicatorIntervalInput struct {
-	Interval CandleInterval `json:"interval"`
-
-	// ShowInChart Whether the charts of the interval draw the indicator.
-	ShowInChart *bool `json:"show_in_chart,omitempty"`
-
-	// ShowInTable Only indicators with one output can be table columns.
-	ShowInTable *bool `json:"show_in_table,omitempty"`
 }
 
 // ScannerIndicatorList defines model for ScannerIndicatorList.
@@ -1529,6 +1499,20 @@ type ScannerIndicatorOrder struct {
 	Ids []int64 `json:"ids"`
 }
 
+// ScannerIndicatorPeriod defines model for ScannerIndicatorPeriod.
+type ScannerIndicatorPeriod struct {
+	Interval CandleInterval `json:"interval"`
+
+	// ShowInChart Whether the charts of the interval draw the indicator.
+	ShowInChart bool `json:"show_in_chart"`
+
+	// ShowInTable Whether market tables show the indicator of the interval as a column; only indicators with one output can be table columns.
+	ShowInTable bool `json:"show_in_table"`
+}
+
+// ScannerIndicatorPeriods Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+type ScannerIndicatorPeriods = []ScannerIndicatorPeriod
+
 // ScannerIndicatorScale Optional value axis of a pane indicator; overlays have none.
 type ScannerIndicatorScale struct {
 	Levels []float64 `json:"levels"`
@@ -1538,10 +1522,11 @@ type ScannerIndicatorScale struct {
 
 // ScannerIndicatorUpdate defines model for ScannerIndicatorUpdate.
 type ScannerIndicatorUpdate struct {
+	// Periods Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+	Periods ScannerIndicatorPeriods `json:"periods"`
+
 	// Scale Optional value axis of a pane indicator; overlays have none.
-	Scale       *ScannerIndicatorScale `json:"scale,omitempty"`
-	ShowInChart *bool                  `json:"show_in_chart,omitempty"`
-	ShowInTable *bool                  `json:"show_in_table,omitempty"`
+	Scale *ScannerIndicatorScale `json:"scale,omitempty"`
 }
 
 // Session defines model for Session.
@@ -1592,7 +1577,7 @@ type Strategy struct {
 	// or stop loss never sells and buys at every entry signal.
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 
-	// Expression Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
+	// Expression Entry rule, a CEL expression such as `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`.
 	Expression string `json:"expression"`
 
 	// Id UUIDv7 of a strategy or signal.
@@ -1616,12 +1601,7 @@ type Strategy struct {
 	// coins of an unknown market cap signal nothing. Backtests ignore it.
 	// The minimum must not exceed the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
-
-	// MissingIndicators Indicators the rules read that are not configured, in reading
-	// order. The strategy reads them all the same; the builder shows
-	// the rules only once they are added.
-	MissingIndicators []StrategyMissingIndicator `json:"missing_indicators"`
-	Name              string                     `json:"name"`
+	Name            string                  `json:"name"`
 
 	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
@@ -1633,14 +1613,14 @@ type Strategy struct {
 	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
@@ -1729,7 +1709,7 @@ type StrategyBacktestInput struct {
 	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
@@ -1737,9 +1717,9 @@ type StrategyBacktestInput struct {
 	Symbol SymbolName `json:"symbol"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
@@ -1748,6 +1728,19 @@ type StrategyBacktestInput struct {
 	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
 	To     *time.Time    `json:"to,omitempty"`
 	Window *SignalWindow `json:"window"`
+}
+
+// StrategyCatalog defines model for StrategyCatalog.
+type StrategyCatalog struct {
+	// CandleFields Candle fields, called with the period only, such as `close("1h")`.
+	CandleFields []string `json:"candle_fields"`
+
+	// Indicators The configured indicators, in display order.
+	Indicators []StrategyIndicatorCall `json:"indicators"`
+
+	// Intervals The periods indicator and candle field calls take first.
+	Intervals         []CandleInterval           `json:"intervals"`
+	PositionVariables []StrategyPositionVariable `json:"position_variables"`
 }
 
 // StrategyCoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
@@ -1775,6 +1768,27 @@ type StrategyExitExpression = string
 
 // StrategyID UUIDv7 of a strategy or signal.
 type StrategyID = openapi_types.UUID
+
+// StrategyIndicatorCall An indicator as calls write it, such as `bbands_upperband("1h", 20, 2.5)`.
+type StrategyIndicatorCall struct {
+	// CountOutputs The outputs that count candles, which a calculated `Prev` shift may read.
+	CountOutputs []string `json:"count_outputs"`
+
+	// Outputs The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
+	Outputs []string `json:"outputs"`
+
+	// Parameters The parameters as they follow the period in the canonical call:
+	// in descriptor order up to the last one that differs from its
+	// default, numbers without trailing zeros and named choices by
+	// name, such as `["20", "2.5"]` or `["20", "volume"]`.
+	Parameters []string `json:"parameters"`
+
+	// Title Indicator title without a period, such as `bbands-20-2.5`.
+	Title string `json:"title"`
+
+	// Type The indicator type, such as `bbands`, which names its calls.
+	Type string `json:"type"`
+}
 
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
@@ -1832,14 +1846,14 @@ type StrategyInput struct {
 	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
@@ -1864,16 +1878,15 @@ type StrategyMarketCapBound = float64
 // of each coin; empty shows none.
 type StrategyMessage = string
 
-// StrategyMissingIndicator defines model for StrategyMissingIndicator.
-type StrategyMissingIndicator struct {
-	Interval CandleInterval `json:"interval"`
-
-	// Parameters Canonical parameters with defaults filled in.
-	Parameters map[string]interface{} `json:"parameters"`
-
-	// Title Table column title, such as `h-atr-100`.
-	Title string `json:"title"`
-	Type  string `json:"type"`
+// StrategyPositionVariable A variable of the open trade, which only exit rules read and only at
+// the latest candle: `entry_price`, the average price of its buys;
+// `pnl`, its return at the close before fees in percent, such as 5 for
+// 5%; and `bars_held`, the candles since its first buy filled, counting
+// the candle it filled at.
+type StrategyPositionVariable struct {
+	// Count True for a count of candles, which a calculated `Prev` shift may read.
+	Count bool   `json:"count"`
+	Name  string `json:"name"`
 }
 
 // StrategySignal Whether the strategy is a signal, which buys nothing and only
@@ -1883,14 +1896,14 @@ type StrategyMissingIndicator struct {
 type StrategySignal = bool
 
 // StrategyStopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 // and its close buys nothing. Empty without a stop loss.
 type StrategyStopLossExpression = string
 
 // StrategyTakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 // reading the evaluated coin. A signal whose take profit is not above
 // its close buys nothing. Empty without a take profit.
 type StrategyTakeProfitExpression = string
@@ -1922,15 +1935,16 @@ type StrategyUpdate struct {
 	// or stop loss never sells and buys at every entry signal.
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 
-	// Expression CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
-	// arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and
-	// numbers, combined with `&&`, `||`, and `!`. `prev(x)` and
-	// `prev(x, n)` read `x` one or `n` closed candles earlier;
-	// `percentile(x, n, p)` is the nearest-rank `p`-th percentile of `x`
-	// over the `n` closed candles before the latest one;
-	// `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
-	// previous candle. `of("BTCUSDT", x)` reads `x` of another coin,
-	// which must be active.
+	// Expression CEL over indicator and candle field calls, such as `rsi("1h")`,
+	// `bbands_upperband("1d", 20, 2.5)`, or `close("1h")`: comparisons
+	// (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`, `/`,
+	// parentheses) over calls and numbers, combined with `&&`, `||`,
+	// and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n` closed
+	// candles earlier; `Percentile(x, n, p)` is the nearest-rank
+	// `p`-th percentile of `x` over the `n` closed candles before the
+	// latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
+	// with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
+	// coin, which must be active.
 	Expression string `json:"expression"`
 
 	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
@@ -1960,14 +1974,14 @@ type StrategyUpdate struct {
 	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
@@ -1979,8 +1993,11 @@ type StrategyUpdate struct {
 type StrategyValidation struct {
 	Errors []string `json:"errors"`
 
-	// MissingIndicators Indicators the expression reads that are not configured, in reading order; they need not be added.
-	MissingIndicators []StrategyMissingIndicator `json:"missing_indicators"`
+	// Expression The expression with every call that resolves spelled canonically, such as `rsi("1h")` for `rsi("1h", 14)`; the rest stays as written.
+	Expression string `json:"expression"`
+
+	// Indicators The indicators the expression calls, configured or not, once each, in source order.
+	Indicators []StrategyIndicatorCall `json:"indicators"`
 }
 
 // StrategyValidationInput defines model for StrategyValidationInput.
@@ -1993,33 +2010,6 @@ type StrategyValidationInput struct {
 
 // StrategyValidationInputKind Checks the expression as the entry rule, as the exit rule, which may read the position variables, or as a take profit or stop loss price.
 type StrategyValidationInputKind string
-
-// StrategyVariable defines model for StrategyVariable.
-type StrategyVariable struct {
-	// IndicatorId The indicator the variable reads; absent for candle fields, which every interval has, and position variables.
-	IndicatorId *int64 `json:"indicator_id,omitempty"`
-
-	// Interval Interval of the value; absent for position variables.
-	Interval *CandleInterval `json:"interval,omitempty"`
-
-	// Label Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, the candle field, such as `h-close`, or the position variable, such as `pnl`.
-	Label string `json:"label"`
-
-	// Name CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, the candle field `h_close`, or the position variable `pnl`.
-	Name string `json:"name"`
-
-	// Position True for the variables of the open trade, which only exit rules
-	// read and only at the latest candle: `entry_price`, the average
-	// price of its buys; `pnl`, its return at the close before fees in
-	// percent, such as 5 for 5%; and `bars_held`, the candles since its first buy
-	// filled, counting the candle it filled at.
-	Position bool `json:"position"`
-}
-
-// StrategyVariableList defines model for StrategyVariableList.
-type StrategyVariableList struct {
-	Items []StrategyVariable `json:"items"`
-}
 
 // SymbolName Market symbol, such as `BTCUSDT`.
 type SymbolName = string
@@ -2176,9 +2166,6 @@ type InternalError = ErrorResponse
 // ScannerIndicatorConflict defines model for ScannerIndicatorConflict.
 type ScannerIndicatorConflict = ErrorResponse
 
-// ScannerIndicatorInUse defines model for ScannerIndicatorInUse.
-type ScannerIndicatorInUse = ErrorResponse
-
 // ScannerIndicatorNotFound defines model for ScannerIndicatorNotFound.
 type ScannerIndicatorNotFound = ErrorResponse
 
@@ -2296,9 +2283,6 @@ type CreateApiTokenJSONRequestBody = ApiTokenInput
 // StartCandleHistoryLoadJSONRequestBody defines body for StartCandleHistoryLoad for application/json ContentType.
 type StartCandleHistoryLoadJSONRequestBody = CandleHistoryLoadInput
 
-// CreateScannerIndicatorBatchJSONRequestBody defines body for CreateScannerIndicatorBatch for application/json ContentType.
-type CreateScannerIndicatorBatchJSONRequestBody = ScannerIndicatorBatch
-
 // ReorderScannerIndicatorsJSONRequestBody defines body for ReorderScannerIndicators for application/json ContentType.
 type ReorderScannerIndicatorsJSONRequestBody = ScannerIndicatorOrder
 
@@ -2361,25 +2345,19 @@ type ServerInterface interface {
 	// ListIndicatorTypes List every indicator the scanner can calculate
 	// (GET /api/v1/admin/indicator-types)
 	ListIndicatorTypes(w http.ResponseWriter, r *http.Request)
-	// CreateScannerIndicatorBatch Add several different scanner indicators
-	// (POST /api/v1/admin/scanner-indicator-batches)
-	CreateScannerIndicatorBatch(w http.ResponseWriter, r *http.Request)
 	// ReorderScannerIndicators Set the display order of the scanner indicators
 	// (PUT /api/v1/admin/scanner-indicator-order)
 	ReorderScannerIndicators(w http.ResponseWriter, r *http.Request)
-	// DeleteUnusedScannerIndicators Remove every unused scanner indicator
-	// (DELETE /api/v1/admin/scanner-indicators)
-	DeleteUnusedScannerIndicators(w http.ResponseWriter, r *http.Request)
 	// ListScannerIndicators List the configured scanner indicators
 	// (GET /api/v1/admin/scanner-indicators)
 	ListScannerIndicators(w http.ResponseWriter, r *http.Request)
-	// CreateScannerIndicator Add a scanner indicator on one or more intervals
+	// CreateScannerIndicator Add a scanner indicator with its periods
 	// (POST /api/v1/admin/scanner-indicators)
 	CreateScannerIndicator(w http.ResponseWriter, r *http.Request)
 	// DeleteScannerIndicator Remove a scanner indicator
 	// (DELETE /api/v1/admin/scanner-indicators/{indicator_id})
 	DeleteScannerIndicator(w http.ResponseWriter, r *http.Request, indicatorId ScannerIndicatorID)
-	// UpdateScannerIndicator Change the table visibility and pane scale of a scanner indicator
+	// UpdateScannerIndicator Replace the periods and pane scale of a scanner indicator
 	// (PATCH /api/v1/admin/scanner-indicators/{indicator_id})
 	UpdateScannerIndicator(w http.ResponseWriter, r *http.Request, indicatorId ScannerIndicatorID)
 	// ListStrategies List the strategies
@@ -2403,12 +2381,12 @@ type ServerInterface interface {
 	// BacktestStrategyDraft Backtest an unsaved strategy on one coin
 	// (POST /api/v1/admin/strategy-backtests)
 	BacktestStrategyDraft(w http.ResponseWriter, r *http.Request)
+	// GetStrategyCatalog List what strategy expressions read
+	// (GET /api/v1/admin/strategy-catalog)
+	GetStrategyCatalog(w http.ResponseWriter, r *http.Request)
 	// ValidateStrategy Check a strategy expression
 	// (POST /api/v1/admin/strategy-validations)
 	ValidateStrategy(w http.ResponseWriter, r *http.Request)
-	// ListStrategyVariables List the indicator values strategy expressions can read
-	// (GET /api/v1/admin/strategy-variables)
-	ListStrategyVariables(w http.ResponseWriter, r *http.Request)
 	// ListUsers List the application users
 	// (GET /api/v1/admin/users)
 	ListUsers(w http.ResponseWriter, r *http.Request)
@@ -2582,39 +2560,11 @@ func (siw *ServerInterfaceWrapper) ListIndicatorTypes(w http.ResponseWriter, r *
 	handler.ServeHTTP(w, r)
 }
 
-// CreateScannerIndicatorBatch operation middleware
-func (siw *ServerInterfaceWrapper) CreateScannerIndicatorBatch(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.CreateScannerIndicatorBatch(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
 // ReorderScannerIndicators operation middleware
 func (siw *ServerInterfaceWrapper) ReorderScannerIndicators(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.ReorderScannerIndicators(w, r)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// DeleteUnusedScannerIndicators operation middleware
-func (siw *ServerInterfaceWrapper) DeleteUnusedScannerIndicators(w http.ResponseWriter, r *http.Request) {
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.DeleteUnusedScannerIndicators(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2905,11 +2855,11 @@ func (siw *ServerInterfaceWrapper) BacktestStrategyDraft(w http.ResponseWriter, 
 	handler.ServeHTTP(w, r)
 }
 
-// ValidateStrategy operation middleware
-func (siw *ServerInterfaceWrapper) ValidateStrategy(w http.ResponseWriter, r *http.Request) {
+// GetStrategyCatalog operation middleware
+func (siw *ServerInterfaceWrapper) GetStrategyCatalog(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ValidateStrategy(w, r)
+		siw.Handler.GetStrategyCatalog(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -2919,11 +2869,11 @@ func (siw *ServerInterfaceWrapper) ValidateStrategy(w http.ResponseWriter, r *ht
 	handler.ServeHTTP(w, r)
 }
 
-// ListStrategyVariables operation middleware
-func (siw *ServerInterfaceWrapper) ListStrategyVariables(w http.ResponseWriter, r *http.Request) {
+// ValidateStrategy operation middleware
+func (siw *ServerInterfaceWrapper) ValidateStrategy(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.ListStrategyVariables(w, r)
+		siw.Handler.ValidateStrategy(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -3813,17 +3763,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/alerts/{alert_id}", wrapper.UpdatePriceAlert)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/me", wrapper.GetCurrentUser)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/indicator-types", wrapper.ListIndicatorTypes)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/admin/scanner-indicators", wrapper.DeleteUnusedScannerIndicators)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/scanner-indicators", wrapper.ListScannerIndicators)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/scanner-indicators", wrapper.CreateScannerIndicator)
-	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/scanner-indicator-batches", wrapper.CreateScannerIndicatorBatch)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/api/v1/admin/scanner-indicator-order", wrapper.ReorderScannerIndicators)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/admin/scanner-indicators/{indicator_id}", wrapper.DeleteScannerIndicator)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/admin/scanner-indicators/{indicator_id}", wrapper.UpdateScannerIndicator)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/users", wrapper.ListUsers)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/api/v1/admin/users/{telegram_id}", wrapper.DeleteUser)
 	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/api/v1/admin/users/{telegram_id}", wrapper.UpdateUser)
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategy-variables", wrapper.ListStrategyVariables)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategy-catalog", wrapper.GetStrategyCatalog)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/strategy-validations", wrapper.ValidateStrategy)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/api/v1/admin/strategies", wrapper.ListStrategies)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/api/v1/admin/strategies", wrapper.CreateStrategy)
@@ -3928,8 +3876,6 @@ type InternalErrorJSONResponse struct {
 }
 
 type ScannerIndicatorConflictJSONResponse ErrorResponse
-
-type ScannerIndicatorInUseJSONResponse ErrorResponse
 
 type ScannerIndicatorNotFoundJSONResponse ErrorResponse
 
@@ -4452,105 +4398,6 @@ func (response ListIndicatorTypes500JSONResponse) VisitListIndicatorTypesRespons
 	return err
 }
 
-type CreateScannerIndicatorBatchRequestObject struct {
-	Body *CreateScannerIndicatorBatchJSONRequestBody
-}
-
-type CreateScannerIndicatorBatchResponseObject interface {
-	VisitCreateScannerIndicatorBatchResponse(w http.ResponseWriter) error
-}
-
-type CreateScannerIndicatorBatch201JSONResponse ScannerIndicatorList
-
-func (response CreateScannerIndicatorBatch201JSONResponse) VisitCreateScannerIndicatorBatchResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(201)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateScannerIndicatorBatch400JSONResponse struct{ BadRequestJSONResponse }
-
-func (response CreateScannerIndicatorBatch400JSONResponse) VisitCreateScannerIndicatorBatchResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(400)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateScannerIndicatorBatch401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response CreateScannerIndicatorBatch401JSONResponse) VisitCreateScannerIndicatorBatchResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateScannerIndicatorBatch403JSONResponse struct {
-	AdministratorRequiredJSONResponse
-}
-
-func (response CreateScannerIndicatorBatch403JSONResponse) VisitCreateScannerIndicatorBatchResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateScannerIndicatorBatch409JSONResponse struct {
-	ScannerIndicatorConflictJSONResponse
-}
-
-func (response CreateScannerIndicatorBatch409JSONResponse) VisitCreateScannerIndicatorBatchResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type CreateScannerIndicatorBatch500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response CreateScannerIndicatorBatch500JSONResponse) VisitCreateScannerIndicatorBatchResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type ReorderScannerIndicatorsRequestObject struct {
 	Body *ReorderScannerIndicatorsJSONRequestBody
 }
@@ -4650,83 +4497,6 @@ func (response ReorderScannerIndicators500JSONResponse) VisitReorderScannerIndic
 	return err
 }
 
-type DeleteUnusedScannerIndicatorsRequestObject struct {
-}
-
-type DeleteUnusedScannerIndicatorsResponseObject interface {
-	VisitDeleteUnusedScannerIndicatorsResponse(w http.ResponseWriter) error
-}
-
-type DeleteUnusedScannerIndicators204Response struct {
-}
-
-func (response DeleteUnusedScannerIndicators204Response) VisitDeleteUnusedScannerIndicatorsResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
-	return nil
-}
-
-type DeleteUnusedScannerIndicators401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response DeleteUnusedScannerIndicators401JSONResponse) VisitDeleteUnusedScannerIndicatorsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type DeleteUnusedScannerIndicators403JSONResponse struct {
-	AdministratorRequiredJSONResponse
-}
-
-func (response DeleteUnusedScannerIndicators403JSONResponse) VisitDeleteUnusedScannerIndicatorsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type DeleteUnusedScannerIndicators409JSONResponse struct {
-	ScannerIndicatorInUseJSONResponse
-}
-
-func (response DeleteUnusedScannerIndicators409JSONResponse) VisitDeleteUnusedScannerIndicatorsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type DeleteUnusedScannerIndicators500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response DeleteUnusedScannerIndicators500JSONResponse) VisitDeleteUnusedScannerIndicatorsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type ListScannerIndicatorsRequestObject struct {
 }
 
@@ -4802,7 +4572,7 @@ type CreateScannerIndicatorResponseObject interface {
 	VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error
 }
 
-type CreateScannerIndicator201JSONResponse ScannerIndicatorList
+type CreateScannerIndicator201JSONResponse ScannerIndicator
 
 func (response CreateScannerIndicator201JSONResponse) VisitCreateScannerIndicatorResponse(w http.ResponseWriter) error {
 
@@ -4956,22 +4726,6 @@ func (response DeleteScannerIndicator404JSONResponse) VisitDeleteScannerIndicato
 	return err
 }
 
-type DeleteScannerIndicator409JSONResponse struct {
-	ScannerIndicatorInUseJSONResponse
-}
-
-func (response DeleteScannerIndicator409JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(409)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
 type DeleteScannerIndicator500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response DeleteScannerIndicator500JSONResponse) VisitDeleteScannerIndicatorResponse(w http.ResponseWriter) error {
@@ -5068,6 +4822,22 @@ func (response UpdateScannerIndicator404JSONResponse) VisitUpdateScannerIndicato
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateScannerIndicator409JSONResponse struct {
+	ScannerIndicatorConflictJSONResponse
+}
+
+func (response UpdateScannerIndicator409JSONResponse) VisitUpdateScannerIndicatorResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(409)
 	_, err := buf.WriteTo(w)
 	return err
 }
@@ -5801,6 +5571,73 @@ func (response BacktestStrategyDraft503JSONResponse) VisitBacktestStrategyDraftR
 	return err
 }
 
+type GetStrategyCatalogRequestObject struct {
+}
+
+type GetStrategyCatalogResponseObject interface {
+	VisitGetStrategyCatalogResponse(w http.ResponseWriter) error
+}
+
+type GetStrategyCatalog200JSONResponse StrategyCatalog
+
+func (response GetStrategyCatalog200JSONResponse) VisitGetStrategyCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStrategyCatalog401JSONResponse struct{ UnauthenticatedJSONResponse }
+
+func (response GetStrategyCatalog401JSONResponse) VisitGetStrategyCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStrategyCatalog403JSONResponse struct {
+	AdministratorRequiredJSONResponse
+}
+
+func (response GetStrategyCatalog403JSONResponse) VisitGetStrategyCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(403)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetStrategyCatalog500JSONResponse struct{ InternalErrorJSONResponse }
+
+func (response GetStrategyCatalog500JSONResponse) VisitGetStrategyCatalogResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ValidateStrategyRequestObject struct {
 	Body *ValidateStrategyJSONRequestBody
 }
@@ -5872,73 +5709,6 @@ func (response ValidateStrategy403JSONResponse) VisitValidateStrategyResponse(w 
 type ValidateStrategy500JSONResponse struct{ InternalErrorJSONResponse }
 
 func (response ValidateStrategy500JSONResponse) VisitValidateStrategyResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(500)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListStrategyVariablesRequestObject struct {
-}
-
-type ListStrategyVariablesResponseObject interface {
-	VisitListStrategyVariablesResponse(w http.ResponseWriter) error
-}
-
-type ListStrategyVariables200JSONResponse StrategyVariableList
-
-func (response ListStrategyVariables200JSONResponse) VisitListStrategyVariablesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(200)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListStrategyVariables401JSONResponse struct{ UnauthenticatedJSONResponse }
-
-func (response ListStrategyVariables401JSONResponse) VisitListStrategyVariablesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("X-Request-ID", fmt.Sprint(response.Headers.XRequestID))
-	w.WriteHeader(401)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListStrategyVariables403JSONResponse struct {
-	AdministratorRequiredJSONResponse
-}
-
-func (response ListStrategyVariables403JSONResponse) VisitListStrategyVariablesResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(403)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type ListStrategyVariables500JSONResponse struct{ InternalErrorJSONResponse }
-
-func (response ListStrategyVariables500JSONResponse) VisitListStrategyVariablesResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -7870,25 +7640,19 @@ type StrictServerInterface interface {
 	// ListIndicatorTypes List every indicator the scanner can calculate
 	// (GET /api/v1/admin/indicator-types)
 	ListIndicatorTypes(ctx context.Context, request ListIndicatorTypesRequestObject) (ListIndicatorTypesResponseObject, error)
-	// CreateScannerIndicatorBatch Add several different scanner indicators
-	// (POST /api/v1/admin/scanner-indicator-batches)
-	CreateScannerIndicatorBatch(ctx context.Context, request CreateScannerIndicatorBatchRequestObject) (CreateScannerIndicatorBatchResponseObject, error)
 	// ReorderScannerIndicators Set the display order of the scanner indicators
 	// (PUT /api/v1/admin/scanner-indicator-order)
 	ReorderScannerIndicators(ctx context.Context, request ReorderScannerIndicatorsRequestObject) (ReorderScannerIndicatorsResponseObject, error)
-	// DeleteUnusedScannerIndicators Remove every unused scanner indicator
-	// (DELETE /api/v1/admin/scanner-indicators)
-	DeleteUnusedScannerIndicators(ctx context.Context, request DeleteUnusedScannerIndicatorsRequestObject) (DeleteUnusedScannerIndicatorsResponseObject, error)
 	// ListScannerIndicators List the configured scanner indicators
 	// (GET /api/v1/admin/scanner-indicators)
 	ListScannerIndicators(ctx context.Context, request ListScannerIndicatorsRequestObject) (ListScannerIndicatorsResponseObject, error)
-	// CreateScannerIndicator Add a scanner indicator on one or more intervals
+	// CreateScannerIndicator Add a scanner indicator with its periods
 	// (POST /api/v1/admin/scanner-indicators)
 	CreateScannerIndicator(ctx context.Context, request CreateScannerIndicatorRequestObject) (CreateScannerIndicatorResponseObject, error)
 	// DeleteScannerIndicator Remove a scanner indicator
 	// (DELETE /api/v1/admin/scanner-indicators/{indicator_id})
 	DeleteScannerIndicator(ctx context.Context, request DeleteScannerIndicatorRequestObject) (DeleteScannerIndicatorResponseObject, error)
-	// UpdateScannerIndicator Change the table visibility and pane scale of a scanner indicator
+	// UpdateScannerIndicator Replace the periods and pane scale of a scanner indicator
 	// (PATCH /api/v1/admin/scanner-indicators/{indicator_id})
 	UpdateScannerIndicator(ctx context.Context, request UpdateScannerIndicatorRequestObject) (UpdateScannerIndicatorResponseObject, error)
 	// ListStrategies List the strategies
@@ -7912,12 +7676,12 @@ type StrictServerInterface interface {
 	// BacktestStrategyDraft Backtest an unsaved strategy on one coin
 	// (POST /api/v1/admin/strategy-backtests)
 	BacktestStrategyDraft(ctx context.Context, request BacktestStrategyDraftRequestObject) (BacktestStrategyDraftResponseObject, error)
+	// GetStrategyCatalog List what strategy expressions read
+	// (GET /api/v1/admin/strategy-catalog)
+	GetStrategyCatalog(ctx context.Context, request GetStrategyCatalogRequestObject) (GetStrategyCatalogResponseObject, error)
 	// ValidateStrategy Check a strategy expression
 	// (POST /api/v1/admin/strategy-validations)
 	ValidateStrategy(ctx context.Context, request ValidateStrategyRequestObject) (ValidateStrategyResponseObject, error)
-	// ListStrategyVariables List the indicator values strategy expressions can read
-	// (GET /api/v1/admin/strategy-variables)
-	ListStrategyVariables(ctx context.Context, request ListStrategyVariablesRequestObject) (ListStrategyVariablesResponseObject, error)
 	// ListUsers List the application users
 	// (GET /api/v1/admin/users)
 	ListUsers(ctx context.Context, request ListUsersRequestObject) (ListUsersResponseObject, error)
@@ -8185,37 +7949,6 @@ func (sh *strictHandler) ListIndicatorTypes(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-// CreateScannerIndicatorBatch operation middleware
-func (sh *strictHandler) CreateScannerIndicatorBatch(w http.ResponseWriter, r *http.Request) {
-	var request CreateScannerIndicatorBatchRequestObject
-
-	var body CreateScannerIndicatorBatchJSONRequestBody
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
-		return
-	}
-	request.Body = &body
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.CreateScannerIndicatorBatch(ctx, request.(CreateScannerIndicatorBatchRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "CreateScannerIndicatorBatch")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(CreateScannerIndicatorBatchResponseObject); ok {
-		if err := validResponse.VisitCreateScannerIndicatorBatchResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
 // ReorderScannerIndicators operation middleware
 func (sh *strictHandler) ReorderScannerIndicators(w http.ResponseWriter, r *http.Request) {
 	var request ReorderScannerIndicatorsRequestObject
@@ -8240,30 +7973,6 @@ func (sh *strictHandler) ReorderScannerIndicators(w http.ResponseWriter, r *http
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ReorderScannerIndicatorsResponseObject); ok {
 		if err := validResponse.VisitReorderScannerIndicatorsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// DeleteUnusedScannerIndicators operation middleware
-func (sh *strictHandler) DeleteUnusedScannerIndicators(w http.ResponseWriter, r *http.Request) {
-	var request DeleteUnusedScannerIndicatorsRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.DeleteUnusedScannerIndicators(ctx, request.(DeleteUnusedScannerIndicatorsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "DeleteUnusedScannerIndicators")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(DeleteUnusedScannerIndicatorsResponseObject); ok {
-		if err := validResponse.VisitDeleteUnusedScannerIndicatorsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -8590,6 +8299,30 @@ func (sh *strictHandler) BacktestStrategyDraft(w http.ResponseWriter, r *http.Re
 	}
 }
 
+// GetStrategyCatalog operation middleware
+func (sh *strictHandler) GetStrategyCatalog(w http.ResponseWriter, r *http.Request) {
+	var request GetStrategyCatalogRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetStrategyCatalog(ctx, request.(GetStrategyCatalogRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetStrategyCatalog")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetStrategyCatalogResponseObject); ok {
+		if err := validResponse.VisitGetStrategyCatalogResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ValidateStrategy operation middleware
 func (sh *strictHandler) ValidateStrategy(w http.ResponseWriter, r *http.Request) {
 	var request ValidateStrategyRequestObject
@@ -8614,30 +8347,6 @@ func (sh *strictHandler) ValidateStrategy(w http.ResponseWriter, r *http.Request
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ValidateStrategyResponseObject); ok {
 		if err := validResponse.VisitValidateStrategyResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// ListStrategyVariables operation middleware
-func (sh *strictHandler) ListStrategyVariables(w http.ResponseWriter, r *http.Request) {
-	var request ListStrategyVariablesRequestObject
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.ListStrategyVariables(ctx, request.(ListStrategyVariablesRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "ListStrategyVariables")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(ListStrategyVariablesResponseObject); ok {
-		if err := validResponse.VisitListStrategyVariablesResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -9260,312 +8969,309 @@ func (sh *strictHandler) GetReadiness(w http.ResponseWriter, r *http.Request, pa
 // const string: with thousands of chunks the chained `+` fold is several
 // times slower for the Go compiler than parsing a slice literal.
 var swaggerSpec = []string{
-	"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",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

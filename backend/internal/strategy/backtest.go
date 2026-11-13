@@ -9,7 +9,6 @@ import (
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
-	"crypto-scanner/internal/scannerindicator"
 
 	"github.com/google/uuid"
 )
@@ -735,7 +734,7 @@ type replay struct {
 	// unknown because the stored history ends inside their window.
 	opens     []time.Time
 	cut       []bool
-	displayed []scannerindicator.Entry
+	displayed []displayedIndicator
 	// chartValues are the displayed values of the chart instrument by
 	// their UTC open time.
 	chartValues       map[pair]map[time.Time][]closedindicator.Output
@@ -832,7 +831,7 @@ func (replay *replay) at(now time.Time) (snapshot, bool, error) {
 		if !warm {
 			continue
 		}
-		if replay.chartValues != nil && subscription.InstrumentID == replay.chartInstrumentID && slices.ContainsFunc(replay.displayed, func(item scannerindicator.Entry) bool { return item.Target().Equal(subscription.Target) }) {
+		if replay.chartValues != nil && subscription.InstrumentID == replay.chartInstrumentID && slices.ContainsFunc(replay.displayed, func(item displayedIndicator) bool { return item.target().Equal(subscription.Target) }) {
 			key := pair{instrumentID: subscription.InstrumentID, target: subscription.Target.Key()}
 			if replay.chartValues[key] == nil {
 				replay.chartValues[key] = map[time.Time][]closedindicator.Output{}

@@ -21,12 +21,10 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ScannerIndicatorBatchItem } from './scannerIndicatorBatchItem.ts';
+import type { ScannerIndicatorPeriod } from './scannerIndicatorPeriod.ts';
 
-export interface ScannerIndicatorBatch {
-  /**
-     * @minItems 1
-     * @maxItems 32
-     */
-  items: ScannerIndicatorBatchItem[];
-}
+/**
+ * Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+ * @maxItems 4
+ */
+export type ScannerIndicatorPeriods = ScannerIndicatorPeriod[];

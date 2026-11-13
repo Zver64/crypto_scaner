@@ -1,10 +1,12 @@
 import type { Field, RuleGroupType, RuleType } from "react-querybuilder";
 
 import type {
+	CandleInterval,
 	Direction,
+	Strategy,
 	StrategyCoinSource,
+	StrategyIndicatorCall,
 	StrategyID,
-	StrategyVariable,
 } from "@/api/generated/models";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
 import type { useStrategyForm } from "@/features/strategy-settings/use-strategy-form";
@@ -95,15 +97,56 @@ export interface StrategyDraft {
 	// Whether the builder dropped parts of a stored rule it cannot show,
 	// which saving would remove.
 	incomplete: boolean;
+	// The indicators the opened rules read, configured or not, which the
+	// builder offers besides the configured ones.
+	indicators: StrategyIndicatorCall[];
 	// The fields the form opens with.
 	values: StrategyFormValues;
 }
 
-// The variables one rule builder offers, with the builder fields made of
-// them.
-export interface StrategyRuleVariables {
-	fields: Field[];
+// A value an operand reads, without its period: an indicator output or a
+// candle field, which a call reads on a period, such as rsi("1h") or
+// bbands_upperband("1h", 20, 2.5), or a position variable of exit rules,
+// which has no period.
+export interface StrategyVariable {
+	// The call without its period, such as bbands_upperband(20, 2.5), or the
+	// name of a position variable; tells the variables apart.
+	key: string;
+	label: string;
+	// The function reading an indicator output, such as rsi or
+	// bbands_upperband, the candle field, or the position variable.
+	name: string;
+	// The parameters as the canonical call spells them after the period.
+	parameters: string[];
+	kind: StrategyVariableKind;
+}
+
+export type StrategyVariableKind = "candle" | "indicator" | "position";
+
+// What operands of one rule builder read: the variables offered and the
+// periods every call takes.
+export interface StrategyVariables {
+	intervals: CandleInterval[];
 	variables: StrategyVariable[];
+}
+
+// The variables one rule builder offers, with the builder's field, the call
+// a new condition compares.
+export interface StrategyRuleVariables extends StrategyVariables {
+	fields: Field[];
+}
+
+// The rules of a strategy as the builder opens them: spelled canonically,
+// with the indicators they read.
+export interface CanonicalRules {
+	expressions: Pick<
+		Strategy,
+		| "exit_expression"
+		| "expression"
+		| "stop_loss_expression"
+		| "take_profit_expression"
+	>;
+	indicators: StrategyIndicatorCall[];
 }
 
 // The variables of the entry rule and prices, which exist at every candle,

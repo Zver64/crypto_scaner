@@ -613,31 +613,42 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("unused scanner indicators are read by no strategy and shown nowhere", func(t *testing.T) {
-		rsi := func(period int, table, chart bool) scannerindicator.Indicator {
-			return scannerindicator.Indicator{Interval: market.IntervalDay, Selection: indicator.Selection{Type: "rsi", Parameters: indicator.Parameters{"period": period}}, ShowInTable: table, ShowInChart: chart}
-		}
-		ids, err := store.CreateScannerIndicators(ctx, []scannerindicator.Indicator{rsi(11, true, false), rsi(12, false, true), rsi(13, false, false), rsi(14, false, false)})
+	t.Run("scanner indicators keep their periods and reject duplicate selections", func(t *testing.T) {
+		rsi := indicator.Selection{Type: "rsi", Parameters: indicator.Parameters{"period": 11}}
+		id, err := store.CreateScannerIndicator(ctx, scannerindicator.Indicator{Selection: rsi, Periods: []scannerindicator.Period{
+			{Interval: market.IntervalHour, ShowInTable: true}, {Interval: market.IntervalDay, ShowInChart: true},
+		}})
 		if err != nil {
-			t.Fatalf("create indicators: %v", err)
-		}
-		table, chart, read, unused := ids[0], ids[1], ids[2], ids[3]
-		strategyID, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Reads RSI 13", Direction: strategy.DirectionLong, Expression: "d_rsi_13 > 1", CoinSource: strategy.CoinsSelected}, []int64{read})
-		if err != nil {
-			t.Fatalf("create strategy: %v", err)
+			t.Fatalf("create indicator: %v", err)
 		}
 		t.Cleanup(func() {
-			if _, err := db.Exec(ctx, `DELETE FROM app.strategies WHERE id = $1`, strategyID); err != nil {
-				t.Errorf("clean strategy fixture: %v", err)
-			}
-			if _, err := db.Exec(ctx, `DELETE FROM app.scanner_indicators WHERE id = ANY($1)`, ids); err != nil {
-				t.Errorf("clean indicator fixtures: %v", err)
+			if _, err := db.Exec(ctx, `DELETE FROM app.scanner_indicators WHERE id = $1`, id); err != nil {
+				t.Errorf("clean indicator fixture: %v", err)
 			}
 		})
-
-		deleted, err := store.DeleteUnusedScannerIndicators(ctx)
-		if err != nil || !reflect.DeepEqual(deleted, []int64{unused}) {
-			t.Fatalf("deleted = %v, error = %v; want only %d, keeping table %d, chart %d and strategy %d", deleted, err, unused, table, chart, read)
+		if _, err := store.CreateScannerIndicator(ctx, scannerindicator.Indicator{Selection: rsi}); !errors.Is(err, scannerindicator.ErrConflict) {
+			t.Fatalf("duplicate selection error = %v, want ErrConflict", err)
+		}
+		periods := func() []scannerindicator.Period {
+			items, err := store.ListScannerIndicators(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			index := slices.IndexFunc(items, func(item scannerindicator.Indicator) bool { return item.ID == id })
+			if index < 0 {
+				t.Fatal("created indicator not listed")
+			}
+			return items[index].Periods
+		}
+		if got := periods(); len(got) != 2 {
+			t.Fatalf("periods = %+v, want both", got)
+		}
+		weekly := []scannerindicator.Period{{Interval: market.IntervalWeek, ShowInChart: true}}
+		if err := store.UpdateScannerIndicator(ctx, scannerindicator.Indicator{ID: id, Selection: rsi, Periods: weekly}); err != nil {
+			t.Fatalf("update indicator: %v", err)
+		}
+		if got := periods(); !reflect.DeepEqual(got, weekly) {
+			t.Fatalf("periods after update = %+v, want %+v", got, weekly)
 		}
 	})
 
@@ -736,7 +747,7 @@ func TestPostgresStoreContracts(t *testing.T) {
 			t.Fatal(err)
 		}
 		instrument := instruments[0]
-		id, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "States", Direction: strategy.DirectionLong, Expression: "h_close > 1", Coins: []string{instrument.Symbol}, CoinSource: strategy.CoinsSelected}, nil)
+		id, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "States", Direction: strategy.DirectionLong, Expression: `close("1h") > 1`, Coins: []string{instrument.Symbol}, CoinSource: strategy.CoinsSelected})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -773,18 +784,66 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 	})
 
+	t.Run("rules of the old syntax are rewritten once, keeping revisions and states", func(t *testing.T) {
+		instruments, err := store.ListActiveInstruments(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		id, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Old syntax", Direction: strategy.DirectionLong, Expression: "h_close > 1", ExitExpression: "pnl > 5",
+			Coins: []string{instruments[0].Symbol}, CoinSource: strategy.CoinsSelected})
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			if _, err := db.Exec(ctx, `DELETE FROM app.strategies WHERE id = $1`, id); err != nil {
+				t.Errorf("clean strategy fixture: %v", err)
+			}
+		})
+		revision, err := store.SetStrategyEnabled(ctx, id, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(ctx, `UPDATE app.strategies SET syntax = 1 WHERE id = $1`, id); err != nil {
+			t.Fatal(err)
+		}
+		rewrites := 0
+		rewrite := func(item strategy.Strategy) strategy.Strategy {
+			rewrites++
+			item.Expression = `close("1h") > 1`
+			return item
+		}
+		for range 2 {
+			if err := store.RewriteLegacyStrategies(ctx, rewrite); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if rewrites != 1 {
+			t.Fatalf("rewrites = %d, want 1", rewrites)
+		}
+		var expression, exit string
+		var current int64
+		var pending bool
+		if err := db.QueryRow(ctx, `SELECT expression, exit_expression, revision, baseline_pending FROM app.strategies WHERE id = $1`, id).Scan(&expression, &exit, &current, &pending); err != nil {
+			t.Fatal(err)
+		}
+		if expression != `close("1h") > 1` || exit != "pnl > 5" || current != revision || !pending {
+			t.Fatalf("rewritten strategy = %q, %q, revision %d (was %d), baseline pending %t", expression, exit, current, revision, pending)
+		}
+	})
+
 	// Runs last: it migrates the schema down and up again.
 	t.Run("strategy UUID migration round trip keeps strategies and their rows", func(t *testing.T) {
-		indicatorIDs, err := store.CreateScannerIndicators(ctx, []scannerindicator.Indicator{{Interval: market.IntervalDay, Selection: indicator.Selection{Type: "rsi", Parameters: indicator.Parameters{"period": 21}}}})
-		if err != nil {
+		if _, err := store.CreateScannerIndicator(ctx, scannerindicator.Indicator{Selection: indicator.Selection{Type: "rsi", Parameters: indicator.Parameters{"period": 21}}, Periods: []scannerindicator.Period{
+			{Interval: market.IntervalHour, ShowInTable: true}, {Interval: market.IntervalDay, ShowInChart: true},
+		}}); err != nil {
 			t.Fatal(err)
 		}
 		instruments, err := store.ListActiveInstruments(ctx)
 		if err != nil || len(instruments) < 2 {
 			t.Fatalf("list active instruments = %v, %v", instruments, err)
 		}
-		id, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Round trip", Direction: strategy.DirectionLong, Expression: "d_rsi_21 > 1",
-			Coins: []string{instruments[0].Symbol, instruments[1].Symbol}, CoinSource: strategy.CoinsSelected}, indicatorIDs)
+		id, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Round trip", Direction: strategy.DirectionLong, Expression: `rsi("1d", 21) > 1`,
+			Coins: []string{instruments[0].Symbol, instruments[1].Symbol}, CoinSource: strategy.CoinsSelected})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -801,14 +860,13 @@ func TestPostgresStoreContracts(t *testing.T) {
 		const snapshot = `SELECT
 			(SELECT string_agg(name || ':' || enabled || ':' || revision, ',' ORDER BY name) FROM app.strategies),
 			(SELECT string_agg(s.name || ':' || c.instrument_id, ',' ORDER BY s.name, c.instrument_id) FROM app.strategy_coins c JOIN app.strategies s ON s.id = c.strategy_id),
-			(SELECT string_agg(s.name || ':' || c.indicator_id, ',' ORDER BY s.name, c.indicator_id) FROM app.strategy_indicators c JOIN app.strategies s ON s.id = c.strategy_id),
 			(SELECT string_agg(s.name || ':' || c.instrument_id || ':' || c.open_time, ',' ORDER BY s.name, c.instrument_id) FROM app.strategy_states c JOIN app.strategies s ON s.id = c.strategy_id)`
-		read := func(stage string) [4]string {
-			var rows [4]*string
-			if err := db.QueryRow(ctx, snapshot+` -- `+stage).Scan(&rows[0], &rows[1], &rows[2], &rows[3]); err != nil {
+		read := func(stage string) [3]string {
+			var rows [3]*string
+			if err := db.QueryRow(ctx, snapshot+` -- `+stage).Scan(&rows[0], &rows[1], &rows[2]); err != nil {
 				t.Fatalf("read strategies %s: %v", stage, err)
 			}
-			var values [4]string
+			var values [3]string
 			for i, row := range rows {
 				if row != nil {
 					values[i] = *row
@@ -817,8 +875,16 @@ func TestPostgresStoreContracts(t *testing.T) {
 			return values
 		}
 		before := read("before")
-		if before[1] == "" || before[2] == "" || before[3] == "" {
+		if before[1] == "" || before[2] == "" {
 			t.Fatalf("fixture has no child rows: %v", before)
+		}
+		// Each period of an indicator is a row of its own before migration
+		// 35, which merges them back.
+		const periods = `SELECT string_agg(i.indicator_type || i.parameters::TEXT || ':' || p.interval || ':' || p.show_in_table || ':' || p.show_in_chart, ',' ORDER BY p.interval)
+			FROM app.scanner_indicators i JOIN app.scanner_indicator_intervals p ON p.indicator_id = i.id`
+		var periodsBefore, periodsAfter, rowsDown string
+		if err := db.QueryRow(ctx, periods).Scan(&periodsBefore); err != nil {
+			t.Fatal(err)
 		}
 		version := func() int {
 			var current int
@@ -835,11 +901,17 @@ func TestPostgresStoreContracts(t *testing.T) {
 		if down := read("down"); down != before {
 			t.Fatalf("strategies after migrating down = %v, want %v", down, before)
 		}
+		if err := db.QueryRow(ctx, `SELECT string_agg(indicator_type || parameters::TEXT || ':' || interval || ':' || show_in_table || ':' || show_in_chart, ',' ORDER BY interval) FROM app.scanner_indicators`).Scan(&rowsDown); err != nil || rowsDown != periodsBefore {
+			t.Fatalf("indicator rows after migrating down = %q, %v; want %q", rowsDown, err, periodsBefore)
+		}
 		if err := migrate.Run(ctx, []string{"up"}, loadURL); err != nil {
 			t.Fatalf("migrate up: %v", err)
 		}
 		if up := read("up"); up != before {
 			t.Fatalf("strategies after migrating up again = %v, want %v", up, before)
+		}
+		if err := db.QueryRow(ctx, periods).Scan(&periodsAfter); err != nil || periodsAfter != periodsBefore {
+			t.Fatalf("indicator periods after migrating up again = %q, %v; want %q", periodsAfter, err, periodsBefore)
 		}
 		var uuidIDs bool
 		if err := db.QueryRow(ctx, `SELECT bool_and(pg_typeof(id) = 'uuid'::regtype) FROM app.strategies`).Scan(&uuidIDs); err != nil || !uuidIDs {

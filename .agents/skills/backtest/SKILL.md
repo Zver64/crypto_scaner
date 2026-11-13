@@ -8,7 +8,7 @@ description: Create and backtest Crypto Scanner strategies (CEL expressions) aga
 ## Read first
 
 - `backend/cmd/scanner/README.md`: commands, backtest execution, signal evaluation, and output.
-- `docs/strategy-language.md`: expressions, variables, limits, signals, and exits.
+- `docs/strategy-language.md`: expressions, indicator calls, limits, signals, and exits.
 - `docs/buy-strategies.md`: existing strategies.
 - `scanner help <command>`: exact flags; never guess them.
 
@@ -16,16 +16,16 @@ description: Create and backtest Crypto Scanner strategies (CEL expressions) aga
 
 - The user installs the CLI (`make install-cli`) and logs in with a Mini App API token. Never ask for, read, or print the token or `~/.config/scanner/config.json`. Use `scanner profiles` (names and server URLs, no tokens) to select the intended server with `--profile <name>`; never assume production is named `prod`.
 - Use `scanner signals` for an indicator, warning, or buy/sell signal; a bearish warning is `--direction short`; `--direction simple` (no expected move) only lists where the signal fired and judges nothing, so it takes no `--window` or `--target-ratio`. Match `--window` to the claimed horizon. Add exits, take profit, and stop loss only for explicitly requested trading. For a long bot range, take profit is the upper bound and stop loss the lower; for short, reverse them. Short strategies require both.
-- Backtests ignore market cap ranges and accept any active coin, not only favorites. Coins read through `of` must be active coins.
-- Never pass `--add-indicators` unless asked. Only the user enables strategies, in the Mini App.
+- Backtests ignore market cap ranges and accept any active coin, not only favorites. Coins read through `Of` must be active coins.
+- Only the user enables strategies, in the Mini App.
 - Work with stored history. If the user explicitly selects a period or history segment, apply no minimum candle count and do not request a larger sample; report results without generalizing beyond that scope. Otherwise, 2,000 or more stored candles on the signal's interval are sufficient for diagnosis and improvement: do not call this history insufficient or ask for more. Below 2,000, assess how substantial the shortfall is: flag very short history immediately and explain that reliable evaluation needs more; a modest shortfall need not prompt a warning or a request for more history. Continue diagnosis with what is available. Report the actual evaluated period and sample size, distinguishing stored history from candles excluded by indicator warm-up or selected date bounds. Backtests support up to 20,000 stored candles per interval.
 - Never run backtests in parallel: only one per machine. For multiple coins, use comma-separated or repeated `--symbol` values; the CLI runs them sequentially under one lock. There is no `--favorites` flag. Multi-coin text shows only per-coin summaries (`--indicators` is ignored); `--json` returns a `status`/`items` envelope with full results/errors. Coin-specific failures continue, global failures stop the queue; any failure exits with 1, so inspect successful results even then.
 - Check server execution time after every backtest (`Execution time` / JSON `duration_ms`). Compare on the same server, client, comparable history/periods, and similar load. Mini App timings include chart snapshot preparation; CLI timings do not. If formula growth sharply increases runtime, remove redundant conditions and unnecessarily expensive nested calculations without changing the intended logic; rerun to verify results and runtime.
 
 ## Workflow
 
-1. Write the rules using `scanner vars --filter <text>` and check expressions with `scanner validate`.
-2. Test unsaved rules on several coins with `scanner strategies backtest` or `scanner signals backtest`, e.g. `scanner signals backtest --expr 'h_rsi > 80' --direction short --symbol BTCUSDT,ETHUSDT,ARBUSDT`. Unconfigured indicators are readable without adding them to the Mini App. `--json` includes all rows and diagnostic expression values at signals; use them to verify the intended pattern. Text shows at most 100 latest trades/signals; for signals, `--indicators` adds current local indicator dependency outputs, distinct from diagnostic reads.
+1. Write the rules with indicator and candle field calls (`scanner vars --filter <text>` lists the configured indicators, but any indicator can be called) and check expressions with `scanner validate`.
+2. Test unsaved rules on several coins with `scanner strategies backtest` or `scanner signals backtest`, e.g. `scanner signals backtest --expr 'rsi("1h") > 80' --direction short --symbol BTCUSDT,ETHUSDT,ARBUSDT`. Unconfigured indicators are readable without adding them to the Mini App. `--json` includes all rows and diagnostic expression values at signals; use them to verify the intended pattern. Text shows at most 100 latest trades/signals; for signals, `--indicators` adds current local indicator dependency outputs, distinct from diagnostic reads.
 3. Iterate using the diagnosis rules below until the signal meets the user's requirements. Report failure only after at least 50 distinct, backtested and analyzed signal variants; repeated runs of one formula do not count. Keep a brief record of each variant, result, diagnosis, and next change. Do not invent trials or count requests that failed to execute; report execution blockers separately from failure to find a working signal.
 4. Save only what works with `create` (always disabled), choosing its coins with `--coin`, `--favorites`, or `--coin-m` (a signal may take `--track-favorites`, following the administrator's favorites as they change, or `--all-coins` instead); tell the user what you saved so they can delete it if needed. Use `scanner backtest --strategy <id>` for saved strategies or signals.
 

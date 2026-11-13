@@ -24,7 +24,7 @@
 
 /**
  * Stop loss price, a CEL price expression like the take profit, such as
- * `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+ * `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
  * and its close buys nothing. Empty without a stop loss.
  * @maxLength 2000
  */

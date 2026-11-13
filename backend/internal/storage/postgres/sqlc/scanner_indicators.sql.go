@@ -23,56 +23,94 @@ func (q *Queries) DeleteScannerIndicator(ctx context.Context, id int64) (int64, 
 	return result.RowsAffected(), nil
 }
 
-const deleteUnusedScannerIndicators = `-- name: DeleteUnusedScannerIndicators :many
-DELETE FROM app.scanner_indicators AS indicators
-WHERE NOT indicators.show_in_table
-    AND NOT indicators.show_in_chart
-    AND NOT EXISTS (
-        SELECT 1 FROM app.strategy_indicators AS used
-        WHERE used.indicator_id = indicators.id
-    )
-RETURNING indicators.id
+const deleteScannerIndicatorIntervals = `-- name: DeleteScannerIndicatorIntervals :exec
+DELETE FROM app.scanner_indicator_intervals WHERE indicator_id = $1
 `
 
-// Unused: read by no strategy, and shown in no market table and on no chart.
-func (q *Queries) DeleteUnusedScannerIndicators(ctx context.Context) ([]int64, error) {
-	rows, err := q.db.Query(ctx, deleteUnusedScannerIndicators)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []int64
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
-		items = append(items, id)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
+func (q *Queries) DeleteScannerIndicatorIntervals(ctx context.Context, indicatorID int64) error {
+	_, err := q.db.Exec(ctx, deleteScannerIndicatorIntervals, indicatorID)
+	return err
 }
 
-const listScannerIndicators = `-- name: ListScannerIndicators :many
-SELECT id, interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels
+const insertScannerIndicator = `-- name: InsertScannerIndicator :one
+INSERT INTO app.scanner_indicators (indicator_type, parameters, scale_min, scale_max, scale_levels, position)
+SELECT $1, $2, $3, $4, $5, COALESCE(MAX(position) + 1, 0)::INTEGER
 FROM app.scanner_indicators
-ORDER BY position, id
+RETURNING id
 `
 
-type ListScannerIndicatorsRow struct {
-	ID            int64
-	Interval      string
+type InsertScannerIndicatorParams struct {
 	IndicatorType string
 	Parameters    []byte
-	ShowInTable   bool
-	ShowInChart   bool
 	ScaleMin      pgtype.Float8
 	ScaleMax      pgtype.Float8
 	ScaleLevels   []float64
 }
 
+// Runs after LockScannerIndicators.
+func (q *Queries) InsertScannerIndicator(ctx context.Context, arg InsertScannerIndicatorParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertScannerIndicator,
+		arg.IndicatorType,
+		arg.Parameters,
+		arg.ScaleMin,
+		arg.ScaleMax,
+		arg.ScaleLevels,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const insertScannerIndicatorIntervals = `-- name: InsertScannerIndicatorIntervals :exec
+INSERT INTO app.scanner_indicator_intervals (indicator_id, interval, show_in_table, show_in_chart)
+SELECT $1::BIGINT, periods.interval, periods.show_in_table, periods.show_in_chart
+FROM (
+    SELECT unnest($2::TEXT[]) AS interval, unnest($3::BOOLEAN[]) AS show_in_table,
+           unnest($4::BOOLEAN[]) AS show_in_chart
+) AS periods
+`
+
+type InsertScannerIndicatorIntervalsParams struct {
+	IndicatorID int64
+	Intervals   []string
+	ShowInTable []bool
+	ShowInChart []bool
+}
+
+func (q *Queries) InsertScannerIndicatorIntervals(ctx context.Context, arg InsertScannerIndicatorIntervalsParams) error {
+	_, err := q.db.Exec(ctx, insertScannerIndicatorIntervals,
+		arg.IndicatorID,
+		arg.Intervals,
+		arg.ShowInTable,
+		arg.ShowInChart,
+	)
+	return err
+}
+
+const listScannerIndicators = `-- name: ListScannerIndicators :many
+SELECT indicators.id, indicators.indicator_type, indicators.parameters, indicators.scale_min, indicators.scale_max, indicators.scale_levels,
+    COALESCE(array_agg(periods.interval ORDER BY periods.interval) FILTER (WHERE periods.indicator_id IS NOT NULL), '{}')::TEXT[] AS intervals,
+    COALESCE(array_agg(periods.show_in_table ORDER BY periods.interval) FILTER (WHERE periods.indicator_id IS NOT NULL), '{}')::BOOLEAN[] AS show_in_table,
+    COALESCE(array_agg(periods.show_in_chart ORDER BY periods.interval) FILTER (WHERE periods.indicator_id IS NOT NULL), '{}')::BOOLEAN[] AS show_in_chart
+FROM app.scanner_indicators AS indicators
+LEFT JOIN app.scanner_indicator_intervals AS periods ON periods.indicator_id = indicators.id
+GROUP BY indicators.id
+ORDER BY indicators.position, indicators.id
+`
+
+type ListScannerIndicatorsRow struct {
+	ID            int64
+	IndicatorType string
+	Parameters    []byte
+	ScaleMin      pgtype.Float8
+	ScaleMax      pgtype.Float8
+	ScaleLevels   []float64
+	Intervals     []string
+	ShowInTable   []bool
+	ShowInChart   []bool
+}
+
+// Periods come as parallel arrays, empty for an indicator without periods.
 func (q *Queries) ListScannerIndicators(ctx context.Context) ([]ListScannerIndicatorsRow, error) {
 	rows, err := q.db.Query(ctx, listScannerIndicators)
 	if err != nil {
@@ -84,14 +122,14 @@ func (q *Queries) ListScannerIndicators(ctx context.Context) ([]ListScannerIndic
 		var i ListScannerIndicatorsRow
 		if err := rows.Scan(
 			&i.ID,
-			&i.Interval,
 			&i.IndicatorType,
 			&i.Parameters,
-			&i.ShowInTable,
-			&i.ShowInChart,
 			&i.ScaleMin,
 			&i.ScaleMax,
 			&i.ScaleLevels,
+			&i.Intervals,
+			&i.ShowInTable,
+			&i.ShowInChart,
 		); err != nil {
 			return nil, err
 		}
@@ -131,14 +169,12 @@ func (q *Queries) ReorderScannerIndicators(ctx context.Context, ids []int64) (in
 
 const updateScannerIndicator = `-- name: UpdateScannerIndicator :execrows
 UPDATE app.scanner_indicators
-SET show_in_table = $2, show_in_chart = $3, scale_min = $4, scale_max = $5, scale_levels = $6
+SET scale_min = $2, scale_max = $3, scale_levels = $4
 WHERE id = $1
 `
 
 type UpdateScannerIndicatorParams struct {
 	ID          int64
-	ShowInTable bool
-	ShowInChart bool
 	ScaleMin    pgtype.Float8
 	ScaleMax    pgtype.Float8
 	ScaleLevels []float64
@@ -147,8 +183,6 @@ type UpdateScannerIndicatorParams struct {
 func (q *Queries) UpdateScannerIndicator(ctx context.Context, arg UpdateScannerIndicatorParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateScannerIndicator,
 		arg.ID,
-		arg.ShowInTable,
-		arg.ShowInChart,
 		arg.ScaleMin,
 		arg.ScaleMax,
 		arg.ScaleLevels,

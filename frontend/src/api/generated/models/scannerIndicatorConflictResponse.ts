@@ -24,6 +24,6 @@
 import type { ErrorResponse } from './errorResponse.ts';
 
 /**
- * The interval already has this indicator or its charts draw the maximum number of indicators.
+ * The indicator is already configured, or the charts of a period draw the maximum number of indicators.
  */
 export type ScannerIndicatorConflictResponse = ErrorResponse;

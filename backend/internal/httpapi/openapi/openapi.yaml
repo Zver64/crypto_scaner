@@ -475,10 +475,11 @@ paths:
       operationId: listScannerIndicators
       summary: List the configured scanner indicators
       description: |
-        Strategies can read every configured indicator. It is drawn on the
-        charts of its interval when `show_in_chart` is set and shown as a market
-        table column when `show_in_table` is set. Items are in display order, which orders the
-        table columns and the chart indicators.
+        Strategies can read every configured indicator on every interval. Each
+        of its periods draws it on the charts of the period's interval when
+        `show_in_chart` is set and shows it as a market table column when
+        `show_in_table` is set. Items are in display order, which orders the
+        table columns and the chart indicators of every interval.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       responses:
@@ -490,8 +491,8 @@ paths:
         "500": { $ref: "#/components/responses/InternalError" }
     post:
       operationId: createScannerIndicator
-      summary: Add a scanner indicator on one or more intervals
-      description: Adds one indicator per chosen interval, all or none, at the end of the display order.
+      summary: Add a scanner indicator with its periods
+      description: Adds the indicator at the end of the display order.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       requestBody:
@@ -499,45 +500,8 @@ paths:
         content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorInput" } } }
       responses:
         "201":
-          description: Added indicators, in interval request order.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorList" } } }
-        "400": { $ref: "#/components/responses/BadRequest" }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/AdministratorRequired" }
-        "409": { $ref: "#/components/responses/ScannerIndicatorConflict" }
-        "500": { $ref: "#/components/responses/InternalError" }
-    delete:
-      operationId: deleteUnusedScannerIndicators
-      summary: Remove every unused scanner indicator
-      description: |
-        Removes every indicator that no strategy reads (disabled strategies
-        included) and that is shown in no market table and on no chart. Every
-        other indicator stays.
-      tags: [Administration]
-      security: [{ sessionToken: [] }]
-      responses:
-        "204": { description: Unused indicators removed. }
-        "401": { $ref: "#/components/responses/Unauthenticated" }
-        "403": { $ref: "#/components/responses/AdministratorRequired" }
-        "409": { $ref: "#/components/responses/ScannerIndicatorInUse" }
-        "500": { $ref: "#/components/responses/InternalError" }
-  /api/v1/admin/scanner-indicator-batches:
-    post:
-      operationId: createScannerIndicatorBatch
-      summary: Add several different scanner indicators
-      description: |
-        Adds the indicators, all or none, at the end of the display order,
-        neither shown in tables nor drawn on charts. Used to add the missing
-        indicators a strategy expression reads.
-      tags: [Administration]
-      security: [{ sessionToken: [] }]
-      requestBody:
-        required: true
-        content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorBatch" } } }
-      responses:
-        "201":
-          description: Added indicators, in request order.
-          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorList" } } }
+          description: Added indicator.
+          content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicator" } } }
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
@@ -564,7 +528,7 @@ paths:
   /api/v1/admin/scanner-indicators/{indicator_id}:
     patch:
       operationId: updateScannerIndicator
-      summary: Change the table visibility and pane scale of a scanner indicator
+      summary: Replace the periods and pane scale of a scanner indicator
       tags: [Administration]
       security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
@@ -579,11 +543,11 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/ScannerIndicatorNotFound" }
+        "409": { $ref: "#/components/responses/ScannerIndicatorConflict" }
         "500": { $ref: "#/components/responses/InternalError" }
     delete:
       operationId: deleteScannerIndicator
       summary: Remove a scanner indicator
-      description: Rejected while a strategy reads the indicator.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
@@ -592,7 +556,6 @@ paths:
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "404": { $ref: "#/components/responses/ScannerIndicatorNotFound" }
-        "409": { $ref: "#/components/responses/ScannerIndicatorInUse" }
         "500": { $ref: "#/components/responses/InternalError" }
   /api/v1/admin/users:
     get:
@@ -640,17 +603,21 @@ paths:
         "404": { $ref: "#/components/responses/UserNotFound" }
         "409": { $ref: "#/components/responses/AdministratorProtected" }
         "500": { $ref: "#/components/responses/InternalError" }
-  /api/v1/admin/strategy-variables:
+  /api/v1/admin/strategy-catalog:
     get:
-      operationId: listStrategyVariables
-      summary: List the indicator values strategy expressions can read
-      description: One variable per output of every configured indicator, in display order.
+      operationId: getStrategyCatalog
+      summary: List what strategy expressions read
+      description: |
+        The configured indicators in display order with their calls, the
+        candle fields, the periods every indicator and candle field call
+        takes first, and the position variables of exit rules. Expressions
+        read indicators that are not configured all the same.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       responses:
         "200":
-          description: Strategy variables.
-          content: { application/json: { schema: { $ref: "#/components/schemas/StrategyVariableList" } } }
+          description: What strategy expressions read.
+          content: { application/json: { schema: { $ref: "#/components/schemas/StrategyCatalog" } } }
         "401": { $ref: "#/components/responses/Unauthenticated" }
         "403": { $ref: "#/components/responses/AdministratorRequired" }
         "500": { $ref: "#/components/responses/InternalError" }
@@ -660,12 +627,12 @@ paths:
       summary: Check a strategy expression
       description: |
         Lists every problem that would reject the expression as the entry
-        rule of a strategy, or as its exit rule when `exit` is set, which may
-        also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-        depth, and coins read through `of` that are not active. Variables of indicators that are not
-        configured are resolved from their names into `missing_indicators`
-        when exactly one indicator has the name. Strategies read them without
-        adding them, so no problems mean the expression is valid.
+        rule of a strategy, as its exit rule, which may also read the
+        position variables, or as a price: syntax, unknown indicators,
+        periods, parameters, outputs, and functions, history depth, and coins
+        read through `Of` that are not active. Whatever the problems, it
+        returns the expression with every call that resolves spelled
+        canonically and the indicators it calls, configured or not.
       tags: [Administration]
       security: [{ sessionToken: [] }]
       requestBody:
@@ -1151,10 +1118,7 @@ components:
       description: The scanner indicator does not exist.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     ScannerIndicatorConflict:
-      description: The interval already has this indicator or its charts draw the maximum number of indicators.
-      content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
-    ScannerIndicatorInUse:
-      description: A strategy reads the indicator.
+      description: The indicator is already configured, or the charts of a period draw the maximum number of indicators.
       content: { application/json: { schema: { $ref: "#/components/schemas/ErrorResponse" } } }
     StrategyNotFound:
       description: The strategy does not exist.
@@ -1957,7 +1921,6 @@ components:
             - market_data_unavailable
             - rate_limited
             - scanner_indicator_exists
-            - scanner_indicator_in_use
             - scanner_indicator_limit
             - scanner_indicator_not_found
             - session_required
@@ -2015,40 +1978,69 @@ components:
       required: [strategy_alerts]
       properties:
         strategy_alerts: { type: boolean }
-    StrategyVariableList:
+    StrategyCatalog:
       type: object
       additionalProperties: false
-      required: [items]
+      required: [indicators, candle_fields, intervals, position_variables]
       properties:
-        items:
+        indicators:
           type: array
-          items: { $ref: "#/components/schemas/StrategyVariable" }
-    StrategyVariable:
+          description: The configured indicators, in display order.
+          items: { $ref: "#/components/schemas/StrategyIndicatorCall" }
+        candle_fields:
+          type: array
+          description: Candle fields, called with the period only, such as `close("1h")`.
+          items: { type: string }
+        intervals:
+          type: array
+          description: The periods indicator and candle field calls take first.
+          items: { $ref: "#/components/schemas/CandleInterval" }
+        position_variables:
+          type: array
+          items: { $ref: "#/components/schemas/StrategyPositionVariable" }
+    StrategyIndicatorCall:
       type: object
       additionalProperties: false
-      required: [name, label, position]
+      required: [type, parameters, title, outputs, count_outputs]
+      description: An indicator as calls write it, such as `bbands_upperband("1h", 20, 2.5)`.
       properties:
-        name:
+        type:
           type: string
-          description: CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, the candle field `h_close`, or the position variable `pnl`.
-        label:
-          type: string
-          description: Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, the candle field, such as `h-close`, or the position variable, such as `pnl`.
-        indicator_id:
-          type: integer
-          format: int64
-          description: The indicator the variable reads; absent for candle fields, which every interval has, and position variables.
-        interval:
-          $ref: "#/components/schemas/CandleInterval"
-          description: Interval of the value; absent for position variables.
-        position:
-          type: boolean
+          description: The indicator type, such as `bbands`, which names its calls.
+        parameters:
+          type: array
           description: |
-            True for the variables of the open trade, which only exit rules
-            read and only at the latest candle: `entry_price`, the average
-            price of its buys; `pnl`, its return at the close before fees in
-            percent, such as 5 for 5%; and `bars_held`, the candles since its first buy
-            filled, counting the candle it filled at.
+            The parameters as they follow the period in the canonical call:
+            in descriptor order up to the last one that differs from its
+            default, numbers without trailing zeros and named choices by
+            name, such as `["20", "2.5"]` or `["20", "volume"]`.
+          items: { type: string }
+        title:
+          type: string
+          description: Indicator title without a period, such as `bbands-20-2.5`.
+        outputs:
+          type: array
+          description: The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
+          items: { type: string }
+        count_outputs:
+          type: array
+          description: The outputs that count candles, which a calculated `Prev` shift may read.
+          items: { type: string }
+    StrategyPositionVariable:
+      type: object
+      additionalProperties: false
+      required: [name, count]
+      description: |
+        A variable of the open trade, which only exit rules read and only at
+        the latest candle: `entry_price`, the average price of its buys;
+        `pnl`, its return at the close before fees in percent, such as 5 for
+        5%; and `bars_held`, the candles since its first buy filled, counting
+        the candle it filled at.
+      properties:
+        name: { type: string }
+        count:
+          type: boolean
+          description: True for a count of candles, which a calculated `Prev` shift may read.
     StrategyList:
       type: object
       additionalProperties: false
@@ -2065,7 +2057,7 @@ components:
     Strategy:
       type: object
       additionalProperties: false
-      required: [id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled, valid, missing_indicators]
+      required: [id, name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression, coins, coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window, message, enabled, valid]
       properties:
         id: { $ref: "#/components/schemas/StrategyID" }
         name: { type: string }
@@ -2073,7 +2065,7 @@ components:
         direction: { $ref: "#/components/schemas/Direction" }
         expression:
           type: string
-          description: Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
+          description: Entry rule, a CEL expression such as `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`.
         exit_expression: { $ref: "#/components/schemas/StrategyExitExpression" }
         take_profit_expression: { $ref: "#/components/schemas/StrategyTakeProfitExpression" }
         stop_loss_expression: { $ref: "#/components/schemas/StrategyStopLossExpression" }
@@ -2097,13 +2089,6 @@ components:
         problem:
           type: string
           description: Why a stored rule no longer compiles; present only when valid is false.
-        missing_indicators:
-          type: array
-          description: |
-            Indicators the rules read that are not configured, in reading
-            order. The strategy reads them all the same; the builder shows
-            the rules only once they are added.
-          items: { $ref: "#/components/schemas/StrategyMissingIndicator" }
     StrategyBacktest:
       type: object
       additionalProperties: false
@@ -2162,7 +2147,9 @@ components:
       additionalProperties: false
       required: [key, title]
       properties:
-        key: { type: string }
+        key:
+          type: string
+          description: The canonical call of the output, such as `rsi("1h")` or `bbands_upperband("1h", 20)`.
         title: { type: string }
     BacktestChart:
       type: object
@@ -2446,9 +2433,9 @@ components:
     BacktestValues:
       type: object
       description: |
-        Values a rule read, named as its source writes them, such as `h_rsi`,
-        `prev(h_rsi, 2)`, or `of("BTCUSDT", h_close)`; reads inside
-        percentile windows and unknown values are left out.
+        Values a rule read, named by their canonical calls, such as
+        `rsi("1h")`, `Prev(rsi("1h"), 2)`, or `Of("BTCUSDT", close("1h"))`;
+        reads inside percentile windows and unknown values are left out.
       additionalProperties: { type: number, format: double }
     BacktestEquityPoint:
       type: object
@@ -2576,15 +2563,16 @@ components:
           minLength: 1
           maxLength: 2000
           description: |
-            CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
-            arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and
-            numbers, combined with `&&`, `||`, and `!`. `prev(x)` and
-            `prev(x, n)` read `x` one or `n` closed candles earlier;
-            `percentile(x, n, p)` is the nearest-rank `p`-th percentile of `x`
-            over the `n` closed candles before the latest one;
-            `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
-            previous candle. `of("BTCUSDT", x)` reads `x` of another coin,
-            which must be active.
+            CEL over indicator and candle field calls, such as `rsi("1h")`,
+            `bbands_upperband("1d", 20, 2.5)`, or `close("1h")`: comparisons
+            (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`, `/`,
+            parentheses) over calls and numbers, combined with `&&`, `||`,
+            and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n` closed
+            candles earlier; `Percentile(x, n, p)` is the nearest-rank
+            `p`-th percentile of `x` over the `n` closed candles before the
+            latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
+            with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
+            coin, which must be active.
     StrategyInput:
       type: object
       additionalProperties: false
@@ -2718,9 +2706,9 @@ components:
       maxLength: 2000
       description: |
         Take profit price, a CEL price expression evaluated at the close of
-        the entry signal and fixed for the trade, such as `h_close * 1.05` or
-        `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-        `max`, `prev`, `percentile`, and `of` over variables and numbers,
+        the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+        `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+        `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
         reading the evaluated coin. A signal whose take profit is not above
         its close buys nothing. Empty without a take profit.
     StrategyStopLossExpression:
@@ -2728,7 +2716,7 @@ components:
       maxLength: 2000
       description: |
         Stop loss price, a CEL price expression like the take profit, such as
-        `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+        `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
         and its close buys nothing. Empty without a stop loss.
     StrategyMessage:
       type: string
@@ -2751,29 +2739,18 @@ components:
     StrategyValidation:
       type: object
       additionalProperties: false
-      required: [errors, missing_indicators]
+      required: [errors, expression, indicators]
       properties:
         errors:
           type: array
           items: { type: string }
-        missing_indicators:
-          type: array
-          description: Indicators the expression reads that are not configured, in reading order; they need not be added.
-          items: { $ref: "#/components/schemas/StrategyMissingIndicator" }
-    StrategyMissingIndicator:
-      type: object
-      additionalProperties: false
-      required: [interval, type, parameters, title]
-      properties:
-        interval: { $ref: "#/components/schemas/CandleInterval" }
-        type: { type: string }
-        parameters:
-          type: object
-          additionalProperties: true
-          description: Canonical parameters with defaults filled in.
-        title:
+        expression:
           type: string
-          description: Table column title, such as `h-atr-100`.
+          description: The expression with every call that resolves spelled canonically, such as `rsi("1h")` for `rsi("1h", 14)`; the rest stays as written.
+        indicators:
+          type: array
+          description: The indicators the expression calls, configured or not, once each, in source order.
+          items: { $ref: "#/components/schemas/StrategyIndicatorCall" }
     StrategyEnabled:
       type: object
       additionalProperties: false
@@ -2845,61 +2822,38 @@ components:
     ScannerIndicatorInput:
       type: object
       additionalProperties: false
-      required: [type, parameters, intervals]
+      required: [type, parameters, periods]
       properties:
         type: { type: string, minLength: 1 }
         parameters:
           type: object
           additionalProperties: true
           description: Parameter values by key; omitted keys take their defaults.
-        intervals:
-          type: array
-          minItems: 1
-          maxItems: 4
-          description: Intervals to add the indicator on, each once.
-          items: { $ref: "#/components/schemas/ScannerIndicatorIntervalInput" }
+        periods: { $ref: "#/components/schemas/ScannerIndicatorPeriods" }
         scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
-    ScannerIndicatorBatch:
+    ScannerIndicatorPeriods:
+      type: array
+      maxItems: 4
+      description: Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+      items: { $ref: "#/components/schemas/ScannerIndicatorPeriod" }
+    ScannerIndicatorPeriod:
       type: object
       additionalProperties: false
-      required: [items]
-      properties:
-        items:
-          type: array
-          minItems: 1
-          maxItems: 32
-          items: { $ref: "#/components/schemas/ScannerIndicatorBatchItem" }
-    ScannerIndicatorBatchItem:
-      type: object
-      additionalProperties: false
-      required: [interval, type, parameters]
-      properties:
-        interval: { $ref: "#/components/schemas/CandleInterval" }
-        type: { type: string, minLength: 1 }
-        parameters:
-          type: object
-          additionalProperties: true
-          description: Parameter values by key; omitted keys take their defaults.
-    ScannerIndicatorIntervalInput:
-      type: object
-      additionalProperties: false
-      required: [interval]
+      required: [interval, show_in_table, show_in_chart]
       properties:
         interval: { $ref: "#/components/schemas/CandleInterval" }
         show_in_table:
           type: boolean
-          default: false
-          description: Only indicators with one output can be table columns.
+          description: Whether market tables show the indicator of the interval as a column; only indicators with one output can be table columns.
         show_in_chart:
           type: boolean
-          default: false
           description: Whether the charts of the interval draw the indicator.
     ScannerIndicatorUpdate:
       type: object
       additionalProperties: false
+      required: [periods]
       properties:
-        show_in_table: { type: boolean, default: false }
-        show_in_chart: { type: boolean, default: false }
+        periods: { $ref: "#/components/schemas/ScannerIndicatorPeriods" }
         scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
     ScannerIndicatorOrder:
       type: object
@@ -2921,28 +2875,22 @@ components:
     ScannerIndicator:
       type: object
       additionalProperties: false
-      required: [id, interval, type, parameters, show_in_table, show_in_chart, scale, title, placement, outputs, strategies]
+      required: [id, type, parameters, periods, scale, title, placement, outputs]
       properties:
         id: { type: integer, format: int64 }
-        interval: { $ref: "#/components/schemas/CandleInterval" }
         type: { type: string }
         parameters:
           type: object
           additionalProperties: true
           description: Canonical parameters with defaults filled in.
-        show_in_table: { type: boolean }
-        show_in_chart: { type: boolean }
+        periods: { $ref: "#/components/schemas/ScannerIndicatorPeriods" }
         scale: { $ref: "#/components/schemas/ScannerIndicatorScale" }
         title:
           type: string
-          description: Table column title, such as `d-rsi`.
+          description: Title without a period, such as `rsi-21`; table columns prefix the interval, as in `d-rsi-21`.
         placement:
           type: string
           enum: [overlay, pane, volume]
         outputs:
           type: array
-          items: { type: string }
-        strategies:
-          type: array
-          description: Names of the strategies that read the indicator, which cannot be removed meanwhile.
           items: { type: string }

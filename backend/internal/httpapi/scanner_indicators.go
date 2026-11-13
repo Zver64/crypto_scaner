@@ -13,13 +13,10 @@ import (
 // ScannerIndicators manages the global indicator configuration.
 type ScannerIndicators interface {
 	List() []scannerindicator.Entry
-	Create(context.Context, []scannerindicator.Indicator) ([]scannerindicator.Entry, error)
-	Update(context.Context, int64, bool, bool, scannerindicator.Scale) (scannerindicator.Entry, error)
+	Create(context.Context, scannerindicator.Indicator) (scannerindicator.Entry, error)
+	Update(context.Context, int64, []scannerindicator.Period, scannerindicator.Scale) (scannerindicator.Entry, error)
 	Delete(context.Context, int64) error
-	DeleteUnused(context.Context) error
 	Reorder(context.Context, []int64) ([]scannerindicator.Entry, error)
-	// Usage maps indicator ids to the names of the strategies that read them.
-	Usage() map[int64][]string
 }
 
 // IndicatorTypes describes every indicator the scanner can calculate.
@@ -42,29 +39,26 @@ func (api *api) ListIndicatorTypes(context.Context, ListIndicatorTypesRequestObj
 }
 
 func (api *api) ListScannerIndicators(context.Context, ListScannerIndicatorsRequestObject) (ListScannerIndicatorsResponseObject, error) {
-	return ListScannerIndicators200JSONResponse(api.scannerIndicatorListDTO(api.scannerIndicators.List())), nil
+	return ListScannerIndicators200JSONResponse(scannerIndicatorListDTO(api.scannerIndicators.List())), nil
 }
 
-func (api *api) scannerIndicatorListDTO(entries []scannerindicator.Entry) ScannerIndicatorList {
-	usage := api.scannerIndicators.Usage()
+func scannerIndicatorListDTO(entries []scannerindicator.Entry) ScannerIndicatorList {
 	items := make([]ScannerIndicator, len(entries))
 	for i, entry := range entries {
-		items[i] = scannerIndicatorDTO(entry, usage)
+		items[i] = scannerIndicatorDTO(entry)
 	}
 	return ScannerIndicatorList{Items: items}
 }
 
 func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScannerIndicatorRequestObject) (CreateScannerIndicatorResponseObject, error) {
-	selection := indicator.Selection{Type: indicator.Type(request.Body.Type), Parameters: indicator.Parameters(request.Body.Parameters)}
-	scale := scaleFromDTO(request.Body.Scale)
-	items := make([]scannerindicator.Indicator, len(request.Body.Intervals))
-	for i, interval := range request.Body.Intervals {
-		items[i] = scannerindicator.Indicator{Interval: market.CandleInterval(interval.Interval), Selection: selection, ShowInTable: flag(interval.ShowInTable), ShowInChart: flag(interval.ShowInChart), Scale: scale}
-	}
-	entries, err := api.scannerIndicators.Create(ctx, items)
+	entry, err := api.scannerIndicators.Create(ctx, scannerindicator.Indicator{
+		Selection: indicator.Selection{Type: indicator.Type(request.Body.Type), Parameters: indicator.Parameters(request.Body.Parameters)},
+		Periods:   periodsFromDTO(request.Body.Periods),
+		Scale:     scaleFromDTO(request.Body.Scale),
+	})
 	switch {
 	case err == nil:
-		return CreateScannerIndicator201JSONResponse(api.scannerIndicatorListDTO(entries)), nil
+		return CreateScannerIndicator201JSONResponse(scannerIndicatorDTO(entry)), nil
 	case errors.Is(err, scannerindicator.ErrInvalidArgument):
 		return CreateScannerIndicator400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, scannerindicator.ErrConflict):
@@ -76,33 +70,15 @@ func (api *api) CreateScannerIndicator(ctx context.Context, request CreateScanne
 	}
 }
 
-func (api *api) CreateScannerIndicatorBatch(ctx context.Context, request CreateScannerIndicatorBatchRequestObject) (CreateScannerIndicatorBatchResponseObject, error) {
-	items := make([]scannerindicator.Indicator, len(request.Body.Items))
-	for i, item := range request.Body.Items {
-		items[i] = scannerindicator.Indicator{Interval: market.CandleInterval(item.Interval), Selection: indicator.Selection{Type: indicator.Type(item.Type), Parameters: indicator.Parameters(item.Parameters)}}
-	}
-	entries, err := api.scannerIndicators.Create(ctx, items)
-	switch {
-	case err == nil:
-		return CreateScannerIndicatorBatch201JSONResponse(api.scannerIndicatorListDTO(entries)), nil
-	case errors.Is(err, scannerindicator.ErrInvalidArgument):
-		return CreateScannerIndicatorBatch400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
-	case errors.Is(err, scannerindicator.ErrConflict):
-		return CreateScannerIndicatorBatch409JSONResponse{ScannerIndicatorConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_exists", err.Error(), nil).body)}, nil
-	case errors.Is(err, scannerindicator.ErrLimit):
-		return CreateScannerIndicatorBatch409JSONResponse{ScannerIndicatorConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_limit", err.Error(), nil).body)}, nil
-	default:
-		return CreateScannerIndicatorBatch500JSONResponse{api.internalError(ctx, "create_scanner_indicator_batch", err)}, nil
-	}
-}
-
 func (api *api) UpdateScannerIndicator(ctx context.Context, request UpdateScannerIndicatorRequestObject) (UpdateScannerIndicatorResponseObject, error) {
-	entry, err := api.scannerIndicators.Update(ctx, request.IndicatorId, flag(request.Body.ShowInTable), flag(request.Body.ShowInChart), scaleFromDTO(request.Body.Scale))
+	entry, err := api.scannerIndicators.Update(ctx, request.IndicatorId, periodsFromDTO(request.Body.Periods), scaleFromDTO(request.Body.Scale))
 	switch {
 	case err == nil:
-		return UpdateScannerIndicator200JSONResponse(scannerIndicatorDTO(entry, api.scannerIndicators.Usage())), nil
+		return UpdateScannerIndicator200JSONResponse(scannerIndicatorDTO(entry)), nil
 	case errors.Is(err, scannerindicator.ErrInvalidArgument):
 		return UpdateScannerIndicator400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
+	case errors.Is(err, scannerindicator.ErrLimit):
+		return UpdateScannerIndicator409JSONResponse{ScannerIndicatorConflictJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_limit", err.Error(), nil).body)}, nil
 	case errors.Is(err, scannerindicator.ErrNotFound):
 		return UpdateScannerIndicator404JSONResponse{ScannerIndicatorNotFoundJSONResponse(scannerIndicatorNotFound(ctx).body)}, nil
 	default:
@@ -114,25 +90,13 @@ func (api *api) ReorderScannerIndicators(ctx context.Context, request ReorderSca
 	entries, err := api.scannerIndicators.Reorder(ctx, request.Body.Ids)
 	switch {
 	case err == nil:
-		return ReorderScannerIndicators200JSONResponse(api.scannerIndicatorListDTO(entries)), nil
+		return ReorderScannerIndicators200JSONResponse(scannerIndicatorListDTO(entries)), nil
 	case errors.Is(err, scannerindicator.ErrInvalidArgument):
 		return ReorderScannerIndicators400JSONResponse{invalidArgument(ctx, err.Error()).badRequest()}, nil
 	case errors.Is(err, scannerindicator.ErrNotFound):
 		return ReorderScannerIndicators404JSONResponse{ScannerIndicatorNotFoundJSONResponse(scannerIndicatorNotFound(ctx).body)}, nil
 	default:
 		return ReorderScannerIndicators500JSONResponse{api.internalError(ctx, "reorder_scanner_indicators", err)}, nil
-	}
-}
-
-func (api *api) DeleteUnusedScannerIndicators(ctx context.Context, _ DeleteUnusedScannerIndicatorsRequestObject) (DeleteUnusedScannerIndicatorsResponseObject, error) {
-	err := api.scannerIndicators.DeleteUnused(ctx)
-	switch {
-	case err == nil:
-		return DeleteUnusedScannerIndicators204Response{}, nil
-	case errors.Is(err, scannerindicator.ErrInUse):
-		return DeleteUnusedScannerIndicators409JSONResponse{scannerIndicatorInUse(ctx)}, nil
-	default:
-		return DeleteUnusedScannerIndicators500JSONResponse{api.internalError(ctx, "delete_unused_scanner_indicators", err)}, nil
 	}
 }
 
@@ -143,8 +107,6 @@ func (api *api) DeleteScannerIndicator(ctx context.Context, request DeleteScanne
 		return DeleteScannerIndicator204Response{}, nil
 	case errors.Is(err, scannerindicator.ErrNotFound):
 		return DeleteScannerIndicator404JSONResponse{ScannerIndicatorNotFoundJSONResponse(scannerIndicatorNotFound(ctx).body)}, nil
-	case errors.Is(err, scannerindicator.ErrInUse):
-		return DeleteScannerIndicator409JSONResponse{scannerIndicatorInUse(ctx)}, nil
 	default:
 		return DeleteScannerIndicator500JSONResponse{api.internalError(ctx, "delete_scanner_indicator", err)}, nil
 	}
@@ -154,13 +116,12 @@ func scannerIndicatorNotFound(ctx context.Context) apiError {
 	return newAPIError(ctx, http.StatusNotFound, "scanner_indicator_not_found", "Scanner indicator does not exist", nil)
 }
 
-func scannerIndicatorInUse(ctx context.Context) ScannerIndicatorInUseJSONResponse {
-	return ScannerIndicatorInUseJSONResponse(newAPIError(ctx, http.StatusConflict, "scanner_indicator_in_use", "A strategy reads the indicator", nil).body)
-}
-
-// flag reads an optional boolean, which defaults to false.
-func flag(value *bool) bool {
-	return value != nil && *value
+func periodsFromDTO(items ScannerIndicatorPeriods) []scannerindicator.Period {
+	periods := make([]scannerindicator.Period, len(items))
+	for i, item := range items {
+		periods[i] = scannerindicator.Period{Interval: market.CandleInterval(item.Interval), ShowInTable: item.ShowInTable, ShowInChart: item.ShowInChart}
+	}
+	return periods
 }
 
 func scaleFromDTO(scale *ScannerIndicatorScale) scannerindicator.Scale {
@@ -170,19 +131,20 @@ func scaleFromDTO(scale *ScannerIndicatorScale) scannerindicator.Scale {
 	return scannerindicator.Scale{Min: scale.Min, Max: scale.Max, Levels: scale.Levels}
 }
 
-func scannerIndicatorDTO(entry scannerindicator.Entry, usage map[int64][]string) ScannerIndicator {
+func scannerIndicatorDTO(entry scannerindicator.Entry) ScannerIndicator {
+	periods := make(ScannerIndicatorPeriods, len(entry.Periods))
+	for i, period := range entry.Periods {
+		periods[i] = ScannerIndicatorPeriod{Interval: CandleInterval(period.Interval), ShowInTable: period.ShowInTable, ShowInChart: period.ShowInChart}
+	}
 	return ScannerIndicator{
-		Id:          entry.ID,
-		Interval:    CandleInterval(entry.Interval),
-		Type:        string(entry.Selection.Type),
-		Parameters:  entry.Selection.Parameters,
-		ShowInTable: entry.ShowInTable,
-		ShowInChart: entry.ShowInChart,
-		Scale:       ScannerIndicatorScale{Min: entry.Scale.Min, Max: entry.Scale.Max, Levels: append([]float64{}, entry.Scale.Levels...)},
-		Title:       entry.Title,
-		Placement:   ScannerIndicatorPlacement(entry.Placement),
-		Outputs:     entry.Outputs,
-		Strategies:  append([]string{}, usage[entry.ID]...),
+		Id:         entry.ID,
+		Type:       string(entry.Selection.Type),
+		Parameters: entry.Selection.Parameters,
+		Periods:    periods,
+		Scale:      ScannerIndicatorScale{Min: entry.Scale.Min, Max: entry.Scale.Max, Levels: append([]float64{}, entry.Scale.Levels...)},
+		Title:      entry.Title,
+		Placement:  ScannerIndicatorPlacement(entry.Placement),
+		Outputs:    entry.Outputs,
 	}
 }
 

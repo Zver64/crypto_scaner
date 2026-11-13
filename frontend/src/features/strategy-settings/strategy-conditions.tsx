@@ -1,6 +1,7 @@
 import { Group, Stack, Text } from "@mantine/core";
 import { type ReactNode, useState } from "react";
 
+import type { StrategyIndicatorCall } from "@/api/generated/models";
 import { StrategyConditionsReplaceButton } from "@/features/strategy-settings/strategy-conditions-replace-button";
 import { StrategyExpressionPreview } from "@/features/strategy-settings/strategy-expression-preview";
 import { StrategyImport } from "@/features/strategy-settings/strategy-import";
@@ -24,6 +25,8 @@ interface StrategyConditionsProps {
 	exit: boolean;
 	field: StrategyRuleField;
 	form: StrategyFormApi;
+	// Offers the indicators an imported expression reads.
+	onIndicators(indicators: StrategyIndicatorCall[]): void;
 	title: string;
 	variables: StrategyRuleVariables;
 }
@@ -37,6 +40,7 @@ export function StrategyConditions({
 	exit,
 	field,
 	form,
+	onIndicators,
 	title,
 	variables,
 }: StrategyConditionsProps) {
@@ -80,7 +84,10 @@ export function StrategyConditions({
 			<StrategyImport
 				exit={exit}
 				onClose={() => setImporting(false)}
-				onImport={replace}
+				onImport={(query, indicators) => {
+					onIndicators(indicators);
+					replace(query);
+				}}
 				opened={importing}
 			/>
 		</Stack>

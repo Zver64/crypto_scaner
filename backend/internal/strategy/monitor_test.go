@@ -127,7 +127,7 @@ func noFavorites(string) bool { return false }
 // stays enabled.
 func TestDisableAtRevisionKeepsAChangedStrategy(t *testing.T) {
 	store := &disablingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
-	service := newBacktestService(t, store.backtestStore, Strategy{ID: testID(1), Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Enabled: true, Revision: 3})
+	service := newBacktestService(t, store.backtestStore, Strategy{ID: testID(1), Name: "Hold", Direction: DirectionLong, Expression: `close("1h") > 5`, Enabled: true, Revision: 3})
 	service.store = store
 	if disabled, err := service.DisableAtRevision(context.Background(), testID(1), 2); err != nil || disabled || store.calls != 0 || !service.List()[0].Enabled {
 		t.Fatalf("stale revision: disabled %v, error %v, store calls %d", disabled, err, store.calls)
@@ -151,8 +151,8 @@ func (store *disablingStore) DisableStrategyAtRevision(_ context.Context, _ uuid
 // coins every active one.
 func TestReadsOfSubscribesTheCoinsOfEachStrategy(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil),
-		Strategy{ID: testID(1), Name: "Hourly", Expression: "h_close > 1", Coins: []string{"ETHUSDT", "LUNAUSDT"}},
-		Strategy{ID: testID(2), Name: "Daily", Signal: true, Expression: "d_close > 1", CoinSource: CoinsAll},
+		Strategy{ID: testID(1), Name: "Hourly", Expression: `close("1h") > 1`, Coins: []string{"ETHUSDT", "LUNAUSDT"}},
+		Strategy{ID: testID(2), Name: "Daily", Signal: true, Expression: `close("1d") > 1`, CoinSource: CoinsAll},
 	)
 	active := []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"}}
 	subscribed := map[market.CandleInterval][]int64{}
@@ -169,7 +169,7 @@ func TestReadsOfSubscribesTheCoinsOfEachStrategy(t *testing.T) {
 func TestUpdateStartsAfreshOnlyWhenTheCoinsChange(t *testing.T) {
 	store := &updatingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
 	var baselines []uuid.UUID
-	service := newBacktestService(t, store.backtestStore, Strategy{ID: testID(1), Name: "Hold", Direction: DirectionLong, Expression: "h_close > 5", Coins: []string{"ETHUSDT"}, CoinSource: CoinsSelected, Enabled: true})
+	service := newBacktestService(t, store.backtestStore, Strategy{ID: testID(1), Name: "Hold", Direction: DirectionLong, Expression: `close("1h") > 5`, Coins: []string{"ETHUSDT"}, CoinSource: CoinsSelected, Enabled: true})
 	service.store, service.changed = store, func(ids []uuid.UUID) { baselines = ids }
 	service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
 	for _, test := range []struct {
@@ -197,7 +197,7 @@ type updatingStore struct {
 	retrade, baseline bool
 }
 
-func (store *updatingStore) UpdateStrategy(_ context.Context, _ Strategy, _ []int64, retrade, baseline bool) (int64, error) {
+func (store *updatingStore) UpdateStrategy(_ context.Context, _ Strategy, retrade, baseline bool) (int64, error) {
 	store.retrade, store.baseline = retrade, baseline
 	return 2, nil
 }
@@ -206,8 +206,8 @@ func (store *updatingStore) UpdateStrategy(_ context.Context, _ Strategy, _ []in
 // disables the strategy and tells the administrator.
 func TestMonitorHaltsStrategiesOfInactiveCoins(t *testing.T) {
 	for _, item := range []Strategy{
-		{ID: testID(1), Name: "Chosen", Expression: "h_close > 5", Coins: []string{"BTCUSDT", "LUNAUSDT"}, Enabled: true, Revision: 3},
-		{ID: testID(1), Name: "Read", Expression: `h_close > 5 && of("LUNAUSDT", h_close) > 1`, Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 3},
+		{ID: testID(1), Name: "Chosen", Expression: `close("1h") > 5`, Coins: []string{"BTCUSDT", "LUNAUSDT"}, Enabled: true, Revision: 3},
+		{ID: testID(1), Name: "Read", Expression: `close("1h") > 5 && Of("LUNAUSDT", close("1h")) > 1`, Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 3},
 	} {
 		disabling := &disablingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
 		service := newBacktestService(t, disabling.backtestStore, item)
@@ -256,7 +256,7 @@ func (noValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closed
 func TestMonitorStartsCoinsNewToTheFavoritesSilently(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, nil)
 	store.favorites = []string{"BTCUSDT"}
-	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Watch", Signal: true, Direction: DirectionLong, Expression: "h_close > 1", CoinSource: CoinsFavorites, Enabled: true, Revision: 1})
+	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Watch", Signal: true, Direction: DirectionLong, Expression: `close("1h") > 1`, CoinSource: CoinsFavorites, Enabled: true, Revision: 1})
 	for _, test := range []struct {
 		states map[int64]TradeState
 		alert  bool
@@ -302,7 +302,7 @@ func (closingValues) Snapshot(subscriptions []closedindicator.Subscription) ([]c
 // A failed round is retried after a delay instead of at once.
 func TestMonitorRetriesAFailedRoundLater(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: testID(1), Name: "Hold", Expression: "h_close > 5", Coins: []string{"BTCUSDT"}, Enabled: true})
+		service := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: testID(1), Name: "Hold", Expression: `close("1h") > 5`, Coins: []string{"BTCUSDT"}, Enabled: true})
 		store := &failingStore{monitorStore: monitorStore{newBacktestStore(market.IntervalHour, nil)}}
 		monitor := NewMonitor(store, store.backtestStore, testRegistry(t), noValues{}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 		ctx, cancel := context.WithCancel(context.Background())
@@ -345,10 +345,10 @@ func (store *failingStore) ListStrategyInstruments(context.Context) ([]Instrumen
 func TestServiceSubscribesTheTrackerToWhatItsStrategiesRead(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, nil)
 	store.strategies = []Strategy{
-		{ID: testID(1), Name: "Hourly", Expression: "h_close > 1", Coins: []string{"BTCUSDT"}, Enabled: true},
-		{ID: testID(2), Name: "Daily", Signal: true, Expression: "d_close > 1", CoinSource: CoinsAll, Enabled: true},
-		{ID: testID(3), Name: "Off", Expression: "w_close > 1", Coins: []string{"BTCUSDT"}},
-		{ID: testID(4), Name: "Weekly", Signal: true, Expression: "w_close > 1", CoinSource: CoinsFavorites, Enabled: true},
+		{ID: testID(1), Name: "Hourly", Expression: `close("1h") > 1`, Coins: []string{"BTCUSDT"}, Enabled: true},
+		{ID: testID(2), Name: "Daily", Signal: true, Expression: `close("1d") > 1`, CoinSource: CoinsAll, Enabled: true},
+		{ID: testID(3), Name: "Off", Expression: `close("1w") > 1`, Coins: []string{"BTCUSDT"}},
+		{ID: testID(4), Name: "Weekly", Signal: true, Expression: `close("1w") > 1`, CoinSource: CoinsFavorites, Enabled: true},
 	}
 	store.favorites = []string{"ETHUSDT"}
 	tracker := &recordingTracker{}
@@ -416,7 +416,7 @@ func (tracker *recordingTracker) subscribed() map[market.CandleInterval][]int64 
 // committed change is not lost.
 func TestFailedFavoritesReadIsReloadedLater(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, nil)
-	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Watch", Signal: true, Direction: DirectionLong, Expression: "h_close > 1", CoinSource: CoinsFavorites, Enabled: true, Revision: 1})
+	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Watch", Signal: true, Direction: DirectionLong, Expression: `close("1h") > 1`, CoinSource: CoinsFavorites, Enabled: true, Revision: 1})
 	failing := &favoritesStore{backtestStore: store, err: errors.New("database unavailable")}
 	service.store = failing
 	store.favorites = []string{"BTCUSDT"}
@@ -469,7 +469,7 @@ func TestMonitorCatchesUpMissedCandlesLikeTheBacktest(t *testing.T) {
 		candles[index].Open, candles[index].High, candles[index].Low = bar.open, bar.high, bar.low
 	}
 	item := Strategy{
-		ID: testID(1), Name: "Range", Expression: "h_close > 5", TakeProfitExpression: "h_close * 1.2", StopLossExpression: "h_close * 0.9",
+		ID: testID(1), Name: "Range", Expression: `close("1h") > 5`, TakeProfitExpression: `close("1h") * 1.2`, StopLossExpression: `close("1h") * 0.9`,
 		Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 1,
 	}
 	link := testCoins.Symbol("BTCUSDT")
@@ -581,7 +581,7 @@ func (values storedValues) Snapshot(subscriptions []closedindicator.Subscription
 // and the catch-up goes on from the first warm one, as the backtest does.
 func TestMonitorCatchesUpDeepSpansFromTheFirstWarmCandle(t *testing.T) {
 	registry := testRegistry(t)
-	indicators := testIndicators{entries: []scannerindicator.Entry{testEMA(t, registry, 1, market.IntervalHour, 100)}}
+	indicators := testIndicators{entries: []scannerindicator.Entry{testEMA(t, registry, 1, 100)}}
 	const missed = 1500
 	for _, test := range []struct {
 		name    string
@@ -594,7 +594,7 @@ func TestMonitorCatchesUpDeepSpansFromTheFirstWarmCandle(t *testing.T) {
 				candles[index] = testCandle(1, market.IntervalHour, backtestHour(index), 100+10*math.Sin(float64(index)/100))
 			}
 			store := newBacktestStore(market.IntervalHour, candles)
-			store.strategies = []Strategy{{ID: testID(1), Name: "Cross", Signal: true, Direction: DirectionSimple, Expression: "crosses_above(h_close, h_ema_100)", Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 1}}
+			store.strategies = []Strategy{{ID: testID(1), Name: "Cross", Signal: true, Direction: DirectionSimple, Expression: `CrossesAbove(close("1h"), ema("1h", 100))`, Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 1}}
 			service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 			if err != nil {
 				t.Fatal(err)
@@ -655,7 +655,7 @@ func TestMonitorRetriesACatchUpPerInstrument(t *testing.T) {
 	}{{"failed", errors.New("database unavailable"), closingValues{}}, {"stalled", nil, noValues{}}} {
 		t.Run(test.name, func(t *testing.T) {
 			store := newBacktestStore(market.IntervalHour, nil)
-			service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Hold", Expression: "h_close > 1", Coins: []string{"BTCUSDT", "ETHUSDT"}, Enabled: true, Revision: 1})
+			service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Hold", Expression: `close("1h") > 1`, Coins: []string{"BTCUSDT", "ETHUSDT"}, Enabled: true, Revision: 1})
 			// Only the catch-ups of BTCUSDT fail.
 			candles := &countingCandles{err: test.err}
 			saving := &twoCoinsStore{statesStore: statesStore{monitorStore: monitorStore{store}}}
@@ -711,7 +711,7 @@ func TestMonitorCatchesUpInChunks(t *testing.T) {
 			store.candles[market.IntervalHour][id+1] = append(store.candles[market.IntervalHour][id+1], testCandle(id+1, market.IntervalHour, backtestHour(index), 2))
 		}
 	}
-	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Hold", Expression: "h_close > 1", Coins: []string{"BTCUSDT", "ETHUSDT"}, Enabled: true, Revision: 1})
+	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Hold", Expression: `close("1h") > 1`, Coins: []string{"BTCUSDT", "ETHUSDT"}, Enabled: true, Revision: 1})
 	saving := &twoCoinsStore{statesStore: statesStore{monitorStore: monitorStore{store}}}
 	monitor := NewMonitor(saving, store, testRegistry(t), storedValues{testRegistry(t), store}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 	monitor.now = func() time.Time { return backtestHour(10) }

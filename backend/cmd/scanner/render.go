@@ -18,24 +18,6 @@ import (
 	"golang.org/x/term"
 )
 
-// renderValidation prints a valid expression's validation; validate returns
-// the errors of an invalid one.
-func renderValidation(w io.Writer, validation apiclient.StrategyValidation) {
-	if len(validation.MissingIndicators) == 0 {
-		fmt.Fprintln(w, "ok")
-		return
-	}
-	fmt.Fprintf(w, "ok; reads indicators that are not configured: %s\n", missingTitles(validation.MissingIndicators))
-}
-
-func missingTitles(missing []apiclient.StrategyMissingIndicator) string {
-	titles := make([]string, len(missing))
-	for i, indicator := range missing {
-		titles[i] = indicator.Title
-	}
-	return strings.Join(titles, ", ")
-}
-
 // newTable returns a table in the style of every CLI table.
 func newTable() table.Writer {
 	t := table.NewWriter()
@@ -109,9 +91,6 @@ func renderStrategiesWidth(w io.Writer, k kind, strategies []apiclient.Strategy,
 		name := strategy.Name
 		if strategy.Problem != nil && *strategy.Problem != "" {
 			name += "\nproblem: " + *strategy.Problem
-		}
-		if len(strategy.MissingIndicators) > 0 {
-			name += "\nnot configured: " + missingTitles(strategy.MissingIndicators)
 		}
 		if strategy.Message != "" {
 			name += "\nmessage: " + strategy.Message

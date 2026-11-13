@@ -49,7 +49,6 @@ export const APIErrorCode = {
   market_data_unavailable: 'market_data_unavailable',
   rate_limited: 'rate_limited',
   scanner_indicator_exists: 'scanner_indicator_exists',
-  scanner_indicator_in_use: 'scanner_indicator_in_use',
   scanner_indicator_limit: 'scanner_indicator_limit',
   scanner_indicator_not_found: 'scanner_indicator_not_found',
   session_required: 'session_required',

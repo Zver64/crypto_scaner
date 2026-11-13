@@ -110,7 +110,7 @@ func (c *cli) backtestDraft(command *cobra.Command, body apiclient.StrategyBackt
 	if err != nil {
 		return err
 	}
-	if _, err := c.prepareStrategyRules(command, client, rules, false); err != nil {
+	if err := c.prepareStrategyRules(command, client, rules); err != nil {
 		return err
 	}
 	return c.runBacktests(command, target, func(symbol string) ([]byte, *apiclient.StrategyBacktest, error) {

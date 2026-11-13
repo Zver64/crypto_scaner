@@ -43,7 +43,6 @@ const (
 	APIErrorCodeMarketDataUnavailable      APIErrorCode = "market_data_unavailable"
 	APIErrorCodeRateLimited                APIErrorCode = "rate_limited"
 	APIErrorCodeScannerIndicatorExists     APIErrorCode = "scanner_indicator_exists"
-	APIErrorCodeScannerIndicatorInUse      APIErrorCode = "scanner_indicator_in_use"
 	APIErrorCodeScannerIndicatorLimit      APIErrorCode = "scanner_indicator_limit"
 	APIErrorCodeScannerIndicatorNotFound   APIErrorCode = "scanner_indicator_not_found"
 	APIErrorCodeSessionRequired            APIErrorCode = "session_required"
@@ -103,8 +102,6 @@ func (e APIErrorCode) Valid() bool {
 	case APIErrorCodeRateLimited:
 		return true
 	case APIErrorCodeScannerIndicatorExists:
-		return true
-	case APIErrorCodeScannerIndicatorInUse:
 		return true
 	case APIErrorCodeScannerIndicatorLimit:
 		return true
@@ -664,6 +661,7 @@ type BacktestFill struct {
 
 // BacktestIndicatorColumn defines model for BacktestIndicatorColumn.
 type BacktestIndicatorColumn struct {
+	// Key The canonical call of the output, such as `rsi("1h")` or `bbands_upperband("1h", 20)`.
 	Key   string `json:"key"`
 	Title string `json:"title"`
 }
@@ -855,9 +853,9 @@ type BacktestTradeStats struct {
 	WinRate *float64 `json:"win_rate"`
 }
 
-// BacktestValues Values a rule read, named as its source writes them, such as `h_rsi`,
-// `prev(h_rsi, 2)`, or `of("BTCUSDT", h_close)`; reads inside
-// percentile windows and unknown values are left out.
+// BacktestValues Values a rule read, named by their canonical calls, such as
+// `rsi("1h")`, `Prev(rsi("1h"), 2)`, or `Of("BTCUSDT", close("1h"))`;
+// reads inside percentile windows and unknown values are left out.
 type BacktestValues map[string]float64
 
 // Candle defines model for Candle.
@@ -1262,23 +1260,20 @@ type ReadinessResponseStatus string
 
 // ScannerIndicator defines model for ScannerIndicator.
 type ScannerIndicator struct {
-	Id       int64          `json:"id"`
-	Interval CandleInterval `json:"interval"`
-	Outputs  []string       `json:"outputs"`
+	Id      int64    `json:"id"`
+	Outputs []string `json:"outputs"`
 
 	// Parameters Canonical parameters with defaults filled in.
-	Parameters map[string]interface{}    `json:"parameters"`
-	Placement  ScannerIndicatorPlacement `json:"placement"`
+	Parameters map[string]interface{} `json:"parameters"`
+
+	// Periods Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+	Periods   ScannerIndicatorPeriods   `json:"periods"`
+	Placement ScannerIndicatorPlacement `json:"placement"`
 
 	// Scale Optional value axis of a pane indicator; overlays have none.
-	Scale       ScannerIndicatorScale `json:"scale"`
-	ShowInChart bool                  `json:"show_in_chart"`
-	ShowInTable bool                  `json:"show_in_table"`
+	Scale ScannerIndicatorScale `json:"scale"`
 
-	// Strategies Names of the strategies that read the indicator, which cannot be removed meanwhile.
-	Strategies []string `json:"strategies"`
-
-	// Title Table column title, such as `d-rsi`.
+	// Title Title without a period, such as `rsi-21`; table columns prefix the interval, as in `d-rsi-21`.
 	Title string `json:"title"`
 	Type  string `json:"type"`
 }
@@ -1286,42 +1281,17 @@ type ScannerIndicator struct {
 // ScannerIndicatorPlacement defines model for ScannerIndicator.Placement.
 type ScannerIndicatorPlacement string
 
-// ScannerIndicatorBatch defines model for ScannerIndicatorBatch.
-type ScannerIndicatorBatch struct {
-	Items []ScannerIndicatorBatchItem `json:"items"`
-}
-
-// ScannerIndicatorBatchItem defines model for ScannerIndicatorBatchItem.
-type ScannerIndicatorBatchItem struct {
-	Interval CandleInterval `json:"interval"`
-
-	// Parameters Parameter values by key; omitted keys take their defaults.
-	Parameters map[string]interface{} `json:"parameters"`
-	Type       string                 `json:"type"`
-}
-
 // ScannerIndicatorInput defines model for ScannerIndicatorInput.
 type ScannerIndicatorInput struct {
-	// Intervals Intervals to add the indicator on, each once.
-	Intervals []ScannerIndicatorIntervalInput `json:"intervals"`
-
 	// Parameters Parameter values by key; omitted keys take their defaults.
 	Parameters map[string]interface{} `json:"parameters"`
+
+	// Periods Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+	Periods ScannerIndicatorPeriods `json:"periods"`
 
 	// Scale Optional value axis of a pane indicator; overlays have none.
 	Scale *ScannerIndicatorScale `json:"scale,omitempty"`
 	Type  string                 `json:"type"`
-}
-
-// ScannerIndicatorIntervalInput defines model for ScannerIndicatorIntervalInput.
-type ScannerIndicatorIntervalInput struct {
-	Interval CandleInterval `json:"interval"`
-
-	// ShowInChart Whether the charts of the interval draw the indicator.
-	ShowInChart *bool `json:"show_in_chart,omitempty"`
-
-	// ShowInTable Only indicators with one output can be table columns.
-	ShowInTable *bool `json:"show_in_table,omitempty"`
 }
 
 // ScannerIndicatorList defines model for ScannerIndicatorList.
@@ -1335,6 +1305,20 @@ type ScannerIndicatorOrder struct {
 	Ids []int64 `json:"ids"`
 }
 
+// ScannerIndicatorPeriod defines model for ScannerIndicatorPeriod.
+type ScannerIndicatorPeriod struct {
+	Interval CandleInterval `json:"interval"`
+
+	// ShowInChart Whether the charts of the interval draw the indicator.
+	ShowInChart bool `json:"show_in_chart"`
+
+	// ShowInTable Whether market tables show the indicator of the interval as a column; only indicators with one output can be table columns.
+	ShowInTable bool `json:"show_in_table"`
+}
+
+// ScannerIndicatorPeriods Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+type ScannerIndicatorPeriods = []ScannerIndicatorPeriod
+
 // ScannerIndicatorScale Optional value axis of a pane indicator; overlays have none.
 type ScannerIndicatorScale struct {
 	Levels []float64 `json:"levels"`
@@ -1344,10 +1328,11 @@ type ScannerIndicatorScale struct {
 
 // ScannerIndicatorUpdate defines model for ScannerIndicatorUpdate.
 type ScannerIndicatorUpdate struct {
+	// Periods Where charts and tables show the indicator, each interval at most once; strategies read it on every interval regardless.
+	Periods ScannerIndicatorPeriods `json:"periods"`
+
 	// Scale Optional value axis of a pane indicator; overlays have none.
-	Scale       *ScannerIndicatorScale `json:"scale,omitempty"`
-	ShowInChart *bool                  `json:"show_in_chart,omitempty"`
-	ShowInTable *bool                  `json:"show_in_table,omitempty"`
+	Scale *ScannerIndicatorScale `json:"scale,omitempty"`
 }
 
 // Session defines model for Session.
@@ -1398,7 +1383,7 @@ type Strategy struct {
 	// or stop loss never sells and buys at every entry signal.
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 
-	// Expression Entry rule, a CEL expression such as `d_rsi > 50 && crosses_above(h_ema_20, h_ema_50)`.
+	// Expression Entry rule, a CEL expression such as `rsi("1d") > 50 && CrossesAbove(ema("1h", 20), ema("1h", 50))`.
 	Expression string `json:"expression"`
 
 	// Id UUIDv7 of a strategy or signal.
@@ -1422,12 +1407,7 @@ type Strategy struct {
 	// coins of an unknown market cap signal nothing. Backtests ignore it.
 	// The minimum must not exceed the maximum.
 	MinMarketCapUsd *StrategyMarketCapBound `json:"min_market_cap_usd"`
-
-	// MissingIndicators Indicators the rules read that are not configured, in reading
-	// order. The strategy reads them all the same; the builder shows
-	// the rules only once they are added.
-	MissingIndicators []StrategyMissingIndicator `json:"missing_indicators"`
-	Name              string                     `json:"name"`
+	Name            string                  `json:"name"`
 
 	// Problem Why a stored rule no longer compiles; present only when valid is false.
 	Problem *string `json:"problem,omitempty"`
@@ -1439,14 +1419,14 @@ type Strategy struct {
 	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
@@ -1535,7 +1515,7 @@ type StrategyBacktestInput struct {
 	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
@@ -1543,9 +1523,9 @@ type StrategyBacktestInput struct {
 	Symbol SymbolName `json:"symbol"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
@@ -1554,6 +1534,19 @@ type StrategyBacktestInput struct {
 	// To Latest open time of an evaluated candle, not before `from`; the end of the stored history when absent.
 	To     *time.Time    `json:"to,omitempty"`
 	Window *SignalWindow `json:"window"`
+}
+
+// StrategyCatalog defines model for StrategyCatalog.
+type StrategyCatalog struct {
+	// CandleFields Candle fields, called with the period only, such as `close("1h")`.
+	CandleFields []string `json:"candle_fields"`
+
+	// Indicators The configured indicators, in display order.
+	Indicators []StrategyIndicatorCall `json:"indicators"`
+
+	// Intervals The periods indicator and candle field calls take first.
+	Intervals         []CandleInterval           `json:"intervals"`
+	PositionVariables []StrategyPositionVariable `json:"position_variables"`
 }
 
 // StrategyCoinSource Which coins the strategy evaluates: `selected`, the coins in `coins`;
@@ -1581,6 +1574,27 @@ type StrategyExitExpression = string
 
 // StrategyID UUIDv7 of a strategy or signal.
 type StrategyID = openapi_types.UUID
+
+// StrategyIndicatorCall An indicator as calls write it, such as `bbands_upperband("1h", 20, 2.5)`.
+type StrategyIndicatorCall struct {
+	// CountOutputs The outputs that count candles, which a calculated `Prev` shift may read.
+	CountOutputs []string `json:"count_outputs"`
+
+	// Outputs The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
+	Outputs []string `json:"outputs"`
+
+	// Parameters The parameters as they follow the period in the canonical call:
+	// in descriptor order up to the last one that differs from its
+	// default, numbers without trailing zeros and named choices by
+	// name, such as `["20", "2.5"]` or `["20", "volume"]`.
+	Parameters []string `json:"parameters"`
+
+	// Title Indicator title without a period, such as `bbands-20-2.5`.
+	Title string `json:"title"`
+
+	// Type The indicator type, such as `bbands`, which names its calls.
+	Type string `json:"type"`
+}
 
 // StrategyInput defines model for StrategyInput.
 type StrategyInput struct {
@@ -1638,14 +1652,14 @@ type StrategyInput struct {
 	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
@@ -1670,16 +1684,15 @@ type StrategyMarketCapBound = float64
 // of each coin; empty shows none.
 type StrategyMessage = string
 
-// StrategyMissingIndicator defines model for StrategyMissingIndicator.
-type StrategyMissingIndicator struct {
-	Interval CandleInterval `json:"interval"`
-
-	// Parameters Canonical parameters with defaults filled in.
-	Parameters map[string]interface{} `json:"parameters"`
-
-	// Title Table column title, such as `h-atr-100`.
-	Title string `json:"title"`
-	Type  string `json:"type"`
+// StrategyPositionVariable A variable of the open trade, which only exit rules read and only at
+// the latest candle: `entry_price`, the average price of its buys;
+// `pnl`, its return at the close before fees in percent, such as 5 for
+// 5%; and `bars_held`, the candles since its first buy filled, counting
+// the candle it filled at.
+type StrategyPositionVariable struct {
+	// Count True for a count of candles, which a calculated `Prev` shift may read.
+	Count bool   `json:"count"`
+	Name  string `json:"name"`
 }
 
 // StrategySignal Whether the strategy is a signal, which buys nothing and only
@@ -1689,14 +1702,14 @@ type StrategyMissingIndicator struct {
 type StrategySignal = bool
 
 // StrategyStopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 // and its close buys nothing. Empty without a stop loss.
 type StrategyStopLossExpression = string
 
 // StrategyTakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 // reading the evaluated coin. A signal whose take profit is not above
 // its close buys nothing. Empty without a take profit.
 type StrategyTakeProfitExpression = string
@@ -1728,15 +1741,16 @@ type StrategyUpdate struct {
 	// or stop loss never sells and buys at every entry signal.
 	ExitExpression StrategyExitExpression `json:"exit_expression"`
 
-	// Expression CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
-	// arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and
-	// numbers, combined with `&&`, `||`, and `!`. `prev(x)` and
-	// `prev(x, n)` read `x` one or `n` closed candles earlier;
-	// `percentile(x, n, p)` is the nearest-rank `p`-th percentile of `x`
-	// over the `n` closed candles before the latest one;
-	// `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
-	// previous candle. `of("BTCUSDT", x)` reads `x` of another coin,
-	// which must be active.
+	// Expression CEL over indicator and candle field calls, such as `rsi("1h")`,
+	// `bbands_upperband("1d", 20, 2.5)`, or `close("1h")`: comparisons
+	// (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`, `/`,
+	// parentheses) over calls and numbers, combined with `&&`, `||`,
+	// and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n` closed
+	// candles earlier; `Percentile(x, n, p)` is the nearest-rank
+	// `p`-th percentile of `x` over the `n` closed candles before the
+	// latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
+	// with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
+	// coin, which must be active.
 	Expression string `json:"expression"`
 
 	// MaxMarketCapUsd A signal's only: a bound, in USD and inclusive, of the current market
@@ -1766,14 +1780,14 @@ type StrategyUpdate struct {
 	Signal StrategySignal `json:"signal"`
 
 	// StopLossExpression Stop loss price, a CEL price expression like the take profit, such as
-	// `h_close - 2 * h_atr_14`. A signal whose stop loss is not between 0
+	// `close("1h") - 2 * atr("1h")`. A signal whose stop loss is not between 0
 	// and its close buys nothing. Empty without a stop loss.
 	StopLossExpression StrategyStopLossExpression `json:"stop_loss_expression"`
 
 	// TakeProfitExpression Take profit price, a CEL price expression evaluated at the close of
-	// the entry signal and fixed for the trade, such as `h_close * 1.05` or
-	// `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
-	// `max`, `prev`, `percentile`, and `of` over variables and numbers,
+	// the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+	// `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+	// `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
 	// reading the evaluated coin. A signal whose take profit is not above
 	// its close buys nothing. Empty without a take profit.
 	TakeProfitExpression StrategyTakeProfitExpression `json:"take_profit_expression"`
@@ -1785,8 +1799,11 @@ type StrategyUpdate struct {
 type StrategyValidation struct {
 	Errors []string `json:"errors"`
 
-	// MissingIndicators Indicators the expression reads that are not configured, in reading order; they need not be added.
-	MissingIndicators []StrategyMissingIndicator `json:"missing_indicators"`
+	// Expression The expression with every call that resolves spelled canonically, such as `rsi("1h")` for `rsi("1h", 14)`; the rest stays as written.
+	Expression string `json:"expression"`
+
+	// Indicators The indicators the expression calls, configured or not, once each, in source order.
+	Indicators []StrategyIndicatorCall `json:"indicators"`
 }
 
 // StrategyValidationInput defines model for StrategyValidationInput.
@@ -1799,33 +1816,6 @@ type StrategyValidationInput struct {
 
 // StrategyValidationInputKind Checks the expression as the entry rule, as the exit rule, which may read the position variables, or as a take profit or stop loss price.
 type StrategyValidationInputKind string
-
-// StrategyVariable defines model for StrategyVariable.
-type StrategyVariable struct {
-	// IndicatorId The indicator the variable reads; absent for candle fields, which every interval has, and position variables.
-	IndicatorId *int64 `json:"indicator_id,omitempty"`
-
-	// Interval Interval of the value; absent for position variables.
-	Interval *CandleInterval `json:"interval,omitempty"`
-
-	// Label Indicator title and output, such as `d-rsi` or `h-macd macdsignal`, the candle field, such as `h-close`, or the position variable, such as `pnl`.
-	Label string `json:"label"`
-
-	// Name CEL identifier, such as `d_rsi`, `h_macd_macdsignal`, the candle field `h_close`, or the position variable `pnl`.
-	Name string `json:"name"`
-
-	// Position True for the variables of the open trade, which only exit rules
-	// read and only at the latest candle: `entry_price`, the average
-	// price of its buys; `pnl`, its return at the close before fees in
-	// percent, such as 5 for 5%; and `bars_held`, the candles since its first buy
-	// filled, counting the candle it filled at.
-	Position bool `json:"position"`
-}
-
-// StrategyVariableList defines model for StrategyVariableList.
-type StrategyVariableList struct {
-	Items []StrategyVariable `json:"items"`
-}
 
 // SymbolName Market symbol, such as `BTCUSDT`.
 type SymbolName = string
@@ -1973,9 +1963,6 @@ type InternalError = ErrorResponse
 // ScannerIndicatorConflict defines model for ScannerIndicatorConflict.
 type ScannerIndicatorConflict = ErrorResponse
 
-// ScannerIndicatorInUse defines model for ScannerIndicatorInUse.
-type ScannerIndicatorInUse = ErrorResponse
-
 // ScannerIndicatorNotFound defines model for ScannerIndicatorNotFound.
 type ScannerIndicatorNotFound = ErrorResponse
 
@@ -2086,9 +2073,6 @@ type GetReadinessParams struct {
 	// XRequestID Optional caller-provided correlation ID. Unsafe values are replaced.
 	XRequestID *RequestID `json:"X-Request-ID,omitempty"`
 }
-
-// CreateScannerIndicatorBatchJSONRequestBody defines body for CreateScannerIndicatorBatch for application/json ContentType.
-type CreateScannerIndicatorBatchJSONRequestBody = ScannerIndicatorBatch
 
 // ReorderScannerIndicatorsJSONRequestBody defines body for ReorderScannerIndicators for application/json ContentType.
 type ReorderScannerIndicatorsJSONRequestBody = ScannerIndicatorOrder
@@ -2222,28 +2206,6 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/admin/indicator-types (the `ListIndicatorTypes` operationId).
 	ListIndicatorTypes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// CreateScannerIndicatorBatchWithBody Add several different scanner indicators
-	//
-	// Adds the indicators, all or none, at the end of the display order,
-	// neither shown in tables nor drawn on charts. Used to add the missing
-	// indicators a strategy expression reads.
-	//
-	// Takes any type of body and a specified content type.
-	//
-	// Corresponds with POST /api/v1/admin/scanner-indicator-batches (the `CreateScannerIndicatorBatch` operationId).
-	CreateScannerIndicatorBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// CreateScannerIndicatorBatch Add several different scanner indicators
-	//
-	// Adds the indicators, all or none, at the end of the display order,
-	// neither shown in tables nor drawn on charts. Used to add the missing
-	// indicators a strategy expression reads.
-	//
-	// Takes a body of the `application/json` content type.
-	//
-	// Corresponds with POST /api/v1/admin/scanner-indicator-batches (the `CreateScannerIndicatorBatch` operationId).
-	CreateScannerIndicatorBatch(ctx context.Context, body CreateScannerIndicatorBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ReorderScannerIndicatorsWithBody Set the display order of the scanner indicators
 	//
 	// Takes any type of body and a specified content type.
@@ -2258,37 +2220,29 @@ type ClientInterface interface {
 	// Corresponds with PUT /api/v1/admin/scanner-indicator-order (the `ReorderScannerIndicators` operationId).
 	ReorderScannerIndicators(ctx context.Context, body ReorderScannerIndicatorsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// DeleteUnusedScannerIndicators Remove every unused scanner indicator
-	//
-	// Removes every indicator that no strategy reads (disabled strategies
-	// included) and that is shown in no market table and on no chart. Every
-	// other indicator stays.
-	//
-	// Corresponds with DELETE /api/v1/admin/scanner-indicators (the `DeleteUnusedScannerIndicators` operationId).
-	DeleteUnusedScannerIndicators(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
-
 	// ListScannerIndicators List the configured scanner indicators
 	//
-	// Strategies can read every configured indicator. It is drawn on the
-	// charts of its interval when `show_in_chart` is set and shown as a market
-	// table column when `show_in_table` is set. Items are in display order, which orders the
-	// table columns and the chart indicators.
+	// Strategies can read every configured indicator on every interval. Each
+	// of its periods draws it on the charts of the period's interval when
+	// `show_in_chart` is set and shows it as a market table column when
+	// `show_in_table` is set. Items are in display order, which orders the
+	// table columns and the chart indicators of every interval.
 	//
 	// Corresponds with GET /api/v1/admin/scanner-indicators (the `ListScannerIndicators` operationId).
 	ListScannerIndicators(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// CreateScannerIndicatorWithBody Add a scanner indicator on one or more intervals
+	// CreateScannerIndicatorWithBody Add a scanner indicator with its periods
 	//
-	// Adds one indicator per chosen interval, all or none, at the end of the display order.
+	// Adds the indicator at the end of the display order.
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /api/v1/admin/scanner-indicators (the `CreateScannerIndicator` operationId).
 	CreateScannerIndicatorWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// CreateScannerIndicator Add a scanner indicator on one or more intervals
+	// CreateScannerIndicator Add a scanner indicator with its periods
 	//
-	// Adds one indicator per chosen interval, all or none, at the end of the display order.
+	// Adds the indicator at the end of the display order.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2297,19 +2251,17 @@ type ClientInterface interface {
 
 	// DeleteScannerIndicator Remove a scanner indicator
 	//
-	// Rejected while a strategy reads the indicator.
-	//
 	// Corresponds with DELETE /api/v1/admin/scanner-indicators/{indicator_id} (the `DeleteScannerIndicator` operationId).
 	DeleteScannerIndicator(ctx context.Context, indicatorId ScannerIndicatorID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// UpdateScannerIndicatorWithBody Change the table visibility and pane scale of a scanner indicator
+	// UpdateScannerIndicatorWithBody Replace the periods and pane scale of a scanner indicator
 	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PATCH /api/v1/admin/scanner-indicators/{indicator_id} (the `UpdateScannerIndicator` operationId).
 	UpdateScannerIndicatorWithBody(ctx context.Context, indicatorId ScannerIndicatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// UpdateScannerIndicator Change the table visibility and pane scale of a scanner indicator
+	// UpdateScannerIndicator Replace the periods and pane scale of a scanner indicator
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2463,15 +2415,25 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
 	BacktestStrategyDraft(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// GetStrategyCatalog List what strategy expressions read
+	//
+	// The configured indicators in display order with their calls, the
+	// candle fields, the periods every indicator and candle field call
+	// takes first, and the position variables of exit rules. Expressions
+	// read indicators that are not configured all the same.
+	//
+	// Corresponds with GET /api/v1/admin/strategy-catalog (the `GetStrategyCatalog` operationId).
+	GetStrategyCatalog(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ValidateStrategyWithBody Check a strategy expression
 	//
 	// Lists every problem that would reject the expression as the entry
-	// rule of a strategy, or as its exit rule when `exit` is set, which may
-	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-	// depth, and coins read through `of` that are not active. Variables of indicators that are not
-	// configured are resolved from their names into `missing_indicators`
-	// when exactly one indicator has the name. Strategies read them without
-	// adding them, so no problems mean the expression is valid.
+	// rule of a strategy, as its exit rule, which may also read the
+	// position variables, or as a price: syntax, unknown indicators,
+	// periods, parameters, outputs, and functions, history depth, and coins
+	// read through `Of` that are not active. Whatever the problems, it
+	// returns the expression with every call that resolves spelled
+	// canonically and the indicators it calls, configured or not.
 	//
 	// Takes any type of body and a specified content type.
 	//
@@ -2481,24 +2443,17 @@ type ClientInterface interface {
 	// ValidateStrategy Check a strategy expression
 	//
 	// Lists every problem that would reject the expression as the entry
-	// rule of a strategy, or as its exit rule when `exit` is set, which may
-	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-	// depth, and coins read through `of` that are not active. Variables of indicators that are not
-	// configured are resolved from their names into `missing_indicators`
-	// when exactly one indicator has the name. Strategies read them without
-	// adding them, so no problems mean the expression is valid.
+	// rule of a strategy, as its exit rule, which may also read the
+	// position variables, or as a price: syntax, unknown indicators,
+	// periods, parameters, outputs, and functions, history depth, and coins
+	// read through `Of` that are not active. Whatever the problems, it
+	// returns the expression with every call that resolves spelled
+	// canonically and the indicators it calls, configured or not.
 	//
 	// Takes a body of the `application/json` content type.
 	//
 	// Corresponds with POST /api/v1/admin/strategy-validations (the `ValidateStrategy` operationId).
 	ValidateStrategy(ctx context.Context, body ValidateStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// ListStrategyVariables List the indicator values strategy expressions can read
-	//
-	// One variable per output of every configured indicator, in display order.
-	//
-	// Corresponds with GET /api/v1/admin/strategy-variables (the `ListStrategyVariables` operationId).
-	ListStrategyVariables(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListUsers List the application users
 	//
@@ -2703,48 +2658,6 @@ func (c *Client) ListIndicatorTypes(ctx context.Context, reqEditors ...RequestEd
 	return c.Client.Do(req)
 }
 
-// CreateScannerIndicatorBatchWithBody Add several different scanner indicators
-//
-// Adds the indicators, all or none, at the end of the display order,
-// neither shown in tables nor drawn on charts. Used to add the missing
-// indicators a strategy expression reads.
-//
-// Takes any type of body and a specified content type.
-//
-// Corresponds with POST /api/v1/admin/scanner-indicator-batches (the `CreateScannerIndicatorBatch` operationId).
-func (c *Client) CreateScannerIndicatorBatchWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateScannerIndicatorBatchRequestWithBody(c.Server, contentType, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// CreateScannerIndicatorBatch Add several different scanner indicators
-//
-// Adds the indicators, all or none, at the end of the display order,
-// neither shown in tables nor drawn on charts. Used to add the missing
-// indicators a strategy expression reads.
-//
-// Takes a body of the `application/json` content type.
-//
-// Corresponds with POST /api/v1/admin/scanner-indicator-batches (the `CreateScannerIndicatorBatch` operationId).
-func (c *Client) CreateScannerIndicatorBatch(ctx context.Context, body CreateScannerIndicatorBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewCreateScannerIndicatorBatchRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 // ReorderScannerIndicatorsWithBody Set the display order of the scanner indicators
 //
 // Takes any type of body and a specified content type.
@@ -2779,31 +2692,13 @@ func (c *Client) ReorderScannerIndicators(ctx context.Context, body ReorderScann
 	return c.Client.Do(req)
 }
 
-// DeleteUnusedScannerIndicators Remove every unused scanner indicator
-//
-// Removes every indicator that no strategy reads (disabled strategies
-// included) and that is shown in no market table and on no chart. Every
-// other indicator stays.
-//
-// Corresponds with DELETE /api/v1/admin/scanner-indicators (the `DeleteUnusedScannerIndicators` operationId).
-func (c *Client) DeleteUnusedScannerIndicators(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDeleteUnusedScannerIndicatorsRequest(c.Server)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
 // ListScannerIndicators List the configured scanner indicators
 //
-// Strategies can read every configured indicator. It is drawn on the
-// charts of its interval when `show_in_chart` is set and shown as a market
-// table column when `show_in_table` is set. Items are in display order, which orders the
-// table columns and the chart indicators.
+// Strategies can read every configured indicator on every interval. Each
+// of its periods draws it on the charts of the period's interval when
+// `show_in_chart` is set and shows it as a market table column when
+// `show_in_table` is set. Items are in display order, which orders the
+// table columns and the chart indicators of every interval.
 //
 // Corresponds with GET /api/v1/admin/scanner-indicators (the `ListScannerIndicators` operationId).
 func (c *Client) ListScannerIndicators(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -2818,9 +2713,9 @@ func (c *Client) ListScannerIndicators(ctx context.Context, reqEditors ...Reques
 	return c.Client.Do(req)
 }
 
-// CreateScannerIndicatorWithBody Add a scanner indicator on one or more intervals
+// CreateScannerIndicatorWithBody Add a scanner indicator with its periods
 //
-// Adds one indicator per chosen interval, all or none, at the end of the display order.
+// Adds the indicator at the end of the display order.
 //
 // Takes any type of body and a specified content type.
 //
@@ -2837,9 +2732,9 @@ func (c *Client) CreateScannerIndicatorWithBody(ctx context.Context, contentType
 	return c.Client.Do(req)
 }
 
-// CreateScannerIndicator Add a scanner indicator on one or more intervals
+// CreateScannerIndicator Add a scanner indicator with its periods
 //
-// Adds one indicator per chosen interval, all or none, at the end of the display order.
+// Adds the indicator at the end of the display order.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2858,8 +2753,6 @@ func (c *Client) CreateScannerIndicator(ctx context.Context, body CreateScannerI
 
 // DeleteScannerIndicator Remove a scanner indicator
 //
-// Rejected while a strategy reads the indicator.
-//
 // Corresponds with DELETE /api/v1/admin/scanner-indicators/{indicator_id} (the `DeleteScannerIndicator` operationId).
 func (c *Client) DeleteScannerIndicator(ctx context.Context, indicatorId ScannerIndicatorID, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteScannerIndicatorRequest(c.Server, indicatorId)
@@ -2873,7 +2766,7 @@ func (c *Client) DeleteScannerIndicator(ctx context.Context, indicatorId Scanner
 	return c.Client.Do(req)
 }
 
-// UpdateScannerIndicatorWithBody Change the table visibility and pane scale of a scanner indicator
+// UpdateScannerIndicatorWithBody Replace the periods and pane scale of a scanner indicator
 //
 // Takes any type of body and a specified content type.
 //
@@ -2890,7 +2783,7 @@ func (c *Client) UpdateScannerIndicatorWithBody(ctx context.Context, indicatorId
 	return c.Client.Do(req)
 }
 
-// UpdateScannerIndicator Change the table visibility and pane scale of a scanner indicator
+// UpdateScannerIndicator Replace the periods and pane scale of a scanner indicator
 //
 // Takes a body of the `application/json` content type.
 //
@@ -3164,15 +3057,35 @@ func (c *Client) BacktestStrategyDraft(ctx context.Context, body BacktestStrateg
 	return c.Client.Do(req)
 }
 
+// GetStrategyCatalog List what strategy expressions read
+//
+// The configured indicators in display order with their calls, the
+// candle fields, the periods every indicator and candle field call
+// takes first, and the position variables of exit rules. Expressions
+// read indicators that are not configured all the same.
+//
+// Corresponds with GET /api/v1/admin/strategy-catalog (the `GetStrategyCatalog` operationId).
+func (c *Client) GetStrategyCatalog(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetStrategyCatalogRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ValidateStrategyWithBody Check a strategy expression
 //
 // Lists every problem that would reject the expression as the entry
-// rule of a strategy, or as its exit rule when `exit` is set, which may
-// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-// depth, and coins read through `of` that are not active. Variables of indicators that are not
-// configured are resolved from their names into `missing_indicators`
-// when exactly one indicator has the name. Strategies read them without
-// adding them, so no problems mean the expression is valid.
+// rule of a strategy, as its exit rule, which may also read the
+// position variables, or as a price: syntax, unknown indicators,
+// periods, parameters, outputs, and functions, history depth, and coins
+// read through `Of` that are not active. Whatever the problems, it
+// returns the expression with every call that resolves spelled
+// canonically and the indicators it calls, configured or not.
 //
 // Takes any type of body and a specified content type.
 //
@@ -3192,35 +3105,18 @@ func (c *Client) ValidateStrategyWithBody(ctx context.Context, contentType strin
 // ValidateStrategy Check a strategy expression
 //
 // Lists every problem that would reject the expression as the entry
-// rule of a strategy, or as its exit rule when `exit` is set, which may
-// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-// depth, and coins read through `of` that are not active. Variables of indicators that are not
-// configured are resolved from their names into `missing_indicators`
-// when exactly one indicator has the name. Strategies read them without
-// adding them, so no problems mean the expression is valid.
+// rule of a strategy, as its exit rule, which may also read the
+// position variables, or as a price: syntax, unknown indicators,
+// periods, parameters, outputs, and functions, history depth, and coins
+// read through `Of` that are not active. Whatever the problems, it
+// returns the expression with every call that resolves spelled
+// canonically and the indicators it calls, configured or not.
 //
 // Takes a body of the `application/json` content type.
 //
 // Corresponds with POST /api/v1/admin/strategy-validations (the `ValidateStrategy` operationId).
 func (c *Client) ValidateStrategy(ctx context.Context, body ValidateStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewValidateStrategyRequest(c.Server, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// ListStrategyVariables List the indicator values strategy expressions can read
-//
-// One variable per output of every configured indicator, in display order.
-//
-// Corresponds with GET /api/v1/admin/strategy-variables (the `ListStrategyVariables` operationId).
-func (c *Client) ListStrategyVariables(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListStrategyVariablesRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3731,46 +3627,6 @@ func NewListIndicatorTypesRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
-// NewCreateScannerIndicatorBatchRequest calls the generic CreateScannerIndicatorBatch builder with application/json body
-func NewCreateScannerIndicatorBatchRequest(server string, body CreateScannerIndicatorBatchJSONRequestBody) (*http.Request, error) {
-	var bodyReader io.Reader
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return nil, err
-	}
-	bodyReader = bytes.NewReader(buf)
-	return NewCreateScannerIndicatorBatchRequestWithBody(server, "application/json", bodyReader)
-}
-
-// NewCreateScannerIndicatorBatchRequestWithBody constructs an http.Request for the CreateScannerIndicatorBatch method, with any body, and a specified content type
-func NewCreateScannerIndicatorBatchRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/admin/scanner-indicator-batches")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
-	if err != nil {
-		return nil, err
-	}
-
-	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
 // NewReorderScannerIndicatorsRequest calls the generic ReorderScannerIndicators builder with application/json body
 func NewReorderScannerIndicatorsRequest(server string, body ReorderScannerIndicatorsJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -3807,33 +3663,6 @@ func NewReorderScannerIndicatorsRequestWithBody(server string, contentType strin
 	}
 
 	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewDeleteUnusedScannerIndicatorsRequest constructs an http.Request for the DeleteUnusedScannerIndicators method
-func NewDeleteUnusedScannerIndicatorsRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/admin/scanner-indicators")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
 
 	return req, nil
 }
@@ -4314,6 +4143,33 @@ func NewBacktestStrategyDraftRequestWithBody(server string, contentType string, 
 	return req, nil
 }
 
+// NewGetStrategyCatalogRequest constructs an http.Request for the GetStrategyCatalog method
+func NewGetStrategyCatalogRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/api/v1/admin/strategy-catalog")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewValidateStrategyRequest calls the generic ValidateStrategy builder with application/json body
 func NewValidateStrategyRequest(server string, body ValidateStrategyJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -4350,33 +4206,6 @@ func NewValidateStrategyRequestWithBody(server string, contentType string, body 
 	}
 
 	req.Header.Add("Content-Type", contentType)
-
-	return req, nil
-}
-
-// NewListStrategyVariablesRequest constructs an http.Request for the ListStrategyVariables method
-func NewListStrategyVariablesRequest(server string) (*http.Request, error) {
-	var err error
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/api/v1/admin/strategy-variables")
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
 
 	return req, nil
 }
@@ -5438,28 +5267,6 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/admin/indicator-types (the `ListIndicatorTypes` operationId).
 	ListIndicatorTypesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListIndicatorTypesResponse, error)
 
-	// CreateScannerIndicatorBatchWithBodyWithResponse Add several different scanner indicators
-	//
-	// Adds the indicators, all or none, at the end of the display order,
-	// neither shown in tables nor drawn on charts. Used to add the missing
-	// indicators a strategy expression reads.
-	//
-	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/admin/scanner-indicator-batches (the `CreateScannerIndicatorBatch` operationId).
-	CreateScannerIndicatorBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScannerIndicatorBatchResponse, error)
-
-	// CreateScannerIndicatorBatchWithResponse Add several different scanner indicators
-	//
-	// Adds the indicators, all or none, at the end of the display order,
-	// neither shown in tables nor drawn on charts. Used to add the missing
-	// indicators a strategy expression reads.
-	//
-	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with POST /api/v1/admin/scanner-indicator-batches (the `CreateScannerIndicatorBatch` operationId).
-	CreateScannerIndicatorBatchWithResponse(ctx context.Context, body CreateScannerIndicatorBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScannerIndicatorBatchResponse, error)
-
 	// ReorderScannerIndicatorsWithBodyWithResponse Set the display order of the scanner indicators
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -5474,41 +5281,31 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with PUT /api/v1/admin/scanner-indicator-order (the `ReorderScannerIndicators` operationId).
 	ReorderScannerIndicatorsWithResponse(ctx context.Context, body ReorderScannerIndicatorsJSONRequestBody, reqEditors ...RequestEditorFn) (*ReorderScannerIndicatorsResponse, error)
 
-	// DeleteUnusedScannerIndicatorsWithResponse Remove every unused scanner indicator
-	//
-	// Removes every indicator that no strategy reads (disabled strategies
-	// included) and that is shown in no market table and on no chart. Every
-	// other indicator stays.
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with DELETE /api/v1/admin/scanner-indicators (the `DeleteUnusedScannerIndicators` operationId).
-	DeleteUnusedScannerIndicatorsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteUnusedScannerIndicatorsResponse, error)
-
 	// ListScannerIndicatorsWithResponse List the configured scanner indicators
 	//
-	// Strategies can read every configured indicator. It is drawn on the
-	// charts of its interval when `show_in_chart` is set and shown as a market
-	// table column when `show_in_table` is set. Items are in display order, which orders the
-	// table columns and the chart indicators.
+	// Strategies can read every configured indicator on every interval. Each
+	// of its periods draws it on the charts of the period's interval when
+	// `show_in_chart` is set and shows it as a market table column when
+	// `show_in_table` is set. Items are in display order, which orders the
+	// table columns and the chart indicators of every interval.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with GET /api/v1/admin/scanner-indicators (the `ListScannerIndicators` operationId).
 	ListScannerIndicatorsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScannerIndicatorsResponse, error)
 
-	// CreateScannerIndicatorWithBodyWithResponse Add a scanner indicator on one or more intervals
+	// CreateScannerIndicatorWithBodyWithResponse Add a scanner indicator with its periods
 	//
-	// Adds one indicator per chosen interval, all or none, at the end of the display order.
+	// Adds the indicator at the end of the display order.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/admin/scanner-indicators (the `CreateScannerIndicator` operationId).
 	CreateScannerIndicatorWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScannerIndicatorResponse, error)
 
-	// CreateScannerIndicatorWithResponse Add a scanner indicator on one or more intervals
+	// CreateScannerIndicatorWithResponse Add a scanner indicator with its periods
 	//
-	// Adds one indicator per chosen interval, all or none, at the end of the display order.
+	// Adds the indicator at the end of the display order.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5517,21 +5314,19 @@ type ClientWithResponsesInterface interface {
 
 	// DeleteScannerIndicatorWithResponse Remove a scanner indicator
 	//
-	// Rejected while a strategy reads the indicator.
-	//
 	// Returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with DELETE /api/v1/admin/scanner-indicators/{indicator_id} (the `DeleteScannerIndicator` operationId).
 	DeleteScannerIndicatorWithResponse(ctx context.Context, indicatorId ScannerIndicatorID, reqEditors ...RequestEditorFn) (*DeleteScannerIndicatorResponse, error)
 
-	// UpdateScannerIndicatorWithBodyWithResponse Change the table visibility and pane scale of a scanner indicator
+	// UpdateScannerIndicatorWithBodyWithResponse Replace the periods and pane scale of a scanner indicator
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PATCH /api/v1/admin/scanner-indicators/{indicator_id} (the `UpdateScannerIndicator` operationId).
 	UpdateScannerIndicatorWithBodyWithResponse(ctx context.Context, indicatorId ScannerIndicatorID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateScannerIndicatorResponse, error)
 
-	// UpdateScannerIndicatorWithResponse Change the table visibility and pane scale of a scanner indicator
+	// UpdateScannerIndicatorWithResponse Replace the periods and pane scale of a scanner indicator
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5691,15 +5486,27 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/admin/strategy-backtests (the `BacktestStrategyDraft` operationId).
 	BacktestStrategyDraftWithResponse(ctx context.Context, body BacktestStrategyDraftJSONRequestBody, reqEditors ...RequestEditorFn) (*BacktestStrategyDraftResponse, error)
 
+	// GetStrategyCatalogWithResponse List what strategy expressions read
+	//
+	// The configured indicators in display order with their calls, the
+	// candle fields, the periods every indicator and candle field call
+	// takes first, and the position variables of exit rules. Expressions
+	// read indicators that are not configured all the same.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /api/v1/admin/strategy-catalog (the `GetStrategyCatalog` operationId).
+	GetStrategyCatalogWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetStrategyCatalogResponse, error)
+
 	// ValidateStrategyWithBodyWithResponse Check a strategy expression
 	//
 	// Lists every problem that would reject the expression as the entry
-	// rule of a strategy, or as its exit rule when `exit` is set, which may
-	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-	// depth, and coins read through `of` that are not active. Variables of indicators that are not
-	// configured are resolved from their names into `missing_indicators`
-	// when exactly one indicator has the name. Strategies read them without
-	// adding them, so no problems mean the expression is valid.
+	// rule of a strategy, as its exit rule, which may also read the
+	// position variables, or as a price: syntax, unknown indicators,
+	// periods, parameters, outputs, and functions, history depth, and coins
+	// read through `Of` that are not active. Whatever the problems, it
+	// returns the expression with every call that resolves spelled
+	// canonically and the indicators it calls, configured or not.
 	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -5709,26 +5516,17 @@ type ClientWithResponsesInterface interface {
 	// ValidateStrategyWithResponse Check a strategy expression
 	//
 	// Lists every problem that would reject the expression as the entry
-	// rule of a strategy, or as its exit rule when `exit` is set, which may
-	// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-	// depth, and coins read through `of` that are not active. Variables of indicators that are not
-	// configured are resolved from their names into `missing_indicators`
-	// when exactly one indicator has the name. Strategies read them without
-	// adding them, so no problems mean the expression is valid.
+	// rule of a strategy, as its exit rule, which may also read the
+	// position variables, or as a price: syntax, unknown indicators,
+	// periods, parameters, outputs, and functions, history depth, and coins
+	// read through `Of` that are not active. Whatever the problems, it
+	// returns the expression with every call that resolves spelled
+	// canonically and the indicators it calls, configured or not.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /api/v1/admin/strategy-validations (the `ValidateStrategy` operationId).
 	ValidateStrategyWithResponse(ctx context.Context, body ValidateStrategyJSONRequestBody, reqEditors ...RequestEditorFn) (*ValidateStrategyResponse, error)
-
-	// ListStrategyVariablesWithResponse List the indicator values strategy expressions can read
-	//
-	// One variable per output of every configured indicator, in display order.
-	//
-	// Returns a wrapper object for the known response body format(s).
-	//
-	// Corresponds with GET /api/v1/admin/strategy-variables (the `ListStrategyVariables` operationId).
-	ListStrategyVariablesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListStrategyVariablesResponse, error)
 
 	// ListUsersWithResponse List the application users
 	//
@@ -6085,103 +5883,6 @@ func (r ListIndicatorTypesResponse) ContentType() string {
 	return ""
 }
 
-// CreateScannerIndicatorBatchResponse400Headers the declared response headers of an HTTP 400 response for CreateScannerIndicatorBatch
-type CreateScannerIndicatorBatchResponse400Headers struct {
-	XRequestID string
-}
-
-// CreateScannerIndicatorBatchResponse401Headers the declared response headers of an HTTP 401 response for CreateScannerIndicatorBatch
-type CreateScannerIndicatorBatchResponse401Headers struct {
-	XRequestID string
-}
-
-// CreateScannerIndicatorBatchResponse500Headers the declared response headers of an HTTP 500 response for CreateScannerIndicatorBatch
-type CreateScannerIndicatorBatchResponse500Headers struct {
-	XRequestID string
-}
-
-type CreateScannerIndicatorBatchResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON201 the response for an HTTP 201 `application/json` response
-	JSON201 *ScannerIndicatorList
-	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *BadRequest
-	// JSON401 the response for an HTTP 401 `application/json` response
-	JSON401 *Unauthenticated
-	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *AdministratorRequired
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *ScannerIndicatorConflict
-	// JSON500 the response for an HTTP 500 `application/json` response
-	JSON500 *InternalError
-	// Headers400 the parsed response headers for an HTTP 400 response
-	Headers400 *CreateScannerIndicatorBatchResponse400Headers
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *CreateScannerIndicatorBatchResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *CreateScannerIndicatorBatchResponse500Headers
-}
-
-// GetJSON201 returns the response for an HTTP 201 `application/json` response
-func (r CreateScannerIndicatorBatchResponse) GetJSON201() *ScannerIndicatorList {
-	return r.JSON201
-}
-
-// GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r CreateScannerIndicatorBatchResponse) GetJSON400() *BadRequest {
-	return r.JSON400
-}
-
-// GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r CreateScannerIndicatorBatchResponse) GetJSON401() *Unauthenticated {
-	return r.JSON401
-}
-
-// GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r CreateScannerIndicatorBatchResponse) GetJSON403() *AdministratorRequired {
-	return r.JSON403
-}
-
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r CreateScannerIndicatorBatchResponse) GetJSON409() *ScannerIndicatorConflict {
-	return r.JSON409
-}
-
-// GetJSON500 returns the response for an HTTP 500 `application/json` response
-func (r CreateScannerIndicatorBatchResponse) GetJSON500() *InternalError {
-	return r.JSON500
-}
-
-// GetBody returns the raw response body bytes
-func (r CreateScannerIndicatorBatchResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r CreateScannerIndicatorBatchResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r CreateScannerIndicatorBatchResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r CreateScannerIndicatorBatchResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
 // ReorderScannerIndicatorsResponse400Headers the declared response headers of an HTTP 400 response for ReorderScannerIndicators
 type ReorderScannerIndicatorsResponse400Headers struct {
 	XRequestID string
@@ -6273,82 +5974,6 @@ func (r ReorderScannerIndicatorsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ReorderScannerIndicatorsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// DeleteUnusedScannerIndicatorsResponse401Headers the declared response headers of an HTTP 401 response for DeleteUnusedScannerIndicators
-type DeleteUnusedScannerIndicatorsResponse401Headers struct {
-	XRequestID string
-}
-
-// DeleteUnusedScannerIndicatorsResponse500Headers the declared response headers of an HTTP 500 response for DeleteUnusedScannerIndicators
-type DeleteUnusedScannerIndicatorsResponse500Headers struct {
-	XRequestID string
-}
-
-type DeleteUnusedScannerIndicatorsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON401 the response for an HTTP 401 `application/json` response
-	JSON401 *Unauthenticated
-	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *AdministratorRequired
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *ScannerIndicatorInUse
-	// JSON500 the response for an HTTP 500 `application/json` response
-	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *DeleteUnusedScannerIndicatorsResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *DeleteUnusedScannerIndicatorsResponse500Headers
-}
-
-// GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r DeleteUnusedScannerIndicatorsResponse) GetJSON401() *Unauthenticated {
-	return r.JSON401
-}
-
-// GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r DeleteUnusedScannerIndicatorsResponse) GetJSON403() *AdministratorRequired {
-	return r.JSON403
-}
-
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r DeleteUnusedScannerIndicatorsResponse) GetJSON409() *ScannerIndicatorInUse {
-	return r.JSON409
-}
-
-// GetJSON500 returns the response for an HTTP 500 `application/json` response
-func (r DeleteUnusedScannerIndicatorsResponse) GetJSON500() *InternalError {
-	return r.JSON500
-}
-
-// GetBody returns the raw response body bytes
-func (r DeleteUnusedScannerIndicatorsResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r DeleteUnusedScannerIndicatorsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r DeleteUnusedScannerIndicatorsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r DeleteUnusedScannerIndicatorsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6450,7 +6075,7 @@ type CreateScannerIndicatorResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON201 the response for an HTTP 201 `application/json` response
-	JSON201 *ScannerIndicatorList
+	JSON201 *ScannerIndicator
 	// JSON400 the response for an HTTP 400 `application/json` response
 	JSON400 *BadRequest
 	// JSON401 the response for an HTTP 401 `application/json` response
@@ -6470,7 +6095,7 @@ type CreateScannerIndicatorResponse struct {
 }
 
 // GetJSON201 returns the response for an HTTP 201 `application/json` response
-func (r CreateScannerIndicatorResponse) GetJSON201() *ScannerIndicatorList {
+func (r CreateScannerIndicatorResponse) GetJSON201() *ScannerIndicator {
 	return r.JSON201
 }
 
@@ -6547,8 +6172,6 @@ type DeleteScannerIndicatorResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *ScannerIndicatorNotFound
-	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *ScannerIndicatorInUse
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
 	// Headers401 the parsed response headers for an HTTP 401 response
@@ -6570,11 +6193,6 @@ func (r DeleteScannerIndicatorResponse) GetJSON403() *AdministratorRequired {
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
 func (r DeleteScannerIndicatorResponse) GetJSON404() *ScannerIndicatorNotFound {
 	return r.JSON404
-}
-
-// GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r DeleteScannerIndicatorResponse) GetJSON409() *ScannerIndicatorInUse {
-	return r.JSON409
 }
 
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
@@ -6639,6 +6257,8 @@ type UpdateScannerIndicatorResponse struct {
 	JSON403 *AdministratorRequired
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *ScannerIndicatorNotFound
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *ScannerIndicatorConflict
 	// JSON500 the response for an HTTP 500 `application/json` response
 	JSON500 *InternalError
 	// Headers400 the parsed response headers for an HTTP 400 response
@@ -6672,6 +6292,11 @@ func (r UpdateScannerIndicatorResponse) GetJSON403() *AdministratorRequired {
 // GetJSON404 returns the response for an HTTP 404 `application/json` response
 func (r UpdateScannerIndicatorResponse) GetJSON404() *ScannerIndicatorNotFound {
 	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UpdateScannerIndicatorResponse) GetJSON409() *ScannerIndicatorConflict {
+	return r.JSON409
 }
 
 // GetJSON500 returns the response for an HTTP 500 `application/json` response
@@ -7422,6 +7047,82 @@ func (r BacktestStrategyDraftResponse) ContentType() string {
 	return ""
 }
 
+// GetStrategyCatalogResponse401Headers the declared response headers of an HTTP 401 response for GetStrategyCatalog
+type GetStrategyCatalogResponse401Headers struct {
+	XRequestID string
+}
+
+// GetStrategyCatalogResponse500Headers the declared response headers of an HTTP 500 response for GetStrategyCatalog
+type GetStrategyCatalogResponse500Headers struct {
+	XRequestID string
+}
+
+type GetStrategyCatalogResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *StrategyCatalog
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *Unauthenticated
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *AdministratorRequired
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *InternalError
+	// Headers401 the parsed response headers for an HTTP 401 response
+	Headers401 *GetStrategyCatalogResponse401Headers
+	// Headers500 the parsed response headers for an HTTP 500 response
+	Headers500 *GetStrategyCatalogResponse500Headers
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetStrategyCatalogResponse) GetJSON200() *StrategyCatalog {
+	return r.JSON200
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r GetStrategyCatalogResponse) GetJSON401() *Unauthenticated {
+	return r.JSON401
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetStrategyCatalogResponse) GetJSON403() *AdministratorRequired {
+	return r.JSON403
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r GetStrategyCatalogResponse) GetJSON500() *InternalError {
+	return r.JSON500
+}
+
+// GetBody returns the raw response body bytes
+func (r GetStrategyCatalogResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetStrategyCatalogResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetStrategyCatalogResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetStrategyCatalogResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // ValidateStrategyResponse400Headers the declared response headers of an HTTP 400 response for ValidateStrategy
 type ValidateStrategyResponse400Headers struct {
 	XRequestID string
@@ -7506,82 +7207,6 @@ func (r ValidateStrategyResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ValidateStrategyResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-// ListStrategyVariablesResponse401Headers the declared response headers of an HTTP 401 response for ListStrategyVariables
-type ListStrategyVariablesResponse401Headers struct {
-	XRequestID string
-}
-
-// ListStrategyVariablesResponse500Headers the declared response headers of an HTTP 500 response for ListStrategyVariables
-type ListStrategyVariablesResponse500Headers struct {
-	XRequestID string
-}
-
-type ListStrategyVariablesResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *StrategyVariableList
-	// JSON401 the response for an HTTP 401 `application/json` response
-	JSON401 *Unauthenticated
-	// JSON403 the response for an HTTP 403 `application/json` response
-	JSON403 *AdministratorRequired
-	// JSON500 the response for an HTTP 500 `application/json` response
-	JSON500 *InternalError
-	// Headers401 the parsed response headers for an HTTP 401 response
-	Headers401 *ListStrategyVariablesResponse401Headers
-	// Headers500 the parsed response headers for an HTTP 500 response
-	Headers500 *ListStrategyVariablesResponse500Headers
-}
-
-// GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r ListStrategyVariablesResponse) GetJSON200() *StrategyVariableList {
-	return r.JSON200
-}
-
-// GetJSON401 returns the response for an HTTP 401 `application/json` response
-func (r ListStrategyVariablesResponse) GetJSON401() *Unauthenticated {
-	return r.JSON401
-}
-
-// GetJSON403 returns the response for an HTTP 403 `application/json` response
-func (r ListStrategyVariablesResponse) GetJSON403() *AdministratorRequired {
-	return r.JSON403
-}
-
-// GetJSON500 returns the response for an HTTP 500 `application/json` response
-func (r ListStrategyVariablesResponse) GetJSON500() *InternalError {
-	return r.JSON500
-}
-
-// GetBody returns the raw response body bytes
-func (r ListStrategyVariablesResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r ListStrategyVariablesResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r ListStrategyVariablesResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r ListStrategyVariablesResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -9719,40 +9344,6 @@ func (c *ClientWithResponses) ListIndicatorTypesWithResponse(ctx context.Context
 	return ParseListIndicatorTypesResponse(rsp)
 }
 
-// CreateScannerIndicatorBatchWithBodyWithResponse Add several different scanner indicators
-//
-// Adds the indicators, all or none, at the end of the display order,
-// neither shown in tables nor drawn on charts. Used to add the missing
-// indicators a strategy expression reads.
-//
-// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/admin/scanner-indicator-batches (the `CreateScannerIndicatorBatch` operationId).
-func (c *ClientWithResponses) CreateScannerIndicatorBatchWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScannerIndicatorBatchResponse, error) {
-	rsp, err := c.CreateScannerIndicatorBatchWithBody(ctx, contentType, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateScannerIndicatorBatchResponse(rsp)
-}
-
-// CreateScannerIndicatorBatchWithResponse Add several different scanner indicators
-//
-// Adds the indicators, all or none, at the end of the display order,
-// neither shown in tables nor drawn on charts. Used to add the missing
-// indicators a strategy expression reads.
-//
-// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
-//
-// Corresponds with POST /api/v1/admin/scanner-indicator-batches (the `CreateScannerIndicatorBatch` operationId).
-func (c *ClientWithResponses) CreateScannerIndicatorBatchWithResponse(ctx context.Context, body CreateScannerIndicatorBatchJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScannerIndicatorBatchResponse, error) {
-	rsp, err := c.CreateScannerIndicatorBatch(ctx, body, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseCreateScannerIndicatorBatchResponse(rsp)
-}
-
 // ReorderScannerIndicatorsWithBodyWithResponse Set the display order of the scanner indicators
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
@@ -9779,29 +9370,13 @@ func (c *ClientWithResponses) ReorderScannerIndicatorsWithResponse(ctx context.C
 	return ParseReorderScannerIndicatorsResponse(rsp)
 }
 
-// DeleteUnusedScannerIndicatorsWithResponse Remove every unused scanner indicator
-//
-// Removes every indicator that no strategy reads (disabled strategies
-// included) and that is shown in no market table and on no chart. Every
-// other indicator stays.
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with DELETE /api/v1/admin/scanner-indicators (the `DeleteUnusedScannerIndicators` operationId).
-func (c *ClientWithResponses) DeleteUnusedScannerIndicatorsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DeleteUnusedScannerIndicatorsResponse, error) {
-	rsp, err := c.DeleteUnusedScannerIndicators(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseDeleteUnusedScannerIndicatorsResponse(rsp)
-}
-
 // ListScannerIndicatorsWithResponse List the configured scanner indicators
 //
-// Strategies can read every configured indicator. It is drawn on the
-// charts of its interval when `show_in_chart` is set and shown as a market
-// table column when `show_in_table` is set. Items are in display order, which orders the
-// table columns and the chart indicators.
+// Strategies can read every configured indicator on every interval. Each
+// of its periods draws it on the charts of the period's interval when
+// `show_in_chart` is set and shows it as a market table column when
+// `show_in_table` is set. Items are in display order, which orders the
+// table columns and the chart indicators of every interval.
 //
 // Returns a wrapper object for the known response body format(s).
 //
@@ -9814,9 +9389,9 @@ func (c *ClientWithResponses) ListScannerIndicatorsWithResponse(ctx context.Cont
 	return ParseListScannerIndicatorsResponse(rsp)
 }
 
-// CreateScannerIndicatorWithBodyWithResponse Add a scanner indicator on one or more intervals
+// CreateScannerIndicatorWithBodyWithResponse Add a scanner indicator with its periods
 //
-// Adds one indicator per chosen interval, all or none, at the end of the display order.
+// Adds the indicator at the end of the display order.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9829,9 +9404,9 @@ func (c *ClientWithResponses) CreateScannerIndicatorWithBodyWithResponse(ctx con
 	return ParseCreateScannerIndicatorResponse(rsp)
 }
 
-// CreateScannerIndicatorWithResponse Add a scanner indicator on one or more intervals
+// CreateScannerIndicatorWithResponse Add a scanner indicator with its periods
 //
-// Adds one indicator per chosen interval, all or none, at the end of the display order.
+// Adds the indicator at the end of the display order.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9846,8 +9421,6 @@ func (c *ClientWithResponses) CreateScannerIndicatorWithResponse(ctx context.Con
 
 // DeleteScannerIndicatorWithResponse Remove a scanner indicator
 //
-// Rejected while a strategy reads the indicator.
-//
 // Returns a wrapper object for the known response body format(s).
 //
 // Corresponds with DELETE /api/v1/admin/scanner-indicators/{indicator_id} (the `DeleteScannerIndicator` operationId).
@@ -9859,7 +9432,7 @@ func (c *ClientWithResponses) DeleteScannerIndicatorWithResponse(ctx context.Con
 	return ParseDeleteScannerIndicatorResponse(rsp)
 }
 
-// UpdateScannerIndicatorWithBodyWithResponse Change the table visibility and pane scale of a scanner indicator
+// UpdateScannerIndicatorWithBodyWithResponse Replace the periods and pane scale of a scanner indicator
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9872,7 +9445,7 @@ func (c *ClientWithResponses) UpdateScannerIndicatorWithBodyWithResponse(ctx con
 	return ParseUpdateScannerIndicatorResponse(rsp)
 }
 
-// UpdateScannerIndicatorWithResponse Change the table visibility and pane scale of a scanner indicator
+// UpdateScannerIndicatorWithResponse Replace the periods and pane scale of a scanner indicator
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10104,15 +9677,33 @@ func (c *ClientWithResponses) BacktestStrategyDraftWithResponse(ctx context.Cont
 	return ParseBacktestStrategyDraftResponse(rsp)
 }
 
+// GetStrategyCatalogWithResponse List what strategy expressions read
+//
+// The configured indicators in display order with their calls, the
+// candle fields, the periods every indicator and candle field call
+// takes first, and the position variables of exit rules. Expressions
+// read indicators that are not configured all the same.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /api/v1/admin/strategy-catalog (the `GetStrategyCatalog` operationId).
+func (c *ClientWithResponses) GetStrategyCatalogWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetStrategyCatalogResponse, error) {
+	rsp, err := c.GetStrategyCatalog(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetStrategyCatalogResponse(rsp)
+}
+
 // ValidateStrategyWithBodyWithResponse Check a strategy expression
 //
 // Lists every problem that would reject the expression as the entry
-// rule of a strategy, or as its exit rule when `exit` is set, which may
-// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-// depth, and coins read through `of` that are not active. Variables of indicators that are not
-// configured are resolved from their names into `missing_indicators`
-// when exactly one indicator has the name. Strategies read them without
-// adding them, so no problems mean the expression is valid.
+// rule of a strategy, as its exit rule, which may also read the
+// position variables, or as a price: syntax, unknown indicators,
+// periods, parameters, outputs, and functions, history depth, and coins
+// read through `Of` that are not active. Whatever the problems, it
+// returns the expression with every call that resolves spelled
+// canonically and the indicators it calls, configured or not.
 //
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10128,12 +9719,12 @@ func (c *ClientWithResponses) ValidateStrategyWithBodyWithResponse(ctx context.C
 // ValidateStrategyWithResponse Check a strategy expression
 //
 // Lists every problem that would reject the expression as the entry
-// rule of a strategy, or as its exit rule when `exit` is set, which may
-// also read the position variables: syntax, unknown indicators, candle fields, and functions, history
-// depth, and coins read through `of` that are not active. Variables of indicators that are not
-// configured are resolved from their names into `missing_indicators`
-// when exactly one indicator has the name. Strategies read them without
-// adding them, so no problems mean the expression is valid.
+// rule of a strategy, as its exit rule, which may also read the
+// position variables, or as a price: syntax, unknown indicators,
+// periods, parameters, outputs, and functions, history depth, and coins
+// read through `Of` that are not active. Whatever the problems, it
+// returns the expression with every call that resolves spelled
+// canonically and the indicators it calls, configured or not.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10144,21 +9735,6 @@ func (c *ClientWithResponses) ValidateStrategyWithResponse(ctx context.Context, 
 		return nil, err
 	}
 	return ParseValidateStrategyResponse(rsp)
-}
-
-// ListStrategyVariablesWithResponse List the indicator values strategy expressions can read
-//
-// One variable per output of every configured indicator, in display order.
-//
-// Returns a wrapper object for the known response body format(s).
-//
-// Corresponds with GET /api/v1/admin/strategy-variables (the `ListStrategyVariables` operationId).
-func (c *ClientWithResponses) ListStrategyVariablesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListStrategyVariablesResponse, error) {
-	rsp, err := c.ListStrategyVariables(ctx, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseListStrategyVariablesResponse(rsp)
 }
 
 // ListUsersWithResponse List the application users
@@ -10674,100 +10250,6 @@ func ParseListIndicatorTypesResponse(rsp *http.Response) (*ListIndicatorTypesRes
 	return response, nil
 }
 
-// ParseCreateScannerIndicatorBatchResponse parses an HTTP response from a CreateScannerIndicatorBatchWithResponse call
-func ParseCreateScannerIndicatorBatchResponse(rsp *http.Response) (*CreateScannerIndicatorBatchResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &CreateScannerIndicatorBatchResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest ScannerIndicatorList
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON201 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest BadRequest
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON400 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthenticated
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest AdministratorRequired
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
-		var dest ScannerIndicatorConflict
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON409 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 400:
-		var headers CreateScannerIndicatorBatchResponse400Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers400 = &headers
-	case rsp.StatusCode == 401:
-		var headers CreateScannerIndicatorBatchResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers CreateScannerIndicatorBatchResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
-	return response, nil
-}
-
 // ParseReorderScannerIndicatorsResponse parses an HTTP response from a ReorderScannerIndicatorsWithResponse call
 func ParseReorderScannerIndicatorsResponse(rsp *http.Response) (*ReorderScannerIndicatorsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -10849,79 +10331,6 @@ func ParseReorderScannerIndicatorsResponse(rsp *http.Response) (*ReorderScannerI
 		response.Headers401 = &headers
 	case rsp.StatusCode == 500:
 		var headers ReorderScannerIndicatorsResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
-	return response, nil
-}
-
-// ParseDeleteUnusedScannerIndicatorsResponse parses an HTTP response from a DeleteUnusedScannerIndicatorsWithResponse call
-func ParseDeleteUnusedScannerIndicatorsResponse(rsp *http.Response) (*DeleteUnusedScannerIndicatorsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &DeleteUnusedScannerIndicatorsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case rsp.StatusCode == 204:
-		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthenticated
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest AdministratorRequired
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
-		var dest ScannerIndicatorInUse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON409 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers DeleteUnusedScannerIndicatorsResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers DeleteUnusedScannerIndicatorsResponse500Headers
 		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
@@ -11020,7 +10429,7 @@ func ParseCreateScannerIndicatorResponse(rsp *http.Response) (*CreateScannerIndi
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
-		var dest ScannerIndicatorList
+		var dest ScannerIndicator
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -11137,13 +10546,6 @@ func ParseDeleteScannerIndicatorResponse(rsp *http.Response) (*DeleteScannerIndi
 		}
 		response.JSON404 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
-		var dest ScannerIndicatorInUse
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON409 = &dest
-
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
@@ -11227,6 +10629,13 @@ func ParseUpdateScannerIndicatorResponse(rsp *http.Response) (*UpdateScannerIndi
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ScannerIndicatorConflict
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
 		var dest InternalError
@@ -11981,6 +11390,76 @@ func ParseBacktestStrategyDraftResponse(rsp *http.Response) (*BacktestStrategyDr
 	return response, nil
 }
 
+// ParseGetStrategyCatalogResponse parses an HTTP response from a GetStrategyCatalogWithResponse call
+func ParseGetStrategyCatalogResponse(rsp *http.Response) (*GetStrategyCatalogResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetStrategyCatalogResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest StrategyCatalog
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest Unauthenticated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest AdministratorRequired
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest InternalError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	}
+
+	switch {
+	case rsp.StatusCode == 401:
+		var headers GetStrategyCatalogResponse401Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers401 = &headers
+	case rsp.StatusCode == 500:
+		var headers GetStrategyCatalogResponse500Headers
+		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
+			var value string
+			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			}
+			headers.XRequestID = value
+		}
+		response.Headers500 = &headers
+	}
+
+	return response, nil
+}
+
 // ParseValidateStrategyResponse parses an HTTP response from a ValidateStrategyWithResponse call
 func ParseValidateStrategyResponse(rsp *http.Response) (*ValidateStrategyResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -12055,76 +11534,6 @@ func ParseValidateStrategyResponse(rsp *http.Response) (*ValidateStrategyRespons
 		response.Headers401 = &headers
 	case rsp.StatusCode == 500:
 		var headers ValidateStrategyResponse500Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers500 = &headers
-	}
-
-	return response, nil
-}
-
-// ParseListStrategyVariablesResponse parses an HTTP response from a ListStrategyVariablesWithResponse call
-func ParseListStrategyVariablesResponse(rsp *http.Response) (*ListStrategyVariablesResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &ListStrategyVariablesResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest StrategyVariableList
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON200 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
-		var dest Unauthenticated
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON401 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
-		var dest AdministratorRequired
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON403 = &dest
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
-		var dest InternalError
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.JSON500 = &dest
-
-	}
-
-	switch {
-	case rsp.StatusCode == 401:
-		var headers ListStrategyVariablesResponse401Headers
-		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
-			var value string
-			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			}
-			headers.XRequestID = value
-		}
-		response.Headers401 = &headers
-	case rsp.StatusCode == 500:
-		var headers ListStrategyVariablesResponse500Headers
 		if values := rsp.Header.Values("X-Request-ID"); len(values) > 0 {
 			var value string
 			if err := runtime.BindStyledParameterWithOptions("simple", "X-Request-ID", values[0], &value, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: true, Type: "string", Format: ""}); err != nil {

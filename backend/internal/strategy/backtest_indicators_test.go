@@ -25,7 +25,7 @@ func snapshotTestService(t *testing.T, store *backtestStore) *Service {
 		t.Fatal(err)
 	}
 	// No configured rows or writes: Preview must resolve all dependencies.
-	source, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, []string{"yellow.5", "blue.5"}, slog.New(slog.DiscardHandler), func() {}, func() map[int64][]string { return nil })
+	source, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, []string{"yellow.5", "blue.5"}, slog.New(slog.DiscardHandler), func() {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.candles[market.IntervalDay] = map[int64][]market.Candle{1: daily}
 	item := Strategy{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6,
-		Expression: `h_close > 101 && prev(h_bbands_20_upperband) > 0 && percentile(h_rsi, 3, 50) > 0 && d_ema_3 > 0 && h_pivot_low_bars > 0 && of("BTCUSDT", h_ema_7) > 0`}
+		Expression: `close("1h") > 101 && Prev(bbands_upperband("1h", 20)) > 0 && Percentile(rsi("1h"), 3, 50) > 0 && ema("1d", 3) > 0 && pivot_low_bars("1h") > 0 && Of("BTCUSDT", ema("1h", 7)) > 0`}
 	store.strategies = []Strategy{item}
 	service := snapshotTestService(t, store)
 	// A bounded run must not return the latest stored tail or future indicators.
@@ -68,11 +68,11 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 	keys := make(map[string]bool)
 	for _, column := range result.IndicatorColumns {
 		keys[column.Key] = true
-		if column.Key == "h_close" || column.Key == "h_ema_7" {
+		if column.Key == `close("1h")` || column.Key == `ema("1h", 7)` {
 			t.Fatalf("nonlocal or candle column: %s", column.Key)
 		}
 	}
-	for _, name := range []string{"h_rsi", "d_ema_3", "h_bbands_20_upperband", "h_bbands_20_middleband", "h_bbands_20_lowerband", "h_pivot_low_bars"} {
+	for _, name := range []string{`rsi("1h")`, `ema("1d", 3)`, `bbands_upperband("1h", 20)`, `bbands_middleband("1h", 20)`, `bbands_lowerband("1h", 20)`, `pivot_low_bars("1h")`} {
 		if !keys[name] {
 			t.Fatalf("missing output %s", name)
 		}
@@ -86,10 +86,10 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 				t.Fatalf("unlisted output %s", name)
 			}
 		}
-		if _, exists := occurrence.Values["h_rsi"]; exists {
+		if _, exists := occurrence.Values[`rsi("1h")`]; exists {
 			t.Fatal("fixture must read RSI only within percentile")
 		}
-		if _, exists := occurrence.IndicatorValues["h_rsi"]; !exists {
+		if _, exists := occurrence.IndicatorValues[`rsi("1h")`]; !exists {
 			t.Fatal("current RSI missing despite percentile dependency")
 		}
 		// Current outputs at the signal and chart points must agree exactly.
@@ -104,15 +104,19 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 					}
 				}
 				for _, series := range page.Indicators[j].Series {
-					entry := slices.IndexFunc(service.indicators.List(), func(e scannerindicator.Entry) bool { return e.Target().Selection.Type == definition.Selection.Type })
+					entry := slices.IndexFunc(service.indicators.List(), func(e scannerindicator.Entry) bool { return e.Selection.Type == definition.Selection.Type })
 					if entry >= 0 {
 						t.Fatal("test unexpectedly configured an indicator")
 					}
-					preview, err := service.indicators.Preview(scannerindicator.Indicator{Interval: page.Interval, Selection: definition.Selection})
+					preview, err := service.indicators.Preview(definition.Selection)
 					if err != nil {
 						t.Fatal(err)
 					}
-					name := outputName(preview, series.Name)
+					arguments, err := callArguments(service.registry, definition.Selection)
+					if err != nil {
+						t.Fatal(err)
+					}
+					name := displayedIndicator{Entry: preview, interval: page.Interval, arguments: arguments}.column(series.Name)
 					open := page.Interval.LastClosedOpenTime(result.Interval.NextOpenTime(occurrence.Time))
 					point := slices.IndexFunc(series.Points, func(p indicator.Point) bool { return p.Time.Equal(open) })
 					if point >= 0 {
@@ -152,8 +156,8 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 func TestBacktestDependenciesIncludeExitAndPriceRules(t *testing.T) {
 	service := snapshotTestService(t, newBacktestStore(market.IntervalHour, nil))
 	entry, err := service.compileEntry(Strategy{
-		Expression: "h_rsi > 30", ExitExpression: "d_ema_3 > d_close",
-		TakeProfitExpression: "h_bbands_20_upperband", StopLossExpression: "h_close - h_atr",
+		Expression: `rsi("1h") > 30`, ExitExpression: `ema("1d", 3) > close("1d")`,
+		TakeProfitExpression: `bbands_upperband("1h", 20)`, StopLossExpression: `close("1h") - atr("1h")`,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -166,7 +170,7 @@ func TestBacktestDependenciesIncludeExitAndPriceRules(t *testing.T) {
 		if read.Variable.Target.Equal(CandleTarget(read.Variable.Target.Interval)) {
 			continue
 		}
-		if !slices.ContainsFunc(items, func(item scannerindicator.Entry) bool { return item.Target().Equal(read.Variable.Target) }) {
+		if !slices.ContainsFunc(items, func(item displayedIndicator) bool { return item.target().Equal(read.Variable.Target) }) {
 			t.Fatalf("dependency missing: %s", read.Variable.Name)
 		}
 	}

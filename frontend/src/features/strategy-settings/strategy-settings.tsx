@@ -7,13 +7,12 @@ import type { ErrorType } from "@/api/fetch";
 import {
 	getListScannerIndicatorsQueryKey,
 	getListStrategiesQueryKey,
+	type getStrategyCatalogResponseSuccess,
 	type listStrategiesResponseSuccess,
-	type listStrategyVariablesResponseSuccess,
-	useCreateScannerIndicatorBatch,
 	useCreateStrategy,
 	useDeleteStrategy,
+	useGetStrategyCatalog,
 	useListStrategies,
-	useListStrategyVariables,
 	useSetStrategyEnabled,
 	useUpdateStrategy,
 } from "@/api/generated/api";
@@ -21,13 +20,10 @@ import type { ErrorResponse, Strategy } from "@/api/generated/models";
 import { EmptyState } from "@/components/empty-state";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
-import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
-import { mutationErrorMessage } from "@/features/scanner-settings/utils";
 import { kindNouns } from "@/features/strategy-settings/constants";
 import { StrategyDiscardConfirmation } from "@/features/strategy-settings/strategy-discard-confirmation";
 import { StrategyForm } from "@/features/strategy-settings/strategy-form";
 import { StrategyFormContent } from "@/features/strategy-settings/strategy-form-content";
-import { StrategyIndicatorsConfirmation } from "@/features/strategy-settings/strategy-indicators-confirmation";
 import { StrategyRemovalConfirmation } from "@/features/strategy-settings/strategy-removal-confirmation";
 import { StrategyRow } from "@/features/strategy-settings/strategy-row";
 import type {
@@ -35,6 +31,7 @@ import type {
 	StrategyFormValues,
 	StrategyKind,
 } from "@/features/strategy-settings/types";
+import { useCanonicalRules } from "@/features/strategy-settings/use-canonical-rules";
 import { useStrategyForm } from "@/features/strategy-settings/use-strategy-form";
 import {
 	newStrategyDraft,
@@ -44,12 +41,10 @@ import {
 	strategyFormValues,
 	strategyInput,
 	strategyKind,
-	strategyVariableSets,
 } from "@/features/strategy-settings/utils";
 
-const selectStrategyVariables = (
-	response: listStrategyVariablesResponseSuccess,
-) => strategyVariableSets(response.data.items);
+const selectStrategyCatalog = (response: getStrategyCatalogResponseSuccess) =>
+	response.data;
 
 const selectStrategiesOfKind =
 	(kind: StrategyKind) => (response: listStrategiesResponseSuccess) =>
@@ -77,18 +72,16 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	const [pending, setPending] = useState<Omit<StrategyDraft, "revision">>();
 	const revision = useRef(0);
 	const [removing, setRemoving] = useState<Strategy>();
-	// A strategy to open once the indicators it reads are added.
-	const [adding, setAdding] = useState<Strategy>();
 	const strategies = useListStrategies({
 		query: {
 			retry: false,
 			select: selectStrategies[kind],
 		},
 	});
-	const variables = useListStrategyVariables({
+	const catalog = useGetStrategyCatalog({
 		query: {
 			retry: false,
-			select: selectStrategyVariables,
+			select: selectStrategyCatalog,
 		},
 	});
 	// Strategies decide which indicators are in use.
@@ -131,20 +124,7 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 		},
 	});
 
-	// The builder shows the added indicators once the variables are current.
-	const additionMutation = useCreateScannerIndicatorBatch({
-		mutation: {
-			onError: (error) => {
-				setAdding(undefined);
-				notifications.show({
-					color: "red",
-					message: mutationErrorMessage(error),
-					title: "Indicators could not be added",
-				});
-			},
-			onSuccess: () => invalidateScannerIndicatorQueries(queryClient),
-		},
-	});
+	const openingMutation = useCanonicalRules();
 
 	const submit = (values: StrategyFormValues) => {
 		if (!draft) return;
@@ -172,10 +152,10 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	// page subscribes to none of them, so edits never render it.
 	const form = useStrategyForm(draft?.values, submit);
 
-	if (strategies.isPending || variables.isPending) {
+	if (strategies.isPending || catalog.isPending) {
 		return <Loader aria-label={`Loading ${nouns.many}`} />;
 	}
-	if (strategies.isError || variables.isError) {
+	if (strategies.isError || catalog.isError) {
 		return (
 			<Text c="red" size="sm">
 				{`${nouns.title} could not be loaded.`}
@@ -187,8 +167,13 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	const busy =
 		enabledMutation.isPending ||
 		deleteMutation.isPending ||
-		additionMutation.isPending ||
+		openingMutation.isPending ||
 		isSaving;
+	// Rules need a period and something to read on it.
+	const empty =
+		catalog.data.intervals.length === 0 ||
+		(catalog.data.candle_fields.length === 0 &&
+			catalog.data.indicators.length === 0);
 	const show = (next: Omit<StrategyDraft, "revision">) => {
 		revision.current += 1;
 		form.reset(next.values);
@@ -217,17 +202,14 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 					{`No ${nouns.many} yet.`}
 				</Text>
 			) : null}
-			{variables.data.exit.variables.length === 0 ? (
+			{empty ? (
 				<Text c="dimmed" size="sm">
 					Add indicators first.
 				</Text>
 			) : null}
 			{/* Full width on phones and in the sidebar. */}
 			<Group grow>
-				<Button
-					disabled={variables.data.exit.variables.length === 0}
-					onClick={() => open(newStrategyDraft(kind))}
-				>
+				<Button disabled={empty} onClick={() => open(newStrategyDraft(kind))}>
 					{`Add ${nouns.one}`}
 				</Button>
 			</Group>
@@ -239,9 +221,15 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 							key={strategy.id}
 							onDelete={() => setRemoving(strategy)}
 							onEdit={() =>
-								strategy.missing_indicators.length > 0
-									? setAdding(strategy)
-									: open(strategyDraft(strategy))
+								openingMutation.mutate(strategy, {
+									onError: (error) =>
+										notifications.show({
+											color: "red",
+											message: strategyErrorMessage(error),
+											title: `${nouns.name} could not be opened`,
+										}),
+									onSuccess: (rules) => open(strategyDraft(strategy, rules)),
+								})
 							}
 							onEnabledChange={(enabled) =>
 								enabledMutation.mutate({
@@ -267,33 +255,6 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 				}}
 				opened={pending !== undefined}
 			/>
-			<StrategyIndicatorsConfirmation
-				isPending={additionMutation.isPending}
-				missing={adding?.missing_indicators}
-				onCancel={() => setAdding(undefined)}
-				onConfirm={() => {
-					if (!adding) return;
-					additionMutation.mutate(
-						{
-							data: {
-								items: adding.missing_indicators.map(
-									({ interval, parameters, type }) => ({
-										interval,
-										parameters,
-										type,
-									}),
-								),
-							},
-						},
-						{
-							onSuccess: () => {
-								open(strategyDraft(adding));
-								setAdding(undefined);
-							},
-						},
-					);
-				}}
-			/>
 			<StrategyRemovalConfirmation
 				isPending={deleteMutation.isPending}
 				name={removing?.name}
@@ -315,8 +276,8 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 					draft={draft}
 					isSaving={isSaving}
 					onCancel={() => setDraft(undefined)}
+					catalog={catalog.data}
 					form={form}
-					variables={variables.data}
 				/>
 				{confirmations}
 			</>
@@ -332,8 +293,8 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 							isSaving={isSaving}
 							key={draft.revision}
 							onCancel={() => setDraft(undefined)}
+							catalog={catalog.data}
 							form={form}
-							variables={variables.data}
 						/>
 					</Stack>
 				</Paper>

@@ -6,18 +6,15 @@ import type {
 	IndicatorType,
 	ScannerIndicatorInput,
 } from "@/api/generated/models";
-import { fieldError, useAppForm } from "@/components/form";
-import { chartIntervalOptions } from "@/features/candle-chart/config";
+import { useAppForm } from "@/components/form";
 import {
 	emptyScaleDraft,
+	periodOrder,
 	scaleFields,
 } from "@/features/scanner-settings/constants";
 import { ScannerIndicatorPeriodsField } from "@/features/scanner-settings/scanner-indicator-periods-field";
 import { ScannerIndicatorScaleFields } from "@/features/scanner-settings/scanner-indicator-scale-fields";
-import {
-	indicatorPeriodsSchema,
-	indicatorTypeSchema,
-} from "@/features/scanner-settings/schemas";
+import { indicatorTypeSchema } from "@/features/scanner-settings/schemas";
 import type { ScannerIndicatorDraft } from "@/features/scanner-settings/types";
 import {
 	defaultParameterValues,
@@ -34,8 +31,6 @@ const emptyDraft: ScannerIndicatorDraft = {
 	periods: {},
 	type: null,
 };
-
-const periodOrder = chartIntervalOptions.map(({ value }) => value);
 
 const allGroups = "all";
 
@@ -168,13 +163,9 @@ export function ScannerIndicatorForm({
 							Outputs: {type.outputs.join(", ")}
 						</Text>
 					) : null}
-					<form.Field
-						name="periods"
-						validators={{ onChange: indicatorPeriodsSchema }}
-					>
+					<form.Field name="periods">
 						{(field) => (
 							<ScannerIndicatorPeriodsField
-								error={fieldError(field.state.meta.errors)}
 								onChange={field.handleChange}
 								tableAllowed={tableColumnAllowed(type)}
 								value={field.state.value}

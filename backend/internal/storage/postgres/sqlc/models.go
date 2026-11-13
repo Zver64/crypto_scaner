@@ -60,16 +60,20 @@ type AppPriceAlert struct {
 
 type AppScannerIndicator struct {
 	ID            int64
-	Interval      string
 	IndicatorType string
 	Parameters    []byte
-	ShowInTable   bool
 	ScaleMin      pgtype.Float8
 	ScaleMax      pgtype.Float8
 	ScaleLevels   []float64
 	CreatedAt     pgtype.Timestamptz
 	Position      int32
-	ShowInChart   bool
+}
+
+type AppScannerIndicatorInterval struct {
+	IndicatorID int64
+	Interval    string
+	ShowInTable bool
+	ShowInChart bool
 }
 
 type AppSchemaMigration struct {
@@ -107,16 +111,12 @@ type AppStrategy struct {
 	WindowCandles        pgtype.Int2
 	CoinSource           string
 	ID                   uuid.UUID
+	Syntax               int16
 }
 
 type AppStrategyCoin struct {
 	InstrumentID int64
 	StrategyID   uuid.UUID
-}
-
-type AppStrategyIndicator struct {
-	IndicatorID int64
-	StrategyID  uuid.UUID
 }
 
 type AppStrategyState struct {

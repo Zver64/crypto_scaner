@@ -3,7 +3,10 @@ import {
 	SignalTargetRatio,
 	SignalWindow,
 } from "@/api/generated/models";
-import type { StrategyKind } from "@/features/strategy-settings/types";
+import type {
+	StrategyKind,
+	StrategyVariableKind,
+} from "@/features/strategy-settings/types";
 
 // Tokens of a strategy expression, for parenthesizeOperands.
 export const tokenPattern =
@@ -19,6 +22,13 @@ export const operandBoundaries = [
 	":",
 	...comparisonTokens,
 ];
+
+// The variable select's group of each kind of variable.
+export const variableGroups = {
+	candle: "Candle",
+	indicator: "Indicators",
+	position: "Position",
+} as const satisfies Record<StrategyVariableKind, string>;
 
 // Lets the expression parser accept every field; the backend validates them.
 export const anyField = { fieldExists: () => true };

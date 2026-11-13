@@ -23,6 +23,7 @@
  */
 
 export interface BacktestIndicatorColumn {
+  /** The canonical call of the output, such as `rsi("1h")` or `bbands_upperband("1h", 20)`. */
   key: string;
   title: string;
 }

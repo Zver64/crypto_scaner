@@ -5,13 +5,16 @@ import type {
 	IndicatorType,
 	ScannerIndicator,
 	ScannerIndicatorInput,
+	ScannerIndicatorPeriod,
 	ScannerIndicatorScale,
+	ScannerIndicatorUpdate,
 } from "@/api/generated/models";
 import type {
 	ParameterValues,
 	PeriodChoices,
 	ScaleDraft,
 	ScannerIndicatorDraft,
+	ScannerIndicatorSettingsDraft,
 } from "@/features/scanner-settings/types";
 import { describeApiError } from "@/utils/api-error";
 
@@ -87,41 +90,93 @@ export function scaleDraft(scale: ScannerIndicatorScale): ScaleDraft {
 	};
 }
 
-// Builds the create request, one entry per chosen period in the given order,
-// with the parameter inputs as numbers; returns undefined while no type or
-// period is chosen or a level is not a number.
-export function scannerIndicatorInput(
-	draft: ScannerIndicatorDraft,
-	type: IndicatorType | undefined,
-	periods: readonly CandleInterval[],
-): ScannerIndicatorInput | undefined {
-	if (!type) return undefined;
-	const intervals = periods.flatMap((interval) => {
-		const choice = draft.periods[interval];
+// The chosen periods in the given order; table columns only where allowed.
+export function indicatorPeriods(
+	choices: PeriodChoices,
+	order: readonly CandleInterval[],
+	tableAllowed: boolean,
+): ScannerIndicatorPeriod[] {
+	return order.flatMap((interval) => {
+		const choice = choices[interval];
 		return choice
 			? [
 					{
 						interval,
-						show_in_table: choice.showInTable && tableColumnAllowed(type),
+						show_in_table: choice.showInTable && tableAllowed,
 						show_in_chart: choice.showInChart,
 					},
 				]
 			: [];
 	});
-	if (intervals.length === 0) return undefined;
+}
+
+export function periodChoices(
+	periods: readonly ScannerIndicatorPeriod[],
+): PeriodChoices {
+	return Object.fromEntries(
+		periods.map(({ interval, show_in_chart, show_in_table }) => [
+			interval,
+			{ showInChart: show_in_chart, showInTable: show_in_table },
+		]),
+	);
+}
+
+// The intervals whose charts or tables show the indicator.
+export function shownIntervals(
+	periods: readonly ScannerIndicatorPeriod[],
+	where: "show_in_chart" | "show_in_table",
+): CandleInterval[] {
+	return periods.flatMap((period) => (period[where] ? [period.interval] : []));
+}
+
+// Builds the create request with the parameter inputs as numbers; returns
+// undefined while no type is chosen or a level is not a number.
+export function scannerIndicatorInput(
+	draft: ScannerIndicatorDraft,
+	type: IndicatorType | undefined,
+	order: readonly CandleInterval[],
+): ScannerIndicatorInput | undefined {
+	if (!type) return undefined;
 	const parameters = Object.fromEntries(
 		Object.entries(draft.parameters).flatMap(([key, value]) =>
 			value === "" || value === null ? [] : [[key, Number(value)]],
 		),
 	);
 	const input: ScannerIndicatorInput = {
-		intervals,
 		parameters,
+		periods: indicatorPeriods(draft.periods, order, tableColumnAllowed(type)),
 		type: type.type,
 	};
 	if (type.overlay) return input;
 	const scale = indicatorScale(draft);
 	return scale ? { ...input, scale } : undefined;
+}
+
+// The settings inputs of a configured indicator.
+export function scannerIndicatorSettingsDraft(
+	indicator: ScannerIndicator,
+): ScannerIndicatorSettingsDraft {
+	return {
+		...scaleDraft(indicator.scale),
+		periods: periodChoices(indicator.periods),
+	};
+}
+
+// Builds the update request of a configured indicator; returns undefined
+// while a level is not a number. Only pane indicators have a scale.
+export function scannerIndicatorUpdate(
+	draft: ScannerIndicatorSettingsDraft,
+	indicator: ScannerIndicator,
+	order: readonly CandleInterval[],
+): ScannerIndicatorUpdate | undefined {
+	const periods = indicatorPeriods(
+		draft.periods,
+		order,
+		indicator.outputs.length === 1,
+	);
+	if (indicator.placement !== "pane") return { periods };
+	const scale = indicatorScale(draft);
+	return scale ? { periods, scale } : undefined;
 }
 
 // Moves one indicator id, as a drag and drop does, and returns the new order.
@@ -176,8 +231,6 @@ export function mutationErrorMessage(
 		fallback: "The indicator could not be saved.",
 		forbidden: "Only the scanner administrator can change indicators.",
 		messages: {
-			scanner_indicator_in_use:
-				"A strategy uses this indicator. Change or delete the strategy first.",
 			scanner_indicator_not_found: "This indicator no longer exists.",
 		},
 		server: [

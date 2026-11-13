@@ -16,6 +16,7 @@ import (
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/indicator/candle"
+	"crypto-scanner/internal/indicator/pivot"
 	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
@@ -36,7 +37,7 @@ func TestBacktestReplaysAlertTransitions(t *testing.T) {
 		}
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
-	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Breakout", Expression: "h_close > 5 && prev(h_close) > 0"})
+	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Breakout", Expression: `close("1h") > 5 && Prev(close("1h")) > 0`})
 
 	// Hour 0 is unknown, hours 2 and 7 keep matching, and hour 6 is unknown
 	// while matching.
@@ -52,7 +53,7 @@ func TestBacktestSkipsCandlesBeforeTheWarmUpOfAPrunedHistory(t *testing.T) {
 	for index := range hourly {
 		hourly[index] = testCandle(1, market.IntervalHour, hour(index), 9)
 	}
-	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourly), Strategy{ID: testID(1), Name: "Close", Expression: "h_close > 5"})
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourly), Strategy{ID: testID(1), Name: "Close", Expression: `close("1h") > 5`})
 
 	depth, err := closedindicator.Depth(testRegistry(t), CandleTarget(market.IntervalHour), 1)
 	if err != nil {
@@ -73,7 +74,7 @@ func TestBacktestRefusesInactiveCoinsReadThroughOf(t *testing.T) {
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.candles[market.IntervalHour][2] = other
-	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Pair", Expression: `h_close > 5 && of("ETHUSDT", h_close) > 5`})
+	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Pair", Expression: `close("1h") > 5 && Of("ETHUSDT", close("1h")) > 5`})
 
 	if _, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false); !errors.Is(err, ErrInvalidArgument) {
 		t.Fatalf("Backtest() error = %v, want ErrInvalidArgument", err)
@@ -81,7 +82,7 @@ func TestBacktestRefusesInactiveCoinsReadThroughOf(t *testing.T) {
 }
 
 func TestBacktestWithoutHistoryEvaluatesNothing(t *testing.T) {
-	service := newBacktestService(t, newBacktestStore(market.IntervalDay, nil), Strategy{ID: testID(1), Name: "Daily", Expression: "d_close > 5"})
+	service := newBacktestService(t, newBacktestStore(market.IntervalDay, nil), Strategy{ID: testID(1), Name: "Daily", Expression: `close("1d") > 5`})
 
 	assertReplay(t, service, testID(1), market.IntervalDay, Backtest{})
 }
@@ -95,7 +96,7 @@ func TestBacktestReadsDailyValuesOnlyAfterTheDayCloses(t *testing.T) {
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.candles[market.IntervalDay] = map[int64][]market.Candle{1: daily}
-	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Daily", Expression: "h_close > d_close"})
+	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Daily", Expression: `close("1h") > close("1d")`})
 
 	// The hourly candle opened at 23:00 closes with the day.
 	assertReplay(t, service, testID(1), market.IntervalHour, Backtest{From: day, To: day.Add(29 * time.Hour), Alerts: []time.Time{day.Add(23 * time.Hour)}})
@@ -103,7 +104,7 @@ func TestBacktestReadsDailyValuesOnlyAfterTheDayCloses(t *testing.T) {
 
 func TestBacktestRejectsUnknownAndInvalidStrategiesAndArguments(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, nil)
-	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Broken", Expression: "h_unknown > 1"}, Strategy{ID: testID(2), Name: "Valid", Expression: "h_close > 1"})
+	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Broken", Expression: "h_unknown > 1"}, Strategy{ID: testID(2), Name: "Valid", Expression: `close("1h") > 1`})
 	for _, test := range []struct {
 		id       byte
 		symbol   string
@@ -126,8 +127,8 @@ func TestBacktestRejectsUnknownAndInvalidStrategiesAndArguments(t *testing.T) {
 // checked like a save.
 func TestBacktestDraftReplaysLikeASavedStrategy(t *testing.T) {
 	saved := Strategy{
-		ID: testID(1), Name: "Top", Direction: DirectionShort, Expression: "h_close > 5",
-		TakeProfitExpression: "h_close * 0.8", StopLossExpression: "h_close * 1.5",
+		ID: testID(1), Name: "Top", Direction: DirectionShort, Expression: `close("1h") > 5`,
+		TakeProfitExpression: `close("1h") * 0.8`, StopLossExpression: `close("1h") * 1.5`,
 	}
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 10, 10, 4)), saved)
 
@@ -145,15 +146,15 @@ func TestBacktestDraftReplaysLikeASavedStrategy(t *testing.T) {
 	if !reflect.DeepEqual(got, want) || len(got.Trades) != 1 {
 		t.Fatalf("BacktestDraft() = %+v, want %+v", got, want)
 	}
-	if _, err := service.BacktestDraft(context.Background(), Strategy{Direction: DirectionLong, Expression: `h_close > 1 && of("BTCUSDT", h_close) > 5`}, "BTCUSDT", time.Time{}, time.Time{}, false); err != nil {
+	if _, err := service.BacktestDraft(context.Background(), Strategy{Direction: DirectionLong, Expression: `close("1h") > 1 && Of("BTCUSDT", close("1h")) > 5`}, "BTCUSDT", time.Time{}, time.Time{}, false); err != nil {
 		t.Fatalf("BacktestDraft() reading a favorite: %v", err)
 	}
 	for _, draft := range []Strategy{
-		{Expression: "h_close > 5"},
+		{Expression: `close("1h") > 5`},
 		{Direction: DirectionLong, Expression: "h_unknown > 5"},
-		{Direction: DirectionShort, Expression: "h_close > 5"},
-		{Signal: true, Direction: DirectionSideways, Expression: "h_close > 5"},
-		{Direction: DirectionLong, Expression: `h_close > 1 && of("ETHUSDT", h_close) > 5`},
+		{Direction: DirectionShort, Expression: `close("1h") > 5`},
+		{Signal: true, Direction: DirectionSideways, Expression: `close("1h") > 5`},
+		{Direction: DirectionLong, Expression: `close("1h") > 1 && Of("ETHUSDT", close("1h")) > 5`},
 	} {
 		if _, err := service.BacktestDraft(context.Background(), draft, "BTCUSDT", time.Time{}, time.Time{}, false); !errors.Is(err, ErrInvalidArgument) {
 			t.Fatalf("BacktestDraft(%+v) error = %v, want %v", draft, err, ErrInvalidArgument)
@@ -162,7 +163,7 @@ func TestBacktestDraftReplaysLikeASavedStrategy(t *testing.T) {
 }
 
 func TestBacktestRefusesBeyondTheRunningLimit(t *testing.T) {
-	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 10)), Strategy{ID: testID(1), Name: "Close", Expression: "h_close > 5"})
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 10)), Strategy{ID: testID(1), Name: "Close", Expression: `close("1h") > 5`})
 	for range maxBacktests {
 		service.backtests <- struct{}{}
 	}
@@ -180,8 +181,8 @@ func TestBacktestRefusesBeyondTheRunningLimit(t *testing.T) {
 // baselines.
 func TestBacktestShortGainsOnAFall(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 10, 10, 4)), Strategy{
-		ID: testID(1), Name: "Top", Direction: DirectionShort, Expression: "h_close > 5",
-		TakeProfitExpression: "h_close * 0.8", StopLossExpression: "h_close * 1.5",
+		ID: testID(1), Name: "Top", Direction: DirectionShort, Expression: `close("1h") > 5`,
+		TakeProfitExpression: `close("1h") * 0.8`, StopLossExpression: `close("1h") * 1.5`,
 	})
 
 	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
@@ -208,7 +209,7 @@ func TestBacktestShortGainsOnAFall(t *testing.T) {
 // sells at its close.
 func TestBacktestExitingStrategySkipsSignalsDuringATrade(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 9, 1, 9, 1, 9, 30, 30, 30)), Strategy{
-		ID: testID(1), Name: "Dip", Expression: "h_close > 5", ExitExpression: "h_close > 20",
+		ID: testID(1), Name: "Dip", Expression: `close("1h") > 5`, ExitExpression: `close("1h") > 20`,
 	})
 
 	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
@@ -225,7 +226,7 @@ func TestBacktestExitingStrategySkipsSignalsDuringATrade(t *testing.T) {
 		t.Fatalf("trades = %+v, skipped %d, alerts %v", result.Trades, result.Skipped, result.Alerts)
 	}
 	exit := result.Trades[0]
-	if exit.Reason != ExitRuleSignal || !exit.ExitSignal.Equal(backtestHour(7)) || !maps.Equal(exit.ExitValues, map[string]float64{"h_close": 30}) {
+	if exit.Reason != ExitRuleSignal || !exit.ExitSignal.Equal(backtestHour(7)) || !maps.Equal(exit.ExitValues, map[string]float64{`close("1h")`: 30}) {
 		t.Fatalf("exit = %s at %v, values %v", exit.Reason, exit.ExitSignal, exit.ExitValues)
 	}
 	// The trade falls from 9 to 1 at the close of hour 3 before it profits.
@@ -260,7 +261,7 @@ func TestBacktestSellsAtTakeProfitAndStopLoss(t *testing.T) {
 		candles[index].Open, candles[index].High, candles[index].Low = bar.open, bar.high, bar.low
 	}
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, candles), Strategy{
-		ID: testID(1), Name: "Range", Expression: "h_close > 5", TakeProfitExpression: "h_close * 1.2", StopLossExpression: "h_close * 0.9",
+		ID: testID(1), Name: "Range", Expression: `close("1h") > 5`, TakeProfitExpression: `close("1h") * 1.2`, StopLossExpression: `close("1h") * 0.9`,
 	})
 
 	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
@@ -277,7 +278,7 @@ func TestBacktestSellsAtTakeProfitAndStopLoss(t *testing.T) {
 	}) {
 		t.Fatalf("trades = %+v, want %+v", result.Trades, want)
 	}
-	wantFill := Fill{Signal: backtestHour(1), Time: backtestHour(2), Price: 10, Values: map[string]float64{"h_close": 10}}
+	wantFill := Fill{Signal: backtestHour(1), Time: backtestHour(2), Price: 10, Values: map[string]float64{`close("1h")`: 10}}
 	if fills := result.Trades[0].Fills; len(fills) != 1 || !fills[0].Signal.Equal(wantFill.Signal) || !fills[0].Time.Equal(wantFill.Time) ||
 		fills[0].Price != wantFill.Price || !maps.Equal(fills[0].Values, wantFill.Values) {
 		t.Fatalf("fills = %+v, want %+v", fills, wantFill)
@@ -292,7 +293,7 @@ func TestBacktestSellsAtTakeProfitAndStopLoss(t *testing.T) {
 // candle.
 func TestBacktestEvaluatesThePeriod(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(9, 9, 1, 9, 2, 9)), Strategy{
-		ID: testID(1), Name: "Stack", Expression: "h_close > 5 && prev(h_close) > 0",
+		ID: testID(1), Name: "Stack", Expression: `close("1h") > 5 && Prev(close("1h")) > 0`,
 	})
 
 	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", backtestHour(2), backtestHour(4), false)
@@ -314,7 +315,7 @@ func TestBacktestEvaluatesThePeriod(t *testing.T) {
 // its second candle.
 func TestBacktestExitsOnPositionVariables(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 9, 9, 9)), Strategy{
-		ID: testID(1), Name: "Hold", Expression: "h_close > 5", ExitExpression: "bars_held >= 2 && pnl > -1",
+		ID: testID(1), Name: "Hold", Expression: `close("1h") > 5`, ExitExpression: "bars_held >= 2 && pnl > -1",
 	})
 
 	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
@@ -332,11 +333,11 @@ func TestBacktestExitsOnPositionVariables(t *testing.T) {
 // candle whose rule it decides: bars_held is 1 at the fill of hour 2.
 func TestBacktestFailsOnAnInvalidPrevShift(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 9, 9, 9)), Strategy{
-		ID: testID(1), Name: "Hold", Expression: "h_close > 5", ExitExpression: "prev(h_close, bars_held - 1) > 100",
+		ID: testID(1), Name: "Hold", Expression: `close("1h") > 5`, ExitExpression: `Prev(close("1h"), bars_held - 1) > 100`,
 	})
 	_, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
 	var shift *ShiftError
-	want := "invalid strategy: at the candle opening 2026-03-02 02:00 UTC, the exit rule: the prev shift is 0, not a whole number from 1 to 500"
+	want := "invalid strategy: at the candle opening 2026-03-02 02:00 UTC, the exit rule: the Prev shift is 0, not a whole number from 1 to 500"
 	if !errors.Is(err, ErrInvalidArgument) || !errors.As(err, &shift) || err.Error() != want {
 		t.Fatalf("Backtest() error = %v, want %q", err, want)
 	}
@@ -353,7 +354,7 @@ func TestBacktestPnLExitUsesPercent(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(test.closes...)), Strategy{
-				ID: testID(1), Name: "Percent", Expression: "h_close > 5", ExitExpression: test.exit,
+				ID: testID(1), Name: "Percent", Expression: `close("1h") > 5`, ExitExpression: test.exit,
 			})
 			result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
 			if err != nil {
@@ -373,7 +374,7 @@ func TestBacktestPnLExitUsesPercent(t *testing.T) {
 // open, valued at the last close, and counts in the net profit but not in
 // the statistics. A buy signaled at the last candle never fills.
 func TestBacktestWithoutExitHoldsAnOpenTrade(t *testing.T) {
-	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 1, 9)), Strategy{ID: testID(1), Name: "Stack", Expression: "h_close > 5"})
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 1, 9)), Strategy{ID: testID(1), Name: "Stack", Expression: `close("1h") > 5`})
 
 	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
 	if err != nil {
@@ -392,10 +393,6 @@ func TestBacktestWithoutExitHoldsAnOpenTrade(t *testing.T) {
 
 func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 	registry := testRegistry(t)
-	indicators := testIndicators{entries: []scannerindicator.Entry{
-		testEMA(t, registry, 1, market.IntervalHour, 100),
-		testEMA(t, registry, 2, market.IntervalDay, 3),
-	}}
 	var hourly, other, daily []market.Candle
 	for index := range 300 {
 		open := backtestStart.Add(time.Duration(index) * time.Hour)
@@ -409,7 +406,7 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 	store.candles[market.IntervalHour][2] = other
 	store.candles[market.IntervalDay] = map[int64][]market.Candle{1: daily}
 	instruments := []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}}
-	compiled, err := Compile(`h_ema_100 > prev(h_ema_100) && d_ema_3 < d_close && of("ETHUSDT", h_close) > 0`, Variables(indicators.entries))
+	compiled, err := Compile(`ema("1h", 100) > Prev(ema("1h", 100)) && ema("1d", 3) < close("1d") && Of("ETHUSDT", close("1h")) > 0`, registry, EntryRule)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -451,7 +448,6 @@ func TestBacktestReplayMatchesTrackedValuesAtTheLatestCandle(t *testing.T) {
 // values of their own backtest, however deep the other one reads.
 func TestTrackedValuesOfEachStrategyMatchItsBacktest(t *testing.T) {
 	registry := testRegistry(t)
-	indicators := testIndicators{entries: []scannerindicator.Entry{testEMA(t, registry, 1, market.IntervalHour, 10)}}
 	var hourly []market.Candle
 	for index := range 700 {
 		hourly = append(hourly, testCandle(1, market.IntervalHour, backtestHour(index), 100+10*math.Sin(float64(index)/7)))
@@ -459,8 +455,8 @@ func TestTrackedValuesOfEachStrategyMatchItsBacktest(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, hourly)
 	instruments := []Instrument{{ID: 1, Symbol: "BTCUSDT"}}
 	var entries []Entry
-	for index, source := range []string{"h_ema_10 > prev(h_ema_10)", "h_ema_10 > prev(h_ema_10, 400)"} {
-		compiled, err := Compile(source, Variables(indicators.entries))
+	for index, source := range []string{`ema("1h", 10) > Prev(ema("1h", 10))`, `ema("1h", 10) > Prev(ema("1h", 10), 400)`} {
+		compiled, err := Compile(source, registry, EntryRule)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -494,7 +490,6 @@ func TestTrackedValuesOfEachStrategyMatchItsBacktest(t *testing.T) {
 // depth of the backtest of each coin, however deep that coin reads its own.
 func TestTrackedValuesReadThroughOfMatchTheBacktestOfEachCoin(t *testing.T) {
 	registry := testRegistry(t)
-	indicators := testIndicators{entries: []scannerindicator.Entry{testEMA(t, registry, 1, market.IntervalHour, 10)}}
 	var btc, eth []market.Candle
 	for index := range 700 {
 		btc = append(btc, testCandle(1, market.IntervalHour, backtestHour(index), 100+10*math.Sin(float64(index)/7)))
@@ -503,7 +498,7 @@ func TestTrackedValuesReadThroughOfMatchTheBacktestOfEachCoin(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, btc)
 	store.candles[market.IntervalHour][2] = eth
 	instruments := []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}}
-	compiled, err := Compile(`h_ema_10 > prev(h_ema_10, 400) && of("BTCUSDT", h_ema_10) > 0`, Variables(indicators.entries))
+	compiled, err := Compile(`ema("1h", 10) > Prev(ema("1h", 10), 400) && Of("BTCUSDT", ema("1h", 10)) > 0`, registry, EntryRule)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -634,21 +629,20 @@ func testCandle(instrumentID int64, interval market.CandleInterval, open time.Ti
 
 func testRegistry(t *testing.T) *indicator.Registry {
 	t.Helper()
-	registry, err := indicator.NewRegistry(append(indicatortalib.New(), candle.New())...)
+	registry, err := indicator.NewRegistry(append(indicatortalib.New(), candle.New(), pivot.New())...)
 	if err != nil {
 		t.Fatal(err)
 	}
 	return registry
 }
 
-func testEMA(t *testing.T, registry *indicator.Registry, id int64, interval market.CandleInterval, period int) scannerindicator.Entry {
+func testEMA(t *testing.T, registry *indicator.Registry, id int64, period int) scannerindicator.Entry {
 	t.Helper()
 	selection, err := registry.Normalize(indicator.Selection{Type: "ema", Parameters: indicator.Parameters{"period": period}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	title := scannerindicator.IntervalPrefix(interval) + "-ema-" + strconv.Itoa(period)
-	return scannerindicator.Entry{Indicator: scannerindicator.Indicator{ID: id, Interval: interval, Selection: selection}, Title: title, Outputs: []string{"ema"}}
+	return scannerindicator.Entry{Indicator: scannerindicator.Indicator{ID: id, Selection: selection}, Title: "ema-" + strconv.Itoa(period), Outputs: []string{"ema"}}
 }
 
 // testID is the id of the nth test strategy.
@@ -670,9 +664,9 @@ func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *
 type testIndicators struct{ entries []scannerindicator.Entry }
 
 func (indicators testIndicators) List() []scannerindicator.Entry { return indicators.entries }
-func (indicators testIndicators) Preview(item scannerindicator.Indicator) (scannerindicator.Entry, error) {
+func (indicators testIndicators) Preview(selection indicator.Selection) (scannerindicator.Entry, error) {
 	for _, entry := range indicators.entries {
-		if entry.Target().Equal(item.Target()) {
+		if entry.HasSelection(selection) {
 			return entry, nil
 		}
 	}
@@ -700,6 +694,10 @@ func newBacktestStore(interval market.CandleInterval, candles []market.Candle) *
 
 func (store *backtestStore) ListStrategies(context.Context) ([]Strategy, error) {
 	return store.strategies, nil
+}
+
+func (store *backtestStore) RewriteLegacyStrategies(context.Context, func(Strategy) Strategy) error {
+	return nil
 }
 
 func (store *backtestStore) ListStrategyInstruments(context.Context) ([]Instrument, error) {
@@ -739,13 +737,13 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	indicators := testIndicators{entries: []scannerindicator.Entry{{Indicator: scannerindicator.Indicator{ID: 1, Interval: market.IntervalHour, Selection: selection}, Title: "h-ema-100", Outputs: []string{"ema"}}}}
+	indicators := testIndicators{entries: []scannerindicator.Entry{{Indicator: scannerindicator.Indicator{ID: 1, Selection: selection}, Title: "ema-100", Outputs: []string{"ema"}}}}
 	hourly := make([]market.Candle, market.RetentionDepth)
 	for index := range hourly {
 		hourly[index] = testCandle(1, market.IntervalHour, backtestStart.Add(time.Duration(index)*time.Hour), 100+10*math.Sin(float64(index)/50))
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
-	store.strategies = []Strategy{{ID: testID(1), Name: "Cross", Expression: "crosses_above(h_close, h_ema_100)"}}
+	store.strategies = []Strategy{{ID: testID(1), Name: "Cross", Expression: `CrossesAbove(close("1h"), ema("1h", 100))`}}
 	service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		b.Fatal(err)

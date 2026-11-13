@@ -11,7 +11,7 @@ func TestSignalSnapshotIncludesExitAfterRequestedPeriod(t *testing.T) {
 	quiet := ohlc(100, 100.1, 99.9, 100)
 	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
 	store := newBacktestStore(market.IntervalHour, history)
-	store.strategies = []Strategy{{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, Expression: "h_close > 0"}}
+	store.strategies = []Strategy{{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, Expression: `close("1h") > 0`}}
 	service := snapshotTestService(t, store)
 	at := history[signalHistoryCandles].OpenTime
 	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", at, at, true)
@@ -50,7 +50,7 @@ func TestSimpleSignalBacktestListsSignalsWithoutJudging(t *testing.T) {
 	quiet := ohlc(100, 100.1, 99.9, 100)
 	history := signalHistory(quiet, quiet, quiet, quiet, quiet, quiet)
 	store := newBacktestStore(market.IntervalHour, history)
-	store.strategies = []Strategy{{ID: testID(1), Signal: true, Direction: DirectionSimple, Expression: "h_close > 0"}}
+	store.strategies = []Strategy{{ID: testID(1), Signal: true, Direction: DirectionSimple, Expression: `close("1h") > 0`}}
 	service := snapshotTestService(t, store)
 	from, to := history[signalHistoryCandles].OpenTime, history[signalHistoryCandles+2].OpenTime
 	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", from, to, false)

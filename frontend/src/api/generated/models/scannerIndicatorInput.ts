@@ -22,7 +22,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { ScannerIndicatorInputParameters } from './scannerIndicatorInputParameters.ts';
-import type { ScannerIndicatorIntervalInput } from './scannerIndicatorIntervalInput.ts';
+import type { ScannerIndicatorPeriods } from './scannerIndicatorPeriods.ts';
 import type { ScannerIndicatorScale } from './scannerIndicatorScale.ts';
 
 export interface ScannerIndicatorInput {
@@ -30,11 +30,6 @@ export interface ScannerIndicatorInput {
   type: string;
   /** Parameter values by key; omitted keys take their defaults. */
   parameters: ScannerIndicatorInputParameters;
-  /**
-     * Intervals to add the indicator on, each once.
-     * @minItems 1
-     * @maxItems 4
-     */
-  intervals: ScannerIndicatorIntervalInput[];
+  periods: ScannerIndicatorPeriods;
   scale?: ScannerIndicatorScale;
 }

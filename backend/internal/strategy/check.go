@@ -276,7 +276,7 @@ func (monitor *Monitor) halt(ctx context.Context, entry Entry, err error) {
 
 // ruleError names the rule and the candle, opening at at, of the rule error
 // err, such as "at the candle opening 2026-03-02 10:00 UTC, the entry rule:
-// the prev shift is 0, …".
+// the Prev shift is 0, …".
 func ruleError(at time.Time, rule string, err error) error {
 	return fmt.Errorf("at the candle opening %s, %s: %w", candleTime(at), rule, err)
 }

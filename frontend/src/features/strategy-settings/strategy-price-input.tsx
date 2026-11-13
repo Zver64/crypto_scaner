@@ -1,12 +1,12 @@
 import { Button, Group, Stack, Text, TextInput } from "@mantine/core";
 import { useSelector } from "@tanstack/react-form";
 
-import type { StrategyVariable } from "@/api/generated/models";
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
 import type {
 	StrategyFormApi,
 	StrategyPriceField,
+	StrategyVariables,
 } from "@/features/strategy-settings/types";
 import { strategyFormValues } from "@/features/strategy-settings/utils";
 
@@ -15,7 +15,7 @@ interface StrategyPriceInputProps {
 	field: StrategyPriceField;
 	form: StrategyFormApi;
 	label: string;
-	variables: readonly StrategyVariable[];
+	variables: StrategyVariables;
 }
 
 // The same numeric operand builder as conditions, evaluated once at entry.

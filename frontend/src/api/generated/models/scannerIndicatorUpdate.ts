@@ -21,10 +21,10 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { ScannerIndicatorPeriods } from './scannerIndicatorPeriods.ts';
 import type { ScannerIndicatorScale } from './scannerIndicatorScale.ts';
 
 export interface ScannerIndicatorUpdate {
-  show_in_table?: boolean;
-  show_in_chart?: boolean;
+  periods: ScannerIndicatorPeriods;
   scale?: ScannerIndicatorScale;
 }

@@ -8,7 +8,6 @@ import (
 
 	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/market"
-	"crypto-scanner/internal/scannerindicator"
 	"crypto-scanner/internal/strategy"
 
 	"github.com/google/uuid"
@@ -17,10 +16,9 @@ import (
 // Strategies manages the administrator's strategies.
 type Strategies interface {
 	List() []strategy.Entry
-	Variables() []strategy.Variable
+	// Catalog lists what expressions read.
+	Catalog() (strategy.Catalog, error)
 	Validate(ctx context.Context, expression string, kind strategy.RuleKind) (strategy.Validation, error)
-	// Unconfigured lists the indicators entry reads that are not configured.
-	Unconfigured(entry strategy.Entry) []scannerindicator.Entry
 	Create(context.Context, strategy.Strategy) (strategy.Entry, error)
 	Update(context.Context, strategy.Strategy) (strategy.Entry, error)
 	SetEnabled(ctx context.Context, id uuid.UUID, enabled bool) (strategy.Entry, error)
@@ -29,19 +27,33 @@ type Strategies interface {
 	BacktestDraft(ctx context.Context, item strategy.Strategy, symbol string, from, to time.Time, withChart bool) (strategy.Backtest, error)
 }
 
-func (api *api) ListStrategyVariables(context.Context, ListStrategyVariablesRequestObject) (ListStrategyVariablesResponseObject, error) {
-	variables := append(api.strategies.Variables(), strategy.PositionVariables()...)
-	items := make([]StrategyVariable, len(variables))
-	for i, variable := range variables {
-		items[i] = StrategyVariable{Name: variable.Name, Label: variable.Label, Position: variable.Position}
-		if !variable.Position {
-			items[i].Interval = new(CandleInterval(variable.Target.Interval))
-		}
-		if variable.IndicatorID != 0 {
-			items[i].IndicatorId = &variable.IndicatorID
+func (api *api) GetStrategyCatalog(ctx context.Context, _ GetStrategyCatalogRequestObject) (GetStrategyCatalogResponseObject, error) {
+	catalog, err := api.strategies.Catalog()
+	if err != nil {
+		return GetStrategyCatalog500JSONResponse{api.internalError(ctx, "get_strategy_catalog", err)}, nil
+	}
+	response := StrategyCatalog{
+		Indicators: indicatorCallDTOs(catalog.Indicators), CandleFields: catalog.CandleFields,
+		Intervals: make([]CandleInterval, len(catalog.Intervals)), PositionVariables: make([]StrategyPositionVariable, len(catalog.Positions)),
+	}
+	for i, interval := range catalog.Intervals {
+		response.Intervals[i] = CandleInterval(interval)
+	}
+	for i, variable := range catalog.Positions {
+		response.PositionVariables[i] = StrategyPositionVariable{Name: variable.Name, Count: variable.Count}
+	}
+	return GetStrategyCatalog200JSONResponse(response), nil
+}
+
+func indicatorCallDTOs(calls []strategy.IndicatorCall) []StrategyIndicatorCall {
+	items := make([]StrategyIndicatorCall, len(calls))
+	for i, call := range calls {
+		items[i] = StrategyIndicatorCall{
+			Type: string(call.Selection.Type), Parameters: append([]string{}, call.Arguments...), Title: call.Title,
+			Outputs: append([]string{}, call.Outputs...), CountOutputs: append([]string{}, call.Counts...),
 		}
 	}
-	return ListStrategyVariables200JSONResponse{Items: items}, nil
+	return items
 }
 
 func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRequestObject) (ValidateStrategyResponseObject, error) {
@@ -58,7 +70,7 @@ func (api *api) ValidateStrategy(ctx context.Context, request ValidateStrategyRe
 	if err != nil {
 		return ValidateStrategy500JSONResponse{api.internalError(ctx, "validate_strategy", err)}, nil
 	}
-	return ValidateStrategy200JSONResponse{Errors: validation.Problems, MissingIndicators: missingIndicatorDTOs(validation.Missing)}, nil
+	return ValidateStrategy200JSONResponse{Errors: validation.Problems, Expression: validation.Expression, Indicators: indicatorCallDTOs(validation.Indicators)}, nil
 }
 
 func (api *api) ListStrategies(context.Context, ListStrategiesRequestObject) (ListStrategiesResponseObject, error) {
@@ -361,18 +373,9 @@ func (api *api) strategyDTO(entry strategy.Entry) Strategy {
 		MinMarketCapUsd: entry.MarketCap.MinUSD, MaxMarketCapUsd: entry.MarketCap.MaxUSD,
 		TargetRatio: toNullable[SignalTargetRatio](entry.TargetRatio), Window: toNullable[SignalWindow](entry.Window),
 		Message: entry.Message, Enabled: entry.Enabled, Valid: entry.Compiled != nil,
-		MissingIndicators: missingIndicatorDTOs(api.strategies.Unconfigured(entry)),
 	}
 	if entry.Problem != "" {
 		dto.Problem = &entry.Problem
 	}
 	return dto
-}
-
-func missingIndicatorDTOs(entries []scannerindicator.Entry) []StrategyMissingIndicator {
-	missing := make([]StrategyMissingIndicator, len(entries))
-	for i, entry := range entries {
-		missing[i] = StrategyMissingIndicator{Interval: CandleInterval(entry.Interval), Type: string(entry.Selection.Type), Parameters: entry.Selection.Parameters, Title: entry.Title}
-	}
-	return missing
 }

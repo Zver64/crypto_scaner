@@ -145,7 +145,7 @@ API error shape {"error":{"code","message","details"},"request_id"}.`,
 	root.PersistentFlags().BoolVar(&c.json, "json", false, "print the result as JSON, and errors as JSON on stderr")
 	_ = root.RegisterFlagCompletionFunc("profile", completeProfiles)
 	root.AddCommand(c.loginCommand(), c.profilesCommand(), c.useCommand(),
-		c.varsCommand(), c.validateCommand(), c.favoritesCommand(), c.strategiesCommand(), c.signalsCommand(), c.indicatorsCommand(), c.backtestCommand())
+		c.varsCommand(), c.validateCommand(), c.favoritesCommand(), c.strategiesCommand(), c.signalsCommand(), c.backtestCommand())
 	c.markRunning(root)
 	return root
 }

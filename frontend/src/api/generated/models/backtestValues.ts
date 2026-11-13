@@ -23,8 +23,8 @@
  */
 
 /**
- * Values a rule read, named as its source writes them, such as `h_rsi`,
- * `prev(h_rsi, 2)`, or `of("BTCUSDT", h_close)`; reads inside
- * percentile windows and unknown values are left out.
+ * Values a rule read, named by their canonical calls, such as
+ * `rsi("1h")`, `Prev(rsi("1h"), 2)`, or `Of("BTCUSDT", close("1h"))`;
+ * reads inside percentile windows and unknown values are left out.
  */
 export interface BacktestValues {[key: string]: number}

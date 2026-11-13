@@ -5,7 +5,6 @@ import {
 	Menu,
 	NativeSelect,
 	NumberInput,
-	Select,
 	Stack,
 } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
@@ -18,7 +17,6 @@ import {
 } from "@tabler/icons-react";
 import type { ReactNode } from "react";
 
-import type { StrategyVariable } from "@/api/generated/models";
 import { CoinSelect } from "@/features/strategy-settings/coin-select";
 import {
 	coinCall,
@@ -31,8 +29,10 @@ import {
 } from "@/features/strategy-settings/expressions";
 import { FunctionEditor } from "@/features/strategy-settings/function-editor";
 import { NestingLine } from "@/features/strategy-settings/nesting-line";
+import { StrategyVariableInput } from "@/features/strategy-settings/strategy-variable-input";
+import type { StrategyVariables } from "@/features/strategy-settings/types";
 import {
-	variableSelectData,
+	defaultVariableCall,
 	withoutPositionVariables,
 } from "@/features/strategy-settings/utils";
 
@@ -43,12 +43,12 @@ export interface ExpressionEditorProps {
 	label: string;
 	node: ExpressionNode;
 	onChange(node: ExpressionNode): void;
-	variables: readonly StrategyVariable[];
+	variables: StrategyVariables;
 	// Hides the number kind where a number alone makes no sense, such as the
 	// compared side of a condition.
 	withoutNumber?: boolean;
-	// The indicator a new indicator or coin operand starts with when the
-	// operand reads none, such as one other than the compared indicator.
+	// The call a new indicator or coin operand starts with when the operand
+	// reads none, such as one other than the compared indicator.
 	defaultField?: string;
 	// Hides the coin kind inside an operand of another coin, since of
 	// cannot contain of.
@@ -112,7 +112,8 @@ export function ExpressionEditor({
 	// A new kind keeps the first indicator the operand reads.
 	const field: ExpressionNode = {
 		kind: "field",
-		field: firstField(node) ?? defaultField ?? variables[0]?.name ?? "",
+		field:
+			firstField(node) ?? defaultField ?? defaultVariableCall(variables) ?? "",
 	};
 	const choose = (next: OperandKind) => {
 		if (next === kind) return;
@@ -187,21 +188,12 @@ export function ExpressionEditor({
 							}
 						/>
 					) : (
-						<Select
-							aria-label={label}
-							clearable
-							data={variableSelectData(variables)}
+						<StrategyVariableInput
 							disabled={disabled}
-							// Clearing leaves the indicator to be chosen again.
-							onChange={(value) =>
-								onChange({ kind: "field", field: value ?? "" })
-							}
-							placeholder="Indicator"
-							searchable
-							size="sm"
-							value={
-								node.kind === "field" && node.field !== "" ? node.field : null
-							}
+							field={node.kind === "field" ? node.field : ""}
+							label={label}
+							onChange={(field) => onChange({ kind: "field", field })}
+							variables={variables}
 						/>
 					)}
 				</Box>

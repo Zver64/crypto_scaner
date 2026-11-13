@@ -20,8 +20,12 @@ export interface ScaleDraft {
 	levels: string[];
 }
 
-export interface ScannerIndicatorDraft extends ScaleDraft {
+// The inputs that change a configured indicator.
+export interface ScannerIndicatorSettingsDraft extends ScaleDraft {
 	periods: PeriodChoices;
+}
+
+export interface ScannerIndicatorDraft extends ScannerIndicatorSettingsDraft {
 	type: string | null;
 	parameters: ParameterValues;
 }

@@ -1,7 +1,8 @@
 // Package scannerindicator holds the global indicator configuration the
-// administrator manages: every configured indicator can be read by strategies
-// and is optionally drawn on the charts of its interval and shown as a market
-// table column.
+// administrator manages: each period of a configured indicator optionally
+// draws it on the charts of the interval and shows it as a market table
+// column, and the strategy builder offers it. Strategies call any indicator,
+// configured or not.
 package scannerindicator
 
 import (
@@ -24,13 +25,12 @@ import (
 var (
 	ErrInvalidArgument = errors.New("invalid scanner indicator")
 	ErrNotFound        = errors.New("scanner indicator not found")
-	// ErrConflict means the interval already has the same selection.
+	// ErrConflict means the same selection, or one with the same title, is
+	// configured.
 	ErrConflict = errors.New("scanner indicator already exists")
-	// ErrLimit means the interval charts already draw the maximum number of
-	// indicators.
+	// ErrLimit means the charts of an interval already draw the maximum
+	// number of indicators.
 	ErrLimit = errors.New("scanner indicator limit reached")
-	// ErrInUse means a strategy reads the indicator.
-	ErrInUse = errors.New("scanner indicator is used by a strategy")
 )
 
 // Scale is the optional value axis of an indicator pane. Overlays share the
@@ -41,24 +41,49 @@ type Scale struct {
 	Levels []float64
 }
 
-// Indicator is one configured indicator.
-type Indicator struct {
-	ID          int64
+// Period is how the charts and tables of one interval show an indicator.
+type Period struct {
 	Interval    market.CandleInterval
-	Selection   indicator.Selection
 	ShowInTable bool
 	ShowInChart bool
-	Scale       Scale
 }
 
-// Target is the closed-candle calculation of the indicator.
-func (item Indicator) Target() closedindicator.Target {
-	return closedindicator.Target{Interval: item.Interval, Selection: item.Selection}
+// Indicator is one configured indicator. Its periods are display settings
+// only.
+type Indicator struct {
+	ID        int64
+	Selection indicator.Selection
+	// Periods are in interval order, each interval at most once.
+	Periods []Period
+	Scale   Scale
+}
+
+// Target is the closed-candle calculation of the indicator on interval.
+func (item Indicator) Target(interval market.CandleInterval) closedindicator.Target {
+	return closedindicator.Target{Interval: interval, Selection: item.Selection}
+}
+
+// HasSelection reports whether the indicator calculates selection, which
+// must be normalized.
+func (item Indicator) HasSelection(selection indicator.Selection) bool {
+	return item.Target("").Equal(closedindicator.Target{Selection: selection})
+}
+
+// Period returns the display settings of interval; found is false when the
+// indicator has no such period.
+func (item Indicator) Period(interval market.CandleInterval) (period Period, found bool) {
+	index := slices.IndexFunc(item.Periods, func(period Period) bool { return period.Interval == interval })
+	if index < 0 {
+		return Period{}, false
+	}
+	return item.Periods[index], true
 }
 
 // Entry is a validated indicator with its derived presentation.
 type Entry struct {
 	Indicator
+	// Title names the indicator without a period, such as "rsi-21";
+	// ColumnTitle adds the interval.
 	Title     string
 	Placement chart.Placement
 	Outputs   []string
@@ -77,19 +102,15 @@ type Entry struct {
 
 type Store interface {
 	ListScannerIndicators(context.Context) ([]Indicator, error)
-	// CreateScannerIndicators appends the indicators to the display order in
-	// one transaction and returns their ids in order. It fails with
-	// ErrConflict for a duplicate selection.
-	CreateScannerIndicators(context.Context, []Indicator) ([]int64, error)
+	// CreateScannerIndicator appends the indicator with its periods to the
+	// display order and returns its id. It fails with ErrConflict for a
+	// duplicate selection.
+	CreateScannerIndicator(context.Context, Indicator) (int64, error)
+	// UpdateScannerIndicator replaces the periods and the scale.
 	// UpdateScannerIndicator and DeleteScannerIndicator fail with
-	// ErrNotFound for an unknown id. Deletions fail with ErrInUse while a
-	// strategy reads an indicator.
+	// ErrNotFound for an unknown id.
 	UpdateScannerIndicator(context.Context, Indicator) error
 	DeleteScannerIndicator(context.Context, int64) error
-	// DeleteUnusedScannerIndicators removes every indicator that no strategy
-	// references and no market table or chart shows, and returns the removed
-	// ids.
-	DeleteUnusedScannerIndicators(context.Context) ([]int64, error)
 	// ReorderScannerIndicators stores ids as the display order.
 	ReorderScannerIndicators(context.Context, []int64) error
 }
@@ -101,7 +122,6 @@ type Service struct {
 	palette  []string
 	logger   *slog.Logger
 	changed  func()
-	usage    func() map[int64][]string
 
 	// writes serializes changes, so limit and duplicate checks see every
 	// earlier change.
@@ -112,13 +132,12 @@ type Service struct {
 
 // New creates an empty service; Load reads the stored configuration. Chart
 // lines take palette colors (theme tokens) in turn. changed is called after
-// each change and must not block. usage maps indicator ids to the names of
-// the strategies that read them.
-func New(store Store, registry *indicator.Registry, palette []string, logger *slog.Logger, changed func(), usage func() map[int64][]string) (*Service, error) {
-	if store == nil || registry == nil || len(palette) == 0 || logger == nil || changed == nil || usage == nil {
-		return nil, errors.New("scanner indicator store, registry, palette, logger, change listener, and usage are required")
+// each change and must not block.
+func New(store Store, registry *indicator.Registry, palette []string, logger *slog.Logger, changed func()) (*Service, error) {
+	if store == nil || registry == nil || len(palette) == 0 || logger == nil || changed == nil {
+		return nil, errors.New("scanner indicator store, registry, palette, logger, and change listener are required")
 	}
-	return &Service{store: store, registry: registry, palette: slices.Clone(palette), logger: logger.With("module", "scanner_indicator"), changed: changed, usage: usage}, nil
+	return &Service{store: store, registry: registry, palette: slices.Clone(palette), logger: logger.With("module", "scanner_indicator"), changed: changed}, nil
 }
 
 // Load replaces the configuration with the stored one. Indicators the
@@ -151,74 +170,44 @@ func (service *Service) List() []Entry {
 	return slices.Clone(service.entries)
 }
 
-// Usage maps indicator ids to the names of the strategies that read them.
-func (service *Service) Usage() map[int64][]string { return service.usage() }
-
-// Preview validates an indicator that is not configured and derives its
+// Preview validates a selection that is not configured and derives its
 // presentation, such as its title.
-func (service *Service) Preview(item Indicator) (Entry, error) {
-	return service.entry(item)
+func (service *Service) Preview(selection indicator.Selection) (Entry, error) {
+	return service.entry(Indicator{Selection: selection})
 }
 
-// Create validates, stores, and applies new indicators, such as one
-// selection on several intervals. Either all of them are added or none.
-func (service *Service) Create(ctx context.Context, items []Indicator) ([]Entry, error) {
-	if len(items) == 0 {
-		return nil, fmt.Errorf("%w: choose at least one interval", ErrInvalidArgument)
-	}
-	entries := make([]Entry, len(items))
-	for i, item := range items {
-		entry, err := service.entry(item)
-		if err != nil {
-			return nil, err
-		}
-		if slices.ContainsFunc(entries[:i], func(earlier Entry) bool { return earlier.Target().Equal(entry.Target()) }) {
-			return nil, fmt.Errorf("%w: choose each interval once", ErrInvalidArgument)
-		}
-		entries[i] = entry
+// Create validates, stores, and applies a new indicator.
+func (service *Service) Create(ctx context.Context, item Indicator) (Entry, error) {
+	entry, err := service.entry(item)
+	if err != nil {
+		return Entry{}, err
 	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
-	// Each new indicator is checked against the stored ones and the new
-	// ones before it, since a batch may add several on one interval.
-	for i, entry := range entries {
-		count := 0
-		for _, existing := range append(slices.Clone(current), entries[:i]...) {
-			if existing.Interval != entry.Interval {
-				continue
-			}
-			if existing.Target().Equal(entry.Target()) {
-				return nil, fmt.Errorf("%w: %s already has %s", ErrConflict, entry.Interval, entry.lineTitle)
-			}
-			// Titles name table columns and strategy variables.
-			if existing.Title == entry.Title {
-				return nil, fmt.Errorf("%w: another indicator is titled %s", ErrConflict, entry.Title)
-			}
-			count++
+	for _, existing := range current {
+		if existing.HasSelection(entry.Selection) {
+			return Entry{}, fmt.Errorf("%w: %s is already configured", ErrConflict, entry.lineTitle)
 		}
-		if count >= chart.MaxIndicators {
-			return nil, fmt.Errorf("%w: %s charts draw at most %d indicators", ErrLimit, entry.Interval, chart.MaxIndicators)
+		// Titles name table columns.
+		if existing.Title == entry.Title {
+			return Entry{}, fmt.Errorf("%w: another indicator is titled %s", ErrConflict, entry.Title)
 		}
 	}
-	indicators := make([]Indicator, len(entries))
-	for i, entry := range entries {
-		indicators[i] = entry.Indicator
+	if err := chartLimit(current, entry); err != nil {
+		return Entry{}, err
 	}
-	ids, err := service.store.CreateScannerIndicators(ctx, indicators)
+	id, err := service.store.CreateScannerIndicator(ctx, entry.Indicator)
 	if err != nil {
-		return nil, err
+		return Entry{}, err
 	}
-	for i := range entries {
-		entries[i].ID = ids[i]
-	}
-	service.replace(append(current, entries...))
-	return entries, nil
+	entry.ID = id
+	service.replace(append(current, entry))
+	return entry, nil
 }
 
-// Update changes whether the indicator is a table column, whether charts draw
-// it, and its pane scale.
-func (service *Service) Update(ctx context.Context, id int64, showInTable, showInChart bool, scale Scale) (Entry, error) {
+// Update replaces the periods of the indicator and its pane scale.
+func (service *Service) Update(ctx context.Context, id int64, periods []Period, scale Scale) (Entry, error) {
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
@@ -227,9 +216,12 @@ func (service *Service) Update(ctx context.Context, id int64, showInTable, showI
 		return Entry{}, ErrNotFound
 	}
 	item := current[index].Indicator
-	item.ShowInTable, item.ShowInChart, item.Scale = showInTable, showInChart, scale
+	item.Periods, item.Scale = periods, scale
 	entry, err := service.entry(item)
 	if err != nil {
+		return Entry{}, err
+	}
+	if err := chartLimit(current, entry); err != nil {
 		return Entry{}, err
 	}
 	if err := service.store.UpdateScannerIndicator(ctx, entry.Indicator); err != nil {
@@ -238,6 +230,27 @@ func (service *Service) Update(ctx context.Context, id int64, showInTable, showI
 	current[index] = entry
 	service.replace(current)
 	return entry, nil
+}
+
+// chartLimit checks that the charts of every period that draws entry draw
+// at most chart.MaxIndicators indicators with it, among the current ones
+// other than entry itself.
+func chartLimit(current []Entry, entry Entry) error {
+	for _, period := range entry.Periods {
+		if !period.ShowInChart {
+			continue
+		}
+		count := 0
+		for _, other := range current {
+			if found, ok := other.Period(period.Interval); ok && found.ShowInChart && other.ID != entry.ID {
+				count++
+			}
+		}
+		if count >= chart.MaxIndicators {
+			return fmt.Errorf("%w: %s charts draw at most %d indicators", ErrLimit, period.Interval, chart.MaxIndicators)
+		}
+	}
+	return nil
 }
 
 // Delete removes the indicator.
@@ -249,26 +262,10 @@ func (service *Service) Delete(ctx context.Context, id int64) error {
 	if index < 0 {
 		return ErrNotFound
 	}
-	if names := service.usage()[id]; len(names) > 0 {
-		return fmt.Errorf("%w: %s", ErrInUse, strings.Join(names, ", "))
-	}
 	if err := service.store.DeleteScannerIndicator(ctx, id); err != nil {
 		return err
 	}
 	service.replace(slices.Delete(current, index, index+1))
-	return nil
-}
-
-// DeleteUnused removes every indicator that no strategy reads and no market
-// table or chart shows.
-func (service *Service) DeleteUnused(ctx context.Context) error {
-	service.writes.Lock()
-	defer service.writes.Unlock()
-	deleted, err := service.store.DeleteUnusedScannerIndicators(ctx)
-	if err != nil {
-		return err
-	}
-	service.replace(slices.DeleteFunc(service.List(), func(entry Entry) bool { return slices.Contains(deleted, entry.ID) }))
 	return nil
 }
 
@@ -301,22 +298,25 @@ func (service *Service) Reorder(ctx context.Context, ids []int64) ([]Entry, erro
 	return slices.Clone(reordered), nil
 }
 
-// TableColumns are the market table columns of indicators shown in tables.
+// TableColumns are the market table columns of the periods shown in tables,
+// in display order and, within an indicator, in interval order.
 func (service *Service) TableColumns() []markettable.Column {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
 	var columns []markettable.Column
 	for _, entry := range service.entries {
-		if !entry.ShowInTable {
-			continue
+		for _, period := range entry.Periods {
+			if !period.ShowInTable {
+				continue
+			}
+			columns = append(columns, markettable.Column{
+				ID:       fmt.Sprintf("indicator_%d_%s", entry.ID, period.Interval),
+				Title:    entry.ColumnTitle(period.Interval),
+				Kind:     markettable.KindNumber,
+				Sortable: true,
+				Source:   markettable.ClosedIndicator{Target: entry.Target(period.Interval), Output: entry.Outputs[0]},
+			})
 		}
-		columns = append(columns, markettable.Column{
-			ID:       fmt.Sprintf("indicator_%d", entry.ID),
-			Title:    entry.Title,
-			Kind:     markettable.KindNumber,
-			Sortable: true,
-			Source:   markettable.ClosedIndicator{Target: entry.Target(), Output: entry.Outputs[0]},
-		})
 	}
 	return columns
 }
@@ -328,8 +328,10 @@ func (service *Service) TableTargets() []closedindicator.Target {
 	defer service.mu.RUnlock()
 	var targets []closedindicator.Target
 	for _, entry := range service.entries {
-		if entry.ShowInTable && !slices.ContainsFunc(targets, entry.Target().Equal) {
-			targets = append(targets, entry.Target())
+		for _, period := range entry.Periods {
+			if target := entry.Target(period.Interval); period.ShowInTable && !slices.ContainsFunc(targets, target.Equal) {
+				targets = append(targets, target)
+			}
 		}
 	}
 	return targets
@@ -344,7 +346,7 @@ func (service *Service) ChartCatalog(interval market.CandleInterval) []chart.Cat
 	var catalog []chart.CatalogIndicator
 	line := 0
 	for _, entry := range service.entries {
-		if entry.Interval != interval || !entry.ShowInChart {
+		if period, found := entry.Period(interval); !found || !period.ShowInChart {
 			continue
 		}
 		item := service.catalogIndicator(entry, line)
@@ -362,11 +364,14 @@ func (service *Service) replace(entries []Entry) {
 	service.changed()
 }
 
-// entry validates an indicator and derives its presentation.
+// entry validates an indicator and derives its presentation. Its periods are
+// put in interval order.
 func (service *Service) entry(item Indicator) (Entry, error) {
-	if !item.Interval.Valid() {
-		return Entry{}, fmt.Errorf("%w: interval %q is unsupported", ErrInvalidArgument, item.Interval)
+	periods, err := sortedPeriods(item.Periods)
+	if err != nil {
+		return Entry{}, err
 	}
+	item.Periods = periods
 	selection, err := service.registry.Normalize(item.Selection)
 	if err != nil {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
@@ -410,18 +415,42 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 	if entry.Placement == chart.PlacementPane && !slices.ContainsFunc(descriptor.Outputs, histogram) {
 		entry.pane = sharedPane(selection.Type, fields)
 	}
-	if item.ShowInTable && len(entry.Outputs) != 1 {
+	if slices.ContainsFunc(item.Periods, func(period Period) bool { return period.ShowInTable }) && len(entry.Outputs) != 1 {
 		return Entry{}, fmt.Errorf("%w: only indicators with one output can be table columns", ErrInvalidArgument)
 	}
 	if err := validateScale(entry.Placement, item.Scale); err != nil {
 		return Entry{}, err
 	}
-	entry.Title = tableTitle(item.Interval, descriptor, selection.Parameters, defaults.Parameters)
+	entry.Title = title(descriptor, selection.Parameters, defaults.Parameters)
 	entry.lineTitle = lineTitle(descriptor, selection.Parameters, defaults.Parameters)
 	if err := chart.ValidateIndicator(service.registry, service.catalogIndicator(entry, 0)); err != nil {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
 	}
 	return entry, nil
+}
+
+// sortedPeriods checks the periods and puts them in interval order.
+func sortedPeriods(periods []Period) ([]Period, error) {
+	intervals := market.CandleIntervals()
+	for i, period := range periods {
+		if !period.Interval.Valid() {
+			return nil, fmt.Errorf("%w: interval %q is unsupported", ErrInvalidArgument, period.Interval)
+		}
+		if slices.ContainsFunc(periods[:i], func(earlier Period) bool { return earlier.Interval == period.Interval }) {
+			return nil, fmt.Errorf("%w: choose each period once", ErrInvalidArgument)
+		}
+	}
+	sorted := slices.Clone(periods)
+	slices.SortFunc(sorted, func(a, b Period) int {
+		return slices.Index(intervals, a.Interval) - slices.Index(intervals, b.Interval)
+	})
+	return sorted, nil
+}
+
+// ColumnTitle is the title of the indicator's table column on interval, such
+// as "d-rsi-21".
+func (entry Entry) ColumnTitle(interval market.CandleInterval) string {
+	return IntervalPrefix(interval) + "-" + entry.Title
 }
 
 func histogram(output indicator.OutputDescriptor) bool {
@@ -500,15 +529,15 @@ func (entry Entry) ChartIndicator(id string, firstLine int) chart.CatalogIndicat
 	return item
 }
 
-// tableTitle is "<interval>-<type>", followed by the parameter values, such
-// as "d-rsi", "d-rsi-21", or "h-sma-20-volume". Values that are not named
-// choices appear in order up to the last one that differs from its default,
-// so each keeps its position and distinct selections get distinct titles:
-// "h-bbands-20-2.5" raises the upper band, "h-bbands-20-2-2.5" the lower one.
-// Once one of several named choices differs, all of them appear in order, so
-// "h-beta-high-close" and "h-beta-close-high" differ.
-func tableTitle(interval market.CandleInterval, descriptor indicator.Descriptor, parameters, defaults indicator.Parameters) string {
-	parts := []string{IntervalPrefix(interval), string(descriptor.Type)}
+// title is the type followed by the parameter values, such as "rsi",
+// "rsi-21", or "sma-20-volume". Values that are not named choices appear in
+// order up to the last one that differs from its default, so each keeps its
+// position and distinct selections get distinct titles: "bbands-20-2.5"
+// raises the upper band, "bbands-20-2-2.5" the lower one. Once one of several
+// named choices differs, all of them appear in order, so "beta-high-close"
+// and "beta-close-high" differ.
+func title(descriptor indicator.Descriptor, parameters, defaults indicator.Parameters) string {
+	parts := []string{string(descriptor.Type)}
 	named := namedChoicesChanged(descriptor, parameters, defaults)
 	last := -1
 	for i, parameter := range descriptor.Parameters {
@@ -547,8 +576,8 @@ func namedChoicesChanged(descriptor indicator.Descriptor, parameters, defaults i
 }
 
 // parameterValue formats a value, naming named choices such as "volume".
-// Plain choices, such as moving average types, stay numbers, which keeps the
-// titles strategies read stable.
+// Plain choices, such as moving average types, stay numbers, which keeps
+// titles stable.
 func parameterValue(parameter indicator.ParameterDescriptor, value any) string {
 	if namedChoice(parameter) {
 		for _, choice := range parameter.Choices {

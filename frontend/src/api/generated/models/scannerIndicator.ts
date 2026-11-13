@@ -21,24 +21,20 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { CandleInterval } from './candleInterval.ts';
 import type { ScannerIndicatorParameters } from './scannerIndicatorParameters.ts';
+import type { ScannerIndicatorPeriods } from './scannerIndicatorPeriods.ts';
 import type { ScannerIndicatorPlacement } from './scannerIndicatorPlacement.ts';
 import type { ScannerIndicatorScale } from './scannerIndicatorScale.ts';
 
 export interface ScannerIndicator {
   id: number;
-  interval: CandleInterval;
   type: string;
   /** Canonical parameters with defaults filled in. */
   parameters: ScannerIndicatorParameters;
-  show_in_table: boolean;
-  show_in_chart: boolean;
+  periods: ScannerIndicatorPeriods;
   scale: ScannerIndicatorScale;
-  /** Table column title, such as `d-rsi`. */
+  /** Title without a period, such as `rsi-21`; table columns prefix the interval, as in `d-rsi-21`. */
   title: string;
   placement: ScannerIndicatorPlacement;
   outputs: string[];
-  /** Names of the strategies that read the indicator, which cannot be removed meanwhile. */
-  strategies: string[];
 }

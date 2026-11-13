@@ -24,9 +24,9 @@
 
 /**
  * Take profit price, a CEL price expression evaluated at the close of
- * the entry signal and fixed for the trade, such as `h_close * 1.05` or
- * `h_bbands_20_2_2_upperband`: arithmetic and `abs`, `mod`, `min`,
- * `max`, `prev`, `percentile`, and `of` over variables and numbers,
+ * the entry signal and fixed for the trade, such as `close("1h") * 1.05` or
+ * `bbands_upperband("1h", 20)`: arithmetic and `Abs`, `Mod`, `Min`,
+ * `Max`, `Prev`, `Percentile`, and `Of` over calls and numbers,
  * reading the evaluated coin. A signal whose take profit is not above
  * its close buys nothing. Empty without a take profit.
  * @maxLength 2000

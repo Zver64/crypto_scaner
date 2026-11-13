@@ -18,14 +18,16 @@ import {
 	Direction,
 	type ErrorResponse,
 	type Strategy,
+	type StrategyCatalog,
 	StrategyCoinSource,
+	type StrategyIndicatorCall,
 	type StrategyUpdate,
-	type StrategyVariable,
 } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
 import {
 	anyField,
 	arithmeticTokens,
+	variableGroups,
 	comparisonTokens,
 	defaultDirections,
 	defaultSignalTargetRatio,
@@ -43,7 +45,10 @@ import {
 	expressionParser,
 	expressionRuleProcessor,
 	expressionSource,
+	fieldVariable,
 	firstField,
+	variableCall,
+	variableKey,
 } from "@/features/strategy-settings/expressions";
 import {
 	parsePriceSetup,
@@ -52,6 +57,7 @@ import {
 	priceSetupExpression,
 } from "@/features/strategy-settings/strategy-price-input/utils";
 import type {
+	CanonicalRules,
 	StrategyDraft,
 	StrategyFormData,
 	StrategyFormValues,
@@ -59,6 +65,8 @@ import type {
 	StrategyOperator,
 	StrategyQuery,
 	StrategyRuleVariables,
+	StrategyVariable,
+	StrategyVariables,
 	StrategyVariableSets,
 	Token,
 } from "@/features/strategy-settings/types";
@@ -104,9 +112,9 @@ function numberOrZero(value: unknown): number {
 function crossFunction(operator: string): string | undefined {
 	switch (operator) {
 		case "crossesAbove":
-			return "crosses_above";
+			return "CrossesAbove";
 		case "crossesBelow":
-			return "crosses_below";
+			return "CrossesBelow";
 		default:
 			return undefined;
 	}
@@ -115,9 +123,9 @@ function crossFunction(operator: string): string | undefined {
 // The crossing operator of a CEL function.
 function crossOperator(name: string): StrategyOperator | undefined {
 	switch (name) {
-		case "crosses_above":
+		case "CrossesAbove":
 			return "crossesAbove";
-		case "crosses_below":
+		case "CrossesBelow":
 			return "crossesBelow";
 		default:
 			return undefined;
@@ -191,8 +199,8 @@ export function importedStrategyQuery(
 }
 
 // The parser restores arithmetic operands of comparisons only in
-// parentheses, as the builder writes them, so h_volume >= 1.5 * h_sma becomes
-// h_volume >= (1.5 * h_sma). A negative number stays bare.
+// parentheses, as the builder writes them, so volume("1h") >= 1.5 * x
+// becomes volume("1h") >= (1.5 * x). A negative number stays bare.
 export function parenthesizeOperands(expression: string): string {
 	const tokens: Token[] = [];
 	for (const match of expression.matchAll(tokenPattern)) {
@@ -280,7 +288,7 @@ export function strategyQueryDropped(
 }
 
 function comparisonCount(expression: string): number {
-	return expression.match(/crosses_(?:above|below)\(|[<>]=?/g)?.length ?? 0;
+	return expression.match(/Crosses(?:Above|Below)\(|[<>]=?/g)?.length ?? 0;
 }
 
 function crossRule(expression: CELExpression): RuleType | null {
@@ -317,13 +325,25 @@ function crossRule(expression: CELExpression): RuleType | null {
 // another group; turn them back into what the builder produced.
 function normalizeGroup(group: RuleGroupType): RuleGroupType {
 	const rules = group.rules.map((rule) =>
-		isRuleGroup(rule) ? rangeRule(normalizeGroup(rule)) : rule,
+		isRuleGroup(rule) ? rangeRule(normalizeGroup(rule)) : plainRule(rule),
 	);
 	const [only] = rules;
 	if (group.not && rules.length === 1 && only && isRuleGroup(only)) {
 		return { ...only, not: !only.not };
 	}
 	return { ...group, rules };
+}
+
+// The parser reads a call compared as a whole as an expression; the builder
+// keeps it a plain field, as it does for edited conditions.
+function plainRule(rule: RuleType): RuleType {
+	const { lhs, ...rest } = rule;
+	const left = lhs as ExpressionNode | undefined;
+	const plain = left?.kind === "field" ? { ...rest, field: left.field } : rule;
+	const right = plain.value as ExpressionNode;
+	return plain.valueSource === "expression" && right.kind === "field"
+		? { ...plain, value: right.field, valueSource: "field" }
+		: plain;
 }
 
 function rangeRule(group: RuleGroupType): RuleGroupType | RuleType {
@@ -396,6 +416,7 @@ export function newStrategyDraft(
 		id: undefined,
 		signal: kind === "signal",
 		incomplete: false,
+		indicators: [],
 		values: {
 			name: "",
 			direction: defaultDirections[kind],
@@ -414,30 +435,33 @@ export function newStrategyDraft(
 	};
 }
 
-// The draft editing strategy, with its rules parsed into the builder.
+// The draft editing strategy, with its canonical rules parsed into the
+// builder.
 export function strategyDraft(
 	strategy: Strategy,
+	{ expressions, indicators }: CanonicalRules,
 ): Omit<StrategyDraft, "revision"> {
-	const query = strategyQuery(strategy.expression);
+	const query = strategyQuery(expressions.expression);
 	const exitQuery =
-		strategy.exit_expression === ""
+		expressions.exit_expression === ""
 			? undefined
-			: strategyQuery(strategy.exit_expression);
+			: strategyQuery(expressions.exit_expression);
 	return {
 		id: strategy.id,
 		signal: strategy.signal,
 		incomplete:
-			strategyQueryDropped(strategy.expression, query) ||
+			strategyQueryDropped(expressions.expression, query) ||
 			(exitQuery !== undefined &&
-				strategyQueryDropped(strategy.exit_expression, exitQuery)),
+				strategyQueryDropped(expressions.exit_expression, exitQuery)),
+		indicators,
 		values: {
 			name: strategy.name,
 			direction: strategy.direction,
 			message: strategy.message,
 			query,
 			exitQuery,
-			takeProfit: parsePriceSetup(strategy.take_profit_expression),
-			stopLoss: parsePriceSetup(strategy.stop_loss_expression),
+			takeProfit: parsePriceSetup(expressions.take_profit_expression),
+			stopLoss: parsePriceSetup(expressions.stop_loss_expression),
 			coins: strategy.coins,
 			coinSource: strategy.coin_source,
 			minMarketCap: marketCapMillions(strategy.min_market_cap_usd),
@@ -446,6 +470,24 @@ export function strategyDraft(
 			window: String(strategy.window ?? defaultSignalWindow),
 		},
 	};
+}
+
+// indicators and those of more that are not among them, once each.
+export function withIndicators(
+	indicators: readonly StrategyIndicatorCall[],
+	more: readonly StrategyIndicatorCall[],
+): StrategyIndicatorCall[] {
+	const key = ({ parameters, type }: StrategyIndicatorCall) =>
+		variableKey({ kind: "indicator", name: type, parameters });
+	const known = new Set(indicators.map(key));
+	return [
+		...indicators,
+		...more.filter((indicator) => {
+			const fresh = !known.has(key(indicator));
+			known.add(key(indicator));
+			return fresh;
+		}),
+	];
 }
 
 // The strategy form's values with their trees typed; only the strategy form
@@ -701,45 +743,109 @@ export function strategyErrorMessage(
 // position variables of the open trade, which the backend reads only at the
 // latest candle of the evaluated coin.
 export function withoutPositionVariables(
-	variables: readonly StrategyVariable[],
-): StrategyVariable[] {
-	return variables.filter(({ position }) => !position);
+	variables: StrategyVariables,
+): StrategyVariables {
+	return {
+		...variables,
+		variables: variables.variables.filter(({ kind }) => kind !== "position"),
+	};
 }
 
-// Select data for variables, grouped by candle interval; the position
-// variables of exit rules form their own group.
+// Select data for variables: the candle fields, the indicators, and the
+// position variables of exit rules, each in a group of its own.
 export function variableSelectData(variables: readonly StrategyVariable[]) {
 	const groups = new Map<string, { label: string; value: string }[]>();
 	for (const variable of variables) {
-		const group =
-			variable.interval === undefined
-				? "Position"
-				: (chartIntervalOptions.find(({ value }) => value === variable.interval)
-						?.label ?? variable.interval);
+		const group = variableGroups[variable.kind];
 		const items = groups.get(group) ?? [];
-		items.push({ label: variable.label, value: variable.name });
+		items.push({ label: variable.label, value: variable.key });
 		groups.set(group, items);
 	}
 	return [...groups].map(([group, items]) => ({ group, items }));
 }
 
-// The variables of the entry and the exit rule with their builder fields.
-// Built in the variables query's select, whose structural sharing keeps them
-// the same objects across renders, so the builders keep their schema.
+// Select data for the periods calls read.
+export function intervalSelectData(intervals: readonly string[]) {
+	return intervals.map((interval) => ({
+		label:
+			chartIntervalOptions.find(({ value }) => value === interval)?.label ??
+			interval,
+		value: interval,
+	}));
+}
+
+// The variables of the entry and the exit rule with their builder fields:
+// the candle fields, the configured indicators and the others the rules
+// read, and the position variables.
 export function strategyVariableSets(
-	variables: StrategyVariable[],
+	catalog: StrategyCatalog,
+	indicators: readonly StrategyIndicatorCall[],
 ): StrategyVariableSets {
+	const variables: StrategyVariable[] = catalog.candle_fields.map((name) => ({
+		key: variableKey({ kind: "candle", name, parameters: [] }),
+		kind: "candle",
+		label: name,
+		name,
+		parameters: [],
+	}));
+	for (const { outputs, parameters, title, type } of withIndicators(
+		catalog.indicators,
+		indicators,
+	)) {
+		for (const output of outputs) {
+			const variable = {
+				kind: "indicator" as const,
+				name: outputs.length > 1 ? `${type}_${output}` : type,
+				parameters,
+			};
+			variables.push({
+				...variable,
+				key: variableKey(variable),
+				label: outputs.length > 1 ? `${title} ${output}` : title,
+			});
+		}
+	}
+	for (const { name } of catalog.position_variables) {
+		variables.push({
+			key: name,
+			kind: "position",
+			label: name,
+			name,
+			parameters: [],
+		});
+	}
+	const all = { intervals: catalog.intervals, variables };
 	return {
-		entry: ruleVariables(withoutPositionVariables(variables)),
-		exit: ruleVariables(variables),
+		entry: ruleVariables(withoutPositionVariables(all)),
+		exit: ruleVariables(all),
 	};
 }
 
-function ruleVariables(variables: StrategyVariable[]): StrategyRuleVariables {
-	const fields: Field[] = variables.map(({ label, name }) => ({
-		label,
-		name,
-		valueSources: ["value", "field", "expression"],
-	}));
-	return { fields, variables };
+// The builder's only field is the call a new condition compares.
+function ruleVariables(variables: StrategyVariables): StrategyRuleVariables {
+	const call = defaultVariableCall(variables);
+	const fields: Field[] =
+		call === undefined
+			? []
+			: [
+					{
+						label: call,
+						name: call,
+						valueSources: ["value", "field", "expression"],
+					},
+				];
+	return { ...variables, fields };
+}
+
+// The call of the first variable other than the one field reads, on the
+// period of field or else on the first period.
+export function defaultVariableCall(
+	variables: StrategyVariables,
+	field = "",
+): string | undefined {
+	const interval = fieldVariable(field).interval ?? variables.intervals[0];
+	if (interval === undefined) return undefined;
+	return variables.variables
+		.map((variable) => variableCall(variable, interval))
+		.find((call) => call !== field);
 }

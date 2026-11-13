@@ -32,7 +32,7 @@ func TestMultiCoinBacktestsSavedAndDrafts(t *testing.T) {
 				w.Header().Set("Content-Type", "application/json")
 				if r.URL.Path == "/api/v1/admin/strategy-validations" {
 					validations++
-					io.WriteString(w, `{"errors":[],"missing_indicators":[]}`)
+					io.WriteString(w, `{"errors":[],"expression":"","indicators":[]}`)
 					return
 				}
 				lock := flock.New(filepath.Join(home, "scanner", "backtest.lock"))

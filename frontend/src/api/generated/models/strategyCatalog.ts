@@ -21,9 +21,16 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ErrorResponse } from './errorResponse.ts';
+import type { CandleInterval } from './candleInterval.ts';
+import type { StrategyIndicatorCall } from './strategyIndicatorCall.ts';
+import type { StrategyPositionVariable } from './strategyPositionVariable.ts';
 
-/**
- * A strategy reads the indicator.
- */
-export type ScannerIndicatorInUseResponse = ErrorResponse;
+export interface StrategyCatalog {
+  /** The configured indicators, in display order. */
+  indicators: StrategyIndicatorCall[];
+  /** Candle fields, called with the period only, such as `close("1h")`. */
+  candle_fields: string[];
+  /** The periods indicator and candle field calls take first. */
+  intervals: CandleInterval[];
+  position_variables: StrategyPositionVariable[];
+}

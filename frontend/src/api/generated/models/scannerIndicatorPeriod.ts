@@ -22,13 +22,11 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { CandleInterval } from './candleInterval.ts';
-import type { StrategyMissingIndicatorParameters } from './strategyMissingIndicatorParameters.ts';
 
-export interface StrategyMissingIndicator {
+export interface ScannerIndicatorPeriod {
   interval: CandleInterval;
-  type: string;
-  /** Canonical parameters with defaults filled in. */
-  parameters: StrategyMissingIndicatorParameters;
-  /** Table column title, such as `h-atr-100`. */
-  title: string;
+  /** Whether market tables show the indicator of the interval as a column; only indicators with one output can be table columns. */
+  show_in_table: boolean;
+  /** Whether the charts of the interval draw the indicator. */
+  show_in_chart: boolean;
 }

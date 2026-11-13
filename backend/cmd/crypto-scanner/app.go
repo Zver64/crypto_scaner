@@ -70,7 +70,6 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	// The tracker is created after the configuration loads; changes before
 	// that are covered by its initial targets.
 	var closedIndicators *closedindicator.Tracker
-	// Strategies read the configured indicators, which stay while in use.
 	var strategies *strategy.Service
 	var strategyMonitor *strategy.Monitor
 	var alertMonitor *alerts.Monitor
@@ -82,11 +81,6 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		if err := closedIndicators.SetTargets(scannerIndicators.TableTargets()); err != nil {
 			logger.Error("apply table indicator targets failed", "module", "scanner_indicator", "error", err)
 		}
-	}, func() map[int64][]string {
-		if strategies == nil {
-			return nil
-		}
-		return strategies.IndicatorUsage()
 	})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize scanner indicators: %w", err)

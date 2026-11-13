@@ -10,7 +10,10 @@ import {
 	useUpdateScannerIndicator,
 } from "@/api/generated/api";
 import type { ScannerIndicator } from "@/api/generated/models";
-import { mutationErrorMessage } from "@/features/scanner-settings/utils";
+import {
+	mutationErrorMessage,
+	shownIntervals,
+} from "@/features/scanner-settings/utils";
 
 export function useSaveScannerIndicator(indicator: ScannerIndicator) {
 	const queryClient = useQueryClient();
@@ -41,17 +44,22 @@ export function useSaveScannerIndicator(indicator: ScannerIndicator) {
 							},
 						},
 				);
-				// Visibility and scale do not change other indicators or strategy
+				// Periods and scale do not change other indicators or strategy
 				// variables. Only dependent views become stale, without refetching.
-				if (indicator.show_in_chart || response.data.show_in_chart) {
+				const charts = new Set([
+					...shownIntervals(indicator.periods, "show_in_chart"),
+					...shownIntervals(response.data.periods, "show_in_chart"),
+				]);
+				for (const interval of charts) {
 					void queryClient.invalidateQueries({
-						queryKey: getListChartIndicatorsQueryKey({
-							interval: response.data.interval,
-						}),
+						queryKey: getListChartIndicatorsQueryKey({ interval }),
 						refetchType: "none",
 					});
 				}
-				if (indicator.show_in_table !== response.data.show_in_table) {
+				if (
+					shownIntervals(indicator.periods, "show_in_table").join() !==
+					shownIntervals(response.data.periods, "show_in_table").join()
+				) {
 					void queryClient.invalidateQueries({
 						queryKey: getAnalyzeMarketQueryKey().slice(0, 2),
 						refetchType: "none",

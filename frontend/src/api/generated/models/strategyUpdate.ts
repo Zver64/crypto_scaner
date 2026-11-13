@@ -52,15 +52,16 @@ export interface StrategyUpdate {
   target_ratio: SignalTargetRatio | null;
   window: SignalWindow | null;
   /**
-     * CEL over strategy variables: comparisons (`>`, `>=`, `<`, `<=`) of
-     * arithmetic (`+`, `-`, `*`, `/`, parentheses) over variables and
-     * numbers, combined with `&&`, `||`, and `!`. `prev(x)` and
-     * `prev(x, n)` read `x` one or `n` closed candles earlier;
-     * `percentile(x, n, p)` is the nearest-rank `p`-th percentile of `x`
-     * over the `n` closed candles before the latest one;
-     * `crosses_above(a, b)` and `crosses_below(a, b)` compare with the
-     * previous candle. `of("BTCUSDT", x)` reads `x` of another coin,
-     * which must be active.
+     * CEL over indicator and candle field calls, such as `rsi("1h")`,
+     * `bbands_upperband("1d", 20, 2.5)`, or `close("1h")`: comparisons
+     * (`>`, `>=`, `<`, `<=`) of arithmetic (`+`, `-`, `*`, `/`,
+     * parentheses) over calls and numbers, combined with `&&`, `||`,
+     * and `!`. `Prev(x)` and `Prev(x, n)` read `x` one or `n` closed
+     * candles earlier; `Percentile(x, n, p)` is the nearest-rank
+     * `p`-th percentile of `x` over the `n` closed candles before the
+     * latest one; `CrossesAbove(a, b)` and `CrossesBelow(a, b)` compare
+     * with the previous candle. `Of("BTCUSDT", x)` reads `x` of another
+     * coin, which must be active.
      * @minLength 1
      * @maxLength 2000
      */

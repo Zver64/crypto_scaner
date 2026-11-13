@@ -1,5 +1,10 @@
 import { Alert, Stack } from "@mantine/core";
+import { useState } from "react";
 
+import type {
+	StrategyCatalog,
+	StrategyIndicatorCall,
+} from "@/api/generated/models";
 import { strategyNameSchema } from "@/features/strategy-settings/schemas";
 import { StrategyCoinFields } from "@/features/strategy-settings/strategy-coin-fields";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
@@ -12,18 +17,22 @@ import { StrategySignalEvaluationFields } from "@/features/strategy-settings/str
 import type {
 	StrategyDraft,
 	StrategyFormApi,
-	StrategyVariableSets,
 } from "@/features/strategy-settings/types";
-import { strategyKind } from "@/features/strategy-settings/utils";
+import {
+	strategyKind,
+	strategyVariableSets,
+	withIndicators,
+} from "@/features/strategy-settings/utils";
 
 interface StrategyFormContentProps {
+	// What expressions read.
+	catalog: StrategyCatalog;
 	draft: StrategyDraft;
 	// Holds the fields of the draft; the page owns it, so it can ask before
 	// another strategy replaces unsaved changes.
 	form: StrategyFormApi;
 	isSaving: boolean;
 	onCancel(): void;
-	variables: StrategyVariableSets;
 }
 
 // The fields of an opened strategy form; remounted for every draft. Not an
@@ -31,12 +40,18 @@ interface StrategyFormContentProps {
 // field and each component that shows values subscribes to its own part of
 // the form, so a keystroke renders only those.
 export function StrategyFormContent({
+	catalog,
 	draft,
 	form,
 	isSaving,
 	onCancel,
-	variables,
 }: StrategyFormContentProps) {
+	// The indicators the rules read besides the configured ones, which the
+	// builders offer too.
+	const [indicators, setIndicators] = useState(draft.indicators);
+	const addIndicators = (more: StrategyIndicatorCall[]) =>
+		setIndicators((current) => withIndicators(current, more));
+	const variables = strategyVariableSets(catalog, indicators);
 	return (
 		<Stack gap="md">
 			<form.AppField
@@ -90,6 +105,7 @@ export function StrategyFormContent({
 				exit={false}
 				field="query"
 				form={form}
+				onIndicators={addIndicators}
 				title="Entry"
 				variables={variables.entry}
 			/>
@@ -106,6 +122,7 @@ export function StrategyFormContent({
 					<StrategyExitConditions
 						disabled={isSaving}
 						form={form}
+						onIndicators={addIndicators}
 						variables={variables.exit}
 					/>
 					<StrategyPriceInput
@@ -113,14 +130,14 @@ export function StrategyFormContent({
 						field="takeProfit"
 						form={form}
 						label="Take profit"
-						variables={variables.entry.variables}
+						variables={variables.entry}
 					/>
 					<StrategyPriceInput
 						disabled={isSaving}
 						field="stopLoss"
 						form={form}
 						label="Stop loss"
-						variables={variables.entry.variables}
+						variables={variables.entry}
 					/>
 				</>
 			)}

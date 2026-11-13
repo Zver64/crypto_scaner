@@ -174,9 +174,9 @@ func TestDirectionRules(t *testing.T) {
 	usd := 1e9
 	for _, item := range []Strategy{
 		{Signal: true, Direction: "up"},
-		{Signal: true, Direction: DirectionShort, ExitExpression: "h_close > 1"},
-		{Signal: true, Direction: DirectionShort, TakeProfitExpression: "h_close * 2"},
-		{Signal: true, Direction: DirectionShort, StopLossExpression: "h_close / 2"},
+		{Signal: true, Direction: DirectionShort, ExitExpression: `close("1h") > 1`},
+		{Signal: true, Direction: DirectionShort, TakeProfitExpression: `close("1h") * 2`},
+		{Signal: true, Direction: DirectionShort, StopLossExpression: `close("1h") / 2`},
 		{Signal: true, Direction: DirectionLong, Window: 6},
 		{Signal: true, Direction: DirectionLong, TargetRatio: 1, Window: 6},
 		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 5},
@@ -185,8 +185,8 @@ func TestDirectionRules(t *testing.T) {
 		{Direction: DirectionSimple},
 		{Signal: true, Direction: DirectionSimple, TargetRatio: 2, Window: 6},
 		{Signal: true, Direction: DirectionSimple, Window: 6},
-		{Direction: DirectionShort, StopLossExpression: "h_close * 2"},
-		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", ExitExpression: "h_close > 1"},
+		{Direction: DirectionShort, StopLossExpression: `close("1h") * 2`},
+		{Direction: DirectionShort, TakeProfitExpression: `close("1h") / 2`, ExitExpression: `close("1h") > 1`},
 		// Only a signal has a market cap range or evaluates the favorites or
 		// all coins, and every strategy evaluates some coins.
 		{Direction: DirectionLong, MarketCap: MarketCapRange{MaxUSD: &usd}},
@@ -198,7 +198,7 @@ func TestDirectionRules(t *testing.T) {
 		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, CoinSource: CoinsFavorites},
 		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, CoinSource: "watchlist", Coins: []string{}},
 	} {
-		item.Name, item.Expression = "Strategy", "h_close > 5"
+		item.Name, item.Expression = "Strategy", `close("1h") > 5`
 		if item.Coins == nil {
 			item.Coins = []string{"BTCUSDT"}
 		}
@@ -213,11 +213,11 @@ func TestDirectionRules(t *testing.T) {
 		{Signal: true, Direction: DirectionSideways, TargetRatio: 5, Window: 24},
 		{Signal: true, Direction: DirectionSimple},
 		{Signal: true, Direction: DirectionShort, MarketCap: MarketCapRange{MaxUSD: &usd}, TargetRatio: 2, Window: 3},
-		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", StopLossExpression: "h_close * 2"},
+		{Direction: DirectionShort, TakeProfitExpression: `close("1h") / 2`, StopLossExpression: `close("1h") * 2`},
 		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, CoinSource: CoinsAll, Coins: []string{}},
 		{Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6, CoinSource: CoinsFavorites, Coins: []string{}},
 	} {
-		item.Name, item.Expression = "Strategy", "h_close > 5"
+		item.Name, item.Expression = "Strategy", `close("1h") > 5`
 		if item.Coins == nil {
 			item.Coins = []string{"BTCUSDT"}
 		}
@@ -230,12 +230,12 @@ func TestDirectionRules(t *testing.T) {
 	}
 
 	// A saved strategy keeps its kind and direction.
-	saved := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: testID(1), Name: "Trade", Direction: DirectionLong, Expression: "h_close > 5"})
+	saved := newBacktestService(t, newBacktestStore(market.IntervalHour, nil), Strategy{ID: testID(1), Name: "Trade", Direction: DirectionLong, Expression: `close("1h") > 5`})
 	for _, item := range []Strategy{
 		{Signal: true, Direction: DirectionLong},
-		{Direction: DirectionShort, TakeProfitExpression: "h_close / 2", StopLossExpression: "h_close * 2"},
+		{Direction: DirectionShort, TakeProfitExpression: `close("1h") / 2`, StopLossExpression: `close("1h") * 2`},
 	} {
-		item.ID, item.Name, item.Expression, item.Coins = testID(1), "Trade", "h_close > 5", []string{"BTCUSDT"}
+		item.ID, item.Name, item.Expression, item.Coins = testID(1), "Trade", `close("1h") > 5`, []string{"BTCUSDT"}
 		if _, err := saved.Update(context.Background(), item); !errors.Is(err, ErrInvalidArgument) {
 			t.Fatalf("%+v: %v", item, err)
 		}

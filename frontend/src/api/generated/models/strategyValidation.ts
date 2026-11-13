@@ -21,10 +21,12 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { StrategyMissingIndicator } from './strategyMissingIndicator.ts';
+import type { StrategyIndicatorCall } from './strategyIndicatorCall.ts';
 
 export interface StrategyValidation {
   errors: string[];
-  /** Indicators the expression reads that are not configured, in reading order; they need not be added. */
-  missing_indicators: StrategyMissingIndicator[];
+  /** The expression with every call that resolves spelled canonically, such as `rsi("1h")` for `rsi("1h", 14)`; the rest stays as written. */
+  expression: string;
+  /** The indicators the expression calls, configured or not, once each, in source order. */
+  indicators: StrategyIndicatorCall[];
 }

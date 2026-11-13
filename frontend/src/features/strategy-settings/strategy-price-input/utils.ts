@@ -47,7 +47,7 @@ function priceOperandSupported(node: ExpressionNode): boolean {
 	if (node.kind === "value") return typeof node.value === "number";
 	return (
 		node.kind === "func" &&
-		node.fn !== "of" &&
+		node.fn !== "Of" &&
 		node.args.every(priceOperandSupported)
 	);
 }

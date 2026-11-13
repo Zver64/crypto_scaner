@@ -23,6 +23,14 @@
  */
 
 /**
- * Parameter values by key; omitted keys take their defaults.
+ * A variable of the open trade, which only exit rules read and only at
+ * the latest candle: `entry_price`, the average price of its buys;
+ * `pnl`, its return at the close before fees in percent, such as 5 for
+ * 5%; and `bars_held`, the candles since its first buy filled, counting
+ * the candle it filled at.
  */
-export type ScannerIndicatorBatchItemParameters = { [key: string]: unknown };
+export interface StrategyPositionVariable {
+  name: string;
+  /** True for a count of candles, which a calculated `Prev` shift may read. */
+  count: boolean;
+}

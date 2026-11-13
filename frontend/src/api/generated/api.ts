@@ -90,9 +90,7 @@ import type {
   ReadinessResponse,
   RemoveFavoriteParams,
   ScannerIndicator,
-  ScannerIndicatorBatch,
   ScannerIndicatorConflictResponse,
-  ScannerIndicatorInUseResponse,
   ScannerIndicatorInput,
   ScannerIndicatorList,
   ScannerIndicatorNotFoundResponse,
@@ -103,6 +101,7 @@ import type {
   Strategy,
   StrategyBacktest,
   StrategyBacktestInput,
+  StrategyCatalog,
   StrategyConflictResponse,
   StrategyEnabled,
   StrategyInput,
@@ -111,7 +110,6 @@ import type {
   StrategyUpdate,
   StrategyValidation,
   StrategyValidationInput,
-  StrategyVariableList,
   SymbolNotFoundResponse,
   UnauthenticatedResponse,
   UnprocessableAnalysisResponse,
@@ -2741,10 +2739,11 @@ export const getListScannerIndicatorsUrl = () => {
 }
 
 /**
- * Strategies can read every configured indicator. It is drawn on the
- * charts of its interval when `show_in_chart` is set and shown as a market
- * table column when `show_in_table` is set. Items are in display order, which orders the
- * table columns and the chart indicators.
+ * Strategies can read every configured indicator on every interval. Each
+ * of its periods draws it on the charts of the period's interval when
+ * `show_in_chart` is set and shows it as a market table column when
+ * `show_in_table` is set. Items are in display order, which orders the
+ * table columns and the chart indicators of every interval.
  * @summary List the configured scanner indicators
  */
 export const listScannerIndicators = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listScannerIndicatorsResponseSuccess> => {
@@ -2838,7 +2837,7 @@ export function useListScannerIndicators<TData = Awaited<ReturnType<typeof listS
 
 
 export type createScannerIndicatorResponse201 = {
-  data: ScannerIndicatorList
+  data: ScannerIndicator
   status: 201
 }
 
@@ -2883,8 +2882,8 @@ export const getCreateScannerIndicatorUrl = () => {
 }
 
 /**
- * Adds one indicator per chosen interval, all or none, at the end of the display order.
- * @summary Add a scanner indicator on one or more intervals
+ * Adds the indicator at the end of the display order.
+ * @summary Add a scanner indicator with its periods
  */
 export const createScannerIndicator = async (scannerIndicatorInput: ScannerIndicatorInput, options?: Parameters<typeof apiFetch>[1]): Promise<createScannerIndicatorResponseSuccess> => {
 
@@ -2950,7 +2949,7 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
     export type CreateScannerIndicatorMutationVariables = {data: ScannerIndicatorInput}
 
     /**
- * @summary Add a scanner indicator on one or more intervals
+ * @summary Add a scanner indicator with its periods
  */
 export const useCreateScannerIndicator = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicator>>, TError,CreateScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
@@ -2961,243 +2960,6 @@ export const useCreateScannerIndicator = <TError = ErrorType<BadRequestResponse 
         TContext
       > => {
       return useMutation(getCreateScannerIndicatorMutationOptions(options), queryClient);
-    }
-
-export type deleteUnusedScannerIndicatorsResponse204 = {
-  data: void
-  status: 204
-}
-
-export type deleteUnusedScannerIndicatorsResponse401 = {
-  data: UnauthenticatedResponse
-  status: 401
-}
-
-export type deleteUnusedScannerIndicatorsResponse403 = {
-  data: AdministratorRequiredResponse
-  status: 403
-}
-
-export type deleteUnusedScannerIndicatorsResponse409 = {
-  data: ScannerIndicatorInUseResponse
-  status: 409
-}
-
-export type deleteUnusedScannerIndicatorsResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
-
-export type deleteUnusedScannerIndicatorsResponseSuccess = (deleteUnusedScannerIndicatorsResponse204) & {
-  headers: Headers;
-};
-export type deleteUnusedScannerIndicatorsResponseError = (deleteUnusedScannerIndicatorsResponse401 | deleteUnusedScannerIndicatorsResponse403 | deleteUnusedScannerIndicatorsResponse409 | deleteUnusedScannerIndicatorsResponse500) & {
-  headers: Headers;
-};
-
-export const getDeleteUnusedScannerIndicatorsUrl = () => {
-
-
-
-
-  return `/api/v1/admin/scanner-indicators`
-}
-
-/**
- * Removes every indicator that no strategy reads (disabled strategies
- * included) and that is shown in no market table and on no chart. Every
- * other indicator stays.
- * @summary Remove every unused scanner indicator
- */
-export const deleteUnusedScannerIndicators = async ( options?: Parameters<typeof apiFetch>[1]): Promise<deleteUnusedScannerIndicatorsResponseSuccess> => {
-
-  return apiFetch<deleteUnusedScannerIndicatorsResponseSuccess>(getDeleteUnusedScannerIndicatorsUrl(),
-  {
-    ...options,
-    method: 'DELETE'
-
-
-  }
-);}
-
-
-
-
-
-export const getDeleteUnusedScannerIndicatorsMutationKey = () => ['deleteUnusedScannerIndicators'] as const;
-
-export const getDeleteUnusedScannerIndicatorsMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, TError,void, TContext> => {
-
-const mutationKey = getDeleteUnusedScannerIndicatorsMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, void> = () => {
-
-
-          return  deleteUnusedScannerIndicators(requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type DeleteUnusedScannerIndicatorsMutationResult = NonNullable<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>>
-
-    export type DeleteUnusedScannerIndicatorsMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>
-
-
-    /**
- * @summary Remove every unused scanner indicator
- */
-export const useDeleteUnusedScannerIndicators = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>, TError,void, TContext>, request?: SecondParameter<typeof apiFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof deleteUnusedScannerIndicators>>,
-        TError,
-        void,
-        TContext
-      > => {
-      return useMutation(getDeleteUnusedScannerIndicatorsMutationOptions(options), queryClient);
-    }
-
-export type createScannerIndicatorBatchResponse201 = {
-  data: ScannerIndicatorList
-  status: 201
-}
-
-export type createScannerIndicatorBatchResponse400 = {
-  data: BadRequestResponse
-  status: 400
-}
-
-export type createScannerIndicatorBatchResponse401 = {
-  data: UnauthenticatedResponse
-  status: 401
-}
-
-export type createScannerIndicatorBatchResponse403 = {
-  data: AdministratorRequiredResponse
-  status: 403
-}
-
-export type createScannerIndicatorBatchResponse409 = {
-  data: ScannerIndicatorConflictResponse
-  status: 409
-}
-
-export type createScannerIndicatorBatchResponse500 = {
-  data: InternalErrorResponse
-  status: 500
-}
-
-export type createScannerIndicatorBatchResponseSuccess = (createScannerIndicatorBatchResponse201) & {
-  headers: Headers;
-};
-export type createScannerIndicatorBatchResponseError = (createScannerIndicatorBatchResponse400 | createScannerIndicatorBatchResponse401 | createScannerIndicatorBatchResponse403 | createScannerIndicatorBatchResponse409 | createScannerIndicatorBatchResponse500) & {
-  headers: Headers;
-};
-
-export const getCreateScannerIndicatorBatchUrl = () => {
-
-
-
-
-  return `/api/v1/admin/scanner-indicator-batches`
-}
-
-/**
- * Adds the indicators, all or none, at the end of the display order,
- * neither shown in tables nor drawn on charts. Used to add the missing
- * indicators a strategy expression reads.
- * @summary Add several different scanner indicators
- */
-export const createScannerIndicatorBatch = async (scannerIndicatorBatch: ScannerIndicatorBatch, options?: Parameters<typeof apiFetch>[1]): Promise<createScannerIndicatorBatchResponseSuccess> => {
-
-    const getHeaders = (h?: NonNullable<RequestInit['headers']>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-return apiFetch<createScannerIndicatorBatchResponseSuccess>(getCreateScannerIndicatorBatchUrl(),
-  {
-    ...options,
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', ...getHeaders(options?.headers) },
-    body: JSON.stringify(scannerIndicatorBatch)
-  }
-);}
-
-
-
-
-
-export const getCreateScannerIndicatorBatchMutationKey = () => ['createScannerIndicatorBatch'] as const;
-
-export const getCreateScannerIndicatorBatchMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicatorBatch>>, TError,CreateScannerIndicatorBatchMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
-): UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicatorBatch>>, TError,CreateScannerIndicatorBatchMutationVariables, TContext> => {
-
-const mutationKey = getCreateScannerIndicatorBatchMutationKey();
-const {mutation: mutationOptions, request: requestOptions} = options ?
-      options.mutation && 'mutationKey' in options.mutation && options.mutation.mutationKey ?
-      options
-      : {...options, mutation: {...options.mutation, mutationKey}}
-      : {mutation: { mutationKey, }, request: undefined};
-
-
-
-
-      const mutationFn: MutationFunction<Awaited<ReturnType<typeof createScannerIndicatorBatch>>, CreateScannerIndicatorBatchMutationVariables> = (props) => {
-          const {data} = props ?? {};
-
-          return  createScannerIndicatorBatch(data,requestOptions)
-        }
-
-
-
-
-
-
-  return  { mutationFn, ...mutationOptions }}
-
-    export type CreateScannerIndicatorBatchMutationResult = NonNullable<Awaited<ReturnType<typeof createScannerIndicatorBatch>>>
-    export type CreateScannerIndicatorBatchMutationBody = ScannerIndicatorBatch
-    export type CreateScannerIndicatorBatchMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>
-    export type CreateScannerIndicatorBatchMutationVariables = {data: ScannerIndicatorBatch}
-
-    /**
- * @summary Add several different scanner indicators
- */
-export const useCreateScannerIndicatorBatch = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
-    TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof createScannerIndicatorBatch>>, TError,CreateScannerIndicatorBatchMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
- , queryClient?: QueryClient): UseMutationResult<
-        Awaited<ReturnType<typeof createScannerIndicatorBatch>>,
-        TError,
-        CreateScannerIndicatorBatchMutationVariables,
-        TContext
-      > => {
-      return useMutation(getCreateScannerIndicatorBatchMutationOptions(options), queryClient);
     }
 
 export type reorderScannerIndicatorsResponse200 = {
@@ -3350,6 +3112,11 @@ export type updateScannerIndicatorResponse404 = {
   status: 404
 }
 
+export type updateScannerIndicatorResponse409 = {
+  data: ScannerIndicatorConflictResponse
+  status: 409
+}
+
 export type updateScannerIndicatorResponse500 = {
   data: InternalErrorResponse
   status: 500
@@ -3358,7 +3125,7 @@ export type updateScannerIndicatorResponse500 = {
 export type updateScannerIndicatorResponseSuccess = (updateScannerIndicatorResponse200) & {
   headers: Headers;
 };
-export type updateScannerIndicatorResponseError = (updateScannerIndicatorResponse400 | updateScannerIndicatorResponse401 | updateScannerIndicatorResponse403 | updateScannerIndicatorResponse404 | updateScannerIndicatorResponse500) & {
+export type updateScannerIndicatorResponseError = (updateScannerIndicatorResponse400 | updateScannerIndicatorResponse401 | updateScannerIndicatorResponse403 | updateScannerIndicatorResponse404 | updateScannerIndicatorResponse409 | updateScannerIndicatorResponse500) & {
   headers: Headers;
 };
 
@@ -3371,7 +3138,7 @@ export const getUpdateScannerIndicatorUrl = (indicatorId: number,) => {
 }
 
 /**
- * @summary Change the table visibility and pane scale of a scanner indicator
+ * @summary Replace the periods and pane scale of a scanner indicator
  */
 export const updateScannerIndicator = async (indicatorId: number,
     scannerIndicatorUpdate: ScannerIndicatorUpdate, options?: Parameters<typeof apiFetch>[1]): Promise<updateScannerIndicatorResponseSuccess> => {
@@ -3405,7 +3172,7 @@ return apiFetch<updateScannerIndicatorResponseSuccess>(getUpdateScannerIndicator
 
 export const getUpdateScannerIndicatorMutationKey = () => ['updateScannerIndicator'] as const;
 
-export const getUpdateScannerIndicatorMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>,
+export const getUpdateScannerIndicatorMutationOptions = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext> => {
 
@@ -3434,13 +3201,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type UpdateScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof updateScannerIndicator>>>
     export type UpdateScannerIndicatorMutationBody = ScannerIndicatorUpdate
-    export type UpdateScannerIndicatorMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>
+    export type UpdateScannerIndicatorMutationError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>
     export type UpdateScannerIndicatorMutationVariables = {indicatorId: number;data: ScannerIndicatorUpdate}
 
     /**
- * @summary Change the table visibility and pane scale of a scanner indicator
+ * @summary Replace the periods and pane scale of a scanner indicator
  */
-export const useUpdateScannerIndicator = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>,
+export const useUpdateScannerIndicator = <TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorConflictResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof updateScannerIndicator>>, TError,UpdateScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof updateScannerIndicator>>,
@@ -3471,11 +3238,6 @@ export type deleteScannerIndicatorResponse404 = {
   status: 404
 }
 
-export type deleteScannerIndicatorResponse409 = {
-  data: ScannerIndicatorInUseResponse
-  status: 409
-}
-
 export type deleteScannerIndicatorResponse500 = {
   data: InternalErrorResponse
   status: 500
@@ -3484,7 +3246,7 @@ export type deleteScannerIndicatorResponse500 = {
 export type deleteScannerIndicatorResponseSuccess = (deleteScannerIndicatorResponse204) & {
   headers: Headers;
 };
-export type deleteScannerIndicatorResponseError = (deleteScannerIndicatorResponse401 | deleteScannerIndicatorResponse403 | deleteScannerIndicatorResponse404 | deleteScannerIndicatorResponse409 | deleteScannerIndicatorResponse500) & {
+export type deleteScannerIndicatorResponseError = (deleteScannerIndicatorResponse401 | deleteScannerIndicatorResponse403 | deleteScannerIndicatorResponse404 | deleteScannerIndicatorResponse500) & {
   headers: Headers;
 };
 
@@ -3497,7 +3259,6 @@ export const getDeleteScannerIndicatorUrl = (indicatorId: number,) => {
 }
 
 /**
- * Rejected while a strategy reads the indicator.
  * @summary Remove a scanner indicator
  */
 export const deleteScannerIndicator = async (indicatorId: number, options?: Parameters<typeof apiFetch>[1]): Promise<deleteScannerIndicatorResponseSuccess> => {
@@ -3517,7 +3278,7 @@ export const deleteScannerIndicator = async (indicatorId: number, options?: Para
 
 export const getDeleteScannerIndicatorMutationKey = () => ['deleteScannerIndicator'] as const;
 
-export const getDeleteScannerIndicatorMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
+export const getDeleteScannerIndicatorMutationOptions = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
 ): UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext> => {
 
@@ -3546,13 +3307,13 @@ const {mutation: mutationOptions, request: requestOptions} = options ?
 
     export type DeleteScannerIndicatorMutationResult = NonNullable<Awaited<ReturnType<typeof deleteScannerIndicator>>>
 
-    export type DeleteScannerIndicatorMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>
+    export type DeleteScannerIndicatorMutationError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>
     export type DeleteScannerIndicatorMutationVariables = {indicatorId: number}
 
     /**
  * @summary Remove a scanner indicator
  */
-export const useDeleteScannerIndicator = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | ScannerIndicatorInUseResponse | InternalErrorResponse>,
+export const useDeleteScannerIndicator = <TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | ScannerIndicatorNotFoundResponse | InternalErrorResponse>,
     TContext = unknown>(options?: { mutation?:UseMutationOptions<Awaited<ReturnType<typeof deleteScannerIndicator>>, TError,DeleteScannerIndicatorMutationVariables, TContext>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient): UseMutationResult<
         Awaited<ReturnType<typeof deleteScannerIndicator>>,
@@ -3931,48 +3692,51 @@ export const useDeleteUser = <TError = ErrorType<UnauthenticatedResponse | Admin
       return useMutation(getDeleteUserMutationOptions(options), queryClient);
     }
 
-export type listStrategyVariablesResponse200 = {
-  data: StrategyVariableList
+export type getStrategyCatalogResponse200 = {
+  data: StrategyCatalog
   status: 200
 }
 
-export type listStrategyVariablesResponse401 = {
+export type getStrategyCatalogResponse401 = {
   data: UnauthenticatedResponse
   status: 401
 }
 
-export type listStrategyVariablesResponse403 = {
+export type getStrategyCatalogResponse403 = {
   data: AdministratorRequiredResponse
   status: 403
 }
 
-export type listStrategyVariablesResponse500 = {
+export type getStrategyCatalogResponse500 = {
   data: InternalErrorResponse
   status: 500
 }
 
-export type listStrategyVariablesResponseSuccess = (listStrategyVariablesResponse200) & {
+export type getStrategyCatalogResponseSuccess = (getStrategyCatalogResponse200) & {
   headers: Headers;
 };
-export type listStrategyVariablesResponseError = (listStrategyVariablesResponse401 | listStrategyVariablesResponse403 | listStrategyVariablesResponse500) & {
+export type getStrategyCatalogResponseError = (getStrategyCatalogResponse401 | getStrategyCatalogResponse403 | getStrategyCatalogResponse500) & {
   headers: Headers;
 };
 
-export const getListStrategyVariablesUrl = () => {
+export const getGetStrategyCatalogUrl = () => {
 
 
 
 
-  return `/api/v1/admin/strategy-variables`
+  return `/api/v1/admin/strategy-catalog`
 }
 
 /**
- * One variable per output of every configured indicator, in display order.
- * @summary List the indicator values strategy expressions can read
+ * The configured indicators in display order with their calls, the
+ * candle fields, the periods every indicator and candle field call
+ * takes first, and the position variables of exit rules. Expressions
+ * read indicators that are not configured all the same.
+ * @summary List what strategy expressions read
  */
-export const listStrategyVariables = async ( options?: Parameters<typeof apiFetch>[1]): Promise<listStrategyVariablesResponseSuccess> => {
+export const getStrategyCatalog = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getStrategyCatalogResponseSuccess> => {
 
-  return apiFetch<listStrategyVariablesResponseSuccess>(getListStrategyVariablesUrl(),
+  return apiFetch<getStrategyCatalogResponseSuccess>(getGetStrategyCatalogUrl(),
   {
     ...options,
     method: 'GET'
@@ -3985,69 +3749,69 @@ export const listStrategyVariables = async ( options?: Parameters<typeof apiFetc
 
 
 
-export const getListStrategyVariablesQueryKey = () => {
+export const getGetStrategyCatalogQueryKey = () => {
     return [
-    `/api/v1/admin/strategy-variables`
+    `/api/v1/admin/strategy-catalog`
     ] as const;
     }
 
 
-export const getListStrategyVariablesQueryOptions = <TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export const getGetStrategyCatalogQueryOptions = <TData = Awaited<ReturnType<typeof getStrategyCatalog>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>( options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getStrategyCatalog>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
 ) => {
 
 const {query: queryOptions, request: requestOptions} = options ?? {};
 
-  const queryKey =  queryOptions?.queryKey ?? getListStrategyVariablesQueryKey();
+  const queryKey =  queryOptions?.queryKey ?? getGetStrategyCatalogQueryKey();
 
 
 
-    const queryFn: QueryFunction<Awaited<ReturnType<typeof listStrategyVariables>>> = ({ signal }) => listStrategyVariables({ signal, ...requestOptions });
+    const queryFn: QueryFunction<Awaited<ReturnType<typeof getStrategyCatalog>>> = ({ signal }) => getStrategyCatalog({ signal, ...requestOptions });
 
 
 
 
 
-   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
+   return  { queryKey, queryFn, ...queryOptions} as UseQueryOptions<Awaited<ReturnType<typeof getStrategyCatalog>>, TError, TData> & { queryKey: DataTag<QueryKey, TData, TError> }
 }
 
-export type ListStrategyVariablesQueryResult = NonNullable<Awaited<ReturnType<typeof listStrategyVariables>>>
-export type ListStrategyVariablesQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
+export type GetStrategyCatalogQueryResult = NonNullable<Awaited<ReturnType<typeof getStrategyCatalog>>>
+export type GetStrategyCatalogQueryError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>
 
 
-export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
-  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>> & Pick<
+export function useGetStrategyCatalog<TData = Awaited<ReturnType<typeof getStrategyCatalog>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options: { query:Partial<UseQueryOptions<Awaited<ReturnType<typeof getStrategyCatalog>>, TError, TData>> & Pick<
         DefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listStrategyVariables>>,
+          Awaited<ReturnType<typeof getStrategyCatalog>>,
           TError,
-          Awaited<ReturnType<typeof listStrategyVariables>>
+          Awaited<ReturnType<typeof getStrategyCatalog>>
         > , 'initialData'
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  DefinedUseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>> & Pick<
+export function useGetStrategyCatalog<TData = Awaited<ReturnType<typeof getStrategyCatalog>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getStrategyCatalog>>, TError, TData>> & Pick<
         UndefinedInitialDataOptions<
-          Awaited<ReturnType<typeof listStrategyVariables>>,
+          Awaited<ReturnType<typeof getStrategyCatalog>>,
           TError,
-          Awaited<ReturnType<typeof listStrategyVariables>>
+          Awaited<ReturnType<typeof getStrategyCatalog>>
         > , 'initialData'
       >, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
-export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export function useGetStrategyCatalog<TData = Awaited<ReturnType<typeof getStrategyCatalog>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getStrategyCatalog>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary List the indicator values strategy expressions can read
+ * @summary List what strategy expressions read
  */
 
-export function useListStrategyVariables<TData = Awaited<ReturnType<typeof listStrategyVariables>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
-  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof listStrategyVariables>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
+export function useGetStrategyCatalog<TData = Awaited<ReturnType<typeof getStrategyCatalog>>, TError = ErrorType<UnauthenticatedResponse | AdministratorRequiredResponse | InternalErrorResponse>>(
+  options?: { query?:Partial<UseQueryOptions<Awaited<ReturnType<typeof getStrategyCatalog>>, TError, TData>>, request?: SecondParameter<typeof apiFetch>}
  , queryClient?: QueryClient
  ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> } {
 
-  const queryOptions = getListStrategyVariablesQueryOptions(options)
+  const queryOptions = getGetStrategyCatalogQueryOptions(options)
 
   const query = useQuery(queryOptions, queryClient) as  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> };
 
@@ -4102,12 +3866,12 @@ export const getValidateStrategyUrl = () => {
 
 /**
  * Lists every problem that would reject the expression as the entry
- * rule of a strategy, or as its exit rule when `exit` is set, which may
- * also read the position variables: syntax, unknown indicators, candle fields, and functions, history
- * depth, and coins read through `of` that are not active. Variables of indicators that are not
- * configured are resolved from their names into `missing_indicators`
- * when exactly one indicator has the name. Strategies read them without
- * adding them, so no problems mean the expression is valid.
+ * rule of a strategy, as its exit rule, which may also read the
+ * position variables, or as a price: syntax, unknown indicators,
+ * periods, parameters, outputs, and functions, history depth, and coins
+ * read through `Of` that are not active. Whatever the problems, it
+ * returns the expression with every call that resolves spelled
+ * canonically and the indicators it calls, configured or not.
  * @summary Check a strategy expression
  */
 export const validateStrategy = async (strategyValidationInput: StrategyValidationInput, options?: Parameters<typeof apiFetch>[1]): Promise<validateStrategyResponseSuccess> => {

@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"crypto-scanner/internal/chart"
+	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
@@ -22,60 +24,76 @@ type BacktestChart struct {
 	Indicators  []indicator.Calculation
 }
 
-func (service *Service) displayedIndicators(entry Entry) ([]scannerindicator.Entry, error) {
-	var result []scannerindicator.Entry
+// displayedIndicator is an indicator a backtest reads on interval, whose
+// calls take arguments after the period.
+type displayedIndicator struct {
+	scannerindicator.Entry
+	interval  market.CandleInterval
+	arguments []string
+}
+
+// column names an output of the indicator as expressions read it, such as
+// rsi("1h") or bbands_upperband("1h", 20, 2.5).
+func (item displayedIndicator) column(output string) string {
+	return spellCall(indicatorFunction(item.Selection.Type, len(item.Outputs), output), item.interval, item.arguments)
+}
+
+func (item displayedIndicator) target() closedindicator.Target {
+	return item.Target(item.interval)
+}
+
+func (service *Service) displayedIndicators(entry Entry) ([]displayedIndicator, error) {
+	var result []displayedIndicator
 	for _, read := range entry.reads {
 		target := read.Variable.Target
 		if read.Symbol != "" || read.Variable.Position || target.Equal(CandleTarget(target.Interval)) ||
-			slices.ContainsFunc(result, func(item scannerindicator.Entry) bool { return item.Target().Equal(target) }) {
+			slices.ContainsFunc(result, func(item displayedIndicator) bool { return item.target().Equal(target) }) {
 			continue
 		}
 		// Derive presentation from the dependency itself, never from configured
 		// rows, their display flags, order, or scale overrides.
-		item, err := service.indicators.Preview(scannerindicator.Indicator{Interval: target.Interval, Selection: target.Selection})
+		item, err := service.indicators.Preview(target.Selection)
 		if err != nil {
 			return nil, fmt.Errorf("describe backtest indicator: %w", err)
 		}
-		result = append(result, item)
+		arguments, err := callArguments(service.registry, target.Selection)
+		if err != nil {
+			return nil, fmt.Errorf("spell backtest indicator: %w", err)
+		}
+		result = append(result, displayedIndicator{Entry: item, interval: target.Interval, arguments: arguments})
 	}
-	// Formula traversal contains maps. Canonical titles give both clients a stable order,
+	// Formula traversal contains maps. Canonical calls give both clients a stable order,
 	// independent of configured indicator order and display flags.
-	slices.SortFunc(result, func(a, b scannerindicator.Entry) int {
-		if a.Title < b.Title {
-			return -1
-		}
-		if a.Title > b.Title {
-			return 1
-		}
-		return 0
+	slices.SortFunc(result, func(a, b displayedIndicator) int {
+		return strings.Compare(a.column(a.Outputs[0]), b.column(b.Outputs[0]))
 	})
 	return result, nil
 }
 
-func indicatorColumns(items []scannerindicator.Entry) []IndicatorColumn {
+func indicatorColumns(items []displayedIndicator) []IndicatorColumn {
 	columns := make([]IndicatorColumn, 0)
 	for _, item := range items {
 		for _, output := range item.Outputs {
-			name := outputName(item, output)
+			name := item.column(output)
 			columns = append(columns, IndicatorColumn{Key: name, Title: name})
 		}
 	}
 	return columns
 }
 
-func (current snapshot) indicatorValues(entry Entry, instrumentID int64, items []scannerindicator.Entry) map[string]float64 {
+func (current snapshot) indicatorValues(entry Entry, instrumentID int64, items []displayedIndicator) map[string]float64 {
 	result := make(map[string]float64)
 	for _, item := range items {
-		position, found := current.reads.position(entry.ID, instrumentID, instrumentID, item.Target().Key())
+		position, found := current.reads.position(entry.ID, instrumentID, instrumentID, item.target().Key())
 		if !found {
 			continue
 		}
 		value := current.values[position]
-		if !value.OpenTime.Equal(item.Interval.LastClosedOpenTime(current.now)) {
+		if !value.OpenTime.Equal(item.interval.LastClosedOpenTime(current.now)) {
 			continue
 		}
 		for _, output := range value.Outputs {
-			result[outputName(item, output.Name)] = output.Value
+			result[item.column(output.Name)] = output.Value
 		}
 	}
 	return result
@@ -120,17 +138,17 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 		}
 		line := 0
 		for _, item := range replay.displayed {
-			if item.Interval != interval {
+			if item.interval != interval {
 				continue
 			}
-			definition := item.ChartIndicator(item.Target().Key(), line)
+			definition := item.ChartIndicator(item.target().Key(), line)
 			line += len(definition.Lines)
 			page.Definitions = append(page.Definitions, definition)
 			calculation := indicator.Calculation{Type: item.Selection.Type, Parameters: item.Selection.Parameters, Series: make([]indicator.NamedSeries, len(definition.Lines))}
 			for i, drawn := range definition.Lines {
 				calculation.Series[i] = indicator.NamedSeries{Name: drawn.Output, Points: make([]indicator.Point, 0)}
 			}
-			target := item.Target()
+			target := item.target()
 			position, subscribed := replay.current.reads.position(entry.ID, instrumentID, instrumentID, target.Key())
 			if !subscribed {
 				return nil, fmt.Errorf("backtest chart target %s is not subscribed", target.Key())

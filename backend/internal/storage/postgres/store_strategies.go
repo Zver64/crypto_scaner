@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -35,7 +34,7 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 	return items, nil
 }
 
-func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64) (uuid.UUID, error) {
+func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy) (uuid.UUID, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return uuid.Nil, fmt.Errorf("begin strategy creation: %w", err)
@@ -52,9 +51,6 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 	if err != nil {
 		return uuid.Nil, strategyWriteError("insert strategy", err)
 	}
-	if err := queries.InsertStrategyIndicators(ctx, generated.InsertStrategyIndicatorsParams{StrategyID: id, IndicatorIds: indicatorIDs}); err != nil {
-		return uuid.Nil, strategyWriteError("insert strategy indicators", err)
-	}
 	if err := replaceStrategyCoins(ctx, queries, id, item.Coins); err != nil {
 		return uuid.Nil, err
 	}
@@ -65,9 +61,9 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy, 
 }
 
 // UpdateStrategy replaces the name, expressions, coins, trading settings,
-// message, and indicators and returns the revision; retrade starts a new
+// and message and returns the revision; retrade starts a new
 // revision, and baseline requests a fresh start of the trading states.
-func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, indicatorIDs []int64, retrade, baseline bool) (int64, error) {
+func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, retrade, baseline bool) (int64, error) {
 	tx, err := store.db.Begin(ctx)
 	if err != nil {
 		return 0, fmt.Errorf("begin strategy update: %w", err)
@@ -86,12 +82,6 @@ func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, 
 	}
 	if err != nil {
 		return 0, strategyWriteError("update strategy", err)
-	}
-	if err := queries.DeleteStrategyIndicators(ctx, item.ID); err != nil {
-		return 0, fmt.Errorf("delete strategy indicators: %w", err)
-	}
-	if err := queries.InsertStrategyIndicators(ctx, generated.InsertStrategyIndicatorsParams{StrategyID: item.ID, IndicatorIds: indicatorIDs}); err != nil {
-		return 0, strategyWriteError("insert strategy indicators", err)
 	}
 	if err := replaceStrategyCoins(ctx, queries, item.ID, item.Coins); err != nil {
 		return 0, err
@@ -322,20 +312,11 @@ func (store *Store) ListStrategyRecipients(ctx context.Context, administratorTel
 	return recipients, nil
 }
 
-// strategyWriteError maps a taken name to strategy.ErrConflict and an
-// indicator deleted meanwhile to strategy.ErrInvalidArgument, and wraps any
+// strategyWriteError maps a taken name to strategy.ErrConflict and wraps any
 // other error with operation.
 func strategyWriteError(operation string, err error) error {
 	if duplicateViolation(err) {
 		return strategy.ErrConflict
 	}
-	if foreignKeyViolation(err) {
-		return fmt.Errorf("%w: an indicator it reads no longer exists", strategy.ErrInvalidArgument)
-	}
 	return fmt.Errorf("%s: %w", operation, err)
-}
-
-func foreignKeyViolation(err error) bool {
-	var pgErr *pgconn.PgError
-	return errors.As(err, &pgErr) && pgErr.Code == "23503"
 }

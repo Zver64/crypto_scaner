@@ -178,7 +178,7 @@ func TestBacktestRendersTheTradesOfASavedStrategy(t *testing.T) {
 // backtest like a saved strategy's.
 func TestBacktestDraftsSendTheirRules(t *testing.T) {
 	api, server := newFakeAPI(t, map[string]string{
-		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[]}`,
+		"POST /api/v1/admin/strategy-validations": `{"errors":[],"expression":"","indicators":[]}`,
 		"POST /api/v1/admin/strategy-backtests":   backtestResponse,
 	})
 	home := writeProfile(t, server.URL)
@@ -204,7 +204,7 @@ func TestBacktestDraftsSendTheirRules(t *testing.T) {
 
 // An invalid draft reports its rules like create and is not backtested.
 func TestBacktestDraftWithAnInvalidRuleSendsNothing(t *testing.T) {
-	_, server := newFakeAPI(t, map[string]string{"POST /api/v1/admin/strategy-validations": `{"errors":["undeclared reference to 'x'"],"missing_indicators":[]}`})
+	_, server := newFakeAPI(t, map[string]string{"POST /api/v1/admin/strategy-validations": `{"errors":["undeclared reference to 'x'"],"expression":"","indicators":[]}`})
 	home := writeProfile(t, server.URL)
 
 	got := runCLI(t, home, "", "strategies", "backtest", "--expr", "x > 1", "--exit", "x < 1", "--symbol", "BTCUSDT")
@@ -218,7 +218,7 @@ func TestBacktestDraftWithAnInvalidRuleSendsNothing(t *testing.T) {
 func TestBacktestRefusesWhileAnotherRuns(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
 		"GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=BTCUSDT": backtestResponse,
-		"POST /api/v1/admin/strategy-validations":                                                   `{"errors":[],"missing_indicators":[]}`,
+		"POST /api/v1/admin/strategy-validations":                                                   `{"errors":[],"expression":"","indicators":[]}`,
 	})
 	home := writeProfile(t, server.URL)
 	running := flock.New(filepath.Join(home, "scanner", "backtest.lock"))
@@ -301,55 +301,35 @@ func TestBacktestCapsTheTradeList(t *testing.T) {
 }
 
 // A strategy is created disabled and reads the indicators that are not
-// configured without adding them; --add-indicators adds them first.
-func TestStrategiesCreateAddsMissingIndicatorsOnlyWhenAsked(t *testing.T) {
-	for _, test := range []struct {
-		args []string
-		add  bool
-	}{{}, {args: []string{"--add-indicators"}, add: true}} {
-		api, server := newFakeAPI(t, map[string]string{
-			"POST /api/v1/admin/strategy-validations":      `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
-			"POST /api/v1/admin/scanner-indicator-batches": `{"items":[]}`,
-			"POST /api/v1/admin/strategies":                `{"id":"00000000-0000-7000-8000-000000000007","name":"ATR","direction":"long","expression":"h_atr_100 > 1","coins":["BTCUSDT","ETHUSDT"],"coin_source":"selected","message":"","enabled":false,"valid":true,"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
-		})
-		home := writeProfile(t, server.URL)
+// configured without adding them.
+func TestStrategiesCreateReadsMissingIndicatorsWithoutAddingThem(t *testing.T) {
+	api, server := newFakeAPI(t, map[string]string{
+		"POST /api/v1/admin/strategy-validations": `{"errors":[],"expression":"","indicators":[]}`,
+		"POST /api/v1/admin/strategies":           `{"id":"00000000-0000-7000-8000-000000000007","name":"ATR","direction":"long","expression":"atr(\"1h\", 100) > 1","coins":["BTCUSDT","ETHUSDT"],"coin_source":"selected","message":"","enabled":false,"valid":true}`,
+	})
+	home := writeProfile(t, server.URL)
 
-		got := runCLI(t, home, "", append([]string{"strategies", "create", "ATR", "--expr", "h_atr_100 > 1", "--coin", "ethusdt,BTCUSDT"}, test.args...)...)
+	got := runCLI(t, home, "", "strategies", "create", "ATR", "--expr", `atr("1h", 100) > 1`, "--coin", "ethusdt,BTCUSDT")
 
-		want := `┌──────────────────────────────────────┬───────┬───────────────────────────┬───────────┬───────────────┬──────┬──────────────┬──────────────────┐
-│ ID                                   │ STATE │ NAME                      │ DIRECTION │ ENTRY         │ EXIT │ BUYS         │ COINS            │
-├──────────────────────────────────────┼───────┼───────────────────────────┼───────────┼───────────────┼──────┼──────────────┼──────────────────┤
-│ 00000000-0000-7000-8000-000000000007 │ off   │ ATR                       │ long      │ h_atr_100 > 1 │ -    │ every signal │ BTCUSDT, ETHUSDT │
-│                                      │       │ not configured: h-atr-100 │           │               │      │              │                  │
-└──────────────────────────────────────┴───────┴───────────────────────────┴───────────┴───────────────┴──────┴──────────────┴──────────────────┘
+	want := `┌──────────────────────────────────────┬───────┬──────┬───────────┬────────────────────┬──────┬──────────────┬──────────────────┐
+│ ID                                   │ STATE │ NAME │ DIRECTION │ ENTRY              │ EXIT │ BUYS         │ COINS            │
+├──────────────────────────────────────┼───────┼──────┼───────────┼────────────────────┼──────┼──────────────┼──────────────────┤
+│ 00000000-0000-7000-8000-000000000007 │ off   │ ATR  │ long      │ atr("1h", 100) > 1 │ -    │ every signal │ BTCUSDT, ETHUSDT │
+└──────────────────────────────────────┴───────┴──────┴───────────┴────────────────────┴──────┴──────────────┴──────────────────┘
 `
-		wantNote := ""
-		if test.add {
-			wantNote = "added indicators: h-atr-100\n"
-		}
-		if got.code != 0 || got.stdout != want || got.stderr != wantNote {
-			t.Fatalf("strategies create %v = %+v", test.args, got)
-		}
-		wants := map[string]string{
-			"POST /api/v1/admin/strategies": `{"coin_source":"selected","coins":["BTCUSDT","ETHUSDT"],"enabled":false,"exit_expression":"","expression":"h_atr_100 \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":"","target_ratio":null,"window":null}`,
-		}
-		if test.add {
-			wants["POST /api/v1/admin/scanner-indicator-batches"] = `{"items":[{"interval":"1h","parameters":{"period":100},"type":"atr"}]}`
-		} else if body, sent := api.bodies["POST /api/v1/admin/scanner-indicator-batches"]; sent {
-			t.Errorf("indicators added without --add-indicators: %s", body)
-		}
-		for key, want := range wants {
-			var sent, expected any
-			if json.Unmarshal([]byte(api.bodies[key]), &sent) != nil || json.Unmarshal([]byte(want), &expected) != nil || !reflect.DeepEqual(sent, expected) {
-				t.Errorf("%s body = %s, want %s", key, api.bodies[key], want)
-			}
-		}
+	if got.code != 0 || got.stdout != want || got.stderr != "" {
+		t.Fatalf("strategies create = %+v", got)
+	}
+	var sent, expected any
+	wantBody := `{"coin_source":"selected","coins":["BTCUSDT","ETHUSDT"],"enabled":false,"exit_expression":"","expression":"atr(\"1h\", 100) \u003e 1","max_market_cap_usd":null,"message":"","min_market_cap_usd":null,"name":"ATR","signal":false,"direction":"long","stop_loss_expression":"","take_profit_expression":"","target_ratio":null,"window":null}`
+	if json.Unmarshal([]byte(api.bodies["POST /api/v1/admin/strategies"]), &sent) != nil || json.Unmarshal([]byte(wantBody), &expected) != nil || !reflect.DeepEqual(sent, expected) {
+		t.Errorf("create body = %s, want %s", api.bodies["POST /api/v1/admin/strategies"], wantBody)
 	}
 }
 
-// Every rule is validated before any indicator is added, so an invalid
-// rule adds nothing, and every invalid rule is reported, on stderr only.
-func TestStrategiesCreateWithAnInvalidRuleAddsNothing(t *testing.T) {
+// Every rule is validated before anything is sent, and every invalid rule
+// is reported, on stderr only.
+func TestStrategiesCreateWithAnInvalidRuleSendsNothing(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path != "/api/v1/admin/strategy-validations" {
@@ -359,15 +339,15 @@ func TestStrategiesCreateWithAnInvalidRuleAddsNothing(t *testing.T) {
 		}
 		raw, _ := io.ReadAll(r.Body)
 		if strings.Contains(string(raw), "bad(") {
-			fmt.Fprint(w, `{"errors":["syntax error"],"missing_indicators":[]}`)
+			fmt.Fprint(w, `{"errors":["syntax error"],"expression":"","indicators":[]}`)
 			return
 		}
-		fmt.Fprint(w, `{"errors":[],"missing_indicators":[{"interval":"1h","type":"ema","parameters":{"period":3},"title":"h-ema-3"}]}`)
+		fmt.Fprint(w, `{"errors":[],"expression":"","indicators":[]}`)
 	}))
 	t.Cleanup(server.Close)
 
 	home := writeProfile(t, server.URL)
-	args := []string{"strategies", "create", "X", "--expr", "h_ema_3 > 0", "--exit", "bad(", "--stop-loss", "bad(", "--add-indicators", "--coin", "BTCUSDT"}
+	args := []string{"strategies", "create", "X", "--expr", "h_ema_3 > 0", "--exit", "bad(", "--stop-loss", "bad(", "--coin", "BTCUSDT"}
 
 	if got := runCLI(t, home, "", args...); got.code != 1 || got.stdout != "" ||
 		got.stderr != "scanner: invalid rules; nothing was sent\n  the exit rule: syntax error\n  the stop loss: syntax error\n" {
@@ -381,8 +361,8 @@ func TestStrategiesCreateWithAnInvalidRuleAddsNothing(t *testing.T) {
 
 func TestCommandsRenderCompactText(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategy-variables":    `{"items":[{"name":"d_rsi","label":"d-rsi","interval":"1d","indicator_id":1},{"name":"h_close","label":"h-close","interval":"1h"},{"name":"pnl","label":"pnl","position":true}]}`,
-		"POST /api/v1/admin/strategy-validations": `{"errors":[],"missing_indicators":[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]}`,
+		"GET /api/v1/admin/strategy-catalog":      `{"indicators":[{"type":"rsi","parameters":["21"],"title":"rsi-21","outputs":["rsi"],"count_outputs":[]},{"type":"bbands","parameters":["20"],"title":"bbands-20","outputs":["upperband","middleband","lowerband"],"count_outputs":[]}],"candle_fields":["close","volume"],"intervals":["1h","1d","1w","1M"],"position_variables":[{"name":"pnl","count":false}]}`,
+		"POST /api/v1/admin/strategy-validations": `{"errors":[],"expression":"","indicators":[]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
 		"GET /api/v1/admin/strategies":            `{"items":[{"id":"00000000-0000-7000-8000-000000000003","name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","coins":["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"],"coin_source":"selected","message":"Dip!","enabled":true,"valid":true},{"id":"00000000-0000-7000-8000-000000000004","name":"Old","direction":"short","expression":"x","coin_source":"selected","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
 	})
@@ -392,10 +372,12 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		args []string
 		want string
 	}{
-		{args: []string{"vars", "--filter", "RSI"}, want: "d_rsi\n"},
+		{args: []string{"vars", "--filter", "RSI"}, want: "rsi(PERIOD, 21)\n"},
+		{args: []string{"vars", "--filter", "upper"}, want: "bbands_upperband(PERIOD, 20)\n"},
+		{args: []string{"vars", "--filter", "clo"}, want: "close(PERIOD)\n"},
 		{args: []string{"vars", "--filter", "pnl"}, want: "pnl (exit rule only)\n"},
-		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"items":[{"indicator_id":1,"interval":"1d","label":"d-rsi","name":"d_rsi","position":false}]}` + "\n"},
-		{args: []string{"validate", "h_atr_100 > 1"}, want: "ok; reads indicators that are not configured: h-atr-100\n"},
+		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"candle_fields":[],"indicators":[{"count_outputs":[],"outputs":["rsi"],"parameters":["21"],"title":"rsi-21","type":"rsi"}],"intervals":["1h","1d","1w","1M"],"position_variables":[]}` + "\n"},
+		{args: []string{"validate", `atr("1h", 100) > 1`}, want: "ok\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
 		{args: []string{"strategies"}, want: `┌──────────────────────────────────────┬──────────────┬─────────────────────┬───────────┬───────────────────────────┬──────────────────┬─────────────────────┬──────────────────────────────┐
 │ ID                                   │ STATE        │ NAME                │ DIRECTION │ ENTRY                     │ EXIT             │ BUYS                │ COINS                        │
@@ -415,7 +397,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 
 func TestErrorsExitWithoutPrintingTheToken(t *testing.T) {
 	api, server := newFakeAPI(t, map[string]string{
-		"POST /api/v1/admin/strategy-validations":                                                `{"errors":["undeclared reference to 'x'"],"missing_indicators":[]}`,
+		"POST /api/v1/admin/strategy-validations":                                                `{"errors":["undeclared reference to 'x'"],"expression":"","indicators":[]}`,
 		"GET /api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest?symbol=NOPE": `{"error":{"code":"symbol_not_found","message":"Symbol is unknown"},"request_id":"r"}`,
 	})
 	home := writeProfile(t, server.URL)
@@ -483,12 +465,11 @@ func TestLocalErrors(t *testing.T) {
 		code, prefix string
 	}{
 		{args: []string{"favorites"}, code: "unreachable", prefix: "cannot reach http://127.0.0.1:1 (profile dev): "},
-		{args: []string{"indicators", "typo"}, code: "usage", prefix: `unknown command "typo" for "scanner indicators"`},
 		{args: []string{"typo"}, code: "usage", prefix: `unknown command "typo" for "scanner"`},
 		{args: []string{"backtest", "--strategy", "0", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "0" must be a UUID`},
 		{args: []string{"backtest", "--strategy", "abc", "--symbol", "BTCUSDT"}, code: "usage", prefix: `strategy ID "abc" must be a UUID`},
-		{args: []string{"strategies", "update", "00000000-0000-7000-8000-000000000006", "--add-indicators=false"}, code: "usage", prefix: "specify at least one of"},
-		{args: []string{"signals", "update", "00000000-0000-7000-8000-000000000006", "--add-indicators=false"}, code: "usage", prefix: "specify at least one of"},
+		{args: []string{"strategies", "update", "00000000-0000-7000-8000-000000000006"}, code: "usage", prefix: "specify at least one of"},
+		{args: []string{"signals", "update", "00000000-0000-7000-8000-000000000006"}, code: "usage", prefix: "specify at least one of"},
 	} {
 		got := runCLI(t, home, "", test.args...)
 		if got.code != 1 || got.stdout != "" || !strings.HasPrefix(got.stderr, "scanner: "+test.prefix) {
@@ -512,11 +493,10 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 		status       int
 	}{
 		{name: "login", target: "/api/v1/me", args: []string{"login", "dev"}, status: http.StatusOK},
-		{name: "vars", target: "/api/v1/admin/strategy-variables", args: []string{"vars"}, status: http.StatusOK},
+		{name: "vars", target: "/api/v1/admin/strategy-catalog", args: []string{"vars"}, status: http.StatusOK},
 		{name: "validate", target: "/api/v1/admin/strategy-validations", args: []string{"validate", "h_close > 1"}, status: http.StatusOK},
 		{name: "favorites", target: "/api/v1/favorites", args: []string{"favorites"}, status: http.StatusOK},
 		{name: "strategies", target: "/api/v1/admin/strategies", args: []string{"strategies"}, status: http.StatusOK},
-		{name: "add indicators", target: "/api/v1/admin/scanner-indicator-batches", args: []string{"strategies", "create", "Test", "--expr", "h_atr_100 > 1", "--add-indicators", "--coin", "BTCUSDT"}, status: http.StatusCreated},
 		{name: "create", target: "/api/v1/admin/strategies", args: []string{"strategies", "create", "Test", "--expr", "h_close > 1", "--coin", "BTCUSDT"}, status: http.StatusCreated},
 		{name: "backtest", target: "/api/v1/admin/strategies/00000000-0000-7000-8000-000000000003/backtest", args: []string{"backtest", "--strategy", "00000000-0000-7000-8000-000000000003", "--symbol", "BTCUSDT"}, status: http.StatusOK},
 		{name: "delete", target: "/api/v1/admin/strategies/00000000-0000-7000-8000-000000000003", args: []string{"strategies", "delete", "00000000-0000-7000-8000-000000000003"}, status: http.StatusOK},
@@ -535,11 +515,7 @@ func TestCommandsRejectUnexpectedSuccessResponses(t *testing.T) {
 						if r.URL.Path != "/api/v1/admin/strategy-validations" {
 							t.Errorf("unexpected request %s", r.URL.Path)
 						}
-						missing := "[]"
-						if test.name == "add indicators" {
-							missing = `[{"interval":"1h","type":"atr","parameters":{"period":100},"title":"h-atr-100"}]`
-						}
-						fmt.Fprintf(w, `{"errors":[],"missing_indicators":%s}`, missing)
+						fmt.Fprint(w, `{"errors":[],"expression":"","indicators":[]}`)
 						return
 					}
 					if html {

@@ -1,24 +1,41 @@
 -- name: ListScannerIndicators :many
-SELECT id, interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels
-FROM app.scanner_indicators
-ORDER BY position, id;
+-- Periods come as parallel arrays, empty for an indicator without periods.
+SELECT indicators.id, indicators.indicator_type, indicators.parameters, indicators.scale_min, indicators.scale_max, indicators.scale_levels,
+    COALESCE(array_agg(periods.interval ORDER BY periods.interval) FILTER (WHERE periods.indicator_id IS NOT NULL), '{}')::TEXT[] AS intervals,
+    COALESCE(array_agg(periods.show_in_table ORDER BY periods.interval) FILTER (WHERE periods.indicator_id IS NOT NULL), '{}')::BOOLEAN[] AS show_in_table,
+    COALESCE(array_agg(periods.show_in_chart ORDER BY periods.interval) FILTER (WHERE periods.indicator_id IS NOT NULL), '{}')::BOOLEAN[] AS show_in_chart
+FROM app.scanner_indicators AS indicators
+LEFT JOIN app.scanner_indicator_intervals AS periods ON periods.indicator_id = indicators.id
+GROUP BY indicators.id
+ORDER BY indicators.position, indicators.id;
 
 -- name: LockScannerIndicators :exec
 -- Serializes appends, which number positions after the current maximum, with
 -- each other and with other writes; reads stay allowed.
 LOCK TABLE app.scanner_indicators IN SHARE ROW EXCLUSIVE MODE;
 
--- name: InsertScannerIndicator :batchone
--- Runs after LockScannerIndicators; each insert sees the previous ones.
-INSERT INTO app.scanner_indicators (interval, indicator_type, parameters, show_in_table, show_in_chart, scale_min, scale_max, scale_levels, position)
-SELECT $1, $2, $3, $4, $5, $6, $7, $8, COALESCE(MAX(position) + 1, 0)::INTEGER
+-- name: InsertScannerIndicator :one
+-- Runs after LockScannerIndicators.
+INSERT INTO app.scanner_indicators (indicator_type, parameters, scale_min, scale_max, scale_levels, position)
+SELECT $1, $2, $3, $4, $5, COALESCE(MAX(position) + 1, 0)::INTEGER
 FROM app.scanner_indicators
 RETURNING id;
 
 -- name: UpdateScannerIndicator :execrows
 UPDATE app.scanner_indicators
-SET show_in_table = $2, show_in_chart = $3, scale_min = $4, scale_max = $5, scale_levels = $6
+SET scale_min = $2, scale_max = $3, scale_levels = $4
 WHERE id = $1;
+
+-- name: DeleteScannerIndicatorIntervals :exec
+DELETE FROM app.scanner_indicator_intervals WHERE indicator_id = $1;
+
+-- name: InsertScannerIndicatorIntervals :exec
+INSERT INTO app.scanner_indicator_intervals (indicator_id, interval, show_in_table, show_in_chart)
+SELECT @indicator_id::BIGINT, periods.interval, periods.show_in_table, periods.show_in_chart
+FROM (
+    SELECT unnest(@intervals::TEXT[]) AS interval, unnest(@show_in_table::BOOLEAN[]) AS show_in_table,
+           unnest(@show_in_chart::BOOLEAN[]) AS show_in_chart
+) AS periods;
 
 -- name: DeleteScannerIndicator :execrows
 DELETE FROM app.scanner_indicators WHERE id = $1;
@@ -28,14 +45,3 @@ UPDATE app.scanner_indicators AS indicators
 SET position = (ordered.position - 1)::INTEGER
 FROM unnest(@ids::BIGINT[]) WITH ORDINALITY AS ordered(id, position)
 WHERE indicators.id = ordered.id;
-
--- name: DeleteUnusedScannerIndicators :many
--- Unused: read by no strategy, and shown in no market table and on no chart.
-DELETE FROM app.scanner_indicators AS indicators
-WHERE NOT indicators.show_in_table
-    AND NOT indicators.show_in_chart
-    AND NOT EXISTS (
-        SELECT 1 FROM app.strategy_indicators AS used
-        WHERE used.indicator_id = indicators.id
-    )
-RETURNING indicators.id;

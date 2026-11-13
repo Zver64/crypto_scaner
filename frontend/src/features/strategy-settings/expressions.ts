@@ -8,6 +8,14 @@ import {
 	type SQLSerializerRegistry,
 	serializeInfix,
 } from "@react-querybuilder/expr";
+import type {
+	CELExpression,
+	CELFunctionCall,
+	CELIdentifier,
+	CELStringLiteral,
+} from "react-querybuilder/parseCEL";
+
+import type { StrategyVariable } from "@/features/strategy-settings/types";
 
 // A function of the strategy language: its builder label, its argument
 // titles, and the arguments it takes when first chosen. Variadic functions
@@ -47,42 +55,42 @@ export const strategyFunctions: Record<string, StrategyFunction> = {
 		args: ["Value", "Divisor"],
 		defaults: [number(1)],
 	},
-	min: {
-		label: "min",
+	Min: {
+		label: "Min",
 		args: ["Value", "Value"],
 		defaults: [number(0)],
 		variadic: true,
 	},
-	max: {
-		label: "max",
+	Max: {
+		label: "Max",
 		args: ["Value", "Value"],
 		defaults: [number(0)],
 		variadic: true,
 	},
-	abs: { label: "abs", args: ["Value"], defaults: [] },
-	mod: { label: "mod", args: ["Value", "Divisor"], defaults: [number(1)] },
-	prev: {
-		label: "prev — earlier candle",
+	Abs: { label: "Abs", args: ["Value"], defaults: [] },
+	Mod: { label: "Mod", args: ["Value", "Divisor"], defaults: [number(1)] },
+	Prev: {
+		label: "Prev — earlier candle",
 		args: ["Value", "Candles back"],
 		defaults: [number(1)],
-		// prev(x) reads one candle back.
+		// Prev(x) reads one candle back.
 		minArgs: 1,
 		earlier: true,
 	},
-	percentile: {
-		label: "percentile — of earlier candles",
+	Percentile: {
+		label: "Percentile — of earlier candles",
 		args: ["Value", "Candles", "Percentile"],
 		defaults: [number(120), number(20)],
 		earlier: true,
 	},
 };
 
-// of("BTCUSDT", x) reads the operand x of another coin. It is not a
+// Of("BTCUSDT", x) reads the operand x of another coin. It is not a
 // function over values, so the builder offers it as an operand kind of its
 // own rather than among strategyFunctions.
-const coinFunction = "of";
+const coinFunction = "Of";
 
-// min and max take up to ten values on the backend.
+// Min and Max take up to ten values on the backend.
 export const maxVariadicArguments = 10;
 
 // The inclusive range of argument counts a function accepts.
@@ -108,12 +116,12 @@ const functionMeta: ExpressionFunctionMetaRegistry = {
 // Named functions are written as calls, which the backend compiles and the
 // parser reads back.
 const callNames = [
-	"min",
-	"max",
-	"abs",
-	"mod",
-	"prev",
-	"percentile",
+	"Min",
+	"Max",
+	"Abs",
+	"Mod",
+	"Prev",
+	"Percentile",
 	coinFunction,
 ];
 
@@ -162,11 +170,106 @@ function withoutOuterParentheses(source: string): string {
 export const expressionRuleProcessor =
 	getExpressionRuleProcessorCEL(serializers);
 
-// Reads arithmetic and function operands of stored expressions.
-export const expressionParser = getExpressionParserCEL(
+const functionParser = getExpressionParserCEL(
 	{ functions: Object.fromEntries(callNames.map((name) => [name, name])) },
 	functionMeta,
 );
+
+// Reads arithmetic and function operands of stored expressions. Indicator
+// and candle field calls are variables, read as fields named by their call.
+export const expressionParser: typeof functionParser = (expression, context) =>
+	functionParser(withVariableCalls(expression), context);
+
+// expression with every indicator and candle field call it holds replaced
+// by a field named by the call.
+function withVariableCalls(expression: CELExpression): CELExpression {
+	const source = variableCallSource(expression);
+	if (source !== undefined) {
+		const field: CELIdentifier = { type: "Identifier", value: source };
+		return field;
+	}
+	return Object.fromEntries(
+		Object.entries(expression).map(([key, value]) => [
+			key,
+			withVariableCallsIn(value),
+		]),
+	) as unknown as CELExpression;
+}
+
+function withVariableCallsIn(value: unknown): unknown {
+	if (Array.isArray(value)) return value.map(withVariableCallsIn);
+	return typeof value === "object" && value !== null && "type" in value
+		? withVariableCalls(value as CELExpression)
+		: value;
+}
+
+// The source of an indicator or candle field call, such as
+// sma("1h", 20, volume): a lowercase name, a period, and literal
+// parameters. Undefined for anything else, such as a function call, whose
+// name is capitalized.
+function variableCallSource(expression: CELExpression): string | undefined {
+	if (expression.type !== "FunctionCall") return undefined;
+	const call = expression as CELFunctionCall;
+	const name = call.name.value;
+	const [period, ...parameters] = call.args.value;
+	if (!/^[a-z]/.test(name) || period?.type !== "StringLiteral") {
+		return undefined;
+	}
+	const args = [
+		JSON.stringify((period as CELStringLiteral).value.slice(1, -1)),
+	];
+	for (const parameter of parameters) {
+		if (
+			parameter.type === "IntegerLiteral" ||
+			parameter.type === "FloatLiteral" ||
+			parameter.type === "Identifier"
+		) {
+			args.push(
+				String((parameter as CELExpression & { value: unknown }).value),
+			);
+		} else {
+			return undefined;
+		}
+	}
+	return `${name}(${args.join(", ")})`;
+}
+
+// The call reading variable on interval, such as bbands_upperband("1h", 20);
+// a position variable is read by its name.
+export function variableCall(
+	variable: StrategyVariable,
+	interval: string,
+): string {
+	if (variable.kind === "position") return variable.name;
+	const args = [JSON.stringify(interval), ...variable.parameters].join(", ");
+	return `${variable.name}(${args})`;
+}
+
+// The key of a variable: its call without the period, such as
+// bbands_upperband(20), or the name of a position variable.
+export function variableKey(
+	variable: Pick<StrategyVariable, "kind" | "name" | "parameters">,
+): string {
+	if (variable.kind === "position") return variable.name;
+	return `${variable.name}(${variable.parameters.join(", ")})`;
+}
+
+// field read on interval instead of its own period.
+export function withInterval(field: string, interval: string): string {
+	return field.replace(/^(\w+\()"[^"]*"/, `$1${JSON.stringify(interval)}`);
+}
+
+// What the field of an operand reads: the key of its variable and, for a
+// call, its period.
+export function fieldVariable(field: string): {
+	key: string;
+	interval?: string;
+} {
+	const match = /^(\w+)\("([^"]*)"(?:, )?/.exec(field);
+	if (!match) return { key: field };
+	const [prefix, name, interval] = match;
+	return { key: `${name}(${field.slice(prefix.length)}`, interval };
+}
 
 // The CEL source of one operand.
 export function expressionSource(node: ExpressionNode): string {

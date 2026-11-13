@@ -1,5 +1,5 @@
 // Package strategy holds the administrator's strategies, CEL expressions over
-// the configured indicators, and alerts when a monitored instrument starts
+// indicator and candle field calls, and alerts when a monitored instrument starts
 // matching one of them.
 package strategy
 
@@ -241,29 +241,16 @@ func (entry Entry) Exits() bool {
 	return entry.Exit != nil || entry.TakeProfit != nil || entry.StopLoss != nil
 }
 
-// indicatorIDs lists the indicators the rules read, ascending.
-func (entry Entry) indicatorIDs() []int64 {
-	var ids []int64
-	for _, read := range entry.reads {
-		if id := read.Variable.IndicatorID; id != 0 && !slices.Contains(ids, id) {
-			ids = append(ids, id)
-		}
-	}
-	slices.Sort(ids)
-	return ids
-}
-
 type Store interface {
 	ListStrategies(context.Context) ([]Strategy, error)
-	// CreateStrategy stores the strategy, at revision 1, with the indicators
-	// it reads and returns its id. It fails with ErrConflict for a taken name
-	// and with ErrInvalidArgument when an indicator no longer exists.
-	CreateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64) (uuid.UUID, error)
-	// UpdateStrategy replaces the name, rules, coins, trading settings,
-	// message, and indicators and returns the revision; retrade starts a new
-	// revision, and baseline marks the trading states for a fresh start. It
-	// fails like CreateStrategy, or with ErrNotFound.
-	UpdateStrategy(ctx context.Context, item Strategy, indicatorIDs []int64, retrade, baseline bool) (int64, error)
+	// CreateStrategy stores the strategy, at revision 1, and returns its id.
+	// It fails with ErrConflict for a taken name.
+	CreateStrategy(ctx context.Context, item Strategy) (uuid.UUID, error)
+	// UpdateStrategy replaces the name, rules, coins, trading settings, and
+	// message and returns the revision; retrade starts a new revision, and
+	// baseline marks the trading states for a fresh start. It fails like
+	// CreateStrategy, or with ErrNotFound.
+	UpdateStrategy(ctx context.Context, item Strategy, retrade, baseline bool) (int64, error)
 	// SetStrategyEnabled returns the revision and fails with ErrNotFound.
 	// Enabling marks the trading states for a fresh start; disabling
 	// forgets them.
@@ -283,13 +270,19 @@ type Store interface {
 	// ListLatestCandles returns up to limit latest closed candles per
 	// instrument in chronological order.
 	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
+	// RewriteLegacyStrategies replaces the rules of every strategy stored in
+	// the syntax before indicator calls with those rewrite returns for it,
+	// in one transaction, and marks them rewritten; revisions, trading
+	// states, and baselines stay as they are. rewrite receives the id, name,
+	// and rules of each.
+	RewriteLegacyStrategies(ctx context.Context, rewrite func(Strategy) Strategy) error
 }
 
-// Indicators supplies the configured indicators expressions may read.
+// Indicators supplies the configured indicators, which the catalog offers.
 type Indicators interface {
 	List() []scannerindicator.Entry
-	// Preview derives the entry of an indicator that is not configured.
-	Preview(scannerindicator.Indicator) (scannerindicator.Entry, error)
+	// Preview derives the entry of a selection that is not configured.
+	Preview(indicator.Selection) (scannerindicator.Entry, error)
 }
 
 // Service keeps the strategies in memory and persists every change.
@@ -363,17 +356,8 @@ const (
 // compile compiles source as a rule of kind and checks that the synchronized
 // history covers its deepest reads, so a strategy never waits for values that
 // cannot exist.
-func (service *Service) compile(source string, variables []Variable, kind RuleKind) (*Expression, error) {
-	var compiled *Expression
-	var err error
-	switch kind {
-	case PriceRule:
-		compiled, err = CompilePrice(source, variables)
-	case ExitRule:
-		compiled, err = Compile(source, append(slices.Clone(variables), PositionVariables()...))
-	default:
-		compiled, err = Compile(source, variables)
-	}
+func (service *Service) compile(source string, kind RuleKind) (*Expression, error) {
+	compiled, err := Compile(source, service.registry, kind)
 	if err != nil {
 		return nil, err
 	}
@@ -386,13 +370,13 @@ func (service *Service) compile(source string, variables []Variable, kind RuleKi
 	}
 	var problems []string
 	for _, key := range slices.Sorted(maps.Keys(deepest)) {
-		target := deepest[key].Variable.Target
-		depth, err := closedindicator.Depth(service.registry, target, deepest[key].Shift+1)
+		read := deepest[key]
+		depth, err := closedindicator.Depth(service.registry, read.Variable.Target, read.Shift+1)
 		if err != nil {
 			return nil, err
 		}
 		if depth > market.SyncDepth {
-			problems = append(problems, fmt.Sprintf("%s %s needs %d closed candles, %d are synchronized", target.Interval, target.Selection.Type, depth, market.SyncDepth))
+			problems = append(problems, fmt.Sprintf("%s needs %d closed candles, %d are synchronized", read.Variable.Name, depth, market.SyncDepth))
 		}
 	}
 	if len(problems) > 0 {
@@ -401,100 +385,101 @@ func (service *Service) compile(source string, variables []Variable, kind RuleKi
 	return compiled, nil
 }
 
+// IndicatorCall is an indicator as calls write it: Arguments are its
+// parameters as they follow the period, such as ["20", "2.5"] for
+// bbands_upperband("1h", 20, 2.5).
+type IndicatorCall struct {
+	scannerindicator.Entry
+	Arguments []string
+}
+
+// indicatorCall spells the arguments of entry.
+func (service *Service) indicatorCall(entry scannerindicator.Entry) (IndicatorCall, error) {
+	arguments, err := callArguments(service.registry, entry.Selection)
+	if err != nil {
+		return IndicatorCall{}, err
+	}
+	return IndicatorCall{Entry: entry, Arguments: arguments}, nil
+}
+
+// Catalog is what expressions read: the configured indicators, in display
+// order, the candle fields, and the position variables of exit rules, each
+// on any interval but the position variables.
+type Catalog struct {
+	Indicators   []IndicatorCall
+	CandleFields []string
+	Intervals    []market.CandleInterval
+	Positions    []Variable
+}
+
+// Catalog lists what expressions can read; indicators that are not
+// configured are read all the same.
+func (service *Service) Catalog() (Catalog, error) {
+	catalog := Catalog{CandleFields: CandleFields(), Intervals: market.CandleIntervals(), Positions: PositionVariables()}
+	for _, entry := range service.indicators.List() {
+		call, err := service.indicatorCall(entry)
+		if err != nil {
+			return Catalog{}, err
+		}
+		catalog.Indicators = append(catalog.Indicators, call)
+	}
+	return catalog, nil
+}
+
 // Validation is the result of checking an expression.
 type Validation struct {
 	// Problems would reject the expression.
 	Problems []string
-	// Missing are the indicators the expression reads by names no
-	// configured indicator has but exactly one new indicator would, in
-	// reading order. They need not be added: expressions read them all the
-	// same.
-	Missing []scannerindicator.Entry
+	// Expression is the expression with every call that resolves spelled
+	// canonically.
+	Expression string
+	// Indicators are the indicators the expression calls, once each, in
+	// source order.
+	Indicators []IndicatorCall
 }
 
 // Validate lists every problem that would reject expression as a rule of
-// kind: the problems of compiling it, and the coins it reads through of that
-// are not active. Names of indicators that are
-// not configured are resolved into Missing.
+// kind: the problems of compiling it, and the coins it reads through Of that
+// are not active. It respells the expression canonically and lists the
+// indicators it calls, whatever its problems.
 func (service *Service) Validate(ctx context.Context, expression string, kind RuleKind) (Validation, error) {
-	expression = strings.TrimSpace(expression)
-	variables, missing := service.resolve(rule{expression, kind})
-	compiled, err := service.compile(expression, variables, kind)
+	canonical, targets := Canonical(expression, service.registry)
+	validation := Validation{Problems: []string{}, Expression: canonical, Indicators: []IndicatorCall{}}
+	for _, target := range targets {
+		if slices.ContainsFunc(validation.Indicators, func(call IndicatorCall) bool { return call.HasSelection(target.Selection) }) {
+			continue
+		}
+		entry, err := service.indicators.Preview(target.Selection)
+		if err != nil {
+			return Validation{}, fmt.Errorf("describe %s: %w", target.Selection.Type, err)
+		}
+		call, err := service.indicatorCall(entry)
+		if err != nil {
+			return Validation{}, err
+		}
+		validation.Indicators = append(validation.Indicators, call)
+	}
+	compiled, err := service.compile(expression, kind)
 	var invalid *InvalidExpressionError
 	if errors.As(err, &invalid) {
-		return Validation{Problems: invalid.Problems, Missing: missing}, nil
+		validation.Problems = invalid.Problems
+		return validation, nil
 	}
 	if err != nil {
 		return Validation{}, err
 	}
-	problems := []string{}
 	if absent := inactive(service.activeInstruments(), compiled.Symbols()); len(absent) > 0 {
-		problems = append(problems, notActive(absent).Error())
+		validation.Problems = append(validation.Problems, notActive(absent).Error())
 	}
-	return Validation{Problems: problems, Missing: missing}, nil
+	return validation, nil
 }
 
-// rule is an expression of a strategy and what it is to it.
-type rule struct {
-	source string
-	kind   RuleKind
-}
-
-// resolve lists the variables rules may read: those of the configured
-// indicators and, for names no configured indicator has, those of the
-// indicators missingIndicators resolves them into, which it also returns.
-// The variables of resolved indicators belong to no indicator, so they are
-// read but never linked and keep no indicator configured.
-func (service *Service) resolve(rules ...rule) ([]Variable, []scannerindicator.Entry) {
-	configured := service.indicators.List()
-	configuredVariables := Variables(configured)
-	var unknown []string
-	for _, rule := range rules {
-		_, err := service.compile(rule.source, configuredVariables, rule.kind)
-		var invalid *InvalidExpressionError
-		if errors.As(err, &invalid) {
-			unknown = append(unknown, invalid.Unknown...)
-		}
-	}
-	missing := service.missingIndicators(unknown)
-	if len(missing) == 0 {
-		return configuredVariables, nil
-	}
-	return variables(configured, missing), missing
-}
-
-// Unconfigured lists the indicators entry reads that are not configured
-// now, in reading order: those it compiled without and those removed since.
-func (service *Service) Unconfigured(entry Entry) []scannerindicator.Entry {
-	configured := service.indicators.List()
-	var missing []scannerindicator.Entry
-	for _, read := range entry.reads {
-		target := read.Variable.Target
-		same := func(other scannerindicator.Entry) bool { return other.Target().Equal(target) }
-		if read.Variable.Position || target.Equal(CandleTarget(target.Interval)) || slices.ContainsFunc(configured, same) || slices.ContainsFunc(missing, same) {
-			continue
-		}
-		if found, err := service.indicators.Preview(scannerindicator.Indicator{Interval: target.Interval, Selection: target.Selection}); err == nil {
-			missing = append(missing, found)
-		}
-	}
-	return missing
-}
-
-// compileEntry compiles the expressions of item over the configured
-// indicators and those the names of the others resolve into, and finds the
-// interval it trades on. Problems of the other expressions than the entry
-// rule name them.
+// compileEntry compiles the expressions of item and finds the interval it
+// trades on. Problems of the other expressions than the entry rule name
+// them.
 func (service *Service) compileEntry(item Strategy) (Entry, error) {
 	entry := Entry{Strategy: item}
-	rules := []rule{{item.Expression, EntryRule}}
-	for _, other := range []rule{{item.ExitExpression, ExitRule}, {item.TakeProfitExpression, PriceRule}, {item.StopLossExpression, PriceRule}} {
-		if other.source != "" {
-			rules = append(rules, other)
-		}
-	}
-	variables, _ := service.resolve(rules...)
-	compiled, err := service.compile(item.Expression, variables, EntryRule)
+	compiled, err := service.compile(item.Expression, EntryRule)
 	if err != nil {
 		return entry, err
 	}
@@ -502,7 +487,7 @@ func (service *Service) compileEntry(item Strategy) (Entry, error) {
 		if source == "" {
 			return nil, nil
 		}
-		expression, err := service.compile(source, variables, kind)
+		expression, err := service.compile(source, kind)
 		var invalid *InvalidExpressionError
 		if errors.As(err, &invalid) {
 			for index, problem := range invalid.Problems {
@@ -565,9 +550,13 @@ func mergeReads(compiled *Expression, others ...*Expression) []Read {
 }
 
 // Load replaces the strategies, the active instruments, and the
-// administrator's favorites with the stored ones. A strategy that no longer
-// compiles is kept but not evaluated.
+// administrator's favorites with the stored ones, first rewriting the rules
+// stored in the old syntax. A strategy that no longer compiles is kept but
+// not evaluated.
 func (service *Service) Load(ctx context.Context) error {
+	if err := service.store.RewriteLegacyStrategies(ctx, func(item Strategy) Strategy { return service.rewriteLegacyStrategy(ctx, item) }); err != nil {
+		return fmt.Errorf("rewrite strategies of the old syntax: %w", err)
+	}
 	stored, err := service.store.ListStrategies(ctx)
 	if err != nil {
 		return fmt.Errorf("load strategies: %w", err)
@@ -683,28 +672,6 @@ func (service *Service) List() []Entry {
 	return slices.Clone(service.entries)
 }
 
-// Variables lists what expressions can read now.
-func (service *Service) Variables() []Variable {
-	return Variables(service.indicators.List())
-}
-
-// IndicatorUsage maps each indicator id to the names of the strategies that
-// read it.
-func (service *Service) IndicatorUsage() map[int64][]string {
-	service.mu.RLock()
-	defer service.mu.RUnlock()
-	usage := map[int64][]string{}
-	for _, entry := range service.entries {
-		if entry.Compiled == nil {
-			continue
-		}
-		for _, id := range entry.indicatorIDs() {
-			usage[id] = append(usage[id], entry.Name)
-		}
-	}
-	return usage
-}
-
 // subscribe subscribes the tracker to the values the enabled strategies and
 // signals read: each value of the evaluated instrument on every instrument
 // they evaluate, and each value read through of only on the instrument it
@@ -730,7 +697,7 @@ func (service *Service) Create(ctx context.Context, item Strategy) (Entry, error
 	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
-	entry.ID, err = service.store.CreateStrategy(ctx, entry.Strategy, entry.indicatorIDs())
+	entry.ID, err = service.store.CreateStrategy(ctx, entry.Strategy)
 	if err != nil {
 		return Entry{}, err
 	}
@@ -772,7 +739,7 @@ func (service *Service) Update(ctx context.Context, item Strategy) (Entry, error
 	if entry.Enabled && (retrade || previous.Compiled == nil) {
 		baselines = []uuid.UUID{item.ID}
 	}
-	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, entry.indicatorIDs(), retrade, len(baselines) > 0)
+	entry.Revision, err = service.store.UpdateStrategy(ctx, entry.Strategy, retrade, len(baselines) > 0)
 	if err != nil {
 		return Entry{}, err
 	}

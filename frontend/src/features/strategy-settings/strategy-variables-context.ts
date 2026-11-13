@@ -1,9 +1,10 @@
 import { createContext } from "react";
 
-import type { StrategyVariable } from "@/api/generated/models";
+import type { StrategyVariables } from "@/features/strategy-settings/types";
 
-// The variables of one rule builder. Conditions read them from here, since
-// the builder renders its condition component itself.
-export const StrategyVariablesContext = createContext<
-	readonly StrategyVariable[]
->([]);
+// What the operands of one rule builder read. Conditions read it from here,
+// since the builder renders its condition component itself.
+export const StrategyVariablesContext = createContext<StrategyVariables>({
+	intervals: [],
+	variables: [],
+});

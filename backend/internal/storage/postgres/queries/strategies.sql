@@ -37,14 +37,6 @@ SET name = @name, expression = @expression, exit_expression = @exit_expression,
 WHERE id = @id
 RETURNING revision;
 
--- name: DeleteStrategyIndicators :exec
-DELETE FROM app.strategy_indicators WHERE strategy_id = $1;
-
--- name: InsertStrategyIndicators :exec
-INSERT INTO app.strategy_indicators (strategy_id, indicator_id)
-SELECT @strategy_id::UUID, indicator_id
-FROM unnest(@indicator_ids::BIGINT[]) AS ids(indicator_id);
-
 -- name: SetStrategyEnabled :one
 UPDATE app.strategies
 SET enabled = $2, baseline_pending = $2, revision = revision + 1, updated_at = now()
@@ -163,3 +155,26 @@ FROM app.favorites f
 JOIN binance_spot.instruments i ON i.id = f.instrument_id
 WHERE f.user_id = @user_id
 ORDER BY i.symbol COLLATE "C";
+
+-- name: ListLegacyStrategyRules :many
+-- Locks the strategies whose rules are in the syntax before indicator calls
+-- while they are rewritten.
+SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression
+FROM app.strategies
+WHERE syntax = 1
+ORDER BY id
+FOR UPDATE;
+
+-- name: RewriteLegacyStrategyRules :exec
+-- Replaces the rules and marks them rewritten; revisions, trading states,
+-- and baselines stay as they are.
+UPDATE app.strategies s
+SET expression = v.expression, exit_expression = v.exit_expression,
+    take_profit_expression = v.take_profit_expression, stop_loss_expression = v.stop_loss_expression, syntax = 2
+FROM (
+    SELECT unnest(@ids::UUID[]) AS id, unnest(@expressions::TEXT[]) AS expression,
+           unnest(@exit_expressions::TEXT[]) AS exit_expression,
+           unnest(@take_profit_expressions::TEXT[]) AS take_profit_expression,
+           unnest(@stop_loss_expressions::TEXT[]) AS stop_loss_expression
+) AS v
+WHERE s.id = v.id;

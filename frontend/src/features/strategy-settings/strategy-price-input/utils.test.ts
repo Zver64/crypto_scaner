@@ -9,23 +9,23 @@ import {
 
 describe("fixed price operands", () => {
 	it.each([
-		"h_close",
+		'close("1h")',
 		"100.5",
-		"h_close * 1.05",
-		"h_close - 2 * h_atr_14",
-		"h_close + (h_close * (5 / 100))",
-		"h_max_50_high",
-		"h_min_50_low",
-		"h_sma_50",
-		"prev(h_max_50_high)",
-		"max(h_close, h_open)",
-		"min(h_low, prev(h_low))",
-		"h_close - prev(h_close)",
-		"abs(h_close - h_open)",
-		"mod(h_close, 2)",
-		"percentile(h_high, 50, 100)",
-		"percentile(h_low, 50, 0)",
-		"percentile(h_high, 50, 100) * 0.99",
+		'close("1h") * 1.05',
+		'close("1h") - 2 * atr("1h")',
+		'close("1h") + (close("1h") * (5 / 100))',
+		'max("1h", 50, high)',
+		'min("1h", 50, low)',
+		'sma("1d", 50)',
+		'Prev(max("1h", 50, high))',
+		'Max(close("1h"), open("1h"))',
+		'Min(low("1h"), Prev(low("1h")))',
+		'close("1h") - Prev(close("1h"))',
+		'Abs(close("1h") - open("1h"))',
+		'Mod(close("1h"), 2)',
+		'Percentile(high("1h"), 50, 100)',
+		'Percentile(low("1h"), 50, 0)',
+		'Percentile(high("1h"), 50, 100) * 0.99',
 	])("restores %s with the existing expression builder", (source) => {
 		const setup = parsePriceSetup(source);
 		expect(setup.node).toBeDefined();
@@ -35,36 +35,36 @@ describe("fixed price operands", () => {
 	});
 
 	it("serializes edited arithmetic with the shared serializer", () => {
-		const setup = parsePriceSetup("h_close - 2 * h_atr_14");
+		const setup = parsePriceSetup('close("1h") - 2 * atr("1h", 20)');
 		expect(setup.node).toMatchObject({
 			kind: "func",
 			fn: "subtract",
 			args: [
-				{ kind: "field", field: "h_close" },
+				{ kind: "field", field: 'close("1h")' },
 				{ kind: "func", fn: "multiply" },
 			],
 		});
 		expect(priceSetupExpression({ node: setup.node })).toBe(
-			"(h_close - (2 * h_atr_14))",
+			'(close("1h") - (2 * atr("1h", 20)))',
 		);
 	});
 
 	it("serializes a shifted MAX indicator with the shared function serializer", () => {
-		const setup = parsePriceSetup("prev(h_max_50_high, 1)");
+		const setup = parsePriceSetup('Prev(max("1h", 50, high), 1)');
 		expect(setup.node).toMatchObject({
 			kind: "func",
-			fn: "prev",
+			fn: "Prev",
 			args: [
-				{ kind: "field", field: "h_max_50_high" },
+				{ kind: "field", field: 'max("1h", 50, high)' },
 				{ kind: "value", value: 1 },
 			],
 		});
 		expect(priceSetupExpression({ node: setup.node })).toBe(
-			"prev(h_max_50_high, 1)",
+			'Prev(max("1h", 50, high), 1)',
 		);
 	});
 
-	it.each(['of("BTCUSDT", h_close)', "h_close > 0", "h_close +"])(
+	it.each(['Of("BTCUSDT", close("1h"))', 'close("1h") > 0', 'close("1h") +'])(
 		"preserves unsupported formula %s",
 		(source) => {
 			const setup = parsePriceSetup(source);
@@ -73,25 +73,27 @@ describe("fixed price operands", () => {
 		},
 	);
 
-	it.each(["h_close", "h_close - 2 * h_atr_14"])(
+	it.each(['close("1h")', 'close("1h") - 2 * atr("1h")'])(
 		"clears dirty state when %s is restored without preservation metadata",
 		(source) => {
 			const initial = parsePriceSetup(source);
-			expect(priceSetupChanged(parsePriceSetup("h_open"), initial)).toBe(true);
+			expect(priceSetupChanged(parsePriceSetup('open("1h")'), initial)).toBe(
+				true,
+			);
 			expect(priceSetupChanged({ node: initial.node }, initial)).toBe(false);
 		},
 	);
 
 	it("tracks disabled, incomplete, and manually edited prices separately", () => {
-		const initial = parsePriceSetup("h_close");
+		const initial = parsePriceSetup('close("1h")');
 		const incomplete = { node: { kind: "field" as const, field: "" } };
 		expect(priceSetupChanged(incomplete, initial)).toBe(true);
 		expect(priceSetupChanged(incomplete, {})).toBe(true);
 		expect(priceSetupChanged({}, initial)).toBe(true);
 		expect(priceSetupChanged({}, {})).toBe(false);
-		const custom = parsePriceSetup("h_close +");
-		expect(priceSetupChanged({ custom: "h_open +" }, custom)).toBe(true);
-		expect(priceSetupChanged({ custom: "h_close +" }, custom)).toBe(false);
+		const custom = parsePriceSetup('close("1h") +');
+		expect(priceSetupChanged({ custom: 'open("1h") +' }, custom)).toBe(true);
+		expect(priceSetupChanged({ custom: 'close("1h") +' }, custom)).toBe(false);
 	});
 
 	it("blocks incomplete operands and permits removing the price", () => {
@@ -107,7 +109,7 @@ describe("fixed price operands", () => {
 					kind: "func",
 					fn: "multiply",
 					args: [
-						{ kind: "field", field: "h_close" },
+						{ kind: "field", field: 'close("1h")' },
 						{ kind: "field", field: "" },
 					],
 				},

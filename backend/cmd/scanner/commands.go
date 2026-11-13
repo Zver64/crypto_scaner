@@ -38,44 +38,71 @@ func (c *cli) varsCommand() *cobra.Command {
 	var filter string
 	command := &cobra.Command{
 		Use:   "vars",
-		Short: "Variables: configured indicators, candle fields, and the position variables of exit rules",
+		Short: `What expressions read, PERIOD being "1h", "1d", "1w", or "1M": candle fields, configured indicators, and the position variables of exit rules`,
 		Args:  cobra.NoArgs,
 		RunE: func(command *cobra.Command, _ []string) error {
 			client, err := c.client()
 			if err != nil {
 				return err
 			}
-			variables, err := client.ListStrategyVariablesWithResponse(command.Context())
+			response, err := client.GetStrategyCatalogWithResponse(command.Context())
 			if err == nil {
-				err = c.check(variables, variables.JSON200 != nil)
+				err = c.check(response, response.JSON200 != nil)
 			}
 			if err != nil {
 				return err
 			}
 			// The filter applies to the JSON too.
-			list := *variables.JSON200
+			catalog := *response.JSON200
 			needle := strings.ToLower(filter)
-			list.Items = slices.DeleteFunc(list.Items, func(variable apiclient.StrategyVariable) bool {
-				return !strings.Contains(strings.ToLower(variable.Name), needle)
-			})
-			raw, err := json.Marshal(list)
+			unmatched := func(lines ...string) bool {
+				return !slices.ContainsFunc(lines, func(line string) bool { return strings.Contains(strings.ToLower(line), needle) })
+			}
+			catalog.CandleFields = slices.DeleteFunc(catalog.CandleFields, func(field string) bool { return unmatched(fieldCall(field)) })
+			catalog.Indicators = slices.DeleteFunc(catalog.Indicators, func(indicator apiclient.StrategyIndicatorCall) bool { return unmatched(indicatorCalls(indicator)...) })
+			catalog.PositionVariables = slices.DeleteFunc(catalog.PositionVariables, func(variable apiclient.StrategyPositionVariable) bool { return unmatched(variable.Name) })
+			raw, err := json.Marshal(catalog)
 			if err != nil {
 				return err
 			}
 			c.print(command, raw, func(w io.Writer) {
-				for _, variable := range list.Items {
-					if variable.Position {
-						fmt.Fprintln(w, variable.Name, "(exit rule only)")
-					} else {
-						fmt.Fprintln(w, variable.Name)
+				for _, field := range catalog.CandleFields {
+					fmt.Fprintln(w, fieldCall(field))
+				}
+				for _, indicator := range catalog.Indicators {
+					for _, line := range indicatorCalls(indicator) {
+						if !unmatched(line) {
+							fmt.Fprintln(w, line)
+						}
 					}
+				}
+				for _, variable := range catalog.PositionVariables {
+					fmt.Fprintln(w, variable.Name, "(exit rule only)")
 				}
 			})
 			return nil
 		},
 	}
-	command.Flags().StringVar(&filter, "filter", "", "list only names containing `TEXT`, ignoring case")
+	command.Flags().StringVar(&filter, "filter", "", "list only calls and names containing `TEXT`, ignoring case")
 	return command
+}
+
+// fieldCall is the call of a candle field, such as close(PERIOD).
+func fieldCall(field string) string { return field + "(PERIOD)" }
+
+// indicatorCalls are the calls of each output of an indicator, such as
+// bbands_upperband(PERIOD, 20, 2.5), or the one call of an indicator with a
+// single output, such as rsi(PERIOD, 21).
+func indicatorCalls(indicator apiclient.StrategyIndicatorCall) []string {
+	arguments := "(" + strings.Join(append([]string{"PERIOD"}, indicator.Parameters...), ", ") + ")"
+	if len(indicator.Outputs) < 2 {
+		return []string{indicator.Type + arguments}
+	}
+	calls := make([]string, len(indicator.Outputs))
+	for i, output := range indicator.Outputs {
+		calls[i] = indicator.Type + "_" + output + arguments
+	}
+	return calls
 }
 
 func (c *cli) validateCommand() *cobra.Command {
@@ -106,12 +133,12 @@ func (c *cli) validateCommand() *cobra.Command {
 			if problems := validation.JSON200.Errors; len(problems) > 0 {
 				return &cliError{code: "invalid_expression", message: "the expression is invalid", details: problems}
 			}
-			c.print(command, validation.Body, func(w io.Writer) { renderValidation(w, *validation.JSON200) })
+			c.print(command, validation.Body, func(w io.Writer) { fmt.Fprintln(w, "ok") })
 			return nil
 		},
 	}
 	command.Flags().BoolVar(&exit, "exit", false, "check an exit rule, which may also read entry_price, pnl, and bars_held")
-	command.Flags().BoolVar(&price, "price", false, "check a take profit or stop loss price, such as h_close * 1.05")
+	command.Flags().BoolVar(&price, "price", false, `check a take profit or stop loss price, such as close("1h") * 1.05`)
 	command.MarkFlagsMutuallyExclusive("exit", "price")
 	return command
 }
@@ -244,9 +271,8 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 	var rules strategyRuleFlags
 	var message string
 	var coins coinFlags
-	var addIndicators bool
 	command := &cobra.Command{
-		Use:   "create NAME --expr EXPR (--coin SYM|--favorites|--coin-m)... [--direction long|short] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--message TEXT] [--add-indicators]",
+		Use:   "create NAME --expr EXPR (--coin SYM|--favorites|--coin-m)... [--direction long|short] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--message TEXT]",
 		Short: "Save a disabled strategy; it reads indicators that are not configured without adding them",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(command *cobra.Command, args []string) error {
@@ -264,7 +290,7 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 			if body.Coins, body.CoinSource, err = c.resolveCoins(command, client, coins); err != nil {
 				return err
 			}
-			if _, err := c.prepareStrategyRules(command, client, rules.rules(), addIndicators); err != nil {
+			if err := c.prepareStrategyRules(command, client, rules.rules()); err != nil {
 				return err
 			}
 			created, err := client.CreateStrategyWithResponse(command.Context(), body)
@@ -282,7 +308,6 @@ func (c *cli) createStrategyCommand() *cobra.Command {
 	coins.add(command, false)
 	flags := command.Flags()
 	flags.StringVar(&message, "message", "", "`TEXT` sent in Telegram alerts under the title; empty sends none")
-	flags.BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
 }
 
@@ -295,8 +320,8 @@ func (f *strategyRuleFlags) add(command *cobra.Command) {
 	flags.StringVar(&f.expression, "expr", "", "the entry rule `EXPR`ession, see docs/strategy-language.md")
 	flags.StringVar(&f.direction, "direction", string(apiclient.Long), "how the strategy trades, `long` or short, fixed once saved; a short one needs --take-profit and --stop-loss")
 	flags.StringVar(&f.exit, "exit", "", "the exit rule `EXPR`ession, which may also read entry_price, pnl, and bars_held")
-	flags.StringVar(&f.takeProfit, "take-profit", "", "the take profit price `EXPR`ession, fixed at the entry signal, such as h_close * 1.05")
-	flags.StringVar(&f.stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession, fixed at the entry signal, such as h_close * 0.97")
+	flags.StringVar(&f.takeProfit, "take-profit", "", "the take profit price `EXPR`ession, fixed at the entry signal, such as close(\"1h\") * 1.05")
+	flags.StringVar(&f.stopLoss, "stop-loss", "", "the stop loss price `EXPR`ession, fixed at the entry signal, such as close(\"1h\") * 0.97")
 	_ = command.MarkFlagRequired("expr")
 	_ = command.RegisterFlagCompletionFunc("direction", strategiesKind.completeDirections())
 }
@@ -319,18 +344,11 @@ type strategyRule struct {
 	name       string
 }
 
-// addIndicatorsUsage describes the flag that adds the indicators a strategy
-// reads but nobody configured, which it reads all the same.
-const addIndicatorsUsage = "also add the indicators the rules read that are not configured, with no table columns or chart lines, so the Mini App builder can show the rules"
-
-// prepareStrategyRules validates every rule before any write and, with add,
-// then adds the indicators they read that are missing, so an invalid rule
-// adds nothing. Every invalid rule is reported at once. It returns the
-// titles of the indicators the rules read that are missing. An empty rule
-// other than the entry rule is absent and needs nothing.
-func (c *cli) prepareStrategyRules(command *cobra.Command, client *apiclient.ClientWithResponses, rules []strategyRule, add bool) ([]string, error) {
-	var items []apiclient.ScannerIndicatorBatchItem
-	var titles, problems []string
+// prepareStrategyRules validates every rule before any write, reporting
+// every invalid rule at once. An empty rule other than the entry rule is
+// absent and needs nothing.
+func (c *cli) prepareStrategyRules(command *cobra.Command, client *apiclient.ClientWithResponses, rules []strategyRule) error {
+	var problems []string
 	for _, rule := range rules {
 		if rule.expression == "" && rule.kind != apiclient.StrategyValidationInputKindEntry {
 			continue
@@ -340,43 +358,23 @@ func (c *cli) prepareStrategyRules(command *cobra.Command, client *apiclient.Cli
 			err = c.check(validation, validation.JSON200 != nil, validation.JSON400)
 		}
 		if err != nil {
-			return nil, err
+			return err
 		}
 		for _, problem := range validation.JSON200.Errors {
 			problems = append(problems, rule.name+": "+problem)
 		}
-		for _, indicator := range validation.JSON200.MissingIndicators {
-			if !slices.Contains(titles, indicator.Title) {
-				titles = append(titles, indicator.Title)
-				items = append(items, apiclient.ScannerIndicatorBatchItem{Interval: indicator.Interval, Parameters: indicator.Parameters, Type: indicator.Type})
-			}
-		}
 	}
 	if len(problems) > 0 {
-		return nil, &cliError{code: "invalid_expression", message: "invalid rules; nothing was sent", details: problems}
+		return &cliError{code: "invalid_expression", message: "invalid rules; nothing was sent", details: problems}
 	}
-	if !add || len(items) == 0 {
-		return titles, nil
-	}
-	added, err := client.CreateScannerIndicatorBatchWithResponse(command.Context(), apiclient.ScannerIndicatorBatch{Items: items})
-	if err == nil {
-		err = c.check(added, added.JSON201 != nil, added.JSON400, added.JSON409)
-	}
-	if err != nil {
-		return nil, err
-	}
-	if !c.json {
-		command.PrintErrf("added indicators: %s\n", strings.Join(titles, ", "))
-	}
-	return titles, nil
+	return nil
 }
 
 func (c *cli) updateStrategyCommand() *cobra.Command {
 	var name, expression, exit, takeProfit, stopLoss, message string
 	var coins coinFlags
-	var addIndicators bool
 	command := &cobra.Command{
-		Use:               "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--coin SYM]... [--favorites] [--coin-m] [--name NAME] [--message TEXT] [--add-indicators]",
+		Use:               "update ID [--expr EXPR] [--exit EXPR] [--take-profit EXPR] [--stop-loss EXPR] [--coin SYM]... [--favorites] [--coin-m] [--name NAME] [--message TEXT]",
 		Short:             "Edit a disabled saved strategy, preserving unspecified fields",
 		Args:              cobra.ExactArgs(1),
 		ValidArgsFunction: c.completeArg(strategiesKind),
@@ -389,8 +387,8 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 			// edits are the flags that change the strategy.
 			edits := []string{"expr", "exit", "take-profit", "stop-loss", "name", "message"}
 			edited := slices.ContainsFunc(edits, flags.Changed) || coins.changed()
-			if !edited && !addIndicators {
-				return usageError("specify at least one of --expr, --exit, --take-profit, --stop-loss, --coin, --favorites, --coin-m, --name, --message, or --add-indicators")
+			if !edited {
+				return usageError("specify at least one of --expr, --exit, --take-profit, --stop-loss, --coin, --favorites, --coin-m, --name, or --message")
 			}
 			client, err := c.client()
 			if err != nil {
@@ -428,16 +426,12 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 				{"take-profit", &body.TakeProfitExpression, strategyRule{takeProfit, apiclient.StrategyValidationInputKindPrice, "the take profit"}},
 				{"stop-loss", &body.StopLossExpression, strategyRule{stopLoss, apiclient.StrategyValidationInputKindPrice, "the stop loss"}},
 			} {
-				// --add-indicators covers the preserved rules too.
 				if flags.Changed(change.flag) {
 					*change.target = change.rule.expression
-				} else if !addIndicators {
-					continue
+					rules = append(rules, change.rule)
 				}
-				change.rule.expression = *change.target
-				rules = append(rules, change.rule)
 			}
-			return c.update(command, client, strategiesKind, *current, body, rules, addIndicators, edited)
+			return c.update(command, client, strategiesKind, *current, body, rules)
 		},
 	}
 	command.Flags().StringVar(&expression, "expr", "", "the entry rule `EXPR`ession; omitted preserves the current one")
@@ -447,6 +441,5 @@ func (c *cli) updateStrategyCommand() *cobra.Command {
 	coins.add(command, false)
 	command.Flags().StringVar(&name, "name", "", "strategy `NAME`; omitted preserves the current name")
 	command.Flags().StringVar(&message, "message", "", "`TEXT` sent in Telegram alerts under the title; empty removes it, omitted preserves it")
-	command.Flags().BoolVar(&addIndicators, "add-indicators", false, addIndicatorsUsage)
 	return command
 }

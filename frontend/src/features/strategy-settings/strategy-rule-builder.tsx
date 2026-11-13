@@ -42,7 +42,7 @@ export function StrategyRuleBuilder({
 	variables,
 }: StrategyRuleBuilderProps) {
 	return (
-		<StrategyVariablesContext value={variables.variables}>
+		<StrategyVariablesContext value={variables}>
 			<QueryBuilder
 				controlElements={controlElements}
 				defaultQuery={defaultQuery}

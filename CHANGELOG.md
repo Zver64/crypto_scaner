@@ -1,5 +1,12 @@
 # Changelog
 
+## [4.12.0](https://github.com/Zver64/crypto_scaner/compare/v4.11.0...v4.12.0) (2026-11-13)
+
+
+### Features
+
+* draw indicators of volumes over the volume bars ([3a942ed](https://github.com/Zver64/crypto_scaner/commit/3a942ed4215c5278892645b1cca517c53315c1ae))
+
 ## [4.11.0](https://github.com/Zver64/crypto_scaner/compare/v4.10.0...v4.11.0) (2026-11-11)
 
 

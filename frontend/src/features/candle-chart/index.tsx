@@ -1,6 +1,8 @@
 import {
 	Box,
+	Button,
 	Center,
+	Group,
 	Loader,
 	Paper,
 	SegmentedControl,
@@ -15,6 +17,7 @@ import { ChartCanvas } from "@/components/lightweight-chart";
 import { CandleSeries } from "@/features/candle-chart/candle-series";
 import { timeChartOptions } from "@/features/candle-chart/chart-options";
 import { ChartReadout } from "@/features/candle-chart/chart-readout";
+import { ComparisonSeries } from "@/features/candle-chart/comparison-series";
 import {
 	barSpacing,
 	candlePaneHeight,
@@ -37,6 +40,7 @@ import type {
 	PriceHistoryChartProps,
 } from "@/features/candle-chart/types";
 import { useChartViewport } from "@/features/candle-chart/use-chart-viewport";
+import { usePriceComparison } from "@/features/candle-chart/use-price-comparison";
 import { usePriceHistory } from "@/features/candle-chart/use-price-history";
 import { createIndicatorLegend } from "@/features/candle-chart/utils";
 import { VolumeIndicatorSeries } from "@/features/candle-chart/volume-indicator-series";
@@ -47,6 +51,7 @@ export type {
 	ChartIndicatorLayout,
 	ChartIntervalOption,
 	ChartPriceLevels,
+	PriceComparison,
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart/types";
@@ -60,6 +65,7 @@ const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
 // chart wrappers compare what they receive, so the chart transforms nothing
 // while rendering and needs no memoization.
 export function PriceHistoryChart({
+	comparison,
 	enabled,
 	indicators: layouts,
 	fillHeight = false,
@@ -77,6 +83,8 @@ export function PriceHistoryChart({
 		? intervalControlData.filter(({ value }) => intervals.includes(value))
 		: intervalControlData;
 	const [activeCandle, setActiveCandle] = useState<ChartCandle | null>(null);
+	const [comparing, setComparing] = useState(false);
+	usePriceComparison(comparison, comparing);
 	const { indicators, panes } = layouts[interval];
 	const colorScheme = useComputedColorScheme("dark");
 	// Phones give the chart the full card width and size it from the screen.
@@ -142,6 +150,7 @@ export function PriceHistoryChart({
 		: candlePaneHeight;
 	const paneHeight = compact ? compactIndicatorPaneHeight : indicatorPaneHeight;
 	const chartHeight = candleHeight + panes.length * paneHeight;
+	const baseOptions = timeChartOptions[colorScheme][interval];
 	const fillStyle: CSSProperties | undefined = fillHeight
 		? { display: "flex", flex: 1, flexDirection: "column" }
 		: undefined;
@@ -154,13 +163,23 @@ export function PriceHistoryChart({
 			style={fillStyle}
 		>
 			<Stack gap="xs" style={fillStyle}>
-				<SegmentedControl<ChartInterval>
-					data={intervalOptions}
-					fullWidth
-					mx={compact ? paperPadding : 0}
-					onChange={selectInterval}
-					value={interval}
-				/>
+				<Group gap="xs" mx={compact ? paperPadding : 0} wrap="nowrap">
+					<SegmentedControl<ChartInterval>
+						data={intervalOptions}
+						flex={1}
+						fullWidth
+						onChange={selectInterval}
+						value={interval}
+					/>
+					{comparison ? (
+						<Button
+							onClick={() => setComparing(!comparing)}
+							variant={comparing ? "filled" : "default"}
+						>
+							{comparison.label}
+						</Button>
+					) : null}
+				</Group>
 				<Box pos="relative" style={fillStyle}>
 					{!hasCandles && !isLoading ? (
 						<Text c="dimmed">No closed candles are available.</Text>
@@ -169,7 +188,14 @@ export function PriceHistoryChart({
 						key={`${symbol}:${interval}`}
 						aria-label={`${symbol}: ${interval} candlestick history${live ? " with the current live candle" : " of the completed backtest"}. ${candles.length} candles loaded.${hasMore ? " Scroll left to load older candles." : " Earliest stored candle reached."}`}
 						onVisibleLogicalRangeChange={onVisibleLogicalRangeChange}
-						options={timeChartOptions[colorScheme][interval]}
+						options={{
+							...baseOptions,
+							// The left scale belongs to the comparison line.
+							leftPriceScale: {
+								...baseOptions.leftPriceScale,
+								visible: comparing,
+							},
+						}}
 						paneStretchFactors={[candleHeight, ...panes.map(() => paneHeight)]}
 						ref={chartRef}
 						role="img"
@@ -204,6 +230,9 @@ export function PriceHistoryChart({
 								/>
 							)),
 						)}
+						{comparison && comparing ? (
+							<ComparisonSeries comparison={comparison} interval={interval} />
+						) : null}
 						{volumeIndicators.flatMap(({ id, lines }) =>
 							lines.map((indicatorLine) => (
 								<VolumeIndicatorSeries

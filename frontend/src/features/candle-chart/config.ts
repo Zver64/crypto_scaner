@@ -73,6 +73,7 @@ function chartOptionsFor({ background, grid, text }: SchemeColors) {
 	return {
 		grid: { horzLines: { color: grid }, vertLines: { color: grid } },
 		layout: { background: { color: background }, textColor: text },
+		leftPriceScale: { borderColor: grid },
 		rightPriceScale: { borderColor: grid },
 		timeScale: {
 			barSpacing,
@@ -146,6 +147,13 @@ export const overlayIndicatorSeriesOptions = {
 	// legend.
 	lastValueVisible: false,
 	priceLineVisible: false,
+} satisfies LineSeriesPartialOptions;
+
+// A compared price is drawn like an overlay, on the left price scale.
+export const comparisonSeriesOptions = {
+	...overlayIndicatorSeriesOptions,
+	color: colors.orange[6],
+	priceScaleId: "left",
 } satisfies LineSeriesPartialOptions;
 
 export const volumeIndicatorSeriesOptions = {

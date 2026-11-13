@@ -47,6 +47,18 @@ export interface PriceHistorySource {
 	show(interval: ChartInterval): void;
 	loadOlder(interval: ChartInterval): void;
 }
+// The price of another instrument, drawn over the candles as a line on its own
+// left price scale.
+export interface PriceComparison {
+	label: string;
+	// The line aligned with the candle slots of the interval, empty while the
+	// comparison is disabled or has no data. It keeps its reference until its
+	// data changes.
+	getLine(interval: ChartInterval): ChartLineData;
+	subscribe(listener: () => void): () => void;
+	// The source streams the comparison only while it is enabled.
+	setEnabled(enabled: boolean): void;
+}
 export interface ChartIntervalOption {
 	label: string;
 	value: ChartInterval;
@@ -137,6 +149,8 @@ export interface ChartTradeMarkers {
 	marks?: readonly string[];
 }
 export interface PriceHistoryChartProps {
+	// Adds a toggle that draws the comparison line.
+	comparison?: PriceComparison;
 	// Immutable snapshots have no connection status or current live candle.
 	live?: boolean;
 	enabled: boolean;

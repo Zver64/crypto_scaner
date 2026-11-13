@@ -232,3 +232,84 @@ it("streams only the interval on screen and keeps the last chart of others as st
 		source.stop();
 	}
 });
+
+it("streams Bitcoin for comparison only while enabled, with the interval and range of the coin", async () => {
+	vi.stubGlobal("window", {
+		location: { href: "https://example.com/coin" },
+		Telegram: { WebApp: { initData: "signed-data" } },
+	});
+	vi.stubGlobal("WebSocket", FakeSocket);
+	expect(
+		createCoinChartData("btcusdt", rsiCatalogs).comparison,
+	).toBeUndefined();
+	const source = createCoinChartData("ethusdt", rsiCatalogs);
+	const comparison = source.comparison;
+	if (!comparison) throw new Error("Missing comparison");
+	const lineValues = () =>
+		comparison
+			.getLine("1h")
+			.data.map((slot) => ("value" in slot ? slot.value : null));
+	try {
+		source.show("1h");
+		source.start();
+		await vi.waitFor(() => expect(FakeSocket.current).toBeDefined());
+		const socket = FakeSocket.current;
+		if (!socket) throw new Error("Missing socket");
+		socket.emitOpen();
+		const sent = () =>
+			socket.sent.map(({ type, symbol, interval, limit }) => [
+				type,
+				symbol,
+				interval,
+				limit,
+			]);
+		expect(sent()).toEqual([["subscribe", "ETHUSDT", "1h", 200]]);
+
+		comparison.setEnabled(true);
+		expect(sent().at(-1)).toEqual(["subscribe", "BTCUSDT", "1h", 200]);
+		expect(socket.sent.at(-1)?.indicators).toBeUndefined();
+
+		const base = { type: "snapshot", interval: "1h", version: 1 };
+		socket.emitMessage({
+			...base,
+			symbol: "ETHUSDT",
+			chart: {
+				...chart([candle(1), candle(3)], [60, 70], true),
+				symbol: "ETHUSDT",
+			},
+		});
+		expect(lineValues()).toEqual([]);
+		// Bitcoin candles outside the coin's slots are dropped, and a slot
+		// without a Bitcoin candle stays empty.
+		socket.emitMessage({
+			...base,
+			symbol: "BTCUSDT",
+			chart: {
+				...chart([candle(0, 20), candle(1, 21), candle(3, 23)], [], true),
+				indicators: [],
+			},
+		});
+		expect(lineValues()).toEqual([21, null, 23]);
+		expect(source.getSnapshot("1h").candles).toHaveLength(2);
+		expect(comparison.getLine("1h")).toBe(comparison.getLine("1h"));
+
+		source.loadOlder("1h");
+		expect(sent().slice(-2)).toEqual([
+			["subscribe", "ETHUSDT", "1h", 400],
+			["subscribe", "BTCUSDT", "1h", 400],
+		]);
+		source.show("1d");
+		expect(sent().slice(-4)).toEqual([
+			["unsubscribe", "ETHUSDT", "1h", 400],
+			["unsubscribe", "BTCUSDT", "1h", 400],
+			["subscribe", "ETHUSDT", "1d", 200],
+			["subscribe", "BTCUSDT", "1d", 200],
+		]);
+
+		comparison.setEnabled(false);
+		expect(sent().at(-1)).toEqual(["unsubscribe", "BTCUSDT", "1d", 200]);
+		expect(lineValues()).toEqual([]);
+	} finally {
+		source.stop();
+	}
+});

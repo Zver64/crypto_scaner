@@ -3,10 +3,16 @@ import type { CandleInterval } from "@/api/generated/models";
 import { LiveCandlesClient } from "@/api/live-candles";
 import { getSessionToken, invalidateSessionToken } from "@/api/session";
 import type {
+	PriceComparison,
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart";
-import { createChartSeriesData } from "@/features/candle-chart/utils";
+import { emptyChartLine } from "@/features/candle-chart/constants";
+import type { ChartLineData } from "@/features/candle-chart/types";
+import {
+	createChartSeriesData,
+	createComparisonLine,
+} from "@/features/candle-chart/utils";
 import {
 	type ChartCatalogs,
 	chartIntervals,
@@ -18,14 +24,27 @@ import {
 // chart: the close of the live candle on screen.
 export interface CoinChartData extends PriceHistorySource {
 	getCurrentPrice(): number | undefined;
+	// Bitcoin's price to compare the coin with; absent on Bitcoin's own chart.
+	comparison?: PriceComparison;
 }
 
 const initialLimit = 200;
 const maxLimit = 2000;
+const comparisonSymbol = "BTCUSDT";
+const comparisonLabel = "BTC";
+// The comparison is subscribed without indicators.
+const comparisonCatalogs: ChartCatalogs = {
+	"1h": [],
+	"1d": [],
+	"1w": [],
+	"1M": [],
+};
 
 // The backend owns each chart range: it sends a full snapshot whenever closed
 // history or the range changes and a tail update for the current candle. Only
 // the interval on screen is subscribed; others keep their last chart as stale.
+// While the comparison is enabled, its candles are subscribed on the same
+// connection with the interval and range of the coin.
 export function createCoinChartData(
 	symbol: string,
 	catalogs: ChartCatalogs,
@@ -35,7 +54,31 @@ export function createCoinChartData(
 	const live = createLiveStore(upper, catalogs, (interval) =>
 		connection?.resync(upper, interval),
 	);
+	const compared =
+		upper === comparisonSymbol
+			? undefined
+			: createLiveStore(comparisonSymbol, comparisonCatalogs, (interval) =>
+					connection?.resync(comparisonSymbol, interval),
+				);
+	let comparing = false;
+	// The line of the last coin slots and comparison chart it was read for.
+	let comparisonLine:
+		| { slots: unknown; chart: unknown; line: ChartLineData }
+		| undefined;
 	const listeners = new Set<() => void>();
+	const notify = () => {
+		for (const listener of listeners) listener();
+	};
+	const subscribe = (listener: () => void) => {
+		listeners.add(listener);
+		return () => {
+			listeners.delete(listener);
+		};
+	};
+	const setConnection = (next: LiveCandlesState["connection"]) => {
+		live.connection(next);
+		compared?.connection(next);
+	};
 	type IntervalState = {
 		limit: number;
 		loadingMore: boolean;
@@ -50,20 +93,24 @@ export function createCoinChartData(
 	);
 	let unsubscribeLive: (() => void) | undefined;
 	let shown: CandleInterval | undefined;
-	const subscriptions = () =>
-		shown
-			? [
-					{
-						symbol: upper,
-						interval: shown,
-						limit: intervals.get(shown)?.limit ?? initialLimit,
-						indicators: catalogs[shown].map(({ parameters, type }) => ({
-							parameters,
-							type,
-						})),
-					},
-				]
-			: [];
+	const subscriptions = () => {
+		if (!shown) return [];
+		const limit = intervals.get(shown)?.limit ?? initialLimit;
+		return [
+			{
+				symbol: upper,
+				interval: shown,
+				limit,
+				indicators: catalogs[shown].map(({ parameters, type }) => ({
+					parameters,
+					type,
+				})),
+			},
+			...(comparing
+				? [{ symbol: comparisonSymbol, interval: shown, limit }]
+				: []),
+		];
+	};
 	const recompute = (interval: CandleInterval, force = false) => {
 		const current = intervals.get(interval);
 		if (!current) return;
@@ -98,9 +145,35 @@ export function createCoinChartData(
 			isLoadingMore: current.loadingMore,
 			hasMore: Boolean(state.chart?.has_more) && current.limit < maxLimit,
 		};
-		for (const listener of listeners) listener();
+		notify();
+	};
+	const comparison: PriceComparison | undefined = compared && {
+		label: comparisonLabel,
+		getLine(interval) {
+			const selected = chartIntervals.find((item) => item === interval);
+			const slots =
+				selected && intervals.get(selected)?.snapshot?.series.candles;
+			const chart = selected && compared.getSnapshot(selected).chart;
+			if (!comparing || !slots || !chart) return emptyChartLine;
+			if (comparisonLine?.slots !== slots || comparisonLine.chart !== chart) {
+				comparisonLine = {
+					slots,
+					chart,
+					line: createComparisonLine(slots, chart.candles),
+				};
+			}
+			return comparisonLine.line;
+		},
+		subscribe,
+		setEnabled(enabled) {
+			if (comparing === enabled) return;
+			comparing = enabled;
+			connection?.setSubscriptions(subscriptions());
+			notify();
+		},
 	};
 	return {
+		comparison,
 		getSnapshot(interval) {
 			const selected = chartIntervals.find((item) => item === interval);
 			return (selected && intervals.get(selected)?.snapshot) ?? emptySnapshot;
@@ -108,24 +181,27 @@ export function createCoinChartData(
 		getCurrentPrice() {
 			return shown && intervals.get(shown)?.snapshot?.candles.at(-1)?.close;
 		},
-		subscribe(listener) {
-			listeners.add(listener);
-			return () => {
-				listeners.delete(listener);
-			};
-		},
+		subscribe,
 		start() {
 			if (connection) return;
-			live.connection("connecting");
-			unsubscribeLive = live.subscribe(() => {
+			setConnection("connecting");
+			const unsubscribeCoin = live.subscribe(() => {
 				for (const interval of chartIntervals) recompute(interval);
 			});
+			const unsubscribeCompared = compared?.subscribe(notify);
+			unsubscribeLive = () => {
+				unsubscribeCoin();
+				unsubscribeCompared?.();
+			};
 			connection = new LiveCandlesClient({
 				getToken: getSessionToken,
 				invalidateToken: invalidateSessionToken,
 				checkSession: getCurrentUser,
-				onConnectionChange: live.connection,
-				onMessage: live.message,
+				onConnectionChange: setConnection,
+				onMessage(message) {
+					live.message(message);
+					compared?.message(message);
+				},
 			});
 			connection.setSubscriptions(subscriptions());
 			connection.connect();
@@ -133,7 +209,7 @@ export function createCoinChartData(
 		stop() {
 			connection?.disconnect();
 			connection = undefined;
-			live.connection("disconnected");
+			setConnection("disconnected");
 			unsubscribeLive?.();
 			unsubscribeLive = undefined;
 			for (const [interval, current] of intervals) {

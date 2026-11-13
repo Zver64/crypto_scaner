@@ -37,6 +37,7 @@ export function CoinChart({
 	}
 	return (
 		<PriceHistoryChart
+			comparison={source.comparison}
 			enabled={enabled}
 			fillHeight={fillHeight}
 			indicators={indicators}

@@ -186,6 +186,24 @@ export function createIndicatorData(
 	});
 }
 
+// The close prices of another instrument's candles on the candle slots of the
+// chart; candles without a slot are dropped, so the line adds no bars.
+export function createComparisonLine(
+	slots: readonly ChartCandleSlot[],
+	candles: readonly PriceCandle[],
+): ChartLineData {
+	return {
+		data: createIndicatorData(
+			slots,
+			candles.map(({ close, open_time }) => ({
+				time: open_time,
+				value: close,
+			})),
+		),
+		resolution: valueResolution(candles.map(({ close }) => close)),
+	};
+}
+
 // Aggregate trades once per selection/interval. Each source interval owns its
 // selector; candle arrays with only OHLC changes reuse the marker array.
 export function createMarkerDataSelector(

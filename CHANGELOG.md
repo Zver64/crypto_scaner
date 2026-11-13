@@ -1,5 +1,12 @@
 # Changelog
 
+## [5.2.0](https://github.com/Zver64/crypto_scaner/compare/v5.1.0...v5.2.0) (2026-11-13)
+
+
+### Features
+
+* **frontend:** compare a coin with Bitcoin on its chart ([35a771e](https://github.com/Zver64/crypto_scaner/commit/35a771e565b5f01793d4b507caf98671c2baa1bf))
+
 ## [5.1.0](https://github.com/Zver64/crypto_scaner/compare/v5.0.0...v5.1.0) (2026-11-13)
 
 

@@ -84,6 +84,10 @@ describe("importedStrategyQuery", () => {
 			'Prev(close("1h"), pivot_low_bars("1h") - 1) > Prev(sma("1h", 3, volume), 4)',
 		],
 		['entry_price < close("1d")', 'entry_price < close("1d")'],
+		[
+			'bbands_upperband("1h", 20, 0.0000001) > sma("1h", 1000000000000000000000)',
+			'bbands_upperband("1h", 20, 0.0000001) > sma("1h", 1000000000000000000000)',
+		],
 	])("imports %s", (expression, expected) => {
 		const query = importedStrategyQuery(expression);
 		expect(query && strategyExpression(query)).toBe(expected);

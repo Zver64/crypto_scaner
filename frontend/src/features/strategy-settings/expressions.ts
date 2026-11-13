@@ -12,6 +12,7 @@ import type {
 	CELExpression,
 	CELFunctionCall,
 	CELIdentifier,
+	CELNumericLiteral,
 	CELStringLiteral,
 } from "react-querybuilder/parseCEL";
 
@@ -221,17 +222,30 @@ function variableCallSource(expression: CELExpression): string | undefined {
 	for (const parameter of parameters) {
 		if (
 			parameter.type === "IntegerLiteral" ||
-			parameter.type === "FloatLiteral" ||
-			parameter.type === "Identifier"
+			parameter.type === "FloatLiteral"
 		) {
-			args.push(
-				String((parameter as CELExpression & { value: unknown }).value),
-			);
+			args.push(canonicalNumber((parameter as CELNumericLiteral).value));
+		} else if (parameter.type === "Identifier") {
+			args.push((parameter as CELIdentifier).value);
 		} else {
 			return undefined;
 		}
 	}
 	return `${name}(${args.join(", ")})`;
+}
+
+// value spelled as the backend spells canonical numbers: the shortest
+// decimal that reads back as value, without an exponent, such as 0.0000001
+// for 1e-7. The parser keeps only the value of a literal, not its source.
+function canonicalNumber(value: number): string {
+	const [mantissa, exponent] = String(value).split("e");
+	if (exponent === undefined) return mantissa;
+	const [whole, fraction = ""] = mantissa.split(".");
+	const digits = whole + fraction;
+	const point = whole.length + Number(exponent);
+	if (point <= 0) return `0.${"0".repeat(-point)}${digits}`;
+	if (point >= digits.length) return digits + "0".repeat(point - digits.length);
+	return `${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
 // The call reading variable on interval, such as bbands_upperband("1h", 20);

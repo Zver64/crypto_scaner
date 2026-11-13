@@ -441,7 +441,8 @@ type Validation struct {
 // Validate lists every problem that would reject expression as a rule of
 // kind: the problems of compiling it, and the coins it reads through Of that
 // are not active. It respells the expression canonically and lists the
-// indicators it calls, whatever its problems.
+// indicators it calls that the indicator service describes, whatever its
+// problems.
 func (service *Service) Validate(ctx context.Context, expression string, kind RuleKind) (Validation, error) {
 	canonical, targets := Canonical(expression, service.registry)
 	validation := Validation{Problems: []string{}, Expression: canonical, Indicators: []IndicatorCall{}}
@@ -449,9 +450,11 @@ func (service *Service) Validate(ctx context.Context, expression string, kind Ru
 		if slices.ContainsFunc(validation.Indicators, func(call IndicatorCall) bool { return call.HasSelection(target.Selection) }) {
 			continue
 		}
+		// An indicator the service cannot describe, such as one past the
+		// chart lookback, is left out; compiling reports its problem.
 		entry, err := service.indicators.Preview(target.Selection)
 		if err != nil {
-			return Validation{}, fmt.Errorf("describe %s: %w", target.Selection.Type, err)
+			continue
 		}
 		call, err := service.indicatorCall(entry)
 		if err != nil {

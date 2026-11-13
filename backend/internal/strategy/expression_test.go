@@ -1,6 +1,7 @@
 package strategy
 
 import (
+	"context"
 	"errors"
 	"maps"
 	"slices"
@@ -280,5 +281,18 @@ func TestCompileCalculatedPrevShift(t *testing.T) {
 		if !errors.As(err, &invalid) || len(invalid.Problems) != 1 || !strings.HasSuffix(invalid.Problems[0], problem) {
 			t.Errorf("Compile(%q) error = %v, want %q", source, err, problem)
 		}
+	}
+}
+
+// An indicator call the indicator service cannot describe, such as one past
+// the chart limit, is a problem of the expression, not a failed validation.
+func TestValidateListsProblemsOfIndicatorsItCannotDescribe(t *testing.T) {
+	service := legacyTestService(t)
+	validation, err := service.Validate(context.Background(), `t3("1h", 1000) > 1 && rsi("1h") > 1`, EntryRule)
+	if err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+	if len(validation.Problems) == 0 || len(validation.Indicators) != 1 || validation.Indicators[0].Selection.Type != "rsi" {
+		t.Fatalf("Validate() = %+v, want problems and only rsi described", validation)
 	}
 }

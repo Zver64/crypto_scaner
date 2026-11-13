@@ -3,11 +3,31 @@ package strategy
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"maps"
 	"slices"
 	"strings"
 	"testing"
+
+	"crypto-scanner/internal/market"
+	"crypto-scanner/internal/scannerindicator"
+
+	"github.com/google/uuid"
 )
+
+func validationTestService(t *testing.T) *Service {
+	t.Helper()
+	registry := testRegistry(t)
+	indicators, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, []string{"yellow.5"}, slog.New(slog.DiscardHandler), func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := NewService(newBacktestStore(market.IntervalHour, nil), indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
 
 func TestCompileListsEveryProblem(t *testing.T) {
 	registry := testRegistry(t)
@@ -287,7 +307,7 @@ func TestCompileCalculatedPrevShift(t *testing.T) {
 // An indicator call the indicator service cannot describe, such as one past
 // the chart limit, is a problem of the expression, not a failed validation.
 func TestValidateListsProblemsOfIndicatorsItCannotDescribe(t *testing.T) {
-	service := legacyTestService(t)
+	service := validationTestService(t)
 	validation, err := service.Validate(context.Background(), `t3("1h", 1000) > 1 && rsi("1h") > 1`, EntryRule)
 	if err != nil {
 		t.Fatalf("Validate() error = %v", err)

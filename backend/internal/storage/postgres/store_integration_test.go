@@ -784,53 +784,6 @@ func TestPostgresStoreContracts(t *testing.T) {
 		}
 	})
 
-	t.Run("rules of the old syntax are rewritten once, keeping revisions and states", func(t *testing.T) {
-		instruments, err := store.ListActiveInstruments(ctx)
-		if err != nil {
-			t.Fatal(err)
-		}
-		id, err := store.CreateStrategy(ctx, strategy.Strategy{Name: "Old syntax", Direction: strategy.DirectionLong, Expression: "h_close > 1", ExitExpression: "pnl > 5",
-			Coins: []string{instruments[0].Symbol}, CoinSource: strategy.CoinsSelected})
-		if err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() {
-			if _, err := db.Exec(ctx, `DELETE FROM app.strategies WHERE id = $1`, id); err != nil {
-				t.Errorf("clean strategy fixture: %v", err)
-			}
-		})
-		revision, err := store.SetStrategyEnabled(ctx, id, true)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(ctx, `UPDATE app.strategies SET syntax = 1 WHERE id = $1`, id); err != nil {
-			t.Fatal(err)
-		}
-		rewrites := 0
-		rewrite := func(item strategy.Strategy) strategy.Strategy {
-			rewrites++
-			item.Expression = `close("1h") > 1`
-			return item
-		}
-		for range 2 {
-			if err := store.RewriteLegacyStrategies(ctx, rewrite); err != nil {
-				t.Fatal(err)
-			}
-		}
-		if rewrites != 1 {
-			t.Fatalf("rewrites = %d, want 1", rewrites)
-		}
-		var expression, exit string
-		var current int64
-		var pending bool
-		if err := db.QueryRow(ctx, `SELECT expression, exit_expression, revision, baseline_pending FROM app.strategies WHERE id = $1`, id).Scan(&expression, &exit, &current, &pending); err != nil {
-			t.Fatal(err)
-		}
-		if expression != `close("1h") > 1` || exit != "pnl > 5" || current != revision || !pending {
-			t.Fatalf("rewritten strategy = %q, %q, revision %d (was %d), baseline pending %t", expression, exit, current, revision, pending)
-		}
-	})
-
 	// Runs last: it migrates the schema down and up again.
 	t.Run("strategy UUID migration round trip keeps strategies and their rows", func(t *testing.T) {
 		if _, err := store.CreateScannerIndicator(ctx, scannerindicator.Indicator{Selection: indicator.Selection{Type: "rsi", Parameters: indicator.Parameters{"period": 21}}, Periods: []scannerindicator.Period{

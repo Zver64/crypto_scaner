@@ -111,7 +111,6 @@ type AppStrategy struct {
 	WindowCandles        pgtype.Int2
 	CoinSource           string
 	ID                   uuid.UUID
-	Syntax               int16
 }
 
 type AppStrategyCoin struct {

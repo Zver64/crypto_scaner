@@ -270,12 +270,6 @@ type Store interface {
 	// ListLatestCandles returns up to limit latest closed candles per
 	// instrument in chronological order.
 	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
-	// RewriteLegacyStrategies replaces the rules of every strategy stored in
-	// the syntax before indicator calls with those rewrite returns for it,
-	// in one transaction, and marks them rewritten; revisions, trading
-	// states, and baselines stay as they are. rewrite receives the id, name,
-	// and rules of each.
-	RewriteLegacyStrategies(ctx context.Context, rewrite func(Strategy) Strategy) error
 }
 
 // Indicators supplies the configured indicators, which the catalog offers.
@@ -553,13 +547,9 @@ func mergeReads(compiled *Expression, others ...*Expression) []Read {
 }
 
 // Load replaces the strategies, the active instruments, and the
-// administrator's favorites with the stored ones, first rewriting the rules
-// stored in the old syntax. A strategy that no longer compiles is kept but
-// not evaluated.
+// administrator's favorites with the stored ones. A strategy that no longer
+// compiles is kept but not evaluated.
 func (service *Service) Load(ctx context.Context) error {
-	if err := service.store.RewriteLegacyStrategies(ctx, func(item Strategy) Strategy { return service.rewriteLegacyStrategy(ctx, item) }); err != nil {
-		return fmt.Errorf("rewrite strategies of the old syntax: %w", err)
-	}
 	stored, err := service.store.ListStrategies(ctx)
 	if err != nil {
 		return fmt.Errorf("load strategies: %w", err)

@@ -14,12 +14,11 @@ FROM app.strategies s
 ORDER BY s.id;
 
 -- name: InsertStrategy :one
--- Rules are written in the syntax of calls, 2.
 INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-                            coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending, syntax)
+                            coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
 VALUES (@name, @signal, @direction, @expression, @exit_expression, @take_profit_expression, @stop_loss_expression,
         @coin_source, sqlc.narg(min_market_cap_usd), sqlc.narg(max_market_cap_usd), sqlc.narg(target_ratio), sqlc.narg(window_candles),
-        @message, @enabled, @enabled, 2)
+        @message, @enabled, @enabled)
 RETURNING id;
 
 -- name: UpdateStrategy :one
@@ -27,13 +26,12 @@ RETURNING id;
 -- new revision, @retrade; a market cap range change only limits later signals,
 -- and a target ratio or window change only how backtests judge a signal. The
 -- kind and the direction never change.
--- Rules are written in the syntax of calls, 2.
 UPDATE app.strategies
 SET name = @name, expression = @expression, exit_expression = @exit_expression,
     take_profit_expression = @take_profit_expression, stop_loss_expression = @stop_loss_expression,
     coin_source = @coin_source, min_market_cap_usd = sqlc.narg(min_market_cap_usd), max_market_cap_usd = sqlc.narg(max_market_cap_usd),
     target_ratio = sqlc.narg(target_ratio), window_candles = sqlc.narg(window_candles),
-    message = @message, syntax = 2, updated_at = now(),
+    message = @message, updated_at = now(),
     baseline_pending = baseline_pending OR @baseline::BOOLEAN,
     revision = revision + CASE WHEN @retrade::BOOLEAN THEN 1 ELSE 0 END
 WHERE id = @id
@@ -157,26 +155,3 @@ FROM app.favorites f
 JOIN binance_spot.instruments i ON i.id = f.instrument_id
 WHERE f.user_id = @user_id
 ORDER BY i.symbol COLLATE "C";
-
--- name: ListLegacyStrategyRules :many
--- Locks the strategies whose rules are in the syntax before indicator calls
--- while they are rewritten.
-SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression
-FROM app.strategies
-WHERE syntax = 1
-ORDER BY id
-FOR UPDATE;
-
--- name: RewriteLegacyStrategyRules :exec
--- Replaces the rules and marks them rewritten; revisions, trading states,
--- and baselines stay as they are.
-UPDATE app.strategies s
-SET expression = v.expression, exit_expression = v.exit_expression,
-    take_profit_expression = v.take_profit_expression, stop_loss_expression = v.stop_loss_expression, syntax = 2
-FROM (
-    SELECT unnest(@ids::UUID[]) AS id, unnest(@expressions::TEXT[]) AS expression,
-           unnest(@exit_expressions::TEXT[]) AS exit_expression,
-           unnest(@take_profit_expressions::TEXT[]) AS take_profit_expression,
-           unnest(@stop_loss_expressions::TEXT[]) AS stop_loss_expression
-) AS v
-WHERE s.id = v.id;

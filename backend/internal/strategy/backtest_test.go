@@ -696,10 +696,6 @@ func (store *backtestStore) ListStrategies(context.Context) ([]Strategy, error) 
 	return store.strategies, nil
 }
 
-func (store *backtestStore) RewriteLegacyStrategies(context.Context, func(Strategy) Strategy) error {
-	return nil
-}
-
 func (store *backtestStore) ListStrategyInstruments(context.Context) ([]Instrument, error) {
 	return []Instrument{{ID: 1, Symbol: "BTCUSDT"}}, nil
 }

@@ -99,10 +99,10 @@ func (q *Queries) DisableStrategyAtRevision(ctx context.Context, arg DisableStra
 
 const insertStrategy = `-- name: InsertStrategy :one
 INSERT INTO app.strategies (name, signal, direction, expression, exit_expression, take_profit_expression, stop_loss_expression,
-                            coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending, syntax)
+                            coin_source, min_market_cap_usd, max_market_cap_usd, target_ratio, window_candles, message, enabled, baseline_pending)
 VALUES ($1, $2, $3, $4, $5, $6, $7,
         $8, $9, $10, $11, $12,
-        $13, $14, $14, 2)
+        $13, $14, $14)
 RETURNING id
 `
 
@@ -123,7 +123,6 @@ type InsertStrategyParams struct {
 	Enabled              bool
 }
 
-// Rules are written in the syntax of calls, 2.
 func (q *Queries) InsertStrategy(ctx context.Context, arg InsertStrategyParams) (uuid.UUID, error) {
 	row := q.db.QueryRow(ctx, insertStrategy,
 		arg.Name,
@@ -188,52 +187,6 @@ func (q *Queries) InsertStrategyStates(ctx context.Context, arg InsertStrategySt
 		arg.Entries,
 	)
 	return err
-}
-
-const listLegacyStrategyRules = `-- name: ListLegacyStrategyRules :many
-SELECT id, name, expression, exit_expression, take_profit_expression, stop_loss_expression
-FROM app.strategies
-WHERE syntax = 1
-ORDER BY id
-FOR UPDATE
-`
-
-type ListLegacyStrategyRulesRow struct {
-	ID                   uuid.UUID
-	Name                 string
-	Expression           string
-	ExitExpression       string
-	TakeProfitExpression string
-	StopLossExpression   string
-}
-
-// Locks the strategies whose rules are in the syntax before indicator calls
-// while they are rewritten.
-func (q *Queries) ListLegacyStrategyRules(ctx context.Context) ([]ListLegacyStrategyRulesRow, error) {
-	rows, err := q.db.Query(ctx, listLegacyStrategyRules)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ListLegacyStrategyRulesRow
-	for rows.Next() {
-		var i ListLegacyStrategyRulesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Expression,
-			&i.ExitExpression,
-			&i.TakeProfitExpression,
-			&i.StopLossExpression,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listStrategies = `-- name: ListStrategies :many
@@ -492,40 +445,6 @@ func (q *Queries) LockStrategyCoinInstruments(ctx context.Context, symbols []str
 	return err
 }
 
-const rewriteLegacyStrategyRules = `-- name: RewriteLegacyStrategyRules :exec
-UPDATE app.strategies s
-SET expression = v.expression, exit_expression = v.exit_expression,
-    take_profit_expression = v.take_profit_expression, stop_loss_expression = v.stop_loss_expression, syntax = 2
-FROM (
-    SELECT unnest($1::UUID[]) AS id, unnest($2::TEXT[]) AS expression,
-           unnest($3::TEXT[]) AS exit_expression,
-           unnest($4::TEXT[]) AS take_profit_expression,
-           unnest($5::TEXT[]) AS stop_loss_expression
-) AS v
-WHERE s.id = v.id
-`
-
-type RewriteLegacyStrategyRulesParams struct {
-	Ids                   []uuid.UUID
-	Expressions           []string
-	ExitExpressions       []string
-	TakeProfitExpressions []string
-	StopLossExpressions   []string
-}
-
-// Replaces the rules and marks them rewritten; revisions, trading states,
-// and baselines stay as they are.
-func (q *Queries) RewriteLegacyStrategyRules(ctx context.Context, arg RewriteLegacyStrategyRulesParams) error {
-	_, err := q.db.Exec(ctx, rewriteLegacyStrategyRules,
-		arg.Ids,
-		arg.Expressions,
-		arg.ExitExpressions,
-		arg.TakeProfitExpressions,
-		arg.StopLossExpressions,
-	)
-	return err
-}
-
 const saveStrategyStates = `-- name: SaveStrategyStates :many
 INSERT INTO app.strategy_states (strategy_id, instrument_id, open_time, entry, buys, filled, quantity, opened_at, take_profit, stop_loss)
 SELECT s.id, v.instrument_id, v.open_time, v.entry, v.buys, v.filled, v.quantity, v.opened_at, v.take_profit, v.stop_loss
@@ -621,7 +540,7 @@ SET name = $1, expression = $2, exit_expression = $3,
     take_profit_expression = $4, stop_loss_expression = $5,
     coin_source = $6, min_market_cap_usd = $7, max_market_cap_usd = $8,
     target_ratio = $9, window_candles = $10,
-    message = $11, syntax = 2, updated_at = now(),
+    message = $11, updated_at = now(),
     baseline_pending = baseline_pending OR $12::BOOLEAN,
     revision = revision + CASE WHEN $13::BOOLEAN THEN 1 ELSE 0 END
 WHERE id = $14
@@ -649,7 +568,6 @@ type UpdateStrategyParams struct {
 // new revision, @retrade; a market cap range change only limits later signals,
 // and a target ratio or window change only how backtests judge a signal. The
 // kind and the direction never change.
-// Rules are written in the syntax of calls, 2.
 func (q *Queries) UpdateStrategy(ctx context.Context, arg UpdateStrategyParams) (int64, error) {
 	row := q.db.QueryRow(ctx, updateStrategy,
 		arg.Name,

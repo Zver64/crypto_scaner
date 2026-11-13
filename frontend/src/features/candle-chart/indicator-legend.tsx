@@ -8,10 +8,10 @@ interface IndicatorLegendProps {
 }
 
 // Indicator titles and values below the OHLC readout over the chart: overlays drawn on the
-// candles on one line, indicators in panes below the chart on the next.
+// candles or volumes on one line, indicators in panes below the chart on the next.
 export function IndicatorLegend({ items }: IndicatorLegendProps) {
 	if (items.length === 0) return null;
-	const overlays = items.filter(({ placement }) => placement === "overlay");
+	const overlays = items.filter(({ placement }) => placement !== "pane");
 	const panes = items.filter(({ placement }) => placement === "pane");
 	return (
 		<Stack gap={2}>

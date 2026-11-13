@@ -88,8 +88,8 @@ export function createChartSeriesData(
 			catalog.flatMap(({ id, lines, placement }) =>
 				lines.map(({ output }) => {
 					const data = createIndicatorData(slots, points[id]?.[output] ?? []);
-					// Overlays are drawn on the candles' scale, so only a pane line
-					// has a resolution of its own.
+					// Overlays are drawn on the candles' scale, so only other lines
+					// have a resolution of their own.
 					const line: ChartLineData = {
 						data,
 						resolution:
@@ -116,15 +116,15 @@ function toChartIndicatorOptions({
 	placement,
 	scale,
 }: ChartIndicatorDefinition): ChartIndicatorOptions {
-	return placement === "overlay"
-		? { id, lines, placement }
-		: {
+	return placement === "pane"
+		? {
 				id,
 				lines,
 				placement,
 				pane: pane ?? id,
 				scale: scale ?? { levels: [] },
-			};
+			}
+		: { id, lines, placement };
 }
 
 // What a chart draws from one interval's catalog, created once per catalog.
@@ -441,9 +441,9 @@ export function createIndicatorLegend(
 			const slot = lines[key]?.data[slotIndex];
 			const value =
 				slot && "value" in slot
-					? indicator.placement === "pane"
-						? formatNumber(slot.value)
-						: formatPrice(slot.value)
+					? indicator.placement === "overlay"
+						? formatPrice(slot.value)
+						: formatNumber(slot.value)
 					: null;
 			return { color, key, placement: indicator.placement, title, value };
 		}),

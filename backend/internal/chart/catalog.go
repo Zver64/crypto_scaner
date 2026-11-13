@@ -18,6 +18,8 @@ const (
 	PlacementOverlay Placement = "overlay"
 	// PlacementPane draws the indicator in a pane below the candles.
 	PlacementPane Placement = "pane"
+	// PlacementVolume draws the indicator over the volume bars, on their scale.
+	PlacementVolume Placement = "volume"
 )
 
 // IndicatorLine maps one calculated output series to a drawn line.
@@ -48,11 +50,11 @@ type CatalogIndicator struct {
 	Selection indicator.Selection
 	Placement Placement
 	Lines     []IndicatorLine
-	// Scale is required for panes and must be nil for overlays, which share the
-	// candle price scale.
+	// Scale is required for panes and must be nil otherwise: overlays share the
+	// candle price scale and volume indicators the volume scale.
 	Scale *IndicatorScale
-	// Pane is required for panes and must be empty for overlays: pane
-	// indicators with the same key share one pane.
+	// Pane is required for panes and must be empty otherwise: pane indicators
+	// with the same key share one pane.
 	Pane string
 }
 
@@ -98,9 +100,9 @@ func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicato
 		}
 	}
 	switch item.Placement {
-	case PlacementOverlay:
+	case PlacementOverlay, PlacementVolume:
 		if item.Scale != nil || item.Pane != "" {
-			return errors.New("overlays share the candle pane and scale and must not define them")
+			return errors.New("overlays share the candle pane and a scale and must not define them")
 		}
 	case PlacementPane:
 		if item.Scale == nil || strings.TrimSpace(item.Pane) == "" {

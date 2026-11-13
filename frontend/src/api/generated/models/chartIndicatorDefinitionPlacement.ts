@@ -23,7 +23,7 @@
  */
 
 /**
- * `overlay` draws over the candles on their price scale; `pane` draws in a pane below.
+ * `overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale.
  */
 export type ChartIndicatorDefinitionPlacement = typeof ChartIndicatorDefinitionPlacement[keyof typeof ChartIndicatorDefinitionPlacement];
 
@@ -31,4 +31,5 @@ export type ChartIndicatorDefinitionPlacement = typeof ChartIndicatorDefinitionP
 export const ChartIndicatorDefinitionPlacement = {
   overlay: 'overlay',
   pane: 'pane',
+  volume: 'volume',
 } as const;

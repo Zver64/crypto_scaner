@@ -123,12 +123,15 @@ export const markMarkerOptions = {
 	size: 2,
 } satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
+// A custom id puts the volume bars on their own hidden overlay price scale,
+// which indicators of volumes share.
+const volumePriceScaleId = "volume";
+
 export const volumeSeriesOptions = {
 	lastValueVisible: false,
 	priceFormat: { type: "volume" },
 	priceLineVisible: false,
-	// An empty id puts the series on its own hidden overlay price scale.
-	priceScaleId: "",
+	priceScaleId: volumePriceScaleId,
 } satisfies HistogramSeriesPartialOptions;
 
 export const volumePriceScaleOptions = {
@@ -143,6 +146,11 @@ export const overlayIndicatorSeriesOptions = {
 	// legend.
 	lastValueVisible: false,
 	priceLineVisible: false,
+} satisfies LineSeriesPartialOptions;
+
+export const volumeIndicatorSeriesOptions = {
+	...overlayIndicatorSeriesOptions,
+	priceScaleId: volumePriceScaleId,
 } satisfies LineSeriesPartialOptions;
 
 export const paneIndicatorSeriesOptions = {

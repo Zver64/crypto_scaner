@@ -108,9 +108,11 @@ export function ScannerIndicatorRow({
 						{indicator.type.toUpperCase()} ·{" "}
 						{formatParameters(indicator.parameters)}
 					</Text>
-					{indicator.placement === "overlay" ? (
+					{indicator.placement !== "pane" ? (
 						<Text c="dimmed" size="xs">
-							Over the candles
+							{indicator.placement === "volume"
+								? "Over the volumes"
+								: "Over the candles"}
 						</Text>
 					) : (
 						<Group gap="xs" justify="space-between" wrap="nowrap">

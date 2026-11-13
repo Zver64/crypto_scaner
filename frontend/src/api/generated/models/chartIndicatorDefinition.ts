@@ -32,7 +32,7 @@ export interface ChartIndicatorDefinition {
   /** @minLength 1 */
   type: string;
   parameters: ChartIndicatorDefinitionParameters;
-  /** `overlay` draws over the candles on their price scale; `pane` draws in a pane below. */
+  /** `overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale. */
   placement: ChartIndicatorDefinitionPlacement;
   /** @minItems 1 */
   lines: ChartIndicatorLine[];

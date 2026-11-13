@@ -220,6 +220,7 @@ func (e CandleInterval) Valid() bool {
 const (
 	ChartIndicatorDefinitionPlacementOverlay ChartIndicatorDefinitionPlacement = "overlay"
 	ChartIndicatorDefinitionPlacementPane    ChartIndicatorDefinitionPlacement = "pane"
+	ChartIndicatorDefinitionPlacementVolume  ChartIndicatorDefinitionPlacement = "volume"
 )
 
 // Valid indicates whether the value is a known member of the ChartIndicatorDefinitionPlacement enum.
@@ -228,6 +229,8 @@ func (e ChartIndicatorDefinitionPlacement) Valid() bool {
 	case ChartIndicatorDefinitionPlacementOverlay:
 		return true
 	case ChartIndicatorDefinitionPlacementPane:
+		return true
+	case ChartIndicatorDefinitionPlacementVolume:
 		return true
 	default:
 		return false
@@ -421,6 +424,7 @@ func (e ReadinessResponseStatus) Valid() bool {
 const (
 	ScannerIndicatorPlacementOverlay ScannerIndicatorPlacement = "overlay"
 	ScannerIndicatorPlacementPane    ScannerIndicatorPlacement = "pane"
+	ScannerIndicatorPlacementVolume  ScannerIndicatorPlacement = "volume"
 )
 
 // Valid indicates whether the value is a known member of the ScannerIndicatorPlacement enum.
@@ -429,6 +433,8 @@ func (e ScannerIndicatorPlacement) Valid() bool {
 	case ScannerIndicatorPlacementOverlay:
 		return true
 	case ScannerIndicatorPlacementPane:
+		return true
+	case ScannerIndicatorPlacementVolume:
 		return true
 	default:
 		return false
@@ -934,7 +940,7 @@ type ChartIndicatorDefinition struct {
 	Pane       *string                `json:"pane,omitempty"`
 	Parameters map[string]interface{} `json:"parameters"`
 
-	// Placement `overlay` draws over the candles on their price scale; `pane` draws in a pane below.
+	// Placement `overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale.
 	Placement ChartIndicatorDefinitionPlacement `json:"placement"`
 
 	// Scale Value axis of a pane indicator; clients derive the value precision from the values.
@@ -942,7 +948,7 @@ type ChartIndicatorDefinition struct {
 	Type  string               `json:"type"`
 }
 
-// ChartIndicatorDefinitionPlacement `overlay` draws over the candles on their price scale; `pane` draws in a pane below.
+// ChartIndicatorDefinitionPlacement `overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale.
 type ChartIndicatorDefinitionPlacement string
 
 // ChartIndicatorLevel defines model for ChartIndicatorLevel.

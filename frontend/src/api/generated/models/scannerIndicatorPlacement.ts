@@ -28,4 +28,5 @@ export type ScannerIndicatorPlacement = typeof ScannerIndicatorPlacement[keyof t
 export const ScannerIndicatorPlacement = {
   overlay: 'overlay',
   pane: 'pane',
+  volume: 'volume',
 } as const;

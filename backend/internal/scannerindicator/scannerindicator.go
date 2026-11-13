@@ -397,9 +397,15 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 			entry.lines = append(entry.lines, output.Name)
 		}
 	}
-	// An overlay of volumes or trade counts would not fit the price scale.
-	if descriptor.Overlay && !slices.ContainsFunc(fields, func(field string) bool { return !indicator.PriceField(field) }) {
-		entry.Placement = chart.PlacementOverlay
+	// An overlay fits the price scale only over prices and the volume scale
+	// only over volumes; quote volumes and trade counts get a pane.
+	if descriptor.Overlay {
+		switch {
+		case !slices.ContainsFunc(fields, func(field string) bool { return !indicator.PriceField(field) }):
+			entry.Placement = chart.PlacementOverlay
+		case !slices.ContainsFunc(fields, func(field string) bool { return field != "volume" }):
+			entry.Placement = chart.PlacementVolume
+		}
 	}
 	if entry.Placement == chart.PlacementPane && !slices.ContainsFunc(descriptor.Outputs, histogram) {
 		entry.pane = sharedPane(selection.Type, fields)

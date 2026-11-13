@@ -1799,8 +1799,8 @@ components:
           additionalProperties: true
         placement:
           type: string
-          enum: [overlay, pane]
-          description: "`overlay` draws over the candles on their price scale; `pane` draws in a pane below."
+          enum: [overlay, pane, volume]
+          description: "`overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale."
         lines:
           type: array
           minItems: 1
@@ -2938,7 +2938,7 @@ components:
           description: Table column title, such as `d-rsi`.
         placement:
           type: string
-          enum: [overlay, pane]
+          enum: [overlay, pane, volume]
         outputs:
           type: array
           items: { type: string }

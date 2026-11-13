@@ -39,6 +39,7 @@ import type {
 import { useChartViewport } from "@/features/candle-chart/use-chart-viewport";
 import { usePriceHistory } from "@/features/candle-chart/use-price-history";
 import { createIndicatorLegend } from "@/features/candle-chart/utils";
+import { VolumeIndicatorSeries } from "@/features/candle-chart/volume-indicator-series";
 import { VolumeSeries } from "@/features/candle-chart/volume-series";
 
 export { createChartPriceLevels } from "@/features/candle-chart/utils";
@@ -101,6 +102,9 @@ export function PriceHistoryChart({
 	const line = (key: string) => series.lines[key] ?? emptyChartLine;
 	const overlays = indicators.filter(
 		(indicator) => indicator.placement === "overlay",
+	);
+	const volumeIndicators = indicators.filter(
+		(indicator) => indicator.placement === "volume",
 	);
 
 	const {
@@ -199,6 +203,15 @@ export function PriceHistoryChart({
 									key={`${id}:${indicatorLine.output}`}
 									line={indicatorLine}
 									priceResolution={series.priceResolution}
+								/>
+							)),
+						)}
+						{volumeIndicators.flatMap(({ id, lines }) =>
+							lines.map((indicatorLine) => (
+								<VolumeIndicatorSeries
+									data={line(`${id}:${indicatorLine.output}`).data}
+									key={`${id}:${indicatorLine.output}`}
+									line={indicatorLine}
 								/>
 							)),
 						)}

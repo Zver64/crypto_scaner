@@ -1,5 +1,22 @@
 # Changelog
 
+## [6.0.0](https://github.com/Zver64/crypto_scaner/compare/v5.2.0...v6.0.0) (2026-11-14)
+
+
+### ⚠ BREAKING CHANGES
+
+* the pivot outputs previous_high, previous_low, high_bars, previous_high_bars, low_bars, and previous_low_bars are removed. Read the previous pivot with ValueWhen(pivot_high("1h"), 1) and the candles since a pivot was confirmed with BarsSince(pivot_high("1h")).
+
+### Features
+
+* find pivots as discrete values and read earlier ones with ValueWhen and BarsSince ([17664b1](https://github.com/Zver64/crypto_scaner/commit/17664b1ce66aaf90e8437a5bb7b8cdb5f1c0c8b1))
+* mark incomplete inputs of strategy conditions ([0d27204](https://github.com/Zver64/crypto_scaner/commit/0d2720485c1e297737542456af361f2b28a11c2c))
+
+
+### Bug Fixes
+
+* keep typed decimals in number inputs and validate strategy rules with Zod ([410c1fb](https://github.com/Zver64/crypto_scaner/commit/410c1fbce2424be15d8565baf0c80b02200b7edb))
+
 ## [5.2.0](https://github.com/Zver64/crypto_scaner/compare/v5.1.0...v5.2.0) (2026-11-13)
 
 

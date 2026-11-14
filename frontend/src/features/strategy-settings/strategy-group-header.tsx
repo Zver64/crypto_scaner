@@ -1,76 +1,67 @@
-import {
-	ActionIcon,
-	Button,
-	Group,
-	SegmentedControl,
-	Switch,
-} from "@mantine/core";
-import { IconTrash } from "@tabler/icons-react";
-import type { RuleGroupProps, UseRuleGroup } from "react-querybuilder";
+import { Group } from "@mantine/core";
+import type { UseRuleGroup } from "react-querybuilder";
 
-// The combinator, NOT toggle, and add/remove actions of one group.
-export function StrategyGroupHeader({
-	addGroup,
-	addRule,
-	disabled,
-	onCombinatorChange,
-	onNotToggleChange,
-	path,
-	removeGroup,
-	ruleGroup,
-	schema,
-}: RuleGroupProps & UseRuleGroup) {
+// The header of one group: the combinator and NOT toggle on the left, the
+// add and remove actions on the right.
+export function StrategyGroupHeader(rg: UseRuleGroup) {
+	const {
+		addGroupAction: AddGroupAction,
+		addRuleAction: AddRuleAction,
+		combinatorSelector: CombinatorSelector,
+		notToggle: NotToggle,
+		removeGroupAction: RemoveGroupAction,
+	} = rg.schema.controls;
+	const common = {
+		context: rg.context,
+		disabled: rg.disabled,
+		level: rg.path.length,
+		path: rg.path,
+		schema: rg.schema,
+		validation: rg.validationResult,
+	};
+	const actionProps = {
+		...common,
+		ruleOrGroup: rg.ruleGroup,
+		rules: rg.ruleGroup.rules,
+	};
 	return (
 		<Group gap="xs" justify="space-between">
 			<Group gap="xs">
-				<SegmentedControl
-					data={[
-						{ label: "AND", value: "and" },
-						{ label: "OR", value: "or" },
-					]}
-					disabled={disabled}
-					onChange={onCombinatorChange}
-					size="xs"
-					value={"combinator" in ruleGroup ? ruleGroup.combinator : "and"}
+				<CombinatorSelector
+					{...common}
+					handleOnChange={rg.onCombinatorChange}
+					options={rg.schema.combinators}
+					ruleGroup={rg.ruleGroup}
+					rules={rg.ruleGroup.rules}
+					value={rg.combinator}
 				/>
-				<Switch
-					checked={Boolean(ruleGroup.not)}
-					disabled={disabled}
-					label="NOT"
-					onChange={(event) => onNotToggleChange(event.currentTarget.checked)}
-					size="xs"
+				<NotToggle
+					{...common}
+					checked={rg.ruleGroup.not}
+					handleOnChange={rg.onNotToggleChange}
+					label={rg.translations.notToggle.label}
+					ruleGroup={rg.ruleGroup}
 				/>
 			</Group>
 			<Group gap={4}>
-				<Button
-					disabled={disabled}
-					onClick={(event) => addRule(event)}
-					size="compact-xs"
-					variant="light"
-				>
-					+ Condition
-				</Button>
-				{path.length < schema.maxLevels ? (
-					<Button
-						disabled={disabled}
-						onClick={(event) => addGroup(event)}
-						size="compact-xs"
-						variant="light"
-					>
-						+ Group
-					</Button>
+				<AddRuleAction
+					{...actionProps}
+					handleOnClick={rg.addRule}
+					label={rg.translations.addRule.label}
+				/>
+				{rg.path.length < rg.schema.maxLevels ? (
+					<AddGroupAction
+						{...actionProps}
+						handleOnClick={rg.addGroup}
+						label={rg.translations.addGroup.label}
+					/>
 				) : null}
-				{path.length > 0 ? (
-					<ActionIcon
-						aria-label="Remove group"
-						color="red"
-						disabled={disabled}
-						onClick={(event) => removeGroup(event)}
-						size="sm"
-						variant="subtle"
-					>
-						<IconTrash size={14} />
-					</ActionIcon>
+				{rg.path.length > 0 ? (
+					<RemoveGroupAction
+						{...actionProps}
+						handleOnClick={rg.removeGroup}
+						title={rg.translations.removeGroup.title}
+					/>
 				) : null}
 			</Group>
 		</Group>

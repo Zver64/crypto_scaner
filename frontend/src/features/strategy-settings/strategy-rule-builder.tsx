@@ -1,10 +1,18 @@
 import { QueryBuilder, type ValueSources } from "react-querybuilder";
 
-import { strategyOperators } from "@/features/strategy-settings/constants";
+import {
+	ruleBuilderTranslations,
+	strategyCombinators,
+	strategyOperators,
+} from "@/features/strategy-settings/constants";
+import { StrategyAddAction } from "@/features/strategy-settings/strategy-add-action";
+import { StrategyCombinatorSelector } from "@/features/strategy-settings/strategy-combinator-selector";
 import { StrategyFieldSelector } from "@/features/strategy-settings/strategy-field-selector";
 import { StrategyGroup } from "@/features/strategy-settings/strategy-group";
 import { StrategyGroupHeader } from "@/features/strategy-settings/strategy-group-header";
+import { StrategyNotToggle } from "@/features/strategy-settings/strategy-not-toggle";
 import { StrategyOperatorSelector } from "@/features/strategy-settings/strategy-operator-selector";
+import { StrategyRemoveGroupAction } from "@/features/strategy-settings/strategy-remove-group-action";
 import { StrategyRemoveRuleAction } from "@/features/strategy-settings/strategy-remove-rule-action";
 import { StrategyRule } from "@/features/strategy-settings/strategy-rule";
 import { StrategyValueEditor } from "@/features/strategy-settings/strategy-value-editor";
@@ -28,8 +36,13 @@ interface StrategyRuleBuilderProps {
 // Module-level, so the builder keeps one component per control and its own
 // memoization leaves unchanged groups and conditions alone.
 const controlElements = {
+	addGroupAction: StrategyAddAction,
+	addRuleAction: StrategyAddAction,
+	combinatorSelector: StrategyCombinatorSelector,
 	fieldSelector: StrategyFieldSelector,
+	notToggle: StrategyNotToggle,
 	operatorSelector: StrategyOperatorSelector,
+	removeGroupAction: StrategyRemoveGroupAction,
 	removeRuleAction: StrategyRemoveRuleAction,
 	rule: StrategyRule,
 	valueEditor: StrategyValueEditor,
@@ -63,6 +76,7 @@ export function StrategyRuleBuilder({
 	return (
 		<QueryBuilder
 			// Every control reads the variables its operands offer.
+			combinators={strategyCombinators}
 			context={variables}
 			controlElements={controlElements}
 			defaultQuery={defaultQuery}
@@ -79,6 +93,7 @@ export function StrategyRuleBuilder({
 			operators={strategyOperators}
 			resetOnFieldChange={false}
 			showNotToggle
+			translations={ruleBuilderTranslations}
 		/>
 	);
 }

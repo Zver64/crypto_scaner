@@ -1,3 +1,5 @@
+import type { Translations } from "react-querybuilder";
+
 import {
 	Direction,
 	SignalTargetRatio,
@@ -35,6 +37,20 @@ export const strategyOperators: { label: string; name: StrategyOperator }[] = [
 	{ label: "crosses above", name: "crossesAbove" },
 	{ label: "crosses below", name: "crossesBelow" },
 ];
+
+// How a group combines its conditions.
+export const strategyCombinators = [
+	{ label: "AND", name: "and" },
+	{ label: "OR", name: "or" },
+];
+
+// The labels of the rule builder's group header.
+export const ruleBuilderTranslations = {
+	addGroup: { label: "+ Group" },
+	addRule: { label: "+ Condition" },
+	notToggle: { label: "NOT" },
+	removeGroup: { title: "Remove group" },
+} satisfies Partial<Translations>;
 
 // The variable select's group of each kind of variable.
 export const variableGroups = {

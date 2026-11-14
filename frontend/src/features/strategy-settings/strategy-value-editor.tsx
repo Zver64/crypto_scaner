@@ -1,7 +1,8 @@
 import { Group, NumberInput } from "@mantine/core";
-import type { ValueEditorProps } from "react-querybuilder";
+import { isRuleOrGroupValid, type ValueEditorProps } from "react-querybuilder";
 
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
+import { operandComplete } from "@/features/strategy-settings/expressions";
 import type { StrategyVariables } from "@/features/strategy-settings/types";
 import {
 	defaultVariableCall,
@@ -24,8 +25,10 @@ export function StrategyValueEditor({
 	path,
 	rule,
 	schema,
+	validation,
 	value,
 }: ValueEditorProps) {
+	const invalid = !isRuleOrGroupValid(rule, validation);
 	if (isRangeOperator(operator)) {
 		return (
 			<Group gap="xs" grow wrap="nowrap">
@@ -33,6 +36,13 @@ export function StrategyValueEditor({
 					<NumberInput
 						aria-label={index === 0 ? "From" : "To"}
 						disabled={disabled}
+						error={
+							invalid &&
+							!operandComplete({
+								kind: "value",
+								value: Array.isArray(value) ? value[index] : undefined,
+							})
+						}
 						key={index}
 						onChange={(bound) => {
 							const bounds: unknown[] = Array.isArray(value)
@@ -59,6 +69,7 @@ export function StrategyValueEditor({
 				isCrossOperator(operator) ? "Crossed value" : "Value compared with"
 			}
 			defaultField={defaultVariableCall(variables, rule.field)}
+			markIncomplete={invalid}
 			node={rightOperand(rule)}
 			onChange={(node) =>
 				dispatchRuleUpdate(schema, path, rightOperandUpdate(node))

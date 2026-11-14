@@ -6,12 +6,15 @@ import {
 	getFieldData,
 	isRuleGroup,
 	type Path,
+	prepareRuleGroup,
 	type RuleGroupType,
+	type RuleGroupTypeAny,
 	type RuleProcessor,
 	type RuleType,
 	type Schema,
 	update,
 	type UpdateValueMap,
+	type ValidationMap,
 } from "react-querybuilder";
 import {
 	type CELExpression,
@@ -473,14 +476,29 @@ function rangeRule(group: RuleGroupType): RuleGroupType | RuleType {
 	return low.lhs ? { ...range, lhs: low.lhs } : range;
 }
 
-// Whether every rule names an indicator or a complete expression and has
-// numeric values, and the query has at least one rule.
+// Marks every rule and group of the query by id: a rule is valid when it
+// names an indicator or a complete expression and has numeric values, a
+// group when it holds at least one rule or group.
+export function strategyValidator(query: RuleGroupTypeAny): ValidationMap {
+	const validation: ValidationMap = {};
+	const walk = (group: RuleGroupTypeAny) => {
+		if (group.id) validation[group.id] = group.rules.length > 0;
+		for (const rule of group.rules) {
+			if (typeof rule === "string") continue;
+			if (isRuleGroup(rule)) walk(rule);
+			else if (rule.id) validation[rule.id] = ruleComplete(rule);
+		}
+	};
+	walk(query);
+	return validation;
+}
+
+// Whether the builder's validator finds every rule and group of the query
+// valid. Rules get ids first, since a query not yet edited in the builder
+// may have none.
 export function strategyQueryComplete(query: RuleGroupType): boolean {
-	return (
-		query.rules.length > 0 &&
-		query.rules.every((rule) =>
-			isRuleGroup(rule) ? strategyQueryComplete(rule) : ruleComplete(rule),
-		)
+	return Object.values(strategyValidator(prepareRuleGroup(query))).every(
+		(result) => result === true,
 	);
 }
 

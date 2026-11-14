@@ -16,6 +16,9 @@ interface StrategyVariableInputProps {
 	// The call or position variable the operand reads; empty while it is to
 	// be chosen.
 	field: string;
+	// Shows the error border without a message, such as for a variable still
+	// to be chosen.
+	invalid?: boolean;
 	label: string;
 	onChange(field: string): void;
 	variables: StrategyVariables;
@@ -26,6 +29,7 @@ interface StrategyVariableInputProps {
 export function StrategyVariableInput({
 	disabled,
 	field,
+	invalid = false,
 	label,
 	onChange,
 	variables,
@@ -39,6 +43,7 @@ export function StrategyVariableInput({
 					clearable
 					data={variableSelectData(variables.variables)}
 					disabled={disabled}
+					error={invalid}
 					// Clearing leaves the variable to be chosen again.
 					onChange={(value) => {
 						const variable = variables.variables.find(

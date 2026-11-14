@@ -20,7 +20,10 @@ import type {
 	StrategyQuery,
 	StrategyRuleVariables,
 } from "@/features/strategy-settings/types";
-import { isRangeOperator } from "@/features/strategy-settings/utils";
+import {
+	isRangeOperator,
+	strategyValidator,
+} from "@/features/strategy-settings/utils";
 
 interface StrategyRuleBuilderProps {
 	// The query the builder starts with; the builder keeps its own query
@@ -94,6 +97,8 @@ export function StrategyRuleBuilder({
 			resetOnFieldChange={false}
 			showNotToggle
 			translations={ruleBuilderTranslations}
+			// Marks incomplete conditions; saving checks the same map.
+			validator={strategyValidator}
 		/>
 	);
 }

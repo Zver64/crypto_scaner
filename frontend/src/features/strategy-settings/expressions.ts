@@ -356,9 +356,20 @@ export function replaceFunction(
 	};
 }
 
-// Whether every field is chosen, every number finite, and every function
-// known with a valid number of arguments.
+// Whether every field is chosen, every number finite, every coin chosen,
+// and every function known with a valid number of arguments.
 export function expressionComplete(node: ExpressionNode): boolean {
+	if (!operandComplete(node)) return false;
+	if (node.kind !== "func") return true;
+	// The coin of an operand of another coin is not an operand.
+	const operands = node.fn === coinFunction ? node.args.slice(1) : node.args;
+	return operands.every(expressionComplete);
+}
+
+// Whether the operand itself, apart from its arguments, is filled in: its
+// field chosen, its number finite, its coin chosen, or its function known
+// with a valid number of arguments.
+export function operandComplete(node: ExpressionNode): boolean {
 	switch (node.kind) {
 		case "field":
 			return node.field !== "";
@@ -366,21 +377,13 @@ export function expressionComplete(node: ExpressionNode): boolean {
 			return typeof node.value === "number" && Number.isFinite(node.value);
 		case "func": {
 			if (node.fn === coinFunction) {
-				const [, operand, ...rest] = node.args;
-				return (
-					coinOf(node) !== "" &&
-					operand !== undefined &&
-					rest.length === 0 &&
-					expressionComplete(operand)
-				);
+				return coinOf(node) !== "" && node.args.length === 2;
 			}
 			const definition = strategyFunctions[node.fn];
 			if (!definition) return false;
 			const [fewest, most] = argumentRange(definition);
 			const count = node.args.length;
-			return (
-				count >= fewest && count <= most && node.args.every(expressionComplete)
-			);
+			return count >= fewest && count <= most;
 		}
 		default:
 			return false;

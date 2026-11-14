@@ -23,6 +23,7 @@ import {
 	coinOf,
 	firstField,
 	functionCall,
+	operandComplete,
 	replaceFunction,
 	strategyFunctions,
 	withCoin,
@@ -58,6 +59,9 @@ export interface ExpressionEditorProps {
 	depth?: number;
 	// A control at the end of the operand row, such as a remove button.
 	action?: ReactNode;
+	// Marks the inputs left incomplete with an error border, such as in a
+	// condition the builder's validator finds invalid.
+	markIncomplete?: boolean;
 }
 
 type OperandKind = "field" | "value" | "func" | "coin";
@@ -97,8 +101,10 @@ export function ExpressionEditor({
 	defaultField,
 	action,
 	depth = 0,
+	markIncomplete = false,
 }: ExpressionEditorProps) {
 	const kind = operandKind(node);
+	const incomplete = markIncomplete && !operandComplete(node);
 	// A kind already chosen stays offered, so the menu shows it.
 	const kinds = operandKindOrder.filter(
 		(value) =>
@@ -157,6 +163,7 @@ export function ExpressionEditor({
 						<CoinSelect
 							coin={coinOf(node) ?? ""}
 							disabled={disabled}
+							invalid={incomplete}
 							onChange={(symbol) => onChange(withCoin(node, symbol))}
 						/>
 					) : node.kind === "func" ? (
@@ -164,6 +171,7 @@ export function ExpressionEditor({
 							aria-label="Function"
 							data={functionOptions}
 							disabled={disabled}
+							error={incomplete}
 							onChange={(event) =>
 								onChange(replaceFunction(node, event.currentTarget.value))
 							}
@@ -174,6 +182,7 @@ export function ExpressionEditor({
 						<NumberInput
 							aria-label={label}
 							disabled={disabled}
+							error={incomplete}
 							onChange={(value) =>
 								onChange({
 									kind: "value",
@@ -191,6 +200,7 @@ export function ExpressionEditor({
 						<StrategyVariableInput
 							disabled={disabled}
 							field={node.kind === "field" ? node.field : ""}
+							invalid={incomplete}
 							label={label}
 							onChange={(field) => onChange({ kind: "field", field })}
 							variables={variables}
@@ -206,6 +216,7 @@ export function ExpressionEditor({
 							depth={depth + 1}
 							disabled={disabled}
 							label={`${label} of the coin`}
+							markIncomplete={markIncomplete}
 							node={node.args[1] ?? field}
 							onChange={(operand) =>
 								onChange({ ...node, args: [node.args[0] ?? field, operand] })
@@ -218,6 +229,7 @@ export function ExpressionEditor({
 						<FunctionEditor
 							depth={depth}
 							disabled={disabled}
+							markIncomplete={markIncomplete}
 							node={node}
 							onChange={onChange}
 							variables={variables}

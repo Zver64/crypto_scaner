@@ -10,6 +10,7 @@ import {
 	variableCall,
 	withInterval,
 } from "@/features/strategy-settings/expressions";
+import type { StrategyQuery } from "@/features/strategy-settings/types";
 import {
 	defaultVariableCall,
 	importedStrategyQuery,
@@ -22,7 +23,9 @@ import {
 	strategyFormDirty,
 	strategyInput,
 	strategyQuery,
+	strategyQueryComplete,
 	strategyQueryDropped,
+	strategyValidator,
 	strategyVariableSets,
 } from "@/features/strategy-settings/utils";
 
@@ -102,6 +105,60 @@ describe("importedStrategyQuery", () => {
 		["without a condition", 'close("1h")'],
 	])("rejects an expression %s", (_, expression) => {
 		expect(importedStrategyQuery(expression)).toBeUndefined();
+	});
+});
+
+describe("strategyValidator", () => {
+	it("marks incomplete rules and empty groups by id", () => {
+		const query = {
+			id: "root",
+			combinator: "and",
+			rules: [
+				{ id: "set", field: 'rsi("1h")', operator: ">", value: 1 },
+				{
+					id: "range",
+					field: 'rsi("1h")',
+					operator: "between",
+					value: [1, Number.NaN],
+				},
+				{
+					id: "coin",
+					field: 'rsi("1h")',
+					operator: ">",
+					valueSource: "expression",
+					value: {
+						kind: "func",
+						fn: "Of",
+						args: [
+							{ kind: "value", value: "" },
+							{ kind: "field", field: 'rsi("1h")' },
+						],
+					},
+				},
+				{ id: "empty", combinator: "or", rules: [] },
+			],
+		} satisfies StrategyQuery;
+		expect(strategyValidator(query)).toEqual({
+			root: true,
+			set: true,
+			range: false,
+			coin: false,
+			empty: false,
+		});
+	});
+
+	it("checks a query without ids", () => {
+		const rule = { field: 'rsi("1h")', operator: ">", value: 1 };
+		expect(strategyQueryComplete({ combinator: "and", rules: [rule] })).toBe(
+			true,
+		);
+		expect(strategyQueryComplete({ combinator: "and", rules: [] })).toBe(false);
+		expect(
+			strategyQueryComplete({
+				combinator: "and",
+				rules: [rule, { combinator: "or", rules: [] }],
+			}),
+		).toBe(false);
 	});
 });
 

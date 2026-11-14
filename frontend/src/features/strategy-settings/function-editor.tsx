@@ -24,6 +24,7 @@ export interface FunctionEditorProps extends Omit<
 export function FunctionEditor({
 	depth = 0,
 	disabled,
+	markIncomplete,
 	node,
 	onChange,
 	variables,
@@ -69,6 +70,7 @@ export function FunctionEditor({
 							depth={depth + 1}
 							disabled={disabled}
 							label={title}
+							markIncomplete={markIncomplete}
 							node={arg}
 							onChange={(next) => replaceArg(index, next)}
 							variables={

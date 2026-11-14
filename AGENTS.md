@@ -43,7 +43,7 @@ In a separate terminal, run `npm -C frontend run dev` to serve the frontend on t
 
 The Compose development stack starts PostgreSQL, applies migrations, and starts the backend on `127.0.0.1:8080`. The frontend is not included in development Compose. Use `docker compose up --watch` for automatic backend rebuilds on file changes. On normal backend startup, the configured `ADMIN_TELEGRAM_ID` is inserted only when absent; all existing administrator rows remain untouched.
 
-Before any Compose lifecycle command, inspect the current state with `docker compose ps` and, when relevant, logs or health checks. Prefer read-only diagnosis with `docker compose ps` and `docker compose logs`. Reuse required services that are already running and healthy; do not run `docker compose up`, `start`, `restart`, `stop`, or `down` unless services are absent or unhealthy, or the task verifiably requires a rebuild or restart. Avoid conflicting with the user's existing Compose process or tab, and never stop, recreate, or start Compose-managed containers with raw `docker start` or `docker stop`. If a lifecycle change is necessary, state the concrete reason and use Docker Compose.
+Checks that need the running stack (`make test-db`, backtests through the CLI, checks against real data) are run by one dedicated subagent, which the orchestrating agent starts when it decides so, one at a time. That subagent starts, rebuilds (`docker compose up -d --build`), and stops Compose as it needs, without asking the user. No other agent runs Compose lifecycle commands. Never remove volumes (`docker compose down -v`).
 
 Use `make migrate-up` and `make migrate-down` for manual migration control.
 
@@ -51,7 +51,7 @@ Use `make migrate-up` and `make migrate-down` for manual migration control.
 
 `make install-cli` installs the `scanner` CLI and its zsh completion; `make uninstall-cli` removes them. User instructions live in `backend/cmd/scanner/README.md`, and the backtest workflow in the `.agents/skills/backtest/SKILL.md` skill. The CLI creates strategies (always disabled) and backtests saved or unsaved ones over stored history; it cannot start Binance history loads or manage API tokens, which happen only in the Mini App.
 
-After a change to `backend/cmd/scanner` or to the OpenAPI contract, run `make install-cli` so the installed `scanner` matches the code. This is the one build allowed without an explicit request.
+After a change to `backend/cmd/scanner` or to the OpenAPI contract, run `make install-cli` so the installed `scanner` matches the code. This build needs no explicit request.
 
 Shared repository skills live in `.agents/skills/`; always create and edit them there, never under `.claude/skills/` (a symlink kept for Claude Code discovery).
 
@@ -85,7 +85,7 @@ npm -C frontend run quality
 npm -C frontend run test
 ```
 
-Verify only with tests and static analysis: `make check`, the Makefile targets, and the scripts in `frontend/package.json`. When a script in `frontend/package.json` or a Makefile target runs a tool, run it through that script or target, never directly (`npx tsc`, `npx oxlint`, `npx oxfmt`, `npx vitest`, and so on). Tools with no matching script, such as the TanStack Intent guidance commands in `frontend/AGENTS.md`, may run directly. Never build anything (`npm run build`, `vite build`, `tsc -b`, `go build`, Docker image builds) unless the user explicitly asks for a build.
+Verify only with tests and static analysis: `make check`, the Makefile targets, and the scripts in `frontend/package.json`. When a script in `frontend/package.json` or a Makefile target runs a tool, run it through that script or target, never directly (`npx tsc`, `npx oxlint`, `npx oxfmt`, `npx vitest`, and so on). Tools with no matching script, such as the TanStack Intent guidance commands in `frontend/AGENTS.md`, may run directly. Never build anything (`npm run build`, `vite build`, `tsc -b`, `go build`, Docker image builds) unless the user explicitly asks for a build; the exceptions are `make install-cli` and the image rebuild by the subagent that runs the stack checks (see Development).
 
 Pre-commit hooks run the checks relevant to staged changes, so do not routinely run those checks separately before committing. Run checks manually only when diagnosing a failure, when no commit will be created, or when explicitly requested. Use `make check` for manual verification of cross-cutting changes.
 

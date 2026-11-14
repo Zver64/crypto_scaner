@@ -103,13 +103,13 @@ export const strategyFunctions: Record<string, StrategyFunction> = {
 // Of("BTCUSDT", x) reads the operand x of another coin. It is not a
 // function over values, so the builder offers it as an operand kind of its
 // own rather than among strategyFunctions.
-const coinFunction = "Of";
+export const coinFunction = "Of";
 
 // Min and Max take up to ten values on the backend.
 export const maxVariadicArguments = 10;
 
 // The inclusive range of argument counts a function accepts.
-function argumentRange(definition: StrategyFunction): [number, number] {
+export function argumentRange(definition: StrategyFunction): [number, number] {
 	return definition.variadic
 		? [2, maxVariadicArguments]
 		: [definition.minArgs ?? definition.args.length, definition.args.length];
@@ -354,40 +354,6 @@ export function replaceFunction(
 		...call,
 		args: call.args.map((arg, index) => node.args[index] ?? arg),
 	};
-}
-
-// Whether every field is chosen, every number finite, every coin chosen,
-// and every function known with a valid number of arguments.
-export function expressionComplete(node: ExpressionNode): boolean {
-	if (!operandComplete(node)) return false;
-	if (node.kind !== "func") return true;
-	// The coin of an operand of another coin is not an operand.
-	const operands = node.fn === coinFunction ? node.args.slice(1) : node.args;
-	return operands.every(expressionComplete);
-}
-
-// Whether the operand itself, apart from its arguments, is filled in: its
-// field chosen, its number finite, its coin chosen, or its function known
-// with a valid number of arguments.
-export function operandComplete(node: ExpressionNode): boolean {
-	switch (node.kind) {
-		case "field":
-			return node.field !== "";
-		case "value":
-			return typeof node.value === "number" && Number.isFinite(node.value);
-		case "func": {
-			if (node.fn === coinFunction) {
-				return coinOf(node) !== "" && node.args.length === 2;
-			}
-			const definition = strategyFunctions[node.fn];
-			if (!definition) return false;
-			const [fewest, most] = argumentRange(definition);
-			const count = node.args.length;
-			return count >= fewest && count <= most;
-		}
-		default:
-			return false;
-	}
 }
 
 // The first field an expression reads, which names the rule's field.

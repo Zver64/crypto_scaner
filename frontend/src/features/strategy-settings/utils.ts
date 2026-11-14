@@ -6,7 +6,6 @@ import {
 	getFieldData,
 	isRuleGroup,
 	type Path,
-	prepareRuleGroup,
 	type RuleGroupType,
 	type RuleGroupTypeAny,
 	type RuleProcessor,
@@ -15,12 +14,14 @@ import {
 	update,
 	type UpdateValueMap,
 	type ValidationMap,
+	type ValidationResult,
 } from "react-querybuilder";
 import {
 	type CELExpression,
 	type CELFunctionCall,
 	parseCEL,
 } from "react-querybuilder/parseCEL";
+import type { z } from "zod";
 
 import type { ErrorType } from "@/api/fetch";
 import {
@@ -50,7 +51,6 @@ import {
 } from "@/features/strategy-settings/constants";
 import {
 	callSource,
-	expressionComplete,
 	expressionParser,
 	expressionRuleProcessor,
 	expressionSource,
@@ -59,6 +59,10 @@ import {
 	variableCall,
 	variableKey,
 } from "@/features/strategy-settings/expressions";
+import {
+	strategyQuerySchema,
+	strategyRuleSchema,
+} from "@/features/strategy-settings/schemas";
 import {
 	parsePriceSetup,
 	priceSetupChanged,
@@ -96,25 +100,21 @@ export function emptyStrategyQuery(): StrategyQuery {
 }
 
 // The value a rule takes after its operator changes: ranges take two numbers,
-// other operators one number, indicator, or expression.
+// starting from the number compared with, or 0 after an indicator or
+// expression; other operators one number, indicator, or expression. Numbers
+// stay as their inputs hold them.
 export function valueForOperator(
 	operator: string,
 	value: unknown,
 	valueSource: string | undefined,
 ): unknown {
 	if (isRangeOperator(operator)) {
-		return Array.isArray(value)
-			? value
-			: [numberOrZero(value), numberOrZero(value)];
+		if (Array.isArray(value)) return value;
+		const bound =
+			valueSource === "field" || valueSource === "expression" ? 0 : value;
+		return [bound, bound];
 	}
-	if (Array.isArray(value)) return numberOrZero(value[0]);
-	return valueSource === "field" || valueSource === "expression"
-		? value
-		: numberOrZero(value);
-}
-
-function numberOrZero(value: unknown): number {
-	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+	return Array.isArray(value) ? value[0] : value;
 }
 
 // The rule changes an operator choice makes: a range compares numbers, and
@@ -169,10 +169,7 @@ export function rightOperand(rule: RuleType): ExpressionNode {
 	if (rule.valueSource === "field") {
 		return { kind: "field", field: String(rule.value ?? "") };
 	}
-	return {
-		kind: "value",
-		value: typeof rule.value === "number" ? rule.value : Number.NaN,
-	};
+	return { kind: "value", value: rule.value };
 }
 
 // The rule changes an edit of the side compared with makes.
@@ -262,9 +259,12 @@ function expressionRange(
 		: `(${left} < ${low} || ${left} > ${high})`;
 }
 
-// The CEL expression the backend evaluates.
+// The CEL expression the backend evaluates, with numbers parsed from their
+// inputs. An incomplete query is written as it is, which only tells it apart
+// from others.
 export function strategyExpression(query: StrategyQuery): string {
-	return formatQuery(query, {
+	const parsed = strategyQuerySchema.safeParse(query);
+	return formatQuery(parsed.success ? parsed.data : query, {
 		format: "cel",
 		ruleProcessor: strategyRuleProcessor,
 	});
@@ -476,9 +476,9 @@ function rangeRule(group: RuleGroupType): RuleGroupType | RuleType {
 	return low.lhs ? { ...range, lhs: low.lhs } : range;
 }
 
-// Marks every rule and group of the query by id: a rule is valid when it
-// names an indicator or a complete expression and has numeric values, a
-// group when it holds at least one rule or group.
+// Marks every rule and group of the query by id: a rule is valid when
+// strategyRuleSchema parses it, else its reasons are the schema's issues; a
+// group is valid when it holds at least one rule or group.
 export function strategyValidator(query: RuleGroupTypeAny): ValidationMap {
 	const validation: ValidationMap = {};
 	const walk = (group: RuleGroupTypeAny) => {
@@ -486,37 +486,68 @@ export function strategyValidator(query: RuleGroupTypeAny): ValidationMap {
 		for (const rule of group.rules) {
 			if (typeof rule === "string") continue;
 			if (isRuleGroup(rule)) walk(rule);
-			else if (rule.id) validation[rule.id] = ruleComplete(rule);
+			else if (rule.id) {
+				const result = strategyRuleSchema.safeParse(rule);
+				validation[rule.id] = result.success || {
+					valid: false,
+					reasons: result.error.issues,
+				};
+			}
 		}
 	};
 	walk(query);
 	return validation;
 }
 
-// Whether the builder's validator finds every rule and group of the query
-// valid. Rules get ids first, since a query not yet edited in the builder
-// may have none.
+// Whether every rule and group of the query is filled in.
 export function strategyQueryComplete(query: RuleGroupType): boolean {
-	return Object.values(strategyValidator(prepareRuleGroup(query))).every(
-		(result) => result === true,
+	return strategyQuerySchema.safeParse(query).success;
+}
+
+// The paths of the issues that make a rule invalid, relative to the rule.
+export function validationIssuePaths(
+	validation: boolean | ValidationResult | undefined,
+): PropertyKey[][] {
+	if (typeof validation !== "object" || !Array.isArray(validation.reasons)) {
+		return [];
+	}
+	const issues: z.core.$ZodIssue[] = validation.reasons;
+	return issues.map(({ path }) => path);
+}
+
+// The issue paths under key, relative to it.
+export function issuePathsUnder(
+	paths: readonly PropertyKey[][],
+	key: PropertyKey,
+): PropertyKey[][] {
+	return paths.filter(([first]) => first === key).map((path) => path.slice(1));
+}
+
+// The issue paths of an operand's own input, apart from the operands below
+// it: those not in an argument, other than the coin of another coin's
+// operand.
+export function ownIssuePaths(
+	paths: readonly PropertyKey[][],
+	coin: boolean,
+): PropertyKey[][] {
+	return paths.filter(
+		([first, index]) =>
+			first !== "args" || typeof index !== "number" || (coin && index === 0),
 	);
 }
 
-function ruleComplete(rule: RuleType): boolean {
-	if (rule.lhs ? !expressionComplete(rule.lhs) : !rule.field) return false;
-	if (rule.valueSource === "expression") {
-		return expressionComplete(rule.value as ExpressionNode);
-	}
-	if (rule.valueSource === "field") {
-		return typeof rule.value === "string" && rule.value !== "";
-	}
-	const values: unknown[] = Array.isArray(rule.value)
-		? rule.value
-		: [rule.value];
-	return (
-		values.length === (isRangeOperator(rule.operator) ? 2 : 1) &&
-		values.every((value) => typeof value === "number" && Number.isFinite(value))
-	);
+// The issue paths of an operand's argument at index, relative to it.
+export function argumentIssuePaths(
+	paths: readonly PropertyKey[][],
+	index: number,
+): PropertyKey[][] {
+	return issuePathsUnder(issuePathsUnder(paths, "args"), index);
+}
+
+// What a number input shows for a number operand's value: the number or the
+// text being typed.
+export function numberInputValue(value: unknown): number | string {
+	return typeof value === "number" || typeof value === "string" ? value : "";
 }
 
 // The draft of a new strategy or signal.

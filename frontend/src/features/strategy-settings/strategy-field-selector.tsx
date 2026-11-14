@@ -1,16 +1,14 @@
-import {
-	type FieldSelectorProps,
-	isRuleOrGroupValid,
-	remove,
-} from "react-querybuilder";
+import { type FieldSelectorProps, remove } from "react-querybuilder";
 
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
 import type { StrategyVariables } from "@/features/strategy-settings/types";
 import {
 	dispatchRuleUpdate,
+	issuePathsUnder,
 	leftOperand,
 	leftOperandUpdate,
 	operandVariables,
+	validationIssuePaths,
 } from "@/features/strategy-settings/utils";
 
 // The compared side of a condition: an indicator, a function, or an indicator
@@ -43,8 +41,12 @@ export function StrategyFieldSelector({
 				/>
 			}
 			disabled={disabled === true}
+			// The compared side is the rule's expression, or else its field.
+			issuePaths={issuePathsUnder(
+				validationIssuePaths(validation),
+				rule.lhs ? "lhs" : "field",
+			)}
 			label="Compared value"
-			markIncomplete={!isRuleOrGroupValid(rule, validation)}
 			node={leftOperand(rule)}
 			onChange={(node) =>
 				dispatchRuleUpdate(schema, path, leftOperandUpdate(node))

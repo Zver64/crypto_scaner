@@ -1,17 +1,19 @@
 import { Group, NumberInput } from "@mantine/core";
-import { isRuleOrGroupValid, type ValueEditorProps } from "react-querybuilder";
+import type { ValueEditorProps } from "react-querybuilder";
 
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
-import { operandComplete } from "@/features/strategy-settings/expressions";
 import type { StrategyVariables } from "@/features/strategy-settings/types";
 import {
 	defaultVariableCall,
 	dispatchRuleUpdate,
 	isCrossOperator,
 	isRangeOperator,
+	issuePathsUnder,
+	numberInputValue,
 	operandVariables,
 	rightOperand,
 	rightOperandUpdate,
+	validationIssuePaths,
 } from "@/features/strategy-settings/utils";
 
 // The side a condition compares with: a range of two numbers, or a number, an
@@ -28,7 +30,7 @@ export function StrategyValueEditor({
 	validation,
 	value,
 }: ValueEditorProps) {
-	const invalid = !isRuleOrGroupValid(rule, validation);
+	const issuePaths = issuePathsUnder(validationIssuePaths(validation), "value");
 	if (isRangeOperator(operator)) {
 		return (
 			<Group gap="xs" grow wrap="nowrap">
@@ -36,13 +38,10 @@ export function StrategyValueEditor({
 					<NumberInput
 						aria-label={index === 0 ? "From" : "To"}
 						disabled={disabled}
-						error={
-							invalid &&
-							!operandComplete({
-								kind: "value",
-								value: Array.isArray(value) ? value[index] : undefined,
-							})
-						}
+						// A bound is marked by its own issue, both by one about the range.
+						error={issuePaths.some(
+							([bound]) => bound === undefined || bound === index,
+						)}
 						key={index}
 						onChange={(bound) => {
 							const bounds: unknown[] = Array.isArray(value)
@@ -53,7 +52,9 @@ export function StrategyValueEditor({
 						}}
 						placeholder={index === 0 ? "From" : "To"}
 						size="sm"
-						value={Array.isArray(value) ? value[index] : ""}
+						value={numberInputValue(
+							Array.isArray(value) ? value[index] : undefined,
+						)}
 					/>
 				))}
 			</Group>
@@ -69,7 +70,7 @@ export function StrategyValueEditor({
 				isCrossOperator(operator) ? "Crossed value" : "Value compared with"
 			}
 			defaultField={defaultVariableCall(variables, rule.field)}
-			markIncomplete={invalid}
+			issuePaths={issuePaths}
 			node={rightOperand(rule)}
 			onChange={(node) =>
 				dispatchRuleUpdate(schema, path, rightOperandUpdate(node))

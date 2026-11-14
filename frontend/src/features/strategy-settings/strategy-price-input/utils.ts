@@ -3,10 +3,10 @@ import { isRuleGroup } from "react-querybuilder";
 import { parseCEL } from "react-querybuilder/parseCEL";
 
 import {
-	expressionComplete,
 	expressionParser,
 	expressionSource,
 } from "@/features/strategy-settings/expressions";
+import { priceNodeSchema } from "@/features/strategy-settings/schemas";
 import type { PriceSetup } from "@/features/strategy-settings/strategy-price-input/types";
 
 // Parse one numeric operand through the condition builder's CEL parser.
@@ -42,20 +42,18 @@ function priceNode(source: string): ExpressionNode | undefined {
 	}
 }
 
-function priceOperandSupported(node: ExpressionNode): boolean {
-	if (node.kind === "field") return true;
-	if (node.kind === "value") return typeof node.value === "number";
-	return (
-		node.kind === "func" &&
-		node.fn !== "Of" &&
-		node.args.every(priceOperandSupported)
-	);
+// The source of an operand, with numbers parsed from their inputs when it is
+// filled in; an incomplete one is written as it is, which only tells it apart
+// from others.
+function priceNodeSource(node: ExpressionNode): string {
+	const parsed = priceNodeSchema.safeParse(node);
+	return expressionSource(parsed.success ? parsed.data : node);
 }
 
 export function parsePriceSetup(source: string): PriceSetup {
 	if (!source.trim()) return {};
 	const node = priceNode(source);
-	return node && expressionComplete(node) && priceOperandSupported(node)
+	return node && priceNodeSchema.safeParse(node).success
 		? { node, original: source }
 		: { custom: source };
 }
@@ -68,20 +66,19 @@ export function priceSetupChanged(
 ): boolean {
 	if (setup.custom !== initial.custom) return true;
 	if (!setup.node || !initial.node) return setup.node !== initial.node;
-	return expressionSource(setup.node) !== expressionSource(initial.node);
+	return priceNodeSource(setup.node) !== priceNodeSource(initial.node);
 }
 
 export function priceSetupComplete(setup: PriceSetup): boolean {
 	if (setup.custom !== undefined) return setup.custom.trim() !== "";
-	return (
-		!setup.node ||
-		(priceOperandSupported(setup.node) && expressionComplete(setup.node))
-	);
+	return !setup.node || priceNodeSchema.safeParse(setup.node).success;
 }
 
 export function priceSetupExpression(setup: PriceSetup): string {
 	if (setup.custom !== undefined) return setup.custom.trim();
-	return setup.node && priceSetupComplete(setup)
-		? (setup.original ?? expressionSource(setup.node))
+	if (!setup.node) return "";
+	const parsed = priceNodeSchema.safeParse(setup.node);
+	return parsed.success
+		? (setup.original ?? expressionSource(parsed.data))
 		: "";
 }

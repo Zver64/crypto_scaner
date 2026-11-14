@@ -47,7 +47,7 @@ describe("Top Market Cap URL state", () => {
 			},
 		],
 		["partial", { period: 60, percentile: 75 }],
-		["nonnumeric", { ...customSearch, hourly_period: "72" }],
+		["nonnumeric", { ...customSearch, hourly_period: "abc" }],
 		["invalid", { ...customSearch, percentile: 101 }],
 	] as const)(
 		"atomically replaces a %s settings group with defaults",

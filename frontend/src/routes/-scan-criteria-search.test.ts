@@ -46,27 +46,27 @@ describe("scan criteria URL state", () => {
 	it.each([
 		[
 			"period",
-			[undefined, "30", -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "abc", -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 		[
 			"percentile",
-			[undefined, "30", -1, 0.5, 85, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "abc", -1, 0.5, 85, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 		[
 			"minimum_range_percent",
-			[undefined, "30", -1, 10.1, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "abc", -1, 10.1, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 		[
 			"hourly_period",
-			[undefined, "30", -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "abc", -1, 0.5, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 		[
 			"hourly_percentile",
-			[undefined, "30", -1, 0.5, 85, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "abc", -1, 0.5, 85, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 		[
 			"hourly_minimum_range_percent",
-			[undefined, "30", -1, 3.1, Number.NaN, Number.POSITIVE_INFINITY],
+			[undefined, "abc", -1, 3.1, Number.NaN, Number.POSITIVE_INFINITY],
 		],
 	] as const)("rejects missing or invalid %s", (field, values) => {
 		for (const value of values) {

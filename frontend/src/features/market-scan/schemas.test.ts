@@ -53,7 +53,7 @@ it.each([
 	"hourlyMinimumRangePercent",
 	"minimumMarketCapMillions",
 ] as const)("rejects missing and non-numeric %s", (field) => {
-	for (const value of ["2", Number.NaN, Number.POSITIVE_INFINITY]) {
+	for (const value of ["-", Number.NaN, Number.POSITIVE_INFINITY]) {
 		expect(
 			fieldErrors({ ...defaultMarketScanCriteria, [field]: value })[field]?.[0],
 		).toMatch(/ must be a number$/);

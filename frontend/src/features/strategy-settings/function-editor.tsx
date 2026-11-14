@@ -10,7 +10,10 @@ import {
 	maxVariadicArguments,
 	strategyFunctions,
 } from "@/features/strategy-settings/expressions";
-import { withoutPositionVariables } from "@/features/strategy-settings/utils";
+import {
+	argumentIssuePaths,
+	withoutPositionVariables,
+} from "@/features/strategy-settings/utils";
 
 export interface FunctionEditorProps extends Omit<
 	ExpressionEditorProps,
@@ -24,7 +27,7 @@ export interface FunctionEditorProps extends Omit<
 export function FunctionEditor({
 	depth = 0,
 	disabled,
-	markIncomplete,
+	issuePaths = [],
 	node,
 	onChange,
 	variables,
@@ -69,8 +72,8 @@ export function FunctionEditor({
 							}
 							depth={depth + 1}
 							disabled={disabled}
+							issuePaths={argumentIssuePaths(issuePaths, index)}
 							label={title}
-							markIncomplete={markIncomplete}
 							node={arg}
 							onChange={(next) => replaceArg(index, next)}
 							variables={

@@ -26,7 +26,7 @@ describe("volatility settings", () => {
 
 	it("requires numbers", () => {
 		expect(
-			fieldErrors({ ...defaultSettings, percentile: "", period: "30" }),
+			fieldErrors({ ...defaultSettings, percentile: "", period: "-" }),
 		).toEqual({
 			percentile: ["Range percentile is required"],
 			period: ["Analysis period must be a number"],

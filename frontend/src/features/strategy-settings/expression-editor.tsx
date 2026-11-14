@@ -23,7 +23,6 @@ import {
 	coinOf,
 	firstField,
 	functionCall,
-	operandComplete,
 	replaceFunction,
 	strategyFunctions,
 	withCoin,
@@ -33,7 +32,10 @@ import { NestingLine } from "@/features/strategy-settings/nesting-line";
 import { StrategyVariableInput } from "@/features/strategy-settings/strategy-variable-input";
 import type { StrategyVariables } from "@/features/strategy-settings/types";
 import {
+	argumentIssuePaths,
 	defaultVariableCall,
+	numberInputValue,
+	ownIssuePaths,
 	withoutPositionVariables,
 } from "@/features/strategy-settings/utils";
 
@@ -59,9 +61,9 @@ export interface ExpressionEditorProps {
 	depth?: number;
 	// A control at the end of the operand row, such as a remove button.
 	action?: ReactNode;
-	// Marks the inputs left incomplete with an error border, such as in a
-	// condition the builder's validator finds invalid.
-	markIncomplete?: boolean;
+	// The paths, relative to node, of the validation issues of the condition
+	// it is part of; each input an issue points at gets an error border.
+	issuePaths?: readonly PropertyKey[][];
 }
 
 type OperandKind = "field" | "value" | "func" | "coin";
@@ -101,10 +103,10 @@ export function ExpressionEditor({
 	defaultField,
 	action,
 	depth = 0,
-	markIncomplete = false,
+	issuePaths = [],
 }: ExpressionEditorProps) {
 	const kind = operandKind(node);
-	const incomplete = markIncomplete && !operandComplete(node);
+	const incomplete = ownIssuePaths(issuePaths, kind === "coin").length > 0;
 	// A kind already chosen stays offered, so the menu shows it.
 	const kinds = operandKindOrder.filter(
 		(value) =>
@@ -183,18 +185,9 @@ export function ExpressionEditor({
 							aria-label={label}
 							disabled={disabled}
 							error={incomplete}
-							onChange={(value) =>
-								onChange({
-									kind: "value",
-									value: typeof value === "number" ? value : Number.NaN,
-								})
-							}
+							onChange={(value) => onChange({ kind: "value", value })}
 							size="sm"
-							value={
-								typeof node.value === "number" && Number.isFinite(node.value)
-									? node.value
-									: ""
-							}
+							value={numberInputValue(node.value)}
 						/>
 					) : (
 						<StrategyVariableInput
@@ -215,8 +208,8 @@ export function ExpressionEditor({
 						<ExpressionEditor
 							depth={depth + 1}
 							disabled={disabled}
+							issuePaths={argumentIssuePaths(issuePaths, 1)}
 							label={`${label} of the coin`}
-							markIncomplete={markIncomplete}
 							node={node.args[1] ?? field}
 							onChange={(operand) =>
 								onChange({ ...node, args: [node.args[0] ?? field, operand] })
@@ -229,7 +222,7 @@ export function ExpressionEditor({
 						<FunctionEditor
 							depth={depth}
 							disabled={disabled}
-							markIncomplete={markIncomplete}
+							issuePaths={issuePaths}
 							node={node}
 							onChange={onChange}
 							variables={variables}

@@ -23,10 +23,12 @@ import {
 	strategyFormDirty,
 	strategyInput,
 	strategyQuery,
-	strategyQueryComplete,
 	strategyQueryDropped,
 	strategyValidator,
 	strategyVariableSets,
+	argumentIssuePaths,
+	ownIssuePaths,
+	validationIssuePaths,
 } from "@/features/strategy-settings/utils";
 
 describe("parenthesizeOperands", () => {
@@ -138,27 +140,51 @@ describe("strategyValidator", () => {
 				{ id: "empty", combinator: "or", rules: [] },
 			],
 		} satisfies StrategyQuery;
-		expect(strategyValidator(query)).toEqual({
+		const validation = strategyValidator(query);
+		expect(validation).toMatchObject({
 			root: true,
 			set: true,
-			range: false,
-			coin: false,
+			range: { valid: false },
+			coin: { valid: false },
 			empty: false,
 		});
+		expect(validationIssuePaths(validation.range)).toEqual([["value", 1]]);
+		expect(validationIssuePaths(validation.coin)).toEqual([
+			["value", "args", 0, "value"],
+		]);
 	});
+});
 
-	it("checks a query without ids", () => {
-		const rule = { field: 'rsi("1h")', operator: ">", value: 1 };
-		expect(strategyQueryComplete({ combinator: "and", rules: [rule] })).toBe(
-			true,
-		);
-		expect(strategyQueryComplete({ combinator: "and", rules: [] })).toBe(false);
+describe("issue paths of operands", () => {
+	const paths = [
+		["field"],
+		["args"],
+		["args", 0, "value"],
+		["args", 1, "field"],
+	];
+
+	it("keeps an operand's own issues apart from its arguments'", () => {
+		expect(ownIssuePaths(paths, false)).toEqual([["field"], ["args"]]);
+		expect(ownIssuePaths(paths, true)).toEqual([
+			["field"],
+			["args"],
+			["args", 0, "value"],
+		]);
+		expect(argumentIssuePaths(paths, 1)).toEqual([["field"]]);
+	});
+});
+
+describe("strategyExpression", () => {
+	it("writes the numbers the inputs hold", () => {
 		expect(
-			strategyQueryComplete({
+			strategyExpression({
 				combinator: "and",
-				rules: [rule, { combinator: "or", rules: [] }],
+				rules: [
+					{ field: 'close("1h")', operator: ">", value: "1.50" },
+					{ field: 'rsi("1h")', operator: "between", value: ["30.", "70.0"] },
+				],
 			}),
-		).toBe(false);
+		).toBe('close("1h") > 1.5 && (rsi("1h") >= 30 && rsi("1h") <= 70)');
 	});
 });
 

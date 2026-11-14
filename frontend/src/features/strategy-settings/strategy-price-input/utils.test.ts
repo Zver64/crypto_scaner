@@ -73,6 +73,21 @@ describe("fixed price operands", () => {
 		},
 	);
 
+	it("writes the number an edited operand's input holds", () => {
+		expect(
+			priceSetupExpression({
+				node: {
+					kind: "func",
+					fn: "multiply",
+					args: [
+						{ kind: "field", field: 'close("1h")' },
+						{ kind: "value", value: "1.050" },
+					],
+				},
+			}),
+		).toBe('(close("1h") * 1.05)');
+	});
+
 	it.each(['close("1h")', 'close("1h") - 2 * atr("1h")'])(
 		"clears dirty state when %s is restored without preservation metadata",
 		(source) => {
@@ -100,21 +115,6 @@ describe("fixed price operands", () => {
 		expect(priceSetupComplete({ node: { kind: "field", field: "" } })).toBe(
 			false,
 		);
-		expect(
-			priceSetupComplete({ node: { kind: "value", value: Number.NaN } }),
-		).toBe(false);
-		expect(
-			priceSetupComplete({
-				node: {
-					kind: "func",
-					fn: "multiply",
-					args: [
-						{ kind: "field", field: 'close("1h")' },
-						{ kind: "field", field: "" },
-					],
-				},
-			}),
-		).toBe(false);
 		expect(priceSetupComplete({ custom: "" })).toBe(false);
 		expect(priceSetupComplete({})).toBe(true);
 		expect(priceSetupExpression({})).toBe("");

@@ -1,9 +1,13 @@
 import { QueryBuilder, type ValueSources } from "react-querybuilder";
 
 import { strategyOperators } from "@/features/strategy-settings/constants";
+import { StrategyFieldSelector } from "@/features/strategy-settings/strategy-field-selector";
 import { StrategyGroup } from "@/features/strategy-settings/strategy-group";
 import { StrategyGroupHeader } from "@/features/strategy-settings/strategy-group-header";
+import { StrategyOperatorSelector } from "@/features/strategy-settings/strategy-operator-selector";
+import { StrategyRemoveRuleAction } from "@/features/strategy-settings/strategy-remove-rule-action";
 import { StrategyRule } from "@/features/strategy-settings/strategy-rule";
+import { StrategyValueEditor } from "@/features/strategy-settings/strategy-value-editor";
 import type {
 	StrategyQuery,
 	StrategyRuleVariables,
@@ -24,7 +28,13 @@ interface StrategyRuleBuilderProps {
 // Module-level, so the builder keeps one component per control and its own
 // memoization leaves unchanged groups and conditions alone.
 const controlElements = {
+	fieldSelector: StrategyFieldSelector,
+	operatorSelector: StrategyOperatorSelector,
+	removeRuleAction: StrategyRemoveRuleAction,
 	rule: StrategyRule,
+	valueEditor: StrategyValueEditor,
+	// The operand kind menu of the value editor chooses the value source.
+	valueSourceSelector: null,
 	ruleGroup: StrategyGroup,
 	ruleGroupHeaderElements: StrategyGroupHeader,
 };

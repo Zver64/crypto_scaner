@@ -2,10 +2,16 @@ import type { ExpressionNode } from "@react-querybuilder/expr";
 import {
 	type Field,
 	formatQuery,
+	type FullField,
+	getFieldData,
 	isRuleGroup,
+	type Path,
 	type RuleGroupType,
 	type RuleProcessor,
 	type RuleType,
+	type Schema,
+	update,
+	type UpdateValueMap,
 } from "react-querybuilder";
 import {
 	type CELExpression,
@@ -106,6 +112,93 @@ export function valueForOperator(
 
 function numberOrZero(value: unknown): number {
 	return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+// The rule changes an operator choice makes: a range compares numbers, and
+// the value follows the operator.
+export function operatorUpdate(
+	rule: RuleType,
+	operator: string,
+): UpdateValueMap {
+	const valueSource = isRangeOperator(operator) ? "value" : rule.valueSource;
+	return {
+		operator,
+		valueSource,
+		value: valueForOperator(operator, rule.value, valueSource),
+	};
+}
+
+// The variables a rule's operands offer: a crossing reads the previous candle
+// too, which position variables do not have.
+export function operandVariables(
+	variables: StrategyVariables,
+	operator: string,
+): StrategyVariables {
+	return isCrossOperator(operator)
+		? withoutPositionVariables(variables)
+		: variables;
+}
+
+// The compared side of a rule as an operand: a plain indicator stays the rule
+// field, other operands are an expression.
+export function leftOperand(rule: RuleType): ExpressionNode {
+	return (
+		(rule.lhs as ExpressionNode | undefined) ?? {
+			kind: "field",
+			field: rule.field,
+		}
+	);
+}
+
+// The rule changes an edit of the compared side makes. The field follows the
+// expression, so the rule keeps naming a variable; a cleared indicator stays
+// empty.
+export function leftOperandUpdate(node: ExpressionNode): UpdateValueMap {
+	if (node.kind === "field") return { lhs: undefined, field: node.field };
+	const field = firstField(node);
+	return field ? { lhs: node, field } : { lhs: node };
+}
+
+// The side a rule compares with as an operand: a plain indicator or number
+// stays the rule value, other operands are an expression.
+export function rightOperand(rule: RuleType): ExpressionNode {
+	if (rule.valueSource === "expression") return rule.value as ExpressionNode;
+	if (rule.valueSource === "field") {
+		return { kind: "field", field: String(rule.value ?? "") };
+	}
+	return {
+		kind: "value",
+		value: typeof rule.value === "number" ? rule.value : Number.NaN,
+	};
+}
+
+// The rule changes an edit of the side compared with makes.
+export function rightOperandUpdate(node: ExpressionNode): UpdateValueMap {
+	if (node.kind === "field") return { valueSource: "field", value: node.field };
+	if (node.kind === "value") return { valueSource: "value", value: node.value };
+	return { valueSource: "expression", value: node };
+}
+
+// Applies changes to the rule at path in one update of the builder's query,
+// with the builder's own update options, so onQueryChange sees only the
+// finished rule.
+export function dispatchRuleUpdate(
+	schema: Schema<FullField, string>,
+	path: Path,
+	changes: UpdateValueMap,
+): void {
+	schema.dispatchQuery(
+		update(schema.getQuery(), changes, path, {
+			resetOnFieldChange: schema.resetOnFieldChange,
+			resetOnOperatorChange: schema.resetOnOperatorChange,
+			getRuleDefaultOperator: schema.getRuleDefaultOperator,
+			getRuleDefaultValue: schema.getRuleDefaultValue,
+			getValueSources: (field, operator) =>
+				schema.getValueSources(field, operator, {
+					fieldData: getFieldData(field, schema.fieldMap),
+				}),
+		}),
+	);
 }
 
 // The CEL function of a crossing operator.

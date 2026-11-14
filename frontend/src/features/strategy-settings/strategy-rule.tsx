@@ -1,177 +1,53 @@
-import {
-	ActionIcon,
-	Divider,
-	Group,
-	NativeSelect,
-	NumberInput,
-	Stack,
-} from "@mantine/core";
-import type { ExpressionNode } from "@react-querybuilder/expr";
-import { IconX } from "@tabler/icons-react";
-import {
-	getFieldData,
-	type RuleProps,
-	toFlatOptionArray,
-} from "react-querybuilder";
-
-import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
-import { firstField } from "@/features/strategy-settings/expressions";
-import type { StrategyVariables } from "@/features/strategy-settings/types";
-import {
-	defaultVariableCall,
-	isCrossOperator,
-	isRangeOperator,
-	valueForOperator,
-	withoutPositionVariables,
-} from "@/features/strategy-settings/utils";
+import { Divider, Stack } from "@mantine/core";
+import { type RuleProps, useRule } from "react-querybuilder";
 
 // One comparison, stacked vertically for phones: the compared operand, the
-// operator, then a range or the operand it is compared with. Each operand is
-// an indicator, a number (right side only), a function, or an indicator of
-// another coin.
-export function StrategyRule({
-	actions,
-	context,
-	disabled,
-	path,
-	rule,
-	schema,
-}: RuleProps) {
-	const variables: StrategyVariables = context;
-	const operators = toFlatOptionArray(
-		schema.getOperators(rule.field, {
-			fieldData: getFieldData(rule.field, schema.fieldMap),
-		}),
-	).map(({ label, value }) => ({ label, value }));
-	// A crossing reads the previous candle too.
-	const operandVariables = isCrossOperator(rule.operator)
-		? withoutPositionVariables(variables)
-		: variables;
-	const change = (
-		prop: "field" | "lhs" | "operator" | "value" | "valueSource",
-		value: unknown,
-	) => actions.onPropChange(prop, value, path);
-	// The field follows the expression, so the rule keeps naming a variable.
-	const changeLhs = (lhs: ExpressionNode | undefined) => {
-		change("lhs", lhs);
-		const field = lhs ? firstField(lhs) : undefined;
-		if (field) change("field", field);
-	};
-	const range = isRangeOperator(rule.operator);
-	// Plain indicators and numbers stay plain rule fields and values; other
-	// operands are expressions. A cleared indicator stays empty.
-	const lhs: ExpressionNode = (rule.lhs as ExpressionNode | undefined) ?? {
-		kind: "field",
-		field: rule.field,
-	};
-	const changeLeft = (node: ExpressionNode) => {
-		if (node.kind === "field") {
-			change("lhs", undefined);
-			change("field", node.field);
-		} else {
-			changeLhs(node);
-		}
-	};
-	const right: ExpressionNode =
-		rule.valueSource === "expression"
-			? (rule.value as ExpressionNode)
-			: rule.valueSource === "field"
-				? { kind: "field", field: String(rule.value ?? "") }
-				: {
-						kind: "value",
-						value: typeof rule.value === "number" ? rule.value : Number.NaN,
-					};
-	const changeRight = (node: ExpressionNode) => {
-		const source =
-			node.kind === "field"
-				? "field"
-				: node.kind === "value"
-					? "value"
-					: "expression";
-		if (source !== rule.valueSource) change("valueSource", source);
-		change(
-			"value",
-			node.kind === "field"
-				? node.field
-				: node.kind === "value"
-					? node.value
-					: node,
-		);
+// operator, then a range or the operand it is compared with. Conditions of a
+// group are separated by a line rather than framed, so operands keep the
+// screen width.
+export function StrategyRule(props: RuleProps) {
+	const r = useRule(props);
+	const {
+		fieldSelector: FieldSelector,
+		operatorSelector: OperatorSelector,
+		valueEditor: ValueEditor,
+	} = r.schema.controls;
+	const common = {
+		context: r.context,
+		disabled: r.disabled,
+		level: r.path.length,
+		path: r.path,
+		rule: r.rule,
+		schema: r.schema,
+		validation: r.validationResult,
 	};
 	return (
-		// Conditions of a group are separated by a line rather than framed, so
-		// operands keep the screen width.
 		<Stack gap="xs" mt="sm">
-			{(path.at(-1) ?? 0) > 0 ? <Divider mb="xs" /> : null}
-			<ExpressionEditor
-				depth={path.length}
-				action={
-					<ActionIcon
-						aria-label="Remove condition"
-						size="input-sm"
-						disabled={disabled}
-						onClick={() => actions.onRuleRemove(path)}
-						variant="default"
-					>
-						<IconX size={18} />
-					</ActionIcon>
-				}
-				disabled={disabled === true}
-				label="Compared value"
-				node={lhs}
-				onChange={changeLeft}
-				variables={operandVariables}
-				withoutNumber
+			{(r.path.at(-1) ?? 0) > 0 ? <Divider mb="xs" /> : null}
+			<FieldSelector
+				{...common}
+				handleOnChange={r.onChangeField}
+				operator={r.rule.operator}
+				options={r.schema.fields}
+				value={r.rule.field}
 			/>
-			<NativeSelect
-				aria-label="Comparison"
-				data={operators}
-				disabled={disabled}
-				onChange={(event) => {
-					const value = event.currentTarget.value;
-					change("operator", value);
-					const source = isRangeOperator(value) ? "value" : rule.valueSource;
-					if (source !== rule.valueSource) change("valueSource", source);
-					change("value", valueForOperator(value, rule.value, source));
-				}}
-				size="sm"
-				value={rule.operator}
+			<OperatorSelector
+				{...common}
+				field={r.rule.field}
+				fieldData={r.fieldData}
+				handleOnChange={r.onChangeOperator}
+				options={r.operators}
+				value={r.rule.operator}
 			/>
-			{range ? (
-				<Group gap="xs" grow wrap="nowrap">
-					{[0, 1].map((index) => (
-						<NumberInput
-							aria-label={index === 0 ? "From" : "To"}
-							disabled={disabled}
-							key={index}
-							onChange={(value) => {
-								const bounds: unknown[] = Array.isArray(rule.value)
-									? [...rule.value]
-									: [0, 0];
-								bounds[index] = value;
-								change("value", bounds);
-							}}
-							placeholder={index === 0 ? "From" : "To"}
-							size="sm"
-							value={Array.isArray(rule.value) ? rule.value[index] : ""}
-						/>
-					))}
-				</Group>
-			) : (
-				<ExpressionEditor
-					depth={path.length}
-					disabled={disabled === true}
-					label={
-						isCrossOperator(rule.operator)
-							? "Crossed value"
-							: "Value compared with"
-					}
-					defaultField={defaultVariableCall(operandVariables, rule.field)}
-					node={right}
-					onChange={changeRight}
-					variables={operandVariables}
-				/>
-			)}
+			<ValueEditor
+				{...common}
+				field={r.rule.field}
+				fieldData={r.fieldData}
+				handleOnChange={r.onChangeValue}
+				operator={r.rule.operator}
+				value={r.rule.value}
+				valueSource={r.rule.valueSource ?? "value"}
+			/>
 		</Stack>
 	);
 }

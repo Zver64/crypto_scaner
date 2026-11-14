@@ -8,13 +8,15 @@ import {
 } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconX } from "@tabler/icons-react";
-import { use } from "react";
-import type { RuleProps } from "react-querybuilder";
+import {
+	getFieldData,
+	type RuleProps,
+	toFlatOptionArray,
+} from "react-querybuilder";
 
 import { ExpressionEditor } from "@/features/strategy-settings/expression-editor";
 import { firstField } from "@/features/strategy-settings/expressions";
-import { StrategyVariablesContext } from "@/features/strategy-settings/strategy-variables-context";
-import type { StrategyOperator } from "@/features/strategy-settings/types";
+import type { StrategyVariables } from "@/features/strategy-settings/types";
 import {
 	defaultVariableCall,
 	isCrossOperator,
@@ -23,23 +25,24 @@ import {
 	withoutPositionVariables,
 } from "@/features/strategy-settings/utils";
 
-const operatorOptions: { label: string; value: StrategyOperator }[] = [
-	{ label: "> above", value: ">" },
-	{ label: "≥ at least", value: ">=" },
-	{ label: "< below", value: "<" },
-	{ label: "≤ at most", value: "<=" },
-	{ label: "between", value: "between" },
-	{ label: "not between", value: "notBetween" },
-	{ label: "crosses above", value: "crossesAbove" },
-	{ label: "crosses below", value: "crossesBelow" },
-];
-
 // One comparison, stacked vertically for phones: the compared operand, the
 // operator, then a range or the operand it is compared with. Each operand is
 // an indicator, a number (right side only), a function, or an indicator of
 // another coin.
-export function StrategyRule({ actions, disabled, path, rule }: RuleProps) {
-	const variables = use(StrategyVariablesContext);
+export function StrategyRule({
+	actions,
+	context,
+	disabled,
+	path,
+	rule,
+	schema,
+}: RuleProps) {
+	const variables: StrategyVariables = context;
+	const operators = toFlatOptionArray(
+		schema.getOperators(rule.field, {
+			fieldData: getFieldData(rule.field, schema.fieldMap),
+		}),
+	).map(({ label, value }) => ({ label, value }));
 	// A crossing reads the previous candle too.
 	const operandVariables = isCrossOperator(rule.operator)
 		? withoutPositionVariables(variables)
@@ -122,7 +125,7 @@ export function StrategyRule({ actions, disabled, path, rule }: RuleProps) {
 			/>
 			<NativeSelect
 				aria-label="Comparison"
-				data={operatorOptions}
+				data={operators}
 				disabled={disabled}
 				onChange={(event) => {
 					const value = event.currentTarget.value;

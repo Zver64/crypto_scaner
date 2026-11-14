@@ -1,13 +1,14 @@
-import { QueryBuilder } from "react-querybuilder";
+import { QueryBuilder, type ValueSources } from "react-querybuilder";
 
+import { strategyOperators } from "@/features/strategy-settings/constants";
 import { StrategyGroup } from "@/features/strategy-settings/strategy-group";
 import { StrategyGroupHeader } from "@/features/strategy-settings/strategy-group-header";
 import { StrategyRule } from "@/features/strategy-settings/strategy-rule";
-import { StrategyVariablesContext } from "@/features/strategy-settings/strategy-variables-context";
 import type {
 	StrategyQuery,
 	StrategyRuleVariables,
 } from "@/features/strategy-settings/types";
+import { isRangeOperator } from "@/features/strategy-settings/utils";
 
 interface StrategyRuleBuilderProps {
 	// The query the builder starts with; the builder keeps its own query
@@ -32,6 +33,14 @@ const getDefaultOperator = () => ">";
 
 const getDefaultValue = () => 0;
 
+// A range compares two numbers; other operands are a number, an indicator, or
+// an expression.
+const getValueSources = (_field: string, operator: string): ValueSources =>
+	isRangeOperator(operator) ? ["value"] : ["value", "field", "expression"];
+
+// Groups nest at most two levels below the top level.
+const maxLevels = 2;
+
 // Builds the strategy as nested AND/OR groups of comparisons. The builder is
 // uncontrolled: it renders on its own edits and reports them, and every
 // control is a Mantine component.
@@ -42,20 +51,24 @@ export function StrategyRuleBuilder({
 	variables,
 }: StrategyRuleBuilderProps) {
 	return (
-		<StrategyVariablesContext value={variables}>
-			<QueryBuilder
-				controlElements={controlElements}
-				defaultQuery={defaultQuery}
-				disabled={disabled}
-				// The opened query is already in the form.
-				enableMountQueryChange={false}
-				fields={variables.fields}
-				getDefaultOperator={getDefaultOperator}
-				getDefaultValue={getDefaultValue}
-				onQueryChange={onQueryChange}
-				resetOnFieldChange={false}
-				showNotToggle
-			/>
-		</StrategyVariablesContext>
+		<QueryBuilder
+			// Every control reads the variables its operands offer.
+			context={variables}
+			controlElements={controlElements}
+			defaultQuery={defaultQuery}
+			disabled={disabled}
+			// The opened query is already in the form.
+			enableMountQueryChange={false}
+			fields={variables.fields}
+			getDefaultField={variables.defaultField}
+			getDefaultOperator={getDefaultOperator}
+			getDefaultValue={getDefaultValue}
+			getValueSources={getValueSources}
+			maxLevels={maxLevels}
+			onQueryChange={onQueryChange}
+			operators={strategyOperators}
+			resetOnFieldChange={false}
+			showNotToggle
+		/>
 	);
 }

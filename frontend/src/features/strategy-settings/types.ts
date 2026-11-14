@@ -1,4 +1,9 @@
-import type { Field, RuleGroupType, RuleType } from "react-querybuilder";
+import type {
+	Field,
+	OptionGroup,
+	RuleGroupType,
+	RuleType,
+} from "react-querybuilder";
 
 import type {
 	CandleInterval,
@@ -130,10 +135,12 @@ export interface StrategyVariables {
 	variables: StrategyVariable[];
 }
 
-// The variables one rule builder offers, with the builder's field, the call
-// a new condition compares.
+// The variables one rule builder offers, with the builder's fields, the
+// calls of every variable on every period, and the call a new condition
+// compares.
 export interface StrategyRuleVariables extends StrategyVariables {
-	fields: Field[];
+	defaultField: string | undefined;
+	fields: OptionGroup<Field>[];
 }
 
 // The rules of a strategy as the builder opens them: spelled canonically,

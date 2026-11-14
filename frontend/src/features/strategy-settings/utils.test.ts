@@ -178,7 +178,28 @@ describe("strategyVariableSets", () => {
 			'rsi("1d", 21)',
 			"pnl",
 		]);
-		expect(entry.fields.map(({ name }) => name)).toEqual(['close("1h")']);
+		expect(
+			exit.fields.map(({ label, options }) => [
+				label,
+				options.map(({ name }) => name),
+			]),
+		).toEqual([
+			["Candle", ['close("1h")', 'close("1d")']],
+			[
+				"Indicators",
+				[
+					'bbands_upperband("1h", 20)',
+					'bbands_upperband("1d", 20)',
+					'bbands_lowerband("1h", 20)',
+					'bbands_lowerband("1d", 20)',
+					'rsi("1h", 21)',
+					'rsi("1d", 21)',
+				],
+			],
+			["Position", ["pnl"]],
+		]);
+		expect(entry.fields.map(({ label }) => label)).not.toContain("Position");
+		expect(entry.defaultField).toBe('close("1h")');
 	});
 
 	it("finds the variable and period of a call", () => {

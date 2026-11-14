@@ -8,9 +8,6 @@ import {
 import { IconTrash } from "@tabler/icons-react";
 import type { RuleGroupProps, UseRuleGroup } from "react-querybuilder";
 
-// Groups nest at most this deep below the top level.
-const maxNestedGroups = 2;
-
 // The combinator, NOT toggle, and add/remove actions of one group.
 export function StrategyGroupHeader({
 	addGroup,
@@ -21,6 +18,7 @@ export function StrategyGroupHeader({
 	path,
 	removeGroup,
 	ruleGroup,
+	schema,
 }: RuleGroupProps & UseRuleGroup) {
 	return (
 		<Group gap="xs" justify="space-between">
@@ -52,7 +50,7 @@ export function StrategyGroupHeader({
 				>
 					+ Condition
 				</Button>
-				{path.length < maxNestedGroups ? (
+				{path.length < schema.maxLevels ? (
 					<Button
 						disabled={disabled}
 						onClick={(event) => addGroup(event)}

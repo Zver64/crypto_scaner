@@ -5,6 +5,7 @@ import {
 } from "@/api/generated/models";
 import type {
 	StrategyKind,
+	StrategyOperator,
 	StrategyVariableKind,
 } from "@/features/strategy-settings/types";
 
@@ -21,6 +22,18 @@ export const operandBoundaries = [
 	"?",
 	":",
 	...comparisonTokens,
+];
+
+// The comparison operators the rule builder offers.
+export const strategyOperators: { label: string; name: StrategyOperator }[] = [
+	{ label: "> above", name: ">" },
+	{ label: "≥ at least", name: ">=" },
+	{ label: "< below", name: "<" },
+	{ label: "≤ at most", name: "<=" },
+	{ label: "between", name: "between" },
+	{ label: "not between", name: "notBetween" },
+	{ label: "crosses above", name: "crossesAbove" },
+	{ label: "crosses below", name: "crossesBelow" },
 ];
 
 // The variable select's group of each kind of variable.

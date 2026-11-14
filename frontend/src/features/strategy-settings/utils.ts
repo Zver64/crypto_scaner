@@ -821,20 +821,29 @@ export function strategyVariableSets(
 	};
 }
 
-// The builder's only field is the call a new condition compares.
+// The builder's fields: every variable on every period, a position variable
+// by its name, as calls grouped like the variable select; a new condition
+// compares the default call.
 function ruleVariables(variables: StrategyVariables): StrategyRuleVariables {
-	const call = defaultVariableCall(variables);
-	const fields: Field[] =
-		call === undefined
-			? []
-			: [
-					{
-						label: call,
-						name: call,
-						valueSources: ["value", "field", "expression"],
-					},
-				];
-	return { ...variables, fields };
+	const groups = new Map<string, Field[]>();
+	for (const variable of variables.variables) {
+		const group = variableGroups[variable.kind];
+		const calls =
+			variable.kind === "position"
+				? [variable.name]
+				: variables.intervals.map((interval) =>
+						variableCall(variable, interval),
+					);
+		groups.set(group, [
+			...(groups.get(group) ?? []),
+			...calls.map((call) => ({ label: call, name: call })),
+		]);
+	}
+	return {
+		...variables,
+		defaultField: defaultVariableCall(variables),
+		fields: [...groups].map(([label, options]) => ({ label, options })),
+	};
 }
 
 // The call of the first variable other than the one field reads, on the

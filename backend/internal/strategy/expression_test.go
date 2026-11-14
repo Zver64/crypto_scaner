@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"maps"
+	"math"
 	"slices"
 	"strings"
 	"testing"
@@ -166,8 +167,8 @@ func TestCompileReadsPositionVariablesOnlyInExitRules(t *testing.T) {
 		problem string
 	}{
 		{source: `close("1h") > entry_price`, kind: EntryRule, problem: "entry_price is available only in the exit rule"},
-		{source: "Prev(pnl) > 0", kind: ExitRule, problem: "pnl cannot be read through Prev, Percentile, crossings, or Of"},
-		{source: `Of("BTCUSDT", pnl) > 0 && close("1h") > 1`, kind: ExitRule, problem: "pnl cannot be read through Prev, Percentile, crossings, or Of"},
+		{source: "Prev(pnl) > 0", kind: ExitRule, problem: "pnl cannot be read through Prev, Percentile, ValueWhen, BarsSince, crossings, or Of"},
+		{source: `Of("BTCUSDT", pnl) > 0 && close("1h") > 1`, kind: ExitRule, problem: "pnl cannot be read through Prev, Percentile, ValueWhen, BarsSince, crossings, or Of"},
 	} {
 		_, err := Compile(test.source, registry, test.kind)
 		var invalid *InvalidExpressionError
@@ -216,7 +217,7 @@ func TestCompilePrice(t *testing.T) {
 }
 
 // A calculated Prev shift is read at the latest candle and picks the operand
-// that many candles back, reading only that candle. A shift outside 1 to 500
+// that many candles back, reading only that candle. A shift outside 0 to 500
 // is a rule error where it decides the result.
 func TestCompileCalculatedPrevShift(t *testing.T) {
 	registry := testRegistry(t)
@@ -230,10 +231,11 @@ func TestCompileCalculatedPrevShift(t *testing.T) {
 	}{
 		{name: "picks the shift", source: `Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 4, missing: 7, result: true, known: true},
 		{name: "picked value missing", source: `Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 4, missing: 3},
-		{name: "zero shift", source: `Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 1, shiftError: true},
+		{name: "zero shift", source: `Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 1, missing: 7, result: true, known: true},
+		{name: "below zero", source: `Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 0, shiftError: true},
 		{name: "beyond 500", source: `Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 502, shiftError: true},
-		{name: "decided without it", source: `open("1h") < 0 && Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 1, known: true},
-		{name: "unknown before it", source: `low("1h") > 0 && Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 1},
+		{name: "decided without it", source: `open("1h") < 0 && Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 0, known: true},
+		{name: "unknown before it", source: `low("1h") > 0 && Prev(close("1h"), bars_held - 1) > open("1h")`, barsHeld: 0},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			compiled, err := Compile(test.source, registry, ExitRule)
@@ -279,16 +281,16 @@ func TestCompileCalculatedPrevShift(t *testing.T) {
 		t.Fatalf("Compile(prev 500) error = %v", err)
 	}
 	for source, problem := range map[string]string{
-		`Prev(Prev(close("1h"), bars_held), bars_held) > 1`:   "Prev with a calculated shift cannot contain Prev with a calculated shift",
-		`Prev(close("1h"), Prev(bars_held)) > 1`:              shiftProblem,
-		`Prev(close("1h"), bars_held * 2) > 1`:                shiftProblem,
-		"Prev(pnl, bars_held) > 1":                            "pnl cannot be read through Prev, Percentile, crossings, or Of",
-		`Prev(close("1h"), open("1h")) > 1`:                   `open("1h") does not count candles, so it cannot be a Prev shift`,
-		`Prev(close("1h"), pivot_low_bars("1h")) > 1`:         "",
-		`Prev(Percentile(close("1h"), 5, 50), bars_held) > 1`: "Prev with a calculated shift cannot contain Percentile",
-		`Percentile(Prev(close("1h"), bars_held), 5, 50) > 1`: "Percentile cannot contain Prev with a calculated shift",
-		`Prev(close("1h"), 2.5) > 1`:                          "the Prev shift must be a whole number from 1 to 500",
-		`Prev(close("1h"), 501) > 1`:                          "the Prev shift must be a whole number from 1 to 500",
+		`Prev(Prev(close("1h"), bars_held), bars_held) > 1`:         "Prev with a calculated shift cannot contain Prev with a calculated shift",
+		`Prev(close("1h"), Prev(bars_held)) > 1`:                    shiftProblem,
+		`Prev(close("1h"), bars_held * 2) > 1`:                      shiftProblem,
+		"Prev(pnl, bars_held) > 1":                                  "pnl cannot be read through Prev, Percentile, ValueWhen, BarsSince, crossings, or Of",
+		`Prev(close("1h"), open("1h")) > 1`:                         `open("1h") does not count candles, so it cannot be a Prev shift`,
+		`Prev(close("1h"), divergence_previous_low_bars("1h")) > 1`: "",
+		`Prev(Percentile(close("1h"), 5, 50), bars_held) > 1`:       "Prev with a calculated shift cannot contain Percentile",
+		`Percentile(Prev(close("1h"), bars_held), 5, 50) > 1`:       "Percentile cannot contain Prev with a calculated shift",
+		`Prev(close("1h"), 2.5) > 1`:                                "the Prev shift must be a whole number from 1 to 500",
+		`Prev(close("1h"), 501) > 1`:                                "the Prev shift must be a whole number from 1 to 500",
 	} {
 		_, err := Compile(source, registry, ExitRule)
 		if problem == "" {
@@ -301,6 +303,156 @@ func TestCompileCalculatedPrevShift(t *testing.T) {
 		if !errors.As(err, &invalid) || len(invalid.Problems) != 1 || !strings.HasSuffix(invalid.Problems[0], problem) {
 			t.Errorf("Compile(%q) error = %v, want %q", source, err, problem)
 		}
+	}
+}
+
+// An empty value is known: whatever compares it is false, and arithmetic
+// with it is empty too.
+func TestEmptyValuesCompareAsFalse(t *testing.T) {
+	registry := testRegistry(t)
+	value := func(read Read) (float64, bool) {
+		if read.Variable.Name == `pivot_high("1h")` {
+			return math.NaN(), true
+		}
+		return 100, true
+	}
+	for source, want := range map[string]bool{
+		`pivot_high("1h") > 0`:                              false,
+		`pivot_high("1h") <= 0`:                             false,
+		`!(pivot_high("1h") > 0)`:                           true,
+		`close("1h") - pivot_high("1h") / 2 < 1000`:         false,
+		`Max(pivot_high("1h"), close("1h")) >= close("1h")`: false,
+		`pivot_high("1h") > 0 || close("1h") > 0`:           true,
+	} {
+		compiled, err := Compile(source, registry, EntryRule)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if result, known, err := compiled.Evaluate(value); result != want || !known || err != nil {
+			t.Errorf("Evaluate(%s) = %v (%v), %v, want %v", source, result, known, err, want)
+		}
+		if _, shown := compiled.Values(value)[`pivot_high("1h")`]; shown {
+			t.Errorf("Values(%s) holds the empty value", source)
+		}
+	}
+	price, err := Compile(`pivot_high("1h") + 1`, registry, PriceRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, known, err := price.Price(value); known || err != nil {
+		t.Fatalf("Price() of an empty value is known (%v), %v", known, err)
+	}
+}
+
+// ValueWhen and BarsSince scan the latest 200 closed candles from the latest
+// one: an occurrence not among them is empty, and a candle not known on the
+// way makes the result unknown. Percentile ignores empty values.
+func TestValueWhenAndBarsSince(t *testing.T) {
+	registry := testRegistry(t)
+	// Pivot highs of 50 and 60 are confirmed 3 and 10 candles back, the RSI
+	// is above 70 2 and 7 candles back, and prices fall by one per candle
+	// back. Nothing is known missing candles back, when set.
+	values := func(missing int) func(Read) (float64, bool) {
+		return func(read Read) (float64, bool) {
+			if missing > 0 && read.Shift == missing {
+				return 0, false
+			}
+			switch read.Variable.Name {
+			case `pivot_high("1h")`:
+				if high, confirmed := map[int]float64{3: 50, 10: 60}[read.Shift]; confirmed {
+					return high, true
+				}
+				return math.NaN(), true
+			case `rsi("1h")`:
+				return map[bool]float64{true: 80, false: 40}[read.Shift == 2 || read.Shift == 7], true
+			}
+			return 100 - float64(read.Shift), true
+		}
+	}
+	for _, test := range []struct {
+		source  string
+		missing int
+		want    float64
+		empty   bool
+		unknown bool
+	}{
+		{source: `ValueWhen(pivot_high("1h"))`, want: 50},
+		{source: `ValueWhen(pivot_high("1h"), 1)`, want: 60},
+		{source: `ValueWhen(pivot_high("1h"), 2)`, empty: true},
+		{source: `ValueWhen(rsi("1h") > 70, close("1h"), 1)`, want: 93},
+		{source: `ValueWhen(rsi("1h") > 70 && close("1h") < 95, close("1h"), 0)`, want: 93},
+		{source: `ValueWhen(rsi("1h") > 90, close("1h"), 0)`, empty: true},
+		{source: `ValueWhen(pivot_high("1h") > 0, Prev(low("1h"), 5), 1)`, want: 85},
+		{source: `BarsSince(pivot_high("1h"))`, want: 3},
+		{source: `BarsSince(rsi("1h") > 70)`, want: 2},
+		{source: `BarsSince(rsi("1h") > 30)`, want: 0},
+		{source: `BarsSince(rsi("1h") > 90)`, empty: true},
+		{source: `Prev(BarsSince(pivot_high("1h")), 1)`, want: 2},
+		{source: `Of("ETHUSDT", BarsSince(pivot_high("1h"))) + close("1h") * 0`, want: 3},
+		{source: `Prev(close("1h"), BarsSince(pivot_high("1h")) + 5)`, want: 92},
+		{source: `Prev(close("1h"), BarsSince(rsi("1h") > 90) + 5)`, empty: true},
+		// The condition is true at the latest candle: a shift of 0.
+		{source: `Prev(close("1h"), BarsSince(rsi("1h") > 30))`, want: 100},
+		// The occurrence is found before the unknown candle, or behind it.
+		{source: `ValueWhen(pivot_high("1h"))`, missing: 5, want: 50},
+		{source: `ValueWhen(pivot_high("1h"), 1)`, missing: 5, unknown: true},
+		{source: `ValueWhen(rsi("1h") > 70, close("1h"), 1)`, missing: 5, unknown: true},
+		{source: `BarsSince(rsi("1h") > 70)`, missing: 1, unknown: true},
+		{source: `Percentile(pivot_high("1h"), 12, 50)`, want: 50},
+		{source: `Percentile(pivot_high("1h"), 12, 51)`, want: 60},
+		{source: `Percentile(pivot_high("1h"), 2, 50)`, empty: true},
+		{source: `Percentile(pivot_high("1h"), 12, 50)`, missing: 5, unknown: true},
+	} {
+		price, err := Compile(test.source, registry, PriceRule)
+		if err != nil {
+			t.Fatalf("Compile(%s) error = %v", test.source, err)
+		}
+		// An empty price is not known, so a comparison tells empty, which is
+		// false, from unknown.
+		condition, err := Compile("!("+test.source+" >= 0)", registry, EntryRule)
+		if err != nil {
+			t.Fatalf("Compile(%s) error = %v", test.source, err)
+		}
+		got, known, err := price.Price(values(test.missing))
+		empty, decided, conditionErr := condition.Evaluate(values(test.missing))
+		if err != nil || conditionErr != nil || known != (!test.empty && !test.unknown) || known && got != test.want || decided == test.unknown || empty != test.empty {
+			t.Errorf("%s with candle %d missing = %v (%v), empty %v (%v), %v, %v", test.source, test.missing, got, known, empty, decided, err, conditionErr)
+		}
+	}
+
+	for source, problem := range map[string]string{
+		`ValueWhen(BarsSince(rsi("1h") > 70), 1) > 0`:                                                          "ValueWhen cannot contain BarsSince",
+		`BarsSince(ValueWhen(pivot_high("1h")) > 1) > 0`:                                                       "BarsSince cannot contain ValueWhen",
+		`BarsSince(Percentile(close("1h"), 5, 50) > 1) > 0`:                                                    "BarsSince cannot contain Percentile",
+		`BarsSince(Prev(close("1h"), bars_held) > 1) > 0`:                                                      "BarsSince cannot contain Prev with a calculated shift",
+		`Percentile(ValueWhen(pivot_high("1h")), 5, 50) > 1`:                                                   "Percentile cannot contain ValueWhen",
+		`Prev(ValueWhen(pivot_high("1h")), bars_held) > 1`:                                                     "Prev with a calculated shift cannot contain ValueWhen",
+		`Prev(close("1h"), BarsSince(pivot_low("1h")) + 5) > 1`:                                                "",
+		`Prev(close("1h"), BarsSince(pivot_low("1h")) * 2) > 1`:                                                shiftProblem,
+		`Prev(close("1h"), ValueWhen(pivot_low("1h"))) > 1`:                                                    shiftProblem,
+		`BarsSince(pnl > 1) > 3`:                                                                               "pnl cannot be read through Prev, Percentile, ValueWhen, BarsSince, crossings, or Of",
+		`ValueWhen(pivot_high("1h"), 200) > 1`:                                                                 "the ValueWhen occurrence must be a whole number from 0 to 199",
+		`ValueWhen(pivot_high("1h"), close("1h"), 0) > 1`:                                                      "ValueWhen takes a condition, a value, and an occurrence, or a value and an optional occurrence",
+		`ValueWhen(rsi("1h") > 70) > 1`:                                                                        "ValueWhen takes a condition, a value, and an occurrence, or a value and an optional occurrence",
+		`bars_since(pivot_high("1h")) > value_when(close("1h"))`:                                               "unknown function bars_since; did you mean BarsSince?; unknown function value_when; did you mean ValueWhen?",
+		strings.Repeat(`BarsSince(rsi("1h") > 70) < 5 && `, 9) + `BarsSince(CrossesAbove(rsi("1h"), 70)) < 5`:  "",
+		strings.Repeat(`BarsSince(rsi("1h") > 70) < 5 && `, 10) + `BarsSince(CrossesAbove(rsi("1h"), 70)) < 5`: "the expression has too many comparisons",
+	} {
+		_, err := Compile(source, registry, ExitRule)
+		if problem == "" {
+			if err != nil {
+				t.Errorf("Compile(%q) error = %v", source, err)
+			}
+			continue
+		}
+		if err == nil || !strings.HasSuffix(err.Error(), problem) {
+			t.Errorf("Compile(%q) error = %v, want %q", source, err, problem)
+		}
+	}
+
+	canonical, _ := Canonical(`ValueWhen(rsi("1h", 14) > 70, pivot_high("1h", 5, 5), 0) > BarsSince(pivot_low("1h", 5))`, registry)
+	if want := `ValueWhen(rsi("1h") > 70, pivot_high("1h"), 0) > BarsSince(pivot_low("1h"))`; canonical != want {
+		t.Fatalf("Canonical() = %s, want %s", canonical, want)
 	}
 }
 

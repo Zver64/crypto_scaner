@@ -11,7 +11,15 @@ import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-d
 const rsiCatalog: ChartIndicatorDefinition[] = [
 	{
 		id: "rsi-14",
-		lines: [{ color: "blue.5", output: "rsi", title: "RSI 14" }],
+		lines: [
+			{
+				color: "blue.5",
+				output: "rsi",
+				shift: 0,
+				style: "line",
+				title: "RSI 14",
+			},
+		],
 		parameters: { period: 14 },
 		placement: "pane",
 		scale: { levels: [], max: 100, min: 0 },

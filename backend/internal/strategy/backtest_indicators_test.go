@@ -50,7 +50,7 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.candles[market.IntervalDay] = map[int64][]market.Candle{1: daily}
 	item := Strategy{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6,
-		Expression: `close("1h") > 101 && Prev(bbands_upperband("1h", 20)) > 0 && Percentile(rsi("1h"), 3, 50) > 0 && ema("1d", 3) > 0 && pivot_low_bars("1h") > 0 && Of("BTCUSDT", ema("1h", 7)) > 0`}
+		Expression: `close("1h") > 101 && Prev(bbands_upperband("1h", 20)) > 0 && Percentile(rsi("1h"), 3, 50) > 0 && ema("1d", 3) > 0 && !(pivot_low("1h") > 0) && Of("BTCUSDT", ema("1h", 7)) > 0`}
 	store.strategies = []Strategy{item}
 	service := snapshotTestService(t, store)
 	// A bounded run must not return the latest stored tail or future indicators.
@@ -72,7 +72,7 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 			t.Fatalf("nonlocal or candle column: %s", column.Key)
 		}
 	}
-	for _, name := range []string{`rsi("1h")`, `ema("1d", 3)`, `bbands_upperband("1h", 20)`, `bbands_middleband("1h", 20)`, `bbands_lowerband("1h", 20)`, `pivot_low_bars("1h")`} {
+	for _, name := range []string{`rsi("1h")`, `ema("1d", 3)`, `bbands_upperband("1h", 20)`, `bbands_middleband("1h", 20)`, `bbands_lowerband("1h", 20)`, `pivot_high("1h")`, `pivot_low("1h")`} {
 		if !keys[name] {
 			t.Fatalf("missing output %s", name)
 		}
@@ -92,16 +92,19 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 		if _, exists := occurrence.IndicatorValues[`rsi("1h")`]; !exists {
 			t.Fatal("current RSI missing despite percentile dependency")
 		}
+		// The rule holds only where there is no pivot low: the empty value
+		// compares as false and is left out of both maps.
+		if _, exists := occurrence.IndicatorValues[`pivot_low("1h")`]; exists {
+			t.Fatal("empty pivot low among the indicator values")
+		}
+		if _, exists := occurrence.Values[`pivot_low("1h")`]; exists {
+			t.Fatal("empty pivot low among the read values")
+		}
 		// Current outputs at the signal and chart points must agree exactly.
 		for _, page := range result.Charts {
 			for j, definition := range page.Definitions {
 				if definition.Selection.Type == "ema" && page.Interval == market.IntervalHour {
 					t.Fatal("of-only indicator drawn")
-				}
-				for _, line := range definition.Lines {
-					if line.Output == "low_bars" {
-						t.Fatal("hidden count drawn")
-					}
 				}
 				for _, series := range page.Indicators[j].Series {
 					entry := slices.IndexFunc(service.indicators.List(), func(e scannerindicator.Entry) bool { return e.Selection.Type == definition.Selection.Type })
@@ -130,6 +133,17 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 		}
 	}
 	for _, page := range result.Charts {
+		for j, definition := range page.Definitions {
+			if definition.Selection.Type != pivot.Type {
+				continue
+			}
+			// Pivots are points only on the candles confirming them.
+			for _, series := range page.Indicators[j].Series {
+				if len(series.Points) == 0 || len(series.Points) > len(page.Candles)/10 {
+					t.Fatalf("%s has %d points over %d candles", series.Name, len(series.Points), len(page.Candles))
+				}
+			}
+		}
 		for _, candle := range page.Candles {
 			if candle.OpenTime.Before(page.Interval.OpenTime(result.From)) || page.Interval.NextOpenTime(candle.OpenTime).After(result.Interval.NextOpenTime(result.To)) {
 				t.Fatalf("candle outside snapshot: %v", candle.OpenTime)

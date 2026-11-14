@@ -80,8 +80,12 @@ describe("importedStrategyQuery", () => {
 			'CrossesAbove(close("1h") + 1, Min(open("1h") * 2, low("1h"))) && Abs(close("1h") - open("1h")) > 1',
 		],
 		[
-			'Prev(close("1h"), pivot_low_bars("1h") - 1) > Prev(sma("1h", 3, volume), 4)',
-			'Prev(close("1h"), pivot_low_bars("1h") - 1) > Prev(sma("1h", 3, volume), 4)',
+			'Prev(close("1h"), BarsSince(pivot_low("1h")) + 5) > Prev(sma("1h", 3, volume), 4)',
+			'Prev(close("1h"), BarsSince(pivot_low("1h")) + 5) > Prev(sma("1h", 3, volume), 4)',
+		],
+		[
+			'ValueWhen(pivot_high("1h")) > ValueWhen(pivot_high("1h", 3, 3), 1)',
+			'ValueWhen(pivot_high("1h")) > ValueWhen(pivot_high("1h", 3, 3), 1)',
 		],
 		['entry_price < close("1d")', 'entry_price < close("1d")'],
 		[

@@ -92,6 +92,10 @@ export interface ChartIndicatorLine {
 	output: string;
 	title: string;
 	color: string;
+	// A marker is a point above or below a candle instead of a line.
+	style: "line" | "marker_above" | "marker_below";
+	// The candles a marker is drawn before the candle holding its value.
+	shift: number;
 }
 export interface ChartIndicatorScale {
 	min?: number;

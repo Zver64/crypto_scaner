@@ -34,7 +34,9 @@ func (target Target) Key() string {
 
 // Output is one named output at the latest stored closed candle. Earlier
 // holds its values at the closed candles before it, newest first, as far as
-// the requested points reach and the history is continuous.
+// the requested points reach and the history is continuous. Empty values of
+// a sparse output are kept (indicator.Empty), so the values behind them stay
+// readable.
 type Output struct {
 	Name    string
 	Value   float64
@@ -52,6 +54,12 @@ func (output Output) At(shift int) (float64, bool) {
 	return output.Earlier[shift-1], true
 }
 
+// Shown returns the value at the latest closed candle as people and JSON
+// get it: an empty value is absent.
+func (output Output) Shown() (float64, bool) {
+	return output.Value, !indicator.Empty(output.Value)
+}
+
 // Value holds the named outputs at the latest stored closed candle. Outputs is
 // empty when the continuous history ending at that candle is too short.
 type Value struct {
@@ -62,8 +70,13 @@ type Value struct {
 
 func (value Value) equal(other Value) bool {
 	return value.OpenTime.Equal(other.OpenTime) && slices.EqualFunc(value.Outputs, other.Outputs, func(left, right Output) bool {
-		return left.Name == right.Name && left.Value == right.Value && slices.Equal(left.Earlier, right.Earlier)
+		return left.Name == right.Name && same(left.Value, right.Value) && slices.EqualFunc(left.Earlier, right.Earlier, same)
 	})
+}
+
+// same reports equal values; empty values are the same.
+func same(left, right float64) bool {
+	return left == right || indicator.Empty(left) && indicator.Empty(right)
 }
 
 // Depth is the number of closed candles loaded to calculate points values of

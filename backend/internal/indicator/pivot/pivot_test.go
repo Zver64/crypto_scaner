@@ -9,53 +9,31 @@ import (
 	"crypto-scanner/internal/indicator/pivot"
 )
 
-func TestPivotsCarryTheLatestAndPreviousConfirmedPivots(t *testing.T) {
+func TestPivotsHoldTheirPriceOnTheConfirmingCandle(t *testing.T) {
 	// Highs pivot at 1 and, of the equal highs at 4 and 5, at the later one,
-	// as ta.pivothigh picks it; lows pivot at 3 and 7.
+	// as ta.pivothigh picks it; lows pivot at 3 and 7. Each is confirmed one
+	// candle later.
 	highs := []float64{1, 5, 2, 2, 4, 4, 1, 1, 1}
 	lows := []float64{5, 4, 4, 1, 4, 4, 4, 2, 3}
 	result, err := pivot.New().Calculate(indicator.Parameters{"left": 1, "right": 1}, indicator.Inputs{"high": highs, "low": lows})
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := map[string]indicator.Series{
-		"high":          {Offset: 2, Values: []float64{5, 5, 5, 5, 4, 4, 4}},
-		"previous_high": {Offset: 6, Values: []float64{5, 5, 5}},
-		"low":           {Offset: 4, Values: []float64{1, 1, 1, 1, 2}},
-		"previous_low":  {Offset: 8, Values: []float64{1}},
-		// The distances run exactly where the levels do.
-		"high_bars":          {Offset: 2, Values: []float64{1, 2, 3, 4, 1, 2, 3}},
-		"previous_high_bars": {Offset: 6, Values: []float64{5, 6, 7}},
-		"low_bars":           {Offset: 4, Values: []float64{1, 2, 3, 4, 1}},
-		"previous_low_bars":  {Offset: 8, Values: []float64{5}},
-	}
-	for name, series := range want {
-		got := result.Outputs[name]
-		if got.Offset != series.Offset || !slices.Equal(got.Values, series.Values) {
-			t.Errorf("%s = %+v, want %+v", name, got, series)
+	// The first candle that can confirm a pivot is the third.
+	const offset = 2
+	for name, want := range map[string]map[int]float64{"high": {2: 5, 6: 4}, "low": {4: 1, 8: 2}} {
+		series := result.Outputs[name]
+		if series.Offset != offset || len(series.Values) != len(highs)-offset {
+			t.Fatalf("%s covers %d candles from %d, want %d from %d", name, len(series.Values), series.Offset, len(highs)-offset, offset)
 		}
-	}
-}
-
-func TestPivotsCountOnlyWithinTheirWindowWhateverHistoryCallersPass(t *testing.T) {
-	// The only pivot high is at 1, with its left candle at 0: the 500
-	// candles ending at 499 hold it, those ending at 500 do not.
-	for _, test := range []struct {
-		candles int
-		want    indicator.Series
-	}{
-		{candles: 500, want: indicator.Series{Offset: 2, Values: slices.Repeat([]float64{5}, 498)}},
-		{candles: 501, want: indicator.Series{Offset: 501, Values: []float64{}}},
-	} {
-		highs := slices.Repeat([]float64{1}, test.candles)
-		highs[1] = 5
-		lows := slices.Repeat([]float64{1}, test.candles)
-		result, err := pivot.New().Calculate(indicator.Parameters{"left": 1, "right": 1}, indicator.Inputs{"high": highs, "low": lows})
-		if err != nil {
-			t.Fatal(err)
+		got := map[int]float64{}
+		for index, value := range series.Values {
+			if !indicator.Empty(value) {
+				got[offset+index] = value
+			}
 		}
-		if got := result.Outputs["high"]; got.Offset != test.want.Offset || !slices.Equal(got.Values, test.want.Values) {
-			t.Errorf("%d candles: high offset %d with %d values, want offset %d with %d", test.candles, got.Offset, len(got.Values), test.want.Offset, len(test.want.Values))
+		if !maps.Equal(got, want) {
+			t.Errorf("%s = %v at candles, want %v", name, got, want)
 		}
 	}
 }

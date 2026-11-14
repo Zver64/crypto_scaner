@@ -41,8 +41,9 @@ type Calculation struct {
 }
 
 // CalculateCandles calculates named series over contiguous candle runs, so no
-// warm-up spans a gap. The same method handles closed history and a private
-// extension with the current candle.
+// warm-up spans a gap; empty values of sparse outputs have no point. The same
+// method handles closed history and a private extension with the current
+// candle.
 func (r *Registry) CalculateCandles(interval market.CandleInterval, candles []market.Candle, selections []Selection) ([]Calculation, error) {
 	history := NewHistory(interval, candles)
 	results := make([]Calculation, 0, len(selections))
@@ -60,6 +61,9 @@ func (r *Registry) CalculateCandles(interval market.CandleInterval, candles []ma
 			points := make([]Point, 0, count)
 			for _, run := range output.Runs {
 				for i, value := range run.Values {
+					if Empty(value) {
+						continue
+					}
 					points = append(points, Point{Time: candles[run.Offset+i].OpenTime.UTC(), Value: value})
 				}
 			}

@@ -14,12 +14,12 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 	occurrences := make([]apiclient.BacktestSignalOccurrence, maxTradeRows+3)
 	for i := range occurrences {
 		occurrences[i] = apiclient.BacktestSignalOccurrence{Time: from.Add(time.Duration(i) * time.Hour), Close: 100,
-			IndicatorValues: map[string]float64{"h_rsi": float64(i), "h_pivot_low_bars": 0}}
+			IndicatorValues: map[string]float64{"h_rsi": float64(i), "h_divergence_previous_low_bars": 0}}
 	}
 	backtest := apiclient.StrategyBacktest{
 		DurationMs: 1234.5,
 		From:       &from, To: &occurrences[len(occurrences)-1].Time, Symbol: "BTCUSDT", Interval: apiclient.N1h, Direction: apiclient.Long,
-		IndicatorColumns: []apiclient.BacktestIndicatorColumn{{Key: "h_rsi", Title: "h_rsi"}, {Key: "h_pivot_low_bars", Title: "h_pivot_low_bars"}, {Key: "h_pivot_high_bars", Title: "h_pivot_high_bars"}},
+		IndicatorColumns: []apiclient.BacktestIndicatorColumn{{Key: "h_rsi", Title: "h_rsi"}, {Key: "h_divergence_previous_low_bars", Title: "h_divergence_previous_low_bars"}, {Key: "h_divergence_previous_high_bars", Title: "h_divergence_previous_high_bars"}},
 		Signal:           &apiclient.BacktestSignal{Evaluation: &apiclient.BacktestSignalEvaluation{Window: 6, TargetRatio: 2}, Occurrences: occurrences},
 	}
 	body, err := json.Marshal(backtest)
@@ -40,7 +40,7 @@ func TestBacktestIndicatorFlagAndCappedSignals(t *testing.T) {
 		if !strings.HasPrefix(got.stdout, "Execution time: 1.23 s\n") || strings.Count(got.stdout, "Execution time:") != 1 {
 			t.Fatalf("execution time missing or repeated: %s", got.stdout)
 		}
-		if strings.Contains(got.stdout, "H_RSI") != indicators || strings.Contains(got.stdout, "H_PIVOT_LOW_BARS") != indicators {
+		if strings.Contains(got.stdout, "H_RSI") != indicators || strings.Contains(got.stdout, "H_DIVERGENCE_PREVIOUS_LOW_BARS") != indicators {
 			t.Fatalf("indicator columns: %s", got.stdout)
 		}
 		// The parameter summary still mentions the beginning of the period,

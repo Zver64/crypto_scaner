@@ -10,6 +10,7 @@ import (
 
 type fakeImplementation struct {
 	indicatorType indicator.Type
+	sparse        bool
 	lookback      int
 	lookbackErr   error
 	result        indicator.Result
@@ -23,7 +24,7 @@ func (f *fakeImplementation) Describe() indicator.Descriptor {
 	return indicator.Descriptor{
 		Type:    f.indicatorType,
 		Inputs:  []string{"close"},
-		Outputs: []indicator.OutputDescriptor{{Name: "value", Style: indicator.OutputLine}},
+		Outputs: []indicator.OutputDescriptor{{Name: "value", Style: indicator.OutputLine, Sparse: f.sparse}},
 	}
 }
 
@@ -158,7 +159,6 @@ func TestRegistryRejectsInvalidImplementationResults(t *testing.T) {
 		{name: "empty output name", result: indicator.Result{Outputs: indicator.Outputs{"": {Values: []float64{1}}}}},
 		{name: "negative offset", result: indicator.Result{Outputs: indicator.Outputs{"value": {Offset: -1, Values: []float64{1}}}}},
 		{name: "nil values", result: indicator.Result{Outputs: indicator.Outputs{"value": {Values: nil}}}},
-		{name: "NaN value", result: indicator.Result{Outputs: indicator.Outputs{"value": {Values: []float64{math.NaN()}}}}},
 		{name: "infinite value", result: indicator.Result{Outputs: indicator.Outputs{"value": {Values: []float64{math.Inf(1)}}}}},
 	}
 
@@ -188,6 +188,30 @@ func TestRegistryAllowsEmptyValidValues(t *testing.T) {
 
 	if _, err := registry.Calculate(indicator.Request{Type: "fake"}); err != nil {
 		t.Fatalf("Calculate() error = %v", err)
+	}
+}
+
+func TestRegistryAcceptsEmptyValuesOnlyInSparseOutputs(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		sparse bool
+		value  float64
+		valid  bool
+	}{
+		{name: "empty in a sparse output", sparse: true, value: math.NaN(), valid: true},
+		{name: "empty in a dense output", value: math.NaN()},
+		{name: "infinite in a sparse output", sparse: true, value: math.Inf(1)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result := indicator.Result{Outputs: indicator.Outputs{"value": {Values: []float64{1, test.value, 2}}}}
+			registry, err := indicator.NewRegistry(&fakeImplementation{indicatorType: "fake", sparse: test.sparse, result: result})
+			if err != nil {
+				t.Fatalf("NewRegistry() error = %v", err)
+			}
+			if _, err := registry.Calculate(indicator.Request{Type: "fake"}); errors.Is(err, indicator.ErrInvalidResult) == test.valid {
+				t.Fatalf("Calculate() error = %v, valid %v", err, test.valid)
+			}
+		})
 	}
 }
 

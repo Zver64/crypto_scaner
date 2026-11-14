@@ -9,6 +9,8 @@
 // packages and are selected by a Registry.
 package indicator
 
+import "math"
+
 // Type is the stable identifier of an indicator implementation.
 type Type string
 
@@ -31,11 +33,17 @@ type Request struct {
 
 // Series is one output series. Offset is the zero-based input position matching
 // Values[0]. Values contains only valid values; warm-up placeholders must not be
-// included.
+// included. A sparse output (OutputDescriptor.Sparse) holds NaN where it is
+// empty.
 type Series struct {
 	Offset int
 	Values []float64
 }
+
+// Empty reports an empty value of a sparse output: calculated, with nothing
+// there, unlike an unknown value, which could not be calculated. Empty values
+// are never drawn, shown, or written to JSON.
+func Empty(value float64) bool { return math.IsNaN(value) }
 
 // Outputs contains indicator output series keyed by their
 // implementation-defined names, for example "rsi".
@@ -87,6 +95,10 @@ const (
 	OutputHistogram  OutputStyle = "histogram"
 	OutputUpperLimit OutputStyle = "upper_limit"
 	OutputLowerLimit OutputStyle = "lower_limit"
+	// OutputMarkerAbove and OutputMarkerBelow are points drawn above and
+	// below the candles holding a value.
+	OutputMarkerAbove OutputStyle = "marker_above"
+	OutputMarkerBelow OutputStyle = "marker_below"
 	// OutputHidden is an output that charts do not draw, such as a distance
 	// in candles that strategies read.
 	OutputHidden OutputStyle = "hidden"
@@ -99,6 +111,14 @@ type OutputDescriptor struct {
 	// Count marks an output that counts candles, a whole number that
 	// strategies may use as a prev shift.
 	Count bool
+	// Sparse marks an output with a value only on some candles and empty on
+	// the others.
+	Sparse bool
+	// Shift is the key of the integer parameter holding the number of candles
+	// a marker is drawn before the candle holding its value, such as the
+	// candles that confirm a pivot; empty draws it on that candle. Values are
+	// not shifted, only their drawing.
+	Shift string
 }
 
 // Descriptor is the self-description of an implementation. Registries use it

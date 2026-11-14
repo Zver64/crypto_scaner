@@ -9,7 +9,6 @@ import (
 	"math"
 	"slices"
 
-	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/indicator"
 )
 
@@ -21,11 +20,6 @@ const (
 	// maxSide bounds the candles a pivot is compared with on either side,
 	// which every candle of a backtest compares again.
 	maxSide = 20
-	// window is how many candles, ending at a candle, its pivots are found
-	// in.
-	window = 500
-	// reach is the lookback for which chart.Window loads that window.
-	reach = window/chart.SettleFactor - 1
 )
 
 // sides are the TradingView pivot lookbacks: the candles before and after a
@@ -38,25 +32,19 @@ var sides = []param{
 // New returns the pivot high and low module.
 func New() indicator.Implementation { return pivots{} }
 
-// pivots reports, at every candle, the latest and the previous pivot high and
-// low confirmed by then within the window, and how many candles back each
-// lies.
+// pivots reports the price of a pivot high and of a pivot low on the candle
+// that confirms it, right candles after the pivot, and is empty on every
+// other candle.
 type pivots struct{}
 
 func (pivots) Describe() indicator.Descriptor {
 	return indicator.Descriptor{
-		Type: Type, Title: "Pivot High/Low", Group: group, Overlay: true, Unstable: true,
+		Type: Type, Title: "Pivot High/Low", Group: group, Overlay: true,
 		Inputs:     []string{"high", "low"},
 		Parameters: describe(sides),
 		Outputs: []indicator.OutputDescriptor{
-			{Name: "high", Style: indicator.OutputLine},
-			{Name: "previous_high", Style: indicator.OutputDashedLine},
-			{Name: "low", Style: indicator.OutputLine},
-			{Name: "previous_low", Style: indicator.OutputDashedLine},
-			{Name: "high_bars", Style: indicator.OutputHidden, Count: true},
-			{Name: "previous_high_bars", Style: indicator.OutputHidden, Count: true},
-			{Name: "low_bars", Style: indicator.OutputHidden, Count: true},
-			{Name: "previous_low_bars", Style: indicator.OutputHidden, Count: true},
+			{Name: "high", Style: indicator.OutputMarkerAbove, Sparse: true, Shift: "right"},
+			{Name: "low", Style: indicator.OutputMarkerBelow, Sparse: true, Shift: "right"},
 		},
 	}
 }
@@ -76,14 +64,14 @@ func (m pivots) Fields(parameters indicator.Parameters) ([]string, error) {
 	return []string{"high", "low"}, nil
 }
 
-// Lookback is the reach that makes chart.Window load the window, whose every
-// candle a value may depend on, rather than the first value, which comes with
-// the first confirmed pivot.
+// Lookback is the candles a value depends on besides its own: the left
+// candles before the pivot and the right after it.
 func (pivots) Lookback(parameters indicator.Parameters) (int, error) {
-	if _, err := parse(sides, parameters); err != nil {
+	values, err := parse(sides, parameters)
+	if err != nil {
 		return 0, err
 	}
-	return reach, nil
+	return values[0] + values[1], nil
 }
 
 func (pivots) Calculate(parameters indicator.Parameters, inputs indicator.Inputs) (indicator.Result, error) {
@@ -96,53 +84,23 @@ func (pivots) Calculate(parameters indicator.Parameters, inputs indicator.Inputs
 		return indicator.Result{}, fmt.Errorf("%w: %w", indicator.ErrInvalidRequest, err)
 	}
 	left, right := values[0], values[1]
-	highs := confirmed(series[0], left, right, isHigh)
-	lows := confirmed(series[1], left, right, isLow)
-	high, previousHigh := levels(series[0], highs, left, right)
-	low, previousLow := levels(series[1], lows, left, right)
-	outputs := indicator.Outputs{
-		"high": high.values, "previous_high": previousHigh.values, "low": low.values, "previous_low": previousLow.values,
-		"high_bars": high.bars, "previous_high_bars": previousHigh.bars, "low_bars": low.bars, "previous_low_bars": previousLow.bars,
-	}
-	return indicator.Result{Outputs: outputs}, nil
+	return indicator.Result{Outputs: indicator.Outputs{
+		"high": confirmations(series[0], left, right, isHigh),
+		"low":  confirmations(series[1], left, right, isLow),
+	}}, nil
 }
 
-// level is one pivot series: its value at every candle and how many candles
-// back it lies.
-type level struct {
-	values, bars indicator.Series
-}
-
-// levels reports at every candle the latest and the previous pivot confirmed
-// by then, right candles after it, that lies with its left candles within the
-// window ending there, so a value does not depend on how much more history
-// the caller passes. A series holds only consecutive values, so each keeps
-// its last unbroken run: a pivot leaving the window before the next is
-// confirmed drops the values before.
-func levels(values []float64, pivots []int, left, right int) (latest, previous level) {
-	for _, series := range []*level{&latest, &previous} {
-		series.values.Values, series.bars.Values = []float64{}, []float64{}
+// confirmations holds, from the first candle that can confirm a pivot, the
+// value of each pivot on the candle right after it and nothing elsewhere.
+func confirmations(values []float64, left, right int, pivot func(values []float64, at, left, right int) bool) indicator.Series {
+	series := indicator.Series{Offset: left + right, Values: []float64{}}
+	for range max(0, len(values)-series.Offset) {
+		series.Values = append(series.Values, math.NaN())
 	}
-	next := 0
-	for at := range values {
-		for next < len(pivots) && pivots[next]+right <= at {
-			next++
-		}
-		// keep extends series with the pivot back pivots before the latest.
-		keep := func(series *level, back int) {
-			if next > back && pivots[next-1-back]-left > at-window {
-				pivot := pivots[next-1-back]
-				series.values.Values = append(series.values.Values, values[pivot])
-				series.bars.Values = append(series.bars.Values, float64(at-pivot))
-				return
-			}
-			series.values.Offset, series.values.Values = at+1, series.values.Values[:0]
-			series.bars.Offset, series.bars.Values = at+1, series.bars.Values[:0]
-		}
-		keep(&latest, 0)
-		keep(&previous, 1)
+	for _, at := range confirmed(values, left, right, pivot) {
+		series.Values[at-left] = values[at]
 	}
-	return latest, previous
+	return series
 }
 
 // confirmed lists the pivots of values in order, positions with left valid

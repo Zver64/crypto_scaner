@@ -84,6 +84,20 @@ export const strategyFunctions: Record<string, StrategyFunction> = {
 		defaults: [number(120), number(20)],
 		earlier: true,
 	},
+	ValueWhen: {
+		label: "ValueWhen — earlier value",
+		args: ["Value", "Values back"],
+		defaults: [number(0)],
+		// ValueWhen(x) reads the latest value.
+		minArgs: 1,
+		earlier: true,
+	},
+	BarsSince: {
+		label: "BarsSince — candles since a value",
+		args: ["Value"],
+		defaults: [],
+		earlier: true,
+	},
 };
 
 // Of("BTCUSDT", x) reads the operand x of another coin. It is not a
@@ -123,6 +137,8 @@ const callNames = [
 	"Mod",
 	"Prev",
 	"Percentile",
+	"ValueWhen",
+	"BarsSince",
 	coinFunction,
 ];
 

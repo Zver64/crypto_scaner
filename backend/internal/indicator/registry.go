@@ -35,6 +35,8 @@ type registered struct {
 	implementation Implementation
 	descriptor     Descriptor
 	outputs        []string
+	// sparse holds the outputs that may be empty.
+	sparse map[string]bool
 }
 
 // NewRegistry creates a calculator from concrete implementations. At least one
@@ -59,13 +61,22 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 			return nil, fmt.Errorf("%w: %q", ErrDuplicateRegistration, indicatorType)
 		}
 		outputs := make([]string, len(descriptor.Outputs))
+		sparse := map[string]bool{}
 		for position, output := range descriptor.Outputs {
 			outputs[position] = output.Name
+			sparse[output.Name] = output.Sparse
 		}
 		if err := validateOutputs(outputs); err != nil {
 			return nil, fmt.Errorf("%w: %q: %v", ErrEmptyRegistration, indicatorType, err)
 		}
-		byType[indicatorType] = registered{implementation: implementation, descriptor: descriptor, outputs: outputs}
+		for _, output := range descriptor.Outputs {
+			if output.Shift != "" && !slices.ContainsFunc(descriptor.Parameters, func(parameter ParameterDescriptor) bool {
+				return parameter.Key == output.Shift && parameter.Kind == ParameterInteger
+			}) {
+				return nil, fmt.Errorf("%w: %q: output %q is shifted by %q, which is not an integer parameter", ErrEmptyRegistration, indicatorType, output.Name, output.Shift)
+			}
+		}
+		byType[indicatorType] = registered{implementation: implementation, descriptor: descriptor, outputs: outputs, sparse: sparse}
 	}
 
 	return &Registry{implementations: byType}, nil
@@ -171,7 +182,7 @@ func (r *Registry) Calculate(request Request) (Result, error) {
 	if err != nil {
 		return Result{}, err
 	}
-	if err := validateResult(result, entry.outputs); err != nil {
+	if err := validateResult(result, entry.outputs, entry.sparse); err != nil {
 		return Result{}, fmt.Errorf("%w: indicator %q: %v", ErrInvalidResult, request.Type, err)
 	}
 
@@ -204,8 +215,9 @@ func validateOutputs(outputs []string) error {
 }
 
 // validateResult checks the common contract, including that the result
-// contains exactly the declared outputs clients are told to expect.
-func validateResult(result Result, outputs []string) error {
+// contains exactly the declared outputs clients are told to expect. Only the
+// outputs in sparse may hold empty values.
+func validateResult(result Result, outputs []string, sparse map[string]bool) error {
 	if len(result.Outputs) != len(outputs) {
 		return fmt.Errorf("returned %d output series, declared %d", len(result.Outputs), len(outputs))
 	}
@@ -226,7 +238,7 @@ func validateResult(result Result, outputs []string) error {
 			return fmt.Errorf("output %q has nil values", name)
 		}
 		for index, value := range series.Values {
-			if !numeric.Finite(value) {
+			if !numeric.Finite(value) && !(sparse[name] && Empty(value)) {
 				return fmt.Errorf("output %q value %d is not finite", name, index)
 			}
 		}

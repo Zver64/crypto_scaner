@@ -15,7 +15,7 @@ import (
 // Every value a replay reads at a candle is the value of its indicator over
 // the window ending there, calculated from scratch through the indicator
 // implementation, whatever the replay reuses between candles: single and
-// multi-output, recursive and pivot-based indicators, Prev shifts, a gap,
+// multi-output, recursive, pivot-based and sparse indicators, Prev shifts, a gap,
 // a coarser interval, and windows both before and after the history fills
 // market.SyncDepth.
 func TestReplayedValuesMatchAFreshCalculationOfEachWindow(t *testing.T) {
@@ -41,7 +41,7 @@ func TestReplayedValuesMatchAFreshCalculationOfEachWindow(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.candles[market.IntervalDay] = map[int64][]market.Candle{1: daily}
 	compiled, err := Compile(`ema("1h", 100) > Prev(ema("1h", 100)) && macd_macdsignal("1h") > Prev(rsi("1h"), 50) && bbands_upperband("1h", 20) > close("1h") && `+
-		`pivot_low("1h") < Prev(close("1h"), pivot_low_bars("1h")) && divergence_bull("1h") >= 0 && Prev(close("1h"), 3) > ema("1d", 5)`, registry, EntryRule)
+		`pivot_low("1h") < Prev(pivot_high("1h"), 7) && ValueWhen(pivot_high("1h"), 1) > 0 && Prev(close("1h"), divergence_previous_low_bars("1h")) > 0 && divergence_bull("1h") >= 0 && Prev(close("1h"), 3) > ema("1d", 5)`, registry, EntryRule)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,6 +138,11 @@ func freshValue(t *testing.T, registry *indicator.Registry, target closedindicat
 
 func sameValue(left, right closedindicator.Value) bool {
 	return left.Target.Equal(right.Target) && left.OpenTime.Equal(right.OpenTime) && slices.EqualFunc(left.Outputs, right.Outputs, func(left, right closedindicator.Output) bool {
-		return left.Name == right.Name && left.Value == right.Value && slices.Equal(left.Earlier, right.Earlier)
+		return left.Name == right.Name && sameNumber(left.Value, right.Value) && slices.EqualFunc(left.Earlier, right.Earlier, sameNumber)
 	})
+}
+
+// sameNumber reports equal values; empty values are the same.
+func sameNumber(left, right float64) bool {
+	return left == right || indicator.Empty(left) && indicator.Empty(right)
 }

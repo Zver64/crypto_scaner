@@ -294,8 +294,10 @@ func (source ClosedIndicator) cell(row Row) (Cell, bool) {
 		}
 		for _, output := range value.Outputs {
 			if output.Name == source.Output {
-				result := output.Value
-				return Cell{Value: &result}, true
+				if result, ok := output.Shown(); ok {
+					return Cell{Value: &result}, true
+				}
+				return Cell{}, true
 			}
 		}
 	}

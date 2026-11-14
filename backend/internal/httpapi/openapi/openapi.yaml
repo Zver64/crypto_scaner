@@ -1778,7 +1778,7 @@ components:
     ChartIndicatorLine:
       type: object
       additionalProperties: false
-      required: [output, title, color]
+      required: [output, title, color, style, shift]
       properties:
         output:
           type: string
@@ -1788,6 +1788,14 @@ components:
         color:
           type: string
           description: Client theme color token, for example `yellow.5`.
+        style:
+          type: string
+          enum: [line, marker_above, marker_below]
+          description: How the series is drawn. A marker is a point above or below a candle; only `overlay` indicators have marker lines.
+        shift:
+          type: integer
+          minimum: 0
+          description: Number of candles a marker is drawn before the candle holding its value. The points of the series are not shifted.
     ChartIndicatorScale:
       type: object
       additionalProperties: false

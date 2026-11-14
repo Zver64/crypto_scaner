@@ -234,6 +234,27 @@ func (e ChartIndicatorDefinitionPlacement) Valid() bool {
 	}
 }
 
+// Defines values for ChartIndicatorLineStyle.
+const (
+	Line        ChartIndicatorLineStyle = "line"
+	MarkerAbove ChartIndicatorLineStyle = "marker_above"
+	MarkerBelow ChartIndicatorLineStyle = "marker_below"
+)
+
+// Valid indicates whether the value is a known member of the ChartIndicatorLineStyle enum.
+func (e ChartIndicatorLineStyle) Valid() bool {
+	switch e {
+	case Line:
+		return true
+	case MarkerAbove:
+		return true
+	case MarkerBelow:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for Direction.
 const (
 	Long     Direction = "long"
@@ -962,8 +983,17 @@ type ChartIndicatorLine struct {
 
 	// Output Name of the calculated series drawn by this line.
 	Output string `json:"output"`
-	Title  string `json:"title"`
+
+	// Shift Number of candles a marker is drawn before the candle holding its value. The points of the series are not shifted.
+	Shift int `json:"shift"`
+
+	// Style How the series is drawn. A marker is a point above or below a candle; only `overlay` indicators have marker lines.
+	Style ChartIndicatorLineStyle `json:"style"`
+	Title string                  `json:"title"`
 }
+
+// ChartIndicatorLineStyle How the series is drawn. A marker is a point above or below a candle; only `overlay` indicators have marker lines.
+type ChartIndicatorLineStyle string
 
 // ChartIndicatorResult defines model for ChartIndicatorResult.
 type ChartIndicatorResult struct {

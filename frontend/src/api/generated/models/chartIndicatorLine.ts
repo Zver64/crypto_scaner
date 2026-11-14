@@ -21,6 +21,7 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { ChartIndicatorLineStyle } from './chartIndicatorLineStyle.ts';
 
 export interface ChartIndicatorLine {
   /** Name of the calculated series drawn by this line. */
@@ -28,4 +29,11 @@ export interface ChartIndicatorLine {
   title: string;
   /** Client theme color token, for example `yellow.5`. */
   color: string;
+  /** How the series is drawn. A marker is a point above or below a candle; only `overlay` indicators have marker lines. */
+  style: ChartIndicatorLineStyle;
+  /**
+     * Number of candles a marker is drawn before the candle holding its value. The points of the series are not shifted.
+     * @minimum 0
+     */
+  shift: number;
 }

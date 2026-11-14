@@ -42,7 +42,11 @@ import type {
 import { useChartViewport } from "@/features/candle-chart/use-chart-viewport";
 import { usePriceComparison } from "@/features/candle-chart/use-price-comparison";
 import { usePriceHistory } from "@/features/candle-chart/use-price-history";
-import { createIndicatorLegend } from "@/features/candle-chart/utils";
+import { useThemeColor } from "@/features/candle-chart/use-theme-color";
+import {
+	createCandleMarkers,
+	createIndicatorLegend,
+} from "@/features/candle-chart/utils";
 import { VolumeIndicatorSeries } from "@/features/candle-chart/volume-indicator-series";
 import { VolumeSeries } from "@/features/candle-chart/volume-series";
 
@@ -108,6 +112,12 @@ export function PriceHistoryChart({
 	const line = (key: string) => series.lines[key] ?? emptyChartLine;
 	const overlays = indicators.filter(
 		(indicator) => indicator.placement === "overlay",
+	);
+	const candleMarkers = createCandleMarkers(
+		markers,
+		indicators,
+		series.lines,
+		useThemeColor(),
 	);
 	const volumeIndicators = indicators.filter(
 		(indicator) => indicator.placement === "volume",
@@ -214,21 +224,24 @@ export function PriceHistoryChart({
 						<CandleSeries
 							currentPrice={candles.at(-1)?.close}
 							data={series.candles}
-							markers={markers}
+							markers={candleMarkers}
 							onActiveCandleChange={setActiveCandle}
 							priceLevels={priceLevels}
 							priceResolution={series.priceResolution}
 							visibleRange={visibleRange}
 						/>
+						{/* Lines drawn as markers are among the markers of the candles. */}
 						{overlays.flatMap(({ id, lines }) =>
-							lines.map((indicatorLine) => (
-								<OverlayIndicatorSeries
-									data={line(`${id}:${indicatorLine.output}`).data}
-									key={`${id}:${indicatorLine.output}`}
-									line={indicatorLine}
-									priceResolution={series.priceResolution}
-								/>
-							)),
+							lines
+								.filter(({ style }) => style === "line")
+								.map((indicatorLine) => (
+									<OverlayIndicatorSeries
+										data={line(`${id}:${indicatorLine.output}`).data}
+										key={`${id}:${indicatorLine.output}`}
+										line={indicatorLine}
+										priceResolution={series.priceResolution}
+									/>
+								)),
 						)}
 						{comparison && comparing ? (
 							<ComparisonSeries comparison={comparison} interval={interval} />

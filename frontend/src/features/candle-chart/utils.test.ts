@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+	createCandleMarkers,
 	createCandlestickData,
+	createIndicatorLegend,
 	createIndicatorData,
 	createMarkerDataSelector,
 	fitScaleToLevels,
@@ -257,6 +259,88 @@ describe("marker data selector", () => {
 		expect(daily(days).map(({ time, text }) => ({ time, text }))).toEqual([
 			{ time: days[0].time, text: "2" },
 		]);
+	});
+});
+
+describe("candle markers", () => {
+	const slots = createCandlestickData(
+		[0, 1, 2, 3].map((slot) => candle(slot, 10)),
+		"1h",
+	);
+	const times = slots.map(({ time }) => time);
+	const lines = {
+		"pivot:high": {
+			data: createIndicatorData(slots, [
+				{ time: candle(1, 0).open_time, value: 11 },
+				{ time: candle(3, 0).open_time, value: 12 },
+			]),
+			resolution: { base: 100, fractionDigits: 2, minMove: 0.01 },
+		},
+	};
+	const pivot = (shift: number) => [
+		{
+			id: "pivot",
+			placement: "overlay" as const,
+			lines: [
+				{
+					color: "yellow.5",
+					output: "high",
+					shift,
+					style: "marker_above" as const,
+					title: "PIVOT high",
+				},
+			],
+		},
+	];
+	const color = (token: string) => `resolved ${token}`;
+
+	it("draws marker lines shifted back and drops those before the first slot", () => {
+		expect(createCandleMarkers(undefined, pivot(2), lines, color)).toEqual([
+			{
+				color: "resolved yellow.5",
+				position: "aboveBar",
+				shape: "circle",
+				time: times[1],
+			},
+		]);
+	});
+
+	it("shows a marker line in the legend on the candle its marker is drawn on", () => {
+		expect(
+			times.map(
+				(_, slot) => createIndicatorLegend(pivot(2), lines, slot)[0]?.value,
+			),
+		).toEqual([null, "12", null, null]);
+	});
+
+	it("merges them with the markers of the source in time order", () => {
+		const trade = {
+			color: "green",
+			position: "belowBar" as const,
+			shape: "arrowUp" as const,
+			time: times[2],
+		};
+		expect(
+			createCandleMarkers([trade], pivot(0), lines, color)?.map(
+				({ shape, time }) => [shape, time],
+			),
+		).toEqual([
+			["circle", times[1]],
+			["arrowUp", times[2]],
+			["circle", times[3]],
+		]);
+	});
+
+	it("keeps the markers of the source without marker lines", () => {
+		const markers = [
+			{
+				color: "green",
+				position: "belowBar" as const,
+				shape: "arrowUp" as const,
+				time: times[0],
+			},
+		];
+		expect(createCandleMarkers(markers, [], lines, color)).toBe(markers);
 	});
 });
 

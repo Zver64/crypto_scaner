@@ -2,12 +2,14 @@ package markettable_test
 
 import (
 	"context"
+	"math"
 	"slices"
 	"testing"
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/favorites"
+	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/markettable"
 )
@@ -167,5 +169,30 @@ func TestMetricRatioIsUnavailableWithoutAPositiveDenominator(t *testing.T) {
 		if value := row.Cells["ratio"].Value; value != nil {
 			t.Fatalf("%s ratio = %v, want unavailable", row.Symbol, *value)
 		}
+	}
+}
+
+type configuredColumns []markettable.Column
+
+func (columns configuredColumns) TableColumns() []markettable.Column { return columns }
+
+func TestClosedIndicatorCellIsUnavailableWhenTheValueIsEmpty(t *testing.T) {
+	target := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: "pivot"}}
+	column := markettable.Column{ID: "high", Title: "High", Kind: markettable.KindNumber, Source: markettable.ClosedIndicator{Target: target, Output: "high"}}
+	catalog, err := markettable.NewCatalog(configuredColumns{column}, markettable.Sort{Column: "alert_count", Direction: markettable.Descending},
+		markettable.Column{ID: "alert_count", Title: "Alerts", Kind: markettable.KindCount, Sortable: true, Source: markettable.AlertCount{}},
+		markettable.Column{Source: markettable.ConfiguredIndicators{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := func(symbol string, value float64) markettable.Row {
+		return markettable.Row{Symbol: symbol, ClosedIndicators: []closedindicator.Value{{Target: target, Outputs: []closedindicator.Output{{Name: "high", Value: value}}}}}
+	}
+	table := catalog.Build([]markettable.Row{row("A", 5), row("B", math.NaN())}, market.PriceWindows{})
+	if value := table.Rows[0].Cells["high"].Value; value == nil || *value != 5 {
+		t.Fatalf("pivot = %v, want 5", value)
+	}
+	if value := table.Rows[1].Cells["high"].Value; value != nil {
+		t.Fatalf("empty = %v, want unavailable", *value)
 	}
 }

@@ -90,8 +90,9 @@ type Entry struct {
 	// Counts are the outputs that count candles.
 	Counts []string
 	// lines are the outputs charts draw, in output order: those not
-	// indicator.OutputHidden.
-	lines []string
+	// indicator.OutputHidden, with how they are drawn. Titles and colors are
+	// added when a chart draws them.
+	lines []chart.IndicatorLine
 	// lineTitle names the chart lines, such as "RSI 14".
 	lineTitle string
 	// pane is the key of the chart pane shared with other indicators, empty
@@ -399,7 +400,11 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 			entry.Counts = append(entry.Counts, output.Name)
 		}
 		if output.Style != indicator.OutputHidden {
-			entry.lines = append(entry.lines, output.Name)
+			line, err := drawnLine(output, selection.Parameters)
+			if err != nil {
+				return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+			}
+			entry.lines = append(entry.lines, line)
 		}
 	}
 	// An overlay fits the price scale only over prices and the volume scale
@@ -451,6 +456,26 @@ func sortedPeriods(periods []Period) ([]Period, error) {
 // as "d-rsi-21".
 func (entry Entry) ColumnTitle(interval market.CandleInterval) string {
 	return IntervalPrefix(interval) + "-" + entry.Title
+}
+
+// drawnLine is how charts draw output: as markers when the indicator says
+// so, shifted by the parameter it names, and as a line otherwise.
+func drawnLine(output indicator.OutputDescriptor, parameters indicator.Parameters) (chart.IndicatorLine, error) {
+	line := chart.IndicatorLine{Output: output.Name, Style: chart.LineStyleLine}
+	switch output.Style {
+	case indicator.OutputMarkerAbove:
+		line.Style = chart.LineStyleMarkerAbove
+	case indicator.OutputMarkerBelow:
+		line.Style = chart.LineStyleMarkerBelow
+	}
+	if output.Shift != "" {
+		shift, err := indicator.ParseNumber(parameters[output.Shift])
+		if err != nil {
+			return chart.IndicatorLine{}, fmt.Errorf("%s %w", output.Shift, err)
+		}
+		line.Shift = int(shift)
+	}
+	return line, nil
 }
 
 func histogram(output indicator.OutputDescriptor) bool {
@@ -508,12 +533,13 @@ func (entry Entry) ChartIndicator(id string, firstLine int) chart.CatalogIndicat
 		Placement: entry.Placement,
 		Lines:     make([]chart.IndicatorLine, len(entry.lines)),
 	}
-	for i, output := range entry.lines {
-		title := entry.lineTitle
+	for i, line := range entry.lines {
+		line.Title = entry.lineTitle
 		if len(entry.Outputs) > 1 {
-			title += " " + output
+			line.Title += " " + line.Output
 		}
-		item.Lines[i] = chart.IndicatorLine{Output: output, Title: title, Color: entry.palette[(firstLine+i)%len(entry.palette)]}
+		line.Color = entry.palette[(firstLine+i)%len(entry.palette)]
+		item.Lines[i] = line
 	}
 	if entry.Placement == chart.PlacementPane {
 		scale := &chart.IndicatorScale{Min: entry.Scale.Min, Max: entry.Scale.Max}

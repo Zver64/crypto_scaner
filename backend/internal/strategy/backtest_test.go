@@ -329,15 +329,15 @@ func TestBacktestExitsOnPositionVariables(t *testing.T) {
 	}
 }
 
-// A calculated prev shift outside 1 to 500 fails the backtest at the first
+// A calculated prev shift outside 0 to 500 fails the backtest at the first
 // candle whose rule it decides: bars_held is 1 at the fill of hour 2.
 func TestBacktestFailsOnAnInvalidPrevShift(t *testing.T) {
 	service := newBacktestService(t, newBacktestStore(market.IntervalHour, hourlyCloses(1, 9, 9, 9, 9)), Strategy{
-		ID: testID(1), Name: "Hold", Expression: `close("1h") > 5`, ExitExpression: `Prev(close("1h"), bars_held - 1) > 100`,
+		ID: testID(1), Name: "Hold", Expression: `close("1h") > 5`, ExitExpression: `Prev(close("1h"), bars_held - 2) > 100`,
 	})
 	_, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
 	var shift *ShiftError
-	want := "invalid strategy: at the candle opening 2026-03-02 02:00 UTC, the exit rule: the Prev shift is 0, not a whole number from 1 to 500"
+	want := "invalid strategy: at the candle opening 2026-03-02 02:00 UTC, the exit rule: the Prev shift is -1, not a whole number from 0 to 500"
 	if !errors.Is(err, ErrInvalidArgument) || !errors.As(err, &shift) || err.Error() != want {
 		t.Fatalf("Backtest() error = %v, want %q", err, want)
 	}

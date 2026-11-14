@@ -124,6 +124,12 @@ export const markMarkerOptions = {
 	size: 2,
 } satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
+// Where the marker styles of indicator lines put their points.
+export const indicatorMarkerPositions = {
+	marker_above: "aboveBar",
+	marker_below: "belowBar",
+} satisfies Record<string, SeriesMarkerBar<UTCTimestamp>["position"]>;
+
 // A custom id puts the volume bars on their own hidden overlay price scale,
 // which indicators of volumes share.
 const volumePriceScaleId = "volume";

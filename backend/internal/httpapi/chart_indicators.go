@@ -19,7 +19,7 @@ func (api *api) ListChartIndicators(_ context.Context, request ListChartIndicato
 func chartIndicatorDTO(item chart.CatalogIndicator) ChartIndicatorDefinition {
 	lines := make([]ChartIndicatorLine, len(item.Lines))
 	for i, line := range item.Lines {
-		lines[i] = ChartIndicatorLine{Output: line.Output, Title: line.Title, Color: line.Color}
+		lines[i] = ChartIndicatorLine{Output: line.Output, Title: line.Title, Color: line.Color, Style: ChartIndicatorLineStyle(line.Style), Shift: line.Shift}
 	}
 	definition := ChartIndicatorDefinition{
 		Id:         item.ID,

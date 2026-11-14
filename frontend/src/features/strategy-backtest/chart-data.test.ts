@@ -27,7 +27,15 @@ function chart(interval: "1h" | "1d", length: number): BacktestChart {
 				placement: "pane",
 				pane: "rsi",
 				scale: { levels: [] },
-				lines: [{ output: "rsi", title: "RSI", color: "blue.5" }],
+				lines: [
+					{
+						output: "rsi",
+						title: "RSI",
+						color: "blue.5",
+						style: "line",
+						shift: 0,
+					},
+				],
 			},
 		],
 		page: {

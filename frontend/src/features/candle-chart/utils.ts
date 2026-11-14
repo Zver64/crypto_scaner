@@ -13,6 +13,7 @@ import type {
 import {
 	entryMarkerOptions,
 	exitMarkerOptions,
+	indicatorMarkerPositions,
 	markMarkerOptions,
 	volumeColors,
 } from "@/features/candle-chart/config";
@@ -25,6 +26,7 @@ import type {
 	ChartCandle,
 	ChartCandleSlot,
 	ChartIndicatorLayout,
+	ChartIndicatorLine,
 	ChartIndicatorOptions,
 	ChartIndicatorPane,
 	ChartIndicatorPoints,
@@ -262,6 +264,57 @@ export function createMarkerDataSelector(
 	};
 }
 
+// Everything marked on the candles: the markers of the source, such as the
+// trades of a backtest, and the overlay lines drawn as markers, a circle for
+// each value, moved the line's shift of candle slots earlier. A marker moved
+// before the first slot is not drawn. One series stacks only the markers of
+// one ascending list, so they are merged; without marker lines the markers
+// of the source are returned as they are.
+export function createCandleMarkers(
+	markers: readonly ChartMarker[] | undefined,
+	indicators: readonly ChartIndicatorOptions[],
+	lines: Readonly<Record<string, ChartLineData>>,
+	themeColor: (color: string) => string,
+): readonly ChartMarker[] | undefined {
+	const indicatorMarkers = indicators.flatMap(
+		({ id, lines: indicatorLines, placement }) =>
+			placement === "overlay"
+				? indicatorLines.flatMap(({ color, output, shift, style }) => {
+						if (style === "line") return [];
+						const data = lines[`${id}:${output}`]?.data ?? [];
+						return data.flatMap(({ time }, index): ChartMarker[] =>
+							drawnValue(data, { shift, style }, index) === undefined
+								? []
+								: [
+										{
+											color: themeColor(color),
+											position: indicatorMarkerPositions[style],
+											shape: "circle",
+											time,
+										},
+									],
+						);
+					})
+				: [],
+	);
+	if (indicatorMarkers.length === 0) return markers;
+	return [...(markers ?? []), ...indicatorMarkers].sort(
+		(first, second) => first.time - second.time,
+	);
+}
+
+// The value of a line drawn at a candle slot: the value of that slot, or for
+// a line drawn as markers the value held the line's shift of slots later,
+// whose marker is drawn here.
+function drawnValue(
+	data: readonly ChartIndicatorSlot[],
+	{ shift, style }: Pick<ChartIndicatorLine, "shift" | "style">,
+	slotIndex: number,
+): number | undefined {
+	const slot = data[style === "line" ? slotIndex : slotIndex + shift];
+	return slot && "value" in slot ? slot.value : undefined;
+}
+
 function countByCandle(
 	times: readonly string[],
 	interval: ChartInterval,
@@ -454,22 +507,24 @@ export function nextCandleOpen(value: string, interval: ChartInterval): string {
 }
 
 // Titles and values of every indicator line at one candle slot. Indicator data
-// is aligned with the candle slots, so the slot index selects the value.
+// is aligned with the candle slots, so the slot index selects the value; a
+// line drawn as markers shows the value of the marker drawn on the slot.
 export function createIndicatorLegend(
 	indicators: readonly ChartIndicatorOptions[],
 	lines: Readonly<Record<string, ChartLineData>>,
 	slotIndex: number,
 ): ChartLegendItem[] {
 	return indicators.flatMap((indicator) =>
-		indicator.lines.map(({ color, output, title }) => {
+		indicator.lines.map((line) => {
+			const { color, output, title } = line;
 			const key = `${indicator.id}:${output}`;
-			const slot = lines[key]?.data[slotIndex];
+			const drawn = drawnValue(lines[key]?.data ?? [], line, slotIndex);
 			const value =
-				slot && "value" in slot
-					? indicator.placement === "overlay"
-						? formatPrice(slot.value)
-						: formatNumber(slot.value)
-					: null;
+				drawn === undefined
+					? null
+					: indicator.placement === "overlay"
+						? formatPrice(drawn)
+						: formatNumber(drawn);
 			return { color, key, placement: indicator.placement, title, value };
 		}),
 	);

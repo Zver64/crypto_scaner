@@ -93,7 +93,9 @@ func (current snapshot) indicatorValues(entry Entry, instrumentID int64, items [
 			continue
 		}
 		for _, output := range value.Outputs {
-			result[item.column(output.Name)] = output.Value
+			if shown, ok := output.Shown(); ok {
+				result[item.column(output.Name)] = shown
+			}
 		}
 	}
 	return result
@@ -171,9 +173,13 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 					outputs = value.Outputs
 				}
 				for _, output := range outputs {
+					shown, ok := output.Shown()
+					if !ok {
+						continue
+					}
 					for j := range calculation.Series {
 						if calculation.Series[j].Name == output.Name {
-							calculation.Series[j].Points = append(calculation.Series[j].Points, indicator.Point{Time: candle.OpenTime.UTC(), Value: output.Value})
+							calculation.Series[j].Points = append(calculation.Series[j].Points, indicator.Point{Time: candle.OpenTime.UTC(), Value: shown})
 						}
 					}
 				}

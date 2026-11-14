@@ -22,6 +22,18 @@ const (
 	PlacementVolume Placement = "volume"
 )
 
+// LineStyle tells the client how to draw an indicator line.
+type LineStyle string
+
+const (
+	// LineStyleLine joins the values with a line.
+	LineStyleLine LineStyle = "line"
+	// LineStyleMarkerAbove and LineStyleMarkerBelow draw each value as a point
+	// above or below a candle. Only overlays have them.
+	LineStyleMarkerAbove LineStyle = "marker_above"
+	LineStyleMarkerBelow LineStyle = "marker_below"
+)
+
 // IndicatorLine maps one calculated output series to a drawn line.
 type IndicatorLine struct {
 	Output string
@@ -29,6 +41,10 @@ type IndicatorLine struct {
 	// Color is a client theme color token such as "yellow.5", so the client
 	// keeps control of the actual palette.
 	Color string
+	Style LineStyle
+	// Shift is the number of candles a marker is drawn before the candle
+	// holding its value. The values themselves are not shifted.
+	Shift int
 }
 
 // IndicatorLevel is a labeled horizontal reference line in a pane.
@@ -97,6 +113,18 @@ func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicato
 		}
 		if strings.TrimSpace(line.Title) == "" || strings.TrimSpace(line.Color) == "" {
 			return fmt.Errorf("line %q needs a title and color", line.Output)
+		}
+		switch line.Style {
+		case LineStyleLine:
+		case LineStyleMarkerAbove, LineStyleMarkerBelow:
+			if item.Placement != PlacementOverlay {
+				return fmt.Errorf("line %q is drawn as markers, which only indicators over the candles have", line.Output)
+			}
+		default:
+			return fmt.Errorf("line %q has unknown style %q", line.Output, line.Style)
+		}
+		if line.Shift < 0 {
+			return fmt.Errorf("line %q has a negative shift", line.Output)
 		}
 	}
 	switch item.Placement {

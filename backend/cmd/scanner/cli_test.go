@@ -361,7 +361,7 @@ func TestStrategiesCreateWithAnInvalidRuleSendsNothing(t *testing.T) {
 
 func TestCommandsRenderCompactText(t *testing.T) {
 	_, server := newFakeAPI(t, map[string]string{
-		"GET /api/v1/admin/strategy-catalog":      `{"indicators":[{"type":"rsi","parameters":["21"],"title":"rsi-21","outputs":["rsi"],"count_outputs":[]},{"type":"bbands","parameters":["20"],"title":"bbands-20","outputs":["upperband","middleband","lowerband"],"count_outputs":[]}],"candle_fields":["close","volume"],"intervals":["1h","1d","1w","1M"],"position_variables":[{"name":"pnl","count":false}]}`,
+		"GET /api/v1/admin/strategy-catalog":      `{"indicators":[{"type":"rsi","parameters":["21"],"title":"rsi-21","outputs":["rsi"]},{"type":"bbands","parameters":["20"],"title":"bbands-20","outputs":["upperband","middleband","lowerband"]}],"candle_fields":["close","volume"],"intervals":["1h","1d","1w","1M"],"position_variables":[{"name":"pnl","count":false}]}`,
 		"POST /api/v1/admin/strategy-validations": `{"errors":[],"expression":"","indicators":[]}`,
 		"GET /api/v1/favorites":                   `{"items":[{"symbol":"BTCUSDT","base_asset":"BTC","quote_asset":"USDT","active":true,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"},{"symbol":"OLDUSDT","base_asset":"OLD","quote_asset":"USDT","active":false,"alert_count":0,"created_at":"2024-01-01T00:00:00Z"}]}`,
 		"GET /api/v1/admin/strategies":            `{"items":[{"id":"00000000-0000-7000-8000-000000000003","name":"Dip buy","direction":"long","expression":"d_rsi < 30 &&\n  h_close > 1","exit_expression":"pnl > 5","take_profit_expression":"h_close * 1.1","stop_loss_expression":"","coins":["BTCUSDT","ETHUSDT","SOLUSDT","XRPUSDT"],"coin_source":"selected","message":"Dip!","enabled":true,"valid":true},{"id":"00000000-0000-7000-8000-000000000004","name":"Old","direction":"short","expression":"x","coin_source":"selected","message":"","enabled":false,"valid":false,"problem":"undeclared"}]}`,
@@ -376,7 +376,7 @@ func TestCommandsRenderCompactText(t *testing.T) {
 		{args: []string{"vars", "--filter", "upper"}, want: "bbands_upperband(PERIOD, 20)\n"},
 		{args: []string{"vars", "--filter", "clo"}, want: "close(PERIOD)\n"},
 		{args: []string{"vars", "--filter", "pnl"}, want: "pnl (exit rule only)\n"},
-		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"candle_fields":[],"indicators":[{"count_outputs":[],"outputs":["rsi"],"parameters":["21"],"title":"rsi-21","type":"rsi"}],"intervals":["1h","1d","1w","1M"],"position_variables":[]}` + "\n"},
+		{args: []string{"vars", "--filter", "RSI", "--json"}, want: `{"candle_fields":[],"indicators":[{"outputs":["rsi"],"parameters":["21"],"title":"rsi-21","type":"rsi"}],"intervals":["1h","1d","1w","1M"],"position_variables":[]}` + "\n"},
 		{args: []string{"validate", `atr("1h", 100) > 1`}, want: "ok\n"},
 		{args: []string{"favorites"}, want: "BTCUSDT OLDUSDT(inactive)\n"},
 		{args: []string{"strategies"}, want: `┌──────────────────────────────────────┬──────────────┬─────────────────────┬───────────┬───────────────────────────┬──────────────────┬─────────────────────┬──────────────────────────────┐

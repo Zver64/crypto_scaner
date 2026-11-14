@@ -53,6 +53,60 @@ func TestPreviewPlacesIndicatorsByTheirSourceUnits(t *testing.T) {
 	}
 }
 
+// An indicator of another indicator is drawn where that source is; markers,
+// which are drawn on candles, are left out elsewhere.
+func TestPreviewPlacesIndicatorsOfIndicatorsWithTheirSource(t *testing.T) {
+	registry, err := indicator.NewRegistry(append(talib.New(), pivot.New())...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := scannerindicator.New(unusedStore{}, registry, []string{"yellow.5"}, slog.New(slog.DiscardHandler), func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := func(selection indicator.Selection) chart.CatalogIndicator {
+		t.Helper()
+		entry, err := service.Preview(selection)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return entry.ChartIndicator("id", "source", 0)
+	}
+	of := func(indicatorType indicator.Type, source indicator.Type) indicator.Selection {
+		nested := indicator.Source{Selection: indicator.Selection{Type: source}, Output: string(source)}
+		return indicator.Selection{Type: indicatorType, Parameters: indicator.Parameters{"source": nested.Value()}}
+	}
+	rsi := preview(indicator.Selection{Type: talib.RSIType})
+	if item := preview(of("sma", talib.RSIType)); item.Placement != chart.PlacementPane || item.Pane != rsi.Pane || item.Lines[0].Title != "SMA 30 RSI 14" {
+		t.Errorf("sma of rsi = %+v, want a line titled SMA 30 RSI 14 in the pane %q", item, rsi.Pane)
+	}
+	if item := preview(of("sma", talib.EMAType)); item.Placement != chart.PlacementOverlay {
+		t.Errorf("sma of ema is placed %q, want over the candles", item.Placement)
+	}
+	// An oscillator is not in the units of its source.
+	if item := preview(of(talib.RSIType, "sma")); item.Placement != chart.PlacementPane || item.Pane != rsi.Pane {
+		t.Errorf("rsi of sma = %+v, want the pane %q", item, rsi.Pane)
+	}
+	// Only previews take an indicator of another indicator.
+	if _, err := service.Create(context.Background(), scannerindicator.Indicator{Selection: of("sma", talib.RSIType)}); !errors.Is(err, scannerindicator.ErrInvalidArgument) {
+		t.Errorf("Create() of sma of rsi error = %v, want ErrInvalidArgument", err)
+	}
+	// Markers sit on the line of the source, wherever it is drawn.
+	anchor := chart.LineAnchor{IndicatorID: "source", Output: "rsi"}
+	if item := preview(of(pivot.Type, talib.RSIType)); item.Placement != chart.PlacementPane || item.Pane != rsi.Pane || len(item.Lines) != 2 ||
+		item.Lines[0].Style != chart.LineStyleMarkerAbove || item.Lines[0].Anchor != anchor || item.Lines[1].Anchor != anchor {
+		t.Errorf("pivot of rsi = %+v, want two marker lines on the rsi line in the pane %q", item, rsi.Pane)
+	}
+	if item := preview(of(pivot.Type, talib.EMAType)); item.Placement != chart.PlacementOverlay || len(item.Lines) != 2 || item.Lines[0].Anchor.Output != "ema" {
+		t.Errorf("pivot of ema = %+v, want two marker lines on the ema line over the candles", item)
+	}
+	// A source with a histogram has a pane of its own, named by its id.
+	histogram := indicator.Source{Selection: indicator.Selection{Type: "macd"}, Output: "macdhist"}
+	if item := preview(indicator.Selection{Type: talib.EMAType, Parameters: indicator.Parameters{"source": histogram.Value()}}); item.Placement != chart.PlacementPane || item.Pane != "source" {
+		t.Errorf("ema of macdhist = %+v, want the pane of its source", item)
+	}
+}
+
 // memoryStore keeps created indicators in memory.
 type memoryStore struct {
 	scannerindicator.Store
@@ -132,7 +186,7 @@ func TestPivotsAreDrawnAsShiftedMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := entry.ChartIndicator("pivot", 0)
+	item := entry.ChartIndicator("pivot", "", 0)
 	want := []chart.IndicatorLine{
 		{Output: "high", Title: "PIVOT 5 3 high", Color: "yellow.5", Style: chart.LineStyleMarkerAbove, Shift: 3},
 		{Output: "low", Title: "PIVOT 5 3 low", Color: "yellow.5", Style: chart.LineStyleMarkerBelow, Shift: 3},

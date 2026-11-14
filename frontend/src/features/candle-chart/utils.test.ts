@@ -1,11 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+	createAnchoredMarkers,
 	createCandleMarkers,
 	createCandlestickData,
 	createIndicatorLegend,
 	createIndicatorData,
+	createIndicatorPanes,
 	createMarkerDataSelector,
+	createMarkerSegments,
 	fitScaleToLevels,
 	formatCandleRange,
 	formatChartTime,
@@ -341,6 +344,194 @@ describe("candle markers", () => {
 			},
 		];
 		expect(createCandleMarkers(markers, [], lines, color)).toBe(markers);
+	});
+
+	it("puts the markers of anchored lines on the line of their anchor, where it has values", () => {
+		const anchored = [
+			{
+				...pivot(0)[0],
+				lines: pivot(0)[0].lines.map((line) => ({
+					...line,
+					anchor: { indicator_id: "rsi", output: "rsi" },
+				})),
+			},
+		];
+		const withAnchor = {
+			...lines,
+			// The first pivot lies before the first value of its anchor.
+			"rsi:rsi": {
+				...lines["pivot:high"],
+				data: createIndicatorData(slots, [
+					{ time: candle(2, 0).open_time, value: 50 },
+					{ time: candle(3, 0).open_time, value: 60 },
+				]),
+			},
+		};
+		expect(createCandleMarkers(undefined, anchored, withAnchor, color)).toBe(
+			undefined,
+		);
+		expect(createAnchoredMarkers(anchored, withAnchor, color)).toEqual({
+			"rsi:rsi": [
+				{
+					color: "resolved yellow.5",
+					position: "aboveBar",
+					shape: "circle",
+					time: times[3],
+				},
+			],
+		});
+	});
+});
+
+describe("marker segments", () => {
+	const candles = [0, 1, 2, 3, 4, 5, 6].map((slot) => candle(slot, 10 + slot));
+	const slots = createCandlestickData(candles, "1h");
+	const times = slots.map(({ time }) => time);
+	const open = (slot: number) => candles[slot].open_time;
+	const resolution = { base: 100, fractionDigits: 2, minMove: 0.01 };
+	// Values on slots 1, 2, 4 and 6, whose markers are drawn one slot earlier.
+	const series = {
+		candles: slots,
+		lines: {
+			"pivot:low": {
+				data: createIndicatorData(slots, [
+					{ time: open(1), value: 20 },
+					{ time: open(2), value: 30 },
+					{ time: open(4), value: 40 },
+					{ time: open(6), value: 35 },
+				]),
+				resolution,
+			},
+		},
+	};
+	const layout = (
+		style: "marker_above" | "marker_below",
+		anchor?: { indicator_id: string; output: string },
+	) => {
+		const indicators = [
+			{
+				id: "macd",
+				placement: "pane" as const,
+				pane: "macd",
+				lines: [],
+				scale: { levels: [] },
+			},
+			{
+				id: "rsi",
+				placement: "pane" as const,
+				pane: "rsi",
+				lines: [],
+				scale: { levels: [] },
+			},
+			{
+				id: "pivot",
+				placement: "overlay" as const,
+				lines: [
+					{
+						anchor,
+						color: "yellow.5",
+						output: "low",
+						shift: 1,
+						style,
+						title: "PIVOT low",
+					},
+				],
+			},
+		];
+		return { indicators, panes: createIndicatorPanes(indicators) };
+	};
+
+	it("connects the value under a connected candle with the previous one where their markers are drawn", () => {
+		expect(
+			createMarkerSegments([open(6)], layout("marker_below"), series, "1h"),
+		).toEqual([
+			{
+				color: "yellow.5",
+				data: [
+					{ time: times[3], value: 40 },
+					{ time: times[5], value: 35 },
+				],
+				key: "pivot:low",
+				pane: 0,
+				scale: "price",
+			},
+		]);
+	});
+
+	it("draws the segments of an anchored line in the pane of its anchor and between the same candles", () => {
+		const anchor = { indicator_id: "rsi", output: "rsi" };
+		expect(
+			createMarkerSegments(
+				[open(4), open(6)],
+				layout("marker_below", anchor),
+				series,
+				"1h",
+			),
+		).toEqual([
+			{
+				color: "yellow.5",
+				data: [
+					{ time: times[1], value: 30 },
+					{ time: times[3], value: 40 },
+					{ time: times[5], value: 35 },
+				],
+				key: "pivot:low",
+				pane: 2,
+				scale: "price",
+			},
+			{
+				color: "yellow.5",
+				data: [
+					{ time: times[1], value: 10 },
+					{ time: times[3], value: 12 },
+					{ time: times[5], value: 14 },
+				],
+				key: "pivot:low:candles",
+				pane: 0,
+				scale: "price",
+			},
+		]);
+		expect(
+			createMarkerSegments(
+				[open(6)],
+				layout("marker_above", anchor),
+				series,
+				"1h",
+			)[1]?.data,
+		).toEqual([
+			{ time: times[3], value: 14 },
+			{ time: times[5], value: 16 },
+		]);
+	});
+
+	it("does not join separate segments", () => {
+		expect(
+			createMarkerSegments(
+				[open(2), open(6)],
+				layout("marker_below"),
+				series,
+				"1h",
+			)[0]?.data,
+		).toEqual([
+			{ time: times[0], value: 20 },
+			{ color: "transparent", time: times[1], value: 30 },
+			{ time: times[3], value: 40 },
+			{ time: times[5], value: 35 },
+		]);
+	});
+
+	it("draws nothing for the first value of a line, a candle without a value, or no connected candles", () => {
+		expect(
+			createMarkerSegments(
+				[open(1), open(5)],
+				layout("marker_below"),
+				series,
+				"1h",
+			),
+		).toEqual([]);
+		expect(
+			createMarkerSegments(undefined, layout("marker_below"), series, "1h"),
+		).toEqual([]);
 	});
 });
 

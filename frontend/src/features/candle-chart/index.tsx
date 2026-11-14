@@ -32,6 +32,7 @@ import {
 import { emptyChartLine } from "@/features/candle-chart/constants";
 import { IndicatorLegend } from "@/features/candle-chart/indicator-legend";
 import { LiveStatus } from "@/features/candle-chart/live-status";
+import { MarkerSegmentSeries } from "@/features/candle-chart/marker-segment-series";
 import { OverlayIndicatorSeries } from "@/features/candle-chart/overlay-indicator-series";
 import { PaneIndicatorSeries } from "@/features/candle-chart/pane-indicator-series";
 import type {
@@ -44,8 +45,10 @@ import { usePriceComparison } from "@/features/candle-chart/use-price-comparison
 import { usePriceHistory } from "@/features/candle-chart/use-price-history";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
 import {
+	createAnchoredMarkers,
 	createCandleMarkers,
 	createIndicatorLegend,
+	createMarkerSegments,
 } from "@/features/candle-chart/utils";
 import { VolumeIndicatorSeries } from "@/features/candle-chart/volume-indicator-series";
 import { VolumeSeries } from "@/features/candle-chart/volume-series";
@@ -100,6 +103,7 @@ export function PriceHistoryChart({
 	const [screenHeight] = useState(() => window.innerHeight);
 	const {
 		candles,
+		connectedCandles,
 		connection,
 		error,
 		freshness,
@@ -113,11 +117,23 @@ export function PriceHistoryChart({
 	const overlays = indicators.filter(
 		(indicator) => indicator.placement === "overlay",
 	);
+	const themeColor = useThemeColor();
 	const candleMarkers = createCandleMarkers(
 		markers,
 		indicators,
 		series.lines,
-		useThemeColor(),
+		themeColor,
+	);
+	const anchoredMarkers = createAnchoredMarkers(
+		indicators,
+		series.lines,
+		themeColor,
+	);
+	const markerSegments = createMarkerSegments(
+		connectedCandles,
+		layouts[interval],
+		series,
+		interval,
 	);
 	const volumeIndicators = indicators.filter(
 		(indicator) => indicator.placement === "volume",
@@ -230,7 +246,8 @@ export function PriceHistoryChart({
 							priceResolution={series.priceResolution}
 							visibleRange={visibleRange}
 						/>
-						{/* Lines drawn as markers are among the markers of the candles. */}
+						{/* Lines drawn as markers are among the markers of the candles or
+						of the line they are anchored to. */}
 						{overlays.flatMap(({ id, lines }) =>
 							lines
 								.filter(({ style }) => style === "line")
@@ -239,6 +256,7 @@ export function PriceHistoryChart({
 										data={line(`${id}:${indicatorLine.output}`).data}
 										key={`${id}:${indicatorLine.output}`}
 										line={indicatorLine}
+										markers={anchoredMarkers[`${id}:${indicatorLine.output}`]}
 										priceResolution={series.priceResolution}
 									/>
 								)),
@@ -247,33 +265,48 @@ export function PriceHistoryChart({
 							<ComparisonSeries comparison={comparison} interval={interval} />
 						) : null}
 						{volumeIndicators.flatMap(({ id, lines }) =>
-							lines.map((indicatorLine) => (
-								<VolumeIndicatorSeries
-									data={line(`${id}:${indicatorLine.output}`).data}
-									key={`${id}:${indicatorLine.output}`}
-									line={indicatorLine}
-								/>
-							)),
+							lines
+								.filter(({ style }) => style === "line")
+								.map((indicatorLine) => (
+									<VolumeIndicatorSeries
+										data={line(`${id}:${indicatorLine.output}`).data}
+										key={`${id}:${indicatorLine.output}`}
+										line={indicatorLine}
+										markers={anchoredMarkers[`${id}:${indicatorLine.output}`]}
+									/>
+								)),
 						)}
 						{panes.flatMap(
 							(
 								{ autoscaleInfoProvider, indicators: paneIndicators, scale },
 								paneIndex,
 							) =>
-								paneIndicators.flatMap(({ id, lines }, indicatorIndex) =>
-									lines.map((indicatorLine, lineIndex) => (
+								paneIndicators
+									.flatMap(({ id, lines }) =>
+										lines
+											.filter(({ style }) => style === "line")
+											.map((indicatorLine) => ({
+												indicatorLine,
+												key: `${id}:${indicatorLine.output}`,
+											})),
+									)
+									.map(({ indicatorLine, key }, lineIndex) => (
 										<PaneIndicatorSeries
 											autoscaleInfoProvider={autoscaleInfoProvider}
-											data={line(`${id}:${indicatorLine.output}`)}
-											drawsLevels={indicatorIndex === 0 && lineIndex === 0}
-											key={`${id}:${indicatorLine.output}`}
+											data={line(key)}
+											drawsLevels={lineIndex === 0}
+											key={key}
 											line={indicatorLine}
+											markers={anchoredMarkers[key]}
 											pane={paneIndex + 1}
 											scale={scale}
 										/>
 									)),
-								),
 						)}
+						{/* Added after the lines whose panes and scales they share. */}
+						{markerSegments.map((segments) => (
+							<MarkerSegmentSeries key={segments.key} segments={segments} />
+						))}
 					</ChartCanvas>
 					{/* The status, readout and legend lie over the chart, so they take
 					no height of their own and let the pointer through. */}

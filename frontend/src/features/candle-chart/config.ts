@@ -167,6 +167,23 @@ export const volumeIndicatorSeriesOptions = {
 	priceScaleId: volumePriceScaleId,
 } satisfies LineSeriesPartialOptions;
 
+const markerSegmentOptions = {
+	crosshairMarkerVisible: false,
+	lastValueVisible: false,
+	lineWidth: 2,
+	priceLineVisible: false,
+} satisfies LineSeriesPartialOptions;
+
+// Segments between marker values, on the scale their markers sit on.
+export const markerSegmentSeriesOptions = {
+	price: markerSegmentOptions,
+	volume: { ...markerSegmentOptions, priceScaleId: volumePriceScaleId },
+} satisfies Record<"price" | "volume", LineSeriesPartialOptions>;
+
+// A line series joins all its points, so the point before a gap between two
+// segments colors the join to the next point transparent.
+export const markerSegmentGapColor = "transparent";
+
 export const paneIndicatorSeriesOptions = {
 	lastValueVisible: true,
 	lineWidth: 2,

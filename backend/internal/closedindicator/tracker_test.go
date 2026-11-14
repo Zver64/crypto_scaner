@@ -2,6 +2,7 @@ package closedindicator_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"math"
@@ -139,6 +140,32 @@ func testRegistry(t *testing.T) *indicator.Registry {
 		t.Fatal(err)
 	}
 	return registry
+}
+
+// A stored selection with a nested source is decoded from JSON and the same
+// selection is built by Normalize; both must identify one target.
+func TestTargetKeyOfANestedSourceSurvivesJSON(t *testing.T) {
+	registry := testRegistry(t)
+	source := indicator.Source{Selection: indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 21}}, Output: "rsi"}
+	normalized, err := registry.Normalize(indicator.Selection{Type: "sma", Parameters: indicator.Parameters{"period": 9, "source": source.Value()}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	encoded, err := json.Marshal(normalized.Parameters)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded indicator.Parameters
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	want := `1h|sma|period=9|source=map[output:rsi parameters:map[period:21 source:3] type:rsi]`
+	for _, parameters := range []indicator.Parameters{normalized.Parameters, decoded} {
+		target := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: "sma", Parameters: parameters}}
+		if key := target.Key(); key != want {
+			t.Errorf("Key() = %q, want %q", key, want)
+		}
+	}
 }
 
 // selection returns the canonical selection of kind; a zero period keeps the

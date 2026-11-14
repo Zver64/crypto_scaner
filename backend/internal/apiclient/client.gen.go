@@ -978,6 +978,9 @@ type ChartIndicatorLevel struct {
 
 // ChartIndicatorLine defines model for ChartIndicatorLine.
 type ChartIndicatorLine struct {
+	// Anchor The line the markers of a marker line sit on, in its pane, instead of the candles; an output of another indicator of the same catalog.
+	Anchor *ChartIndicatorLineAnchor `json:"anchor,omitempty"`
+
 	// Color Client theme color token, for example `yellow.5`.
 	Color string `json:"color"`
 
@@ -987,13 +990,22 @@ type ChartIndicatorLine struct {
 	// Shift Number of candles a marker is drawn before the candle holding its value. The points of the series are not shifted.
 	Shift int `json:"shift"`
 
-	// Style How the series is drawn. A marker is a point above or below a candle; only `overlay` indicators have marker lines.
+	// Style How the series is drawn. A marker is a point above or below a candle, or above or below the line of its `anchor`; only `overlay` indicators and lines with an `anchor` are marker lines.
 	Style ChartIndicatorLineStyle `json:"style"`
 	Title string                  `json:"title"`
 }
 
-// ChartIndicatorLineStyle How the series is drawn. A marker is a point above or below a candle; only `overlay` indicators have marker lines.
+// ChartIndicatorLineStyle How the series is drawn. A marker is a point above or below a candle, or above or below the line of its `anchor`; only `overlay` indicators and lines with an `anchor` are marker lines.
 type ChartIndicatorLineStyle string
+
+// ChartIndicatorLineAnchor The line the markers of a marker line sit on, in its pane, instead of the candles; an output of another indicator of the same catalog.
+type ChartIndicatorLineAnchor struct {
+	// IndicatorId The `id` of that indicator.
+	IndicatorId string `json:"indicator_id"`
+
+	// Output The `output` of its line.
+	Output string `json:"output"`
+}
 
 // ChartIndicatorResult defines model for ChartIndicatorResult.
 type ChartIndicatorResult struct {
@@ -1494,7 +1506,7 @@ type StrategyBacktest struct {
 	// From Open time of the first evaluated candle of the interval; null when none is evaluated.
 	From *time.Time `json:"from"`
 
-	// IndicatorColumns Current outputs of all local indicator dependencies, including hidden outputs; excludes candle fields, functions, and of reads.
+	// IndicatorColumns Current outputs of all local indicator dependencies; excludes candle fields, functions, and of reads.
 	IndicatorColumns []BacktestIndicatorColumn `json:"indicator_columns"`
 	Interval         CandleInterval            `json:"interval"`
 
@@ -1607,9 +1619,6 @@ type StrategyID = openapi_types.UUID
 
 // StrategyIndicatorCall An indicator as calls write it, such as `bbands_upperband("1h", 20, 2.5)`.
 type StrategyIndicatorCall struct {
-	// CountOutputs The outputs that count candles, which a calculated `Prev` shift may read.
-	CountOutputs []string `json:"count_outputs"`
-
 	// Outputs The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
 	Outputs []string `json:"outputs"`
 

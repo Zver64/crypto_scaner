@@ -7,20 +7,27 @@ Reference for writing a strategy expression that the scanner imports unchanged.
 - An indicator is read through a call whose first argument is the period: `<type>[_<output>]("<period>"[, parameter…])`, such as `rsi("1h")`, `rsi("1d", 21)`, `sma("1h", 20, volume)`, or `bbands_upperband("1h", 20, 2.5)`. Periods: `"1h"`, `"1d"`, `"1w"`, `"1M"`. Every call names its period; a strategy has none of its own and runs on the finest period its rules read.
 - Indicators are TA-Lib functions. Types, parameter order, defaults, and output names are in `backend/internal/indicator/talib/functions_gen.go` (`indicatorType`, `params`, `outputs`). TA-Lib defaults are not obvious: `ema`, `sma`, `max`, and `min` use 30, `roc` 10, `bbands` 5.
 - Parameters follow the period in that order; trailing ones may be left out and take their defaults, but one before a parameter that is set must be written even at its default: `rsi("1h")` is RSI 14, `bbands_upperband("1h", 20, 2.5)` raises the upper band, `bbands_lowerband("1h", 20, 2, 2.5)` lowers the lower one, `sma("1h", 30, volume)` is the SMA 30 of the volume. Parameters are numbers written as literals, never expressions; the MA type is a number too (`0` SMA, `1` EMA, …).
-- The candle field an indicator reads (`source`) is a bare word: `open`, `high`, `low`, `close`, `volume`, `quote_volume`, `trades`, such as `max("1h", 12, high)`.
+- The series an indicator reads (`source`) is a candle field or another indicator:
+  - A candle field is a bare word: `open`, `high`, `low`, `close`, `volume`, `quote_volume`, `trades`, such as `max("1h", 12, high)`.
+  - Another indicator is a call written in place of the field: `sma("1h", 9, rsi("1h"))` is the SMA 9 of the RSI 14, `ema("1h", 20, macd_macdhist("1h"))` the EMA 20 of the MACD histogram, `pivot_low("1h", 5, 5, rsi("1h", 21))` the pivot lows of the RSI 21. The inner call is written like any call, names one output, and must name the period of the outer call: `sma("1h", 9, rsi("1d"))` is an error.
+  - The source is the last parameter, so the ones before it are written even at their defaults: `sma("1h", 30, rsi("1h"))`. Left out, it is the default: the close for most indicators.
+  - Only indicators with a `source` parameter take one: `sma`, `ema`, `rsi`, `bbands`, `macd`, `max`, `min`, `roc`, `stddev`, `linearreg`, and the like, and `pivot`; an indicator of two series, such as `correl`, takes one per series (`correl("1h", 30, rsi("1h"), volume)`). Indicators with fixed inputs (`atr`, `stoch`, `adx`, `cci`, candlestick patterns) cannot change theirs.
+  - Nesting is one level deep: the inner indicator reads candle fields, so `sma("1h", 9, sma("1h", 9, rsi("1h")))` is an error. The inner call is a bare call, not an expression: no `Prev`, arithmetic, or candle field call such as `close("1h")` in its place. An output that may be empty (`pivot_high`, `pivot_low`) cannot be a source.
+  - The inner indicator warms up first, so the outer value needs the history of both.
+  - The canonical spelling keeps the inner call in its own canonical form: `sma("1h", 9, rsi("1h", 14))` is `sma("1h", 9, rsi("1h"))`.
+  - The Mini App indicator form and rule builder do not offer an indicator as a source; such a rule is written as text or through the CLI.
 - An output may be empty on a candle: calculated, with nothing there, such as `pivot_high("1h")` on a candle that confirms no pivot. Empty is not unknown, which is a value that cannot be calculated yet. Any comparison with an empty value is false, so `!(pivot_high("1h") > 0)` is true on a candle without a pivot high, and arithmetic with an empty value is empty. An empty take profit or stop loss is unknown. Empty values are not drawn and are left out of tables and backtest values.
 - An indicator with several outputs is read through one of them, whose name follows the type in the function name: `bbands_upperband("1h", 20, 2.5)`, `macd_macdsignal("1h")`, `stoch_slowk("1h")`; the bare type, such as `bbands("1h")`, is an error. An indicator with one output is called by its type: `rsi("1h")`.
 - Candle fields are calls with the period only: `open`, `high`, `low`, `close`, `volume`, `quote_volume`, `trades`, such as `close("1h")`.
 - A call has one canonical spelling: trailing defaults dropped and numbers without trailing zeros, so `rsi("1h", 14)` is `rsi("1h")` and `bbands_upperband("1h", 20, 2.50)` is `bbands_upperband("1h", 20, 2.5)`. Backtest values and columns, validation, and `scanner vars` use it.
 - Strategies read any indicator, configured or not. Configuring one only shows it in the market table and on charts and offers it in the Mini App builder; nothing links strategies and configured indicators. Do not use `__` in names.
-- Two indicators are not TA-Lib functions; they find pivots the way TradingView does. A pivot high is a value at least as high as the `left` candles before it and higher than the `right` candles after it, so of equal highs the latest counts; a pivot low is the reverse. A pivot is confirmed `right` candles after it, and only then appears.
-  - `pivot` (`left`, `right`, defaults 5 and 5) reads the high and the low and has two outputs: `pivot_high("1h")` is the price of a pivot high on the candle that confirms it and empty on every other candle, and `pivot_low("1h")` likewise. So `pivot_high("1h") > 0` is true exactly on the candles confirming a pivot high, and the pivot candle lies `right` candles back. Earlier pivots are read through `ValueWhen` and `BarsSince` (see Expressions). Lower highs: `ValueWhen(pivot_high("1h")) < ValueWhen(pivot_high("1h"), 1)`.
-  - `divergence` is TradingView's RSI Divergence Indicator (`period`, `left`, `right`, `range_lower`, `range_upper`, defaults 14, 5, 5, 5, 60). It finds pivots of the RSI of the close and compares the price at each with the previous pivot when `range_lower` to `range_upper` candles lie between them: the low at pivot lows, the high at pivot highs, whether or not the price has a pivot there. Its outputs are 1 on the candle confirming the later pivot and 0 elsewhere: `bull` (the price makes a lower low, the RSI a higher one), `hidden_bull` (a higher low, the RSI a lower one), `bear` (a higher high, the RSI a lower one), `hidden_bear` (a lower high, the RSI a higher one): `divergence_bull("1h") > 0`. On a candle marking a divergence of the lows (`bull` or `hidden_bull`), `previous_low_bars` counts the candles back to the earlier pivot; `previous_high_bars` does the same for the highs (`bear` or `hidden_bear`). They are 0 on every other candle, and charts do not draw them. The later pivot always lies `right` candles back. With `Prev`, a rule reads values at both pivots. The SMA 3 of the volume one candle after a pivot averages the pivot and its two neighbors, so with the default `right` of 5 that of the later pivot is `Prev(sma("1h", 3, volume), 4)`. The volume falling from the earlier pivot to the later one: `divergence_bull("1h") > 0 && Prev(sma("1h", 3, volume), divergence_previous_low_bars("1h") - 1) > Prev(sma("1h", 3, volume), 4)`.
+- One indicator is not a TA-Lib function; it finds pivots the way TradingView does. A pivot high is a value at least as high as the `left` candles before it and higher than the `right` candles after it, so of equal highs the latest counts; a pivot low is the reverse. A pivot is confirmed `right` candles after it, and only then appears.
+  - `pivot` (`left`, `right`, `source`, defaults 5, 5, and the high and the low) has two outputs. With a source, both read that series: `pivot_low("1h", 5, 5, close)` finds the pivot lows of the close, `pivot_high("1h", 5, 5, rsi("1h"))` the pivot highs of the RSI. Without one, it reads the high and the low: `pivot_high("1h")` is the price of a pivot high on the candle that confirms it and empty on every other candle, and `pivot_low("1h")` likewise. So `pivot_high("1h") > 0` is true exactly on the candles confirming a pivot high, and the pivot candle lies `right` candles back. Earlier pivots are read through `ValueWhen` and `BarsSince` (see Expressions). Lower highs: `ValueWhen(pivot_high("1h")) < ValueWhen(pivot_high("1h"), 1)`.
 
 ## Expressions
 
 - The result is a boolean: comparisons (`<`, `<=`, `>`, `>=`) of numbers and calls combined with `&&`, `||`, and `!`. Arithmetic: `+ - * /`, `Abs(x)`, `Mod(a, b)`, `Min(…)`, `Max(…)` (2–10 arguments). Functions of the language are capitalized; indicators and candle fields are lowercase, so `max("1h", 12, high)` is the indicator and `Max(a, b)` the larger value. There is no `==`, ternary, other function, string, or list.
-- `Prev(x[, n])` is `x` `n` closed candles earlier (default 1, from 1 to 500); `x` may be an expression. `n` may also be calculated, then from 0 (the latest candle) to 500, by adding and subtracting whole numbers and counts of candles: `BarsSince`, the `*_bars` outputs of `divergence`, and, in the exit rule, `bars_held`, such as `Prev(close("1h"), BarsSince(pivot_low("1h")) + 5)`, the close at the latest pivot low with the default `right` of 5. A calculated shift is read at the latest candle, and only that one earlier `x` is read. It counts candles of the period of the values inside `Prev`, whatever the period it was read on: in an hourly strategy, `Prev(close("1d"), bars_held)` reads `close("1d")` `bars_held` days back. Such a `Prev` cannot contain another one, `Percentile`, `ValueWhen`, or `BarsSince` (except `BarsSince` in its shift), and those cannot contain it. A `Prev` with a number or a crossing around it is allowed and reads the shift at that earlier candle too: `Prev(Prev(close("1h"), BarsSince(pivot_low("1h")) + 5), 1)` reads `BarsSince(pivot_low("1h"))` one candle back.
+- `Prev(x[, n])` is `x` `n` closed candles earlier (default 1, from 1 to 500); `x` may be an expression. `n` may also be calculated, then from 0 (the latest candle) to 500, by adding and subtracting whole numbers and counts of candles: `BarsSince` and, in the exit rule, `bars_held`, such as `Prev(close("1h"), BarsSince(pivot_low("1h")) + 5)`, the close at the latest pivot low with the default `right` of 5. A calculated shift is read at the latest candle, and only that one earlier `x` is read. It counts candles of the period of the values inside `Prev`, whatever the period it was read on: in an hourly strategy, `Prev(close("1d"), bars_held)` reads `close("1d")` `bars_held` days back. Such a `Prev` cannot contain another one, `Percentile`, `ValueWhen`, or `BarsSince` (except `BarsSince` in its shift), and those cannot contain it. A `Prev` with a number or a crossing around it is allowed and reads the shift at that earlier candle too: `Prev(Prev(close("1h"), BarsSince(pivot_low("1h")) + 5), 1)` reads `BarsSince(pivot_low("1h"))` one candle back.
 - An empty calculated shift, such as a `BarsSince` that found nothing, makes the `Prev` empty. Any other calculated shift outside 0 to 500 at a candle is an error of the rule where it decides the result (`close("1h") < 0 && Prev(…)` is simply false when the close is not negative). A backtest then fails, naming the candle, the rule, and the shift; a live strategy is disabled, and, as with a manual disable, its open trade is forgotten without a sell, and the administrator gets a Telegram message saying why. A strategy whose rules were changed meanwhile stays enabled.
 - `Percentile(x, n, p)` is the p-th percentile (a whole number from 1 to 100) of `x` over the `n` candles (at most 500) before the latest. Empty values are ignored: it is the percentile of the values that are not empty, and empty when all are.
 - `ValueWhen(cond, x, n)` is `x` at the candle where the condition `cond` was true for the `n`-th time back, among the latest 200 closed candles, the latest included; `n` is a whole number from 0 (the latest time) to 199: `ValueWhen(rsi("1h") > 70, close("1h"), 0)`. `ValueWhen(x[, n])` is short for the condition "`x` is not empty", the `n`-th latest value of `x` (default 0): `ValueWhen(pivot_high("1h"))` is the latest pivot high and `ValueWhen(pivot_high("1h"), 1)` the one before.
@@ -30,6 +37,50 @@ Reference for writing a strategy expression that the scanner imports unchanged.
 - `Of("BTCUSDT", x)` is `x` of another coin, which must be active; `Of` cannot contain `Of`.
 - Limits: 2000 characters and 20 comparisons (a crossing counts once, and so does each comparison of a condition inside `ValueWhen` or `BarsSince`).
 - Everything is calculated on closed candles. MAX and MIN include the latest candle, so a breakout of the previous range is `close("1h") > Prev(max("1h", 12, high), 1)`. A division by zero is unknown, so it signals nothing.
+
+## Divergence
+
+A divergence is a rule over the pivots of an oscillator, written by hand. These four are TradingView's RSI Divergence Indicator with its defaults (RSI 14, pivots 5 and 5, 5 to 60 candles between the pivots); any other oscillator, such as `macd_macdhist("1h")`, replaces `rsi("1h")`. Each is true on the candle that confirms the later pivot of the RSI, which lies 5 candles back, so `Prev(low("1h"), 5)` is the low of the price at that pivot, and `ValueWhen(… > 0, Prev(low("1h"), 5), 1)` the low at the pivot before. `Prev(BarsSince(…), 1)` is the candles between the two confirmations, counted one candle back, where the previous pivot was still the latest.
+
+Regular bullish, the price makes a lower low and the RSI a higher one:
+
+```cel
+pivot_low("1h", 5, 5, rsi("1h")) > 0
+&& pivot_low("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), 1)
+&& Prev(low("1h"), 5) < ValueWhen(pivot_low("1h", 5, 5, rsi("1h")) > 0, Prev(low("1h"), 5), 1)
+&& Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) >= 5
+&& Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) <= 60
+```
+
+Hidden bullish, the price makes a higher low and the RSI a lower one:
+
+```cel
+pivot_low("1h", 5, 5, rsi("1h")) > 0
+&& pivot_low("1h", 5, 5, rsi("1h")) < ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), 1)
+&& Prev(low("1h"), 5) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")) > 0, Prev(low("1h"), 5), 1)
+&& Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) >= 5
+&& Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) <= 60
+```
+
+Regular bearish, the price makes a higher high and the RSI a lower one:
+
+```cel
+pivot_high("1h", 5, 5, rsi("1h")) > 0
+&& pivot_high("1h", 5, 5, rsi("1h")) < ValueWhen(pivot_high("1h", 5, 5, rsi("1h")), 1)
+&& Prev(high("1h"), 5) > ValueWhen(pivot_high("1h", 5, 5, rsi("1h")) > 0, Prev(high("1h"), 5), 1)
+&& Prev(BarsSince(pivot_high("1h", 5, 5, rsi("1h"))), 1) >= 5
+&& Prev(BarsSince(pivot_high("1h", 5, 5, rsi("1h"))), 1) <= 60
+```
+
+Hidden bearish, the price makes a lower high and the RSI a higher one:
+
+```cel
+pivot_high("1h", 5, 5, rsi("1h")) > 0
+&& pivot_high("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_high("1h", 5, 5, rsi("1h")), 1)
+&& Prev(high("1h"), 5) < ValueWhen(pivot_high("1h", 5, 5, rsi("1h")) > 0, Prev(high("1h"), 5), 1)
+&& Prev(BarsSince(pivot_high("1h", 5, 5, rsi("1h"))), 1) >= 5
+&& Prev(BarsSince(pivot_high("1h", 5, 5, rsi("1h"))), 1) <= 60
+```
 
 ## Signals
 
@@ -41,8 +92,8 @@ Reference for writing a strategy expression that the scanner imports unchanged.
 ## Backtest charts and indicator values
 
 - The Mini App chart is an immutable snapshot of the completed backtest, not a live chart. It shows the whole evaluated period and can scroll to its beginning, including periods longer than 2,000 candles. Stored candles before the period warm indicators up but are not displayed. Each interval shows its own closed candles and indicators; no future or live candle is appended.
-- Chart dependencies cover entry, exit, take profit, and stop loss expressions, including indicators that are not configured. Display flags, configured order, and scale overrides do not determine backtest presentation. Indicators read only through `Of` are not displayed; all drawable outputs of the local dependencies are shown on their own interval. Hidden count outputs remain hidden on charts.
-- The signal table adds current values of all local dependency outputs at the signal close, including hidden outputs and indicators read only through `Prev`, `Percentile`, `ValueWhen`, or `BarsSince`. Columns and values are named by canonical calls, such as `bbands_upperband("1h", 20)` or `Prev(rsi("1h"), 2)`. It does not add columns for shifted reads, function results, candle fields, or other coins. Unknown values are empty, not zero. The CLI shows these columns only with `--indicators`, and prints up to 100 latest signals or trades in text mode; `--json` returns all rows. Existing diagnostic `values` still describe the reads of the expression, independently of current indicator outputs.
+- Chart dependencies cover entry, exit, take profit, and stop loss expressions, including indicators that are not configured. Display flags, configured order, and scale overrides do not determine backtest presentation. Indicators read only through `Of` are not displayed; all drawable outputs of the local dependencies are shown on their own interval. An indicator read as the source of another is drawn too, once: the pivots of `pivot_low("1h", 5, 5, rsi("1h"))` are points on the RSI line, each on its pivot candle, and an indicator in the units of its source, such as `ema("1h", 20, macd_macdhist("1h"))`, is drawn in the pane of that source. Pivots of the price stay on the candles.
+- The signal table adds current values of all local dependency outputs at the signal close, including indicators read only through `Prev`, `Percentile`, `ValueWhen`, or `BarsSince`. Columns and values are named by canonical calls, such as `bbands_upperband("1h", 20)` or `Prev(rsi("1h"), 2)`. It does not add columns for shifted reads, function results, candle fields, or other coins. Unknown values are empty, not zero. The CLI shows these columns only with `--indicators`, and prints up to 100 latest signals or trades in text mode; `--json` returns all rows. Existing diagnostic `values` still describe the reads of the expression, independently of current indicator outputs.
 - API backtests include chart snapshots only when `chart` is true (a query parameter for saved strategies, a body field for drafts). Indicator columns and current signal values are returned regardless of that option.
 
 ## Entry, exit, and trades

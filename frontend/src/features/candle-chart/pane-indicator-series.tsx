@@ -1,7 +1,11 @@
 import { useComputedColorScheme } from "@mantine/core";
 import { type AutoscaleInfoProvider, LineSeries } from "lightweight-charts";
 
-import { PriceLine, Series } from "@/components/lightweight-chart";
+import {
+	PriceLine,
+	Series,
+	SeriesMarkers,
+} from "@/components/lightweight-chart";
 import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import {
 	paneIndicatorLevelOptions,
@@ -12,6 +16,7 @@ import type {
 	ChartIndicatorLine,
 	ChartIndicatorScale,
 	ChartLineData,
+	ChartMarker,
 } from "@/features/candle-chart/types";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
 
@@ -21,6 +26,8 @@ interface PaneIndicatorSeriesProps {
 	drawsLevels: boolean;
 	data: ChartLineData;
 	line: ChartIndicatorLine;
+	// The markers of the lines anchored to this one.
+	markers?: readonly ChartMarker[];
 	pane: number;
 	scale: ChartIndicatorScale;
 }
@@ -31,6 +38,7 @@ export function PaneIndicatorSeries({
 	drawsLevels,
 	data: { data, resolution },
 	line,
+	markers,
 	pane,
 	scale,
 }: PaneIndicatorSeriesProps) {
@@ -58,6 +66,7 @@ export function PaneIndicatorSeries({
 						/>
 					))
 				: null}
+			{markers ? <SeriesMarkers markers={markers} /> : null}
 		</Series>
 	);
 }

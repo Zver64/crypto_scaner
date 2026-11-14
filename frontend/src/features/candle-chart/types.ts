@@ -31,6 +31,9 @@ export interface PriceHistorySnapshot {
 	series: ChartSeriesData;
 	// Markers on the candles, such as the trades of a backtest.
 	markers?: readonly ChartMarker[];
+	// Times within the candles whose marker line values are connected with the
+	// previous value of their line.
+	connectedCandles?: readonly string[];
 	connection: ChartConnection;
 	freshness: ChartFreshness;
 	error?: string;
@@ -92,10 +95,14 @@ export interface ChartIndicatorLine {
 	output: string;
 	title: string;
 	color: string;
-	// A marker is a point above or below a candle instead of a line.
+	// A marker is a point above or below a candle, or the line of its anchor,
+	// instead of a line.
 	style: "line" | "marker_above" | "marker_below";
 	// The candles a marker is drawn before the candle holding its value.
 	shift: number;
+	// The line of another indicator the markers sit on, in its pane; the
+	// candles without one.
+	anchor?: { indicator_id: string; output: string };
 }
 export interface ChartIndicatorScale {
 	min?: number;
@@ -181,6 +188,20 @@ export type ChartVolumeSlot =
 export type ChartIndicatorSlot =
 	| LineData<UTCTimestamp>
 	| WhitespaceData<UTCTimestamp>;
+
+// The segments connecting values of one marker line, as the data of one line
+// series: the points of a segment follow each other, and a point that only
+// precedes the next segment carries the transparent color of the gap.
+export interface ChartMarkerSegments {
+	key: string;
+	color: string;
+	data: readonly LineData<UTCTimestamp>[];
+	// The pane the segments are drawn in; the candles are in pane 0.
+	pane: number;
+	// The scale of that pane they lie on: its price or value scale, or the
+	// volume scale of the candle pane.
+	scale: "price" | "volume";
+}
 
 // One entry of the indicator legend over the chart.
 export interface ChartLegendItem {

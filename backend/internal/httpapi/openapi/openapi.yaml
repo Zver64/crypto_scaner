@@ -1791,11 +1791,24 @@ components:
         style:
           type: string
           enum: [line, marker_above, marker_below]
-          description: How the series is drawn. A marker is a point above or below a candle; only `overlay` indicators have marker lines.
+          description: How the series is drawn. A marker is a point above or below a candle, or above or below the line of its `anchor`; only `overlay` indicators and lines with an `anchor` are marker lines.
         shift:
           type: integer
           minimum: 0
           description: Number of candles a marker is drawn before the candle holding its value. The points of the series are not shifted.
+        anchor: { $ref: "#/components/schemas/ChartIndicatorLineAnchor" }
+    ChartIndicatorLineAnchor:
+      type: object
+      additionalProperties: false
+      required: [indicator_id, output]
+      description: The line the markers of a marker line sit on, in its pane, instead of the candles; an output of another indicator of the same catalog.
+      properties:
+        indicator_id:
+          type: string
+          description: The `id` of that indicator.
+        output:
+          type: string
+          description: The `output` of its line.
     ChartIndicatorScale:
       type: object
       additionalProperties: false
@@ -2009,7 +2022,7 @@ components:
     StrategyIndicatorCall:
       type: object
       additionalProperties: false
-      required: [type, parameters, title, outputs, count_outputs]
+      required: [type, parameters, title, outputs]
       description: An indicator as calls write it, such as `bbands_upperband("1h", 20, 2.5)`.
       properties:
         type:
@@ -2029,10 +2042,6 @@ components:
         outputs:
           type: array
           description: The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
-          items: { type: string }
-        count_outputs:
-          type: array
-          description: The outputs that count candles, which a calculated `Prev` shift may read.
           items: { type: string }
     StrategyPositionVariable:
       type: object
@@ -2126,7 +2135,7 @@ components:
           description: Open time of the last evaluated candle of the interval; null when none is evaluated.
         indicator_columns:
           type: array
-          description: Current outputs of all local indicator dependencies, including hidden outputs; excludes candle fields, functions, and of reads.
+          description: Current outputs of all local indicator dependencies; excludes candle fields, functions, and of reads.
           items: { $ref: "#/components/schemas/BacktestIndicatorColumn" }
         charts:
           type: array

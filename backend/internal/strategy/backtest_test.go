@@ -629,9 +629,7 @@ func testCandle(instrumentID int64, interval market.CandleInterval, open time.Ti
 
 func testRegistry(t *testing.T) *indicator.Registry {
 	t.Helper()
-	modules := indicatortalib.New()
-	rsi := slices.IndexFunc(modules, func(module indicator.Implementation) bool { return module.Describe().Type == indicatortalib.RSIType })
-	registry, err := indicator.NewRegistry(append(modules, candle.New(), pivot.New(), pivot.NewDivergence(modules[rsi]))...)
+	registry, err := indicator.NewRegistry(append(indicatortalib.New(), candle.New(), pivot.New())...)
 	if err != nil {
 		t.Fatal(err)
 	}

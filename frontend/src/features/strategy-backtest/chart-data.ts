@@ -30,7 +30,13 @@ export function createBacktestChart(backtest: StrategyBacktest) {
 	return {
 		indicators,
 		intervals: backtest.charts.map(({ page }) => page.interval),
-		source: createBacktestChartData(backtest.charts, backtestMarkers(backtest)),
+		source: createBacktestChartData(
+			backtest.charts,
+			backtestMarkers(backtest),
+			// The marker values a signal fired on are connected with the previous
+			// ones.
+			backtest.signal?.occurrences.map(({ time }) => time),
+		),
 	};
 }
 
@@ -39,6 +45,7 @@ export function createBacktestChart(backtest: StrategyBacktest) {
 export function createBacktestChartData(
 	charts: readonly BacktestChart[],
 	markers?: ChartTradeMarkers,
+	connectedCandles?: readonly string[],
 ): PriceHistorySource {
 	const listeners = new Set<() => void>();
 	const pages = new Map<
@@ -67,6 +74,7 @@ export function createBacktestChartData(
 			candles,
 			series,
 			markers: selectMarkers?.(series.candles),
+			connectedCandles,
 			connection: "disconnected",
 			freshness: "fresh",
 			hasMore: candles.length < chart.page.candles.length,

@@ -158,6 +158,10 @@ func indicatorTypeDTO(descriptor indicator.Descriptor) IndicatorType {
 		Outputs:    make([]string, len(descriptor.Outputs)),
 	}
 	for i, parameter := range descriptor.Parameters {
+		// Clients choose a source among its candle fields.
+		if parameter.Kind == indicator.ParameterSource {
+			parameter.Kind = indicator.ParameterChoice
+		}
 		dto := IndicatorParameter{Key: parameter.Key, Title: parameter.Title, Description: parameter.Description, Kind: IndicatorParameterKind(parameter.Kind), Default: parameter.Default}
 		if parameter.Kind == indicator.ParameterChoice {
 			choices := make([]IndicatorChoice, len(parameter.Choices))

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -32,6 +33,8 @@ var (
 	// number of indicators.
 	ErrLimit = errors.New("scanner indicator limit reached")
 )
+
+var errNested = fmt.Errorf("%w: an indicator of another indicator cannot be configured", ErrInvalidArgument)
 
 // Scale is the optional value axis of an indicator pane. Overlays share the
 // candle price scale and have none.
@@ -87,18 +90,23 @@ type Entry struct {
 	Title     string
 	Placement chart.Placement
 	Outputs   []string
-	// Counts are the outputs that count candles.
-	Counts []string
-	// lines are the outputs charts draw, in output order: those not
-	// indicator.OutputHidden, with how they are drawn. Titles and colors are
-	// added when a chart draws them.
+	// lines are the outputs charts draw, in output order, with how they are
+	// drawn: markers only over the candles or, anchored to the output of
+	// the source, on its line. Titles, colors, and the catalog id of an
+	// anchor are added when a chart draws them.
 	lines []chart.IndicatorLine
 	// lineTitle names the chart lines, such as "RSI 14".
 	lineTitle string
+	// source is the indicator output an indicator of another indicator
+	// reads, the first of several; such an indicator is previewed but
+	// cannot be configured.
+	source *indicator.Source
 	// pane is the key of the chart pane shared with other indicators, empty
-	// for an indicator drawn in a pane of its own.
-	pane    string
-	palette []string
+	// for an indicator drawn in a pane of its own or, with sourcePane, in
+	// the pane the source has of its own.
+	pane       string
+	sourcePane bool
+	palette    []string
 }
 
 type Store interface {
@@ -183,6 +191,9 @@ func (service *Service) Create(ctx context.Context, item Indicator) (Entry, erro
 	if err != nil {
 		return Entry{}, err
 	}
+	if entry.source != nil {
+		return Entry{}, errNested
+	}
 	service.writes.Lock()
 	defer service.writes.Unlock()
 	current := service.List()
@@ -221,6 +232,9 @@ func (service *Service) Update(ctx context.Context, id int64, periods []Period, 
 	entry, err := service.entry(item)
 	if err != nil {
 		return Entry{}, err
+	}
+	if entry.source != nil {
+		return Entry{}, errNested
 	}
 	if err := chartLimit(current, entry); err != nil {
 		return Entry{}, err
@@ -347,10 +361,12 @@ func (service *Service) ChartCatalog(interval market.CandleInterval) []chart.Cat
 	var catalog []chart.CatalogIndicator
 	line := 0
 	for _, entry := range service.entries {
-		if period, found := entry.Period(interval); !found || !period.ShowInChart {
+		// An indicator without lines has nothing to draw.
+		if period, found := entry.Period(interval); !found || !period.ShowInChart || len(entry.lines) == 0 {
 			continue
 		}
-		item := service.catalogIndicator(entry, line)
+		// A configured indicator has no source.
+		item := entry.ChartIndicator(fmt.Sprintf("indicator-%d", entry.ID), "", line)
 		line += len(item.Lines)
 		catalog = append(catalog, item)
 	}
@@ -394,19 +410,6 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
 	}
 	entry := Entry{Indicator: item, Placement: chart.PlacementPane, Outputs: make([]string, len(descriptor.Outputs)), palette: service.palette}
-	for i, output := range descriptor.Outputs {
-		entry.Outputs[i] = output.Name
-		if output.Count {
-			entry.Counts = append(entry.Counts, output.Name)
-		}
-		if output.Style != indicator.OutputHidden {
-			line, err := drawnLine(output, selection.Parameters)
-			if err != nil {
-				return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
-			}
-			entry.lines = append(entry.lines, line)
-		}
-	}
 	// An overlay fits the price scale only over prices and the volume scale
 	// only over volumes; quote volumes and trade counts get a pane.
 	if descriptor.Overlay {
@@ -420,15 +423,65 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 	if entry.Placement == chart.PlacementPane && !slices.ContainsFunc(descriptor.Outputs, histogram) {
 		entry.pane = sharedPane(selection.Type, fields)
 	}
+	// An indicator of another indicator that draws in the units of its input
+	// is drawn where that source is, whatever fields lie beneath; any other
+	// keeps its own pane. Its titles name the source.
+	titled, lineTitled := selection.Parameters, selection.Parameters
+	for i := len(descriptor.Parameters) - 1; i >= 0; i-- {
+		parameter := descriptor.Parameters[i]
+		if parameter.Kind != indicator.ParameterSource {
+			continue
+		}
+		_, nested, err := indicator.ParseSource(selection.Parameters[parameter.Key])
+		if err != nil {
+			return Entry{}, fmt.Errorf("%w: %s %w", ErrInvalidArgument, parameter.Key, err)
+		}
+		if nested == nil {
+			continue
+		}
+		source, err := service.entry(Indicator{Selection: nested.Selection})
+		if err != nil {
+			return Entry{}, err
+		}
+		// The first nested source decides.
+		entry.source = nested
+		if descriptor.Overlay {
+			entry.Placement, entry.pane = source.Placement, source.pane
+			entry.sourcePane = source.Placement == chart.PlacementPane && source.pane == ""
+		}
+		name, lineName := source.Title, source.lineTitle
+		if len(source.Outputs) > 1 {
+			name, lineName = name+"-"+nested.Output, lineName+" "+nested.Output
+		}
+		titled, lineTitled = maps.Clone(titled), maps.Clone(lineTitled)
+		titled[parameter.Key], lineTitled[parameter.Key] = name, lineName
+	}
+	for i, output := range descriptor.Outputs {
+		entry.Outputs[i] = output.Name
+		line, err := drawnLine(output, selection.Parameters)
+		if err != nil {
+			return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+		}
+		// Markers are drawn on the line of the source or on candles.
+		switch {
+		case line.Style == chart.LineStyleLine:
+		case entry.source != nil:
+			line.Anchor.Output = entry.source.Output
+		case entry.Placement != chart.PlacementOverlay:
+			continue
+		}
+		entry.lines = append(entry.lines, line)
+	}
 	if slices.ContainsFunc(item.Periods, func(period Period) bool { return period.ShowInTable }) && len(entry.Outputs) != 1 {
 		return Entry{}, fmt.Errorf("%w: only indicators with one output can be table columns", ErrInvalidArgument)
 	}
 	if err := validateScale(entry.Placement, item.Scale); err != nil {
 		return Entry{}, err
 	}
-	entry.Title = title(descriptor, selection.Parameters, defaults.Parameters)
-	entry.lineTitle = lineTitle(descriptor, selection.Parameters, defaults.Parameters)
-	if err := chart.ValidateIndicator(service.registry, service.catalogIndicator(entry, 0)); err != nil {
+	entry.Title = title(descriptor, titled, defaults.Parameters)
+	entry.lineTitle = lineTitle(descriptor, lineTitled, defaults.Parameters)
+	// Charts give an indicator and its source their own ids.
+	if err := chart.ValidateIndicator(service.registry, entry.ChartIndicator("indicator", "source", 0)); err != nil {
 		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
 	}
 	return entry, nil
@@ -518,15 +571,22 @@ func validateScale(placement chart.Placement, scale Scale) error {
 	return nil
 }
 
-// catalogIndicator draws the entry's lines, coloring them from palette
-// position firstLine on.
-func (service *Service) catalogIndicator(entry Entry, firstLine int) chart.CatalogIndicator {
-	return entry.ChartIndicator(fmt.Sprintf("indicator-%d", entry.ID), firstLine)
+// Source is the indicator whose output an indicator of another indicator
+// reads; found is false for an indicator of candle fields.
+func (entry Entry) Source() (selection indicator.Selection, found bool) {
+	if entry.source == nil {
+		return indicator.Selection{}, false
+	}
+	return entry.source.Selection, true
 }
 
-// ChartIndicator derives chart presentation without consulting display flags.
-// The caller supplies a unique id, including for indicators that are not stored.
-func (entry Entry) ChartIndicator(id string, firstLine int) chart.CatalogIndicator {
+// ChartIndicator derives chart presentation without consulting display flags,
+// coloring the lines from palette position firstLine on. The caller supplies
+// a unique id, including for indicators that are not stored, and sourceID,
+// the id it draws the Source under in the same catalog, which markers on
+// the line of the source and a pane shared with it name; an indicator of
+// candle fields needs none.
+func (entry Entry) ChartIndicator(id, sourceID string, firstLine int) chart.CatalogIndicator {
 	item := chart.CatalogIndicator{
 		ID:        id,
 		Selection: entry.Selection,
@@ -539,6 +599,9 @@ func (entry Entry) ChartIndicator(id string, firstLine int) chart.CatalogIndicat
 			line.Title += " " + line.Output
 		}
 		line.Color = entry.palette[(firstLine+i)%len(entry.palette)]
+		if line.Anchor.Output != "" {
+			line.Anchor.IndicatorID = sourceID
+		}
 		item.Lines[i] = line
 	}
 	if entry.Placement == chart.PlacementPane {
@@ -547,8 +610,12 @@ func (entry Entry) ChartIndicator(id string, firstLine int) chart.CatalogIndicat
 			scale.Levels = append(scale.Levels, chart.IndicatorLevel{Value: level, Title: formatValue(level)})
 		}
 		item.Scale = scale
-		item.Pane = entry.pane
-		if item.Pane == "" {
+		switch {
+		case entry.pane != "":
+			item.Pane = entry.pane
+		case entry.sourcePane:
+			item.Pane = sourceID
+		default:
 			item.Pane = item.ID
 		}
 	}
@@ -601,9 +668,9 @@ func namedChoicesChanged(descriptor indicator.Descriptor, parameters, defaults i
 	})
 }
 
-// parameterValue formats a value, naming named choices such as "volume".
-// Plain choices, such as moving average types, stay numbers, which keeps
-// titles stable.
+// parameterValue formats a value, naming named choices such as "volume"; a
+// nested source is already a name. Plain choices, such as moving average
+// types, stay numbers, which keeps titles stable.
 func parameterValue(parameter indicator.ParameterDescriptor, value any) string {
 	if namedChoice(parameter) {
 		for _, choice := range parameter.Choices {
@@ -616,7 +683,7 @@ func parameterValue(parameter indicator.ParameterDescriptor, value any) string {
 }
 
 func namedChoice(parameter indicator.ParameterDescriptor) bool {
-	return parameter.Kind == indicator.ParameterChoice && len(parameter.Choices) > 0 && parameter.Choices[0].Name != ""
+	return parameter.Kind == indicator.ParameterSource
 }
 
 func formatValue(value any) string {

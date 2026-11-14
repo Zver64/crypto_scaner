@@ -82,8 +82,8 @@ type Variable struct {
 	Target   closedindicator.Target
 	Output   string
 	Position bool
-	// Count marks a count of candles, which a calculated prev shift may
-	// read.
+	// Count marks a position variable that counts candles, which a
+	// calculated prev shift may read.
 	Count bool
 }
 
@@ -430,12 +430,14 @@ func Compile(source string, registry *indicator.Registry, kind RuleKind) (*Expre
 
 // Canonical respells every call of source that resolves canonically, such
 // as rsi("1h", 14) as rsi("1h"), and lists what the indicator calls
-// calculate, in source order; the rest of source stays as written.
+// calculate, in source order, a call with a source call once, as one
+// calculation; the rest of source stays as written.
 func Canonical(source string, registry *indicator.Registry) (string, []closedindicator.Target) {
 	source = strings.TrimSpace(source)
 	language := newLanguage(source, registry)
 	env, err := cel.NewEnv(language.options()...)
-	if err != nil || len(source) > maxExpressionLength {
+	// A reserved name could pass for the identifier of a resolved call.
+	if err != nil || len(source) > maxExpressionLength || strings.Contains(source, callMarker) {
 		return source, nil
 	}
 	env.Parse(source)
@@ -443,6 +445,10 @@ func Canonical(source string, registry *indicator.Registry) (string, []closedind
 	replacements := make([]replacement, 0, len(language.calls))
 	var targets []closedindicator.Target
 	for _, item := range language.calls {
+		// The call it is the source of spells it.
+		if item.source {
+			continue
+		}
 		replacements = append(replacements, replacement{start: item.start, end: item.end, text: item.spelling})
 		if !item.candle {
 			targets = append(targets, item.target)
@@ -467,8 +473,8 @@ func newLanguage(source string, registry *indicator.Registry) *language {
 }
 
 // options declare the functions and macros of the language: a macro per
-// indicator output and candle field resolves each call into an identifier
-// before Prev, Of, Percentile, ValueWhen, BarsSince, and the crossings expand
+// indicator output and candle field resolves each call into an identifier,
+// a source call before the call that reads it, before Prev, Of, Percentile, ValueWhen, BarsSince, and the crossings expand
 // around it. The bare
 // type of an indicator with several outputs is an error naming them.
 func (language *language) options() []cel.EnvOption {
@@ -499,7 +505,7 @@ func (language *language) options() []cel.EnvOption {
 		for _, output := range descriptor.Outputs {
 			name := indicatorFunction(descriptor.Type, len(descriptor.Outputs), output.Name)
 			macros = append(macros, parser.NewGlobalVarArgMacro(name, language.callMacro(name, func(args []ast.Expr) (call, string) {
-				return resolveCall(language.registry, descriptor, output, args)
+				return language.resolveCall(descriptor, output, args)
 			})))
 		}
 	}

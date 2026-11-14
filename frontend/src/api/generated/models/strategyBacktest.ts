@@ -55,7 +55,7 @@ export interface StrategyBacktest {
      * @nullable
      */
   to: string | null;
-  /** Current outputs of all local indicator dependencies, including hidden outputs; excludes candle fields, functions, and of reads. */
+  /** Current outputs of all local indicator dependencies; excludes candle fields, functions, and of reads. */
   indicator_columns: BacktestIndicatorColumn[];
   /** Immutable closed history over the evaluated period, finest interval first. Empty unless chart was requested. No live updates or 2000-candle display limit. */
   charts: BacktestChart[];

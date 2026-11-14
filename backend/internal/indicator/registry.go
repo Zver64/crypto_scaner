@@ -3,6 +3,7 @@ package indicator
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -37,6 +38,8 @@ type registered struct {
 	outputs        []string
 	// sparse holds the outputs that may be empty.
 	sparse map[string]bool
+	// sources are the source parameters.
+	sources []ParameterDescriptor
 }
 
 // NewRegistry creates a calculator from concrete implementations. At least one
@@ -76,14 +79,21 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 				return nil, fmt.Errorf("%w: %q: output %q is shifted by %q, which is not an integer parameter", ErrEmptyRegistration, indicatorType, output.Name, output.Shift)
 			}
 		}
-		byType[indicatorType] = registered{implementation: implementation, descriptor: descriptor, outputs: outputs, sparse: sparse}
+		var sources []ParameterDescriptor
+		for _, parameter := range descriptor.Parameters {
+			if parameter.Kind == ParameterSource {
+				sources = append(sources, parameter)
+			}
+		}
+		byType[indicatorType] = registered{implementation: implementation, descriptor: descriptor, outputs: outputs, sparse: sparse, sources: sources}
 	}
 
 	return &Registry{implementations: byType}, nil
 }
 
 // Lookback reports the number of preceding input values required by the
-// selected implementation. A negative value is an invalid implementation
+// selected implementation, with the lookback of its nested source: the
+// source warms up first. A negative value is an invalid implementation
 // result.
 func (r *Registry) Lookback(indicatorType Type, parameters Parameters) (int, error) {
 	entry, err := r.entry(indicatorType)
@@ -98,26 +108,130 @@ func (r *Registry) Lookback(indicatorType Type, parameters Parameters) (int, err
 	if lookback < 0 {
 		return 0, fmt.Errorf("%w: indicator %q returned negative lookback %d", ErrInvalidResult, indicatorType, lookback)
 	}
+	nested := 0
+	for _, parameter := range entry.sources {
+		source, err := r.source(parameter, parameters)
+		if err != nil {
+			return 0, err
+		}
+		if source.nested != nil {
+			depth, err := r.Lookback(source.nested.Selection.Type, source.nested.Selection.Parameters)
+			if err != nil {
+				return 0, err
+			}
+			nested = max(nested, depth)
+		}
+	}
 
-	return lookback, nil
+	return lookback + nested, nil
 }
 
-// Fields returns the candle fields the selection reads.
+// Fields returns the candle fields the selection reads, those of its nested
+// sources included.
 func (r *Registry) Fields(selection Selection) ([]string, error) {
 	entry, err := r.entry(selection.Type)
 	if err != nil {
 		return nil, err
 	}
-	fields, err := entry.implementation.Fields(selection.Parameters)
+	sources, err := r.inputSources(entry, selection)
 	if err != nil {
 		return nil, err
 	}
-	for _, field := range fields {
-		if !slices.Contains(CandleFields, field) {
-			return nil, fmt.Errorf("%w: indicator %q reads unsupported field %q", ErrInvalidResult, selection.Type, field)
+	var fields []string
+	for _, source := range sources {
+		if source.nested == nil {
+			fields = append(fields, source.field)
+			continue
 		}
+		nested, err := r.Fields(source.nested.Selection)
+		if err != nil {
+			return nil, err
+		}
+		fields = append(fields, nested...)
 	}
 	return fields, nil
+}
+
+// inputSource is what one input of a calculation reads: a candle field or
+// the output of a nested selection, which is normalized.
+type inputSource struct {
+	// name keys the series in the Inputs of the implementation.
+	name   string
+	field  string
+	nested *Source
+	// value is the canonical parameter value of a source parameter.
+	value any
+}
+
+// inputSources resolves the inputs the implementation reads with the
+// parameters of selection, in input order.
+func (r *Registry) inputSources(entry registered, selection Selection) ([]inputSource, error) {
+	names, err := entry.implementation.Fields(selection.Parameters)
+	if err != nil {
+		return nil, err
+	}
+	sources := make([]inputSource, len(names))
+	for index, name := range names {
+		if slices.Contains(CandleFields, name) {
+			sources[index] = inputSource{name: name, field: name}
+			continue
+		}
+		position := slices.IndexFunc(entry.sources, func(parameter ParameterDescriptor) bool { return parameter.Key == name })
+		if position < 0 {
+			return nil, fmt.Errorf("%w: indicator %q reads unsupported field %q", ErrInvalidResult, selection.Type, name)
+		}
+		source, err := r.source(entry.sources[position], selection.Parameters)
+		if err != nil {
+			return nil, err
+		}
+		if source.nested == nil && !slices.Contains(CandleFields, source.field) {
+			return nil, fmt.Errorf("%w: indicator %q reads %s, which names no candle field", ErrInvalidResult, selection.Type, name)
+		}
+		source.name = name
+		sources[index] = source
+	}
+	return sources, nil
+}
+
+// source validates the value of the source parameter in parameters, its
+// default when left out: one of its choices, or a nested source, the
+// non-sparse output of an indicator clients can configure that reads only
+// candle fields itself.
+func (r *Registry) source(parameter ParameterDescriptor, parameters Parameters) (inputSource, error) {
+	raw, exists := parameters[parameter.Key]
+	if !exists {
+		raw = parameter.Default
+	}
+	number, nested, err := ParseSource(raw)
+	if err != nil {
+		return inputSource{}, fmt.Errorf("%w: %s %w", ErrInvalidRequest, parameter.Key, err)
+	}
+	if nested == nil {
+		position := slices.IndexFunc(parameter.Choices, func(choice Choice) bool { return float64(choice.Value) == number })
+		if position < 0 {
+			return inputSource{}, fmt.Errorf("%w: %s must be one of its choices or an indicator output", ErrInvalidRequest, parameter.Key)
+		}
+		choice := parameter.Choices[position]
+		return inputSource{field: choice.Name, value: choice.Value}, nil
+	}
+	entry, err := r.entry(nested.Selection.Type)
+	if err != nil || entry.descriptor.Internal {
+		return inputSource{}, fmt.Errorf("%w: %s reads unknown indicator %q", ErrInvalidRequest, parameter.Key, nested.Selection.Type)
+	}
+	if sparse, declared := entry.sparse[nested.Output]; !declared || sparse {
+		return inputSource{}, fmt.Errorf("%w: %s reads %q of %s, which is not an output with a value on every candle", ErrInvalidRequest, parameter.Key, nested.Output, nested.Selection.Type)
+	}
+	selection, err := r.Normalize(nested.Selection)
+	if err != nil {
+		return inputSource{}, fmt.Errorf("%w: %s: %w", ErrInvalidRequest, parameter.Key, err)
+	}
+	for _, inner := range entry.sources {
+		if _, deeper := selection.Parameters[inner.Key].(map[string]any); deeper {
+			return inputSource{}, fmt.Errorf("%w: %s reads %s, whose own %s must be a candle field", ErrInvalidRequest, parameter.Key, nested.Selection.Type, inner.Key)
+		}
+	}
+	source := Source{Selection: selection, Output: nested.Output}
+	return inputSource{nested: &source, value: source.Value()}, nil
 }
 
 // Outputs returns the named series produced by the selected module.
@@ -139,6 +253,20 @@ func (r *Registry) Normalize(selection Selection) (Selection, error) {
 	parameters, err := entry.implementation.Normalize(selection.Parameters)
 	if err != nil {
 		return Selection{}, err
+	}
+	if len(entry.sources) > 0 {
+		// The implementation may have returned the parameters it was given.
+		parameters = maps.Clone(parameters)
+		if parameters == nil {
+			parameters = Parameters{}
+		}
+		for _, parameter := range entry.sources {
+			source, err := r.source(parameter, selection.Parameters)
+			if err != nil {
+				return Selection{}, err
+			}
+			parameters[parameter.Key] = source.value
+		}
 	}
 	return Selection{Type: selection.Type, Parameters: parameters}, nil
 }
@@ -172,18 +300,55 @@ func (r *Registry) Descriptors() []Descriptor {
 }
 
 // Calculate dispatches a request and validates the implementation's result.
+// The inputs are the candle fields Fields names. A nested source is
+// calculated first over the same inputs and its values become the source
+// series, so the outputs start that many values later.
 func (r *Registry) Calculate(request Request) (Result, error) {
 	entry, err := r.entry(request.Type)
 	if err != nil {
 		return Result{}, err
 	}
+	sources, err := r.inputSources(entry, Selection{Type: request.Type, Parameters: request.Parameters})
+	if err != nil {
+		return Result{}, err
+	}
+	inputs := make(Inputs, len(sources))
+	// starts are the positions of the first values of the nested series,
+	// and offset the latest of them, where every series has a value.
+	starts, offset := map[string]int{}, 0
+	for _, source := range sources {
+		if source.nested == nil {
+			if values, exists := request.Inputs[source.field]; exists {
+				inputs[source.name] = values
+			}
+			continue
+		}
+		nested, err := r.Calculate(Request{Type: source.nested.Selection.Type, Parameters: source.nested.Selection.Parameters, Inputs: request.Inputs})
+		if err != nil {
+			return Result{}, err
+		}
+		series := nested.Outputs[source.nested.Output]
+		inputs[source.name], starts[source.name] = series.Values, series.Offset
+		offset = max(offset, series.Offset)
+	}
+	if offset > 0 {
+		for name, values := range inputs {
+			inputs[name] = values[min(offset-starts[name], len(values)):]
+		}
+	}
 
-	result, err := entry.implementation.Calculate(request.Parameters, request.Inputs)
+	result, err := entry.implementation.Calculate(request.Parameters, inputs)
 	if err != nil {
 		return Result{}, err
 	}
 	if err := validateResult(result, entry.outputs, entry.sparse); err != nil {
 		return Result{}, fmt.Errorf("%w: indicator %q: %v", ErrInvalidResult, request.Type, err)
+	}
+	if offset > 0 {
+		for name, series := range result.Outputs {
+			series.Offset += offset
+			result.Outputs[name] = series
+		}
 	}
 
 	return result, nil

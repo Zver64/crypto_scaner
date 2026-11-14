@@ -114,6 +114,15 @@ describe("strategyQuery", () => {
 		);
 	});
 
+	it("drops a condition whose call reads another call as its source", () => {
+		const expression =
+			'pivot_low("1h", 5, 5, rsi("1h")) > 0 && close("1h") > 1';
+		const query = strategyQuery(expression);
+		expect(strategyExpression(query)).toBe('close("1h") > 1');
+		expect(strategyQueryDropped(expression, query)).toBe(true);
+		expect(importedStrategyQuery(expression)).toBeUndefined();
+	});
+
 	it("reads a compared call as the condition's field", () => {
 		expect(strategyQuery('rsi("1h") < sma("1d", 20)').rules).toEqual([
 			{
@@ -131,7 +140,6 @@ describe("strategyVariableSets", () => {
 		candle_fields: ["close"],
 		indicators: [
 			{
-				count_outputs: [],
 				outputs: ["upperband", "lowerband"],
 				parameters: ["20"],
 				title: "bbands-20",
@@ -142,7 +150,6 @@ describe("strategyVariableSets", () => {
 		position_variables: [{ count: false, name: "pnl" }],
 	};
 	const read = {
-		count_outputs: [],
 		outputs: ["real"],
 		parameters: ["21"],
 		title: "rsi-21",

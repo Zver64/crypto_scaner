@@ -39,6 +39,4 @@ export interface StrategyIndicatorCall {
   title: string;
   /** The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone. */
   outputs: string[];
-  /** The outputs that count candles, which a calculated `Prev` shift may read. */
-  count_outputs: string[];
 }

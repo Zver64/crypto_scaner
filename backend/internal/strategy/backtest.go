@@ -284,6 +284,9 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 	}
 	replay.displayed = displayed
 	if withChart {
+		if replay.charted, err = service.chartedIndicators(displayed); err != nil {
+			return Backtest{}, err
+		}
 		replay.chartInstrumentID = instrument.ID
 		replay.chartValues = make(map[pair]map[time.Time][]closedindicator.Output)
 		for _, interval := range market.CandleIntervals() {
@@ -737,6 +740,9 @@ type replay struct {
 	opens     []time.Time
 	cut       []bool
 	displayed []displayedIndicator
+	// charted are the indicators the chart draws: displayed and their
+	// sources.
+	charted []displayedIndicator
 	// chartValues are the displayed values of the chart instrument by
 	// their UTC open time.
 	chartValues       map[pair]map[time.Time][]closedindicator.Output
@@ -802,12 +808,11 @@ func (replay *replay) cutOff(interval market.CandleInterval, stored, end, depth 
 	return end < depth && (stored >= market.SyncDepth || limited && stored >= limit)
 }
 
-// calculateAt applies the replay window and retained-history warm-up policy
-// to one subscription at an exclusive end index. Snapshots use the same policy.
-func (replay *replay) calculateAt(index, end int) (closedindicator.Value, bool, error) {
-	subscription := replay.current.reads.subscriptions[index]
+// calculate applies the replay window and retained-history warm-up policy to
+// subscription, which needs depth candles, at an exclusive end index.
+// Snapshots use the same policy.
+func (replay *replay) calculate(subscription closedindicator.Subscription, depth, end int) (closedindicator.Value, bool, error) {
 	candles := replay.histories[subscription.Target.Interval][subscription.InstrumentID]
-	depth := replay.depths[index]
 	if replay.cutOff(subscription.Target.Interval, len(candles), end, depth) {
 		return closedindicator.Value{Target: subscription.Target}, false, nil
 	}
@@ -842,7 +847,7 @@ func (replay *replay) at(now time.Time) (snapshot, bool, error) {
 		if found {
 			end++
 		}
-		value, warm, err := replay.calculateAt(index, end)
+		value, warm, err := replay.calculate(subscription, replay.depths[index], end)
 		if err != nil {
 			return snapshot{}, false, err
 		}

@@ -29,10 +29,19 @@ const (
 	// LineStyleLine joins the values with a line.
 	LineStyleLine LineStyle = "line"
 	// LineStyleMarkerAbove and LineStyleMarkerBelow draw each value as a point
-	// above or below a candle. Only overlays have them.
+	// above or below a candle, or the line they are anchored to. Only
+	// overlays and anchored lines have them.
 	LineStyleMarkerAbove LineStyle = "marker_above"
 	LineStyleMarkerBelow LineStyle = "marker_below"
 )
+
+// LineAnchor names the drawn line markers sit on: an output of another
+// indicator of the catalog. The zero anchor is the candles.
+type LineAnchor struct {
+	// IndicatorID is the catalog id of that indicator.
+	IndicatorID string
+	Output      string
+}
 
 // IndicatorLine maps one calculated output series to a drawn line.
 type IndicatorLine struct {
@@ -45,6 +54,9 @@ type IndicatorLine struct {
 	// Shift is the number of candles a marker is drawn before the candle
 	// holding its value. The values themselves are not shifted.
 	Shift int
+	// Anchor is the line the markers of an indicator of another indicator
+	// sit on, in the pane of that line.
+	Anchor LineAnchor
 }
 
 // IndicatorLevel is a labeled horizontal reference line in a pane.
@@ -61,6 +73,8 @@ type IndicatorScale struct {
 }
 
 // CatalogIndicator is one indicator the chart calculates and how to draw it.
+// It has no lines when nothing of it can be drawn where it is placed, such
+// as markers neither over the candles nor anchored to a line.
 type CatalogIndicator struct {
 	ID        string
 	Selection indicator.Selection
@@ -99,9 +113,6 @@ func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicato
 	if err != nil {
 		return err
 	}
-	if len(item.Lines) == 0 {
-		return errors.New("at least one line is required")
-	}
 	drawn := map[string]bool{}
 	for _, line := range item.Lines {
 		if drawn[line.Output] {
@@ -116,9 +127,17 @@ func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicato
 		}
 		switch line.Style {
 		case LineStyleLine:
+			if line.Anchor != (LineAnchor{}) {
+				return fmt.Errorf("line %q has an anchor, which only markers have", line.Output)
+			}
 		case LineStyleMarkerAbove, LineStyleMarkerBelow:
-			if item.Placement != PlacementOverlay {
-				return fmt.Errorf("line %q is drawn as markers, which only indicators over the candles have", line.Output)
+			switch {
+			case line.Anchor == LineAnchor{}:
+				if item.Placement != PlacementOverlay {
+					return fmt.Errorf("line %q is drawn as markers, which only indicators over the candles or anchored to a line have", line.Output)
+				}
+			case line.Anchor.IndicatorID == "" || line.Anchor.Output == "":
+				return fmt.Errorf("line %q is anchored to an unnamed line", line.Output)
 			}
 		default:
 			return fmt.Errorf("line %q has unknown style %q", line.Output, line.Style)

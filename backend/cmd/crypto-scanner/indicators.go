@@ -1,9 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"slices"
-
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/indicator/candle"
 	"crypto-scanner/internal/indicator/pivot"
@@ -12,18 +9,10 @@ import (
 
 // indicatorModules are the calculation algorithms available to every consumer:
 // every TA-Lib function generated in the talib package, which the
-// administrator chooses for the scanner, charts, and tables, the pivots and
-// the RSI divergence TA-Lib lacks, and the internal candle fields strategies
-// read.
-func indicatorModules() ([]indicator.Implementation, error) {
-	modules := indicatortalib.New()
-	rsi := slices.IndexFunc(modules, func(module indicator.Implementation) bool {
-		return module.Describe().Type == indicatortalib.RSIType
-	})
-	if rsi < 0 {
-		return nil, fmt.Errorf("TA-Lib provides no %q module for the divergence", indicatortalib.RSIType)
-	}
-	return append(modules, pivot.New(), pivot.NewDivergence(modules[rsi]), candle.New()), nil
+// administrator chooses for the scanner, charts, and tables, the pivots
+// TA-Lib lacks, and the internal candle fields strategies read.
+func indicatorModules() []indicator.Implementation {
+	return append(indicatortalib.New(), pivot.New(), candle.New())
 }
 
 // chartPalette colors the chart lines of the configured indicators in turn.

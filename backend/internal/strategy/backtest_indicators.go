@@ -42,32 +42,70 @@ func (item displayedIndicator) target() closedindicator.Target {
 	return item.Target(item.interval)
 }
 
+// source is the indicator the item reads as its source, on its interval.
+func (item displayedIndicator) source() (closedindicator.Target, bool) {
+	selection, found := item.Source()
+	return closedindicator.Target{Interval: item.interval, Selection: selection}, found
+}
+
 func (service *Service) displayedIndicators(entry Entry) ([]displayedIndicator, error) {
 	var result []displayedIndicator
 	for _, read := range entry.reads {
 		target := read.Variable.Target
-		if read.Symbol != "" || read.Variable.Position || target.Equal(CandleTarget(target.Interval)) ||
-			slices.ContainsFunc(result, func(item displayedIndicator) bool { return item.target().Equal(target) }) {
+		if read.Symbol != "" || read.Variable.Position || target.Equal(CandleTarget(target.Interval)) {
 			continue
 		}
-		// Derive presentation from the dependency itself, never from configured
-		// rows, their display flags, order, or scale overrides.
-		item, err := service.indicators.Preview(target.Selection)
-		if err != nil {
-			return nil, fmt.Errorf("describe backtest indicator: %w", err)
+		var err error
+		if result, err = service.withDisplayed(result, target); err != nil {
+			return nil, err
 		}
-		arguments, err := callArguments(service.registry, target.Selection)
-		if err != nil {
-			return nil, fmt.Errorf("spell backtest indicator: %w", err)
-		}
-		result = append(result, displayedIndicator{Entry: item, interval: target.Interval, arguments: arguments})
 	}
-	// Formula traversal contains maps. Canonical calls give both clients a stable order,
-	// independent of configured indicator order and display flags.
-	slices.SortFunc(result, func(a, b displayedIndicator) int {
+	sortDisplayed(result)
+	return result, nil
+}
+
+// chartedIndicators are the indicators backtest charts draw: the displayed
+// ones and, once each, the indicators they read as their sources, which
+// their markers and panes name.
+func (service *Service) chartedIndicators(displayed []displayedIndicator) ([]displayedIndicator, error) {
+	result := slices.Clone(displayed)
+	for _, item := range displayed {
+		if source, found := item.source(); found {
+			var err error
+			if result, err = service.withDisplayed(result, source); err != nil {
+				return nil, err
+			}
+		}
+	}
+	sortDisplayed(result)
+	return result, nil
+}
+
+// withDisplayed adds the indicator of target to items unless they have it.
+func (service *Service) withDisplayed(items []displayedIndicator, target closedindicator.Target) ([]displayedIndicator, error) {
+	if slices.ContainsFunc(items, func(item displayedIndicator) bool { return item.target().Equal(target) }) {
+		return items, nil
+	}
+	// Derive presentation from the dependency itself, never from configured
+	// rows, their display flags, order, or scale overrides.
+	item, err := service.indicators.Preview(target.Selection)
+	if err != nil {
+		return nil, fmt.Errorf("describe backtest indicator: %w", err)
+	}
+	arguments, err := callArguments(service.registry, target.Selection, target.Interval)
+	if err != nil {
+		return nil, fmt.Errorf("spell backtest indicator: %w", err)
+	}
+	return append(items, displayedIndicator{Entry: item, interval: target.Interval, arguments: arguments}), nil
+}
+
+// sortDisplayed orders items by their canonical calls: formula traversal
+// contains maps, and the calls give both clients a stable order, independent
+// of configured indicator order and display flags.
+func sortDisplayed(items []displayedIndicator) {
+	slices.SortFunc(items, func(a, b displayedIndicator) int {
 		return strings.Compare(a.column(a.Outputs[0]), b.column(b.Outputs[0]))
 	})
-	return result, nil
 }
 
 func indicatorColumns(items []displayedIndicator) []IndicatorColumn {
@@ -103,7 +141,9 @@ func (current snapshot) indicatorValues(entry Entry, instrumentID int64, items [
 
 // chartSnapshot uses the same per-candle windows as replay. Values already
 // calculated by replay are reused; gaps in the base interval do not lose points
-// of coarser intervals. No snapshot reads history again after the replay.
+// of coarser intervals. A source the rule does not read by itself is
+// calculated over the windows a read of its latest value would have. No
+// snapshot reads history again after the replay.
 func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrumentID int64, result Backtest) ([]BacktestChart, error) {
 	charts := make([]BacktestChart, 0)
 	if result.From.IsZero() {
@@ -139,11 +179,20 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 			page.Candles = append(page.Candles, candle)
 		}
 		line := 0
-		for _, item := range replay.displayed {
+		for _, item := range replay.charted {
 			if item.interval != interval {
 				continue
 			}
-			definition := item.ChartIndicator(item.target().Key(), line)
+			sourceID := ""
+			if source, found := item.source(); found {
+				sourceID = source.Key()
+			}
+			definition := item.ChartIndicator(item.target().Key(), sourceID, line)
+			// Markers neither over the candles nor on the line of a source
+			// are not drawn, which may leave nothing.
+			if len(definition.Lines) == 0 {
+				continue
+			}
 			line += len(definition.Lines)
 			page.Definitions = append(page.Definitions, definition)
 			calculation := indicator.Calculation{Type: item.Selection.Type, Parameters: item.Selection.Parameters, Series: make([]indicator.NamedSeries, len(definition.Lines))}
@@ -151,9 +200,13 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 				calculation.Series[i] = indicator.NamedSeries{Name: drawn.Output, Points: make([]indicator.Point, 0)}
 			}
 			target := item.target()
-			position, subscribed := replay.current.reads.position(entry.ID, instrumentID, instrumentID, target.Key())
-			if !subscribed {
-				return nil, fmt.Errorf("backtest chart target %s is not subscribed", target.Key())
+			subscription := closedindicator.Subscription{InstrumentID: instrumentID, Target: target, Points: 1}
+			depth, err := closedindicator.Depth(replay.registry, target, subscription.Points)
+			if err != nil {
+				return nil, err
+			}
+			if position, subscribed := replay.current.reads.position(entry.ID, instrumentID, instrumentID, target.Key()); subscribed {
+				subscription, depth = replay.current.reads.subscriptions[position], replay.depths[position]
 			}
 			cached := replay.chartValues[pair{instrumentID: instrumentID, target: target.Key()}]
 			for i := first; first >= 0 && i <= last; i++ {
@@ -163,7 +216,7 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 				candle := history[i]
 				outputs, found := cached[candle.OpenTime.UTC()]
 				if !found {
-					value, warm, err := replay.calculateAt(position, i+1)
+					value, warm, err := replay.calculate(subscription, depth, i+1)
 					if err != nil {
 						return nil, err
 					}

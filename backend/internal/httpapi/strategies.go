@@ -50,7 +50,7 @@ func indicatorCallDTOs(calls []strategy.IndicatorCall) []StrategyIndicatorCall {
 	for i, call := range calls {
 		items[i] = StrategyIndicatorCall{
 			Type: string(call.Selection.Type), Parameters: append([]string{}, call.Arguments...), Title: call.Title,
-			Outputs: append([]string{}, call.Outputs...), CountOutputs: append([]string{}, call.Counts...),
+			Outputs: append([]string{}, call.Outputs...),
 		}
 	}
 	return items

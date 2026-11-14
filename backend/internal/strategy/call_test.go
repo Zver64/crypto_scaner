@@ -1,7 +1,6 @@
 package strategy
 
 import (
-	"slices"
 	"testing"
 
 	"crypto-scanner/internal/indicator"
@@ -14,14 +13,7 @@ import (
 // output, candle field, or function over the whole registry, since an
 // indicator with several outputs is called as its type and the output.
 func TestFunctionNamesAreUnique(t *testing.T) {
-	modules := indicatortalib.New()
-	rsi := slices.IndexFunc(modules, func(module indicator.Implementation) bool {
-		return module.Describe().Type == indicatortalib.RSIType
-	})
-	if rsi < 0 {
-		t.Fatal("no RSI module")
-	}
-	registry, err := indicator.NewRegistry(append(modules, pivot.New(), pivot.NewDivergence(modules[rsi]), candle.New())...)
+	registry, err := indicator.NewRegistry(append(indicatortalib.New(), pivot.New(), candle.New())...)
 	if err != nil {
 		t.Fatal(err)
 	}

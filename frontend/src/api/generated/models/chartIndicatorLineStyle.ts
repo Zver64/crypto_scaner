@@ -23,7 +23,7 @@
  */
 
 /**
- * How the series is drawn. A marker is a point above or below a candle; only `overlay` indicators have marker lines.
+ * How the series is drawn. A marker is a point above or below a candle, or above or below the line of its `anchor`; only `overlay` indicators and lines with an `anchor` are marker lines.
  */
 export type ChartIndicatorLineStyle = typeof ChartIndicatorLineStyle[keyof typeof ChartIndicatorLineStyle];
 

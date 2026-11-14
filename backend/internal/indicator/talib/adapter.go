@@ -25,20 +25,6 @@ var maTypes = []indicator.Choice{
 	{Value: 6, Title: "KAMA"}, {Value: 7, Title: "MAMA"}, {Value: 8, Title: "T3"},
 }
 
-// sourceChoices are the candle fields a series input can read, in
-// indicator.CandleFields order.
-var sourceChoices = func() []indicator.Choice {
-	titles := map[string]string{
-		"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume",
-		"quote_volume": "Quote Volume", "trades": "Trades",
-	}
-	choices := make([]indicator.Choice, len(indicator.CandleFields))
-	for index, field := range indicator.CandleFields {
-		choices[index] = indicator.Choice{Value: index, Title: titles[field], Name: field}
-	}
-	return choices
-}()
-
 // sourceClose is the default source: the close price.
 var sourceClose = float64(slices.Index(indicator.CandleFields, "close"))
 
@@ -48,7 +34,8 @@ const (
 	paramInteger paramKind = iota
 	paramReal
 	paramMAType
-	// paramSource chooses the candle field of the input named by its key.
+	// paramSource chooses the series of the input named by its key
+	// (indicator.ParameterSource).
 	paramSource
 )
 
@@ -71,7 +58,7 @@ type output struct {
 // call in params order, followed by the source parameters they ignore; call
 // receives inputs in inputs order and returns outputs in outputs order, each
 // as long as the inputs. An input named after a source parameter reads the
-// field that parameter chooses.
+// series that parameter chooses, which the registry supplies.
 type spec struct {
 	name          string
 	indicatorType indicator.Type
@@ -126,8 +113,8 @@ func (f *function) Describe() indicator.Descriptor {
 			parameter.Kind = indicator.ParameterChoice
 			parameter.Choices = slices.Clone(maTypes)
 		case paramSource:
-			parameter.Kind = indicator.ParameterChoice
-			parameter.Choices = slices.Clone(sourceChoices)
+			parameter.Kind = indicator.ParameterSource
+			parameter.Choices = indicator.FieldChoices()
 		}
 		descriptor.Parameters = append(descriptor.Parameters, parameter)
 	}
@@ -144,9 +131,11 @@ func (f *function) Normalize(parameters indicator.Parameters) (indicator.Paramet
 	}
 	result := make(indicator.Parameters, len(values))
 	for index, p := range f.spec.params {
-		if p.kind == paramReal {
+		switch p.kind {
+		case paramSource:
+		case paramReal:
 			result[p.key] = values[index]
-		} else {
+		default:
 			result[p.key] = int(values[index])
 		}
 	}
@@ -154,23 +143,10 @@ func (f *function) Normalize(parameters indicator.Parameters) (indicator.Paramet
 }
 
 func (f *function) Fields(parameters indicator.Parameters) ([]string, error) {
-	values, err := f.values(parameters)
-	if err != nil {
+	if _, err := f.values(parameters); err != nil {
 		return nil, err
 	}
-	return f.fields(values), nil
-}
-
-// fields resolves the inputs to candle fields.
-func (f *function) fields(values []float64) []string {
-	fields := slices.Clone(f.spec.inputs)
-	for index, name := range fields {
-		position := slices.IndexFunc(f.spec.params, func(p param) bool { return p.kind == paramSource && p.key == name })
-		if position >= 0 {
-			fields[index] = indicator.CandleFields[int(values[position])]
-		}
-	}
-	return fields
+	return slices.Clone(f.spec.inputs), nil
 }
 
 func (f *function) Lookback(parameters indicator.Parameters) (int, error) {
@@ -194,7 +170,7 @@ func (f *function) Calculate(parameters indicator.Parameters, inputs indicator.I
 	if err != nil {
 		return indicator.Result{}, err
 	}
-	series, err := indicator.ReadInputs(inputs, f.fields(values))
+	series, err := indicator.ReadInputs(inputs, f.spec.inputs)
 	if err != nil {
 		return indicator.Result{}, fmt.Errorf("%w: %w", indicator.ErrInvalidRequest, err)
 	}
@@ -240,7 +216,7 @@ func (f *function) invoke(series [][]float64, values []float64) (calculated [][]
 }
 
 // values validates parameters and returns them in spec order with defaults for
-// omitted keys.
+// omitted keys. Source parameters, which the registry validates, stay zero.
 func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 	for key := range parameters {
 		if !slices.ContainsFunc(f.spec.params, func(p param) bool { return p.key == key }) {
@@ -250,6 +226,9 @@ func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 	values := make([]float64, len(f.spec.params))
 	for index, p := range f.spec.params {
 		raw, exists := parameters[p.key]
+		if p.kind == paramSource {
+			continue
+		}
 		if !exists {
 			values[index] = p.defaultValue
 			continue
@@ -271,10 +250,6 @@ func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 			// Compared before converting, which could overflow.
 			if math.Trunc(value) != value || value < 0 || value >= float64(len(maTypes)) {
 				return nil, fmt.Errorf("%w: %s must be a moving average type between 0 and %d", indicator.ErrInvalidRequest, p.key, len(maTypes)-1)
-			}
-		case paramSource:
-			if math.Trunc(value) != value || value < 0 || value >= float64(len(sourceChoices)) {
-				return nil, fmt.Errorf("%w: %s must be a candle field between 0 and %d", indicator.ErrInvalidRequest, p.key, len(sourceChoices)-1)
 			}
 		}
 		values[index] = value

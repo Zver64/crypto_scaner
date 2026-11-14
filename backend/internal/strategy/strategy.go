@@ -387,9 +387,10 @@ type IndicatorCall struct {
 	Arguments []string
 }
 
-// indicatorCall spells the arguments of entry.
+// indicatorCall spells the arguments of entry, which has no nested source:
+// the call of one names a period, and these arguments fit any.
 func (service *Service) indicatorCall(entry scannerindicator.Entry) (IndicatorCall, error) {
-	arguments, err := callArguments(service.registry, entry.Selection)
+	arguments, err := callArguments(service.registry, entry.Selection, "")
 	if err != nil {
 		return IndicatorCall{}, err
 	}
@@ -428,7 +429,8 @@ type Validation struct {
 	// canonically.
 	Expression string
 	// Indicators are the indicators the expression calls, once each, in
-	// source order.
+	// source order, without those of another indicator: their arguments
+	// name a period.
 	Indicators []IndicatorCall
 }
 
@@ -441,7 +443,7 @@ func (service *Service) Validate(ctx context.Context, expression string, kind Ru
 	canonical, targets := Canonical(expression, service.registry)
 	validation := Validation{Problems: []string{}, Expression: canonical, Indicators: []IndicatorCall{}}
 	for _, target := range targets {
-		if slices.ContainsFunc(validation.Indicators, func(call IndicatorCall) bool { return call.HasSelection(target.Selection) }) {
+		if nestedSource(target.Selection) || slices.ContainsFunc(validation.Indicators, func(call IndicatorCall) bool { return call.HasSelection(target.Selection) }) {
 			continue
 		}
 		// An indicator the service cannot describe, such as one past the

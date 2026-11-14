@@ -62,6 +62,12 @@ const (
 	ParameterReal    ParameterKind = "real"
 	// ParameterChoice is an integer limited to the listed Choices.
 	ParameterChoice ParameterKind = "choice"
+	// ParameterSource chooses the series of the input named by its key: one
+	// of the listed Choices, which name candle fields (FieldChoices) unless
+	// the module reads a choice itself, or the output of another indicator
+	// (Source). The Registry validates and normalizes its value and supplies
+	// the series; implementations leave it out of Normalize and Lookback.
+	ParameterSource ParameterKind = "source"
 )
 
 // Choice is one allowed value of a ParameterChoice parameter. Name is the
@@ -99,18 +105,12 @@ const (
 	// below the candles holding a value.
 	OutputMarkerAbove OutputStyle = "marker_above"
 	OutputMarkerBelow OutputStyle = "marker_below"
-	// OutputHidden is an output that charts do not draw, such as a distance
-	// in candles that strategies read.
-	OutputHidden OutputStyle = "hidden"
 )
 
 // OutputDescriptor describes one output series returned by Calculate.
 type OutputDescriptor struct {
 	Name  string
 	Style OutputStyle
-	// Count marks an output that counts candles, a whole number that
-	// strategies may use as a prev shift.
-	Count bool
 	// Sparse marks an output with a value only on some candles and empty on
 	// the others.
 	Sparse bool
@@ -140,7 +140,7 @@ type Descriptor struct {
 	// configure it.
 	Internal bool
 	// Inputs names the input slots consumed by Calculate: candle fields, or
-	// the key of the parameter that chooses the field. Fields resolves them.
+	// the key of the source parameter that chooses the series.
 	Inputs     []string
 	Parameters []ParameterDescriptor
 	// Outputs names the series returned by Calculate, for example "rsi".
@@ -153,11 +153,15 @@ type Descriptor struct {
 type Implementation interface {
 	Describe() Descriptor
 	// Normalize validates parameters and returns their canonical form with
-	// defaults filled in, so equal settings compare equal.
+	// defaults filled in, so equal settings compare equal. Source parameters
+	// are accepted and left out: the Registry adds their canonical values.
 	Normalize(parameters Parameters) (Parameters, error)
-	// Fields returns the candle fields Calculate reads, in input order and
-	// keyed by those names in Inputs.
+	// Fields returns the names of the series Calculate reads, in input order
+	// and keyed by those names in Inputs: each a candle field or the key of a
+	// source parameter, whose series the Registry supplies.
 	Fields(parameters Parameters) ([]string, error)
+	// Lookback does not count the lookback of a nested source, which the
+	// Registry adds.
 	Lookback(parameters Parameters) (int, error)
 	Calculate(parameters Parameters, inputs Inputs) (Result, error)
 }

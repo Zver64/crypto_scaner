@@ -12,6 +12,20 @@ import (
 // CandleFields are the candle fields indicators can read, in display order.
 var CandleFields = []string{"open", "high", "low", "close", "volume", "quote_volume", "trades"}
 
+// FieldChoices are the candle fields as the choices of a source parameter,
+// valued by their position in CandleFields.
+func FieldChoices() []Choice {
+	titles := map[string]string{
+		"open": "Open", "high": "High", "low": "Low", "close": "Close", "volume": "Volume",
+		"quote_volume": "Quote Volume", "trades": "Trades",
+	}
+	choices := make([]Choice, len(CandleFields))
+	for index, field := range CandleFields {
+		choices[index] = Choice{Value: index, Title: titles[field], Name: field}
+	}
+	return choices
+}
+
 // PriceField reports whether field is on the candle price scale.
 func PriceField(field string) bool {
 	switch field {

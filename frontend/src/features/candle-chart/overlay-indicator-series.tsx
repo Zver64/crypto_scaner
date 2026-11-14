@@ -1,11 +1,12 @@
 import { LineSeries } from "lightweight-charts";
 
-import { Series } from "@/components/lightweight-chart";
+import { Series, SeriesMarkers } from "@/components/lightweight-chart";
 import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import { overlayIndicatorSeriesOptions } from "@/features/candle-chart/config";
 import type {
 	ChartIndicatorLine,
 	ChartIndicatorSlot,
+	ChartMarker,
 	ValueResolution,
 } from "@/features/candle-chart/types";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
@@ -13,6 +14,8 @@ import { useThemeColor } from "@/features/candle-chart/use-theme-color";
 interface OverlayIndicatorSeriesProps {
 	data: readonly ChartIndicatorSlot[];
 	line: ChartIndicatorLine;
+	// The markers of the lines anchored to this one.
+	markers?: readonly ChartMarker[];
 	// The resolution of the candles, so all labels on their scale look the same.
 	priceResolution: ValueResolution;
 }
@@ -21,6 +24,7 @@ interface OverlayIndicatorSeriesProps {
 export function OverlayIndicatorSeries({
 	data,
 	line,
+	markers,
 	priceResolution,
 }: OverlayIndicatorSeriesProps) {
 	const themeColor = useThemeColor();
@@ -34,6 +38,7 @@ export function OverlayIndicatorSeries({
 			}}
 		>
 			<AxisPriceFormat resolution={priceResolution} />
+			{markers ? <SeriesMarkers markers={markers} /> : null}
 		</Series>
 	);
 }

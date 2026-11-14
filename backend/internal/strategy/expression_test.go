@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
 
@@ -106,8 +108,16 @@ func TestCompileRejectsInvalidCalls(t *testing.T) {
 		`rsi("1h", 14, close, 2) > 1`: "1:4: rsi takes the period and at most 2 parameters",
 		`rsi("1h", 1) > 1`:            "1:4: rsi: invalid indicator request: period must be an integer between 2 and 2000",
 		`rsi("1h", close("1h")) > 1`:  "1:4: the period of rsi is a number",
-		`sma("1h", 20, closing) > 1`:  "1:4: the source of sma is one of open, high, low, close, volume, quote_volume, trades",
-		`sma("1h", 20, 4) > 1`:        "1:4: the source of sma is one of open, high, low, close, volume, quote_volume, trades",
+		`sma("1h", 20, closing) > 1`:  "1:4: the source of sma is a candle field (open, high, low, close, volume, quote_volume, trades) or an indicator call of the same period",
+		`sma("1h", 20, 4) > 1`:        "1:4: the source of sma is a candle field (open, high, low, close, volume, quote_volume, trades) or an indicator call of the same period",
+		// A source call is one indicator call of the period of the outer
+		// call, with a value on every candle and candle fields beneath.
+		`sma("1h", 9, rsi("1d")) > 1`:               "1:4: the source of sma is a candle field (open, high, low, close, volume, quote_volume, trades) or an indicator call of the same period",
+		`sma("1h", 9, close("1h")) > 1`:             "1:4: the source of sma is a candle field (open, high, low, close, volume, quote_volume, trades) or an indicator call of the same period",
+		`sma("1h", 9, Prev(rsi("1h"))) > 1`:         "1:4: the source of sma is a candle field (open, high, low, close, volume, quote_volume, trades) or an indicator call of the same period",
+		`sma("1h", 9, rsi("1h") + 1) > 1`:           "1:4: the source of sma is a candle field (open, high, low, close, volume, quote_volume, trades) or an indicator call of the same period",
+		`sma("1h", 9, sma("1h", 9, rsi("1h"))) > 1`: "1:4: sma: invalid indicator request: source reads sma, whose own source must be a candle field",
+		`sma("1h", 9, pivot_low("1h")) > 1`:         `1:4: sma: invalid indicator request: source reads "low" of pivot, which is not an output with a value on every candle`,
 	} {
 		_, err := Compile(source, registry, EntryRule)
 		var invalid *InvalidExpressionError
@@ -144,6 +154,38 @@ func TestCallsAreSpelledCanonically(t *testing.T) {
 	}
 	if want := []string{"1h rsi", "1d sma", "1h bbands", "1h rsi"}; !slices.Equal(types, want) {
 		t.Fatalf("Canonical() targets = %q, want %q", types, want)
+	}
+}
+
+// A call written as the source of another is part of that call: the rule
+// reads one value, the outer indicator calculated over the inner one, spelled
+// with the inner call in its own canonical form.
+func TestSourceCallsAreSpelledCanonically(t *testing.T) {
+	registry := testRegistry(t)
+	source := `sma( "1h", 9.0, rsi( "1h", 14 ) ) > 50 && Prev(pivot_low("1d", 5, 5, rsi("1d", 21)), 2) > ema("1h", 20, macd_macdhist("1h", 12)) && correl("1h", 30, rsi("1h"), volume) > 0`
+	compiled, err := Compile(source, registry, EntryRule)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var labels []string
+	for _, read := range compiled.Reads() {
+		labels = append(labels, read.label())
+	}
+	if want := []string{`correl("1h", 30, rsi("1h"), volume)`, `ema("1h", 20, macd_macdhist("1h"))`, `Prev(pivot_low("1d", 5, 5, rsi("1d", 21)), 2)`, `sma("1h", 9, rsi("1h"))`}; !slices.Equal(labels, want) {
+		t.Fatalf("reads = %q, want %q", labels, want)
+	}
+	canonical, targets := Canonical(source, registry)
+	if want := `sma("1h", 9, rsi("1h")) > 50 && Prev(pivot_low("1d", 5, 5, rsi("1d", 21)), 2) > ema("1h", 20, macd_macdhist("1h")) && correl("1h", 30, rsi("1h"), volume) > 0`; canonical != want {
+		t.Fatalf("Canonical() = %s, want %s", canonical, want)
+	}
+	nested, err := registry.Normalize(indicator.Selection{Type: "sma", Parameters: indicator.Parameters{
+		"period": 9, "source": indicator.Source{Selection: indicator.Selection{Type: "rsi"}, Output: "rsi"}.Value(),
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(targets) != 4 || !targets[0].Equal(closedindicator.Target{Interval: market.IntervalHour, Selection: nested}) {
+		t.Fatalf("Canonical() targets = %+v, want 4 starting with the SMA of the RSI", targets)
 	}
 }
 
@@ -281,16 +323,15 @@ func TestCompileCalculatedPrevShift(t *testing.T) {
 		t.Fatalf("Compile(prev 500) error = %v", err)
 	}
 	for source, problem := range map[string]string{
-		`Prev(Prev(close("1h"), bars_held), bars_held) > 1`:         "Prev with a calculated shift cannot contain Prev with a calculated shift",
-		`Prev(close("1h"), Prev(bars_held)) > 1`:                    shiftProblem,
-		`Prev(close("1h"), bars_held * 2) > 1`:                      shiftProblem,
-		"Prev(pnl, bars_held) > 1":                                  "pnl cannot be read through Prev, Percentile, ValueWhen, BarsSince, crossings, or Of",
-		`Prev(close("1h"), open("1h")) > 1`:                         `open("1h") does not count candles, so it cannot be a Prev shift`,
-		`Prev(close("1h"), divergence_previous_low_bars("1h")) > 1`: "",
-		`Prev(Percentile(close("1h"), 5, 50), bars_held) > 1`:       "Prev with a calculated shift cannot contain Percentile",
-		`Percentile(Prev(close("1h"), bars_held), 5, 50) > 1`:       "Percentile cannot contain Prev with a calculated shift",
-		`Prev(close("1h"), 2.5) > 1`:                                "the Prev shift must be a whole number from 1 to 500",
-		`Prev(close("1h"), 501) > 1`:                                "the Prev shift must be a whole number from 1 to 500",
+		`Prev(Prev(close("1h"), bars_held), bars_held) > 1`:   "Prev with a calculated shift cannot contain Prev with a calculated shift",
+		`Prev(close("1h"), Prev(bars_held)) > 1`:              shiftProblem,
+		`Prev(close("1h"), bars_held * 2) > 1`:                shiftProblem,
+		"Prev(pnl, bars_held) > 1":                            "pnl cannot be read through Prev, Percentile, ValueWhen, BarsSince, crossings, or Of",
+		`Prev(close("1h"), open("1h")) > 1`:                   `open("1h") does not count candles, so it cannot be a Prev shift`,
+		`Prev(Percentile(close("1h"), 5, 50), bars_held) > 1`: "Prev with a calculated shift cannot contain Percentile",
+		`Percentile(Prev(close("1h"), bars_held), 5, 50) > 1`: "Percentile cannot contain Prev with a calculated shift",
+		`Prev(close("1h"), 2.5) > 1`:                          "the Prev shift must be a whole number from 1 to 500",
+		`Prev(close("1h"), 501) > 1`:                          "the Prev shift must be a whole number from 1 to 500",
 	} {
 		_, err := Compile(source, registry, ExitRule)
 		if problem == "" {

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/indicator/candle"
 	"crypto-scanner/internal/indicator/pivot"
@@ -115,7 +116,7 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 					if err != nil {
 						t.Fatal(err)
 					}
-					arguments, err := callArguments(service.registry, definition.Selection)
+					arguments, err := callArguments(service.registry, definition.Selection, page.Interval)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -164,6 +165,51 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 	store.candles[market.IntervalHour][1][first].Close = 1
 	if result.Charts[0].Candles[0].Close != before {
 		t.Fatal("snapshot shares mutable candles")
+	}
+}
+
+// A chart draws the source of an indicator once, though the rule does not
+// read it by itself: the markers of its pivots sit on its line, and an
+// indicator in its units shares its pane.
+func TestBacktestChartDrawsTheSourcesOfIndicators(t *testing.T) {
+	var hourly []market.Candle
+	for i := range 600 {
+		hourly = append(hourly, testCandle(1, market.IntervalHour, backtestHour(i), 100+10*math.Sin(float64(i)/7)))
+	}
+	store := newBacktestStore(market.IntervalHour, hourly)
+	store.strategies = []Strategy{{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6,
+		Expression: `pivot_low("1h", 5, 5, rsi("1h")) > 0 && pivot_high("1h", 5, 5, rsi("1h")) < 100 && ema("1h", 9, macd_macdhist("1h")) > -100`}}
+	result, err := snapshotTestService(t, store).Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page := result.Charts[0]
+	drawn := map[indicator.Type]int{}
+	for i, definition := range page.Definitions {
+		if _, twice := drawn[definition.Selection.Type]; twice {
+			t.Fatalf("%s is drawn twice", definition.Selection.Type)
+		}
+		drawn[definition.Selection.Type] = i
+	}
+	for _, name := range []indicator.Type{"rsi", "macd", "ema", pivot.Type} {
+		if _, found := drawn[name]; !found {
+			t.Fatalf("%s is not drawn among %v", name, drawn)
+		}
+	}
+	rsi, pivots := page.Definitions[drawn["rsi"]], page.Definitions[drawn[pivot.Type]]
+	if len(page.Indicators[drawn["rsi"]].Series[0].Points) == 0 {
+		t.Fatal("the source has no points")
+	}
+	want := chart.LineAnchor{IndicatorID: rsi.ID, Output: "rsi"}
+	if len(pivots.Lines) != 2 || pivots.Lines[0].Anchor != want || pivots.Lines[1].Anchor != want || pivots.Pane != rsi.Pane {
+		t.Fatalf("pivots of the rsi = %+v, want markers anchored to %+v in the pane %q", pivots, want, rsi.Pane)
+	}
+	if macd, ema := page.Definitions[drawn["macd"]], page.Definitions[drawn["ema"]]; ema.Pane != macd.ID || macd.Pane != macd.ID {
+		t.Fatalf("ema of the macd histogram is in the pane %q, want that of the macd, %q", ema.Pane, macd.Pane)
+	}
+	// Only what the rule reads is a column.
+	if slices.ContainsFunc(result.IndicatorColumns, func(column IndicatorColumn) bool { return column.Key == `rsi("1h")` }) {
+		t.Fatal("the source is a column")
 	}
 }
 

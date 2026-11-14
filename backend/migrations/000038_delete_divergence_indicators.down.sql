@@ -1,0 +1,1 @@
+-- The deleted indicators are not restored.

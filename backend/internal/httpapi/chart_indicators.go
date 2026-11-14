@@ -20,6 +20,9 @@ func chartIndicatorDTO(item chart.CatalogIndicator) ChartIndicatorDefinition {
 	lines := make([]ChartIndicatorLine, len(item.Lines))
 	for i, line := range item.Lines {
 		lines[i] = ChartIndicatorLine{Output: line.Output, Title: line.Title, Color: line.Color, Style: ChartIndicatorLineStyle(line.Style), Shift: line.Shift}
+		if line.Anchor != (chart.LineAnchor{}) {
+			lines[i].Anchor = &ChartIndicatorLineAnchor{IndicatorId: line.Anchor.IndicatorID, Output: line.Anchor.Output}
+		}
 	}
 	definition := ChartIndicatorDefinition{
 		Id:         item.ID,

@@ -1,11 +1,11 @@
-// Package pivot provides the swing indicators TA-Lib lacks: confirmed pivot
-// highs and lows, and the RSI divergence between them, both as TradingView
-// calculates them (ta.pivothigh, ta.pivotlow, and its RSI Divergence
-// Indicator).
+// Package pivot provides the swing indicator TA-Lib lacks: confirmed pivot
+// highs and lows, as TradingView calculates them (ta.pivothigh and
+// ta.pivotlow).
 package pivot
 
 import (
 	"fmt"
+	"maps"
 	"math"
 	"slices"
 
@@ -15,7 +15,7 @@ import (
 const (
 	// Type is the registry identifier of the pivot highs and lows.
 	Type indicator.Type = "pivot"
-	// group lists both modules together in the indicator picker.
+	// group lists the module in the indicator picker.
 	group = "Pivots"
 	// maxSide bounds the candles a pivot is compared with on either side,
 	// which every candle of a backtest compares again.
@@ -29,19 +29,32 @@ var sides = []param{
 	{key: "right", title: "Pivot Lookback Right", description: "Candles after a pivot, which confirm it", minimum: 1, maximum: maxSide, defaultValue: 5},
 }
 
+const (
+	// sourceKey is the parameter choosing the series pivots are found in.
+	sourceKey = "source"
+	// highAndLow is its default: pivot highs of the high and pivot lows of
+	// the low.
+	highAndLow = -1
+)
+
 // New returns the pivot high and low module.
 func New() indicator.Implementation { return pivots{} }
 
-// pivots reports the price of a pivot high and of a pivot low on the candle
+// pivots reports the value of a pivot high and of a pivot low on the candle
 // that confirms it, right candles after the pivot, and is empty on every
-// other candle.
+// other candle. Pivot highs are found in the high and pivot lows in the low,
+// or both in the source when one is chosen.
 type pivots struct{}
 
 func (pivots) Describe() indicator.Descriptor {
 	return indicator.Descriptor{
 		Type: Type, Title: "Pivot High/Low", Group: group, Overlay: true,
-		Inputs:     []string{"high", "low"},
-		Parameters: describe(sides),
+		Inputs: []string{"high", "low"},
+		Parameters: append(describe(sides), indicator.ParameterDescriptor{
+			Key: sourceKey, Title: "Source", Description: "Series the pivots are found in", Kind: indicator.ParameterSource,
+			Default: highAndLow,
+			Choices: append([]indicator.Choice{{Value: highAndLow, Title: "High and low"}}, indicator.FieldChoices()...),
+		}),
 		Outputs: []indicator.OutputDescriptor{
 			{Name: "high", Style: indicator.OutputMarkerAbove, Sparse: true, Shift: "right"},
 			{Name: "low", Style: indicator.OutputMarkerBelow, Sparse: true, Shift: "right"},
@@ -49,41 +62,59 @@ func (pivots) Describe() indicator.Descriptor {
 	}
 }
 
-func (pivots) Normalize(parameters indicator.Parameters) (indicator.Parameters, error) {
+// parse reads the sides and the names of the series pivot highs and pivot
+// lows are found in.
+func (pivots) parse(parameters indicator.Parameters) (left, right int, inputs []string, err error) {
+	inputs = []string{"high", "low"}
+	if raw, chosen := parameters[sourceKey]; chosen {
+		if value, err := indicator.ParseNumber(raw); err != nil || value != highAndLow {
+			inputs = []string{sourceKey, sourceKey}
+		}
+		parameters = maps.Clone(parameters)
+		delete(parameters, sourceKey)
+	}
 	values, err := parse(sides, parameters)
+	if err != nil {
+		return 0, 0, nil, err
+	}
+	return values[0], values[1], inputs, nil
+}
+
+func (m pivots) Normalize(parameters indicator.Parameters) (indicator.Parameters, error) {
+	left, right, _, err := m.parse(parameters)
 	if err != nil {
 		return nil, err
 	}
-	return canonical(sides, values), nil
+	return canonical(sides, []int{left, right}), nil
 }
 
 func (m pivots) Fields(parameters indicator.Parameters) ([]string, error) {
-	if _, err := m.Normalize(parameters); err != nil {
+	_, _, inputs, err := m.parse(parameters)
+	if err != nil {
 		return nil, err
 	}
-	return []string{"high", "low"}, nil
+	return slices.Compact(inputs), nil
 }
 
 // Lookback is the candles a value depends on besides its own: the left
 // candles before the pivot and the right after it.
-func (pivots) Lookback(parameters indicator.Parameters) (int, error) {
-	values, err := parse(sides, parameters)
+func (m pivots) Lookback(parameters indicator.Parameters) (int, error) {
+	left, right, _, err := m.parse(parameters)
 	if err != nil {
 		return 0, err
 	}
-	return values[0] + values[1], nil
+	return left + right, nil
 }
 
-func (pivots) Calculate(parameters indicator.Parameters, inputs indicator.Inputs) (indicator.Result, error) {
-	values, err := parse(sides, parameters)
+func (m pivots) Calculate(parameters indicator.Parameters, inputs indicator.Inputs) (indicator.Result, error) {
+	left, right, names, err := m.parse(parameters)
 	if err != nil {
 		return indicator.Result{}, err
 	}
-	series, err := indicator.ReadInputs(inputs, []string{"high", "low"})
+	series, err := indicator.ReadInputs(inputs, names)
 	if err != nil {
 		return indicator.Result{}, fmt.Errorf("%w: %w", indicator.ErrInvalidRequest, err)
 	}
-	left, right := values[0], values[1]
 	return indicator.Result{Outputs: indicator.Outputs{
 		"high": confirmations(series[0], left, right, isHigh),
 		"low":  confirmations(series[1], left, right, isLow),

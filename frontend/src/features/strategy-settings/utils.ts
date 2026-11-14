@@ -245,7 +245,10 @@ function strategyRuleProcessor(
 	return callSource(name, [left, right]);
 }
 
-// A range of an expression with its bounds in ascending order.
+// A range of an expression with its bounds in ascending order. The expr
+// package's CEL processor drops the expression of a range
+// (https://github.com/react-querybuilder/react-querybuilder/issues/1137);
+// once that is fixed, leave ranges to it and remove this function.
 function expressionRange(
 	lhs: ExpressionNode,
 	operator: string,
@@ -297,6 +300,8 @@ export function importedStrategyQuery(
 // The parser restores arithmetic operands of comparisons only in
 // parentheses, as the builder writes them, so volume("1h") >= 1.5 * x
 // becomes volume("1h") >= (1.5 * x). A negative number stays bare.
+// Remove once parseCEL reads such operands itself
+// (https://github.com/react-querybuilder/react-querybuilder/issues/1136).
 export function parenthesizeOperands(expression: string): string {
 	const tokens: Token[] = [];
 	for (const match of expression.matchAll(tokenPattern)) {

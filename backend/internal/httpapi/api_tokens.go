@@ -17,14 +17,7 @@ type APITokens interface {
 	DeleteAPIToken(ctx context.Context, userID, id int64) error
 }
 
-// apiTokensSessionOnly refuses API tokens: a leaked token must not issue
-// more tokens or revoke the ones that would notice it.
-const apiTokensSessionOnly = "API tokens are managed from the Mini App, not with an API token"
-
 func (api *api) ListApiTokens(ctx context.Context, _ ListApiTokensRequestObject) (ListApiTokensResponseObject, error) {
-	if apiTokenUsed(ctx) {
-		return ListApiTokens403JSONResponse{sessionRequired(ctx, apiTokensSessionOnly)}, nil
-	}
 	tokens, err := api.apiTokens.ListAPITokens(ctx, currentUserID(ctx))
 	if err != nil {
 		return ListApiTokens500JSONResponse{api.internalError(ctx, "list_api_tokens", err)}, nil
@@ -40,9 +33,6 @@ func (api *api) ListApiTokens(ctx context.Context, _ ListApiTokensRequestObject)
 }
 
 func (api *api) CreateApiToken(ctx context.Context, request CreateApiTokenRequestObject) (CreateApiTokenResponseObject, error) {
-	if apiTokenUsed(ctx) {
-		return CreateApiToken403JSONResponse{sessionRequired(ctx, apiTokensSessionOnly)}, nil
-	}
 	issued, err := api.apiTokens.CreateAPIToken(ctx, currentUserID(ctx), request.Body.Name)
 	switch {
 	case err == nil:
@@ -55,9 +45,6 @@ func (api *api) CreateApiToken(ctx context.Context, request CreateApiTokenReques
 }
 
 func (api *api) DeleteApiToken(ctx context.Context, request DeleteApiTokenRequestObject) (DeleteApiTokenResponseObject, error) {
-	if apiTokenUsed(ctx) {
-		return DeleteApiToken403JSONResponse{sessionRequired(ctx, apiTokensSessionOnly)}, nil
-	}
 	err := api.apiTokens.DeleteAPIToken(ctx, currentUserID(ctx), request.TokenId)
 	switch {
 	case err == nil:
@@ -67,17 +54,4 @@ func (api *api) DeleteApiToken(ctx context.Context, request DeleteApiTokenReques
 	default:
 		return DeleteApiToken500JSONResponse{api.internalError(ctx, "delete_api_token", err)}, nil
 	}
-}
-
-// apiTokenUsed reports a request authenticated with an API token rather than
-// a Mini App session.
-func apiTokenUsed(ctx context.Context) bool {
-	user, _ := UserFromContext(ctx)
-	return user.APIToken
-}
-
-// sessionRequired refuses an operation reserved for Mini App sessions.
-func sessionRequired(ctx context.Context, message string) SessionRequiredJSONResponse {
-	body := newAPIError(ctx, http.StatusForbidden, "session_required", message, nil).body
-	return SessionRequiredJSONResponse{Body: body, Headers: SessionRequiredResponseHeaders{XRequestID: body.RequestId}}
 }

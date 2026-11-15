@@ -96,6 +96,8 @@ paths:
       summary: Revoke the current session
       tags: [Authentication]
       security: [{ sessionToken: [] }]
+      x-access: user
+      x-session-only: An API token is not a session and cannot be revoked here
       parameters:
         - $ref: "#/components/parameters/RequestID"
       responses:
@@ -110,6 +112,7 @@ paths:
       tags: [Analysis]
       security:
         - sessionToken: []
+      x-access: user
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Symbol"
@@ -152,6 +155,7 @@ paths:
       tags: [Analysis]
       security:
         - sessionToken: []
+      x-access: user
       parameters:
         - $ref: "#/components/parameters/RequestID"
       requestBody:
@@ -189,6 +193,7 @@ paths:
       tags: [Market Data]
       security:
         - sessionToken: []
+      x-access: user
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Symbol"
@@ -253,6 +258,7 @@ paths:
       tags: [Market Data]
       security:
         - sessionToken: []
+      x-access: user
       parameters:
         - $ref: "#/components/parameters/RequestID"
         - $ref: "#/components/parameters/Symbol"
@@ -288,6 +294,7 @@ paths:
         administrator configures the catalog, so it may be empty.
       tags: [Market Data]
       security: [{ sessionToken: [] }]
+      x-access: user
       parameters:
         - name: interval
           in: query
@@ -306,6 +313,7 @@ paths:
       summary: List the active instruments
       tags: [Market Data]
       security: [{ sessionToken: [] }]
+      x-access: user
       parameters:
         - name: universe
           in: query
@@ -323,6 +331,7 @@ paths:
       operationId: listFavorites
       tags: [Favorites]
       security: [{ sessionToken: [] }]
+      x-access: user
       responses:
         "200":
           description: Current user's favorites.
@@ -335,6 +344,7 @@ paths:
       operationId: addFavorite
       tags: [Favorites]
       security: [{ sessionToken: [] }]
+      x-access: user
       parameters: [{ $ref: "#/components/parameters/Symbol" }]
       responses:
         "200":
@@ -348,6 +358,7 @@ paths:
       operationId: removeFavorite
       tags: [Favorites]
       security: [{ sessionToken: [] }]
+      x-access: user
       parameters:
         - { $ref: "#/components/parameters/Symbol" }
         - name: confirm_alerts
@@ -367,6 +378,7 @@ paths:
       summary: Analyze the current user's active favorite instruments
       tags: [Favorites]
       security: [{ sessionToken: [] }]
+      x-access: user
       requestBody:
         required: true
         content:
@@ -387,6 +399,7 @@ paths:
       operationId: listPriceAlerts
       tags: [Price Alerts]
       security: [{ sessionToken: [] }]
+      x-access: user
       parameters: [{ $ref: "#/components/parameters/Symbol" }]
       responses:
         "200":
@@ -399,6 +412,7 @@ paths:
       operationId: createPriceAlert
       tags: [Price Alerts]
       security: [{ sessionToken: [] }]
+      x-access: user
       parameters: [{ $ref: "#/components/parameters/Symbol" }]
       requestBody:
         required: true
@@ -418,6 +432,7 @@ paths:
       operationId: updatePriceAlert
       tags: [Price Alerts]
       security: [{ sessionToken: [] }]
+      x-access: user
       parameters: [{ $ref: "#/components/parameters/AlertID" }]
       requestBody:
         required: true
@@ -436,6 +451,7 @@ paths:
       operationId: deletePriceAlert
       tags: [Price Alerts]
       security: [{ sessionToken: [] }]
+      x-access: user
       parameters: [{ $ref: "#/components/parameters/AlertID" }]
       responses:
         "204": { description: Alert deleted. }
@@ -449,6 +465,7 @@ paths:
       summary: Describe the authenticated user
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: user
       responses:
         "200":
           description: Current user.
@@ -463,6 +480,7 @@ paths:
       description: Self-descriptions of the registered indicators, used to build the scanner indicator form.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       responses:
         "200":
           description: Indicator types ordered by type.
@@ -482,6 +500,7 @@ paths:
         table columns and the chart indicators of every interval.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       responses:
         "200":
           description: Configured indicators.
@@ -495,6 +514,7 @@ paths:
       description: Adds the indicator at the end of the display order.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorInput" } } }
@@ -513,6 +533,7 @@ paths:
       summary: Set the display order of the scanner indicators
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ScannerIndicatorOrder" } } }
@@ -531,6 +552,7 @@ paths:
       summary: Replace the periods and pane scale of a scanner indicator
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
       requestBody:
         required: true
@@ -550,6 +572,7 @@ paths:
       summary: Remove a scanner indicator
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       parameters: [{ $ref: "#/components/parameters/ScannerIndicatorID" }]
       responses:
         "204": { description: Indicator removed. }
@@ -564,6 +587,7 @@ paths:
       description: Users are added through the Telegram bot. The administrator comes first.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       responses:
         "200":
           description: Application users.
@@ -578,6 +602,7 @@ paths:
       description: The administrator always receives them and cannot be changed.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       parameters: [{ $ref: "#/components/parameters/TelegramID" }]
       requestBody:
         required: true
@@ -595,6 +620,7 @@ paths:
       description: The user loses access, and their favorites and price alerts are deleted. The administrator cannot be deleted.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       parameters: [{ $ref: "#/components/parameters/TelegramID" }]
       responses:
         "204": { description: User deleted. }
@@ -615,6 +641,7 @@ paths:
         configured all the same.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       responses:
         "200":
           description: What strategy expressions read.
@@ -636,6 +663,7 @@ paths:
         canonically and the indicators it calls, configured or not.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/StrategyValidationInput" } } }
@@ -673,6 +701,7 @@ paths:
         Telegram message for every buy, sell, short, cover, and signal.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       responses:
         "200":
           description: Strategies ordered by creation.
@@ -686,6 +715,7 @@ paths:
       description: An enabled strategy announces the instruments whose entry is true now, then signals buys and sells.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/StrategyInput" } } }
@@ -705,6 +735,7 @@ paths:
       description: A change of how an enabled strategy trades or of its coins forgets its open trades and starts it afresh.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       parameters: [{ $ref: "#/components/parameters/StrategyID" }]
       requestBody:
         required: true
@@ -725,6 +756,7 @@ paths:
       description: Enabling starts the strategy afresh, without trades, and needs coins chosen, all active; disabling forgets its trades.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       parameters: [{ $ref: "#/components/parameters/StrategyID" }]
       requestBody:
         required: true
@@ -743,6 +775,7 @@ paths:
       summary: Remove a strategy
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       parameters: [{ $ref: "#/components/parameters/StrategyID" }]
       responses:
         "204": { description: Strategy removed. }
@@ -786,6 +819,7 @@ paths:
         them.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       parameters:
         - $ref: "#/components/parameters/StrategyID"
         - name: symbol
@@ -836,6 +870,7 @@ paths:
         another fails at once with `backtest_busy`.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/StrategyBacktestInput" } } }
@@ -870,6 +905,9 @@ paths:
         token are refused (`session_required`). Backtests never load history.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
+      # Loads call the exchange for minutes, so only a person starts them.
+      x-session-only: History loads are started from the Mini App, not with an API token
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/CandleHistoryLoadInput" } } }
@@ -892,6 +930,7 @@ paths:
         one.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
       responses:
         "200":
           description: The current or last job.
@@ -910,6 +949,9 @@ paths:
         token are refused (`session_required`).
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
+      # A leaked token must not issue more tokens or revoke the ones that would notice it.
+      x-session-only: API tokens are managed from the Mini App, not with an API token
       responses:
         "200":
           description: API tokens without their secrets.
@@ -929,6 +971,9 @@ paths:
         Only a Mini App session issues tokens.
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
+      # A leaked token must not issue more tokens or revoke the ones that would notice it.
+      x-session-only: API tokens are managed from the Mini App, not with an API token
       requestBody:
         required: true
         content: { application/json: { schema: { $ref: "#/components/schemas/ApiTokenInput" } } }
@@ -947,6 +992,9 @@ paths:
       description: The token stops authenticating immediately. Only a Mini App session revokes tokens (`session_required`).
       tags: [Administration]
       security: [{ sessionToken: [] }]
+      x-access: administrator
+      # A leaked token must not issue more tokens or revoke the ones that would notice it.
+      x-session-only: API tokens are managed from the Mini App, not with an API token
       parameters: [{ $ref: "#/components/parameters/ApiTokenID" }]
       responses:
         "204": { description: Token revoked. }
@@ -964,7 +1012,15 @@ components:
     sessionToken:
       type: http
       scheme: bearer
-      description: Session token issued by `createSession`, or an API token (`cst_…`) issued by `createApiToken`.
+      description: |
+        Session token issued by `createSession`, or an API token (`cst_…`) issued by `createApiToken`.
+
+        Every operation secured by this scheme declares who may call it with
+        `x-access`: `user` (any authenticated user) or `administrator` (only the
+        scanner administrator; others get `403` `administrator_required`). An
+        operation that refuses API tokens also declares `x-session-only`, whose
+        value is the message of its `403` `session_required` response. The
+        server builds its routing from these extensions.
   parameters:
     ApiTokenID:
       name: token_id

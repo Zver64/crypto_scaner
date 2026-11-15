@@ -8,10 +8,11 @@ import (
 )
 
 func TestPriceAlertOpenAPIValidationAcceptsFractionalDecimal(t *testing.T) {
-	validator, err := openAPIValidator()
+	spec, err := GetSpec()
 	if err != nil {
 		t.Fatal(err)
 	}
+	validator := openAPIValidator(spec)
 	next := http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) { response.WriteHeader(http.StatusNoContent) })
 	for _, test := range []struct {
 		name, target string

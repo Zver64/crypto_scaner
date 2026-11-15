@@ -16,10 +16,6 @@ type HistoryLoads interface {
 }
 
 func (api *api) StartCandleHistoryLoad(ctx context.Context, request StartCandleHistoryLoadRequestObject) (StartCandleHistoryLoadResponseObject, error) {
-	// Loads call the exchange for minutes, so only a person starts them.
-	if apiTokenUsed(ctx) {
-		return StartCandleHistoryLoad403JSONResponse{sessionRequired(ctx, "History loads are started from the Mini App, not with an API token")}, nil
-	}
 	intervals := make([]market.CandleInterval, len(request.Body.Intervals))
 	for i, interval := range request.Body.Intervals {
 		intervals[i] = market.CandleInterval(interval)

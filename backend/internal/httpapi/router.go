@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -111,55 +112,6 @@ type api struct {
 
 var _ StrictServerInterface = (*api)(nil)
 
-// protectedRoutes are the authenticated OpenAPI operations. Method-specific
-// patterns let the router reject unsupported methods before authentication.
-var protectedRoutes = []string{
-	"POST /api/v1/analysis/instruments/{symbol}",
-	"POST /api/v1/analysis/market",
-	"GET /api/v1/instruments/{symbol}/candles",
-	"GET /api/v1/instruments/{symbol}/grid-limits",
-	"GET /api/v1/chart/indicators",
-	"GET /api/v1/instruments",
-	"GET /api/v1/favorites",
-	"PUT /api/v1/favorites/{symbol}",
-	"DELETE /api/v1/favorites/{symbol}",
-	"POST /api/v1/favorites/analysis",
-	"GET /api/v1/instruments/{symbol}/alerts",
-	"POST /api/v1/instruments/{symbol}/alerts",
-	"PATCH /api/v1/alerts/{alert_id}",
-	"DELETE /api/v1/alerts/{alert_id}",
-	"GET /api/v1/me",
-	"DELETE /api/v1/auth/session",
-}
-
-// administratorRoutes are the operations only the scanner administrator may
-// call. They are authenticated like protectedRoutes.
-var administratorRoutes = []string{
-	"GET /api/v1/admin/indicator-types",
-	"GET /api/v1/admin/scanner-indicators",
-	"POST /api/v1/admin/scanner-indicators",
-	"PATCH /api/v1/admin/scanner-indicators/{indicator_id}",
-	"DELETE /api/v1/admin/scanner-indicators/{indicator_id}",
-	"PUT /api/v1/admin/scanner-indicator-order",
-	"GET /api/v1/admin/users",
-	"PATCH /api/v1/admin/users/{telegram_id}",
-	"DELETE /api/v1/admin/users/{telegram_id}",
-	"GET /api/v1/admin/strategy-catalog",
-	"POST /api/v1/admin/strategy-validations",
-	"GET /api/v1/admin/strategies",
-	"POST /api/v1/admin/strategies",
-	"PUT /api/v1/admin/strategies/{strategy_id}",
-	"PATCH /api/v1/admin/strategies/{strategy_id}",
-	"DELETE /api/v1/admin/strategies/{strategy_id}",
-	"GET /api/v1/admin/strategies/{strategy_id}/backtest",
-	"POST /api/v1/admin/strategy-backtests",
-	"POST /api/v1/admin/candle-history-loads",
-	"GET /api/v1/admin/candle-history-loads",
-	"GET /api/v1/admin/api-tokens",
-	"POST /api/v1/admin/api-tokens",
-	"DELETE /api/v1/admin/api-tokens/{token_id}",
-}
-
 // New returns the service HTTP handler with process-wide middleware applied.
 func New(logger *slog.Logger, dependencies Dependencies, options Options) http.Handler {
 	return newHandler(logger, dependencies, options, requireSession(dependencies.Sessions, logger))
@@ -178,21 +130,17 @@ func newHandler(logger *slog.Logger, dependencies Dependencies, options Options,
 	})
 	HandlerWithOptions(strict, StdHTTPServerOptions{BaseRouter: operations, ErrorHandlerFunc: openAPIRequestError})
 
-	validator, err := openAPIValidator()
+	spec, err := GetSpec()
 	if err != nil {
 		panic(fmt.Sprintf("load OpenAPI contract: %v", err))
 	}
+	validator := openAPIValidator(spec)
 
 	router := http.NewServeMux()
 	router.Handle("/health/", operations)
 	router.Handle("POST /api/v1/auth/session", requireInitData(limitRequestBody(validator(operations))))
-	protectedOperations := authenticate(defaultJSONContentType(limitRequestBody(validator(operations))))
-	for _, route := range protectedRoutes {
-		router.Handle(route, protectedOperations)
-	}
-	administratorOperations := authenticate(requireAdministrator(defaultJSONContentType(limitRequestBody(validator(operations)))))
-	for _, route := range administratorRoutes {
-		router.Handle(route, administratorOperations)
+	if err := registerSecuredOperations(router, spec, authenticate, defaultJSONContentType(limitRequestBody(validator(operations)))); err != nil {
+		panic(fmt.Sprintf("route OpenAPI contract: %v", err))
 	}
 	router.Handle("GET /api/v1/live/candles", newLiveCandleHandler(dependencies.Sessions, dependencies.LiveCandles, dependencies.Chart, logger))
 	if options.APIDocsEnabled {
@@ -201,16 +149,61 @@ func newHandler(logger *slog.Logger, dependencies Dependencies, options Options,
 	return requestMiddleware(logger, router)
 }
 
-func openAPIValidator() (func(http.Handler) http.Handler, error) {
-	spec, err := GetSpec()
-	if err != nil {
-		return nil, err
-	}
+func openAPIValidator(spec *openapi3.T) func(http.Handler) http.Handler {
 	spec.Servers = nil
 	return nethttpmiddleware.OapiRequestValidatorWithOptions(spec, &nethttpmiddleware.Options{
 		Options:              openapi3filter.Options{AuthenticationFunc: func(context.Context, *openapi3filter.AuthenticationInput) error { return nil }},
 		ErrorHandlerWithOpts: openAPIValidationError,
-	}), nil
+	})
+}
+
+// Values of the x-access extension of operations secured by sessionToken.
+const (
+	accessUser          = "user"
+	accessAdministrator = "administrator"
+)
+
+// registerSecuredOperations registers every operation the contract secures
+// with sessionToken under its method-specific pattern, so unsupported methods
+// and unknown paths are rejected before authentication. Each runs behind
+// authentication, then the administrator check its x-access asks for, then
+// the API token refusal its x-session-only asks for. A missing or unknown
+// access value is an error, never an open route.
+func registerSecuredOperations(router *http.ServeMux, spec *openapi3.T, authenticate func(http.Handler) http.Handler, next http.Handler) error {
+	for path, item := range spec.Paths.Map() {
+		for method, operation := range item.Operations() {
+			security := spec.Security
+			if operation.Security != nil {
+				security = *operation.Security
+			}
+			if !slices.ContainsFunc(security, func(requirement openapi3.SecurityRequirement) bool { _, ok := requirement["sessionToken"]; return ok }) {
+				if _, ok := operation.Extensions["x-access"]; ok {
+					return fmt.Errorf("%s %s declares x-access without sessionToken security", method, path)
+				}
+				if _, ok := operation.Extensions["x-session-only"]; ok {
+					return fmt.Errorf("%s %s declares x-session-only without sessionToken security", method, path)
+				}
+				continue
+			}
+			handler := next
+			if value, ok := operation.Extensions["x-session-only"]; ok {
+				message, _ := value.(string)
+				if message == "" {
+					return fmt.Errorf("%s %s: x-session-only must be the refusal message", method, path)
+				}
+				handler = refuseAPITokens(message)(handler)
+			}
+			switch access, _ := operation.Extensions["x-access"].(string); access {
+			case accessUser:
+			case accessAdministrator:
+				handler = requireAdministrator(handler)
+			default:
+				return fmt.Errorf("%s %s: x-access is %q, want %q or %q", method, path, access, accessUser, accessAdministrator)
+			}
+			router.Handle(method+" "+path, authenticate(handler))
+		}
+	}
+	return nil
 }
 
 func openAPIValidationError(_ context.Context, err error, response http.ResponseWriter, request *http.Request, options nethttpmiddleware.ErrorHandlerOpts) {

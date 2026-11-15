@@ -107,6 +107,21 @@ func requireAdministrator(next http.Handler) http.Handler {
 	})
 }
 
+// refuseAPITokens answers 403 session_required, with message, to requests
+// authenticated with an API token rather than a Mini App session. It runs
+// after requireSession.
+func refuseAPITokens(message string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+			if user, _ := UserFromContext(request.Context()); user.APIToken {
+				writeAPIError(response, http.StatusForbidden, "session_required", message, nil)
+				return
+			}
+			next.ServeHTTP(response, request)
+		})
+	}
+}
+
 func authorizationCredential(header, scheme string) (string, bool) {
 	raw, ok := strings.CutPrefix(header, scheme)
 	return raw, ok && raw != "" && !strings.ContainsAny(raw, " \t\r\n")
@@ -132,9 +147,6 @@ func (api *api) CreateSession(ctx context.Context, _ CreateSessionRequestObject)
 }
 
 func (api *api) DeleteSession(ctx context.Context, _ DeleteSessionRequestObject) (DeleteSessionResponseObject, error) {
-	if apiTokenUsed(ctx) {
-		return DeleteSession403JSONResponse{sessionRequired(ctx, "An API token is not a session and cannot be revoked here")}, nil
-	}
 	if err := api.sessions.Revoke(ctx, credentialFromContext(ctx)); err != nil {
 		return DeleteSession500JSONResponse{api.internalError(ctx, "delete_session", err)}, nil
 	}

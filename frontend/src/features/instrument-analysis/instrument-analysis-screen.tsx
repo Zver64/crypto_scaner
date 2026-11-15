@@ -63,7 +63,6 @@ export function InstrumentAnalysisScreen({
 						enabled={page.allowed}
 						failed={page.indicators.failed}
 						fillHeight={wide}
-						indicators={page.indicators.indicators}
 						priceLevels={page.gridLevels ?? undefined}
 						source={page.chartSource}
 						symbol={symbol}

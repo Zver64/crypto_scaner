@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/closedindicator"
@@ -16,12 +17,14 @@ import (
 // IndicatorColumn names a current output, not a shifted read or function result.
 type IndicatorColumn struct{ Key, Title string }
 
-// BacktestChart is immutable history of one interval within the evaluated period.
+// BacktestChart is immutable history of one interval within the evaluated
+// period: its candles and the shapes of the charted indicators over them, in
+// the panes Panes lists.
 type BacktestChart struct {
-	Interval    market.CandleInterval
-	Candles     []market.Candle
-	Definitions []chart.CatalogIndicator
-	Indicators  []indicator.Calculation
+	Interval market.CandleInterval
+	Candles  []market.Candle
+	Shapes   []chart.Shape
+	Panes    []chart.Pane
 }
 
 // displayedIndicator is an indicator a backtest reads on interval, whose
@@ -143,11 +146,12 @@ func (current snapshot) indicatorValues(entry Entry, instrumentID int64, items [
 // calculated by replay are reused; gaps in the base interval do not lose points
 // of coarser intervals. A source the rule does not read by itself is
 // calculated over the windows a read of its latest value would have. No
-// snapshot reads history again after the replay.
-func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrumentID int64, result Backtest) ([]BacktestChart, error) {
-	charts := make([]BacktestChart, 0)
+// snapshot reads history again after the replay. Every output is calculated,
+// and charts draws them as it draws live charts.
+func (replay *replay) chartSnapshot(ctx context.Context, charts ChartDrawing, entry Entry, instrumentID int64, result Backtest) ([]BacktestChart, error) {
+	pages := make([]BacktestChart, 0)
 	if result.From.IsZero() {
-		return charts, nil
+		return pages, nil
 	}
 	lastExit := result.To
 	if result.Signal != nil && result.Direction != DirectionSideways {
@@ -163,7 +167,7 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 			continue
 		}
 		history := replay.histories[interval][instrumentID]
-		page := BacktestChart{Interval: interval, Candles: make([]market.Candle, 0), Definitions: make([]chart.CatalogIndicator, 0), Indicators: make([]indicator.Calculation, 0)}
+		page := BacktestChart{Interval: interval, Candles: make([]market.Candle, 0)}
 		first, last := -1, -1
 		for i, candle := range history {
 			if interval.NextOpenTime(candle.OpenTime).After(end) {
@@ -178,30 +182,14 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 			last = i
 			page.Candles = append(page.Candles, candle)
 		}
-		line := 0
+		indicators := make([]chart.Calculated, 0)
 		for _, item := range replay.charted {
 			if item.interval != interval {
 				continue
 			}
-			sourceID := ""
-			if source, found := item.source(); found {
-				sourceID = source.Key()
-			}
-			definition, next := item.ChartIndicator(item.target().Key(), sourceID, line)
-			// Markers neither over the candles nor on the line of a source
-			// are not drawn, which may leave nothing.
-			if len(definition.Lines) == 0 {
-				continue
-			}
-			line = next
-			page.Definitions = append(page.Definitions, definition)
-			// The series of the drawn lines and of the segments they draw.
-			calculation := indicator.Calculation{Type: item.Selection.Type, Parameters: item.Selection.Parameters, Series: make([]indicator.NamedSeries, 0, len(definition.Lines))}
-			for _, drawn := range definition.Lines {
-				calculation.Series = append(calculation.Series, indicator.NamedSeries{Name: drawn.Output, Points: make([]indicator.Point, 0)})
-				if drawn.Segment != "" {
-					calculation.Series = append(calculation.Series, indicator.NamedSeries{Name: drawn.Segment, Points: make([]indicator.Point, 0)})
-				}
+			calculation := indicator.Calculation{Type: item.Selection.Type, Parameters: item.Selection.Parameters, Series: make([]indicator.NamedSeries, len(item.Outputs))}
+			for j, output := range item.Outputs {
+				calculation.Series[j] = indicator.NamedSeries{Name: output, Points: make([]indicator.Point, 0)}
 			}
 			target := item.target()
 			subscription := closedindicator.Subscription{InstrumentID: instrumentID, Target: target, Points: 1}
@@ -231,19 +219,29 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 				}
 				for _, output := range outputs {
 					shown, ok := output.Shown()
-					if !ok {
+					j := slices.Index(item.Outputs, output.Name)
+					if !ok || j < 0 {
 						continue
 					}
-					for j := range calculation.Series {
-						if calculation.Series[j].Name == output.Name {
-							calculation.Series[j].Points = append(calculation.Series[j].Points, indicator.Point{Time: candle.OpenTime.UTC(), Value: shown})
-						}
-					}
+					calculation.Series[j].Points = append(calculation.Series[j].Points, indicator.Point{Time: candle.OpenTime.UTC(), Value: shown})
 				}
 			}
-			page.Indicators = append(page.Indicators, calculation)
+			indicators = append(indicators, chart.Calculated{ID: target.Key(), Calculation: calculation})
 		}
-		charts = append(charts, page)
+		drawing, err := charts.Draw(page.Candles, indicators)
+		if err != nil {
+			return nil, fmt.Errorf("draw backtest chart: %w", err)
+		}
+		page.Shapes, page.Panes = drawing.Shapes, drawing.Panes
+		// The markers a signal fired on are joined to the markers before.
+		if result.Signal != nil {
+			times := make([]time.Time, len(result.Signal.Occurrences))
+			for i, occurrence := range result.Signal.Occurrences {
+				times[i] = interval.OpenTime(occurrence.Time)
+			}
+			page.Shapes = append(page.Shapes, chart.Connectors(page.Shapes, page.Candles, times)...)
+		}
+		pages = append(pages, page)
 	}
-	return charts, nil
+	return pages, nil
 }

@@ -1252,9 +1252,9 @@ export const getListChartIndicatorsUrl = (params: ListChartIndicatorsParams,) =>
 
 /**
  * Clients subscribe to live charts of the interval with each item's `type`
- * and `parameters`, in this order, and draw the returned series as described
- * here. The administrator configures the catalog, so it may be empty.
- * @summary List the indicators charts of an interval request and how to draw them
+ * and `parameters`, in this order; the charts arrive drawn as shapes. The
+ * administrator configures the catalog, so it may be empty.
+ * @summary List the indicators charts of an interval request
  */
 export const listChartIndicators = async (params: ListChartIndicatorsParams, options?: Parameters<typeof apiFetch>[1]): Promise<listChartIndicatorsResponseSuccess> => {
 
@@ -1325,7 +1325,7 @@ export function useListChartIndicators<TData = Awaited<ReturnType<typeof listCha
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary List the indicators charts of an interval request and how to draw them
+ * @summary List the indicators charts of an interval request
  */
 
 export function useListChartIndicators<TData = Awaited<ReturnType<typeof listChartIndicators>>, TError = ErrorType<UnauthenticatedResponse | AccessDeniedResponse | InternalErrorResponse>>(

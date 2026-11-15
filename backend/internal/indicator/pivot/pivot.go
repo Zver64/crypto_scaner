@@ -56,8 +56,8 @@ func (pivots) Describe() indicator.Descriptor {
 			Choices: append([]indicator.Choice{{Value: highAndLow, Title: "High and low"}}, indicator.FieldChoices()...),
 		}),
 		Outputs: []indicator.OutputDescriptor{
-			{Name: "high", Style: indicator.OutputMarkerAbove, Sparse: true, Shift: "right"},
-			{Name: "low", Style: indicator.OutputMarkerBelow, Sparse: true, Shift: "right"},
+			{Name: "high", Style: indicator.OutputMarkerAbove, Sparse: true},
+			{Name: "low", Style: indicator.OutputMarkerBelow, Sparse: true},
 		},
 	}
 }

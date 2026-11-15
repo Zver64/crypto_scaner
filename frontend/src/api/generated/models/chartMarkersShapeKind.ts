@@ -22,12 +22,9 @@
  * OpenAPI spec version: 1.0.0
  */
 
-/**
- * The line the markers of a marker line sit on, in its pane, instead of the candles; an output of another indicator of the same catalog.
- */
-export interface ChartIndicatorLineAnchor {
-  /** The `id` of that indicator. */
-  indicator_id: string;
-  /** The `output` of its line. */
-  output: string;
-}
+export type ChartMarkersShapeKind = typeof ChartMarkersShapeKind[keyof typeof ChartMarkersShapeKind];
+
+
+export const ChartMarkersShapeKind = {
+  markers: 'markers',
+} as const;

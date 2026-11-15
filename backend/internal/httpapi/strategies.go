@@ -198,7 +198,10 @@ func (api *api) BacktestStrategy(ctx context.Context, request BacktestStrategyRe
 	backtest, err := api.strategies.Backtest(timed, request.StrategyId, request.Params.Symbol, from, to, request.Params.Chart != nil && *request.Params.Chart)
 	switch {
 	case err == nil:
-		dto := backtestDTO(backtest)
+		dto, err := backtestDTO(backtest)
+		if err != nil {
+			return BacktestStrategy500JSONResponse{api.internalError(ctx, "backtest_strategy", err)}, nil
+		}
 		dto.DurationMs = float64(time.Since(started)) / float64(time.Millisecond)
 		return BacktestStrategy200JSONResponse(dto), nil
 	case backtestExpired(timed, err):
@@ -229,7 +232,10 @@ func (api *api) BacktestStrategyDraft(ctx context.Context, request BacktestStrat
 	}, body.Symbol, from, to, body.Chart != nil && *body.Chart)
 	switch {
 	case err == nil:
-		dto := backtestDTO(backtest)
+		dto, err := backtestDTO(backtest)
+		if err != nil {
+			return BacktestStrategyDraft500JSONResponse{api.internalError(ctx, "backtest_strategy_draft", err)}, nil
+		}
 		dto.DurationMs = float64(time.Since(started)) / float64(time.Millisecond)
 		return BacktestStrategyDraft200JSONResponse(dto), nil
 	case backtestExpired(timed, err):
@@ -257,7 +263,7 @@ func backtestPeriod(fromBound, toBound *time.Time) (from, to time.Time) {
 	return from, to
 }
 
-func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
+func backtestDTO(backtest strategy.Backtest) (StrategyBacktest, error) {
 	trades := make([]BacktestTrade, len(backtest.Trades))
 	for i, trade := range backtest.Trades {
 		trades[i] = backtestTradeDTO(trade)
@@ -272,12 +278,11 @@ func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
 	}
 	charts := make([]BacktestChart, len(backtest.Charts))
 	for i, snapshot := range backtest.Charts {
-		catalog := make([]ChartIndicatorDefinition, len(snapshot.Definitions))
-		for j, definition := range snapshot.Definitions {
-			catalog[j] = chartIndicatorDTO(definition)
+		page, err := chartWirePage(chart.Page{Symbol: backtest.Symbol, Candles: snapshot.Candles, Shapes: snapshot.Shapes, Panes: snapshot.Panes}, snapshot.Interval)
+		if err != nil {
+			return StrategyBacktest{}, err
 		}
-		page := chartWirePage(chart.Page{Symbol: backtest.Symbol, Candles: snapshot.Candles, Indicators: snapshot.Indicators}, snapshot.Interval, time.Time{})
-		charts[i] = BacktestChart{Catalog: catalog, Page: *page}
+		charts[i] = BacktestChart{Page: *page}
 	}
 	dto := StrategyBacktest{
 		IndicatorColumns: columns, Charts: charts,
@@ -307,7 +312,7 @@ func backtestDTO(backtest strategy.Backtest) StrategyBacktest {
 			}
 		}
 	}
-	return dto
+	return dto, nil
 }
 
 func signalStatsDTO(stats strategy.SignalStats) BacktestSignalStats {

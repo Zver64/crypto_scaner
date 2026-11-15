@@ -20,8 +20,8 @@ import (
 func validationTestService(t *testing.T) *Service {
 	t.Helper()
 	registry := testRegistry(t)
-	indicators := testScannerIndicators(t, registry, "yellow.5")
-	service, err := NewService(newBacktestStore(market.IntervalHour, nil), indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	indicators := testScannerIndicators(t, registry)
+	service, err := NewService(newBacktestStore(market.IntervalHour, nil), indicators, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
 	}

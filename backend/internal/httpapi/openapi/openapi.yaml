@@ -281,11 +281,11 @@ paths:
   /api/v1/chart/indicators:
     get:
       operationId: listChartIndicators
-      summary: List the indicators charts of an interval request and how to draw them
+      summary: List the indicators charts of an interval request
       description: |
         Clients subscribe to live charts of the interval with each item's `type`
-        and `parameters`, in this order, and draw the returned series as described
-        here. The administrator configures the catalog, so it may be empty.
+        and `parameters`, in this order; the charts arrive drawn as shapes. The
+        administrator configures the catalog, so it may be empty.
       tags: [Market Data]
       security: [{ sessionToken: [] }]
       parameters:
@@ -1704,54 +1704,24 @@ components:
         parameters:
           type: object
           additionalProperties: true
-    IndicatorPoint:
-      type: object
-      additionalProperties: false
-      required: [time, value]
-      properties:
-        time:
-          type: string
-          format: date-time
-        value:
-          type: number
-          format: double
-    IndicatorSeries:
-      type: object
-      additionalProperties: false
-      required: [name, points]
-      properties:
-        name:
-          type: string
-        points:
-          type: array
-          items:
-            $ref: "#/components/schemas/IndicatorPoint"
-    ChartIndicatorResult:
-      type: object
-      additionalProperties: false
-      required: [type, parameters, series]
-      properties:
-        type:
-          type: string
-        parameters:
-          type: object
-          additionalProperties: true
-        series:
-          type: array
-          items:
-            $ref: "#/components/schemas/IndicatorSeries"
     ChartIndicatorCatalog:
       type: object
       additionalProperties: false
-      required: [items]
+      required: [items, panes]
       properties:
         items:
           type: array
           items: { $ref: "#/components/schemas/ChartIndicatorDefinition" }
+        panes:
+          type: array
+          description: >-
+            The indicator panes below the candles, top to bottom, that the charts of a
+            subscription requesting exactly `items`, in order, have in every frame.
+          items: { $ref: "#/components/schemas/ChartPane" }
     ChartIndicatorDefinition:
       type: object
       additionalProperties: false
-      required: [id, type, parameters, placement, lines]
+      required: [id, type, parameters]
       properties:
         id:
           type: string
@@ -1762,83 +1732,11 @@ components:
         parameters:
           type: object
           additionalProperties: true
-        placement:
-          type: string
-          enum: [overlay, pane, volume]
-          description: "`overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale."
-        lines:
-          type: array
-          minItems: 1
-          items: { $ref: "#/components/schemas/ChartIndicatorLine" }
-        scale:
-          $ref: "#/components/schemas/ChartIndicatorScale"
-        pane:
-          type: string
-          minLength: 1
-          description: Key of the pane a `pane` indicator is drawn in; indicators with the same key share one pane. Absent for overlays.
-    ChartIndicatorLine:
-      type: object
-      additionalProperties: false
-      required: [output, title, color, style, shift]
-      properties:
-        output:
-          type: string
-          description: Name of the calculated series drawn by this line.
-        title:
-          type: string
-        color:
-          type: string
-          description: Client theme color token, for example `yellow.5`.
-        style:
-          type: string
-          enum: [line, marker_above, marker_below]
-          description: How the series is drawn. A marker is a point above or below a candle, or above or below the line of its `anchor`; only `overlay` indicators and lines with an `anchor` are marker lines.
-        shift:
-          type: integer
-          minimum: 0
-          description: Number of candles a marker is drawn before the candle holding its value. The points of the series are not shifted.
-        anchor: { $ref: "#/components/schemas/ChartIndicatorLineAnchor" }
-        segment:
-          type: string
-          minLength: 1
-          description: Name of the calculated series of the same indicator holding, at each value of this marker line, the number of candles back from the marker to where a straight line drawn to the marker starts, on the `anchor` line and on the candles (lows under `marker_below`, highs over `marker_above`). Only marker lines have it; the series is delivered with the others but not drawn itself.
-        direction: { $ref: "#/components/schemas/ChartIndicatorLineDirection" }
-    ChartIndicatorLineDirection:
-      type: object
-      additionalProperties: false
-      required: [output, up_color, down_color, fill]
-      description: Colors each point of a `line` by the sign of a calculated series of the same indicator at that candle, such as the SUPERTREND trend; a point where it is zero or missing keeps the line `color`. The series is delivered with the others but not drawn itself.
-      properties:
-        output:
-          type: string
-          minLength: 1
-          description: Name of the series whose sign is the direction.
-        up_color:
-          type: string
-          description: Client theme color token where the series is positive.
-        down_color:
-          type: string
-          description: Client theme color token where the series is negative.
-        fill:
-          type: boolean
-          description: Whether the area between the line and the middle of the candle body, `(open + close) / 2`, is also filled, translucent in the color of each point, and broken where the sign flips, like the SUPERTREND fill. Only `overlay` indicators have it.
-    ChartIndicatorLineAnchor:
-      type: object
-      additionalProperties: false
-      required: [indicator_id, output]
-      description: The line the markers of a marker line sit on, in its pane, instead of the candles; an output of another indicator of the same catalog.
-      properties:
-        indicator_id:
-          type: string
-          description: The `id` of that indicator.
-        output:
-          type: string
-          description: The `output` of its line.
     ChartIndicatorScale:
       type: object
       additionalProperties: false
       required: [levels]
-      description: Value axis of a pane indicator; clients derive the value precision from the values.
+      description: Value axis of an indicator pane; clients derive the value precision from the values.
       properties:
         min:
           type: number
@@ -1862,7 +1760,7 @@ components:
     ChartPageResponse:
       type: object
       additionalProperties: false
-      required: [symbol, interval, candles, indicators, has_more]
+      required: [symbol, interval, candles, shapes, panes, has_more]
       properties:
         symbol:
           type: string
@@ -1872,15 +1770,245 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/Candle"
-        indicators:
+        shapes:
           type: array
+          description: >-
+            The shapes the indicators are drawn with, in the order of the indicators.
+            Every frame of a subscription has the same shapes under the same ids.
           items:
-            $ref: "#/components/schemas/ChartIndicatorResult"
+            $ref: "#/components/schemas/ChartShape"
+        panes:
+          type: array
+          description: The indicator panes below the candles the shapes lie in, top to bottom.
+          items:
+            $ref: "#/components/schemas/ChartPane"
         has_more:
           type: boolean
         next_before:
           type: [string, "null"]
           format: date-time
+    ChartPane:
+      type: object
+      additionalProperties: false
+      required: [key, scale]
+      properties:
+        key:
+          type: string
+          minLength: 1
+          description: The `pane` of the shapes lying in the pane.
+        scale:
+          $ref: "#/components/schemas/ChartIndicatorScale"
+    ChartPlacement:
+      type: string
+      enum: [overlay, volume, pane]
+      description: "Where a shape lies: `overlay` over the candles on their price scale; `volume` over the volume bars on their scale; `pane` in the pane its `pane` names."
+    ChartShape:
+      description: >-
+        One figure of the indicators. Each point, marker, and segment belongs to the
+        candle that calculated it: points of lines and areas to the candle of their
+        `time`, markers and segments to the candle of their `calculated_time`.
+      oneOf:
+        - $ref: "#/components/schemas/ChartLineShape"
+        - $ref: "#/components/schemas/ChartAreaShape"
+        - $ref: "#/components/schemas/ChartMarkersShape"
+        - $ref: "#/components/schemas/ChartSegmentsShape"
+      discriminator:
+        propertyName: kind
+        mapping:
+          line: "#/components/schemas/ChartLineShape"
+          area: "#/components/schemas/ChartAreaShape"
+          markers: "#/components/schemas/ChartMarkersShape"
+          segments: "#/components/schemas/ChartSegmentsShape"
+    ChartLineShape:
+      type: object
+      additionalProperties: false
+      required: [kind, id, placement, title, color, points]
+      description: A line joining its points in order.
+      properties:
+        kind:
+          type: string
+          enum: [line]
+        id:
+          type: string
+          minLength: 1
+        placement:
+          $ref: "#/components/schemas/ChartPlacement"
+        pane:
+          type: string
+          minLength: 1
+          description: Key of the pane of a `pane` shape; absent otherwise.
+        title:
+          type: string
+          description: The legend title of the line, which shows its value and color at each candle.
+        color:
+          type: string
+          description: Client theme color token, for example `yellow.5`.
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChartLinePoint"
+    ChartLinePoint:
+      type: object
+      additionalProperties: false
+      required: [time, value]
+      properties:
+        time:
+          type: string
+          format: date-time
+          description: Open time of the candle.
+        value:
+          type: number
+          format: double
+        color:
+          type: string
+          description: Client theme color token of the point and of the join to the next point; absent takes the line `color`.
+        break:
+          type: boolean
+          description: When true, the point is not joined to the point before, such as where the SUPERTREND line jumps to the other side of the candles.
+    ChartAreaShape:
+      type: object
+      additionalProperties: false
+      required: [kind, id, placement, points]
+      description: >-
+        A translucent fill between `value` and `base` at each point. Neighbouring points
+        of the same color are joined; a missing point or a change of color breaks it.
+      properties:
+        kind:
+          type: string
+          enum: [area]
+        id:
+          type: string
+          minLength: 1
+        placement:
+          $ref: "#/components/schemas/ChartPlacement"
+        pane:
+          type: string
+          minLength: 1
+          description: Key of the pane of a `pane` shape; absent otherwise.
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChartAreaPoint"
+    ChartAreaPoint:
+      type: object
+      additionalProperties: false
+      required: [time, value, base, color]
+      properties:
+        time:
+          type: string
+          format: date-time
+          description: Open time of the candle.
+        value:
+          type: number
+          format: double
+        base:
+          type: number
+          format: double
+        color:
+          type: string
+          description: Client theme color token, which clients make translucent.
+    ChartMarkersShape:
+      type: object
+      additionalProperties: false
+      required: [kind, id, placement, title, color, position, points]
+      description: Points drawn above or below candles, or above or below the values of a line.
+      properties:
+        kind:
+          type: string
+          enum: [markers]
+        id:
+          type: string
+          minLength: 1
+        placement:
+          $ref: "#/components/schemas/ChartPlacement"
+        pane:
+          type: string
+          minLength: 1
+          description: Key of the pane of a `pane` shape; absent otherwise.
+        title:
+          type: string
+          description: The legend title of the markers, which shows the `value` of the marker on a candle.
+        color:
+          type: string
+          description: Client theme color token.
+        position:
+          type: string
+          enum: [above, below]
+        points:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChartMarker"
+    ChartMarker:
+      type: object
+      additionalProperties: false
+      required: [time, calculated_time, value]
+      properties:
+        time:
+          type: string
+          format: date-time
+          description: Open time of the candle the marker is drawn on.
+        calculated_time:
+          type: string
+          format: date-time
+          description: Open time of the candle that calculated the marker, such as the candle confirming a pivot drawn on an earlier candle.
+        value:
+          type: number
+          format: double
+          description: The value of the marker, which the legend shows.
+        line_value:
+          type: number
+          format: double
+          description: The value of the line the marker sits on, above or below it; absent draws the marker above or below the candle.
+    ChartSegmentsShape:
+      type: object
+      additionalProperties: false
+      required: [kind, id, placement, color, segments]
+      description: Straight lines between two points each.
+      properties:
+        kind:
+          type: string
+          enum: [segments]
+        id:
+          type: string
+          minLength: 1
+        placement:
+          $ref: "#/components/schemas/ChartPlacement"
+        pane:
+          type: string
+          minLength: 1
+          description: Key of the pane of a `pane` shape; absent otherwise.
+        color:
+          type: string
+          description: Client theme color token.
+        segments:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChartSegment"
+    ChartSegment:
+      type: object
+      additionalProperties: false
+      required: [calculated_time, from, to]
+      properties:
+        calculated_time:
+          type: string
+          format: date-time
+          description: Open time of the candle that calculated the segment.
+        from:
+          $ref: "#/components/schemas/ChartSegmentPoint"
+        to:
+          $ref: "#/components/schemas/ChartSegmentPoint"
+    ChartSegmentPoint:
+      type: object
+      additionalProperties: false
+      required: [time, value]
+      properties:
+        time:
+          type: string
+          format: date-time
+          description: Open time of the candle.
+        value:
+          type: number
+          format: double
     LiveCandleClientMessage:
       type: object
       additionalProperties: false
@@ -1920,9 +2048,10 @@ components:
         chart:
           description: >-
             In a snapshot, the complete closed-candle range plus the current candle,
-            with indicators calculated over the entire range. In an update, only the
-            current candle and indicator points from its open time; it applies solely
-            on top of the message with the preceding version.
+            with indicators drawn over the entire range. In an update, only the current
+            candle and, of every shape, what candles opened from its open time calculated:
+            it replaces what the chart has from that time, and it applies solely on top
+            of the message with the preceding version.
           $ref: "#/components/schemas/ChartPageResponse"
         version:
           type: integer
@@ -2257,11 +2386,8 @@ components:
     BacktestChart:
       type: object
       additionalProperties: false
-      required: [catalog, page]
+      required: [page]
       properties:
-        catalog:
-          type: array
-          items: { $ref: "#/components/schemas/ChartIndicatorDefinition" }
         page: { $ref: "#/components/schemas/ChartPageResponse" }
     BacktestSignal:
       type: object

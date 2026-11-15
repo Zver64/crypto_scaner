@@ -22,7 +22,10 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { ChartIndicatorDefinition } from './chartIndicatorDefinition.ts';
+import type { ChartPane } from './chartPane.ts';
 
 export interface ChartIndicatorCatalog {
   items: ChartIndicatorDefinition[];
+  /** The indicator panes below the candles, top to bottom, that the charts of a subscription requesting exactly `items`, in order, have in every frame. */
+  panes: ChartPane[];
 }

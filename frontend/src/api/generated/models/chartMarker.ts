@@ -22,19 +22,13 @@
  * OpenAPI spec version: 1.0.0
  */
 
-/**
- * Colors each point of a `line` by the sign of a calculated series of the same indicator at that candle, such as the SUPERTREND trend; a point where it is zero or missing keeps the line `color`. The series is delivered with the others but not drawn itself.
- */
-export interface ChartIndicatorLineDirection {
-  /**
-     * Name of the series whose sign is the direction.
-     * @minLength 1
-     */
-  output: string;
-  /** Client theme color token where the series is positive. */
-  up_color: string;
-  /** Client theme color token where the series is negative. */
-  down_color: string;
-  /** Whether the area between the line and the middle of the candle body, `(open + close) / 2`, is also filled, translucent in the color of each point, and broken where the sign flips, like the SUPERTREND fill. Only `overlay` indicators have it. */
-  fill: boolean;
+export interface ChartMarker {
+  /** Open time of the candle the marker is drawn on. */
+  time: string;
+  /** Open time of the candle that calculated the marker, such as the candle confirming a pivot drawn on an earlier candle. */
+  calculated_time: string;
+  /** The value of the marker, which the legend shows. */
+  value: number;
+  /** The value of the line the marker sits on, above or below it; absent draws the marker above or below the candle. */
+  line_value?: number;
 }

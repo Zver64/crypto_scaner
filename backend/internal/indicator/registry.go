@@ -77,29 +77,6 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 				return nil, fmt.Errorf("%w: %q: parameter %q defaults to %g, which is not one of its choices", ErrEmptyRegistration, indicatorType, parameter.Key, parameter.Default)
 			}
 		}
-		for _, output := range descriptor.Outputs {
-			if output.Shift != "" && !slices.ContainsFunc(descriptor.Parameters, func(parameter ParameterDescriptor) bool {
-				return parameter.Key == output.Shift && parameter.Kind == ParameterInteger
-			}) {
-				return nil, fmt.Errorf("%w: %q: output %q is shifted by %q, which is not an integer parameter", ErrEmptyRegistration, indicatorType, output.Name, output.Shift)
-			}
-			if output.Anchor != "" && !slices.ContainsFunc(descriptor.Outputs, func(line OutputDescriptor) bool {
-				return line.Name == output.Anchor && line.Style == OutputLine && !line.Sparse
-			}) {
-				return nil, fmt.Errorf("%w: %q: output %q is drawn on %q, which is not a line with a value on every candle", ErrEmptyRegistration, indicatorType, output.Name, output.Anchor)
-			}
-			if output.Tone != "" && (output.Style == OutputValue || !slices.Contains(Tones(), output.Tone)) {
-				return nil, fmt.Errorf("%w: %q: output %q has tone %q, which is unknown or on an output that is not drawn", ErrEmptyRegistration, indicatorType, output.Name, output.Tone)
-			}
-			if output.Segment != "" && (output.Style != OutputMarkerAbove && output.Style != OutputMarkerBelow || !sparse[output.Segment]) {
-				return nil, fmt.Errorf("%w: %q: output %q draws segments from %q, which only markers may do from a sparse output", ErrEmptyRegistration, indicatorType, output.Name, output.Segment)
-			}
-			if output.Direction != (OutputDirection{}) && (output.Style != OutputLine || output.Tone != "" || !slices.ContainsFunc(descriptor.Outputs, func(direction OutputDescriptor) bool {
-				return direction.Name == output.Direction.Output && direction.Style == OutputValue
-			})) {
-				return nil, fmt.Errorf("%w: %q: output %q takes its direction from %q, which only a line without a tone may do from a value output", ErrEmptyRegistration, indicatorType, output.Name, output.Direction.Output)
-			}
-		}
 		var sources []ParameterDescriptor
 		for _, parameter := range descriptor.Parameters {
 			if parameter.Kind == ParameterSource {

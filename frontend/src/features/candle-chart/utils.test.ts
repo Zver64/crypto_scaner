@@ -1,22 +1,29 @@
 import type { UTCTimestamp } from "lightweight-charts";
 import { describe, expect, it, vi } from "vitest";
 
+import type {
+	ChartLineShape,
+	ChartMarker,
+	ChartMarkersShape,
+	ChartPane,
+	ChartSegmentsShape,
+	ChartShape,
+} from "@/api/generated/models";
 import {
-	colorByDirection,
-	directionFill,
-	createAnchoredMarkers,
+	areaFillPoints,
 	createCandleMarkers,
 	createCandlestickData,
-	createIndicatorLegend,
+	createChartSeriesData,
 	createIndicatorData,
-	createIndicatorPanes,
+	createIndicatorLegend,
 	createMarkerDataSelector,
-	createMarkerSegments,
 	fitScaleToLevels,
 	formatCandleRange,
 	formatChartTime,
 	formatOhlc,
 	formatPrice,
+	lineMarkers,
+	lineSeriesData,
 	nextCandleOpen,
 } from "@/features/candle-chart/utils";
 
@@ -268,512 +275,278 @@ describe("marker data selector", () => {
 	});
 });
 
-describe("candle markers", () => {
-	const slots = createCandlestickData(
-		[0, 1, 2, 3].map((slot) => candle(slot, 10)),
-		"1h",
-	);
+describe("shape data", () => {
+	// Slots 0-4 with the candle of slot 3 missing.
+	const candles = [0, 1, 2, 4].map((slot) => candle(slot, 10));
+	const slots = createCandlestickData(candles, "1h");
 	const times = slots.map(({ time }) => time);
-	const lines = {
-		"pivot:high": {
-			data: createIndicatorData(slots, [
-				{ time: candle(1, 0).open_time, value: 11 },
-				{ time: candle(3, 0).open_time, value: 12 },
-			]),
-			resolution: { base: 100, fractionDigits: 2, minMove: 0.01 },
-		},
-	};
-	const pivot = (shift: number) => [
-		{
-			id: "pivot",
-			placement: "overlay" as const,
-			lines: [
-				{
-					color: "yellow.5",
-					output: "high",
-					shift,
-					style: "marker_above" as const,
-					title: "PIVOT high",
-				},
-			],
-		},
-	];
+	const at = (slot: number) => candle(slot, 0).open_time;
 	const color = (token: string) => `resolved ${token}`;
+	const rsiPane = {
+		key: "rsi",
+		scale: { levels: [{ title: "Overbought", value: 70 }], max: 100, min: 0 },
+	};
+	const line = (
+		id: string,
+		points: ChartLineShape["points"],
+		place: Pick<ChartLineShape, "pane" | "placement"> = {
+			pane: "rsi",
+			placement: "pane",
+		},
+	): ChartLineShape => ({
+		...place,
+		color: "blue.5",
+		id,
+		kind: "line",
+		points,
+		title: id.toUpperCase(),
+	});
+	const series = (
+		shapes: ChartShape[],
+		panes: ChartPane[] = [rsiPane],
+		previous?: ReturnType<typeof createChartSeriesData>,
+	) => createChartSeriesData(candles, { panes, shapes }, "1h", previous);
 
-	it("draws marker lines shifted back and drops those before the first slot", () => {
+	it("places shapes in their panes, and the first line of a pane draws its levels", () => {
+		const { panes, shapes } = series([
+			line("sma", [], { placement: "overlay" }),
+			line("rsi", []),
+			line("rsi-sma", []),
+			line("macd", [], { pane: "macd", placement: "pane" }),
+		]);
 		expect(
-			createCandleMarkers(
-				undefined,
-				pivot(2),
-				{ candles: slots, lines },
-				color,
+			shapes.map((shape) =>
+				shape.kind === "line"
+					? [shape.id, shape.pane, shape.levels.length]
+					: undefined,
+			),
+		).toEqual([
+			["sma", 0, 0],
+			["rsi", 1, 1],
+			["rsi-sma", 1, 0],
+		]);
+		expect(shapes[1]?.autoscaleInfoProvider).toBe(
+			panes[0]?.autoscaleInfoProvider,
+		);
+	});
+
+	it("keeps the autoscale of a pane while its scale does not change", () => {
+		const first = series([]);
+		expect(series([], [rsiPane], first).panes[0]).toBe(first.panes[0]);
+		const rescaled = series(
+			[],
+			[{ ...rsiPane, scale: { ...rsiPane.scale, max: 90 } }],
+			first,
+		).panes[0];
+		expect(rescaled?.autoscaleInfoProvider).not.toBe(
+			first.panes[0]?.autoscaleInfoProvider,
+		);
+	});
+
+	it("aligns a line with the slots and leaves out the joins before its breaks", () => {
+		const [shape] = series([
+			line("supertrend", [
+				{ color: "green.5", time: at(0), value: 1 },
+				{ color: "green.5", time: at(1), value: 2 },
+				{ break: true, color: "red.5", time: at(2), value: 3 },
+				{ time: at(4), value: 4 },
+			]),
+		]).shapes;
+		if (shape?.kind !== "line") throw new Error("Missing line");
+		expect(lineSeriesData(shape, color)).toEqual([
+			{ color: "resolved green.5", time: times[0], value: 1 },
+			{ color: "transparent", time: times[1], value: 2 },
+			{ color: "resolved red.5", time: times[2], value: 3 },
+			{ time: times[3] },
+			{ time: times[4], value: 4 },
+		]);
+		// The legend shows the color of the point, not of its join.
+		expect(
+			times.map(
+				(_, slot) =>
+					createIndicatorLegend({ candles: slots, shapes: [shape] }, slot)[0],
 			),
 		).toEqual([
 			{
-				color: "resolved yellow.5",
-				position: "aboveBar",
-				shape: "circle",
-				time: times[1],
+				color: "green.5",
+				key: "supertrend",
+				placement: "pane",
+				title: "SUPERTREND",
+				value: "1",
+			},
+			{
+				color: "green.5",
+				key: "supertrend",
+				placement: "pane",
+				title: "SUPERTREND",
+				value: "2",
+			},
+			{
+				color: "red.5",
+				key: "supertrend",
+				placement: "pane",
+				title: "SUPERTREND",
+				value: "3",
+			},
+			{
+				color: "blue.5",
+				key: "supertrend",
+				placement: "pane",
+				title: "SUPERTREND",
+				value: null,
+			},
+			{
+				color: "blue.5",
+				key: "supertrend",
+				placement: "pane",
+				title: "SUPERTREND",
+				value: "4",
 			},
 		]);
 	});
 
-	it("shows a marker line in the legend on the candle its marker is drawn on", () => {
-		expect(
-			times.map(
-				(_, slot) =>
-					createIndicatorLegend(pivot(2), { candles: slots, lines }, slot)[0]
-						?.value,
-			),
-		).toEqual([null, "12", null, null]);
-	});
-
-	it("shifts markers by candles, skipping the slots of missing candles", () => {
-		// Candle 2 is missing, so the value on candle 3 is drawn on candle 1.
-		const gapSlots = createCandlestickData(
-			[0, 1, 3].map((slot) => candle(slot, 10)),
-			"1h",
-		);
-		const gapLines = {
-			"pivot:high": {
-				data: createIndicatorData(gapSlots, [
-					{ time: candle(1, 0).open_time, value: 11 },
-					{ time: candle(3, 0).open_time, value: 12 },
-				]),
-				resolution: { base: 100, fractionDigits: 2, minMove: 0.01 },
+	it("fills an area translucent in the color of each point", () => {
+		const [shape] = series([
+			{
+				id: "fill",
+				kind: "area",
+				placement: "overlay",
+				points: [
+					{ base: 5, color: "#00ff00", time: at(1), value: 8 },
+					{ base: 5, color: "#ff0000", time: at(2), value: 9 },
+				],
 			},
-		};
-		const gapSeries = { candles: gapSlots, lines: gapLines };
-		expect(
-			createCandleMarkers(undefined, pivot(1), gapSeries, color)?.map(
-				({ time }) => time,
-			),
-		).toEqual([gapSlots[0]?.time, gapSlots[1]?.time]);
-		expect(
-			gapSlots.map(
-				(_, slot) => createIndicatorLegend(pivot(1), gapSeries, slot)[0]?.value,
-			),
-		).toEqual(["11", "12", null, null]);
+		]).shapes;
+		if (shape?.kind !== "area") throw new Error("Missing area");
+		expect(areaFillPoints(shape.points, (token) => token)).toEqual([
+			{ time: times[0] },
+			{ base: 5, color: "rgba(0, 255, 0, 0.1)", time: times[1], value: 8 },
+			{ base: 5, color: "rgba(255, 0, 0, 0.1)", time: times[2], value: 9 },
+			{ time: times[3] },
+			{ time: times[4] },
+		]);
+		expect(shape.values[1]).toEqual({ time: times[1], value: 8 });
 	});
 
-	it("merges them with the markers of the source in time order", () => {
+	describe("markers", () => {
+		const markers = (points: ChartMarker[]): ChartMarkersShape => ({
+			color: "yellow.5",
+			id: "pivot",
+			kind: "markers",
+			placement: "overlay",
+			points,
+			position: "above",
+			title: "PIVOT",
+		});
 		const trade = {
 			color: "green",
 			position: "belowBar" as const,
 			shape: "arrowUp" as const,
-			time: times[2],
+			time: times[1] as UTCTimestamp,
 		};
-		expect(
-			createCandleMarkers(
-				[trade],
-				pivot(0),
-				{ candles: slots, lines },
-				color,
-			)?.map(({ shape, time }) => [shape, time]),
-		).toEqual([
-			["circle", times[1]],
-			["arrowUp", times[2]],
-			["circle", times[3]],
-		]);
-	});
 
-	it("keeps the markers of the source without marker lines", () => {
-		const markers = [
-			{
-				color: "green",
-				position: "belowBar" as const,
-				shape: "arrowUp" as const,
-				time: times[0],
-			},
-		];
-		expect(
-			createCandleMarkers(markers, [], { candles: slots, lines }, color),
-		).toBe(markers);
-	});
-
-	it("puts the markers of anchored lines on the line of their anchor, where it has values", () => {
-		const anchored = [
-			{
-				...pivot(0)[0],
-				lines: pivot(0)[0].lines.map((line) => ({
-					...line,
-					anchor: { indicator_id: "rsi", output: "rsi" },
-				})),
-			},
-		];
-		const withAnchor = {
-			...lines,
-			// The first pivot lies before the first value of its anchor.
-			"rsi:rsi": {
-				...lines["pivot:high"],
-				data: createIndicatorData(slots, [
-					{ time: candle(2, 0).open_time, value: 50 },
-					{ time: candle(3, 0).open_time, value: 60 },
+		it("puts markers on their line or on the candles, only on candles the slots have", () => {
+			const [shape] = series([
+				markers([
+					{ calculated_time: at(2), time: at(2), value: 12 },
+					{ calculated_time: at(2), line_value: 50, time: at(0), value: 11 },
+					// The slot of the missing candle has no marker.
+					{ calculated_time: at(4), time: at(3), value: 13 },
+					{ calculated_time: at(-1), time: at(-2), value: 9 },
 				]),
-			},
-		};
-		expect(
-			createCandleMarkers(
-				undefined,
-				anchored,
-				{ candles: slots, lines: withAnchor },
-				color,
-			),
-		).toBe(undefined);
-		expect(
-			createAnchoredMarkers(
-				anchored,
-				{ candles: slots, lines: withAnchor },
-				color,
-			),
-		).toEqual({
-			"rsi:rsi": [
+			]).shapes;
+			if (shape?.kind !== "markers") throw new Error("Missing markers");
+			expect(lineMarkers(shape, color)).toEqual([
 				{
 					color: "resolved yellow.5",
 					position: "aboveBar",
 					shape: "circle",
-					time: times[3],
+					time: times[0],
 				},
-			],
+			]);
+			expect(shape.onLine).toEqual([{ time: times[0], value: 50 }]);
+			expect(
+				createCandleMarkers([trade], [shape], color)?.map(({ shape, time }) => [
+					shape,
+					time,
+				]),
+			).toEqual([
+				["arrowUp", times[1]],
+				["circle", times[2]],
+			]);
+			expect(
+				times.map(
+					(_, slot) =>
+						createIndicatorLegend({ candles: slots, shapes: [shape] }, slot)[0]
+							?.value,
+				),
+			).toEqual(["11", null, "12", null, null]);
+		});
+
+		it("keeps the markers of the source without markers on the candles", () => {
+			const shapes = series([markers([])]).shapes;
+			expect(createCandleMarkers([trade], shapes, color)).toEqual([trade]);
 		});
 	});
-});
 
-describe("marker segments", () => {
-	const candles = [0, 1, 2, 3, 4, 5, 6].map((slot) => candle(slot, 10 + slot));
-	const slots = createCandlestickData(candles, "1h");
-	const times = slots.map(({ time }) => time);
-	const open = (slot: number) => candles[slot].open_time;
-	const resolution = { base: 100, fractionDigits: 2, minMove: 0.01 };
-	// Values on slots 1, 2, 4 and 6, whose markers are drawn one slot earlier.
-	const series = {
-		candles: slots,
-		lines: {
-			"pivot:low": {
-				data: createIndicatorData(slots, [
-					{ time: open(1), value: 20 },
-					{ time: open(2), value: 30 },
-					{ time: open(4), value: 40 },
-					{ time: open(6), value: 35 },
-				]),
-				resolution,
-			},
-		},
-		segments: {},
-	};
-	const layout = (
-		style: "marker_above" | "marker_below",
-		anchor?: { indicator_id: string; output: string },
-		segment?: string,
-	) => {
-		const indicators = [
-			{
-				id: "macd",
-				placement: "pane" as const,
-				pane: "macd",
-				lines: [],
-				scale: { levels: [] },
-			},
-			{
-				id: "rsi",
-				placement: "pane" as const,
-				pane: "rsi",
-				lines: [],
-				scale: { levels: [] },
-			},
-			{
-				id: "pivot",
-				placement: "overlay" as const,
-				lines: [
-					{
-						anchor,
-						color: "yellow.5",
-						output: "low",
-						segment,
-						shift: 1,
-						style,
-						title: "PIVOT low",
-					},
-				],
-			},
-		];
-		return { indicators, panes: createIndicatorPanes(indicators) };
-	};
-
-	it("connects the value under a connected candle with the previous one where their markers are drawn", () => {
-		expect(
-			createMarkerSegments([open(6)], layout("marker_below"), series, "1h"),
-		).toEqual([
-			{
-				color: "yellow.5",
-				data: [
-					{ time: times[3], value: 40 },
-					{ time: times[5], value: 35 },
-				],
-				key: "pivot:low",
-				pane: 0,
-				scale: "price",
-			},
-		]);
-	});
-
-	it("draws the segments of an anchored line in the pane of its anchor and between the same candles", () => {
-		const anchor = { indicator_id: "rsi", output: "rsi" };
-		expect(
-			createMarkerSegments(
-				[open(4), open(6)],
-				layout("marker_below", anchor),
-				series,
-				"1h",
-			),
-		).toEqual([
-			{
-				color: "yellow.5",
-				data: [
-					{ time: times[1], value: 30 },
-					{ time: times[3], value: 40 },
-					{ time: times[5], value: 35 },
-				],
-				key: "pivot:low",
-				pane: 2,
-				scale: "price",
-			},
-			{
-				color: "yellow.5",
-				data: [
-					{ time: times[1], value: 10 },
-					{ time: times[3], value: 12 },
-					{ time: times[5], value: 14 },
-				],
-				key: "pivot:low:candles",
-				pane: 0,
-				scale: "price",
-			},
-		]);
-		expect(
-			createMarkerSegments(
-				[open(6)],
-				layout("marker_above", anchor),
-				series,
-				"1h",
-			)[1]?.data,
-		).toEqual([
-			{ time: times[3], value: 14 },
-			{ time: times[5], value: 16 },
-		]);
-	});
-
-	it("does not join separate segments", () => {
-		expect(
-			createMarkerSegments(
-				[open(2), open(6)],
-				layout("marker_below"),
-				series,
-				"1h",
-			)[0]?.data,
-		).toEqual([
-			{ time: times[0], value: 20 },
-			{ color: "transparent", time: times[1], value: 30 },
-			{ time: times[3], value: 40 },
-			{ time: times[5], value: 35 },
-		]);
-	});
-
-	it("draws a segment from the slot its segment output holds, on the anchor line and the candles, without connected candles", () => {
-		const anchor = { indicator_id: "rsi", output: "rsi" };
-		const withSegments = {
-			...series,
-			lines: {
-				...series.lines,
-				"rsi:rsi": {
-					data: createIndicatorData(
-						slots,
-						[20, 30, 25, 40, 45, 35, 50].map((value, slot) => ({
-							time: open(slot),
-							value,
-						})),
-					),
-					resolution,
-				},
-			},
-			// Slot 2 starts before the first slot; slots 4 and 6 start their
-			// markers 3 and 1 slots back, on slots 0 and 4.
-			segments: {
-				"pivot:bars": createIndicatorData(slots, [
-					{ time: open(2), value: 5 },
-					{ time: open(4), value: 3 },
-					{ time: open(6), value: 1 },
-				]),
-			},
+	describe("segments", () => {
+		const segments = (
+			items: [from: number, to: number][],
+		): ChartSegmentsShape => ({
+			color: "green.5",
+			id: "bull-candles",
+			kind: "segments",
+			placement: "overlay",
+			segments: items.map(([from, to]) => ({
+				calculated_time: at(to),
+				from: { time: at(from), value: from },
+				to: { time: at(to), value: to },
+			})),
+		});
+		const data = (items: [from: number, to: number][]) => {
+			const [shape] = series([segments(items)]).shapes;
+			return shape?.kind === "segments" ? shape.data : undefined;
 		};
-		expect(
-			createMarkerSegments(
-				undefined,
-				layout("marker_below", anchor, "bars"),
-				withSegments,
-				"1h",
-			),
-		).toEqual([
-			{
-				color: "yellow.5",
-				data: [
-					{ time: times[0], value: 20 },
-					{ color: "transparent", time: times[3], value: 40 },
-					{ time: times[4], value: 45 },
-					{ time: times[5], value: 35 },
-				],
-				key: "pivot:low",
-				pane: 2,
-				scale: "price",
-			},
-			{
-				color: "yellow.5",
-				data: [
-					{ time: times[0], value: 9 },
-					{ color: "transparent", time: times[3], value: 12 },
-					{ time: times[4], value: 13 },
-					{ time: times[5], value: 14 },
-				],
-				key: "pivot:low:candles",
-				pane: 0,
-				scale: "price",
-			},
-		]);
-	});
 
-	it("counts the candles back to a segment start and the shift of its marker, skipping missing candles", () => {
-		// Candle 2 is missing: the value on candle 5 is drawn on candle 4, and
-		// its segment starts 3 candles before that, on candle 0.
-		const gapCandles = [0, 1, 3, 4, 5].map((slot) => candle(slot, 10 + slot));
-		const gapSlots = createCandlestickData(gapCandles, "1h");
-		const gapTimes = gapSlots.map(({ time }) => time);
-		const at = (hour: number) => candle(hour, 0).open_time;
-		const anchor = { indicator_id: "rsi", output: "rsi" };
-		expect(
-			createMarkerSegments(
-				undefined,
-				layout("marker_below", anchor, "bars"),
-				{
-					candles: gapSlots,
-					lines: {
-						"pivot:low": {
-							data: createIndicatorData(gapSlots, [{ time: at(5), value: 35 }]),
-							resolution,
-						},
-						"rsi:rsi": {
-							data: createIndicatorData(
-								gapSlots,
-								[0, 1, 3, 4, 5].map((hour) => ({
-									time: at(hour),
-									value: 20 + hour,
-								})),
-							),
-							resolution,
-						},
-					},
-					segments: {
-						"pivot:bars": createIndicatorData(gapSlots, [
-							{ time: at(5), value: 3 },
-						]),
-					},
-				},
-				"1h",
-			).map(({ data }) => data),
-		).toEqual([
-			[
-				{ time: gapTimes[0], value: 20 },
-				{ time: gapTimes[4], value: 35 },
-			],
-			[
-				{ time: gapTimes[0], value: 9 },
-				{ time: gapTimes[4], value: 13 },
-			],
-		]);
-	});
+		it("joins segments sharing a point and leaves out the gaps between others", () => {
+			expect(
+				data([
+					[0, 1],
+					[1, 2],
+					[2, 4],
+				]),
+			).toEqual([
+				{ time: times[0], value: 0 },
+				{ time: times[1], value: 1 },
+				{ time: times[2], value: 2 },
+				{ time: times[4], value: 4 },
+			]);
+			expect(
+				data([
+					[0, 1],
+					[2, 4],
+				]),
+			).toEqual([
+				{ time: times[0], value: 0 },
+				{ color: "transparent", time: times[1], value: 1 },
+				{ time: times[2], value: 2 },
+				{ time: times[4], value: 4 },
+			]);
+		});
 
-	it("draws nothing for the first value of a line, a candle without a value, or no connected candles", () => {
-		expect(
-			createMarkerSegments(
-				[open(1), open(5)],
-				layout("marker_below"),
-				series,
-				"1h",
-			),
-		).toEqual([]);
-		expect(
-			createMarkerSegments(undefined, layout("marker_below"), series, "1h"),
-		).toEqual([]);
-	});
-});
-
-describe("colorByDirection", () => {
-	it("colors points by the direction sign and breaks the line where it flips", () => {
-		const time = (slot: number) =>
-			(1_787_785_200 + slot * 3600) as UTCTimestamp;
-		const data = [0, 1, 2, 3, 4, 5].map((slot) =>
-			slot === 5
-				? { time: time(slot) }
-				: { time: time(slot), value: 10 + slot },
-		);
-		const direction = [1, 1, -1, 0, undefined, 1].map((value, slot) =>
-			value === undefined ? { time: time(slot) } : { time: time(slot), value },
-		);
-		expect(
-			colorByDirection(
-				{
-					data,
-					directionData: direction,
-					resolution: { base: 1, fractionDigits: 0, minMove: 1 },
-				},
-				{ output: "trend", up_color: "green", down_color: "red", fill: false },
-				(color) => color,
-			),
-		).toEqual([
-			{ time: time(0), value: 10, color: "green" },
-			{ time: time(1), value: 11, color: "transparent" },
-			{ time: time(2), value: 12, color: "red" },
-			{ time: time(3), value: 13 },
-			{ time: time(4), value: 14 },
-			{ time: time(5) },
-		]);
-	});
-});
-
-describe("directionFill", () => {
-	it("fills to the base in the direction color, only where both exist", () => {
-		const time = (slot: number) =>
-			(1_787_785_200 + slot * 3600) as UTCTimestamp;
-		const data = [0, 1, 2, 3, 4].map((slot) => ({
-			time: time(slot),
-			value: 130,
-		}));
-		const direction = [1, -1, 0, 1, 1].map((value, slot) => ({
-			time: time(slot),
-			value,
-		}));
-		expect(
-			directionFill(
-				{
-					data,
-					directionData: direction,
-					resolution: { base: 1, fractionDigits: 0, minMove: 1 },
-					fillBases: [100, 100, 100, 100, undefined],
-				},
-				{
-					output: "trend",
-					up_color: "#00ff00",
-					down_color: "#ff0000",
-					fill: true,
-				},
-				(color) => color,
-			),
-		).toEqual([
-			{ time: time(0), value: 130, base: 100, color: "rgba(0, 255, 0, 0.1)" },
-			{ time: time(1), value: 130, base: 100, color: "rgba(255, 0, 0, 0.1)" },
-			{ time: time(2) },
-			{ time: time(3), value: 130, base: 100, color: "rgba(0, 255, 0, 0.1)" },
-			{ time: time(4) },
-		]);
+		it("does not draw a segment starting before the end of the one before, or off the slots", () => {
+			expect(
+				data([
+					[1, 4],
+					[2, 4],
+					[-1, 0],
+					[2, 3],
+				]),
+			).toEqual([
+				{ time: times[1], value: 1 },
+				{ time: times[4], value: 4 },
+			]);
+		});
 	});
 });
 

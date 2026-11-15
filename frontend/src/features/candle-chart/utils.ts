@@ -1,25 +1,32 @@
 import { alpha } from "@mantine/core";
+import equal from "fast-deep-equal";
 import type {
 	AutoscaleInfo,
 	AutoscaleInfoProvider,
 	IRange,
+	LineData,
 	PriceFormatCustom,
 	UTCTimestamp,
 } from "lightweight-charts";
 
 import type {
-	ChartIndicatorDefinition,
-	ChartIndicatorLineDirection,
+	ChartAreaShape,
+	ChartIndicatorLevel,
+	ChartIndicatorScale,
+	ChartLineShape,
+	ChartMarkersShape,
 	ChartPageResponse,
+	ChartPane,
+	ChartSegmentsShape,
 } from "@/api/generated/models";
 import type { SeriesFillPoint } from "@/components/lightweight-chart";
 import {
-	directionFillOpacity,
+	areaFillOpacity,
 	entryMarkerOptions,
 	exitMarkerOptions,
-	indicatorMarkerPositions,
 	lineGapColor,
 	markMarkerOptions,
+	shapeMarkerPositions,
 	volumeColors,
 } from "@/features/candle-chart/config";
 import {
@@ -28,23 +35,22 @@ import {
 	monthTimeFormat,
 } from "@/features/candle-chart/constants";
 import type {
+	ChartAreaShapeData,
 	ChartCandle,
 	ChartCandleSlot,
-	ChartIndicatorLayout,
-	ChartIndicatorLine,
-	ChartIndicatorOptions,
-	ChartIndicatorPane,
-	ChartIndicatorPoints,
-	ChartIndicatorScale,
 	ChartIndicatorSlot,
 	ChartInterval,
 	ChartLegendItem,
 	ChartLineData,
+	ChartLineShapeData,
 	ChartMarker,
-	ChartMarkerSegments,
-	ChartPaneIndicatorOptions,
+	ChartMarkersShapeData,
+	ChartPaneData,
 	ChartPriceLevels,
+	ChartSegmentsShapeData,
 	ChartSeriesData,
+	ChartShapeData,
+	ChartShapePlace,
 	ChartTradeMarkers,
 	ChartVolumeSlot,
 	IndicatorPoint,
@@ -54,123 +60,267 @@ import type {
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
-// Results arrive in catalog order. Both chart sources use the same id/output
-// mapping.
-function chartIndicatorPoints(
-	chart: Pick<ChartPageResponse, "indicators"> | undefined,
-	catalog: readonly Pick<ChartIndicatorDefinition, "id">[],
-): ChartIndicatorPoints {
-	if (!chart) return {};
-	return Object.fromEntries(
-		catalog.map(({ id }, index) => [
-			id,
-			Object.fromEntries(
-				(chart.indicators[index]?.series ?? []).map(({ name, points }) => [
-					name,
-					points,
-				]),
-			),
-		]),
-	);
-}
-
 // The chart-ready data of a snapshot, created once by its source: candle
-// slots with whitespace for missing candles, volume bars, and every catalog
-// line aligned with the slots, so points before the first candle are dropped.
+// slots with whitespace for missing candles, volume bars, the panes, and every
+// shape aligned with the slots, so what lies before the first candle is
+// dropped. The panes of the previous data keep their autoscale while their
+// scales do not change.
 export function createChartSeriesData(
 	candles: readonly PriceCandle[],
-	chart: Pick<ChartPageResponse, "indicators"> | undefined,
-	catalog: readonly Pick<
-		ChartIndicatorDefinition,
-		"id" | "lines" | "placement"
-	>[],
+	chart: Pick<ChartPageResponse, "panes" | "shapes"> | undefined,
 	interval: ChartInterval,
+	previous?: Pick<ChartSeriesData, "panes">,
 ): ChartSeriesData {
 	const slots = createCandlestickData(candles, interval);
-	const points = chartIndicatorPoints(chart, catalog);
 	const priceResolution = chartPriceResolution(slots);
+	const panes = createChartPanes(chart?.panes ?? [], previous?.panes ?? []);
+	// The first line of each pane draws its levels.
+	const leveled = new Set<number>();
+	const shapes = (chart?.shapes ?? []).flatMap((shape): ChartShapeData[] => {
+		const place = shapePlace(shape, panes);
+		if (!place) return [];
+		switch (shape.kind) {
+			case "line": {
+				const levels =
+					place.pane > 0 && !leveled.has(place.pane)
+						? (panes[place.pane - 1]?.scale.levels ?? [])
+						: [];
+				leveled.add(place.pane);
+				return [
+					createLineShapeData(slots, shape, place, priceResolution, levels),
+				];
+			}
+			case "area":
+				return [createAreaShapeData(slots, shape, place)];
+			case "markers":
+				return [createMarkersShapeData(slots, shape, place)];
+			case "segments":
+				return [createSegmentsShapeData(slots, shape, place)];
+		}
+		return [];
+	});
 	return {
 		candles: slots,
 		volumes: createVolumeData(slots, candles, volumeColors),
 		priceResolution,
-		lines: Object.fromEntries(
-			catalog.flatMap(({ id, lines, placement }) =>
-				lines.map(({ output, direction }) => {
-					const data = createIndicatorData(slots, points[id]?.[output] ?? []);
-					// Overlays are drawn on the candles' scale, so only other lines
-					// have a resolution of their own.
-					const line: ChartLineData = {
-						data,
-						resolution:
-							placement === "overlay"
-								? priceResolution
-								: valueResolution(
-										data.flatMap((slot) =>
-											"value" in slot ? [slot.value] : [],
-										),
-									),
-						...(direction
-							? {
-									directionData: createIndicatorData(
-										slots,
-										points[id]?.[direction.output] ?? [],
-									),
-								}
-							: {}),
-						...(direction?.fill
-							? {
-									fillBases: slots.map((slot) =>
-										"open" in slot ? (slot.open + slot.close) / 2 : undefined,
-									),
-								}
-							: {}),
-					};
-					return [`${id}:${output}`, line];
-				}),
-			),
+		panes,
+		shapes,
+	};
+}
+
+// The panes below the candles; a pane of the previous data with the same key
+// and scale is kept, with its autoscale.
+function createChartPanes(
+	panes: readonly ChartPane[],
+	previous: readonly ChartPaneData[],
+): ChartPaneData[] {
+	return panes.map(
+		({ key, scale }) =>
+			previous.find((pane) => pane.key === key && equal(pane.scale, scale)) ?? {
+				autoscaleInfoProvider: paneScaleProvider(scale),
+				key,
+				scale,
+			},
+	);
+}
+
+// Where a shape is drawn; a shape in a pane the page does not have is not
+// drawn.
+function shapePlace(
+	{ pane, placement }: Pick<ChartLineShape, "pane" | "placement">,
+	panes: readonly ChartPaneData[],
+): ChartShapePlace | undefined {
+	if (placement !== "pane") return { pane: 0, placement };
+	const index = panes.findIndex(({ key }) => key === pane);
+	const found = panes[index];
+	return found
+		? {
+				autoscaleInfoProvider: found.autoscaleInfoProvider,
+				pane: index + 1,
+				placement,
+			}
+		: undefined;
+}
+
+// A line aligned with the candle slots. A point that is not joined to the
+// point before leaves out the join from that point.
+export function createLineShapeData(
+	slots: readonly ChartCandleSlot[],
+	{ color, id, points, title }: ChartLineShape,
+	place: ChartShapePlace,
+	priceResolution: ValueResolution,
+	levels: readonly ChartIndicatorLevel[],
+): ChartLineShapeData {
+	const byTime = new Map(
+		points.map((point) => [toUtcTimestamp(point.time), point]),
+	);
+	const data = slots.map(({ time }): ChartIndicatorSlot => {
+		const point = byTime.get(time);
+		if (!point) return { time };
+		return point.color === undefined
+			? { time, value: point.value }
+			: { color: point.color, time, value: point.value };
+	});
+	const gaps = new Set(
+		points.flatMap((point, index) => {
+			const before = points[index - 1];
+			return point.break && before ? [toUtcTimestamp(before.time)] : [];
+		}),
+	);
+	return {
+		...place,
+		color,
+		data,
+		gaps,
+		id,
+		kind: "line",
+		levels,
+		// Overlays are drawn on the candles' scale, so only other lines have a
+		// resolution of their own.
+		resolution:
+			place.placement === "overlay"
+				? priceResolution
+				: valueResolution(
+						data.flatMap((slot) => ("value" in slot ? [slot.value] : [])),
+					),
+		title,
+	};
+}
+
+// The data of a line as drawn: point colors resolved, and the joins it
+// leaves out transparent.
+export function lineSeriesData(
+	{ data, gaps }: Pick<ChartLineShapeData, "data" | "gaps">,
+	themeColor: (color: string) => string,
+): ChartIndicatorSlot[] {
+	return data.map((slot) => {
+		if (!("value" in slot)) return slot;
+		if (gaps.has(slot.time)) return { ...slot, color: lineGapColor };
+		return slot.color === undefined
+			? slot
+			: { ...slot, color: themeColor(slot.color) };
+	});
+}
+
+// An area aligned with the candle slots, with its values as the data of the
+// series it lies on.
+export function createAreaShapeData(
+	slots: readonly ChartCandleSlot[],
+	{ id, points }: ChartAreaShape,
+	place: ChartShapePlace,
+): ChartAreaShapeData {
+	const byTime = new Map(
+		points.map((point) => [toUtcTimestamp(point.time), point]),
+	);
+	const aligned = slots.map(({ time }) => ({ point: byTime.get(time), time }));
+	return {
+		...place,
+		id,
+		kind: "area",
+		points: aligned.map(({ point, time }): SeriesFillPoint =>
+			point
+				? { base: point.base, color: point.color, time, value: point.value }
+				: { time },
 		),
-		segments: Object.fromEntries(
-			catalog.flatMap(({ id, lines }) =>
-				lines.flatMap(({ segment }) =>
-					segment
-						? [
-								[
-									`${id}:${segment}`,
-									createIndicatorData(slots, points[id]?.[segment] ?? []),
-								],
-							]
-						: [],
-				),
-			),
+		values: aligned.map(({ point, time }) =>
+			point ? { time, value: point.value } : { time },
 		),
 	};
 }
 
-// Catalog presentation is shared by live charts and immutable backtest charts.
-function toChartIndicatorOptions({
-	id,
-	lines,
-	pane,
-	placement,
-	scale,
-}: ChartIndicatorDefinition): ChartIndicatorOptions {
-	return placement === "pane"
-		? {
-				id,
-				lines,
-				placement,
-				pane: pane ?? id,
-				scale: scale ?? { levels: [] },
-			}
-		: { id, lines, placement };
+// The fill of an area as drawn: translucent in the resolved color of each
+// point.
+export function areaFillPoints(
+	points: readonly SeriesFillPoint[],
+	themeColor: (color: string) => string,
+): SeriesFillPoint[] {
+	return points.map((point) =>
+		"value" in point
+			? { ...point, color: alpha(themeColor(point.color), areaFillOpacity) }
+			: point,
+	);
 }
 
-// What a chart draws from one interval's catalog, created once per catalog.
-export function createIndicatorLayout(
-	catalog: readonly ChartIndicatorDefinition[],
-): ChartIndicatorLayout {
-	const indicators = catalog.map(toChartIndicatorOptions);
-	return { indicators, panes: createIndicatorPanes(indicators) };
+// Markers on the candle slots, split into those on a line and those on the
+// candles. A marker on a candle the slots do not have is not drawn.
+export function createMarkersShapeData(
+	slots: readonly ChartCandleSlot[],
+	{ color, id, points, position, title }: ChartMarkersShape,
+	place: ChartShapePlace,
+): ChartMarkersShapeData {
+	const candles = new Set(
+		slots.flatMap((slot) => ("open" in slot ? [slot.time] : [])),
+	);
+	const values = new Map<UTCTimestamp, number>();
+	const onLine = new Map<UTCTimestamp, number>();
+	const onCandles = new Set<UTCTimestamp>();
+	for (const point of points) {
+		const time = toUtcTimestamp(point.time);
+		if (!candles.has(time) || values.has(time)) continue;
+		values.set(time, point.value);
+		if (point.line_value === undefined) onCandles.add(time);
+		else onLine.set(time, point.line_value);
+	}
+	return {
+		...place,
+		color,
+		id,
+		kind: "markers",
+		onCandles: [...onCandles].sort((first, second) => first - second),
+		onLine: [...onLine]
+			.map(([time, value]) => ({ time, value }))
+			.sort((first, second) => first.time - second.time),
+		position: shapeMarkerPositions[position],
+		title,
+		values,
+	};
+}
+
+// The markers drawn on a line, in the resolved color of their shape.
+export function lineMarkers(
+	{ color, onLine, position }: ChartMarkersShapeData,
+	themeColor: (color: string) => string,
+): ChartMarker[] {
+	return onLine.map(({ time }) =>
+		shapeMarker(time, color, position, themeColor),
+	);
+}
+
+// The segments on the candle slots as the data of one line series. A segment
+// with a point on a candle the slots do not have, or starting before the end
+// of the one before, is not drawn.
+export function createSegmentsShapeData(
+	slots: readonly ChartCandleSlot[],
+	{ color, id, segments }: ChartSegmentsShape,
+	place: ChartShapePlace,
+): ChartSegmentsShapeData {
+	const candles = new Set(
+		slots.flatMap((slot) => ("open" in slot ? [slot.time] : [])),
+	);
+	const data: LineData<UTCTimestamp>[] = [];
+	for (const segment of segments) {
+		const start = {
+			time: toUtcTimestamp(segment.from.time),
+			value: segment.from.value,
+		};
+		const end = {
+			time: toUtcTimestamp(segment.to.time),
+			value: segment.to.value,
+		};
+		const last = data.at(-1);
+		if (
+			!candles.has(start.time) ||
+			!candles.has(end.time) ||
+			(last && start.time < last.time)
+		)
+			continue;
+		if (last?.time !== start.time) {
+			if (last) data[data.length - 1] = { ...last, color: lineGapColor };
+			data.push(start);
+		}
+		data.push(end);
+	}
+	return { ...place, color, data, id, kind: "segments" };
 }
 
 export function toUtcTimestamp(value: string): UTCTimestamp {
@@ -221,75 +371,6 @@ export function createIndicatorData(
 		const value = values.get(time);
 		return value === undefined ? { time } : { time, value };
 	});
-}
-
-// The points of a line as drawn: with a direction, colored by the sign of the
-// direction output at the same slot; a point where it is zero or missing keeps
-// the line color. Where the sign flips, the line breaks, like the SUPERTREND
-// level jumping to the other side of the candles.
-export function colorByDirection(
-	{ data, directionData }: ChartLineData,
-	direction: ChartIndicatorLineDirection | undefined,
-	themeColor: (color: string) => string,
-): readonly ChartIndicatorSlot[] {
-	if (!direction || !directionData) return data;
-	return data.map((slot, index) => {
-		const color = directionColor(direction, directionData[index]);
-		if (!("value" in slot) || color === undefined) return slot;
-		const next = directionColor(direction, directionData[index + 1]);
-		const flips =
-			next !== undefined &&
-			next !== color &&
-			"value" in (data[index + 1] ?? {});
-		return { ...slot, color: flips ? lineGapColor : themeColor(color) };
-	});
-}
-
-// The fill of a line with a direction: the area between the line and the
-// middle of the candle body, translucent in the color of the direction. There
-// is none where the direction is zero or missing, and it breaks where the
-// color changes, like the line.
-export function directionFill(
-	{ data, directionData, fillBases }: ChartLineData,
-	direction: ChartIndicatorLineDirection,
-	themeColor: (color: string) => string,
-): SeriesFillPoint[] {
-	return data.map((slot, index) => {
-		const color = directionColor(direction, directionData?.[index]);
-		const base = fillBases?.[index];
-		if (!("value" in slot) || color === undefined || base === undefined) {
-			return { time: slot.time };
-		}
-		return {
-			time: slot.time,
-			value: slot.value,
-			base,
-			color: alpha(themeColor(color), directionFillOpacity),
-		};
-	});
-}
-
-// The theme color of a line at a slot: the color of its direction there, or
-// the line color where the direction is zero or missing.
-function lineColorAt(
-	{ color, direction }: ChartIndicatorLine,
-	directionData: readonly ChartIndicatorSlot[] | undefined,
-	slotIndex: number,
-): string {
-	return (
-		(direction && directionColor(direction, directionData?.[slotIndex])) ??
-		color
-	);
-}
-
-// The theme color of a direction at a slot of its output: up where the output
-// is positive, down where it is negative, none where it is zero or missing.
-function directionColor(
-	direction: ChartIndicatorLineDirection,
-	slot: ChartIndicatorSlot | undefined,
-): string | undefined {
-	if (!slot || !("value" in slot) || slot.value === 0) return undefined;
-	return slot.value > 0 ? direction.up_color : direction.down_color;
 }
 
 // The close prices of another instrument's candles on the candle slots of the
@@ -369,310 +450,35 @@ export function createMarkerDataSelector(
 }
 
 // Everything marked on the candles: the markers of the source, such as the
-// trades of a backtest, and the overlay lines drawn as markers without an
-// anchor. One series stacks only the markers of one ascending list, so they
-// are merged; without marker lines the markers of the source are returned as
-// they are.
+// trades of a backtest, and the markers of shapes drawn on the candles. One
+// series stacks only the markers of one ascending list, so they are merged;
+// without such shape markers the markers of the source are returned as they
+// are.
 export function createCandleMarkers(
 	markers: readonly ChartMarker[] | undefined,
-	indicators: readonly ChartIndicatorOptions[],
-	series: Pick<ChartSeriesData, "candles" | "lines">,
+	shapes: readonly ChartShapeData[],
 	themeColor: (color: string) => string,
 ): readonly ChartMarker[] | undefined {
-	const indicatorMarkers = indicators.flatMap(
-		({ id, lines: indicatorLines, placement }) =>
-			placement === "overlay"
-				? indicatorLines.flatMap((line) =>
-						line.anchor ? [] : lineMarkers(id, line, series, themeColor),
-					)
-				: [],
+	const shapeMarkers = shapes.flatMap((shape) =>
+		shape.kind === "markers"
+			? shape.onCandles.map((time) =>
+					shapeMarker(time, shape.color, shape.position, themeColor),
+				)
+			: [],
 	);
-	if (indicatorMarkers.length === 0) return markers;
-	return [...(markers ?? []), ...indicatorMarkers].sort(
+	if (shapeMarkers.length === 0) return markers;
+	return [...(markers ?? []), ...shapeMarkers].sort(
 		(first, second) => first.time - second.time,
 	);
 }
 
-// The markers of the lines anchored to a line of another indicator, by the
-// "id:output" key of that line, whose series draws them wherever it is
-// placed. A series has markers only where it has values, so the others are
-// dropped, and one ascending list of them, so those of several lines are
-// merged.
-export function createAnchoredMarkers(
-	indicators: readonly ChartIndicatorOptions[],
-	series: Pick<ChartSeriesData, "candles" | "lines">,
+function shapeMarker(
+	time: UTCTimestamp,
+	color: string,
+	position: ChartMarker["position"],
 	themeColor: (color: string) => string,
-): Readonly<Record<string, readonly ChartMarker[]>> {
-	const markers: Record<string, ChartMarker[]> = {};
-	for (const { id, lines: indicatorLines } of indicators) {
-		for (const line of indicatorLines) {
-			if (!line.anchor) continue;
-			const key = `${line.anchor.indicator_id}:${line.anchor.output}`;
-			const anchored = new Set(
-				(series.lines[key]?.data ?? []).flatMap((slot) =>
-					"value" in slot ? [slot.time] : [],
-				),
-			);
-			markers[key] = [
-				...(markers[key] ?? []),
-				...lineMarkers(id, line, series, themeColor).filter(({ time }) =>
-					anchored.has(time),
-				),
-			].sort((first, second) => first.time - second.time);
-		}
-	}
-	return markers;
-}
-
-// The segments ending at marker values, where the markers are drawn. A line
-// with a segment output connects each value with the candle that output
-// holds, the number of candles back from its marker; any other line connects
-// the value on a slot whose time is connected with its previous value. The
-// segments lie where the markers sit: on the candles, or in the pane and on
-// the scale of the anchor. An anchored line also connects the same two
-// candles, from low to low under them or from high to high over them. A
-// segment output's start lies on the anchor line, or on the candles without
-// one.
-export function createMarkerSegments(
-	connected: readonly string[] | undefined,
-	{ indicators, panes }: ChartIndicatorLayout,
-	{
-		candles,
-		lines,
-		segments,
-	}: Pick<ChartSeriesData, "candles" | "lines" | "segments">,
-	interval: ChartInterval,
-): ChartMarkerSegments[] {
-	const times = new Set<number>(
-		(connected ?? []).map((time) => candleOpenTime(time, interval)),
-	);
-	return indicators.flatMap(({ id, lines: indicatorLines, placement }) =>
-		indicatorLines.flatMap(
-			({
-				anchor,
-				color,
-				output,
-				segment,
-				shift,
-				style,
-			}): ChartMarkerSegments[] => {
-				if (style === "line") return [];
-				const key = `${id}:${output}`;
-				const data = lines[key]?.data ?? [];
-				// The slots of the two values of each segment; a start from a
-				// segment output is a slot before the value, so it is shifted
-				// back like the values.
-				const pairs = segment
-					? segmentPairs(candles, data, segments[`${id}:${segment}`] ?? [])
-					: connectedPairs(data, times);
-				// The slot of the candle a value's marker is drawn on.
-				const drawn = (index: number) => candleSlot(candles, index, -shift);
-				const ownPoint = (index: number) => {
-					const slot = data[index];
-					const at = drawn(index);
-					if (at === undefined) return undefined;
-					const time = data[at]?.time;
-					return slot && "value" in slot && time !== undefined
-						? { time, value: slot.value }
-						: undefined;
-				};
-				const candlePoint = (index: number) => {
-					const at = drawn(index);
-					if (at === undefined) return undefined;
-					const candle = candles[at];
-					return candle && "open" in candle
-						? {
-								time: candle.time,
-								value: style === "marker_below" ? candle.low : candle.high,
-							}
-						: undefined;
-				};
-				const anchorData = anchor
-					? (lines[`${anchor.indicator_id}:${anchor.output}`]?.data ?? [])
-					: [];
-				const anchorPoint = (index: number) => {
-					const at = drawn(index);
-					if (at === undefined) return undefined;
-					const slot = anchorData[at];
-					return slot && "value" in slot
-						? { time: slot.time, value: slot.value }
-						: undefined;
-				};
-				const drawnSegments: ChartMarkerSegments[] = [];
-				if (!anchor) {
-					if (placement !== "overlay") return [];
-					drawnSegments.push({
-						color,
-						data: segmentData(
-							pairs,
-							segment ? candlePoint : ownPoint,
-							ownPoint,
-						),
-						key,
-						pane: 0,
-						scale: "price",
-					});
-				} else {
-					const pane = panes.findIndex(({ indicators: paneIndicators }) =>
-						paneIndicators.some(
-							(indicator) => indicator.id === anchor.indicator_id,
-						),
-					);
-					const anchorPlacement = indicators.find(
-						(indicator) => indicator.id === anchor.indicator_id,
-					)?.placement;
-					if (anchorPlacement !== undefined) {
-						drawnSegments.push({
-							color,
-							data: segmentData(
-								pairs,
-								segment ? anchorPoint : ownPoint,
-								ownPoint,
-							),
-							key,
-							pane: pane + 1,
-							scale: anchorPlacement === "volume" ? "volume" : "price",
-						});
-					}
-					drawnSegments.push({
-						color,
-						data: segmentData(pairs, candlePoint, candlePoint),
-						key: `${key}:candles`,
-						pane: 0,
-						scale: "price",
-					});
-				}
-				return drawnSegments.filter(({ data }) => data.length > 0);
-			},
-		),
-	);
-}
-
-// The slot of each value of a marker line on a connected time, paired with
-// the slot of the previous value.
-function connectedPairs(
-	data: readonly ChartIndicatorSlot[],
-	times: ReadonlySet<number>,
-): [number, number][] {
-	const pairs: [number, number][] = [];
-	let previous: number | undefined;
-	data.forEach((slot, index) => {
-		if (!("value" in slot)) return;
-		if (previous !== undefined && times.has(slot.time)) {
-			pairs.push([previous, index]);
-		}
-		previous = index;
-	});
-	return pairs;
-}
-
-// The slot of each value of a marker line, paired with the slot of the
-// candle the number of candles before it that its segment output holds there.
-// A start before the first slot drops the pair.
-function segmentPairs(
-	candles: readonly ChartCandleSlot[],
-	data: readonly ChartIndicatorSlot[],
-	starts: readonly ChartIndicatorSlot[],
-): [number, number][] {
-	return data.flatMap((slot, index): [number, number][] => {
-		const bars = starts[index];
-		const start =
-			"value" in slot && bars && "value" in bars && bars.value > 0
-				? candleSlot(candles, index, -bars.value)
-				: undefined;
-		return start === undefined ? [] : [[start, index]];
-	});
-}
-
-// The slot of the candle count candles after the one in slot index, or before
-// it for a negative count, skipping the empty slots of missing candles;
-// undefined past the slots.
-function candleSlot(
-	candles: readonly ChartCandleSlot[],
-	index: number,
-	count: number,
-): number | undefined {
-	const step = Math.sign(count);
-	let slot = index;
-	for (let left = Math.abs(count); left > 0;) {
-		slot += step;
-		const candle = candles[slot];
-		if (!candle) return undefined;
-		if ("open" in candle) left--;
-	}
-	return slot;
-}
-
-// The points of segments in ascending order as the data of one line series:
-// segments sharing a point meet there, and the end of a segment followed by a
-// gap colors the join to the next segment transparent. A segment missing a
-// point, or starting before the end of the one before, is not drawn.
-function segmentData(
-	pairs: readonly (readonly [number, number])[],
-	startPoint: (
-		index: number,
-	) => ChartMarkerSegments["data"][number] | undefined,
-	endPoint: (index: number) => ChartMarkerSegments["data"][number] | undefined,
-): ChartMarkerSegments["data"] {
-	const data: ChartMarkerSegments["data"][number][] = [];
-	for (const [from, to] of pairs) {
-		const start = startPoint(from);
-		const end = endPoint(to);
-		const last = data.at(-1);
-		if (!start || !end || (last && start.time < last.time)) continue;
-		if (last?.time !== start.time) {
-			if (last) data[data.length - 1] = { ...last, color: lineGapColor };
-			data.push(start);
-		}
-		data.push(end);
-	}
-	return data;
-}
-
-// The markers of a line drawn as markers: a circle for each value, moved the
-// line's shift of candles earlier. A marker moved before the first candle is
-// not drawn.
-function lineMarkers(
-	id: string,
-	{ color, output, shift, style }: ChartIndicatorLine,
-	{ candles, lines }: Pick<ChartSeriesData, "candles" | "lines">,
-	themeColor: (color: string) => string,
-): ChartMarker[] {
-	if (style === "line") return [];
-	const data = lines[`${id}:${output}`]?.data ?? [];
-	return data.flatMap(({ time }, index): ChartMarker[] =>
-		drawnValue(candles, data, { shift, style }, index) === undefined
-			? []
-			: [
-					{
-						color: themeColor(color),
-						position: indicatorMarkerPositions[style],
-						shape: "circle",
-						time,
-					},
-				],
-	);
-}
-
-// The value of a line drawn at a candle slot: the value of that slot, or for
-// a line drawn as markers on a candle the value held the line's shift of
-// candles later, whose marker is drawn here.
-function drawnValue(
-	candles: readonly ChartCandleSlot[],
-	data: readonly ChartIndicatorSlot[],
-	{ shift, style }: Pick<ChartIndicatorLine, "shift" | "style">,
-	slotIndex: number,
-): number | undefined {
-	const candle = candles[slotIndex];
-	const index =
-		style === "line"
-			? slotIndex
-			: candle && "open" in candle
-				? candleSlot(candles, slotIndex, shift)
-				: undefined;
-	if (index === undefined) return undefined;
-	const slot = data[index];
-	return slot && "value" in slot ? slot.value : undefined;
+): ChartMarker {
+	return { color: themeColor(color), position, shape: "circle", time };
 }
 
 function countByCandle(
@@ -866,76 +672,47 @@ export function nextCandleOpen(value: string, interval: ChartInterval): string {
 	return date.toISOString();
 }
 
-// Titles and values of every indicator line at one candle slot. Indicator data
-// is aligned with the candle slots, so the slot index selects the value; a
-// line drawn as markers shows the value of the marker drawn on the slot.
+// Titles and values of the shapes with a title at one candle slot: a line
+// shows its value there in the color of its point, markers the value of the
+// marker drawn on that candle.
 export function createIndicatorLegend(
-	indicators: readonly ChartIndicatorOptions[],
-	{ candles, lines }: Pick<ChartSeriesData, "candles" | "lines">,
+	{ candles, shapes }: Pick<ChartSeriesData, "candles" | "shapes">,
 	slotIndex: number,
 ): ChartLegendItem[] {
-	return indicators.flatMap((indicator) =>
-		indicator.lines.map((line) => {
-			const { output, title } = line;
-			const key = `${indicator.id}:${output}`;
-			const color = lineColorAt(line, lines[key]?.directionData, slotIndex);
-			const drawn = drawnValue(
-				candles,
-				lines[key]?.data ?? [],
-				line,
-				slotIndex,
-			);
-			const value =
-				drawn === undefined
-					? null
-					: indicator.placement === "overlay"
-						? formatPrice(drawn)
-						: formatNumber(drawn);
-			return { color, key, placement: indicator.placement, title, value };
-		}),
-	);
-}
-
-// Groups the pane indicators by pane key, ordering the panes by their first
-// indicator. Each pane gets its autoscale provider here, once per catalog, so
-// the provider keeps its identity as long as the layout does.
-export function createIndicatorPanes(
-	indicators: readonly ChartIndicatorOptions[],
-): ChartIndicatorPane[] {
-	const groups = new Map<string, ChartPaneIndicatorOptions[]>();
-	for (const indicator of indicators) {
-		if (indicator.placement !== "pane") continue;
-		const group = groups.get(indicator.pane);
-		if (group) group.push(indicator);
-		else groups.set(indicator.pane, [indicator]);
-	}
-	return [...groups.values()].map((group) => {
-		const scale = group.map(({ scale }) => scale).reduce(mergeScales);
-		return {
-			autoscaleInfoProvider: paneScaleProvider(scale),
-			indicators: group,
-			scale,
-		};
+	const time = candles[slotIndex]?.time;
+	return shapes.flatMap((shape): ChartLegendItem[] => {
+		if (shape.kind !== "line" && shape.kind !== "markers") return [];
+		const { color, id, placement, title } = shape;
+		const format = (value: number | undefined) =>
+			value === undefined
+				? null
+				: placement === "overlay"
+					? formatPrice(value)
+					: formatNumber(value);
+		if (shape.kind === "markers") {
+			return [
+				{
+					color,
+					key: id,
+					placement,
+					title,
+					value: format(
+						time === undefined ? undefined : shape.values.get(time),
+					),
+				},
+			];
+		}
+		const slot = shape.data[slotIndex];
+		return [
+			{
+				color: (slot && "color" in slot ? slot.color : undefined) ?? color,
+				key: id,
+				placement,
+				title,
+				value: format(slot && "value" in slot ? slot.value : undefined),
+			},
+		];
 	});
-}
-
-// The scale of a shared pane spans the bounds of all its indicators, an
-// unbounded side staying unbounded. A shared pane draws no levels.
-function mergeScales(
-	first: ChartIndicatorScale,
-	second: ChartIndicatorScale,
-): ChartIndicatorScale {
-	return {
-		levels: [],
-		max:
-			first.max === undefined || second.max === undefined
-				? undefined
-				: Math.max(first.max, second.max),
-		min:
-			first.min === undefined || second.min === undefined
-				? undefined
-				: Math.min(first.min, second.min),
-	};
 }
 
 // Fits a scale to the visible values while keeping its levels, such as RSI 30

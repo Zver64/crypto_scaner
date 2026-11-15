@@ -13,7 +13,9 @@ import {
 } from "@mantine/core";
 import { type CSSProperties, useState } from "react";
 
+import type { ChartPlacement } from "@/api/generated/models";
 import { ChartCanvas } from "@/components/lightweight-chart";
+import { AreaShapeSeries } from "@/features/candle-chart/area-shape-series";
 import { CandleSeries } from "@/features/candle-chart/candle-series";
 import { timeChartOptions } from "@/features/candle-chart/chart-options";
 import { ChartReadout } from "@/features/candle-chart/chart-readout";
@@ -29,12 +31,11 @@ import {
 	loadOlderThreshold,
 	minVisibleBars,
 } from "@/features/candle-chart/config";
-import { emptyChartLine } from "@/features/candle-chart/constants";
 import { IndicatorLegend } from "@/features/candle-chart/indicator-legend";
+import { LineShapeSeries } from "@/features/candle-chart/line-shape-series";
 import { LiveStatus } from "@/features/candle-chart/live-status";
-import { MarkerSegmentSeries } from "@/features/candle-chart/marker-segment-series";
-import { OverlayIndicatorSeries } from "@/features/candle-chart/overlay-indicator-series";
-import { PaneIndicatorSeries } from "@/features/candle-chart/pane-indicator-series";
+import { MarkersShapeSeries } from "@/features/candle-chart/markers-shape-series";
+import { SegmentsShapeSeries } from "@/features/candle-chart/segments-shape-series";
 import type {
 	ChartCandle,
 	ChartInterval,
@@ -45,17 +46,13 @@ import { usePriceComparison } from "@/features/candle-chart/use-price-comparison
 import { usePriceHistory } from "@/features/candle-chart/use-price-history";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
 import {
-	createAnchoredMarkers,
 	createCandleMarkers,
 	createIndicatorLegend,
-	createMarkerSegments,
 } from "@/features/candle-chart/utils";
-import { VolumeIndicatorSeries } from "@/features/candle-chart/volume-indicator-series";
 import { VolumeSeries } from "@/features/candle-chart/volume-series";
 
 export { createChartPriceLevels } from "@/features/candle-chart/utils";
 export type {
-	ChartIndicatorLayout,
 	ChartIntervalOption,
 	ChartPriceLevels,
 	PriceComparison,
@@ -74,7 +71,6 @@ const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
 export function PriceHistoryChart({
 	comparison,
 	enabled,
-	indicators: layouts,
 	fillHeight = false,
 	intervals,
 	live = true,
@@ -92,7 +88,6 @@ export function PriceHistoryChart({
 	const [activeCandle, setActiveCandle] = useState<ChartCandle | null>(null);
 	const [comparing, setComparing] = useState(false);
 	usePriceComparison(comparison, comparing);
-	const { indicators, panes } = layouts[interval];
 	const colorScheme = useComputedColorScheme("dark");
 	// Phones give the chart the full card width and size it from the screen.
 	// The height is read once, so an opening keyboard does not resize the chart.
@@ -103,7 +98,6 @@ export function PriceHistoryChart({
 	const [screenHeight] = useState(() => window.innerHeight);
 	const {
 		candles,
-		connectedCandles,
 		connection,
 		error,
 		freshness,
@@ -113,27 +107,13 @@ export function PriceHistoryChart({
 		markers,
 		series,
 	} = usePriceHistory(source, interval, enabled);
-	const line = (key: string) => series.lines[key] ?? emptyChartLine;
-	const overlays = indicators.filter(
-		(indicator) => indicator.placement === "overlay",
-	);
+	const { panes, shapes } = series;
 	const themeColor = useThemeColor();
-	const candleMarkers = createCandleMarkers(
-		markers,
-		indicators,
-		series,
-		themeColor,
-	);
-	const anchoredMarkers = createAnchoredMarkers(indicators, series, themeColor);
-	const markerSegments = createMarkerSegments(
-		connectedCandles,
-		layouts[interval],
-		series,
-		interval,
-	);
-	const volumeIndicators = indicators.filter(
-		(indicator) => indicator.placement === "volume",
-	);
+	const candleMarkers = createCandleMarkers(markers, shapes, themeColor);
+	const lines = (placement: ChartPlacement) =>
+		shapes.flatMap((shape) =>
+			shape.kind === "line" && shape.placement === placement ? [shape] : [],
+		);
 
 	const {
 		chartRef,
@@ -158,11 +138,7 @@ export function PriceHistoryChart({
 	const legendSlotIndex = activeCandle
 		? series.candles.findIndex((slot) => slot.time === activeCandle.time)
 		: series.candles.length - 1;
-	const legendItems = createIndicatorLegend(
-		indicators,
-		series,
-		legendSlotIndex,
-	);
+	const legendItems = createIndicatorLegend(series, legendSlotIndex);
 	const hasCandles = candles.length > 0;
 	const candleHeight = compact
 		? Math.max(
@@ -242,67 +218,32 @@ export function PriceHistoryChart({
 							priceResolution={series.priceResolution}
 							visibleRange={visibleRange}
 						/>
-						{/* Lines drawn as markers are among the markers of the candles or
-						of the line they are anchored to. */}
-						{overlays.flatMap(({ id, lines }) =>
-							lines
-								.filter(({ style }) => style === "line")
-								.map((indicatorLine) => (
-									<OverlayIndicatorSeries
-										data={line(`${id}:${indicatorLine.output}`)}
-										key={`${id}:${indicatorLine.output}`}
-										line={indicatorLine}
-										markers={anchoredMarkers[`${id}:${indicatorLine.output}`]}
-										priceResolution={series.priceResolution}
-									/>
-								)),
-						)}
+						{lines("overlay").map((shape) => (
+							<LineShapeSeries key={shape.id} shape={shape} />
+						))}
 						{comparison && comparing ? (
 							<ComparisonSeries comparison={comparison} interval={interval} />
 						) : null}
-						{volumeIndicators.flatMap(({ id, lines }) =>
-							lines
-								.filter(({ style }) => style === "line")
-								.map((indicatorLine) => (
-									<VolumeIndicatorSeries
-										data={line(`${id}:${indicatorLine.output}`)}
-										key={`${id}:${indicatorLine.output}`}
-										line={indicatorLine}
-										markers={anchoredMarkers[`${id}:${indicatorLine.output}`]}
-									/>
-								)),
-						)}
-						{panes.flatMap(
-							(
-								{ autoscaleInfoProvider, indicators: paneIndicators, scale },
-								paneIndex,
-							) =>
-								paneIndicators
-									.flatMap(({ id, lines }) =>
-										lines
-											.filter(({ style }) => style === "line")
-											.map((indicatorLine) => ({
-												indicatorLine,
-												key: `${id}:${indicatorLine.output}`,
-											})),
-									)
-									.map(({ indicatorLine, key }, lineIndex) => (
-										<PaneIndicatorSeries
-											autoscaleInfoProvider={autoscaleInfoProvider}
-											data={line(key)}
-											drawsLevels={lineIndex === 0}
-											key={key}
-											line={indicatorLine}
-											markers={anchoredMarkers[key]}
-											pane={paneIndex + 1}
-											scale={scale}
-										/>
-									)),
-						)}
-						{/* Added after the lines whose panes and scales they share. */}
-						{markerSegments.map((segments) => (
-							<MarkerSegmentSeries key={segments.key} segments={segments} />
+						{lines("volume").map((shape) => (
+							<LineShapeSeries key={shape.id} shape={shape} />
 						))}
+						{lines("pane").map((shape) => (
+							<LineShapeSeries key={shape.id} shape={shape} />
+						))}
+						{/* Added after the lines whose panes and scales they share, so the
+						lines keep the format of their scales. Markers on the candles are
+						among the markers of the candles. */}
+						{shapes.map((shape) => {
+							switch (shape.kind) {
+								case "area":
+									return <AreaShapeSeries key={shape.id} shape={shape} />;
+								case "markers":
+									return <MarkersShapeSeries key={shape.id} shape={shape} />;
+								case "segments":
+									return <SegmentsShapeSeries key={shape.id} shape={shape} />;
+							}
+							return null;
+						})}
 					</ChartCanvas>
 					{/* The status, readout and legend lie over the chart, so they take
 					no height of their own and let the pointer through. */}

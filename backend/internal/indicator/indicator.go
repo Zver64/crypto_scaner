@@ -109,18 +109,6 @@ const (
 	OutputValue OutputStyle = "value"
 )
 
-// Tone is the fixed meaning of an output that clients color accordingly,
-// instead of with the next color of their palette.
-type Tone string
-
-const (
-	ToneBullish Tone = "bullish"
-	ToneBearish Tone = "bearish"
-)
-
-// Tones are every tone an output may have.
-func Tones() []Tone { return []Tone{ToneBullish, ToneBearish} }
-
 // OutputDescriptor describes one output series returned by Calculate.
 type OutputDescriptor struct {
 	Name  string
@@ -128,36 +116,6 @@ type OutputDescriptor struct {
 	// Sparse marks an output with a value only on some candles and empty on
 	// the others.
 	Sparse bool
-	// Shift is the key of the integer parameter holding the number of candles
-	// a marker is drawn before the candle holding its value, such as the
-	// candles that confirm a pivot; empty draws it on that candle. Values are
-	// not shifted, only their drawing.
-	Shift string
-	// Anchor names the output of the same indicator whose line the markers
-	// of this output are drawn on; empty draws them over the candles, or on
-	// the line of a nested source.
-	Anchor string
-	// Segment names the sparse output of the same indicator holding, at each
-	// value of this marker output, the number of candles back from the marker
-	// to where a line drawn to the marker starts; empty draws no line.
-	Segment string
-	// Direction colors this line by the sign of another output; zero keeps
-	// one color.
-	Direction OutputDirection
-	// Tone is the fixed meaning of the output; empty colors it from the
-	// palette.
-	Tone Tone
-}
-
-// OutputDirection colors a line by the sign of a value output of the same
-// indicator at each candle, such as the SUPERTREND trend: the line takes the
-// bullish tone where it is positive and the bearish tone where it is negative.
-type OutputDirection struct {
-	// Output names that value output.
-	Output string
-	// Fill also fills, in the tone of the direction, the area between the
-	// line and the middle of the candle body, like the SUPERTREND fill.
-	Fill bool
 }
 
 // Descriptor is the self-description of an implementation. Registries use it

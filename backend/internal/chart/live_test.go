@@ -2,7 +2,6 @@ package chart_test
 
 import (
 	"context"
-	"log/slog"
 	"slices"
 	"testing"
 	"time"
@@ -66,7 +65,7 @@ func TestLiveSessionReloadsOnlyTheTailOfContiguousHistory(t *testing.T) {
 	if !slices.Equal(frame.Page.Candles, want.Candles) || !frame.Page.HasMore {
 		t.Fatalf("tail reload candles differ from a full build")
 	}
-	got, expected := frame.Page.Indicators[0].Series[0].Points, want.Indicators[0].Series[0].Points
+	got, expected := rsiPoints(t, frame.Page), rsiPoints(t, want)
 	if !slices.Equal(got, expected) {
 		t.Fatalf("tail reload RSI differs from a full build: %d points vs %d", len(got), len(expected))
 	}
@@ -118,15 +117,7 @@ func applyClose(session *chart.LiveSession, history []market.Candle) chart.Trigg
 
 func newLiveTestService(t *testing.T, store chart.Store) *chart.Service {
 	t.Helper()
-	registry, err := indicator.NewRegistry(indicatortalib.New()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := chart.NewService(store, registry, emptyCatalog{}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
-	return service
+	return newTestService(t, store, emptyCatalog{})
 }
 
 // rsiWindow is the chart window of RSI 14, the warm-up the tests load.

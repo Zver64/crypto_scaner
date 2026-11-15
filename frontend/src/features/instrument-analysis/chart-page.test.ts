@@ -1,152 +1,180 @@
 import { describe, expect, it } from "vitest";
 
 import type {
-	ChartIndicatorDefinition,
+	ChartMarkersShape,
 	ChartPageResponse,
+	ChartSegmentsShape,
+	ChartShape,
 } from "@/api/generated/models";
-import { validateChartPage } from "@/features/instrument-analysis/chart-page";
+import {
+	mergeChartTail,
+	validateChartPage,
+} from "@/features/instrument-analysis/chart-page";
 
-const rsiCatalog: ChartIndicatorDefinition[] = [
-	{
-		id: "rsi-14",
-		lines: [
-			{
-				color: "blue.5",
-				output: "rsi",
-				shift: 0,
-				style: "line",
-				title: "RSI 14",
-			},
-		],
-		parameters: { period: 14 },
+function candle(hour: number) {
+	const open = new Date(Date.UTC(2026, 7, 27, hour));
+	return {
+		close: 12,
+		close_time: new Date(open.getTime() + 3_599_999).toISOString(),
+		high: 13,
+		low: 9,
+		open: 10,
+		open_time: open.toISOString().replace(".000Z", "Z"),
+		quote_asset_volume: 20,
+		trade_count: 4,
+		volume: 10,
+	};
+}
+const time = (hour: number) => candle(hour).open_time;
+
+function rsi(points: { hour: number; value: number }[]): ChartShape {
+	return {
+		color: "blue.5",
+		id: "rsi",
+		kind: "line",
+		pane: "rsi",
 		placement: "pane",
-		scale: { levels: [], max: 100, min: 0 },
-		type: "rsi",
-	},
-];
-
-const candle = {
-	close: 12,
-	close_time: "2026-08-27T00:59:59.999Z",
-	high: 13,
-	low: 9,
-	open: 10,
-	open_time: "2026-08-27T00:00:00Z",
-	quote_asset_volume: 20,
-	trade_count: 4,
-	volume: 10,
-};
+		points: points.map(({ hour, value }) => ({ time: time(hour), value })),
+		title: "RSI 14",
+	};
+}
 
 function response(
 	overrides: Partial<ChartPageResponse> = {},
 ): ChartPageResponse {
 	return {
-		candles: [candle],
+		candles: [candle(0)],
 		has_more: true,
-		indicators: [
-			{
-				parameters: { period: 14 },
-				series: [
-					{
-						name: "rsi",
-						points: [{ time: candle.open_time, value: 62.5 }],
-					},
-				],
-				type: "rsi",
-			},
-		],
 		interval: "1h",
-		next_before: candle.open_time,
+		next_before: time(0),
+		panes: [{ key: "rsi", scale: { levels: [], max: 100, min: 0 } }],
+		shapes: [rsi([{ hour: 0, value: 62.5 }])],
 		symbol: "BTCUSDT",
 		...overrides,
 	};
 }
 
 describe("chart page contract", () => {
-	it("validates synchronized candles and RSI", () => {
-		const page = response();
-		const validated = validateChartPage(page, "BTCUSDT", "1h", rsiCatalog);
-		expect(validated.indicators[0]?.series[0]?.points).toEqual([
-			{ time: candle.open_time, value: 62.5 },
-		]);
-	});
-
-	it("accepts a replacement range with revised values across the whole history", () => {
-		const older = {
-			...candle,
-			open_time: "2026-08-26T23:00:00Z",
-			close_time: "2026-08-26T23:59:59.999Z",
-		};
-		const range = response({
-			candles: [older, candle],
-			indicators: [
+	it("accepts shapes on the candles of the page", () => {
+		const page = response({
+			candles: [candle(0), candle(1)],
+			shapes: [
+				rsi([
+					{ hour: 0, value: 55 },
+					{ hour: 1, value: 70 },
+				]),
 				{
-					type: "rsi",
-					parameters: { period: 14 },
-					series: [
-						{
-							name: "rsi",
-							points: [
-								{ time: older.open_time, value: 55 },
-								{ time: candle.open_time, value: 70 },
-							],
-						},
-					],
+					color: "yellow.5",
+					id: "pivot",
+					kind: "markers",
+					placement: "overlay",
+					points: [{ calculated_time: time(1), time: time(0), value: 13 }],
+					position: "above",
+					title: "PIVOT",
 				},
 			],
-			next_before: older.open_time,
 		});
-		expect(
-			validateChartPage(range, "BTCUSDT", "1h", rsiCatalog).indicators[0]
-				?.series[0]?.points,
-		).toEqual([
-			{ time: older.open_time, value: 55 },
-			{ time: candle.open_time, value: 70 },
-		]);
+		expect(validateChartPage(page, "BTCUSDT", "1h")).toBe(page);
 	});
 
 	it.each([
-		{ indicators: [] },
+		{ shapes: [rsi([{ hour: 1, value: 62.5 }])] },
+		{ shapes: [rsi([]), rsi([])] },
+		{ panes: [] },
+		{ shapes: [{ ...rsi([]), pane: "macd" }] },
+		{ shapes: [{ ...rsi([]), placement: "overlay" as const }] },
 		{
-			indicators: [
-				{
-					parameters: { period: 7 },
-					series: [{ name: "rsi", points: [] }],
-					type: "rsi",
-				},
+			candles: [candle(0), candle(1)],
+			shapes: [
+				rsi([
+					{ hour: 1, value: 55 },
+					{ hour: 0, value: 70 },
+				]),
 			],
 		},
-		{
-			indicators: [
-				{
-					parameters: { period: 14 },
-					series: [
-						{
-							name: "rsi",
-							points: [{ time: "2026-08-26T23:00:00Z", value: 62.5 }],
-						},
-					],
-					type: "rsi",
-				},
-			],
-		},
-		{
-			indicators: [
-				{
-					parameters: { period: 14 },
-					series: [
-						{
-							name: "other",
-							points: [{ time: candle.open_time, value: 50 }],
-						},
-					],
-					type: "rsi",
-				},
-			],
-		},
-	])("rejects a desynchronized chart response", (overrides) => {
+	])("rejects shapes the page cannot draw", (overrides) => {
 		expect(() =>
-			validateChartPage(response(overrides), "BTCUSDT", "1h", rsiCatalog),
+			validateChartPage(response(overrides), "BTCUSDT", "1h"),
+		).toThrow("An unexpected error occurred. Please try again.");
+	});
+});
+
+describe("chart tail", () => {
+	const bull: ChartMarkersShape = {
+		color: "green.5",
+		id: "bull",
+		kind: "markers",
+		pane: "rsi",
+		placement: "pane",
+		points: [
+			{ calculated_time: time(1), line_value: 50, time: time(0), value: 1 },
+			{ calculated_time: time(2), line_value: 60, time: time(1), value: 2 },
+		],
+		position: "below",
+		title: "Bull",
+	};
+	const bullCandles: ChartSegmentsShape = {
+		color: "green.5",
+		id: "bull-candles",
+		kind: "segments",
+		placement: "overlay",
+		segments: [
+			{
+				calculated_time: time(2),
+				from: { time: time(0), value: 9 },
+				to: { time: time(1), value: 9 },
+			},
+		],
+	};
+	const base = response({
+		candles: [candle(0), candle(1), candle(2)],
+		has_more: false,
+		next_before: null,
+		shapes: [
+			rsi([
+				{ hour: 0, value: 50 },
+				{ hour: 1, value: 60 },
+				{ hour: 2, value: 70 },
+			]),
+			bull,
+			bullCandles,
+		],
+	});
+	const tail = (shapes: ChartShape[]) =>
+		response({
+			candles: [{ ...candle(2), close: 15 }],
+			has_more: false,
+			next_before: null,
+			shapes,
+		});
+
+	it("replaces what the current candle calculated, wherever it is drawn", () => {
+		const merged = mergeChartTail(
+			base,
+			tail([
+				rsi([{ hour: 2, value: 72 }]),
+				{ ...bull, points: [] },
+				{ ...bullCandles, segments: [] },
+			]),
+		);
+		expect(merged.candles.map(({ close }) => close)).toEqual([12, 12, 15]);
+		expect(merged.shapes).toEqual([
+			rsi([
+				{ hour: 0, value: 50 },
+				{ hour: 1, value: 60 },
+				{ hour: 2, value: 72 },
+			]),
+			{ ...bull, points: bull.points.slice(0, 1) },
+			{ ...bullCandles, segments: [] },
+		]);
+	});
+
+	it("rejects a tail with other shapes", () => {
+		expect(() =>
+			mergeChartTail(
+				base,
+				tail([rsi([]), { ...bull, id: "bear" }, bullCandles]),
+			),
 		).toThrow("An unexpected error occurred. Please try again.");
 	});
 });

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/chart"
+	"crypto-scanner/internal/chart/draw"
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/indicator/candle"
@@ -81,7 +83,11 @@ func TestTrackerAgreesWithChartsAndPoints(t *testing.T) {
 		{Interval: market.IntervalHour, Selection: selection(t, registry, "rsi", 14)},
 		{Interval: market.IntervalHour, Selection: selection(t, registry, "macd", 0)},
 	}
-	service, err := chart.NewService(historyStore{history}, registry, emptyCatalog{}, slog.New(slog.DiscardHandler))
+	drawers, err := chart.NewDrawers(registry, chart.Palette{Colors: []string{"yellow.5"}, Bullish: "green.6", Bearish: "red.6"}, draw.Default{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := chart.NewService(historyStore{history}, registry, drawers, emptyCatalog{}, slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,20 +114,30 @@ func TestTrackerAgreesWithChartsAndPoints(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for outputIndex, series := range page.Indicators[index].Series {
-			want := series.Points[len(series.Points)-1].Value
-			aloneSeries := alone.Indicators[0].Series[outputIndex]
-			if got := aloneSeries.Points[len(aloneSeries.Points)-1].Value; got != want {
-				t.Fatalf("%s %s drawn alone = %v, with others %v", target.Selection.Type, series.Name, got, want)
+		for outputIndex, output := range tracked[index].Outputs {
+			want := lastValue(t, page, fmt.Sprintf("%d/%s", index, output.Name))
+			if got := lastValue(t, alone, "0/"+output.Name); got != want {
+				t.Fatalf("%s %s drawn alone = %v, with others %v", target.Selection.Type, output.Name, got, want)
 			}
-			if got := tracked[index].Outputs[outputIndex].Value; !settled(got, want) {
-				t.Fatalf("%s %s tracked = %v, chart %v", target.Selection.Type, series.Name, got, want)
+			if got := output.Value; !settled(got, want) {
+				t.Fatalf("%s %s tracked = %v, chart %v", target.Selection.Type, output.Name, got, want)
 			}
 			if got := deep.Outputs[outputIndex].Value; !settled(got, want) {
-				t.Fatalf("%s %s with 300 points = %v, chart %v", target.Selection.Type, series.Name, got, want)
+				t.Fatalf("%s %s with 300 points = %v, chart %v", target.Selection.Type, output.Name, got, want)
 			}
 		}
 	}
+}
+
+// lastValue is the last point of the line shape id of page.
+func lastValue(t *testing.T, page chart.Page, id string) float64 {
+	t.Helper()
+	index := slices.IndexFunc(page.Shapes, func(shape chart.Shape) bool { return shape.ID == id && shape.Line != nil })
+	if index < 0 || len(page.Shapes[index].Line.Points) == 0 {
+		t.Fatalf("no line %s among %d shapes", id, len(page.Shapes))
+	}
+	points := page.Shapes[index].Line.Points
+	return points[len(points)-1].Value
 }
 
 func newTracker(t *testing.T, registry *indicator.Registry, history []market.Candle, targets ...closedindicator.Target) *closedindicator.Tracker {

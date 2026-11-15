@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 	"unicode/utf8"
 
+	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
@@ -279,12 +280,18 @@ type Indicators interface {
 	Preview(indicator.Selection) (scannerindicator.Entry, error)
 }
 
+// ChartDrawing draws the indicators of backtest charts as live charts do.
+type ChartDrawing interface {
+	Draw([]market.Candle, []chart.Calculated) (chart.Drawing, error)
+}
+
 // Service keeps the strategies in memory and persists every change.
 type Service struct {
 	store      Store
 	indicators Indicators
 	// registry checks that the history kept covers what expressions read.
 	registry *indicator.Registry
+	charts   ChartDrawing
 	tracker  Tracker
 	logger   *slog.Logger
 	changed  func(baselines []uuid.UUID)
@@ -326,12 +333,12 @@ const trackerSubscriber = "strategies"
 // must start afresh after each change and must not block. administratorUserID
 // is the user id of the administrator, whose favorites signals of
 // CoinsFavorites evaluate.
-func NewService(store Store, indicators Indicators, registry *indicator.Registry, tracker Tracker, logger *slog.Logger, administratorUserID int64, changed func(baselines []uuid.UUID)) (*Service, error) {
-	if store == nil || indicators == nil || registry == nil || tracker == nil || logger == nil || changed == nil {
-		return nil, errors.New("strategy store, indicators, registry, tracker, logger, and change listener are required")
+func NewService(store Store, indicators Indicators, registry *indicator.Registry, charts ChartDrawing, tracker Tracker, logger *slog.Logger, administratorUserID int64, changed func(baselines []uuid.UUID)) (*Service, error) {
+	if store == nil || indicators == nil || registry == nil || charts == nil || tracker == nil || logger == nil || changed == nil {
+		return nil, errors.New("strategy store, indicators, registry, chart drawing, tracker, logger, and change listener are required")
 	}
 	logger = logger.With("module", "strategy")
-	return &Service{store: store, indicators: indicators, registry: registry, tracker: tracker, logger: logger, administratorUserID: administratorUserID, changed: changed, favoritesFailure: logging.NewFailure(logger), backtests: make(chan struct{}, maxBacktests)}, nil
+	return &Service{store: store, indicators: indicators, registry: registry, charts: charts, tracker: tracker, logger: logger, administratorUserID: administratorUserID, changed: changed, favoritesFailure: logging.NewFailure(logger), backtests: make(chan struct{}, maxBacktests)}, nil
 }
 
 // RuleKind tells what an expression is to a strategy.

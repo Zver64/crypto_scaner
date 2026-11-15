@@ -352,7 +352,7 @@ func TestServiceSubscribesTheTrackerToWhatItsStrategiesRead(t *testing.T) {
 	}
 	store.favorites = []string{"ETHUSDT"}
 	tracker := &recordingTracker{}
-	service, err := NewService(store, testIndicators{}, testRegistry(t), tracker, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), testDrawers(t, testRegistry(t)), tracker, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -595,7 +595,7 @@ func TestMonitorCatchesUpDeepSpansFromTheFirstWarmCandle(t *testing.T) {
 			}
 			store := newBacktestStore(market.IntervalHour, candles)
 			store.strategies = []Strategy{{ID: testID(1), Name: "Cross", Signal: true, Direction: DirectionSimple, Expression: `CrossesAbove(close("1h"), ema("1h", 100))`, Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 1}}
-			service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+			service, err := NewService(store, indicators, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 			if err != nil {
 				t.Fatal(err)
 			}

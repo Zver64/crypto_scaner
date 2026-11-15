@@ -63,6 +63,10 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize indicator registry: %w", err)
 	}
+	drawers, err := chartDrawers(indicatorRegistry)
+	if err != nil {
+		return app{}, fmt.Errorf("initialize chart drawers: %w", err)
+	}
 	// The tracker is created after the configuration loads; changes before
 	// that are covered by its initial targets.
 	var closedIndicators *closedindicator.Tracker
@@ -70,7 +74,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	var strategyMonitor *strategy.Monitor
 	var alertMonitor *alerts.Monitor
 	var scannerIndicators *scannerindicator.Service
-	scannerIndicators, err = scannerindicator.New(store, indicatorRegistry, chartPalette, chartTones, logger, func() {
+	scannerIndicators, err = scannerindicator.New(store, indicatorRegistry, drawers, logger, func() {
 		if closedIndicators == nil {
 			return
 		}
@@ -95,7 +99,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		return app{}, fmt.Errorf("find administrator: %w", err)
 	}
 	// Changes before the monitor exists are covered by its first evaluation.
-	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, closedIndicators, logger, administrator.ID, func(baselines []uuid.UUID) {
+	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, drawers, closedIndicators, logger, administrator.ID, func(baselines []uuid.UUID) {
 		if strategyMonitor != nil {
 			strategyMonitor.StrategiesChanged(baselines)
 		}
@@ -158,7 +162,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize analysis service: %w", err)
 	}
-	chartService, err := chart.NewService(store, indicatorRegistry, scannerIndicators, logger)
+	chartService, err := chart.NewService(store, indicatorRegistry, drawers, scannerIndicators, logger)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize chart service: %w", err)
 	}

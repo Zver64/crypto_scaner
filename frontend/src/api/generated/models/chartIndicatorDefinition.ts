@@ -22,9 +22,6 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { ChartIndicatorDefinitionParameters } from './chartIndicatorDefinitionParameters.ts';
-import type { ChartIndicatorDefinitionPlacement } from './chartIndicatorDefinitionPlacement.ts';
-import type { ChartIndicatorLine } from './chartIndicatorLine.ts';
-import type { ChartIndicatorScale } from './chartIndicatorScale.ts';
 
 export interface ChartIndicatorDefinition {
   /** @minLength 1 */
@@ -32,14 +29,4 @@ export interface ChartIndicatorDefinition {
   /** @minLength 1 */
   type: string;
   parameters: ChartIndicatorDefinitionParameters;
-  /** `overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale. */
-  placement: ChartIndicatorDefinitionPlacement;
-  /** @minItems 1 */
-  lines: ChartIndicatorLine[];
-  scale?: ChartIndicatorScale;
-  /**
-     * Key of the pane a `pane` indicator is drawn in; indicators with the same key share one pane. Absent for overlays.
-     * @minLength 1
-     */
-  pane?: string;
 }

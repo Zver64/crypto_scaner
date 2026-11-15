@@ -8,7 +8,12 @@ import type {
 	WhitespaceData,
 } from "lightweight-charts";
 
-import type { ChartIndicatorLineDirection } from "@/api/generated/models";
+import type {
+	ChartIndicatorLevel,
+	ChartIndicatorScale,
+	ChartPlacement,
+} from "@/api/generated/models";
+import type { SeriesFillPoint } from "@/components/lightweight-chart";
 
 export type ChartInterval = "1h" | "1d" | "1w" | "1M";
 export interface PriceCandle {
@@ -28,14 +33,11 @@ export type ChartFreshness = "waiting" | "fresh" | "stale" | "recovering";
 
 export interface PriceHistorySnapshot {
 	candles: readonly PriceCandle[];
-	// The candles and indicator lines ready to draw, created with the snapshot
+	// The candles and indicator shapes ready to draw, created with the snapshot
 	// so they keep their references until the snapshot data changes.
 	series: ChartSeriesData;
 	// Markers on the candles, such as the trades of a backtest.
 	markers?: readonly ChartMarker[];
-	// Times within the candles whose marker line values are connected with the
-	// previous value of their line.
-	connectedCandles?: readonly string[];
 	connection: ChartConnection;
 	freshness: ChartFreshness;
 	error?: string;
@@ -75,85 +77,90 @@ export interface ValueResolution {
 	fractionDigits: number;
 	minMove: number;
 }
-// One indicator line aligned with the candle slots.
+// A line aligned with the candle slots, such as the compared price.
 export interface ChartLineData {
 	data: readonly ChartIndicatorSlot[];
-	// The resolution of a pane line's scale; an overlay shares the candles'.
+	// The resolution of the line's scale.
 	resolution: ValueResolution;
-	// The direction output of a line with a direction, aligned with data.
-	directionData?: readonly ChartIndicatorSlot[];
-	// The middles of the candle bodies, (open + close) / 2, a line with a
-	// direction fill reaches, aligned with data; missing without a candle.
-	fillBases?: readonly (number | undefined)[];
 }
 export interface ChartSeriesData {
 	// Candle slots, with whitespace for missing candles.
 	candles: readonly ChartCandleSlot[];
 	volumes: readonly ChartVolumeSlot[];
 	priceResolution: ValueResolution;
-	// Every line of the catalog, keyed by "id:output".
-	lines: Readonly<Record<string, ChartLineData>>;
-	// The segment outputs of marker lines, which are not drawn themselves,
-	// aligned with the candle slots and keyed by "id:output".
-	segments: Readonly<Record<string, readonly ChartIndicatorSlot[]>>;
+	// The panes below the candles, top to bottom.
+	panes: readonly ChartPaneData[];
+	// The shapes the indicators are drawn with, in the order they arrive.
+	shapes: readonly ChartShapeData[];
 }
-// Points of each indicator line, keyed by indicator id and then output name.
-export type ChartIndicatorPoints = Readonly<
-	Record<string, Readonly<Record<string, readonly IndicatorPoint[]>>>
->;
-export interface ChartIndicatorLine {
-	output: string;
+// One pane below the candles.
+export interface ChartPaneData {
+	key: string;
+	// Fits the pane to its visible values and the scale levels. It is kept
+	// from the previous snapshot while the scale does not change, so live
+	// updates do not reconfigure the series of the pane.
+	autoscaleInfoProvider: AutoscaleInfoProvider;
+	scale: ChartIndicatorScale;
+}
+// Where a shape is drawn: over the candles on their price scale, over the
+// volume bars on their scale, or in a pane below the candles, which has an
+// autoscale of its own. Pane 0 holds the candles.
+export interface ChartShapePlace {
+	placement: ChartPlacement;
+	pane: number;
+	autoscaleInfoProvider?: AutoscaleInfoProvider;
+}
+// Colors are Mantine theme color tokens, resolved where they are drawn.
+export type ChartShapeData =
+	| ChartLineShapeData
+	| ChartAreaShapeData
+	| ChartMarkersShapeData
+	| ChartSegmentsShapeData;
+export interface ChartLineShapeData extends ChartShapePlace {
+	kind: "line";
+	id: string;
 	title: string;
 	color: string;
-	// A marker is a point above or below a candle, or the line of its anchor,
-	// instead of a line.
-	style: "line" | "marker_above" | "marker_below";
-	// The candles a marker is drawn before the candle holding its value.
-	shift: number;
-	// The line of another indicator the markers sit on, in its pane; the
-	// candles without one.
-	anchor?: { indicator_id: string; output: string };
-	// The output of the same indicator holding, at each marker value, the
-	// candles back from the marker to where a line drawn to it starts.
-	segment?: string;
-	// Colors each point by the sign of another output of the same indicator.
-	direction?: ChartIndicatorLineDirection;
+	// Aligned with the candle slots; a point with a color of its own carries
+	// it.
+	data: readonly ChartIndicatorSlot[];
+	// The times of the points whose join to the next point is not drawn.
+	gaps: ReadonlySet<UTCTimestamp>;
+	// The resolution of the line's scale; an overlay shares the candles'.
+	resolution: ValueResolution;
+	// The levels of its pane, drawn by the first line of each pane.
+	levels: readonly ChartIndicatorLevel[];
 }
-export interface ChartIndicatorScale {
-	min?: number;
-	max?: number;
-	levels: readonly { value: number; title: string }[];
-}
-// Overlays share the candle pane and price scale, volume indicators the candle
-// pane and volume scale; panes are drawn below the candles, and indicators
-// with the same pane key share a pane and value scale.
-export type ChartIndicatorOptions =
-	| {
-			id: string;
-			placement: "overlay" | "volume";
-			lines: readonly ChartIndicatorLine[];
-	  }
-	| ChartPaneIndicatorOptions;
-export interface ChartPaneIndicatorOptions {
+export interface ChartAreaShapeData extends ChartShapePlace {
+	kind: "area";
 	id: string;
-	placement: "pane";
-	pane: string;
-	lines: readonly ChartIndicatorLine[];
-	scale: ChartIndicatorScale;
+	// The values of the area, as the data of the series the fill lies on.
+	values: readonly ChartIndicatorSlot[];
+	// Aligned with the candle slots.
+	points: readonly SeriesFillPoint[];
 }
-// What the chart of one interval draws besides the candles, created once per
-// catalog. Line colors are Mantine theme colors, resolved where they are drawn.
-export interface ChartIndicatorLayout {
-	indicators: readonly ChartIndicatorOptions[];
-	panes: readonly ChartIndicatorPane[];
+export interface ChartMarkersShapeData extends ChartShapePlace {
+	kind: "markers";
+	id: string;
+	title: string;
+	color: string;
+	position: ChartMarker["position"];
+	// The value of each marker by the candle it is drawn on.
+	values: ReadonlyMap<UTCTimestamp, number>;
+	// The values of the line the markers on a line sit on, in time order, as
+	// the data of the series that carries them.
+	onLine: readonly LineData<UTCTimestamp>[];
+	// The candles of the markers drawn on the candles, in time order.
+	onCandles: readonly UTCTimestamp[];
 }
-// One pane below the candles with the indicators drawn in it.
-export interface ChartIndicatorPane {
-	// Fits the pane to its visible values and the scale levels; created with
-	// the layout, so it keeps its identity while the catalog does not change.
-	autoscaleInfoProvider: AutoscaleInfoProvider;
-	indicators: readonly ChartPaneIndicatorOptions[];
-	scale: ChartIndicatorScale;
+export interface ChartSegmentsShapeData extends ChartShapePlace {
+	kind: "segments";
+	id: string;
+	color: string;
+	// The points of the segments in time order as the data of one line
+	// series: segments sharing a point meet there, and the end of a segment
+	// followed by a gap colors the join to the next segment transparent.
+	data: readonly LineData<UTCTimestamp>[];
 }
 // Price levels drawn across the candles, such as the levels of a grid, with an
 // autoscale provider that keeps them in view. Created with createChartPriceLevels.
@@ -180,8 +187,6 @@ export interface PriceHistoryChartProps {
 	// Immutable snapshots have no connection status or current live candle.
 	live?: boolean;
 	enabled: boolean;
-	// Indicators drawn on the chart of each interval.
-	indicators: Readonly<Record<ChartInterval, ChartIndicatorLayout>>;
 	// Stretches the chart over the free height of its flex column parent,
 	// keeping its fixed height as the minimum.
 	fillHeight?: boolean;
@@ -204,24 +209,10 @@ export type ChartIndicatorSlot =
 	| LineData<UTCTimestamp>
 	| WhitespaceData<UTCTimestamp>;
 
-// The segments connecting values of one marker line, as the data of one line
-// series: the points of a segment follow each other, and a point that only
-// precedes the next segment carries the transparent color of the gap.
-export interface ChartMarkerSegments {
-	key: string;
-	color: string;
-	data: readonly LineData<UTCTimestamp>[];
-	// The pane the segments are drawn in; the candles are in pane 0.
-	pane: number;
-	// The scale of that pane they lie on: its price or value scale, or the
-	// volume scale of the candle pane.
-	scale: "price" | "volume";
-}
-
 // One entry of the indicator legend over the chart.
 export interface ChartLegendItem {
 	key: string;
-	placement: ChartIndicatorOptions["placement"];
+	placement: ChartPlacement;
 	title: string;
 	color: string;
 	value: string | null;

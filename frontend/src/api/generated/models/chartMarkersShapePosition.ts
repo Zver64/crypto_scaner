@@ -22,7 +22,10 @@
  * OpenAPI spec version: 1.0.0
  */
 
-export interface IndicatorPoint {
-  time: string;
-  value: number;
-}
+export type ChartMarkersShapePosition = typeof ChartMarkersShapePosition[keyof typeof ChartMarkersShapePosition];
+
+
+export const ChartMarkersShapePosition = {
+  above: 'above',
+  below: 'below',
+} as const;

@@ -11,9 +11,6 @@ import (
 	"time"
 
 	"crypto-scanner/internal/auth"
-	"crypto-scanner/internal/chart"
-	"crypto-scanner/internal/indicator"
-	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/market/kline"
 	marketlive "crypto-scanner/internal/market/live"
@@ -78,14 +75,7 @@ func (liveTestService) RemoveClient(string)           {}
 // The handshake authenticates the session token offered after the live
 // protocol, so no unauthenticated or API token socket is ever upgraded.
 func TestLiveCandleHandshakeAuthenticatesSession(t *testing.T) {
-	registry, err := indicator.NewRegistry(indicatortalib.New()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	charts, err := chart.NewService(newChartHistoryStub(), registry, emptyChartCatalog{}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
+	charts := newTestChartService(t, newChartHistoryStub())
 	server := httptest.NewServer(newLiveCandleHandler(liveTestSessions{}, liveTestService{}, charts, slog.New(slog.DiscardHandler)))
 	defer server.Close()
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -123,14 +113,7 @@ func TestLiveCandleHandshakeAuthenticatesSession(t *testing.T) {
 // Connection limits reject the handshake, so a client at a limit never sees
 // an open socket, and a rejected or failed upgrade keeps no slot.
 func TestLiveCandleHandshakeEnforcesConnectionLimits(t *testing.T) {
-	registry, err := indicator.NewRegistry(indicatortalib.New()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	charts, err := chart.NewService(newChartHistoryStub(), registry, emptyChartCatalog{}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
+	charts := newTestChartService(t, newChartHistoryStub())
 	tests := []struct {
 		name        string
 		connections int

@@ -26,7 +26,6 @@ export function BacktestChart({
 		<PriceHistoryChart
 			enabled={enabled}
 			fillHeight={fillHeight}
-			indicators={chart.indicators}
 			intervals={chart.intervals}
 			live={false}
 			paperPadding={paperPadding}

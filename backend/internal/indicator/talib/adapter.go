@@ -16,6 +16,8 @@ const (
 	RSIType indicator.Type = "rsi"
 	// EMAType is the stable registry identifier for the exponential moving average.
 	EMAType indicator.Type = "ema"
+	// SupertrendType is the stable registry identifier for the SUPERTREND.
+	SupertrendType indicator.Type = "supertrend"
 )
 
 // maTypes are the TA-Lib moving average types by their TA_MAType values,
@@ -57,8 +59,7 @@ type output struct {
 	name  string
 	style indicator.OutputStyle
 	// sparse outputs are empty where TA-Lib returns NaN or an infinity.
-	sparse    bool
-	direction indicator.OutputDirection
+	sparse bool
 }
 
 // spec is one generated TA-Lib function. Option values reach lookback and
@@ -126,7 +127,7 @@ func (f *function) Describe() indicator.Descriptor {
 		descriptor.Parameters = append(descriptor.Parameters, parameter)
 	}
 	for _, o := range f.spec.outputs {
-		descriptor.Outputs = append(descriptor.Outputs, indicator.OutputDescriptor{Name: o.name, Style: o.style, Sparse: o.sparse, Direction: o.direction})
+		descriptor.Outputs = append(descriptor.Outputs, indicator.OutputDescriptor{Name: o.name, Style: o.style, Sparse: o.sparse})
 	}
 	return descriptor
 }

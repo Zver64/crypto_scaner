@@ -21,11 +21,28 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ChartIndicatorResultParameters } from './chartIndicatorResultParameters.ts';
-import type { IndicatorSeries } from './indicatorSeries.ts';
+import type { ChartMarker } from './chartMarker.ts';
+import type { ChartMarkersShapeKind } from './chartMarkersShapeKind.ts';
+import type { ChartMarkersShapePosition } from './chartMarkersShapePosition.ts';
+import type { ChartPlacement } from './chartPlacement.ts';
 
-export interface ChartIndicatorResult {
-  type: string;
-  parameters: ChartIndicatorResultParameters;
-  series: IndicatorSeries[];
+/**
+ * Points drawn above or below candles, or above or below the values of a line.
+ */
+export interface ChartMarkersShape {
+  kind: ChartMarkersShapeKind;
+  /** @minLength 1 */
+  id: string;
+  placement: ChartPlacement;
+  /**
+     * Key of the pane of a `pane` shape; absent otherwise.
+     * @minLength 1
+     */
+  pane?: string;
+  /** The legend title of the markers, which shows the `value` of the marker on a candle. */
+  title: string;
+  /** Client theme color token. */
+  color: string;
+  position: ChartMarkersShapePosition;
+  points: ChartMarker[];
 }

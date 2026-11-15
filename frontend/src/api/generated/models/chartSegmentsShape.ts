@@ -21,5 +21,24 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { ChartPlacement } from './chartPlacement.ts';
+import type { ChartSegment } from './chartSegment.ts';
+import type { ChartSegmentsShapeKind } from './chartSegmentsShapeKind.ts';
 
-export type ChartIndicatorResultParameters = { [key: string]: unknown };
+/**
+ * Straight lines between two points each.
+ */
+export interface ChartSegmentsShape {
+  kind: ChartSegmentsShapeKind;
+  /** @minLength 1 */
+  id: string;
+  placement: ChartPlacement;
+  /**
+     * Key of the pane of a `pane` shape; absent otherwise.
+     * @minLength 1
+     */
+  pane?: string;
+  /** Client theme color token. */
+  color: string;
+  segments: ChartSegment[];
+}

@@ -4,39 +4,21 @@ import type {
 	StrategyBacktest,
 } from "@/api/generated/models";
 import type {
-	ChartIndicatorLayout,
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart";
 import type { ChartTradeMarkers } from "@/features/candle-chart/types";
 import {
 	createChartSeriesData,
-	createIndicatorLayout,
 	createMarkerDataSelector,
 } from "@/features/candle-chart/utils";
 import { backtestMarkers } from "@/features/strategy-backtest/utils";
 
 // Everything the chart of a completed run draws, created once per run.
 export function createBacktestChart(backtest: StrategyBacktest) {
-	const indicators: Record<CandleInterval, ChartIndicatorLayout> = {
-		"1h": createIndicatorLayout([]),
-		"1d": createIndicatorLayout([]),
-		"1w": createIndicatorLayout([]),
-		"1M": createIndicatorLayout([]),
-	};
-	for (const { catalog, page } of backtest.charts) {
-		indicators[page.interval] = createIndicatorLayout(catalog);
-	}
 	return {
-		indicators,
 		intervals: backtest.charts.map(({ page }) => page.interval),
-		source: createBacktestChartData(
-			backtest.charts,
-			backtestMarkers(backtest),
-			// The marker values a signal fired on are connected with the previous
-			// ones.
-			backtest.signal?.occurrences.map(({ time }) => time),
-		),
+		source: createBacktestChartData(backtest.charts, backtestMarkers(backtest)),
 	};
 }
 
@@ -45,7 +27,6 @@ export function createBacktestChart(backtest: StrategyBacktest) {
 export function createBacktestChartData(
 	charts: readonly BacktestChart[],
 	markers?: ChartTradeMarkers,
-	connectedCandles?: readonly string[],
 ): PriceHistorySource {
 	const listeners = new Set<() => void>();
 	const pages = new Map<
@@ -61,20 +42,20 @@ export function createBacktestChartData(
 		chart: BacktestChart,
 		count: number,
 		selectMarkers?: ReturnType<typeof createMarkerDataSelector>,
+		previous?: PriceHistorySnapshot,
 	): PriceHistorySnapshot => {
 		const { interval } = chart.page;
 		const candles = chart.page.candles.slice(-count);
 		const series = createChartSeriesData(
 			candles,
 			chart.page,
-			chart.catalog,
 			interval,
+			previous?.series,
 		);
 		return {
 			candles,
 			series,
 			markers: selectMarkers?.(series.candles),
-			connectedCandles,
 			connection: "disconnected",
 			freshness: "fresh",
 			hasMore: candles.length < chart.page.candles.length,
@@ -94,7 +75,7 @@ export function createBacktestChartData(
 	}
 	const empty: PriceHistorySnapshot = {
 		candles: [],
-		series: createChartSeriesData([], undefined, [], "1h"),
+		series: createChartSeriesData([], undefined, "1h"),
 		connection: "disconnected",
 		freshness: "fresh",
 		hasMore: false,
@@ -116,7 +97,12 @@ export function createBacktestChartData(
 			const page = pages.get(interval);
 			if (!page?.snapshot.hasMore) return;
 			page.count += 200;
-			page.snapshot = snapshot(page.chart, page.count, page.selectMarkers);
+			page.snapshot = snapshot(
+				page.chart,
+				page.count,
+				page.selectMarkers,
+				page.snapshot,
+			);
 			for (const listener of listeners) listener();
 		},
 	};

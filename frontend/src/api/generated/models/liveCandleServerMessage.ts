@@ -31,7 +31,7 @@ export interface LiveCandleServerMessage {
   type: LiveCandleServerMessageType;
   symbol?: string;
   interval?: CandleInterval;
-  /** In a snapshot, the complete closed-candle range plus the current candle, with indicators calculated over the entire range. In an update, only the current candle and indicator points from its open time; it applies solely on top of the message with the preceding version. */
+  /** In a snapshot, the complete closed-candle range plus the current candle, with indicators drawn over the entire range. In an update, only the current candle and, of every shape, what candles opened from its open time calculated: it replaces what the chart has from that time, and it applies solely on top of the message with the preceding version. */
   chart?: ChartPageResponse;
   /** Increases by one with every snapshot or update of this subscription. */
   version?: number;

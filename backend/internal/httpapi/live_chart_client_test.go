@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/chart"
+	"crypto-scanner/internal/chart/draw"
 	"crypto-scanner/internal/indicator"
 	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
@@ -168,20 +169,32 @@ func TestChartClientBuildsKeysIndependently(t *testing.T) {
 
 func newTestChartClient(t *testing.T, store chart.Store) (*chartClient, *liveSocketClient) {
 	t.Helper()
-	registry, err := indicator.NewRegistry(indicatortalib.New()...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := chart.NewService(store, registry, emptyChartCatalog{}, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatal(err)
-	}
+	service := newTestChartService(t, store)
 	// The socket has no connection; the test never lets its queue overflow.
 	socket := &liveSocketClient{id: "test", queue: make(chan LiveCandleServerMessage, 64), done: make(chan struct{})}
 	client := newChartClient(socket, service, slog.New(slog.DiscardHandler))
 	// The socket has no connection to close, so only the streams stop.
 	t.Cleanup(func() { client.stop(); client.Wait() })
 	return client, socket
+}
+
+// newTestChartService draws the indicators a chart of store requests with
+// the default drawer.
+func newTestChartService(t *testing.T, store chart.Store) *chart.Service {
+	t.Helper()
+	registry, err := indicator.NewRegistry(indicatortalib.New()...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	drawers, err := chart.NewDrawers(registry, chart.Palette{Colors: []string{"yellow.5"}, Bullish: "green.6", Bearish: "red.6"}, draw.Default{}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := chart.NewService(store, registry, drawers, emptyChartCatalog{}, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
 }
 
 type emptyChartCatalog struct{}

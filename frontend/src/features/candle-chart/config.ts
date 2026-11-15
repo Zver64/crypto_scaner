@@ -12,6 +12,10 @@ import {
 	type UTCTimestamp,
 } from "lightweight-charts";
 
+import type {
+	ChartMarkersShapePosition,
+	ChartPlacement,
+} from "@/api/generated/models";
 import { resolvedTheme } from "@/app/theme";
 import type {
 	ChartInterval,
@@ -124,11 +128,15 @@ export const markMarkerOptions = {
 	size: 2,
 } satisfies Omit<SeriesMarkerBar<UTCTimestamp>, "time">;
 
-// Where the marker styles of indicator lines put their points.
-export const indicatorMarkerPositions = {
-	marker_above: "aboveBar",
-	marker_below: "belowBar",
-} satisfies Record<string, SeriesMarkerBar<UTCTimestamp>["position"]>;
+// Where markers shapes put their points: above or below the candles, or the
+// values of the line they sit on.
+export const shapeMarkerPositions = {
+	above: "aboveBar",
+	below: "belowBar",
+} satisfies Record<
+	ChartMarkersShapePosition,
+	SeriesMarkerBar<UTCTimestamp>["position"]
+>;
 
 // A custom id puts the volume bars on their own hidden overlay price scale,
 // which indicators of volumes share.
@@ -167,32 +175,55 @@ export const volumeIndicatorSeriesOptions = {
 	priceScaleId: volumePriceScaleId,
 } satisfies LineSeriesPartialOptions;
 
-const markerSegmentOptions = {
+const segmentsOptions = {
 	crosshairMarkerVisible: false,
 	lastValueVisible: false,
 	lineWidth: 2,
 	priceLineVisible: false,
 } satisfies LineSeriesPartialOptions;
 
-// Segments between marker values, on the scale their markers sit on.
-export const markerSegmentSeriesOptions = {
-	price: markerSegmentOptions,
-	volume: { ...markerSegmentOptions, priceScaleId: volumePriceScaleId },
-} satisfies Record<"price" | "volume", LineSeriesPartialOptions>;
+// Segments shapes, on the scale of their placement.
+export const segmentsShapeSeriesOptions = {
+	overlay: segmentsOptions,
+	pane: segmentsOptions,
+	volume: { ...segmentsOptions, priceScaleId: volumePriceScaleId },
+} satisfies Record<ChartPlacement, LineSeriesPartialOptions>;
+
+// The series a fill or markers on a line lie on, which draws nothing itself,
+// on the scale of their placement.
+const carrierOptions = {
+	crosshairMarkerVisible: false,
+	lastValueVisible: false,
+	lineVisible: false,
+	priceLineVisible: false,
+} satisfies LineSeriesPartialOptions;
+
+export const carrierSeriesOptions = {
+	overlay: carrierOptions,
+	pane: carrierOptions,
+	volume: { ...carrierOptions, priceScaleId: volumePriceScaleId },
+} satisfies Record<ChartPlacement, LineSeriesPartialOptions>;
 
 // A line series joins all its points and colors each join with the color of
 // its first point, so the point before a gap colors the join transparent.
 export const lineGapColor = "transparent";
 
-// The opacity of the fill of a line with a direction, like the 90%
-// transparency of the TradingView SUPERTREND fill.
-export const directionFillOpacity = 0.1;
+// The opacity of area fills, like the 90% transparency of the TradingView
+// SUPERTREND fill.
+export const areaFillOpacity = 0.1;
 
 export const paneIndicatorSeriesOptions = {
 	lastValueVisible: true,
 	lineWidth: 2,
 	priceLineVisible: false,
 } satisfies LineSeriesPartialOptions;
+
+// Line shapes, by their placement.
+export const lineShapeSeriesOptions = {
+	overlay: overlayIndicatorSeriesOptions,
+	pane: paneIndicatorSeriesOptions,
+	volume: volumeIndicatorSeriesOptions,
+} satisfies Record<ChartPlacement, LineSeriesPartialOptions>;
 
 export const paneIndicatorPriceScaleOptions = {
 	autoScale: true,

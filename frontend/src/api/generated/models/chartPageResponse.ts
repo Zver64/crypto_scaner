@@ -23,13 +23,17 @@
  */
 import type { Candle } from './candle.ts';
 import type { CandleInterval } from './candleInterval.ts';
-import type { ChartIndicatorResult } from './chartIndicatorResult.ts';
+import type { ChartPane } from './chartPane.ts';
+import type { ChartShape } from './chartShape.ts';
 
 export interface ChartPageResponse {
   symbol: string;
   interval: CandleInterval;
   candles: Candle[];
-  indicators: ChartIndicatorResult[];
+  /** The shapes the indicators are drawn with, in the order of the indicators. Every frame of a subscription has the same shapes under the same ids. */
+  shapes: ChartShape[];
+  /** The indicator panes below the candles the shapes lie in, top to bottom. */
+  panes: ChartPane[];
   has_more: boolean;
   /** @nullable */
   next_before?: string | null;

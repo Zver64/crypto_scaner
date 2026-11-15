@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -213,42 +214,99 @@ func (e CandleInterval) Valid() bool {
 	}
 }
 
-// Defines values for ChartIndicatorDefinitionPlacement.
+// Defines values for ChartAreaShapeKind.
 const (
-	ChartIndicatorDefinitionPlacementOverlay ChartIndicatorDefinitionPlacement = "overlay"
-	ChartIndicatorDefinitionPlacementPane    ChartIndicatorDefinitionPlacement = "pane"
-	ChartIndicatorDefinitionPlacementVolume  ChartIndicatorDefinitionPlacement = "volume"
+	Area ChartAreaShapeKind = "area"
 )
 
-// Valid indicates whether the value is a known member of the ChartIndicatorDefinitionPlacement enum.
-func (e ChartIndicatorDefinitionPlacement) Valid() bool {
+// Valid indicates whether the value is a known member of the ChartAreaShapeKind enum.
+func (e ChartAreaShapeKind) Valid() bool {
 	switch e {
-	case ChartIndicatorDefinitionPlacementOverlay:
-		return true
-	case ChartIndicatorDefinitionPlacementPane:
-		return true
-	case ChartIndicatorDefinitionPlacementVolume:
+	case Area:
 		return true
 	default:
 		return false
 	}
 }
 
-// Defines values for ChartIndicatorLineStyle.
+// Defines values for ChartLineShapeKind.
 const (
-	Line        ChartIndicatorLineStyle = "line"
-	MarkerAbove ChartIndicatorLineStyle = "marker_above"
-	MarkerBelow ChartIndicatorLineStyle = "marker_below"
+	Line ChartLineShapeKind = "line"
 )
 
-// Valid indicates whether the value is a known member of the ChartIndicatorLineStyle enum.
-func (e ChartIndicatorLineStyle) Valid() bool {
+// Valid indicates whether the value is a known member of the ChartLineShapeKind enum.
+func (e ChartLineShapeKind) Valid() bool {
 	switch e {
 	case Line:
 		return true
-	case MarkerAbove:
+	default:
+		return false
+	}
+}
+
+// Defines values for ChartMarkersShapeKind.
+const (
+	Markers ChartMarkersShapeKind = "markers"
+)
+
+// Valid indicates whether the value is a known member of the ChartMarkersShapeKind enum.
+func (e ChartMarkersShapeKind) Valid() bool {
+	switch e {
+	case Markers:
 		return true
-	case MarkerBelow:
+	default:
+		return false
+	}
+}
+
+// Defines values for ChartMarkersShapePosition.
+const (
+	Above ChartMarkersShapePosition = "above"
+	Below ChartMarkersShapePosition = "below"
+)
+
+// Valid indicates whether the value is a known member of the ChartMarkersShapePosition enum.
+func (e ChartMarkersShapePosition) Valid() bool {
+	switch e {
+	case Above:
+		return true
+	case Below:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChartPlacement.
+const (
+	ChartPlacementOverlay ChartPlacement = "overlay"
+	ChartPlacementPane    ChartPlacement = "pane"
+	ChartPlacementVolume  ChartPlacement = "volume"
+)
+
+// Valid indicates whether the value is a known member of the ChartPlacement enum.
+func (e ChartPlacement) Valid() bool {
+	switch e {
+	case ChartPlacementOverlay:
+		return true
+	case ChartPlacementPane:
+		return true
+	case ChartPlacementVolume:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChartSegmentsShapeKind.
+const (
+	Segments ChartSegmentsShapeKind = "segments"
+)
+
+// Valid indicates whether the value is a known member of the ChartSegmentsShapeKind enum.
+func (e ChartSegmentsShapeKind) Valid() bool {
+	switch e {
+	case Segments:
 		return true
 	default:
 		return false
@@ -678,8 +736,7 @@ type BacktestBaselines struct {
 
 // BacktestChart defines model for BacktestChart.
 type BacktestChart struct {
-	Catalog []ChartIndicatorDefinition `json:"catalog"`
-	Page    ChartPageResponse          `json:"page"`
+	Page ChartPageResponse `json:"page"`
 }
 
 // BacktestEquityPoint defines model for BacktestEquityPoint.
@@ -969,30 +1026,48 @@ type CandlePageResponse struct {
 	Symbol     string         `json:"symbol"`
 }
 
+// ChartAreaPoint defines model for ChartAreaPoint.
+type ChartAreaPoint struct {
+	Base float64 `json:"base"`
+
+	// Color Client theme color token, which clients make translucent.
+	Color string `json:"color"`
+
+	// Time Open time of the candle.
+	Time  time.Time `json:"time"`
+	Value float64   `json:"value"`
+}
+
+// ChartAreaShape A translucent fill between `value` and `base` at each point. Neighbouring points of the same color are joined; a missing point or a change of color breaks it.
+type ChartAreaShape struct {
+	Id   string             `json:"id"`
+	Kind ChartAreaShapeKind `json:"kind"`
+
+	// Pane Key of the pane of a `pane` shape; absent otherwise.
+	Pane *string `json:"pane,omitempty"`
+
+	// Placement Where a shape lies: `overlay` over the candles on their price scale; `volume` over the volume bars on their scale; `pane` in the pane its `pane` names.
+	Placement ChartPlacement   `json:"placement"`
+	Points    []ChartAreaPoint `json:"points"`
+}
+
+// ChartAreaShapeKind defines model for ChartAreaShape.Kind.
+type ChartAreaShapeKind string
+
 // ChartIndicatorCatalog defines model for ChartIndicatorCatalog.
 type ChartIndicatorCatalog struct {
 	Items []ChartIndicatorDefinition `json:"items"`
+
+	// Panes The indicator panes below the candles, top to bottom, that the charts of a subscription requesting exactly `items`, in order, have in every frame.
+	Panes []ChartPane `json:"panes"`
 }
 
 // ChartIndicatorDefinition defines model for ChartIndicatorDefinition.
 type ChartIndicatorDefinition struct {
-	Id    string               `json:"id"`
-	Lines []ChartIndicatorLine `json:"lines"`
-
-	// Pane Key of the pane a `pane` indicator is drawn in; indicators with the same key share one pane. Absent for overlays.
-	Pane       *string                `json:"pane,omitempty"`
+	Id         string                 `json:"id"`
 	Parameters map[string]interface{} `json:"parameters"`
-
-	// Placement `overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale.
-	Placement ChartIndicatorDefinitionPlacement `json:"placement"`
-
-	// Scale Value axis of a pane indicator; clients derive the value precision from the values.
-	Scale *ChartIndicatorScale `json:"scale,omitempty"`
-	Type  string               `json:"type"`
+	Type       string                 `json:"type"`
 }
-
-// ChartIndicatorDefinitionPlacement `overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale.
-type ChartIndicatorDefinitionPlacement string
 
 // ChartIndicatorLevel defines model for ChartIndicatorLevel.
 type ChartIndicatorLevel struct {
@@ -1000,80 +1075,150 @@ type ChartIndicatorLevel struct {
 	Value float64 `json:"value"`
 }
 
-// ChartIndicatorLine defines model for ChartIndicatorLine.
-type ChartIndicatorLine struct {
-	// Anchor The line the markers of a marker line sit on, in its pane, instead of the candles; an output of another indicator of the same catalog.
-	Anchor *ChartIndicatorLineAnchor `json:"anchor,omitempty"`
-
-	// Color Client theme color token, for example `yellow.5`.
-	Color string `json:"color"`
-
-	// Direction Colors each point of a `line` by the sign of a calculated series of the same indicator at that candle, such as the SUPERTREND trend; a point where it is zero or missing keeps the line `color`. The series is delivered with the others but not drawn itself.
-	Direction *ChartIndicatorLineDirection `json:"direction,omitempty"`
-
-	// Output Name of the calculated series drawn by this line.
-	Output string `json:"output"`
-
-	// Segment Name of the calculated series of the same indicator holding, at each value of this marker line, the number of candles back from the marker to where a straight line drawn to the marker starts, on the `anchor` line and on the candles (lows under `marker_below`, highs over `marker_above`). Only marker lines have it; the series is delivered with the others but not drawn itself.
-	Segment *string `json:"segment,omitempty"`
-
-	// Shift Number of candles a marker is drawn before the candle holding its value. The points of the series are not shifted.
-	Shift int `json:"shift"`
-
-	// Style How the series is drawn. A marker is a point above or below a candle, or above or below the line of its `anchor`; only `overlay` indicators and lines with an `anchor` are marker lines.
-	Style ChartIndicatorLineStyle `json:"style"`
-	Title string                  `json:"title"`
-}
-
-// ChartIndicatorLineStyle How the series is drawn. A marker is a point above or below a candle, or above or below the line of its `anchor`; only `overlay` indicators and lines with an `anchor` are marker lines.
-type ChartIndicatorLineStyle string
-
-// ChartIndicatorLineAnchor The line the markers of a marker line sit on, in its pane, instead of the candles; an output of another indicator of the same catalog.
-type ChartIndicatorLineAnchor struct {
-	// IndicatorId The `id` of that indicator.
-	IndicatorId string `json:"indicator_id"`
-
-	// Output The `output` of its line.
-	Output string `json:"output"`
-}
-
-// ChartIndicatorLineDirection Colors each point of a `line` by the sign of a calculated series of the same indicator at that candle, such as the SUPERTREND trend; a point where it is zero or missing keeps the line `color`. The series is delivered with the others but not drawn itself.
-type ChartIndicatorLineDirection struct {
-	// DownColor Client theme color token where the series is negative.
-	DownColor string `json:"down_color"`
-
-	// Fill Whether the area between the line and the middle of the candle body, `(open + close) / 2`, is also filled, translucent in the color of each point, and broken where the sign flips, like the SUPERTREND fill. Only `overlay` indicators have it.
-	Fill bool `json:"fill"`
-
-	// Output Name of the series whose sign is the direction.
-	Output string `json:"output"`
-
-	// UpColor Client theme color token where the series is positive.
-	UpColor string `json:"up_color"`
-}
-
-// ChartIndicatorResult defines model for ChartIndicatorResult.
-type ChartIndicatorResult struct {
-	Parameters map[string]interface{} `json:"parameters"`
-	Series     []IndicatorSeries      `json:"series"`
-	Type       string                 `json:"type"`
-}
-
-// ChartIndicatorScale Value axis of a pane indicator; clients derive the value precision from the values.
+// ChartIndicatorScale Value axis of an indicator pane; clients derive the value precision from the values.
 type ChartIndicatorScale struct {
 	Levels []ChartIndicatorLevel `json:"levels"`
 	Max    *float64              `json:"max,omitempty"`
 	Min    *float64              `json:"min,omitempty"`
 }
 
+// ChartLinePoint defines model for ChartLinePoint.
+type ChartLinePoint struct {
+	// Break When true, the point is not joined to the point before, such as where the SUPERTREND line jumps to the other side of the candles.
+	Break *bool `json:"break,omitempty"`
+
+	// Color Client theme color token of the point and of the join to the next point; absent takes the line `color`.
+	Color *string `json:"color,omitempty"`
+
+	// Time Open time of the candle.
+	Time  time.Time `json:"time"`
+	Value float64   `json:"value"`
+}
+
+// ChartLineShape A line joining its points in order.
+type ChartLineShape struct {
+	// Color Client theme color token, for example `yellow.5`.
+	Color string             `json:"color"`
+	Id    string             `json:"id"`
+	Kind  ChartLineShapeKind `json:"kind"`
+
+	// Pane Key of the pane of a `pane` shape; absent otherwise.
+	Pane *string `json:"pane,omitempty"`
+
+	// Placement Where a shape lies: `overlay` over the candles on their price scale; `volume` over the volume bars on their scale; `pane` in the pane its `pane` names.
+	Placement ChartPlacement   `json:"placement"`
+	Points    []ChartLinePoint `json:"points"`
+
+	// Title The legend title of the line, which shows its value and color at each candle.
+	Title string `json:"title"`
+}
+
+// ChartLineShapeKind defines model for ChartLineShape.Kind.
+type ChartLineShapeKind string
+
+// ChartMarker defines model for ChartMarker.
+type ChartMarker struct {
+	// CalculatedTime Open time of the candle that calculated the marker, such as the candle confirming a pivot drawn on an earlier candle.
+	CalculatedTime time.Time `json:"calculated_time"`
+
+	// LineValue The value of the line the marker sits on, above or below it; absent draws the marker above or below the candle.
+	LineValue *float64 `json:"line_value,omitempty"`
+
+	// Time Open time of the candle the marker is drawn on.
+	Time time.Time `json:"time"`
+
+	// Value The value of the marker, which the legend shows.
+	Value float64 `json:"value"`
+}
+
+// ChartMarkersShape Points drawn above or below candles, or above or below the values of a line.
+type ChartMarkersShape struct {
+	// Color Client theme color token.
+	Color string                `json:"color"`
+	Id    string                `json:"id"`
+	Kind  ChartMarkersShapeKind `json:"kind"`
+
+	// Pane Key of the pane of a `pane` shape; absent otherwise.
+	Pane *string `json:"pane,omitempty"`
+
+	// Placement Where a shape lies: `overlay` over the candles on their price scale; `volume` over the volume bars on their scale; `pane` in the pane its `pane` names.
+	Placement ChartPlacement            `json:"placement"`
+	Points    []ChartMarker             `json:"points"`
+	Position  ChartMarkersShapePosition `json:"position"`
+
+	// Title The legend title of the markers, which shows the `value` of the marker on a candle.
+	Title string `json:"title"`
+}
+
+// ChartMarkersShapeKind defines model for ChartMarkersShape.Kind.
+type ChartMarkersShapeKind string
+
+// ChartMarkersShapePosition defines model for ChartMarkersShape.Position.
+type ChartMarkersShapePosition string
+
 // ChartPageResponse defines model for ChartPageResponse.
 type ChartPageResponse struct {
-	Candles    []Candle               `json:"candles"`
-	HasMore    bool                   `json:"has_more"`
-	Indicators []ChartIndicatorResult `json:"indicators"`
-	Interval   CandleInterval         `json:"interval"`
-	NextBefore *time.Time             `json:"next_before,omitempty"`
-	Symbol     string                 `json:"symbol"`
+	Candles    []Candle       `json:"candles"`
+	HasMore    bool           `json:"has_more"`
+	Interval   CandleInterval `json:"interval"`
+	NextBefore *time.Time     `json:"next_before,omitempty"`
+
+	// Panes The indicator panes below the candles the shapes lie in, top to bottom.
+	Panes []ChartPane `json:"panes"`
+
+	// Shapes The shapes the indicators are drawn with, in the order of the indicators. Every frame of a subscription has the same shapes under the same ids.
+	Shapes []ChartShape `json:"shapes"`
+	Symbol string       `json:"symbol"`
+}
+
+// ChartPane defines model for ChartPane.
+type ChartPane struct {
+	// Key The `pane` of the shapes lying in the pane.
+	Key string `json:"key"`
+
+	// Scale Value axis of an indicator pane; clients derive the value precision from the values.
+	Scale ChartIndicatorScale `json:"scale"`
+}
+
+// ChartPlacement Where a shape lies: `overlay` over the candles on their price scale; `volume` over the volume bars on their scale; `pane` in the pane its `pane` names.
+type ChartPlacement string
+
+// ChartSegment defines model for ChartSegment.
+type ChartSegment struct {
+	// CalculatedTime Open time of the candle that calculated the segment.
+	CalculatedTime time.Time         `json:"calculated_time"`
+	From           ChartSegmentPoint `json:"from"`
+	To             ChartSegmentPoint `json:"to"`
+}
+
+// ChartSegmentPoint defines model for ChartSegmentPoint.
+type ChartSegmentPoint struct {
+	// Time Open time of the candle.
+	Time  time.Time `json:"time"`
+	Value float64   `json:"value"`
+}
+
+// ChartSegmentsShape Straight lines between two points each.
+type ChartSegmentsShape struct {
+	// Color Client theme color token.
+	Color string                 `json:"color"`
+	Id    string                 `json:"id"`
+	Kind  ChartSegmentsShapeKind `json:"kind"`
+
+	// Pane Key of the pane of a `pane` shape; absent otherwise.
+	Pane *string `json:"pane,omitempty"`
+
+	// Placement Where a shape lies: `overlay` over the candles on their price scale; `volume` over the volume bars on their scale; `pane` in the pane its `pane` names.
+	Placement ChartPlacement `json:"placement"`
+	Segments  []ChartSegment `json:"segments"`
+}
+
+// ChartSegmentsShapeKind defines model for ChartSegmentsShape.Kind.
+type ChartSegmentsShapeKind string
+
+// ChartShape One figure of the indicators. Each point, marker, and segment belongs to the candle that calculated it: points of lines and areas to the candle of their `time`, markers and segments to the candle of their `calculated_time`.
+type ChartShape struct {
+	union json.RawMessage
 }
 
 // CriterionRequest defines model for CriterionRequest.
@@ -1163,18 +1308,6 @@ type IndicatorParameter struct {
 
 // IndicatorParameterKind `choice` is an integer limited to `choices`; `minimum` and `maximum` bound the other kinds.
 type IndicatorParameterKind string
-
-// IndicatorPoint defines model for IndicatorPoint.
-type IndicatorPoint struct {
-	Time  time.Time `json:"time"`
-	Value float64   `json:"value"`
-}
-
-// IndicatorSeries defines model for IndicatorSeries.
-type IndicatorSeries struct {
-	Name   string           `json:"name"`
-	Points []IndicatorPoint `json:"points"`
-}
 
 // IndicatorType defines model for IndicatorType.
 type IndicatorType struct {
@@ -2252,6 +2385,179 @@ type AnalyzeFavoritesJSONRequestBody = MarketAnalysisRequest
 // CreatePriceAlertJSONRequestBody defines body for CreatePriceAlert for application/json ContentType.
 type CreatePriceAlertJSONRequestBody = PriceAlertInput
 
+// AsChartLineShape returns the union data inside the ChartShape as a ChartLineShape
+func (t ChartShape) AsChartLineShape() (ChartLineShape, error) {
+	var body ChartLineShape
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromChartLineShape overwrites any union data inside the ChartShape as the provided ChartLineShape
+func (t *ChartShape) FromChartLineShape(v ChartLineShape) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"line"}`))
+	t.union = b
+	return err
+}
+
+// MergeChartLineShape performs a merge with any union data inside the ChartShape, using the provided ChartLineShape
+func (t *ChartShape) MergeChartLineShape(v ChartLineShape) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"line"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsChartAreaShape returns the union data inside the ChartShape as a ChartAreaShape
+func (t ChartShape) AsChartAreaShape() (ChartAreaShape, error) {
+	var body ChartAreaShape
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromChartAreaShape overwrites any union data inside the ChartShape as the provided ChartAreaShape
+func (t *ChartShape) FromChartAreaShape(v ChartAreaShape) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"area"}`))
+	t.union = b
+	return err
+}
+
+// MergeChartAreaShape performs a merge with any union data inside the ChartShape, using the provided ChartAreaShape
+func (t *ChartShape) MergeChartAreaShape(v ChartAreaShape) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"area"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsChartMarkersShape returns the union data inside the ChartShape as a ChartMarkersShape
+func (t ChartShape) AsChartMarkersShape() (ChartMarkersShape, error) {
+	var body ChartMarkersShape
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromChartMarkersShape overwrites any union data inside the ChartShape as the provided ChartMarkersShape
+func (t *ChartShape) FromChartMarkersShape(v ChartMarkersShape) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"markers"}`))
+	t.union = b
+	return err
+}
+
+// MergeChartMarkersShape performs a merge with any union data inside the ChartShape, using the provided ChartMarkersShape
+func (t *ChartShape) MergeChartMarkersShape(v ChartMarkersShape) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"markers"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsChartSegmentsShape returns the union data inside the ChartShape as a ChartSegmentsShape
+func (t ChartShape) AsChartSegmentsShape() (ChartSegmentsShape, error) {
+	var body ChartSegmentsShape
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromChartSegmentsShape overwrites any union data inside the ChartShape as the provided ChartSegmentsShape
+func (t *ChartShape) FromChartSegmentsShape(v ChartSegmentsShape) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"segments"}`))
+	t.union = b
+	return err
+}
+
+// MergeChartSegmentsShape performs a merge with any union data inside the ChartShape, using the provided ChartSegmentsShape
+func (t *ChartShape) MergeChartSegmentsShape(v ChartSegmentsShape) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	b, err = runtime.JSONMerge(b, []byte(`{"kind":"segments"}`))
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t ChartShape) Discriminator() (string, error) {
+	var discriminator struct {
+		Discriminator string `json:"kind"`
+	}
+	err := json.Unmarshal(t.union, &discriminator)
+	return discriminator.Discriminator, err
+}
+
+func (t ChartShape) ValueByDiscriminator() (interface{}, error) {
+	discriminator, err := t.Discriminator()
+	if err != nil {
+		return nil, err
+	}
+	switch discriminator {
+	case "area":
+		return t.AsChartAreaShape()
+	case "line":
+		return t.AsChartLineShape()
+	case "markers":
+		return t.AsChartMarkersShape()
+	case "segments":
+		return t.AsChartSegmentsShape()
+	default:
+		return nil, errors.New("unknown discriminator value: " + discriminator)
+	}
+}
+
+func (t ChartShape) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *ChartShape) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
+
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
 
@@ -2673,11 +2979,11 @@ type ClientInterface interface {
 	// Corresponds with POST /api/v1/auth/session (the `CreateSession` operationId).
 	CreateSession(ctx context.Context, params *CreateSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// ListChartIndicators List the indicators charts of an interval request and how to draw them
+	// ListChartIndicators List the indicators charts of an interval request
 	//
 	// Clients subscribe to live charts of the interval with each item's `type`
-	// and `parameters`, in this order, and draw the returned series as described
-	// here. The administrator configures the catalog, so it may be empty.
+	// and `parameters`, in this order; the charts arrive drawn as shapes. The
+	// administrator configures the catalog, so it may be empty.
 	//
 	// Corresponds with GET /api/v1/chart/indicators (the `ListChartIndicators` operationId).
 	ListChartIndicators(ctx context.Context, params *ListChartIndicatorsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3476,11 +3782,11 @@ func (c *Client) CreateSession(ctx context.Context, params *CreateSessionParams,
 	return c.Client.Do(req)
 }
 
-// ListChartIndicators List the indicators charts of an interval request and how to draw them
+// ListChartIndicators List the indicators charts of an interval request
 //
 // Clients subscribe to live charts of the interval with each item's `type`
-// and `parameters`, in this order, and draw the returned series as described
-// here. The administrator configures the catalog, so it may be empty.
+// and `parameters`, in this order; the charts arrive drawn as shapes. The
+// administrator configures the catalog, so it may be empty.
 //
 // Corresponds with GET /api/v1/chart/indicators (the `ListChartIndicators` operationId).
 func (c *Client) ListChartIndicators(ctx context.Context, params *ListChartIndicatorsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5760,11 +6066,11 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with POST /api/v1/auth/session (the `CreateSession` operationId).
 	CreateSessionWithResponse(ctx context.Context, params *CreateSessionParams, reqEditors ...RequestEditorFn) (*CreateSessionResponse, error)
 
-	// ListChartIndicatorsWithResponse List the indicators charts of an interval request and how to draw them
+	// ListChartIndicatorsWithResponse List the indicators charts of an interval request
 	//
 	// Clients subscribe to live charts of the interval with each item's `type`
-	// and `parameters`, in this order, and draw the returned series as described
-	// here. The administrator configures the catalog, so it may be empty.
+	// and `parameters`, in this order; the charts arrive drawn as shapes. The
+	// administrator configures the catalog, so it may be empty.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -10048,11 +10354,11 @@ func (c *ClientWithResponses) CreateSessionWithResponse(ctx context.Context, par
 	return ParseCreateSessionResponse(rsp)
 }
 
-// ListChartIndicatorsWithResponse List the indicators charts of an interval request and how to draw them
+// ListChartIndicatorsWithResponse List the indicators charts of an interval request
 //
 // Clients subscribe to live charts of the interval with each item's `type`
-// and `parameters`, in this order, and draw the returned series as described
-// here. The administrator configures the catalog, so it may be empty.
+// and `parameters`, in this order; the charts arrive drawn as shapes. The
+// administrator configures the catalog, so it may be empty.
 //
 // Returns a wrapper object for the known response body format(s).
 //

@@ -1,6 +1,4 @@
-import type { CandleInterval } from "@/api/generated/models";
 import {
-	type ChartIndicatorLayout,
 	type ChartPriceLevels,
 	PriceHistoryChart,
 } from "@/features/candle-chart";
@@ -12,27 +10,23 @@ interface CoinChartProps {
 	enabled: boolean;
 	failed: boolean;
 	fillHeight: boolean;
-	indicators:
-		| Readonly<Record<CandleInterval, ChartIndicatorLayout>>
-		| undefined;
 	priceLevels?: ChartPriceLevels;
 	source: CoinChartData | undefined;
 	symbol: string;
 }
 
-// The live chart waits for the backend indicator catalogs of every interval,
-// which define both what it subscribes to and what it draws.
+// The live chart waits for its source, which waits for the backend indicator
+// catalogs of every interval that define what it subscribes to.
 export function CoinChart({
 	enabled,
 	failed,
 	fillHeight,
-	indicators,
 	priceLevels,
 	source,
 	symbol,
 }: CoinChartProps) {
 	const { paperPadding } = useCoinPageLayout();
-	if (!source || !indicators) {
+	if (!source) {
 		return <CoinChartPlaceholder failed={failed} paperPadding={paperPadding} />;
 	}
 	return (
@@ -40,7 +34,6 @@ export function CoinChart({
 			comparison={source.comparison}
 			enabled={enabled}
 			fillHeight={fillHeight}
-			indicators={indicators}
 			key={symbol}
 			paperPadding={paperPadding}
 			priceLevels={priceLevels}

@@ -21,15 +21,22 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { ChartAreaPoint } from './chartAreaPoint.ts';
+import type { ChartAreaShapeKind } from './chartAreaShapeKind.ts';
+import type { ChartPlacement } from './chartPlacement.ts';
 
 /**
- * `overlay` draws over the candles on their price scale; `pane` draws in a pane below; `volume` draws over the volume bars on their scale.
+ * A translucent fill between `value` and `base` at each point. Neighbouring points of the same color are joined; a missing point or a change of color breaks it.
  */
-export type ChartIndicatorDefinitionPlacement = typeof ChartIndicatorDefinitionPlacement[keyof typeof ChartIndicatorDefinitionPlacement];
-
-
-export const ChartIndicatorDefinitionPlacement = {
-  overlay: 'overlay',
-  pane: 'pane',
-  volume: 'volume',
-} as const;
+export interface ChartAreaShape {
+  kind: ChartAreaShapeKind;
+  /** @minLength 1 */
+  id: string;
+  placement: ChartPlacement;
+  /**
+     * Key of the pane of a `pane` shape; absent otherwise.
+     * @minLength 1
+     */
+  pane?: string;
+  points: ChartAreaPoint[];
+}

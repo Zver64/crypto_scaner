@@ -19,45 +19,23 @@ function chart(interval: "1h" | "1d", length: number): BacktestChart {
 		volume: 10,
 	}));
 	return {
-		catalog: [
-			{
-				id: "rsi",
-				type: "rsi",
-				parameters: {},
-				placement: "pane",
-				pane: "rsi",
-				scale: { levels: [] },
-				lines: [
-					{
-						output: "rsi",
-						title: "RSI",
-						color: "blue.5",
-						style: "line",
-						shift: 0,
-					},
-				],
-			},
-		],
 		page: {
 			symbol: "BTCUSDT",
 			interval,
 			candles,
 			has_more: false,
-			indicators: [
+			shapes: [
 				{
-					type: "rsi",
-					parameters: {},
-					series: [
-						{
-							name: "rsi",
-							points: candles.map((c) => ({
-								time: c.open_time,
-								value: c.close,
-							})),
-						},
-					],
+					kind: "line",
+					id: "rsi",
+					placement: "pane",
+					pane: "rsi",
+					title: "RSI",
+					color: "blue.5",
+					points: candles.map((c) => ({ time: c.open_time, value: c.close })),
 				},
 			],
+			panes: [{ key: "rsi", scale: { levels: [] } }],
 		},
 	};
 }
@@ -80,11 +58,15 @@ describe("backtest snapshot source", () => {
 		while (source.getSnapshot("1h").hasMore) source.loadOlder("1h");
 		const full = source.getSnapshot("1h");
 		expect(full.candles).toEqual(hourly.page.candles);
+		const [rsi] = full.series.shapes;
 		expect(
-			full.series.lines["rsi:rsi"]?.data.map((slot) =>
-				"value" in slot ? slot.value : undefined,
-			),
-		).toEqual(hourly.page.indicators[0]?.series[0]?.points.map((p) => p.value));
+			rsi?.kind === "line"
+				? rsi.data.map((slot) => ("value" in slot ? slot.value : undefined))
+				: undefined,
+		).toEqual(hourly.page.candles.map((c) => c.close));
+		// The panes keep their autoscale while older candles are revealed.
+		expect(full.series.panes).toHaveLength(1);
+		expect(full.series.panes[0]).toBe(initial.series.panes[0]);
 		expect(source.getSnapshot("1d")).toBe(day);
 		expect(initial.candles.length).toBeLessThan(full.candles.length);
 		expect(changes).toBeGreaterThan(0);
@@ -100,7 +82,7 @@ describe("backtest snapshot source", () => {
 		const source = createBacktestChartData([]);
 		expect(source.getSnapshot("1h")).toMatchObject({
 			candles: [],
-			series: { candles: [], lines: {} },
+			series: { candles: [], panes: [], shapes: [] },
 			isLoading: false,
 			hasMore: false,
 		});

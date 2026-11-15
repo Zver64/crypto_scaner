@@ -32,14 +32,6 @@ const initialLimit = 200;
 const maxLimit = 2000;
 const comparisonSymbol = "BTCUSDT";
 const comparisonLabel = "BTC";
-// The comparison is subscribed without indicators.
-const comparisonCatalogs: ChartCatalogs = {
-	"1h": [],
-	"1d": [],
-	"1w": [],
-	"1M": [],
-};
-
 // The backend owns each chart range: it sends a full snapshot whenever closed
 // history or the range changes and a tail update for the current candle. Only
 // the interval on screen is subscribed; others keep their last chart as stale.
@@ -51,13 +43,13 @@ export function createCoinChartData(
 ): CoinChartData {
 	const upper = symbol.toUpperCase();
 	let connection: LiveCandlesClient | undefined;
-	const live = createLiveStore(upper, catalogs, (interval) =>
+	const live = createLiveStore(upper, (interval) =>
 		connection?.resync(upper, interval),
 	);
 	const compared =
 		upper === comparisonSymbol
 			? undefined
-			: createLiveStore(comparisonSymbol, comparisonCatalogs, (interval) =>
+			: createLiveStore(comparisonSymbol, (interval) =>
 					connection?.resync(comparisonSymbol, interval),
 				);
 	let comparing = false;
@@ -101,7 +93,7 @@ export function createCoinChartData(
 				symbol: upper,
 				interval: shown,
 				limit,
-				indicators: catalogs[shown].map(({ parameters, type }) => ({
+				indicators: catalogs[shown].items.map(({ parameters, type }) => ({
 					parameters,
 					type,
 				})),
@@ -117,15 +109,16 @@ export function createCoinChartData(
 		const state = live.getSnapshot(interval);
 		if (!force && current.input === state) return;
 		// Connection and freshness changes keep the chart, and with it the
-		// chart-ready series, so the chart redraws only for new data.
+		// chart-ready series, so the chart redraws only for new data. Before
+		// the first chart, the panes of the catalog give the chart its height.
 		const series =
 			current.snapshot && current.input?.chart === state.chart
 				? current.snapshot.series
 				: createChartSeriesData(
 						state.chart?.candles ?? [],
-						state.chart,
-						catalogs[interval],
+						state.chart ?? { panes: catalogs[interval].panes, shapes: [] },
 						interval,
+						current.snapshot?.series,
 					);
 		current.input = state;
 		const closed = state.chart?.candles.length ?? 0;
@@ -172,6 +165,7 @@ export function createCoinChartData(
 			notify();
 		},
 	};
+	for (const interval of chartIntervals) recompute(interval, true);
 	return {
 		comparison,
 		getSnapshot(interval) {
@@ -247,7 +241,7 @@ export function createCoinChartData(
 
 const emptySnapshot: PriceHistorySnapshot = {
 	candles: [],
-	series: createChartSeriesData([], undefined, [], "1h"),
+	series: createChartSeriesData([], undefined, "1h"),
 	connection: "connecting",
 	freshness: "waiting",
 	isLoading: true,

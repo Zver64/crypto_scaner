@@ -22,14 +22,9 @@
  * OpenAPI spec version: 1.0.0
  */
 
-/**
- * How the series is drawn. A marker is a point above or below a candle, or above or below the line of its `anchor`; only `overlay` indicators and lines with an `anchor` are marker lines.
- */
-export type ChartIndicatorLineStyle = typeof ChartIndicatorLineStyle[keyof typeof ChartIndicatorLineStyle];
+export type ChartSegmentsShapeKind = typeof ChartSegmentsShapeKind[keyof typeof ChartSegmentsShapeKind];
 
 
-export const ChartIndicatorLineStyle = {
-  line: 'line',
-  marker_above: 'marker_above',
-  marker_below: 'marker_below',
+export const ChartSegmentsShapeKind = {
+  segments: 'segments',
 } as const;

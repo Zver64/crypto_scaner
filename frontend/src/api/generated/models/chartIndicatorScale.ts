@@ -24,7 +24,7 @@
 import type { ChartIndicatorLevel } from './chartIndicatorLevel.ts';
 
 /**
- * Value axis of a pane indicator; clients derive the value precision from the values.
+ * Value axis of an indicator pane; clients derive the value precision from the values.
  */
 export interface ChartIndicatorScale {
   min?: number;

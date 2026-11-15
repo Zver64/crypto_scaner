@@ -311,7 +311,7 @@ func (service *Service) backtest(ctx context.Context, entry Entry, symbol string
 		return Backtest{}, err
 	}
 	if withChart {
-		result.Charts, err = replay.chartSnapshot(ctx, entry, instrument.ID, result)
+		result.Charts, err = replay.chartSnapshot(ctx, service.charts, entry, instrument.ID, result)
 		if err != nil {
 			return Backtest{}, err
 		}

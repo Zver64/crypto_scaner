@@ -2,30 +2,17 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import type {
 	Candle,
-	ChartIndicatorDefinition,
+	ChartIndicatorCatalog,
 	ChartPageResponse,
 	LiveCandleClientMessage,
 } from "@/api/generated/models";
 import { createCoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 
-const rsiCatalog: ChartIndicatorDefinition[] = [
-	{
-		id: "rsi-14",
-		lines: [
-			{
-				color: "blue.5",
-				output: "rsi",
-				shift: 0,
-				style: "line",
-				title: "RSI 14",
-			},
-		],
-		parameters: { period: 14 },
-		placement: "pane",
-		scale: { levels: [], max: 100, min: 0 },
-		type: "rsi",
-	},
-];
+const rsiPanes = [{ key: "rsi", scale: { levels: [], max: 100, min: 0 } }];
+const rsiCatalog: ChartIndicatorCatalog = {
+	items: [{ id: "rsi-14", parameters: { period: 14 }, type: "rsi" }],
+	panes: rsiPanes,
+};
 
 const rsiCatalogs = {
 	"1h": rsiCatalog,
@@ -35,9 +22,13 @@ const rsiCatalogs = {
 };
 
 const rsiValues = (source: ReturnType<typeof createCoinChartData>) =>
-	(source.getSnapshot("1h").series.lines["rsi-14:rsi"]?.data ?? []).flatMap(
-		(slot) => ("value" in slot ? [slot.value] : []),
-	);
+	source
+		.getSnapshot("1h")
+		.series.shapes.flatMap((shape) =>
+			shape.kind === "line"
+				? shape.data.flatMap((slot) => ("value" in slot ? [slot.value] : []))
+				: [],
+		);
 
 vi.mock("@/api/session", () => ({
 	getSessionToken: async () => "session-token",
@@ -103,22 +94,22 @@ function chart(
 		candles,
 		has_more: hasMore,
 		next_before: hasMore ? (candles[0]?.open_time ?? null) : null,
-		indicators: [
+		shapes: [
 			{
-				type: "rsi",
-				parameters: { period: 14 },
-				series: [
-					{
-						name: "rsi",
-						points: values.map((value, index) => ({
-							time: candles[candles.length - values.length + index]
-								?.open_time as string,
-							value,
-						})),
-					},
-				],
+				kind: "line",
+				id: "rsi",
+				placement: "pane",
+				pane: "rsi",
+				title: "RSI 14",
+				color: "blue.5",
+				points: values.map((value, index) => ({
+					time: candles[candles.length - values.length + index]
+						?.open_time as string,
+					value,
+				})),
 			},
 		],
+		panes: rsiPanes,
 	};
 }
 
@@ -142,6 +133,10 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 			socket.sent.map(({ type, interval, limit }) => [type, interval, limit]),
 		).toEqual([["subscribe", "1h", 200]]);
 		expect(source.getSnapshot("1h").isLoading).toBe(true);
+		// The panes of the catalog size the chart before its first snapshot.
+		expect(source.getSnapshot("1h").series.panes.map(({ key }) => key)).toEqual(
+			["rsi"],
+		);
 
 		const base = { type: "snapshot", symbol: "BTCUSDT", interval: "1h" };
 		socket.emitMessage({
@@ -294,7 +289,8 @@ it("streams Bitcoin for comparison only while enabled, with the interval and ran
 			symbol: "BTCUSDT",
 			chart: {
 				...chart([candle(0, 20), candle(1, 21), candle(3, 23)], [], true),
-				indicators: [],
+				shapes: [],
+				panes: [],
 			},
 		});
 		expect(lineValues()).toEqual([21, null, 23]);

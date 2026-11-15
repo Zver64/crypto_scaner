@@ -3,39 +3,13 @@ import { expect, it, vi } from "vitest";
 import type {
 	Candle,
 	CandleInterval,
-	ChartIndicatorDefinition,
+	ChartPageResponse,
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
 import {
 	applyServerMessage,
 	createLiveStore,
 } from "@/features/instrument-analysis/live-candle-store";
-
-const rsiCatalog: ChartIndicatorDefinition[] = [
-	{
-		id: "rsi-14",
-		lines: [
-			{
-				color: "blue.5",
-				output: "rsi",
-				shift: 0,
-				style: "line",
-				title: "RSI 14",
-			},
-		],
-		parameters: { period: 14 },
-		placement: "pane",
-		scale: { levels: [], max: 100, min: 0 },
-		type: "rsi",
-	},
-];
-
-const rsiCatalogs = {
-	"1h": rsiCatalog,
-	"1d": rsiCatalog,
-	"1w": rsiCatalog,
-	"1M": rsiCatalog,
-};
 
 function candle(openTime: string): Candle {
 	return {
@@ -65,20 +39,30 @@ function snapshot(
 			symbol: "BTC",
 			interval,
 			candles: [candle(time)],
-			indicators: [
+			shapes: [
 				{
-					type: "rsi",
-					parameters: { period: 14 },
-					series: [{ name: "rsi", points: [{ time, value }] }],
+					kind: "line",
+					id: "rsi",
+					placement: "pane",
+					pane: "rsi",
+					title: "RSI 14",
+					color: "blue.5",
+					points: [{ time, value }],
 				},
 			],
+			panes: [{ key: "rsi", scale: { levels: [], max: 100, min: 0 } }],
 			has_more: false,
 			next_before: null,
 		},
 	};
 }
+function lineValue(chart: ChartPageResponse | undefined) {
+	const shape = chart?.shapes[0];
+	return shape?.kind === "line" ? shape.points[0]?.value : undefined;
+}
+
 it("keeps the visible interval snapshot stable when a hidden interval updates", () => {
-	const store = createLiveStore("BTC", rsiCatalogs);
+	const store = createLiveStore("BTC");
 	const hourly = store.getSnapshot("1h");
 	store.message({
 		type: "status",
@@ -95,14 +79,12 @@ it("retains isolated calculated snapshots and rejects late versions", () => {
 		snapshot("1h", "2026-01-01T23:00:00Z", 2, 45),
 		"BTC",
 		"connected",
-		rsiCatalog,
 	);
 	states = applyServerMessage(
 		states,
 		snapshot("1d", "2026-01-01T00:00:00Z", 1, 55),
 		"BTC",
 		"connected",
-		rsiCatalog,
 	);
 	const stable = states;
 	states = applyServerMessage(
@@ -110,7 +92,6 @@ it("retains isolated calculated snapshots and rejects late versions", () => {
 		snapshot("1h", "2026-01-01T23:00:00Z", 1, 99),
 		"BTC",
 		"connected",
-		rsiCatalog,
 	);
 	expect(states).toBe(stable);
 	states = applyServerMessage(
@@ -118,19 +99,14 @@ it("retains isolated calculated snapshots and rejects late versions", () => {
 		snapshot("1d", "2026-01-01T00:00:00Z", 2, 60),
 		"BTC",
 		"connected",
-		rsiCatalog,
 	);
-	expect(
-		states["BTC:1h"]?.chart?.indicators[0]?.series[0]?.points[0]?.value,
-	).toBe(45);
-	expect(
-		states["BTC:1d"]?.chart?.indicators[0]?.series[0]?.points[0]?.value,
-	).toBe(60);
+	expect(lineValue(states["BTC:1h"]?.chart)).toBe(45);
+	expect(lineValue(states["BTC:1d"]?.chart)).toBe(60);
 });
 
 it("asks once for a new snapshot when an update cannot be applied", () => {
 	const onResync = vi.fn<(interval: CandleInterval) => void>();
-	const store = createLiveStore("BTC", rsiCatalogs, onResync);
+	const store = createLiveStore("BTC", onResync);
 	const time = "2026-01-01T23:00:00Z";
 	const update = (version: number): LiveCandleServerMessage => ({
 		...snapshot("1h", time, version, 50),

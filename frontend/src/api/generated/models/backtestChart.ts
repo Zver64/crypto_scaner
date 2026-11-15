@@ -21,10 +21,8 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { ChartIndicatorDefinition } from './chartIndicatorDefinition.ts';
 import type { ChartPageResponse } from './chartPageResponse.ts';
 
 export interface BacktestChart {
-  catalog: ChartIndicatorDefinition[];
   page: ChartPageResponse;
 }

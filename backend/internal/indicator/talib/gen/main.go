@@ -72,18 +72,6 @@ var paneFunctions = map[string]bool{
 	"AVGDEV": true,
 }
 
-// lineDirection is indicator.OutputDirection with the TA-Lib name of the
-// integer output whose sign is the direction of the line.
-type lineDirection struct {
-	output string
-	fill   bool
-}
-
-// directionOutputs are the directions of lines by function and line output.
-var directionOutputs = map[string]map[string]lineDirection{
-	"SUPERTREND": {"outSupertrend": {output: "outTrend", fill: true}},
-}
-
 // optionAliases maps metadata option names to wrapper parameter names where
 // they differ, both compared by optionKey. An unknown difference fails
 // generation, because same-typed options (fast and slow periods) cannot be
@@ -222,11 +210,6 @@ func main() {
 	for name := range optionLimits {
 		if !names[name] {
 			log.Fatalf("limited function %q is not generated", name)
-		}
-	}
-	for name := range directionOutputs {
-		if !names[name] {
-			log.Fatalf("function %q with a direction is not generated", name)
 		}
 	}
 
@@ -408,11 +391,6 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 		body.WriteString("\t},\n")
 	}
 
-	for line := range directionOutputs[fn.Abbreviation] {
-		if !slices.ContainsFunc(fn.Outputs, func(out output) bool { return out.Name == line }) {
-			return fmt.Errorf("output %q with a direction is not an output", line)
-		}
-	}
 	body.WriteString("\toutputs: []output{\n")
 	for _, out := range fn.Outputs {
 		style, err := outputStyle(out)
@@ -432,13 +410,6 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 		fmt.Fprintf(body, "\t\t{name: %q, style: %s", name, style)
 		if sparse {
 			body.WriteString(", sparse: true")
-		}
-		if direction, ok := directionOutputs[fn.Abbreviation][out.Name]; ok {
-			index := slices.IndexFunc(fn.Outputs, func(out output) bool { return out.Name == direction.output })
-			if index < 0 || fn.Outputs[index].Type != "Integer Array" {
-				return fmt.Errorf("direction %q of output %q is not an integer output", direction.output, out.Name)
-			}
-			fmt.Fprintf(body, ", direction: indicator.OutputDirection{Output: %q, Fill: %t}", outputName(direction.output), direction.fill)
 		}
 		body.WriteString("},\n")
 	}

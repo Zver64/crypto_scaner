@@ -1,6 +1,6 @@
 import type {
 	CandleInterval,
-	ChartIndicatorDefinition,
+	ChartIndicatorCatalog,
 	ChartPageResponse,
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
@@ -31,17 +31,16 @@ const initialState: LiveCandlesState = {
 	freshness: "waiting",
 };
 
-// Each interval has its own backend catalog; a chart validates results against
-// the catalog of its interval.
+// Each interval has its own backend catalog of the indicators its chart
+// subscribes to, with the panes its frames have.
 export type ChartCatalogs = Readonly<
-	Record<CandleInterval, readonly ChartIndicatorDefinition[]>
+	Record<CandleInterval, ChartIndicatorCatalog>
 >;
 
 // onResync asks the backend for a new snapshot of an interval whose update
 // could not be applied; it is called once until a snapshot is accepted.
 export function createLiveStore(
 	symbol: string,
-	catalogs: ChartCatalogs,
 	onResync: (interval: CandleInterval) => void = () => {},
 ) {
 	let states: Record<string, LiveCandlesState> = {};
@@ -89,7 +88,6 @@ export function createLiveStore(
 				message,
 				symbol,
 				fallback.connection,
-				message.interval ? catalogs[message.interval] : [],
 			);
 			if (next === states) return;
 			const key = `${symbol}:${message.interval}`;
@@ -106,7 +104,6 @@ export function applyServerMessage(
 	message: LiveCandleServerMessage,
 	symbol: string,
 	connection: LiveCandlesState["connection"],
-	catalog: readonly ChartIndicatorDefinition[],
 ): Record<string, LiveCandlesState> {
 	if (message.type === "error") {
 		const intervals = message.interval ? [message.interval] : chartIntervals;
@@ -163,7 +160,6 @@ export function applyServerMessage(
 					: received,
 				symbol,
 				message.interval,
-				catalog,
 			);
 		} catch {
 			return previous.resyncing ? states : stale;

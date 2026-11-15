@@ -61,8 +61,8 @@ func (divergences) Describe() indicator.Descriptor {
 			Default: pivotsRSI, Choices: slices.Clone(pivotsChoices),
 		}),
 		Outputs: []indicator.OutputDescriptor{
-			{Name: "bull", Style: indicator.OutputMarkerBelow, Sparse: true, Shift: "right", Anchor: "rsi", Segment: "bull_bars", Tone: indicator.ToneBullish},
-			{Name: "bear", Style: indicator.OutputMarkerAbove, Sparse: true, Shift: "right", Anchor: "rsi", Segment: "bear_bars", Tone: indicator.ToneBearish},
+			{Name: "bull", Style: indicator.OutputMarkerBelow, Sparse: true},
+			{Name: "bear", Style: indicator.OutputMarkerAbove, Sparse: true},
 			{Name: "rsi", Style: indicator.OutputLine},
 			{Name: "bull_bars", Style: indicator.OutputValue, Sparse: true},
 			{Name: "bear_bars", Style: indicator.OutputValue, Sparse: true},

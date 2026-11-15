@@ -4,7 +4,6 @@ import (
 	"context"
 	"log/slog"
 	"sync"
-	"time"
 
 	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/indicator"
@@ -18,7 +17,7 @@ import (
 type ChartService interface {
 	Validate([]indicator.Selection) error
 	NewLiveGroup() *chart.LiveGroup
-	Catalog(market.CandleInterval) []chart.CatalogIndicator
+	Catalog(market.CandleInterval) (chart.Catalog, error)
 }
 
 // chartClient connects the live charts of one connection to its socket. The
@@ -133,26 +132,33 @@ func (c *chartClient) forget(key kline.Key) {
 // stream should go on.
 func (c *chartClient) deliver(key kline.Key, id uint64, output chart.Output) bool {
 	var wire LiveCandleServerMessage
+	frame := output.Frame
 	switch {
 	case output.Message != nil:
 		wire = liveWireMessage(*output.Message)
 	case output.Err != nil:
 		wire = keyErrorMessage(key, "unavailable", "Chart history is unavailable")
 	default:
+		page, err := chartWirePage(frame.Page, key.Interval)
+		if err != nil {
+			c.logger.Error("serialize chart frame failed", "module", "httpapi", "symbol", key.Symbol, "interval", key.Interval, "error", err)
+			wire, frame = keyErrorMessage(key, "unavailable", "Chart history is unavailable"), nil
+			break
+		}
 		// A range change carries no stream state; report the last known one.
 		wire = liveWireMessage(marketlive.Message{Key: key, Freshness: output.Freshness})
 		wire.Type = Update
-		if output.Frame.Snapshot {
+		if frame.Snapshot {
 			wire.Type = Snapshot
 		}
-		wire.Chart = chartWirePage(output.Frame.Page, key.Interval, output.Frame.From)
+		wire.Chart = page
 	}
 	c.mu.Lock()
 	if entry, ok := c.streams[key]; !ok || entry.id != id {
 		c.mu.Unlock()
 		return false
 	}
-	if output.Frame != nil {
+	if frame != nil {
 		c.versions[key]++
 		version := c.versions[key]
 		wire.Version = &version
@@ -163,29 +169,4 @@ func (c *chartClient) deliver(key kline.Key, id uint64, output chart.Output) boo
 		c.Close()
 	}
 	return sent
-}
-
-// chartWirePage serializes candles and indicator points opened at or after from.
-func chartWirePage(page chart.Page, interval market.CandleInterval, from time.Time) *ChartPageResponse {
-	candles := make([]Candle, 0, len(page.Candles))
-	for _, v := range page.Candles {
-		if !v.OpenTime.Before(from) {
-			candles = append(candles, candleResponse(v))
-		}
-	}
-	results := make([]ChartIndicatorResult, len(page.Indicators))
-	for i, v := range page.Indicators {
-		series := make([]IndicatorSeries, len(v.Series))
-		for j, s := range v.Series {
-			points := make([]IndicatorPoint, 0, len(s.Points))
-			for _, p := range s.Points {
-				if !p.Time.Before(from) {
-					points = append(points, IndicatorPoint{Time: p.Time, Value: p.Value})
-				}
-			}
-			series[j] = IndicatorSeries{Name: s.Name, Points: points}
-		}
-		results[i] = ChartIndicatorResult{Type: string(v.Type), Parameters: map[string]interface{}(v.Parameters), Series: series}
-	}
-	return &ChartPageResponse{Symbol: page.Symbol, Interval: CandleInterval(interval), Candles: candles, Indicators: results, HasMore: page.HasMore, NextBefore: page.NextBefore}
 }

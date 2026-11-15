@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"crypto-scanner/internal/chart"
+	"crypto-scanner/internal/chart/draw"
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/indicator/candle"
@@ -629,17 +631,27 @@ func testCandle(instrumentID int64, interval market.CandleInterval, open time.Ti
 
 // testScannerIndicators has no configured rows or writes, and colors the
 // lines of each tone with a token named after it.
-func testScannerIndicators(t *testing.T, registry *indicator.Registry, palette ...string) *scannerindicator.Service {
+func testScannerIndicators(t *testing.T, registry *indicator.Registry) *scannerindicator.Service {
 	t.Helper()
-	tones := map[indicator.Tone]string{}
-	for _, tone := range indicator.Tones() {
-		tones[tone] = string(tone)
-	}
-	service, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, palette, tones, slog.New(slog.DiscardHandler), func() {})
+	service, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, testDrawers(t, registry), slog.New(slog.DiscardHandler), func() {})
 	if err != nil {
 		t.Fatal(err)
 	}
 	return service
+}
+
+// testDrawers draws charts as the application does.
+func testDrawers(t testing.TB, registry *indicator.Registry) *chart.Drawers {
+	t.Helper()
+	drawers, err := chart.NewDrawers(registry, chart.Palette{Colors: []string{"yellow.5", "blue.5"}, Bullish: "green.6", Bearish: "red.6"}, draw.Default{}, map[indicator.Type]chart.Drawer{
+		indicatortalib.SupertrendType: draw.Supertrend{},
+		pivot.Type:                    draw.Pivot{},
+		pivot.DivergenceType:          draw.Divergence{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return drawers
 }
 
 func testRegistry(t *testing.T) *indicator.Registry {
@@ -670,7 +682,7 @@ func testID(n byte) uuid.UUID { return uuid.UUID{15: n} }
 func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *Service {
 	t.Helper()
 	store.strategies = items
-	service, err := NewService(store, testIndicators{}, testRegistry(t), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), testDrawers(t, testRegistry(t)), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -759,7 +771,7 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.strategies = []Strategy{{ID: testID(1), Name: "Cross", Expression: `CrossesAbove(close("1h"), ema("1h", 100))`}}
-	service, err := NewService(store, indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	service, err := NewService(store, indicators, registry, testDrawers(b, registry), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		b.Fatal(err)
 	}

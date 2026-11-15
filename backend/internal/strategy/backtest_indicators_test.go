@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -21,8 +22,8 @@ func snapshotTestService(t *testing.T, store *backtestStore) *Service {
 	t.Helper()
 	registry := testRegistry(t)
 	// No configured rows or writes: Preview must resolve all dependencies.
-	source := testScannerIndicators(t, registry, "yellow.5", "blue.5")
-	service, err := NewService(store, source, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	source := testScannerIndicators(t, registry)
+	service, err := NewService(store, source, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,6 +74,10 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 	if result.Signal == nil || len(result.Signal.Occurrences) == 0 {
 		t.Fatal("expected signals")
 	}
+	if slices.ContainsFunc(service.indicators.List(), func(entry scannerindicator.Entry) bool { return true }) {
+		t.Fatal("test unexpectedly configured an indicator")
+	}
+	charted := chartedOf(t, service, item)
 	for _, occurrence := range result.Signal.Occurrences {
 		for name := range occurrence.IndicatorValues {
 			if !keys[name] {
@@ -95,46 +100,45 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 		}
 		// Current outputs at the signal and chart points must agree exactly.
 		for _, page := range result.Charts {
-			for j, definition := range page.Definitions {
-				if definition.Selection.Type == "ema" && page.Interval == market.IntervalHour {
-					t.Fatal("of-only indicator drawn")
+			open := page.Interval.LastClosedOpenTime(result.Interval.NextOpenTime(occurrence.Time))
+			for _, shape := range page.Shapes {
+				item, output := chartedShape(t, charted, shape)
+				if !slices.Contains(item.Outputs, output) {
+					continue
 				}
-				for _, series := range page.Indicators[j].Series {
-					entry := slices.IndexFunc(service.indicators.List(), func(e scannerindicator.Entry) bool { return e.Selection.Type == definition.Selection.Type })
-					if entry >= 0 {
-						t.Fatal("test unexpectedly configured an indicator")
-					}
-					preview, err := service.indicators.Preview(definition.Selection)
-					if err != nil {
-						t.Fatal(err)
-					}
-					arguments, err := callArguments(service.registry, definition.Selection, page.Interval)
-					if err != nil {
-						t.Fatal(err)
-					}
-					name := displayedIndicator{Entry: preview, interval: page.Interval, arguments: arguments}.column(series.Name)
-					open := page.Interval.LastClosedOpenTime(result.Interval.NextOpenTime(occurrence.Time))
-					point := slices.IndexFunc(series.Points, func(p indicator.Point) bool { return p.Time.Equal(open) })
-					if point >= 0 {
-						value, known := occurrence.IndicatorValues[name]
-						if !known || value != series.Points[point].Value {
-							t.Fatalf("%s at %v: table %v (%v), chart %v", name, occurrence.Time, value, known, series.Points[point].Value)
+				name := item.column(output)
+				var drawn []float64
+				switch {
+				case shape.Line != nil:
+					for _, point := range shape.Line.Points {
+						if point.Time.Equal(open) {
+							drawn = append(drawn, point.Value)
 						}
+					}
+				case shape.Markers != nil:
+					for _, marker := range shape.Markers.Points {
+						if marker.Calculated.Equal(open) {
+							drawn = append(drawn, marker.Value)
+						}
+					}
+				}
+				for _, value := range drawn {
+					if table, known := occurrence.IndicatorValues[name]; !known || table != value {
+						t.Fatalf("%s at %v: table %v (%v), chart %v", name, occurrence.Time, table, known, value)
 					}
 				}
 			}
 		}
 	}
 	for _, page := range result.Charts {
-		for j, definition := range page.Definitions {
-			if definition.Selection.Type != pivot.Type {
-				continue
+		for _, shape := range page.Shapes {
+			item, _ := chartedShape(t, charted, shape)
+			if item.Selection.Type == "ema" && page.Interval == market.IntervalHour {
+				t.Fatal("of-only indicator drawn")
 			}
-			// Pivots are points only on the candles confirming them.
-			for _, series := range page.Indicators[j].Series {
-				if len(series.Points) == 0 || len(series.Points) > len(page.Candles)/10 {
-					t.Fatalf("%s has %d points over %d candles", series.Name, len(series.Points), len(page.Candles))
-				}
+			// Pivots are markers only on the candles confirming them.
+			if item.Selection.Type == pivot.Type && shape.Markers != nil && (len(shape.Markers.Points) == 0 || len(shape.Markers.Points) > len(page.Candles)/10) {
+				t.Fatalf("%s has %d markers over %d candles", shape.ID, len(shape.Markers.Points), len(page.Candles))
 			}
 		}
 		for _, candle := range page.Candles {
@@ -169,35 +173,51 @@ func TestBacktestChartDrawsTheSourcesOfIndicators(t *testing.T) {
 		hourly = append(hourly, testCandle(1, market.IntervalHour, backtestHour(i), 100+10*math.Sin(float64(i)/7)))
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
-	store.strategies = []Strategy{{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6,
-		Expression: `pivot_low("1h", 5, 5, rsi("1h")) > 0 && pivot_high("1h", 5, 5, rsi("1h")) < 100 && ema("1h", 9, macd_macdhist("1h")) > -100`}}
-	result, err := snapshotTestService(t, store).Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, true)
+	item := Strategy{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6,
+		Expression: `pivot_low("1h", 5, 5, rsi("1h")) > 0 && ema("1h", 9, macd_macdhist("1h")) > -100`}
+	store.strategies = []Strategy{item}
+	service := snapshotTestService(t, store)
+	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
 	page := result.Charts[0]
-	drawn := map[indicator.Type]int{}
-	for i, definition := range page.Definitions {
-		if _, twice := drawn[definition.Selection.Type]; twice {
-			t.Fatalf("%s is drawn twice", definition.Selection.Type)
+	charted := chartedOf(t, service, item)
+	// places are where the shapes of each type lie, by output.
+	places := map[indicator.Type]map[string]chart.Place{}
+	for _, shape := range page.Shapes {
+		drawn, output := chartedShape(t, charted, shape)
+		if places[drawn.Selection.Type] == nil {
+			places[drawn.Selection.Type] = map[string]chart.Place{}
 		}
-		drawn[definition.Selection.Type] = i
+		if _, twice := places[drawn.Selection.Type][output]; twice {
+			t.Fatalf("%s %s is drawn twice", drawn.Selection.Type, output)
+		}
+		places[drawn.Selection.Type][output] = shape.Place
+		if drawn.Selection.Type == "rsi" && len(shape.Line.Points) == 0 {
+			t.Fatal("the source has no points")
+		}
+		// The markers of the pivots sit on the line of the rsi.
+		if drawn.Selection.Type == pivot.Type && shape.Markers != nil && slices.ContainsFunc(shape.Markers.Points, func(marker chart.Marker) bool { return marker.LineValue == nil }) {
+			t.Fatalf("pivot %s has markers off the rsi line", output)
+		}
 	}
 	for _, name := range []indicator.Type{"rsi", "macd", "ema", pivot.Type} {
-		if _, found := drawn[name]; !found {
-			t.Fatalf("%s is not drawn among %v", name, drawn)
+		if places[name] == nil {
+			t.Fatalf("%s is not drawn among %v", name, places)
 		}
 	}
-	rsi, pivots := page.Definitions[drawn["rsi"]], page.Definitions[drawn[pivot.Type]]
-	if len(page.Indicators[drawn["rsi"]].Series[0].Points) == 0 {
-		t.Fatal("the source has no points")
+	rsi := places["rsi"]["rsi"]
+	if rsi.Placement != chart.PlacementPane || places[pivot.Type]["high"] != rsi || places[pivot.Type]["low"] != rsi {
+		t.Fatalf("pivots of the rsi lie in %+v, want the pane of the rsi, %+v", places[pivot.Type], rsi)
 	}
-	want := chart.LineAnchor{IndicatorID: rsi.ID, Output: "rsi"}
-	if len(pivots.Lines) != 2 || pivots.Lines[0].Anchor != want || pivots.Lines[1].Anchor != want || pivots.Pane != rsi.Pane {
-		t.Fatalf("pivots of the rsi = %+v, want markers anchored to %+v in the pane %q", pivots, want, rsi.Pane)
+	// The pivot lows the signal fired on are joined to the ones before, on
+	// the rsi line and on the candles.
+	if places[pivot.Type]["low-connected"] != rsi || places[pivot.Type]["low-connected-candles"] != chart.PriceScale {
+		t.Fatalf("pivot shapes lie in %+v, want the signal pivots connected on the rsi line and the candles", places[pivot.Type])
 	}
-	if macd, ema := page.Definitions[drawn["macd"]], page.Definitions[drawn["ema"]]; ema.Pane != macd.ID || macd.Pane != macd.ID {
-		t.Fatalf("ema of the macd histogram is in the pane %q, want that of the macd, %q", ema.Pane, macd.Pane)
+	if macd, ema := places["macd"]["macdhist"], places["ema"]["ema"]; ema != macd || macd.Pane == rsi.Pane {
+		t.Fatalf("ema of the macd histogram lies in %+v, want the own pane of the macd, %+v", ema, macd)
 	}
 	// Only what the rule reads is a column.
 	if slices.ContainsFunc(result.IndicatorColumns, func(column IndicatorColumn) bool { return column.Key == `rsi("1h")` }) {
@@ -226,4 +246,35 @@ func TestBacktestDependenciesIncludeExitAndPriceRules(t *testing.T) {
 			t.Fatalf("dependency missing: %s", read.Variable.Name)
 		}
 	}
+}
+
+// chartedOf are the indicators the backtest chart of item draws.
+func chartedOf(t *testing.T, service *Service, item Strategy) []displayedIndicator {
+	t.Helper()
+	entry, err := service.compileEntry(item)
+	if err != nil {
+		t.Fatal(err)
+	}
+	displayed, err := service.displayedIndicators(entry)
+	if err != nil {
+		t.Fatal(err)
+	}
+	charted, err := service.chartedIndicators(displayed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return charted
+}
+
+// chartedShape returns the indicator among charted a shape draws, which
+// names the shape after its target, and the rest of the shape id, such as
+// the output of a line.
+func chartedShape(t *testing.T, charted []displayedIndicator, shape chart.Shape) (displayedIndicator, string) {
+	t.Helper()
+	cut := strings.LastIndex(shape.ID, "/")
+	index := slices.IndexFunc(charted, func(item displayedIndicator) bool { return cut >= 0 && item.target().Key() == shape.ID[:cut] })
+	if index < 0 {
+		t.Fatalf("shape %s draws no charted indicator", shape.ID)
+	}
+	return charted[index], shape.ID[cut+1:]
 }

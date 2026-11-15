@@ -111,27 +111,23 @@ func TestDivergenceMatchesItsRules(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, definition := range result.Charts[0].Definitions {
-		if definition.Selection.Type != pivot.DivergenceType {
+	// The markers sit on the RSI line of the divergence, which segments
+	// join on that line and on the candles.
+	var drawn []string
+	for _, shape := range result.Charts[0].Shapes {
+		target, local, _ := strings.Cut(shape.ID, "/")
+		if !strings.Contains(target, "|"+string(pivot.DivergenceType)+"|") {
 			continue
 		}
-		want := chart.LineAnchor{IndicatorID: definition.ID, Output: "rsi"}
-		if len(definition.Lines) != 3 || definition.Lines[0].Anchor != want || definition.Lines[1].Anchor != want || definition.Lines[2].Output != "rsi" {
-			t.Fatalf("divergence lines = %+v, want markers anchored to %+v", definition.Lines, want)
+		drawn = append(drawn, local)
+		switch {
+		case shape.Markers != nil && (len(shape.Markers.Points) == 0 || slices.ContainsFunc(shape.Markers.Points, func(marker chart.Marker) bool { return marker.LineValue == nil })):
+			t.Fatalf("divergence %s has no markers or markers off the RSI line", local)
+		case shape.Segments != nil && local == "bull-rsi" && len(shape.Segments.Items) == 0:
+			t.Fatal("bullish divergences have no segments")
 		}
-		// The bars are delivered for the segments of the markers, not drawn.
-		var names []string
-		for _, calculation := range result.Charts[0].Indicators {
-			if calculation.Type == pivot.DivergenceType {
-				for _, series := range calculation.Series {
-					names = append(names, series.Name)
-				}
-			}
-		}
-		if !slices.Equal(names, []string{"bull", "bull_bars", "bear", "bear_bars", "rsi"}) {
-			t.Fatalf("divergence series = %v, want the lines and their segments", names)
-		}
-		return
 	}
-	t.Fatal("divergence is not drawn")
+	if want := []string{"bull", "bear", "rsi", "bull-rsi", "bull-candles", "bear-rsi", "bear-candles"}; !slices.Equal(drawn, want) {
+		t.Fatalf("divergence shapes = %v, want %v", drawn, want)
+	}
 }

@@ -56,11 +56,12 @@ func (trigger Trigger) String() string {
 }
 
 // Frame is one chart delivery. A snapshot replaces the client chart; a tail
-// carries only candles and indicator points opened at or after From.
+// carries only the candles opened, and what of the shapes candles opened, at
+// or after the open time of its first candle, which replace what the chart
+// has from that time.
 type Frame struct {
 	Page     Page
 	Snapshot bool
-	From     time.Time
 }
 
 // LiveSession merges one stream's candle states with persisted closed history.
@@ -199,7 +200,7 @@ func (session *LiveSession) Next(ctx context.Context, trigger Trigger, limit int
 	}
 	frame = Frame{Page: extended, Snapshot: rebuild}
 	if !rebuild {
-		frame.From = pending.OpenTime
+		frame.Page = extended.since(pending.OpenTime)
 	}
 	return frame, true, nil
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strconv"
 	"time"
 
 	"crypto-scanner/internal/indicator"
@@ -37,9 +38,12 @@ type Request struct {
 	Indicators []indicator.Selection
 }
 type Page struct {
-	Symbol     string
-	Candles    []market.Candle
-	Indicators []indicator.Calculation
+	Symbol  string
+	Candles []market.Candle
+	// Shapes draw the indicators over the candles, and Panes are the panes
+	// below the candles they lie in.
+	Shapes     []Shape
+	Panes      []Pane
 	HasMore    bool
 	NextBefore *time.Time
 	// warmup holds the closed candles before Candles that indicators need to
@@ -51,22 +55,44 @@ type Page struct {
 type Service struct {
 	store      Store
 	indicators *indicator.Registry
+	drawers    *Drawers
 	catalog    CatalogSource
 	logger     *slog.Logger
 }
 
-func NewService(store Store, indicators *indicator.Registry, catalog CatalogSource, logger *slog.Logger) (*Service, error) {
-	if store == nil || indicators == nil || catalog == nil || logger == nil {
-		return nil, errors.New("chart store, indicator registry, catalog, and logger are required")
+func NewService(store Store, indicators *indicator.Registry, drawers *Drawers, catalog CatalogSource, logger *slog.Logger) (*Service, error) {
+	if store == nil || indicators == nil || drawers == nil || catalog == nil || logger == nil {
+		return nil, errors.New("chart store, indicator registry, drawers, catalog, and logger are required")
 	}
-	return &Service{store: store, indicators: indicators, catalog: catalog, logger: logger.With("module", "chart")}, nil
+	return &Service{store: store, indicators: indicators, drawers: drawers, catalog: catalog, logger: logger.With("module", "chart")}, nil
 }
 
-// Catalog returns the indicators clients should request on interval charts
-// and how to draw them.
-func (service *Service) Catalog(interval market.CandleInterval) []CatalogIndicator {
-	return service.catalog.ChartCatalog(interval)
+// Catalog is what the charts of an interval draw: the indicators clients
+// should request, and the panes a chart that requests exactly them has.
+type Catalog struct {
+	Indicators []CatalogIndicator
+	Panes      []Pane
 }
+
+// Catalog returns the catalog of interval charts. Drawers draw the same
+// shapes whatever the values, so drawing the indicators over no candles lays
+// out the panes of every frame of such a chart.
+func (service *Service) Catalog(interval market.CandleInterval) (Catalog, error) {
+	items := service.catalog.ChartCatalog(interval)
+	indicators := make([]Calculated, len(items))
+	for i, item := range items {
+		indicators[i] = Calculated{ID: indicatorID(i), Calculation: indicator.Calculation{Type: item.Selection.Type, Parameters: item.Selection.Parameters}, Scale: item.Scale}
+	}
+	drawing, err := service.drawers.Draw(nil, indicators)
+	if err != nil {
+		return Catalog{}, fmt.Errorf("lay out the %s chart catalog: %w", interval, err)
+	}
+	return Catalog{Indicators: items, Panes: drawing.Panes}, nil
+}
+
+// indicatorID names an indicator of a chart by its position in the request,
+// the same as in the catalog.
+func indicatorID(position int) string { return strconv.Itoa(position) }
 
 // Build resolves the symbol and loads the chart range with indicator warm-up.
 func (service *Service) Build(ctx context.Context, request Request) (Page, error) {
@@ -110,7 +136,7 @@ func (service *Service) build(ctx context.Context, instrument *market.Instrument
 	}
 	page.NextBefore = market.CandlePage{Candles: page.Candles, HasMore: page.HasMore}.NextBefore()
 	if indicators {
-		if page.Indicators, err = service.calculate(request.Interval, page.warmup, page.Candles, request.Indicators); err != nil {
+		if page, err = service.draw(page, request.Interval, request.Indicators); err != nil {
 			return Page{}, fmt.Errorf("%w: calculate: %w", ErrInvalidRequest, err)
 		}
 	}
@@ -197,11 +223,32 @@ func (service *Service) extend(page Page, interval market.CandleInterval, live *
 			candles = append(candles, *live)
 		}
 	}
-	results, err := service.calculate(interval, page.warmup, candles, configs)
+	page.Candles = candles
+	return service.draw(page, interval, configs)
+}
+
+// draw calculates the indicators over the candles of page and draws them. A
+// pane takes the scale of the catalog indicator with its selection; the
+// indicators are named by their position.
+func (service *Service) draw(page Page, interval market.CandleInterval, configs []indicator.Selection) (Page, error) {
+	calculations, err := service.calculate(interval, page.warmup, page.Candles, configs)
 	if err != nil {
 		return Page{}, err
 	}
-	page.Candles = candles
-	page.Indicators = results
+	catalog := service.catalog.ChartCatalog(interval)
+	indicators := make([]Calculated, len(calculations))
+	for i, calculation := range calculations {
+		indicators[i] = Calculated{ID: indicatorID(i), Calculation: calculation}
+		if selection, err := service.indicators.Normalize(configs[i]); err == nil {
+			if index := slices.IndexFunc(catalog, func(item CatalogIndicator) bool { return sameSelection(item.Selection, selection) }); index >= 0 {
+				indicators[i].Scale = catalog[index].Scale
+			}
+		}
+	}
+	drawing, err := service.drawers.Draw(page.Candles, indicators)
+	if err != nil {
+		return Page{}, err
+	}
+	page.Shapes, page.Panes = drawing.Shapes, drawing.Panes
 	return page, nil
 }

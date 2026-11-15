@@ -3516,7 +3516,7 @@ var functions = []spec{
 			{key: "multiplier", title: "Multiplier", description: "ATR multiplier for band width", kind: paramReal, minimum: 0, maximum: 3e+37, defaultValue: 3},
 		},
 		outputs: []output{
-			{name: "supertrend", style: indicator.OutputLine, direction: indicator.OutputDirection{Output: "trend", Fill: true}},
+			{name: "supertrend", style: indicator.OutputLine},
 			{name: "trend", style: indicator.OutputValue},
 		},
 		lookback: func(p []float64) int { return ta.SupertrendLookback(int(p[0]), p[1]) },

@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"crypto-scanner/internal/chart"
+	"crypto-scanner/internal/chart/draw"
 	"crypto-scanner/internal/indicator"
-	"crypto-scanner/internal/indicator/pivot"
 	"crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
@@ -18,102 +18,36 @@ import (
 // unusedStore satisfies the Store interface for calls that never persist.
 type unusedStore struct{ scannerindicator.Store }
 
-// newService colors the lines of each tone with a token named after it.
-func newService(store scannerindicator.Store, registry *indicator.Registry, palette ...string) (*scannerindicator.Service, error) {
-	tones := map[indicator.Tone]string{}
-	for _, tone := range indicator.Tones() {
-		tones[tone] = string(tone)
+func newService(store scannerindicator.Store, registry *indicator.Registry) (*scannerindicator.Service, error) {
+	drawers, err := chart.NewDrawers(registry, chart.Palette{Colors: []string{"yellow.5"}, Bullish: "green.6", Bearish: "red.6"}, draw.Default{}, nil)
+	if err != nil {
+		return nil, err
 	}
-	return scannerindicator.New(store, registry, palette, tones, slog.New(slog.DiscardHandler), func() {})
+	return scannerindicator.New(store, registry, drawers, slog.New(slog.DiscardHandler), func() {})
 }
 
-func TestPreviewPlacesIndicatorsByTheirSourceUnits(t *testing.T) {
+// Only previews take an indicator of another indicator, which is titled
+// after its source.
+func TestIndicatorsOfIndicatorsAreOnlyPreviewed(t *testing.T) {
 	registry, err := indicator.NewRegistry(talib.New()...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := newService(unusedStore{}, registry, "yellow.5")
+	service, err := newService(unusedStore{}, registry)
 	if err != nil {
 		t.Fatal(err)
 	}
-	source := func(field string) float64 { return float64(slices.Index(indicator.CandleFields, field)) }
-	tests := []struct {
-		name          string
-		indicatorType indicator.Type
-		field         string
-		want          chart.Placement
-	}{
-		{name: "overlay of prices", indicatorType: talib.EMAType, field: "close", want: chart.PlacementOverlay},
-		{name: "overlay of volumes", indicatorType: talib.EMAType, field: "volume", want: chart.PlacementVolume},
-		{name: "overlay of quote volumes", indicatorType: talib.EMAType, field: "quote_volume", want: chart.PlacementPane},
-		{name: "overlay of trade counts", indicatorType: talib.EMAType, field: "trades", want: chart.PlacementPane},
-		{name: "oscillator of volumes", indicatorType: talib.RSIType, field: "volume", want: chart.PlacementPane},
-	}
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			entry, err := service.Preview(indicator.Selection{Type: test.indicatorType, Parameters: indicator.Parameters{"source": source(test.field)}})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if entry.Placement != test.want {
-				t.Fatalf("placement = %q, want %q", entry.Placement, test.want)
-			}
-		})
-	}
-}
-
-// An indicator of another indicator is drawn where that source is; markers,
-// which are drawn on candles, are left out elsewhere.
-func TestPreviewPlacesIndicatorsOfIndicatorsWithTheirSource(t *testing.T) {
-	registry, err := indicator.NewRegistry(append(talib.New(), pivot.New())...)
+	rsi := indicator.Source{Selection: indicator.Selection{Type: talib.RSIType}, Output: "rsi"}
+	selection := indicator.Selection{Type: "sma", Parameters: indicator.Parameters{"source": rsi.Value()}}
+	entry, err := service.Preview(selection)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := newService(unusedStore{}, registry, "yellow.5")
-	if err != nil {
-		t.Fatal(err)
+	if entry.Title != "sma-rsi" || entry.Placement != chart.PlacementPane {
+		t.Errorf("sma of rsi is titled %q and placed %q, want sma-rsi in a pane", entry.Title, entry.Placement)
 	}
-	preview := func(selection indicator.Selection) chart.CatalogIndicator {
-		t.Helper()
-		entry, err := service.Preview(selection)
-		if err != nil {
-			t.Fatal(err)
-		}
-		item, _ := entry.ChartIndicator("id", "source", 0)
-		return item
-	}
-	of := func(indicatorType indicator.Type, source indicator.Type) indicator.Selection {
-		nested := indicator.Source{Selection: indicator.Selection{Type: source}, Output: string(source)}
-		return indicator.Selection{Type: indicatorType, Parameters: indicator.Parameters{"source": nested.Value()}}
-	}
-	rsi := preview(indicator.Selection{Type: talib.RSIType})
-	if item := preview(of("sma", talib.RSIType)); item.Placement != chart.PlacementPane || item.Pane != rsi.Pane || item.Lines[0].Title != "SMA 30 RSI 14" {
-		t.Errorf("sma of rsi = %+v, want a line titled SMA 30 RSI 14 in the pane %q", item, rsi.Pane)
-	}
-	if item := preview(of("sma", talib.EMAType)); item.Placement != chart.PlacementOverlay {
-		t.Errorf("sma of ema is placed %q, want over the candles", item.Placement)
-	}
-	// An oscillator is not in the units of its source.
-	if item := preview(of(talib.RSIType, "sma")); item.Placement != chart.PlacementPane || item.Pane != rsi.Pane {
-		t.Errorf("rsi of sma = %+v, want the pane %q", item, rsi.Pane)
-	}
-	// Only previews take an indicator of another indicator.
-	if _, err := service.Create(context.Background(), scannerindicator.Indicator{Selection: of("sma", talib.RSIType)}); !errors.Is(err, scannerindicator.ErrInvalidArgument) {
+	if _, err := service.Create(context.Background(), scannerindicator.Indicator{Selection: selection}); !errors.Is(err, scannerindicator.ErrInvalidArgument) {
 		t.Errorf("Create() of sma of rsi error = %v, want ErrInvalidArgument", err)
-	}
-	// Markers sit on the line of the source, wherever it is drawn.
-	anchor := chart.LineAnchor{IndicatorID: "source", Output: "rsi"}
-	if item := preview(of(pivot.Type, talib.RSIType)); item.Placement != chart.PlacementPane || item.Pane != rsi.Pane || len(item.Lines) != 2 ||
-		item.Lines[0].Style != chart.LineStyleMarkerAbove || item.Lines[0].Anchor != anchor || item.Lines[1].Anchor != anchor {
-		t.Errorf("pivot of rsi = %+v, want two marker lines on the rsi line in the pane %q", item, rsi.Pane)
-	}
-	if item := preview(of(pivot.Type, talib.EMAType)); item.Placement != chart.PlacementOverlay || len(item.Lines) != 2 || item.Lines[0].Anchor.Output != "ema" {
-		t.Errorf("pivot of ema = %+v, want two marker lines on the ema line over the candles", item)
-	}
-	// A source with a histogram has a pane of its own, named by its id.
-	histogram := indicator.Source{Selection: indicator.Selection{Type: "macd"}, Output: "macdhist"}
-	if item := preview(indicator.Selection{Type: talib.EMAType, Parameters: indicator.Parameters{"source": histogram.Value()}}); item.Placement != chart.PlacementPane || item.Pane != "source" {
-		t.Errorf("ema of macdhist = %+v, want the pane of its source", item)
 	}
 }
 
@@ -139,7 +73,7 @@ func TestIndicatorPeriods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := newService(&memoryStore{}, registry, "yellow.5")
+	service, err := newService(&memoryStore{}, registry)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,66 +112,5 @@ func TestIndicatorPeriods(t *testing.T) {
 	}
 	if _, err := service.Create(ctx, scannerindicator.Indicator{Selection: rsi(30), Periods: weekly}); !errors.Is(err, scannerindicator.ErrLimit) {
 		t.Fatalf("chart limit error = %v, want ErrLimit", err)
-	}
-}
-
-// Charts draw pivots as markers moved back to the pivot candle, which lies
-// the confirming candles before the value; markers exist only over candles.
-func TestPivotsAreDrawnAsShiftedMarkers(t *testing.T) {
-	registry, err := indicator.NewRegistry(pivot.New())
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := newService(unusedStore{}, registry, "yellow.5")
-	if err != nil {
-		t.Fatal(err)
-	}
-	entry, err := service.Preview(indicator.Selection{Type: pivot.Type, Parameters: indicator.Parameters{"right": 3}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	item, _ := entry.ChartIndicator("pivot", "", 0)
-	want := []chart.IndicatorLine{
-		{Output: "high", Title: "PIVOT 5 3 high", Color: "yellow.5", Style: chart.LineStyleMarkerAbove, Shift: 3},
-		{Output: "low", Title: "PIVOT 5 3 low", Color: "yellow.5", Style: chart.LineStyleMarkerBelow, Shift: 3},
-	}
-	if !slices.Equal(item.Lines, want) {
-		t.Fatalf("lines = %+v, want %+v", item.Lines, want)
-	}
-	item.Placement = chart.PlacementVolume
-	if err := chart.ValidateIndicator(registry, item); err == nil {
-		t.Fatal("markers outside the candles are accepted")
-	}
-}
-
-// Lines with a tone take its color and leave the palette to the others, so
-// an indicator with toned lines does not recolor those after it.
-func TestTonedLinesDoNotTakePaletteColors(t *testing.T) {
-	modules := talib.New()
-	rsi := modules[slices.IndexFunc(modules, func(module indicator.Implementation) bool {
-		return module.Describe().Type == talib.RSIType
-	})]
-	registry, err := indicator.NewRegistry(append(modules, pivot.NewDivergence(rsi))...)
-	if err != nil {
-		t.Fatal(err)
-	}
-	service, err := newService(&memoryStore{}, registry, "yellow.5", "blue.5", "violet.5")
-	if err != nil {
-		t.Fatal(err)
-	}
-	daily := []scannerindicator.Period{{Interval: market.IntervalDay, ShowInChart: true}}
-	for _, selection := range []indicator.Selection{{Type: pivot.DivergenceType}, {Type: talib.RSIType, Parameters: indicator.Parameters{"period": 21}}} {
-		if _, err := service.Create(context.Background(), scannerindicator.Indicator{Selection: selection, Periods: daily}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	var colors []string
-	for _, item := range service.ChartCatalog(market.IntervalDay) {
-		for _, line := range item.Lines {
-			colors = append(colors, line.Output+" "+line.Color)
-		}
-	}
-	if want := []string{"bull bullish", "bear bearish", "rsi yellow.5", "rsi blue.5"}; !slices.Equal(colors, want) {
-		t.Fatalf("line colors = %v, want %v", colors, want)
 	}
 }

@@ -21,9 +21,15 @@
  *
  * OpenAPI spec version: 1.0.0
  */
-import type { IndicatorPoint } from './indicatorPoint.ts';
 
-export interface IndicatorSeries {
-  name: string;
-  points: IndicatorPoint[];
-}
+/**
+ * Where a shape lies: `overlay` over the candles on their price scale; `volume` over the volume bars on their scale; `pane` in the pane its `pane` names.
+ */
+export type ChartPlacement = typeof ChartPlacement[keyof typeof ChartPlacement];
+
+
+export const ChartPlacement = {
+  overlay: 'overlay',
+  volume: 'volume',
+  pane: 'pane',
+} as const;

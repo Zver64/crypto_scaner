@@ -148,11 +148,12 @@ type message struct {
 }
 
 // failureKey names a recurring failure of the monitor: an operation and the
-// strategy and instrument it concerns, if any.
+// strategy, instrument, and Telegram recipient it concerns, if any.
 type failureKey struct {
 	operation  string
 	strategy   uuid.UUID
 	instrument int64
+	telegramID int64
 }
 
 // loadStatesFailure is the failure of loading the stored states.
@@ -419,7 +420,10 @@ func (monitor *Monitor) send(ctx context.Context, recipients []Recipient, text f
 }
 
 func (monitor *Monitor) deliver(ctx context.Context, item message) {
+	key := failureKey{operation: "deliver", telegramID: item.telegramID}
 	if err := monitor.sender.SendStrategyMessage(ctx, item.telegramID, item.text); err != nil {
-		monitor.logger.WarnContext(ctx, "strategy Telegram delivery failed", "error", err)
+		monitor.failures.Warn(ctx, key, "strategy Telegram delivery failed", "telegram_id", item.telegramID, "error", err)
+		return
 	}
+	monitor.failures.Recover(ctx, key, "strategy Telegram delivery recovered", "telegram_id", item.telegramID)
 }

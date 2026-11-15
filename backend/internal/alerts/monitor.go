@@ -84,11 +84,15 @@ type Monitor struct {
 	sends   chan Fired
 	// loadFailure warns once while loads of the alerts keep failing.
 	loadFailure *logging.Failure
+	// fireFailure warns once while persisting fired alerts keeps failing.
+	fireFailure *logging.Failure
+	// deliveries warn once per Telegram ID while its deliveries keep failing.
+	deliveries *logging.Failures[int64]
 }
 
 func NewMonitor(store MonitorStore, feed markettrade.Feed, sender AlertSender, logger *slog.Logger) *Monitor {
 	logger = logger.With("module", "alerts")
-	return &Monitor{store: store, feed: feed, sender: sender, logger: logger, loadFailure: logging.NewFailure(logger), ops: make(chan liveOperation, 128), refresh: make(chan struct{}, 1), sends: make(chan Fired, 128)}
+	return &Monitor{store: store, feed: feed, sender: sender, logger: logger, loadFailure: logging.NewFailure(logger), fireFailure: logging.NewFailure(logger), deliveries: logging.NewFailures[int64](logger), ops: make(chan liveOperation, 128), refresh: make(chan struct{}, 1), sends: make(chan Fired, 128)}
 }
 func (m *Monitor) Apply(a Alert) { copy := a; m.enqueue(liveOperation{apply: &copy}) }
 func (m *Monitor) Remove(userID, id int64) {
@@ -350,8 +354,8 @@ func (m *Monitor) trade(ctx context.Context, states map[string]*symbolState, e m
 }
 
 // fire hands a triggered alert to the send workers, which persist it before
-// delivery. A failed persistence leaves the alert in the database, and the
-// next reload re-arms it.
+// delivery. A failed persistence leaves the alert in the database and
+// requests a reload, which re-arms it.
 func (m *Monitor) fire(ctx context.Context, s *symbolState, a Alert, price string, at time.Time) {
 	delete(s.alerts, a.ID)
 	select {
@@ -366,13 +370,17 @@ func (m *Monitor) fire(ctx context.Context, s *symbolState, a Alert, price strin
 func (m *Monitor) deliver(ctx context.Context, item Fired) {
 	fired, err := m.store.FireAlert(ctx, item.Alert.ID, item.Alert.Version)
 	if err != nil {
-		m.logger.WarnContext(ctx, "fire price alert failed", "alert_id", item.Alert.ID, "error", err)
+		m.fireFailure.Warn(ctx, "fire price alert failed", "alert_id", item.Alert.ID, "error", err)
+		m.Changed()
 		return
 	}
+	m.fireFailure.Recover(ctx, "fire price alert recovered")
 	if !fired {
 		return
 	}
 	if err := m.sender.SendPriceAlert(ctx, item); err != nil {
-		m.logger.WarnContext(ctx, "price alert Telegram delivery failed", "alert_id", item.Alert.ID, "error", err)
+		m.deliveries.Warn(ctx, item.Alert.TelegramID, "price alert Telegram delivery failed", "alert_id", item.Alert.ID, "telegram_id", item.Alert.TelegramID, "error", err)
+		return
 	}
+	m.deliveries.Recover(ctx, item.Alert.TelegramID, "price alert Telegram delivery recovered", "telegram_id", item.Alert.TelegramID)
 }

@@ -2,6 +2,7 @@ package alerts
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"slices"
 	"sync"
@@ -202,4 +203,97 @@ func (s *alertSenderFake) SendPriceAlert(ctx context.Context, fired Fired) error
 	defer s.mu.Unlock()
 	s.sent = append(s.sent, fired)
 	return nil
+}
+
+// An alert whose fire failed to persist stays armed: a later crossing fires
+// it again.
+func TestMonitorRearmsAlertAfterFailedFire(t *testing.T) {
+	store := &failingFireStoreFake{alert: Alert{ID: 1, Version: 1, Symbol: "BTCUSDT", Target: "100"}, fires: make(chan error, 4)}
+	feed := &eventFeedFake{tradeFeedFake: newTradeFeedFake(), ready: make(chan struct{}, 1)}
+	sender := &alertSenderFake{}
+	monitor := NewMonitor(store, feed, sender, slog.New(slog.DiscardHandler))
+	ctx, stop := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- monitor.Run(ctx) }()
+	defer func() { stop(); <-done }()
+
+	tradeID := int64(0)
+	cross := func() {
+		for _, price := range []string{"90", "110"} {
+			tradeID++
+			feed.push(markettrade.Event{Symbol: "BTCUSDT", Price: price, Low: price, High: price, TradeID: tradeID, Epoch: 1})
+		}
+	}
+	cross()
+	if err := <-store.fires; err == nil {
+		t.Fatal("first fire succeeded, want the failing one")
+	}
+	deadline := time.After(5 * time.Second)
+	for {
+		cross()
+		select {
+		case err := <-store.fires:
+			if err != nil {
+				t.Fatalf("second fire failed: %v", err)
+			}
+			return
+		case <-deadline:
+			t.Fatal("alert did not fire again after its fire failed to persist")
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+}
+
+// failingFireStoreFake monitors one BTCUSDT alert, fails its first fire, and
+// reports each fire's result on fires.
+type failingFireStoreFake struct {
+	alert Alert
+	fires chan error
+	mu    sync.Mutex
+	calls int
+}
+
+func (s *failingFireStoreFake) ListEnabledAlerts(context.Context) ([]Alert, error) {
+	return []Alert{s.alert}, nil
+}
+func (s *failingFireStoreFake) ListMonitoredSymbols(context.Context) ([]string, error) {
+	return []string{"BTCUSDT"}, nil
+}
+func (s *failingFireStoreFake) FireAlert(context.Context, int64, int64) (bool, error) {
+	s.mu.Lock()
+	s.calls++
+	first := s.calls == 1
+	s.mu.Unlock()
+	var err error
+	if first {
+		err = errors.New("database unavailable")
+	}
+	s.fires <- err
+	return !first, err
+}
+
+// eventFeedFake delivers the pushed trade events.
+type eventFeedFake struct {
+	*tradeFeedFake
+	ready  chan struct{}
+	mu     sync.Mutex
+	events []markettrade.Event
+}
+
+func (feed *eventFeedFake) push(event markettrade.Event) {
+	feed.mu.Lock()
+	feed.events = append(feed.events, event)
+	feed.mu.Unlock()
+	select {
+	case feed.ready <- struct{}{}:
+	default:
+	}
+}
+func (feed *eventFeedFake) Ready() <-chan struct{} { return feed.ready }
+func (feed *eventFeedFake) Drain() []markettrade.Event {
+	feed.mu.Lock()
+	defer feed.mu.Unlock()
+	events := feed.events
+	feed.events = nil
+	return events
 }

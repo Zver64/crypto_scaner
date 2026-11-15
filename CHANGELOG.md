@@ -1,5 +1,24 @@
 # Changelog
 
+## [7.0.0](https://github.com/Zver64/crypto_scaner/compare/v6.0.0...v7.0.0) (2026-11-15)
+
+
+### ⚠ BREAKING CHANGES
+
+* TA-Lib changed defaults, so expressions that leave them out now mean BBANDS with a period of 20 instead of 5, and APO and PPO over an EMA instead of an SMA.
+* a number in place of a moving average type no longer compiles; write sma, ema, wma, dema, tema, trima, kama, mama, or t3. Saved strategies using numbers must be rewritten.
+* ValueWhen(x) and ValueWhen(x, n) no longer compile; write ValueWhen(x, x, 0) and ValueWhen(x, x, n). Saved strategies using the short forms must be rewritten.
+
+### Features
+
+* add an RSI divergence indicator ([3256ba5](https://github.com/Zver64/crypto_scaner/commit/3256ba5977a1210f7ca9baa481feb52e261b06a9))
+* draw divergences as lines between their pivots and let them use price pivots ([0c047e8](https://github.com/Zver64/crypto_scaner/commit/0c047e8e06724e17bbea10f06d2789090bf48cff))
+* fill the SUPERTREND area between its line and the candle bodies ([f7a6a67](https://github.com/Zver64/crypto_scaner/commit/f7a6a67690191e98f4490b5f69816dae6a5acbf8))
+* make ValueWhen take a when, a value, and an occurrence like TradingView ([e9ba4f3](https://github.com/Zver64/crypto_scaner/commit/e9ba4f3489d2a0b5e742f784b3098e9f82925e0e))
+* offer every indicator type with its parameters and an indicator source in the rule builder ([8863f6d](https://github.com/Zver64/crypto_scaner/commit/8863f6d3f35ca8fc5777e872f7194285d02701f1))
+* upgrade TA-Lib to 0.8.3 and color line indicators by direction ([4669eda](https://github.com/Zver64/crypto_scaner/commit/4669eda1d9dcaa62620cf8c16c38537ab3fdd339))
+* write moving average types by name ([d9ff4a5](https://github.com/Zver64/crypto_scaner/commit/d9ff4a54ca1ce8d81d4fb03c151e7d7972a00b97))
+
 ## [6.0.0](https://github.com/Zver64/crypto_scaner/compare/v5.2.0...v6.0.0) (2026-11-14)
 
 

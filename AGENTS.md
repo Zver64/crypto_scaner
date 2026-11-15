@@ -11,6 +11,7 @@ Agent and subagent orchestration is done via herdr.
 - `frontend/`: React Telegram Mini App built with Vite and TanStack Router.
 - `backend/cmd/scanner`: the `scanner` CLI for creating strategies and backtesting saved or unsaved ones against a running backend (see CLI below).
 - `docs/agents/`: repository-specific configuration consumed by engineering skills.
+- `docs/plans/`: local plans for future work (gitignored), one Markdown file per task, written in Russian: `# Title`, then `## Цель` (the result the user wants), `## Контекст` (what exists, with paths), `## Что сделать` (steps as Markdown checkboxes, `- [ ]`, which the executing agent ticks `- [x]` as it completes them). A plan holds only decided work: ask the user every open question before writing it, and never leave questions or undecided options in a plan. Add a plan there when the user postpones a task; delete it once the task is done.
 - `compose.yaml`: local PostgreSQL, migrations, and backend development stack (frontend runs on the host).
 - `compose.production.yaml`: production deployment stack.
 

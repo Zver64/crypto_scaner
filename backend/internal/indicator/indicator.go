@@ -105,7 +105,21 @@ const (
 	// below the candles holding a value.
 	OutputMarkerAbove OutputStyle = "marker_above"
 	OutputMarkerBelow OutputStyle = "marker_below"
+	// OutputValue is read, such as by rules and tables, but never drawn.
+	OutputValue OutputStyle = "value"
 )
+
+// Tone is the fixed meaning of an output that clients color accordingly,
+// instead of with the next color of their palette.
+type Tone string
+
+const (
+	ToneBullish Tone = "bullish"
+	ToneBearish Tone = "bearish"
+)
+
+// Tones are every tone an output may have.
+func Tones() []Tone { return []Tone{ToneBullish, ToneBearish} }
 
 // OutputDescriptor describes one output series returned by Calculate.
 type OutputDescriptor struct {
@@ -123,6 +137,13 @@ type OutputDescriptor struct {
 	// of this output are drawn on; empty draws them over the candles, or on
 	// the line of a nested source.
 	Anchor string
+	// Segment names the sparse output of the same indicator holding, at each
+	// value of this marker output, the number of candles back from the marker
+	// to where a line drawn to the marker starts; empty draws no line.
+	Segment string
+	// Tone is the fixed meaning of the output; empty colors it from the
+	// palette.
+	Tone Tone
 }
 
 // Descriptor is the self-description of an implementation. Registries use it

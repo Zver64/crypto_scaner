@@ -110,6 +110,20 @@ export function createChartSeriesData(
 				}),
 			),
 		),
+		segments: Object.fromEntries(
+			catalog.flatMap(({ id, lines }) =>
+				lines.flatMap(({ segment }) =>
+					segment
+						? [
+								[
+									`${id}:${segment}`,
+									createIndicatorData(slots, points[id]?.[segment] ?? []),
+								],
+							]
+						: [],
+				),
+			),
+		),
 	};
 }
 
@@ -274,14 +288,14 @@ export function createMarkerDataSelector(
 export function createCandleMarkers(
 	markers: readonly ChartMarker[] | undefined,
 	indicators: readonly ChartIndicatorOptions[],
-	lines: Readonly<Record<string, ChartLineData>>,
+	series: Pick<ChartSeriesData, "candles" | "lines">,
 	themeColor: (color: string) => string,
 ): readonly ChartMarker[] | undefined {
 	const indicatorMarkers = indicators.flatMap(
 		({ id, lines: indicatorLines, placement }) =>
 			placement === "overlay"
 				? indicatorLines.flatMap((line) =>
-						line.anchor ? [] : lineMarkers(id, line, lines, themeColor),
+						line.anchor ? [] : lineMarkers(id, line, series, themeColor),
 					)
 				: [],
 	);
@@ -298,7 +312,7 @@ export function createCandleMarkers(
 // merged.
 export function createAnchoredMarkers(
 	indicators: readonly ChartIndicatorOptions[],
-	lines: Readonly<Record<string, ChartLineData>>,
+	series: Pick<ChartSeriesData, "candles" | "lines">,
 	themeColor: (color: string) => string,
 ): Readonly<Record<string, readonly ChartMarker[]>> {
 	const markers: Record<string, ChartMarker[]> = {};
@@ -307,13 +321,13 @@ export function createAnchoredMarkers(
 			if (!line.anchor) continue;
 			const key = `${line.anchor.indicator_id}:${line.anchor.output}`;
 			const anchored = new Set(
-				(lines[key]?.data ?? []).flatMap((slot) =>
+				(series.lines[key]?.data ?? []).flatMap((slot) =>
 					"value" in slot ? [slot.time] : [],
 				),
 			);
 			markers[key] = [
 				...(markers[key] ?? []),
-				...lineMarkers(id, line, lines, themeColor).filter(({ time }) =>
+				...lineMarkers(id, line, series, themeColor).filter(({ time }) =>
 					anchored.has(time),
 				),
 			].sort((first, second) => first.time - second.time);
@@ -322,47 +336,62 @@ export function createAnchoredMarkers(
 	return markers;
 }
 
-// The segments between marker values: where a connected time falls on a candle
-// slot holding a value of a marker line, that value is connected with the
-// previous value of the line, both where their markers are drawn. The segments
-// lie where the markers sit: on the candles, or in the pane and on the scale of
-// the anchor. An anchored line also connects the same two candles, from low to
-// low under them or from high to high over them.
+// The segments ending at marker values, where the markers are drawn. A line
+// with a segment output connects each value with the candle that output
+// holds, the number of candles back from its marker; any other line connects
+// the value on a slot whose time is connected with its previous value. The
+// segments lie where the markers sit: on the candles, or in the pane and on
+// the scale of the anchor. An anchored line also connects the same two
+// candles, from low to low under them or from high to high over them. A
+// segment output's start lies on the anchor line, or on the candles without
+// one.
 export function createMarkerSegments(
 	connected: readonly string[] | undefined,
 	{ indicators, panes }: ChartIndicatorLayout,
-	{ candles, lines }: Pick<ChartSeriesData, "candles" | "lines">,
+	{
+		candles,
+		lines,
+		segments,
+	}: Pick<ChartSeriesData, "candles" | "lines" | "segments">,
 	interval: ChartInterval,
 ): ChartMarkerSegments[] {
-	if (!connected || connected.length === 0) return [];
 	const times = new Set<number>(
-		connected.map((time) => candleOpenTime(time, interval)),
+		(connected ?? []).map((time) => candleOpenTime(time, interval)),
 	);
 	return indicators.flatMap(({ id, lines: indicatorLines, placement }) =>
 		indicatorLines.flatMap(
-			({ anchor, color, output, shift, style }): ChartMarkerSegments[] => {
+			({
+				anchor,
+				color,
+				output,
+				segment,
+				shift,
+				style,
+			}): ChartMarkerSegments[] => {
 				if (style === "line") return [];
 				const key = `${id}:${output}`;
 				const data = lines[key]?.data ?? [];
-				// The slots of the two values of each segment.
-				const pairs: [number, number][] = [];
-				let previous: number | undefined;
-				data.forEach((slot, index) => {
-					if (!("value" in slot)) return;
-					if (previous !== undefined && times.has(slot.time)) {
-						pairs.push([previous, index]);
-					}
-					previous = index;
-				});
+				// The slots of the two values of each segment; a start from a
+				// segment output is a slot before the value, so it is shifted
+				// back like the values.
+				const pairs = segment
+					? segmentPairs(candles, data, segments[`${id}:${segment}`] ?? [])
+					: connectedPairs(data, times);
+				// The slot of the candle a value's marker is drawn on.
+				const drawn = (index: number) => candleSlot(candles, index, -shift);
 				const ownPoint = (index: number) => {
 					const slot = data[index];
-					const time = data[index - shift]?.time;
+					const at = drawn(index);
+					if (at === undefined) return undefined;
+					const time = data[at]?.time;
 					return slot && "value" in slot && time !== undefined
 						? { time, value: slot.value }
 						: undefined;
 				};
 				const candlePoint = (index: number) => {
-					const candle = candles[index - shift];
+					const at = drawn(index);
+					if (at === undefined) return undefined;
+					const candle = candles[at];
 					return candle && "open" in candle
 						? {
 								time: candle.time,
@@ -370,12 +399,27 @@ export function createMarkerSegments(
 							}
 						: undefined;
 				};
-				const segments: ChartMarkerSegments[] = [];
+				const anchorData = anchor
+					? (lines[`${anchor.indicator_id}:${anchor.output}`]?.data ?? [])
+					: [];
+				const anchorPoint = (index: number) => {
+					const at = drawn(index);
+					if (at === undefined) return undefined;
+					const slot = anchorData[at];
+					return slot && "value" in slot
+						? { time: slot.time, value: slot.value }
+						: undefined;
+				};
+				const drawnSegments: ChartMarkerSegments[] = [];
 				if (!anchor) {
 					if (placement !== "overlay") return [];
-					segments.push({
+					drawnSegments.push({
 						color,
-						data: segmentData(pairs, ownPoint),
+						data: segmentData(
+							pairs,
+							segment ? candlePoint : ownPoint,
+							ownPoint,
+						),
 						key,
 						pane: 0,
 						scale: "price",
@@ -390,42 +434,104 @@ export function createMarkerSegments(
 						(indicator) => indicator.id === anchor.indicator_id,
 					)?.placement;
 					if (anchorPlacement !== undefined) {
-						segments.push({
+						drawnSegments.push({
 							color,
-							data: segmentData(pairs, ownPoint),
+							data: segmentData(
+								pairs,
+								segment ? anchorPoint : ownPoint,
+								ownPoint,
+							),
 							key,
 							pane: pane + 1,
 							scale: anchorPlacement === "volume" ? "volume" : "price",
 						});
 					}
-					segments.push({
+					drawnSegments.push({
 						color,
-						data: segmentData(pairs, candlePoint),
+						data: segmentData(pairs, candlePoint, candlePoint),
 						key: `${key}:candles`,
 						pane: 0,
 						scale: "price",
 					});
 				}
-				return segments.filter(({ data }) => data.length > 0);
+				return drawnSegments.filter(({ data }) => data.length > 0);
 			},
 		),
 	);
 }
 
+// The slot of each value of a marker line on a connected time, paired with
+// the slot of the previous value.
+function connectedPairs(
+	data: readonly ChartIndicatorSlot[],
+	times: ReadonlySet<number>,
+): [number, number][] {
+	const pairs: [number, number][] = [];
+	let previous: number | undefined;
+	data.forEach((slot, index) => {
+		if (!("value" in slot)) return;
+		if (previous !== undefined && times.has(slot.time)) {
+			pairs.push([previous, index]);
+		}
+		previous = index;
+	});
+	return pairs;
+}
+
+// The slot of each value of a marker line, paired with the slot of the
+// candle the number of candles before it that its segment output holds there.
+// A start before the first slot drops the pair.
+function segmentPairs(
+	candles: readonly ChartCandleSlot[],
+	data: readonly ChartIndicatorSlot[],
+	starts: readonly ChartIndicatorSlot[],
+): [number, number][] {
+	return data.flatMap((slot, index): [number, number][] => {
+		const bars = starts[index];
+		const start =
+			"value" in slot && bars && "value" in bars && bars.value > 0
+				? candleSlot(candles, index, -bars.value)
+				: undefined;
+		return start === undefined ? [] : [[start, index]];
+	});
+}
+
+// The slot of the candle count candles after the one in slot index, or before
+// it for a negative count, skipping the empty slots of missing candles;
+// undefined past the slots.
+function candleSlot(
+	candles: readonly ChartCandleSlot[],
+	index: number,
+	count: number,
+): number | undefined {
+	const step = Math.sign(count);
+	let slot = index;
+	for (let left = Math.abs(count); left > 0;) {
+		slot += step;
+		const candle = candles[slot];
+		if (!candle) return undefined;
+		if ("open" in candle) left--;
+	}
+	return slot;
+}
+
 // The points of segments in ascending order as the data of one line series:
 // segments sharing a point meet there, and the end of a segment followed by a
 // gap colors the join to the next segment transparent. A segment missing a
-// point is not drawn.
+// point, or starting before the end of the one before, is not drawn.
 function segmentData(
 	pairs: readonly (readonly [number, number])[],
-	point: (index: number) => ChartMarkerSegments["data"][number] | undefined,
+	startPoint: (
+		index: number,
+	) => ChartMarkerSegments["data"][number] | undefined,
+	endPoint: (index: number) => ChartMarkerSegments["data"][number] | undefined,
 ): ChartMarkerSegments["data"] {
 	const data: ChartMarkerSegments["data"][number][] = [];
 	for (const [from, to] of pairs) {
-		const start = point(from);
-		const end = point(to);
-		if (!start || !end) continue;
+		const start = startPoint(from);
+		const end = endPoint(to);
 		const last = data.at(-1);
+		if (!start || !end || (last && start.time < last.time)) continue;
 		if (last?.time !== start.time) {
 			if (last)
 				data[data.length - 1] = { ...last, color: markerSegmentGapColor };
@@ -437,18 +543,18 @@ function segmentData(
 }
 
 // The markers of a line drawn as markers: a circle for each value, moved the
-// line's shift of candle slots earlier. A marker moved before the first slot
-// is not drawn.
+// line's shift of candles earlier. A marker moved before the first candle is
+// not drawn.
 function lineMarkers(
 	id: string,
 	{ color, output, shift, style }: ChartIndicatorLine,
-	lines: Readonly<Record<string, ChartLineData>>,
+	{ candles, lines }: Pick<ChartSeriesData, "candles" | "lines">,
 	themeColor: (color: string) => string,
 ): ChartMarker[] {
 	if (style === "line") return [];
 	const data = lines[`${id}:${output}`]?.data ?? [];
 	return data.flatMap(({ time }, index): ChartMarker[] =>
-		drawnValue(data, { shift, style }, index) === undefined
+		drawnValue(candles, data, { shift, style }, index) === undefined
 			? []
 			: [
 					{
@@ -462,14 +568,23 @@ function lineMarkers(
 }
 
 // The value of a line drawn at a candle slot: the value of that slot, or for
-// a line drawn as markers the value held the line's shift of slots later,
-// whose marker is drawn here.
+// a line drawn as markers on a candle the value held the line's shift of
+// candles later, whose marker is drawn here.
 function drawnValue(
+	candles: readonly ChartCandleSlot[],
 	data: readonly ChartIndicatorSlot[],
 	{ shift, style }: Pick<ChartIndicatorLine, "shift" | "style">,
 	slotIndex: number,
 ): number | undefined {
-	const slot = data[style === "line" ? slotIndex : slotIndex + shift];
+	const candle = candles[slotIndex];
+	const index =
+		style === "line"
+			? slotIndex
+			: candle && "open" in candle
+				? candleSlot(candles, slotIndex, shift)
+				: undefined;
+	if (index === undefined) return undefined;
+	const slot = data[index];
 	return slot && "value" in slot ? slot.value : undefined;
 }
 
@@ -669,14 +784,19 @@ export function nextCandleOpen(value: string, interval: ChartInterval): string {
 // line drawn as markers shows the value of the marker drawn on the slot.
 export function createIndicatorLegend(
 	indicators: readonly ChartIndicatorOptions[],
-	lines: Readonly<Record<string, ChartLineData>>,
+	{ candles, lines }: Pick<ChartSeriesData, "candles" | "lines">,
 	slotIndex: number,
 ): ChartLegendItem[] {
 	return indicators.flatMap((indicator) =>
 		indicator.lines.map((line) => {
 			const { color, output, title } = line;
 			const key = `${indicator.id}:${output}`;
-			const drawn = drawnValue(lines[key]?.data ?? [], line, slotIndex);
+			const drawn = drawnValue(
+				candles,
+				lines[key]?.data ?? [],
+				line,
+				slotIndex,
+			);
 			const value =
 				drawn === undefined
 					? null

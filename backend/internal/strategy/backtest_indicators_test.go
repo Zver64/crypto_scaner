@@ -21,10 +21,7 @@ func snapshotTestService(t *testing.T, store *backtestStore) *Service {
 	t.Helper()
 	registry := testRegistry(t)
 	// No configured rows or writes: Preview must resolve all dependencies.
-	source, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, []string{"yellow.5", "blue.5"}, slog.New(slog.DiscardHandler), func() {})
-	if err != nil {
-		t.Fatal(err)
-	}
+	source := testScannerIndicators(t, registry, "yellow.5", "blue.5")
 	service, err := NewService(store, source, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)

@@ -57,6 +57,11 @@ type IndicatorLine struct {
 	// Anchor is the line the markers of an indicator of another indicator
 	// sit on, in the pane of that line.
 	Anchor LineAnchor
+	// Segment names the output of the same indicator holding, at each value
+	// of a marker line, the number of candles back from the marker to where
+	// a line drawn to the marker starts, on the anchor and on the candles.
+	// Empty draws no such line.
+	Segment string
 }
 
 // IndicatorLevel is a labeled horizontal reference line in a pane.
@@ -141,6 +146,14 @@ func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicato
 			}
 		default:
 			return fmt.Errorf("line %q has unknown style %q", line.Output, line.Style)
+		}
+		if line.Segment != "" {
+			if line.Style == LineStyleLine {
+				return fmt.Errorf("line %q has a segment, which only markers have", line.Output)
+			}
+			if !slices.Contains(outputs, line.Segment) {
+				return fmt.Errorf("line %q draws segments from %q, which is not produced by %q", line.Output, line.Segment, item.Selection.Type)
+			}
 		}
 		if line.Shift < 0 {
 			return fmt.Errorf("line %q has a negative shift", line.Output)

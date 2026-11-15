@@ -70,7 +70,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	var strategyMonitor *strategy.Monitor
 	var alertMonitor *alerts.Monitor
 	var scannerIndicators *scannerindicator.Service
-	scannerIndicators, err = scannerindicator.New(store, indicatorRegistry, chartPalette, logger, func() {
+	scannerIndicators, err = scannerindicator.New(store, indicatorRegistry, chartPalette, chartTones, logger, func() {
 		if closedIndicators == nil {
 			return
 		}

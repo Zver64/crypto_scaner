@@ -13,7 +13,6 @@ import (
 	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
-	"crypto-scanner/internal/scannerindicator"
 
 	"github.com/google/uuid"
 )
@@ -21,10 +20,7 @@ import (
 func validationTestService(t *testing.T) *Service {
 	t.Helper()
 	registry := testRegistry(t)
-	indicators, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, []string{"yellow.5"}, slog.New(slog.DiscardHandler), func() {})
-	if err != nil {
-		t.Fatal(err)
-	}
+	indicators := testScannerIndicators(t, registry, "yellow.5")
 	service, err := NewService(newBacktestStore(market.IntervalHour, nil), indicators, registry, noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
 	if err != nil {
 		t.Fatal(err)
@@ -132,7 +128,7 @@ func TestCompileRejectsInvalidCalls(t *testing.T) {
 // end, numbers without trailing zeros, and choices by name.
 func TestCallsAreSpelledCanonically(t *testing.T) {
 	registry := testRegistry(t)
-	source := `rsi( "1h", 14 ) > 30 && sma("1d", 30, volume) > 0 && bbands_upperband("1h", 20, 2.50) > close("1h") && rsi("1h") < 70`
+	source := `rsi( "1h", 14 ) > 30 && sma("1d", 30, volume) > 0 && bbands_upperband("1h", 20, 2.50) > close("1h") && rsi("1h") < 70 && divergence_bull("1h", 5, 5, rsi) > divergence_bear("1h", 5, 5.0, price)`
 	compiled, err := Compile(source, registry, EntryRule)
 	if err != nil {
 		t.Fatal(err)
@@ -141,18 +137,18 @@ func TestCallsAreSpelledCanonically(t *testing.T) {
 	for _, read := range compiled.Reads() {
 		names = append(names, read.Variable.Name)
 	}
-	if want := []string{`bbands_upperband("1h", 20, 2.5)`, `close("1h")`, `rsi("1h")`, `rsi("1h")`, `sma("1d", 30, volume)`}; !slices.Equal(names, want) {
+	if want := []string{`bbands_upperband("1h", 20, 2.5)`, `close("1h")`, `divergence_bear("1h", 5, 5, price)`, `divergence_bull("1h")`, `rsi("1h")`, `rsi("1h")`, `sma("1d", 30, volume)`}; !slices.Equal(names, want) {
 		t.Fatalf("reads = %q, want %q", names, want)
 	}
 	canonical, targets := Canonical(source, registry)
-	if want := `rsi("1h") > 30 && sma("1d", 30, volume) > 0 && bbands_upperband("1h", 20, 2.5) > close("1h") && rsi("1h") < 70`; canonical != want {
+	if want := `rsi("1h") > 30 && sma("1d", 30, volume) > 0 && bbands_upperband("1h", 20, 2.5) > close("1h") && rsi("1h") < 70 && divergence_bull("1h") > divergence_bear("1h", 5, 5, price)`; canonical != want {
 		t.Fatalf("Canonical() = %s, want %s", canonical, want)
 	}
 	var types []string
 	for _, target := range targets {
 		types = append(types, string(target.Interval)+" "+string(target.Selection.Type))
 	}
-	if want := []string{"1h rsi", "1d sma", "1h bbands", "1h rsi"}; !slices.Equal(types, want) {
+	if want := []string{"1h rsi", "1d sma", "1h bbands", "1h rsi", "1h divergence", "1h divergence"}; !slices.Equal(types, want) {
 		t.Fatalf("Canonical() targets = %q, want %q", types, want)
 	}
 }

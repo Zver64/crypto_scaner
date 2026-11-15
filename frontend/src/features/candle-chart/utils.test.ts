@@ -298,7 +298,14 @@ describe("candle markers", () => {
 	const color = (token: string) => `resolved ${token}`;
 
 	it("draws marker lines shifted back and drops those before the first slot", () => {
-		expect(createCandleMarkers(undefined, pivot(2), lines, color)).toEqual([
+		expect(
+			createCandleMarkers(
+				undefined,
+				pivot(2),
+				{ candles: slots, lines },
+				color,
+			),
+		).toEqual([
 			{
 				color: "resolved yellow.5",
 				position: "aboveBar",
@@ -311,9 +318,39 @@ describe("candle markers", () => {
 	it("shows a marker line in the legend on the candle its marker is drawn on", () => {
 		expect(
 			times.map(
-				(_, slot) => createIndicatorLegend(pivot(2), lines, slot)[0]?.value,
+				(_, slot) =>
+					createIndicatorLegend(pivot(2), { candles: slots, lines }, slot)[0]
+						?.value,
 			),
 		).toEqual([null, "12", null, null]);
+	});
+
+	it("shifts markers by candles, skipping the slots of missing candles", () => {
+		// Candle 2 is missing, so the value on candle 3 is drawn on candle 1.
+		const gapSlots = createCandlestickData(
+			[0, 1, 3].map((slot) => candle(slot, 10)),
+			"1h",
+		);
+		const gapLines = {
+			"pivot:high": {
+				data: createIndicatorData(gapSlots, [
+					{ time: candle(1, 0).open_time, value: 11 },
+					{ time: candle(3, 0).open_time, value: 12 },
+				]),
+				resolution: { base: 100, fractionDigits: 2, minMove: 0.01 },
+			},
+		};
+		const gapSeries = { candles: gapSlots, lines: gapLines };
+		expect(
+			createCandleMarkers(undefined, pivot(1), gapSeries, color)?.map(
+				({ time }) => time,
+			),
+		).toEqual([gapSlots[0]?.time, gapSlots[1]?.time]);
+		expect(
+			gapSlots.map(
+				(_, slot) => createIndicatorLegend(pivot(1), gapSeries, slot)[0]?.value,
+			),
+		).toEqual(["11", "12", null, null]);
 	});
 
 	it("merges them with the markers of the source in time order", () => {
@@ -324,9 +361,12 @@ describe("candle markers", () => {
 			time: times[2],
 		};
 		expect(
-			createCandleMarkers([trade], pivot(0), lines, color)?.map(
-				({ shape, time }) => [shape, time],
-			),
+			createCandleMarkers(
+				[trade],
+				pivot(0),
+				{ candles: slots, lines },
+				color,
+			)?.map(({ shape, time }) => [shape, time]),
 		).toEqual([
 			["circle", times[1]],
 			["arrowUp", times[2]],
@@ -343,7 +383,9 @@ describe("candle markers", () => {
 				time: times[0],
 			},
 		];
-		expect(createCandleMarkers(markers, [], lines, color)).toBe(markers);
+		expect(
+			createCandleMarkers(markers, [], { candles: slots, lines }, color),
+		).toBe(markers);
 	});
 
 	it("puts the markers of anchored lines on the line of their anchor, where it has values", () => {
@@ -367,10 +409,21 @@ describe("candle markers", () => {
 				]),
 			},
 		};
-		expect(createCandleMarkers(undefined, anchored, withAnchor, color)).toBe(
-			undefined,
-		);
-		expect(createAnchoredMarkers(anchored, withAnchor, color)).toEqual({
+		expect(
+			createCandleMarkers(
+				undefined,
+				anchored,
+				{ candles: slots, lines: withAnchor },
+				color,
+			),
+		).toBe(undefined);
+		expect(
+			createAnchoredMarkers(
+				anchored,
+				{ candles: slots, lines: withAnchor },
+				color,
+			),
+		).toEqual({
 			"rsi:rsi": [
 				{
 					color: "resolved yellow.5",
@@ -403,10 +456,12 @@ describe("marker segments", () => {
 				resolution,
 			},
 		},
+		segments: {},
 	};
 	const layout = (
 		style: "marker_above" | "marker_below",
 		anchor?: { indicator_id: string; output: string },
+		segment?: string,
 	) => {
 		const indicators = [
 			{
@@ -431,6 +486,7 @@ describe("marker segments", () => {
 						anchor,
 						color: "yellow.5",
 						output: "low",
+						segment,
 						shift: 1,
 						style,
 						title: "PIVOT low",
@@ -517,6 +573,118 @@ describe("marker segments", () => {
 			{ color: "transparent", time: times[1], value: 30 },
 			{ time: times[3], value: 40 },
 			{ time: times[5], value: 35 },
+		]);
+	});
+
+	it("draws a segment from the slot its segment output holds, on the anchor line and the candles, without connected candles", () => {
+		const anchor = { indicator_id: "rsi", output: "rsi" };
+		const withSegments = {
+			...series,
+			lines: {
+				...series.lines,
+				"rsi:rsi": {
+					data: createIndicatorData(
+						slots,
+						[20, 30, 25, 40, 45, 35, 50].map((value, slot) => ({
+							time: open(slot),
+							value,
+						})),
+					),
+					resolution,
+				},
+			},
+			// Slot 2 starts before the first slot; slots 4 and 6 start their
+			// markers 3 and 1 slots back, on slots 0 and 4.
+			segments: {
+				"pivot:bars": createIndicatorData(slots, [
+					{ time: open(2), value: 5 },
+					{ time: open(4), value: 3 },
+					{ time: open(6), value: 1 },
+				]),
+			},
+		};
+		expect(
+			createMarkerSegments(
+				undefined,
+				layout("marker_below", anchor, "bars"),
+				withSegments,
+				"1h",
+			),
+		).toEqual([
+			{
+				color: "yellow.5",
+				data: [
+					{ time: times[0], value: 20 },
+					{ color: "transparent", time: times[3], value: 40 },
+					{ time: times[4], value: 45 },
+					{ time: times[5], value: 35 },
+				],
+				key: "pivot:low",
+				pane: 2,
+				scale: "price",
+			},
+			{
+				color: "yellow.5",
+				data: [
+					{ time: times[0], value: 9 },
+					{ color: "transparent", time: times[3], value: 12 },
+					{ time: times[4], value: 13 },
+					{ time: times[5], value: 14 },
+				],
+				key: "pivot:low:candles",
+				pane: 0,
+				scale: "price",
+			},
+		]);
+	});
+
+	it("counts the candles back to a segment start and the shift of its marker, skipping missing candles", () => {
+		// Candle 2 is missing: the value on candle 5 is drawn on candle 4, and
+		// its segment starts 3 candles before that, on candle 0.
+		const gapCandles = [0, 1, 3, 4, 5].map((slot) => candle(slot, 10 + slot));
+		const gapSlots = createCandlestickData(gapCandles, "1h");
+		const gapTimes = gapSlots.map(({ time }) => time);
+		const at = (hour: number) => candle(hour, 0).open_time;
+		const anchor = { indicator_id: "rsi", output: "rsi" };
+		expect(
+			createMarkerSegments(
+				undefined,
+				layout("marker_below", anchor, "bars"),
+				{
+					candles: gapSlots,
+					lines: {
+						"pivot:low": {
+							data: createIndicatorData(gapSlots, [{ time: at(5), value: 35 }]),
+							resolution,
+						},
+						"rsi:rsi": {
+							data: createIndicatorData(
+								gapSlots,
+								[0, 1, 3, 4, 5].map((hour) => ({
+									time: at(hour),
+									value: 20 + hour,
+								})),
+							),
+							resolution,
+						},
+					},
+					segments: {
+						"pivot:bars": createIndicatorData(gapSlots, [
+							{ time: at(5), value: 3 },
+						]),
+					},
+				},
+				"1h",
+			).map(({ data }) => data),
+		).toEqual([
+			[
+				{ time: gapTimes[0], value: 20 },
+				{ time: gapTimes[4], value: 35 },
+			],
+			[
+				{ time: gapTimes[0], value: 9 },
+				{ time: gapTimes[4], value: 13 },
+			],
 		]);
 	});
 

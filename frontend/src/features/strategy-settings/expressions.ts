@@ -368,15 +368,16 @@ export function callArgumentIssues(field: string): number[][] {
 	});
 }
 
-// The argument a call writes for choice of parameter: a source by the name
-// of the choice, empty for one only leaving the source out writes, and any
-// other choice by its value.
+// The argument a call writes for choice of parameter: a named choice by its
+// name, such as volume or price, a source choice without one empty, as only
+// leaving the source out writes it, and any other choice by its value.
 export function choiceArgument(
 	parameter: StrategyIndicatorParameter,
 	choice: StrategyIndicatorChoice,
 ): string {
+	if (choice.name !== undefined) return choice.name;
 	return parameter.kind === StrategyIndicatorParameterKind.source
-		? (choice.name ?? "")
+		? ""
 		: canonicalNumber(choice.value);
 }
 

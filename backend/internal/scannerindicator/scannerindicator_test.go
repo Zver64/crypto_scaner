@@ -18,12 +18,21 @@ import (
 // unusedStore satisfies the Store interface for calls that never persist.
 type unusedStore struct{ scannerindicator.Store }
 
+// newService colors the lines of each tone with a token named after it.
+func newService(store scannerindicator.Store, registry *indicator.Registry, palette ...string) (*scannerindicator.Service, error) {
+	tones := map[indicator.Tone]string{}
+	for _, tone := range indicator.Tones() {
+		tones[tone] = string(tone)
+	}
+	return scannerindicator.New(store, registry, palette, tones, slog.New(slog.DiscardHandler), func() {})
+}
+
 func TestPreviewPlacesIndicatorsByTheirSourceUnits(t *testing.T) {
 	registry, err := indicator.NewRegistry(talib.New()...)
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := scannerindicator.New(unusedStore{}, registry, []string{"yellow.5"}, slog.New(slog.DiscardHandler), func() {})
+	service, err := newService(unusedStore{}, registry, "yellow.5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +69,7 @@ func TestPreviewPlacesIndicatorsOfIndicatorsWithTheirSource(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := scannerindicator.New(unusedStore{}, registry, []string{"yellow.5"}, slog.New(slog.DiscardHandler), func() {})
+	service, err := newService(unusedStore{}, registry, "yellow.5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,7 +79,8 @@ func TestPreviewPlacesIndicatorsOfIndicatorsWithTheirSource(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return entry.ChartIndicator("id", "source", 0)
+		item, _ := entry.ChartIndicator("id", "source", 0)
+		return item
 	}
 	of := func(indicatorType indicator.Type, source indicator.Type) indicator.Selection {
 		nested := indicator.Source{Selection: indicator.Selection{Type: source}, Output: string(source)}
@@ -129,7 +139,7 @@ func TestIndicatorPeriods(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := scannerindicator.New(&memoryStore{}, registry, []string{"yellow.5"}, slog.New(slog.DiscardHandler), func() {})
+	service, err := newService(&memoryStore{}, registry, "yellow.5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +188,7 @@ func TestPivotsAreDrawnAsShiftedMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := scannerindicator.New(unusedStore{}, registry, []string{"yellow.5"}, slog.New(slog.DiscardHandler), func() {})
+	service, err := newService(unusedStore{}, registry, "yellow.5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -186,7 +196,7 @@ func TestPivotsAreDrawnAsShiftedMarkers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := entry.ChartIndicator("pivot", "", 0)
+	item, _ := entry.ChartIndicator("pivot", "", 0)
 	want := []chart.IndicatorLine{
 		{Output: "high", Title: "PIVOT 5 3 high", Color: "yellow.5", Style: chart.LineStyleMarkerAbove, Shift: 3},
 		{Output: "low", Title: "PIVOT 5 3 low", Color: "yellow.5", Style: chart.LineStyleMarkerBelow, Shift: 3},
@@ -197,5 +207,37 @@ func TestPivotsAreDrawnAsShiftedMarkers(t *testing.T) {
 	item.Placement = chart.PlacementVolume
 	if err := chart.ValidateIndicator(registry, item); err == nil {
 		t.Fatal("markers outside the candles are accepted")
+	}
+}
+
+// Lines with a tone take its color and leave the palette to the others, so
+// an indicator with toned lines does not recolor those after it.
+func TestTonedLinesDoNotTakePaletteColors(t *testing.T) {
+	modules := talib.New()
+	rsi := modules[slices.IndexFunc(modules, func(module indicator.Implementation) bool {
+		return module.Describe().Type == talib.RSIType
+	})]
+	registry, err := indicator.NewRegistry(append(modules, pivot.NewDivergence(rsi))...)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := newService(&memoryStore{}, registry, "yellow.5", "blue.5", "violet.5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	daily := []scannerindicator.Period{{Interval: market.IntervalDay, ShowInChart: true}}
+	for _, selection := range []indicator.Selection{{Type: pivot.DivergenceType}, {Type: talib.RSIType, Parameters: indicator.Parameters{"period": 21}}} {
+		if _, err := service.Create(context.Background(), scannerindicator.Indicator{Selection: selection, Periods: daily}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var colors []string
+	for _, item := range service.ChartCatalog(market.IntervalDay) {
+		for _, line := range item.Lines {
+			colors = append(colors, line.Output+" "+line.Color)
+		}
+	}
+	if want := []string{"bull bullish", "bear bearish", "rsi yellow.5", "rsi blue.5"}; !slices.Equal(colors, want) {
+		t.Fatalf("line colors = %v, want %v", colors, want)
 	}
 }

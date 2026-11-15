@@ -1798,6 +1798,10 @@ components:
           minimum: 0
           description: Number of candles a marker is drawn before the candle holding its value. The points of the series are not shifted.
         anchor: { $ref: "#/components/schemas/ChartIndicatorLineAnchor" }
+        segment:
+          type: string
+          minLength: 1
+          description: Name of the calculated series of the same indicator holding, at each value of this marker line, the number of candles back from the marker to where a straight line drawn to the marker starts, on the `anchor` line and on the candles (lows under `marker_below`, highs over `marker_above`). Only marker lines have it; the series is delivered with the others but not drawn itself.
     ChartIndicatorLineAnchor:
       type: object
       additionalProperties: false

@@ -627,6 +627,21 @@ func testCandle(instrumentID int64, interval market.CandleInterval, open time.Ti
 	}
 }
 
+// testScannerIndicators has no configured rows or writes, and colors the
+// lines of each tone with a token named after it.
+func testScannerIndicators(t *testing.T, registry *indicator.Registry, palette ...string) *scannerindicator.Service {
+	t.Helper()
+	tones := map[indicator.Tone]string{}
+	for _, tone := range indicator.Tones() {
+		tones[tone] = string(tone)
+	}
+	service, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, palette, tones, slog.New(slog.DiscardHandler), func() {})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return service
+}
+
 func testRegistry(t *testing.T) *indicator.Registry {
 	t.Helper()
 	modules := indicatortalib.New()

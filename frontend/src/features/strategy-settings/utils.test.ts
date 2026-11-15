@@ -109,6 +109,28 @@ const strategyCatalog: StrategyCatalog = {
 			type: "pivot",
 		},
 		{
+			outputs: [
+				{ name: "bull", sparse: true },
+				{ name: "rsi", sparse: false },
+			],
+			parameters: [
+				{ ...period(5), key: "left", minimum: 1 },
+				{ ...period(5), key: "right", minimum: 1 },
+				{
+					choices: [
+						{ name: "rsi", title: "RSI", value: 0 },
+						{ name: "price", title: "Price", value: 1 },
+					],
+					default: 0,
+					key: "pivots",
+					kind: "choice",
+					title: "Pivots in",
+				},
+			],
+			title: "RSI Divergence",
+			type: "divergence",
+		},
+		{
 			outputs: [{ name: "rsi", sparse: false }],
 			parameters: [period(14), source(fields)],
 			title: "Relative Strength Index",
@@ -347,6 +369,8 @@ describe("strategyVariableSets", () => {
 			"bbands_lowerband",
 			"pivot_high",
 			"pivot_low",
+			"divergence_bull",
+			"divergence_rsi",
 			"rsi",
 			"pnl",
 		]);
@@ -360,6 +384,8 @@ describe("strategyVariableSets", () => {
 			'bbands_lowerband("1d")',
 			'pivot_high("1d")',
 			'pivot_low("1d")',
+			'divergence_bull("1d")',
+			'divergence_rsi("1d")',
 			'rsi("1d")',
 			"pnl",
 		]);
@@ -398,6 +424,7 @@ describe("indicatorCall", () => {
 		'bbands_lowerband("1d", 5, 2, 1)',
 		'pivot_low("1d", 5, 5, rsi("1d", 21))',
 		'pivot_high("1h", 3, 5, close)',
+		'divergence_bull("1d", 5, 5, price)',
 		'rsi("1h", 9, bbands_upperband("1h", 20, 2.5, 1, volume))',
 		// A source whose indicator is still to be chosen.
 		'rsi("1h", 14, ())',
@@ -409,6 +436,15 @@ describe("indicatorCall", () => {
 	it("reads the parameters a call leaves out at their defaults", () => {
 		const call = indicatorCall('pivot_low("1d", 3)', exit.variables);
 		expect(call?.args).toEqual(["3", "5", ""]);
+	});
+
+	it("writes a named choice by its name, and leaves it out at its default", () => {
+		const call = indicatorCall(
+			'divergence_bull("1h", 3, 5, rsi)',
+			exit.variables,
+		);
+		expect(call?.args).toEqual(["3", "5", "rsi"]);
+		expect(call && indicatorCallSource(call)).toBe('divergence_bull("1h", 3)');
 	});
 
 	it("drops trailing defaults, the source a nested call too", () => {

@@ -23,6 +23,9 @@ func chartIndicatorDTO(item chart.CatalogIndicator) ChartIndicatorDefinition {
 		if line.Anchor != (chart.LineAnchor{}) {
 			lines[i].Anchor = &ChartIndicatorLineAnchor{IndicatorId: line.Anchor.IndicatorID, Output: line.Anchor.Output}
 		}
+		if line.Segment != "" {
+			lines[i].Segment = &line.Segment
+		}
 	}
 	definition := ChartIndicatorDefinition{
 		Id:         item.ID,

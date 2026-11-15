@@ -86,6 +86,9 @@ export interface ChartSeriesData {
 	priceResolution: ValueResolution;
 	// Every line of the catalog, keyed by "id:output".
 	lines: Readonly<Record<string, ChartLineData>>;
+	// The segment outputs of marker lines, which are not drawn themselves,
+	// aligned with the candle slots and keyed by "id:output".
+	segments: Readonly<Record<string, readonly ChartIndicatorSlot[]>>;
 }
 // Points of each indicator line, keyed by indicator id and then output name.
 export type ChartIndicatorPoints = Readonly<
@@ -103,6 +106,9 @@ export interface ChartIndicatorLine {
 	// The line of another indicator the markers sit on, in its pane; the
 	// candles without one.
 	anchor?: { indicator_id: string; output: string };
+	// The output of the same indicator holding, at each marker value, the
+	// candles back from the marker to where a line drawn to it starts.
+	segment?: string;
 }
 export interface ChartIndicatorScale {
 	min?: number;

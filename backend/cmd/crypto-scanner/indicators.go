@@ -25,3 +25,7 @@ func indicatorModules() []indicator.Implementation {
 // chartPalette colors the chart lines of the configured indicators in turn.
 // Entries are client theme color tokens.
 var chartPalette = []string{"yellow.5", "orange.6", "violet.5", "blue.5", "teal.5", "pink.5", "lime.5", "cyan.5"}
+
+// chartTones colors the chart lines of outputs with a fixed meaning, with
+// the client theme color tokens of rising and falling candles.
+var chartTones = map[indicator.Tone]string{indicator.ToneBullish: "green.6", indicator.ToneBearish: "red.6"}

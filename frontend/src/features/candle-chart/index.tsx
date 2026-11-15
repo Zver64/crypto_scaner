@@ -121,14 +121,10 @@ export function PriceHistoryChart({
 	const candleMarkers = createCandleMarkers(
 		markers,
 		indicators,
-		series.lines,
+		series,
 		themeColor,
 	);
-	const anchoredMarkers = createAnchoredMarkers(
-		indicators,
-		series.lines,
-		themeColor,
-	);
+	const anchoredMarkers = createAnchoredMarkers(indicators, series, themeColor);
 	const markerSegments = createMarkerSegments(
 		connectedCandles,
 		layouts[interval],
@@ -164,7 +160,7 @@ export function PriceHistoryChart({
 		: series.candles.length - 1;
 	const legendItems = createIndicatorLegend(
 		indicators,
-		series.lines,
+		series,
 		legendSlotIndex,
 	);
 	const hasCandles = candles.length > 0;

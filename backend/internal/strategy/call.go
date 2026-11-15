@@ -106,6 +106,14 @@ func (language *language) resolveCall(descriptor indicator.Descriptor, output in
 			parameters[parameter.Key] = value
 			continue
 		}
+		if namedChoices(parameter) {
+			value, ok := choiceValue(parameter, arg)
+			if !ok {
+				return call{}, fmt.Sprintf("the %s of %s is one of %s", parameter.Key, name, strings.Join(choiceNames(parameter), ", "))
+			}
+			parameters[parameter.Key] = value
+			continue
+		}
 		value, ok := numberValue(arg)
 		if !ok {
 			return call{}, fmt.Sprintf("the %s of %s is a number", parameter.Key, name)
@@ -163,11 +171,28 @@ func (language *language) sourceValue(parameter indicator.ParameterDescriptor, a
 		}
 		return indicator.Source{Selection: inner.target.Selection, Output: inner.output}.Value(), number, true
 	}
+	value, ok = choiceValue(parameter, arg)
+	return value, -1, ok
+}
+
+// namedChoices reports a choice parameter whose choices calls write by name,
+// such as the pivots of divergence, rather than by number, such as a moving
+// average type.
+func namedChoices(parameter indicator.ParameterDescriptor) bool {
+	return parameter.Kind == indicator.ParameterChoice && len(choiceNames(parameter)) > 0
+}
+
+// choiceValue reads the argument of a parameter written as the name of one
+// of its choices, such as volume or price.
+func choiceValue(parameter indicator.ParameterDescriptor, arg ast.Expr) (int, bool) {
+	if arg.Kind() != ast.IdentKind {
+		return 0, false
+	}
 	index := slices.IndexFunc(parameter.Choices, func(choice indicator.Choice) bool { return choice.Name != "" && choice.Name == arg.AsIdent() })
 	if index < 0 {
-		return nil, -1, false
+		return 0, false
 	}
-	return parameter.Choices[index].Value, -1, true
+	return parameter.Choices[index].Value, true
 }
 
 // choiceNames lists the names calls write for the choices of parameter; a
@@ -235,9 +260,9 @@ func spellCall(name string, interval market.CandleInterval, arguments []string) 
 	return name + "(" + strings.Join(append([]string{strconv.Quote(string(interval))}, arguments...), ", ") + ")"
 }
 
-// spellParameter writes a parameter value: the name of a candle field, the
-// canonical call on interval of a nested source, or the number without
-// trailing zeros.
+// spellParameter writes a parameter value: the name of a candle field or of
+// another named choice, the canonical call on interval of a nested source,
+// or the number without trailing zeros.
 func spellParameter(registry *indicator.Registry, parameter indicator.ParameterDescriptor, value any, interval market.CandleInterval) (string, error) {
 	if parameter.Kind == indicator.ParameterSource {
 		number, nested, err := indicator.ParseSource(value)
@@ -255,17 +280,27 @@ func spellParameter(registry *indicator.Registry, parameter indicator.ParameterD
 			}
 			return spellCall(indicatorFunction(descriptor.Type, len(descriptor.Outputs), nested.Output), interval, arguments), nil
 		}
-		for _, choice := range parameter.Choices {
-			if float64(choice.Value) == number {
-				return choice.Name, nil
-			}
-		}
+		return choiceName(parameter, number), nil
 	}
 	number, err := indicator.ParseNumber(value)
 	if err != nil {
 		return fmt.Sprint(value), nil
 	}
+	if namedChoices(parameter) {
+		return choiceName(parameter, number), nil
+	}
 	return strconv.FormatFloat(number, 'f', -1, 64), nil
+}
+
+// choiceName is the name of the choice of parameter with value; empty for
+// one without a name, which only leaving the parameter out writes.
+func choiceName(parameter indicator.ParameterDescriptor, value float64) string {
+	for _, choice := range parameter.Choices {
+		if float64(choice.Value) == value {
+			return choice.Name
+		}
+	}
+	return ""
 }
 
 // nestedSource reports whether selection, which must be normalized, reads

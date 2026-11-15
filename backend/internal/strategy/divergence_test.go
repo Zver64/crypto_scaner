@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -56,20 +57,51 @@ func TestDivergenceMatchesItsRules(t *testing.T) {
 			{"bull", "pivot_low", "low", ">", "<"},
 			{"bear", "pivot_high", "high", "<", ">"},
 		} {
-			pivot := fmt.Sprintf(`%s("1h", %d, %d, rsi("1h"))`, test.pivot, left, right)
-			price := fmt.Sprintf(`Prev(%s("1h"), %d)`, test.price, right)
-			rule := fmt.Sprintf(`%[1]s > 0 && %[1]s %[3]s ValueWhen(%[1]s, %[1]s, 1) && %[2]s %[4]s ValueWhen(%[1]s, %[2]s, 1) && Prev(BarsSince(%[1]s), 1) >= 5 && Prev(BarsSince(%[1]s), 1) <= 60`,
-				pivot, price, test.rsi, test.before)
-			want := occurrences(rule)
-			got := occurrences(fmt.Sprintf(`divergence_%s("1h", %d, %d) > 0`, test.output, left, right))
-			if len(want) < 3 || len(got) != len(want) {
-				t.Fatalf("%s %d/%d: %d signals, the rule %d", test.output, left, right, len(got), len(want))
-			}
-			// The rule reads earlier candles, which deepens its warm-up and
-			// changes the RSI by the remainder of the seed.
-			for at, value := range want {
-				if math.Abs(got[at]-value) > 1e-4 {
-					t.Errorf("%s %d/%d at %v = %v, the rule %v", test.output, left, right, at, got[at], value)
+			// The pivots of the RSI, the price read at them, and the
+			// pivots of the price, the RSI read at them.
+			rsiPivot := fmt.Sprintf(`%s("1h", %d, %d, rsi("1h"))`, test.pivot, left, right)
+			pricePivot := fmt.Sprintf(`%s("1h", %d, %d)`, test.pivot, left, right)
+			// The RSI the rule reads for pivots of the price is rsi("1h"),
+			// which warms up over fewer candles than the divergence, so it
+			// differs by more of the remainder of the seed.
+			for _, in := range []struct {
+				name, pivot, rsi, price string
+				tolerance               float64
+			}{
+				{"rsi", rsiPivot, rsiPivot, fmt.Sprintf(`Prev(%s("1h"), %d)`, test.price, right), 1e-4},
+				{"price", pricePivot, fmt.Sprintf(`Prev(rsi("1h"), %d)`, right), pricePivot, 1e-3},
+			} {
+				name := fmt.Sprintf("%s %d/%d in %s", test.output, left, right, in.name)
+				rule := fmt.Sprintf(`%[1]s > 0 && %[2]s %[4]s ValueWhen(%[1]s, %[2]s, 1) && %[3]s %[5]s ValueWhen(%[1]s, %[3]s, 1) && Prev(BarsSince(%[1]s), 1) >= 5 && Prev(BarsSince(%[1]s), 1) <= 60`,
+					in.pivot, in.rsi, in.price, test.rsi, test.before)
+				call := fmt.Sprintf(`divergence_%s("1h", %d, %d, %s)`, test.output, left, right, in.name)
+				bars := fmt.Sprintf(`divergence_%s_bars("1h", %d, %d, %s)`, test.output, left, right, in.name)
+				signal := call + " > 0"
+				want := occurrences(rule)
+				got := occurrences(signal)
+				if len(want) < 3 || len(got) != len(want) {
+					t.Fatalf("%s: %d signals, the rule %d", name, len(got), len(want))
+				}
+				for at := range want {
+					if _, found := got[at]; !found {
+						t.Errorf("%s: no signal at %v, where the rule has one", name, at)
+					}
+				}
+				// The value is the RSI at the later pivot. The rule reads
+				// earlier candles, which deepens its warm-up and changes the
+				// RSI by the remainder of the seed.
+				rsiAt := occurrences(fmt.Sprintf(`%s && Abs(%s - %s) < %g`, signal, call, in.rsi, in.tolerance))
+				if len(rsiAt) != len(got) {
+					t.Errorf("%s: the RSI at the pivot matches on %d of %d signals", name, len(rsiAt), len(got))
+				}
+				// The candles from the earlier pivot to the later one, where
+				// charts start the line to the marker, are those the rule
+				// counts between the confirmations and the later one.
+				between := fmt.Sprintf(`Prev(BarsSince(%s), 1)`, in.pivot)
+				all := occurrences(fmt.Sprintf(`%s && %s >= 0`, signal, between))
+				matching := occurrences(fmt.Sprintf(`%s && Abs(%s - %s - 1) < 0.5`, signal, bars, between))
+				if len(all) < 3 || len(matching) != len(all) {
+					t.Errorf("%s: bars match the rule on %d of %d signals", name, len(matching), len(all))
 				}
 			}
 		}
@@ -86,6 +118,18 @@ func TestDivergenceMatchesItsRules(t *testing.T) {
 		want := chart.LineAnchor{IndicatorID: definition.ID, Output: "rsi"}
 		if len(definition.Lines) != 3 || definition.Lines[0].Anchor != want || definition.Lines[1].Anchor != want || definition.Lines[2].Output != "rsi" {
 			t.Fatalf("divergence lines = %+v, want markers anchored to %+v", definition.Lines, want)
+		}
+		// The bars are delivered for the segments of the markers, not drawn.
+		var names []string
+		for _, calculation := range result.Charts[0].Indicators {
+			if calculation.Type == pivot.DivergenceType {
+				for _, series := range calculation.Series {
+					names = append(names, series.Name)
+				}
+			}
+		}
+		if !slices.Equal(names, []string{"bull", "bull_bars", "bear", "bear_bars", "rsi"}) {
+			t.Fatalf("divergence series = %v, want the lines and their segments", names)
 		}
 		return
 	}

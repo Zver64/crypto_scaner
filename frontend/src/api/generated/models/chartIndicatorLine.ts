@@ -38,4 +38,9 @@ export interface ChartIndicatorLine {
      */
   shift: number;
   anchor?: ChartIndicatorLineAnchor;
+  /**
+     * Name of the calculated series of the same indicator holding, at each value of this marker line, the number of candles back from the marker to where a straight line drawn to the marker starts, on the `anchor` line and on the candles (lows under `marker_below`, highs over `marker_above`). Only marker lines have it; the series is delivered with the others but not drawn itself.
+     * @minLength 1
+     */
+  segment?: string;
 }

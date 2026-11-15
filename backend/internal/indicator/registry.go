@@ -83,6 +83,12 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 			}) {
 				return nil, fmt.Errorf("%w: %q: output %q is drawn on %q, which is not a line with a value on every candle", ErrEmptyRegistration, indicatorType, output.Name, output.Anchor)
 			}
+			if output.Tone != "" && (output.Style == OutputValue || !slices.Contains(Tones(), output.Tone)) {
+				return nil, fmt.Errorf("%w: %q: output %q has tone %q, which is unknown or on an output that is not drawn", ErrEmptyRegistration, indicatorType, output.Name, output.Tone)
+			}
+			if output.Segment != "" && (output.Style != OutputMarkerAbove && output.Style != OutputMarkerBelow || !sparse[output.Segment]) {
+				return nil, fmt.Errorf("%w: %q: output %q draws segments from %q, which only markers may do from a sparse output", ErrEmptyRegistration, indicatorType, output.Name, output.Segment)
+			}
 		}
 		var sources []ParameterDescriptor
 		for _, parameter := range descriptor.Parameters {

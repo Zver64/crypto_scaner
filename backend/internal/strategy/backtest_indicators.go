@@ -187,17 +187,21 @@ func (replay *replay) chartSnapshot(ctx context.Context, entry Entry, instrument
 			if source, found := item.source(); found {
 				sourceID = source.Key()
 			}
-			definition := item.ChartIndicator(item.target().Key(), sourceID, line)
+			definition, next := item.ChartIndicator(item.target().Key(), sourceID, line)
 			// Markers neither over the candles nor on the line of a source
 			// are not drawn, which may leave nothing.
 			if len(definition.Lines) == 0 {
 				continue
 			}
-			line += len(definition.Lines)
+			line = next
 			page.Definitions = append(page.Definitions, definition)
-			calculation := indicator.Calculation{Type: item.Selection.Type, Parameters: item.Selection.Parameters, Series: make([]indicator.NamedSeries, len(definition.Lines))}
-			for i, drawn := range definition.Lines {
-				calculation.Series[i] = indicator.NamedSeries{Name: drawn.Output, Points: make([]indicator.Point, 0)}
+			// The series of the drawn lines and of the segments they draw.
+			calculation := indicator.Calculation{Type: item.Selection.Type, Parameters: item.Selection.Parameters, Series: make([]indicator.NamedSeries, 0, len(definition.Lines))}
+			for _, drawn := range definition.Lines {
+				calculation.Series = append(calculation.Series, indicator.NamedSeries{Name: drawn.Output, Points: make([]indicator.Point, 0)})
+				if drawn.Segment != "" {
+					calculation.Series = append(calculation.Series, indicator.NamedSeries{Name: drawn.Segment, Points: make([]indicator.Point, 0)})
+				}
 			}
 			target := item.target()
 			subscription := closedindicator.Subscription{InstrumentID: instrumentID, Target: target, Points: 1}

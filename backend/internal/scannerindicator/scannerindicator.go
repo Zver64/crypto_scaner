@@ -91,12 +91,16 @@ type Entry struct {
 	Placement chart.Placement
 	Outputs   []string
 	// lines are the outputs charts draw, in output order, with how they are
-	// drawn: markers only over the candles or, anchored to the output of
-	// the source, on its line. Titles, colors, and the catalog id of an
-	// anchor are added when a chart draws them.
+	// drawn: markers only over the candles or, anchored to another output
+	// of the indicator or to the output of the source, on its line. Titles,
+	// colors, and the catalog id of an anchor are added when a chart draws
+	// them.
 	lines []chart.IndicatorLine
 	// lineTitle names the chart lines, such as "RSI 14".
 	lineTitle string
+	// ownAnchors are the outputs whose markers sit on the line of another
+	// output of this indicator.
+	ownAnchors map[string]bool
 	// source is the indicator output an indicator of another indicator
 	// reads, the first of several; such an indicator is previewed but
 	// cannot be configured.
@@ -462,9 +466,16 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 		if err != nil {
 			return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
 		}
-		// Markers are drawn on the line of the source or on candles.
+		// Markers are drawn on a line of their own indicator, the line of
+		// the source, or on candles.
 		switch {
 		case line.Style == chart.LineStyleLine:
+		case output.Anchor != "":
+			line.Anchor.Output = output.Anchor
+			if entry.ownAnchors == nil {
+				entry.ownAnchors = map[string]bool{}
+			}
+			entry.ownAnchors[output.Name] = true
 		case entry.source != nil:
 			line.Anchor.Output = entry.source.Output
 		case entry.Placement != chart.PlacementOverlay:
@@ -599,7 +610,10 @@ func (entry Entry) ChartIndicator(id, sourceID string, firstLine int) chart.Cata
 			line.Title += " " + line.Output
 		}
 		line.Color = entry.palette[(firstLine+i)%len(entry.palette)]
-		if line.Anchor.Output != "" {
+		switch {
+		case entry.ownAnchors[line.Output]:
+			line.Anchor.IndicatorID = id
+		case line.Anchor.Output != "":
 			line.Anchor.IndicatorID = sourceID
 		}
 		item.Lines[i] = line

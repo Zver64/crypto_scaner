@@ -119,6 +119,10 @@ type OutputDescriptor struct {
 	// candles that confirm a pivot; empty draws it on that candle. Values are
 	// not shifted, only their drawing.
 	Shift string
+	// Anchor names the output of the same indicator whose line the markers
+	// of this output are drawn on; empty draws them over the candles, or on
+	// the line of a nested source.
+	Anchor string
 }
 
 // Descriptor is the self-description of an implementation. Registries use it

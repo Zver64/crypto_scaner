@@ -78,6 +78,11 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 			}) {
 				return nil, fmt.Errorf("%w: %q: output %q is shifted by %q, which is not an integer parameter", ErrEmptyRegistration, indicatorType, output.Name, output.Shift)
 			}
+			if output.Anchor != "" && !slices.ContainsFunc(descriptor.Outputs, func(line OutputDescriptor) bool {
+				return line.Name == output.Anchor && line.Style == OutputLine && !line.Sparse
+			}) {
+				return nil, fmt.Errorf("%w: %q: output %q is drawn on %q, which is not a line with a value on every candle", ErrEmptyRegistration, indicatorType, output.Name, output.Anchor)
+			}
 		}
 		var sources []ParameterDescriptor
 		for _, parameter := range descriptor.Parameters {

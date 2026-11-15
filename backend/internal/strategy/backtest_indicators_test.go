@@ -10,9 +10,7 @@ import (
 
 	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/indicator"
-	"crypto-scanner/internal/indicator/candle"
 	"crypto-scanner/internal/indicator/pivot"
-	indicatortalib "crypto-scanner/internal/indicator/talib"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
 
@@ -21,10 +19,7 @@ import (
 
 func snapshotTestService(t *testing.T, store *backtestStore) *Service {
 	t.Helper()
-	registry, err := indicator.NewRegistry(append(indicatortalib.New(), candle.New(), pivot.New())...)
-	if err != nil {
-		t.Fatal(err)
-	}
+	registry := testRegistry(t)
 	// No configured rows or writes: Preview must resolve all dependencies.
 	source, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, []string{"yellow.5", "blue.5"}, slog.New(slog.DiscardHandler), func() {})
 	if err != nil {

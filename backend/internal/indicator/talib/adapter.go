@@ -18,11 +18,12 @@ const (
 	EMAType indicator.Type = "ema"
 )
 
-// maTypes are the TA-Lib moving average types in TA_MAType order.
+// maTypes are the TA-Lib moving average types in TA_MAType order, which
+// calls write by name.
 var maTypes = []indicator.Choice{
-	{Value: 0, Title: "SMA"}, {Value: 1, Title: "EMA"}, {Value: 2, Title: "WMA"},
-	{Value: 3, Title: "DEMA"}, {Value: 4, Title: "TEMA"}, {Value: 5, Title: "TRIMA"},
-	{Value: 6, Title: "KAMA"}, {Value: 7, Title: "MAMA"}, {Value: 8, Title: "T3"},
+	{Value: 0, Title: "SMA", Name: "sma"}, {Value: 1, Title: "EMA", Name: "ema"}, {Value: 2, Title: "WMA", Name: "wma"},
+	{Value: 3, Title: "DEMA", Name: "dema"}, {Value: 4, Title: "TEMA", Name: "tema"}, {Value: 5, Title: "TRIMA", Name: "trima"},
+	{Value: 6, Title: "KAMA", Name: "kama"}, {Value: 7, Title: "MAMA", Name: "mama"}, {Value: 8, Title: "T3", Name: "t3"},
 }
 
 // sourceClose is the default source: the close price.

@@ -113,6 +113,7 @@ Create commits only when the user asks.
 - Do not drive a browser to check UI changes; finish with the static checks and let the user review visually.
 - Do not add UI texts, hints, captions, or warnings the user did not ask for; when asked for a visual cue such as a color, add only that cue.
 - Prefer established, community-standard libraries to hand-written code, and keep own code minimal.
+- Do not keep backward compatibility: a change that breaks it is a major (breaking) change, not something to work around.
 - Use subagents at your discretion for large or parallel work; do small tasks such as a commit or a one-file fix directly. Give each new task a new subagent with a self-contained brief; resume a subagent only for fixes to its own just-finished work. Start a review, in a separate subagent, only after the user approves it.
 
 ## Generated files

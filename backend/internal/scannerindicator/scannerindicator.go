@@ -708,9 +708,9 @@ func namedChoicesChanged(descriptor indicator.Descriptor, parameters, defaults i
 	})
 }
 
-// parameterValue formats a value, naming named choices such as "volume" or
-// "price"; a nested source is already a name. Plain choices, such as moving
-// average types, stay numbers, which keeps titles stable.
+// parameterValue formats a value, naming named choices such as "volume",
+// "price", or "ema"; a nested source is already a name. Choices without
+// names stay numbers.
 func parameterValue(parameter indicator.ParameterDescriptor, value any) string {
 	if namedChoice(parameter) {
 		for _, choice := range parameter.Choices {

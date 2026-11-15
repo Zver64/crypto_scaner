@@ -82,8 +82,8 @@ const strategyCatalog: StrategyCatalog = {
 				},
 				{
 					choices: [
-						{ title: "SMA", value: 0 },
-						{ title: "EMA", value: 1 },
+						{ name: "sma", title: "SMA", value: 0 },
+						{ name: "ema", title: "EMA", value: 1 },
 					],
 					default: 0,
 					key: "ma_type",
@@ -421,11 +421,11 @@ describe("indicatorCall", () => {
 		'rsi("1h")',
 		'rsi("1h", 21, volume)',
 		'bbands_upperband("1h", 20, 2.5)',
-		'bbands_lowerband("1d", 5, 2, 1)',
+		'bbands_lowerband("1d", 5, 2, ema)',
 		'pivot_low("1d", 5, 5, rsi("1d", 21))',
 		'pivot_high("1h", 3, 5, close)',
 		'divergence_bull("1d", 5, 5, price)',
-		'rsi("1h", 9, bbands_upperband("1h", 20, 2.5, 1, volume))',
+		'rsi("1h", 9, bbands_upperband("1h", 20, 2.5, ema, volume))',
 		// A source whose indicator is still to be chosen.
 		'rsi("1h", 14, ())',
 	])("spells %s back as it reads it", (field) => {
@@ -449,12 +449,12 @@ describe("indicatorCall", () => {
 
 	it("drops trailing defaults, the source a nested call too", () => {
 		const call = indicatorCall(
-			'bbands_upperband("1h", 20, 2.5, 1, rsi("1h", 21))',
+			'bbands_upperband("1h", 20, 2.5, ema, rsi("1h", 21))',
 			exit.variables,
 		);
 		if (!call) throw new Error("not read");
 		expect(
-			indicatorCallSource({ ...call, args: ["20", "2", "0", "close"] }),
+			indicatorCallSource({ ...call, args: ["20", "2", "sma", "close"] }),
 		).toBe('bbands_upperband("1h", 20)');
 		expect(
 			indicatorCallSource({
@@ -463,7 +463,7 @@ describe("indicatorCall", () => {
 					typeof arg === "string" ? arg : { ...arg, args: ["14", "close"] },
 				),
 			}),
-		).toBe('bbands_upperband("1h", 20, 2.5, 1, rsi("1h"))');
+		).toBe('bbands_upperband("1h", 20, 2.5, ema, rsi("1h"))');
 	});
 
 	it.each([

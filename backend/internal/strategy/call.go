@@ -176,8 +176,8 @@ func (language *language) sourceValue(parameter indicator.ParameterDescriptor, a
 }
 
 // namedChoices reports a choice parameter whose choices calls write by name,
-// such as the pivots of divergence, rather than by number, such as a moving
-// average type.
+// such as the pivots of divergence or a moving average type, rather than by
+// number.
 func namedChoices(parameter indicator.ParameterDescriptor) bool {
 	return parameter.Kind == indicator.ParameterChoice && len(choiceNames(parameter)) > 0
 }

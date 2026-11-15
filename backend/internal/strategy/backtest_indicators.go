@@ -142,13 +142,86 @@ func (current snapshot) indicatorValues(entry Entry, instrumentID int64, items [
 	return result
 }
 
-// chartSnapshot uses the same per-candle windows as replay. Values already
-// calculated by replay are reused; gaps in the base interval do not lose points
-// of coarser intervals. A source the rule does not read by itself is
+// chartRecording is what a backtest chart draws on its instrument: the
+// charted indicators and the values the replay calculated for the displayed
+// ones while the backtest ran, so drawing does not calculate them again.
+type chartRecording struct {
+	instrumentID int64
+	// charted are the indicators the chart draws: displayed and their
+	// sources.
+	charted []displayedIndicator
+	// positions are the subscriptions of the replay that calculate a
+	// displayed indicator on the instrument, and recorded the open time of
+	// the value recorded last for each.
+	positions []int
+	recorded  []time.Time
+	// values are the recorded outputs by target key and UTC open time.
+	values map[string]map[time.Time][]closedindicator.Output
+}
+
+// chartRecording prepares the chart of the backtest replay runs of entry on
+// instrumentID, which displays displayed: it gives replay the stored
+// candles of every interval of the chart it lacks.
+func (service *Service) chartRecording(ctx context.Context, replay *replay, entry Entry, instrumentID int64, displayed []displayedIndicator) (*chartRecording, error) {
+	charted, err := service.chartedIndicators(displayed)
+	if err != nil {
+		return nil, err
+	}
+	recording := &chartRecording{instrumentID: instrumentID, charted: charted, values: map[string]map[time.Time][]closedindicator.Output{}}
+	for position, subscription := range replay.current.reads.subscriptions {
+		if subscription.InstrumentID == instrumentID && slices.ContainsFunc(displayed, func(item displayedIndicator) bool { return item.target().Equal(subscription.Target) }) {
+			recording.positions = append(recording.positions, position)
+		}
+	}
+	recording.recorded = make([]time.Time, len(recording.positions))
+	for _, interval := range market.CandleIntervals() {
+		if slices.Index(market.CandleIntervals(), interval) < slices.Index(market.CandleIntervals(), entry.Interval) {
+			continue
+		}
+		if replay.histories[interval] == nil {
+			replay.histories[interval] = map[int64][]market.Candle{}
+		}
+		if _, loaded := replay.histories[interval][instrumentID]; loaded {
+			continue
+		}
+		stored, err := service.store.ListLatestCandles(ctx, []int64{instrumentID}, interval, market.RetentionDepth)
+		if err != nil {
+			return nil, fmt.Errorf("load backtest chart history: %w", err)
+		}
+		replay.histories[interval][instrumentID] = stored[instrumentID]
+	}
+	return recording, nil
+}
+
+// record keeps the values replay calculated last for the displayed
+// indicators, those its window was warm for.
+func (recording *chartRecording) record(replay *replay) {
+	for index, position := range recording.positions {
+		value := replay.current.values[position]
+		if replay.cut[position] || value.OpenTime.Equal(recording.recorded[index]) {
+			continue
+		}
+		recording.recorded[index] = value.OpenTime
+		key := value.Target.Key()
+		if recording.values[key] == nil {
+			recording.values[key] = map[time.Time][]closedindicator.Output{}
+		}
+		outputs := make([]closedindicator.Output, len(value.Outputs))
+		for i, output := range value.Outputs {
+			outputs[i] = closedindicator.Output{Name: output.Name, Value: output.Value}
+		}
+		recording.values[key][value.OpenTime.UTC()] = outputs
+	}
+}
+
+// pages draws the chart of result, using the same per-candle windows as
+// replay. Values recorded while the backtest ran are reused; gaps in the
+// base interval do not lose points of coarser intervals. A source the rule does not read by itself is
 // calculated over the windows a read of its latest value would have. No
 // snapshot reads history again after the replay. Every output is calculated,
 // and charts draws them as it draws live charts.
-func (replay *replay) chartSnapshot(ctx context.Context, charts ChartDrawing, entry Entry, instrumentID int64, result Backtest) ([]BacktestChart, error) {
+func (recording *chartRecording) pages(ctx context.Context, charts ChartDrawing, replay *replay, entry Entry, result Backtest) ([]BacktestChart, error) {
+	instrumentID := recording.instrumentID
 	pages := make([]BacktestChart, 0)
 	if result.From.IsZero() {
 		return pages, nil
@@ -183,7 +256,7 @@ func (replay *replay) chartSnapshot(ctx context.Context, charts ChartDrawing, en
 			page.Candles = append(page.Candles, candle)
 		}
 		indicators := make([]chart.Calculated, 0)
-		for _, item := range replay.charted {
+		for _, item := range recording.charted {
 			if item.interval != interval {
 				continue
 			}
@@ -200,7 +273,7 @@ func (replay *replay) chartSnapshot(ctx context.Context, charts ChartDrawing, en
 			if position, subscribed := replay.current.reads.position(entry.ID, instrumentID, instrumentID, target.Key()); subscribed {
 				subscription, depth = replay.current.reads.subscriptions[position], replay.depths[position]
 			}
-			cached := replay.chartValues[pair{instrumentID: instrumentID, target: target.Key()}]
+			cached := recording.values[target.Key()]
 			for i := first; first >= 0 && i <= last; i++ {
 				if err := ctx.Err(); err != nil {
 					return nil, err

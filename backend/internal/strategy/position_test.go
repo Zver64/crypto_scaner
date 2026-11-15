@@ -37,6 +37,37 @@ func TestStepWaitsForEveryRuleAndStartsTheTradeAtTheFill(t *testing.T) {
 	}
 }
 
+// A step reports its fills before its other events: pending buys fill with
+// the first processed candle, while the sell of an exit rule fills at the
+// open of the next candle even when that candle waits.
+func TestStepReportsFills(t *testing.T) {
+	entry := Entry{Strategy: Strategy{ExitExpression: "x"}, Exit: &Expression{}, Interval: market.IntervalHour}
+	exit := func(result, known bool) func(map[string]float64) (bool, bool, error) {
+		return func(map[string]float64) (bool, bool, error) { return result, known, nil }
+	}
+	signaled := TradeState{OpenTime: backtestHour(0), Entry: true, Buys: 1}
+	if _, events, processed, _ := entry.step(signaled, flatCandle(1, 10, false, false, exit(false, true))); processed || len(events) != 0 {
+		t.Fatalf("waiting candle processed %v, events %+v", processed, events)
+	}
+	sold, events, processed, _ := entry.step(signaled, flatCandle(2, 20, true, true, exit(true, true)))
+	if !processed || len(events) != 2 || events[1].Kind != TradeSell || events[1].Reason != ExitRuleSignal {
+		t.Fatalf("processed %v, events %+v", processed, events)
+	}
+	if fill := events[0]; fill.Kind != TradeBuyFill || !fill.Time.Equal(backtestHour(2)) || fill.Price != 20 || fill.Count != 1 || fill.Trade.Filled != 1 {
+		t.Fatalf("buy fill %+v", fill)
+	}
+	next, events, processed, _ := entry.step(sold, flatCandle(3, 25, false, false, nil))
+	if processed || len(events) != 1 {
+		t.Fatalf("processed %v, events %+v", processed, events)
+	}
+	if fill := events[0]; fill.Kind != TradeSellFill || !fill.Time.Equal(backtestHour(3)) || fill.Price != 25 || fill.Count != 1 {
+		t.Fatalf("sell fill %+v", fill)
+	}
+	if _, events, _, _ := entry.step(next, flatCandle(4, 30, false, true, nil)); len(events) != 0 {
+		t.Fatalf("the sell filled again: %+v", events)
+	}
+}
+
 // A signal waits for unknown levels, skips levels on the wrong side of the
 // close, and otherwise fixes them in the trade it opens.
 func TestStepFixesTheLevelsOfTheTradeItOpens(t *testing.T) {

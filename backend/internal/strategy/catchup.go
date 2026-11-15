@@ -167,7 +167,9 @@ func (monitor *Monitor) catchUp(ctx context.Context, replay *replay, entry Entry
 		}
 		result.state, result.processed = next, true
 		for _, event := range events {
-			result.alerts = append(result.alerts, alert{instrument: instrument, event: event, past: candle.OpenTime.UTC()})
+			if !event.Kind.fill() {
+				result.alerts = append(result.alerts, alert{instrument: instrument, event: event, past: candle.OpenTime.UTC()})
+			}
 		}
 	}
 	if beyond || cold > 0 {
@@ -188,7 +190,9 @@ func (result progress) advance(current snapshot, entry Entry, instrument Instrum
 		result.state, result.processed = next, true
 	}
 	for _, event := range events {
-		result.alerts = append(result.alerts, alert{instrument: instrument, event: event})
+		if !event.Kind.fill() {
+			result.alerts = append(result.alerts, alert{instrument: instrument, event: event})
+		}
 	}
 	return result
 }

@@ -62,6 +62,20 @@ type IndicatorLine struct {
 	// a line drawn to the marker starts, on the anchor and on the candles.
 	// Empty draws no such line.
 	Segment string
+	// Direction colors a line by the sign of another output; empty keeps
+	// Color.
+	Direction LineDirection
+}
+
+// LineDirection colors each point of a line by the sign of an output of the
+// same indicator at that candle, such as the SUPERTREND trend; a point where
+// it is zero or missing keeps the line color.
+type LineDirection struct {
+	Output string
+	// UpColor and DownColor are client theme color tokens for positive and
+	// negative signs.
+	UpColor   string
+	DownColor string
 }
 
 // IndicatorLevel is a labeled horizontal reference line in a pane.
@@ -153,6 +167,17 @@ func validateCatalogIndicator(registry *indicator.Registry, item CatalogIndicato
 			}
 			if !slices.Contains(outputs, line.Segment) {
 				return fmt.Errorf("line %q draws segments from %q, which is not produced by %q", line.Output, line.Segment, item.Selection.Type)
+			}
+		}
+		if line.Direction != (LineDirection{}) {
+			if line.Style != LineStyleLine {
+				return fmt.Errorf("line %q has a direction, which only lines have", line.Output)
+			}
+			if !slices.Contains(outputs, line.Direction.Output) {
+				return fmt.Errorf("line %q takes its direction from %q, which is not produced by %q", line.Output, line.Direction.Output, item.Selection.Type)
+			}
+			if line.Direction.UpColor == "" || line.Direction.DownColor == "" {
+				return fmt.Errorf("line %q has a direction without colors", line.Output)
 			}
 		}
 		if line.Shift < 0 {

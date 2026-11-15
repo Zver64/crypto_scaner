@@ -1,5 +1,5 @@
 // Command gen writes functions_gen.go from the official TA-Lib function
-// metadata (ta_func_api.xml) and the github.com/TA-Lib/ta-lib-cgo wrapper
+// metadata (ta_func_api.xml) and the github.com/Zver64/ta-lib-cgo wrapper
 // signatures. Every generated call is checked against the wrapper source, so a
 // metadata and wrapper version mismatch fails generation instead of producing
 // wrong argument orders.
@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	wrapperModule = "github.com/TA-Lib/ta-lib-cgo"
+	wrapperModule = "github.com/Zver64/ta-lib-cgo"
 	metadataFile  = "ta_func_api.xml"
 	outputFile    = "functions_gen.go"
 )
@@ -38,15 +38,15 @@ var skippedFunctions = map[string]bool{
 	// These return positions inside the calculation window, so their values
 	// change with the amount of loaded history.
 	"MAXINDEX": true, "MININDEX": true, "MINMAXINDEX": true,
-	// TA-Lib divides by zero without a guard when every candle in the window
-	// has open equal to close, which is common for illiquid pairs.
-	"IMI": true,
-	// TA-Lib divides without a guard, and a zero volume is common; strategy
-	// expressions divide safely instead.
-	"DIV": true,
 	// The second series holds a period for every candle, which no candle
 	// field provides.
 	"MAVP": true,
+	// A swing is confirmed only by later candles, so a backtest would see it
+	// before it was known.
+	"FRACTAL": true, "ZIGZAG": true,
+	// Charts draw these outputs shifted by a number of candles, which the
+	// indicator contract cannot describe.
+	"DPO": true, "ICHIMOKU": true,
 }
 
 // optionLimits narrow the metadata ranges of options whose ends TA-Lib
@@ -72,34 +72,46 @@ var paneFunctions = map[string]bool{
 	"AVGDEV": true,
 }
 
+// directionOutputs name, by function and line output, the integer output
+// whose sign is the direction of that line.
+var directionOutputs = map[string]map[string]string{
+	"SUPERTREND": {"outSupertrend": "outTrend"},
+}
+
 // optionAliases maps metadata option names to wrapper parameter names where
 // they differ, both compared by optionKey. An unknown difference fails
 // generation, because same-typed options (fast and slow periods) cannot be
 // told apart by type.
 var optionAliases = map[string]string{
-	"accelerationfactor": "acceleration",
-	"afmaximum":          "maximum",
-	"afinitlong":         "accelerationinitlong",
-	"aflong":             "accelerationlong",
-	"afmaxlong":          "accelerationmaxlong",
-	"afinitshort":        "accelerationinitshort",
-	"afshort":            "accelerationshort",
-	"afmaxshort":         "accelerationmaxshort",
-	"deviations":         "nbdev",
-	"deviationsup":       "nbdevup",
-	"deviationsdown":     "nbdevdn",
-	"fastma":             "fastmatype",
-	"slowma":             "slowmatype",
-	"signalma":           "signalmatype",
-	"fastdma":            "fastdmatype",
-	"slowkma":            "slowkmatype",
-	"slowdma":            "slowdmatype",
-	"firstperiod":        "timeperiod1",
-	"secondperiod":       "timeperiod2",
-	"thirdperiod":        "timeperiod3",
-	"minimumperiod":      "minperiod",
-	"maximumperiod":      "maxperiod",
-	"volumefactor":       "vfactor",
+	"accelerationfactor":    "acceleration",
+	"afmaximum":             "maximum",
+	"afinitlong":            "accelerationinitlong",
+	"aflong":                "accelerationlong",
+	"afmaxlong":             "accelerationmaxlong",
+	"afinitshort":           "accelerationinitshort",
+	"afshort":               "accelerationshort",
+	"afmaxshort":            "accelerationmaxshort",
+	"deviations":            "nbdev",
+	"deviationsup":          "nbdevup",
+	"deviationsdown":        "nbdevdn",
+	"fastma":                "fastmatype",
+	"slowma":                "slowmatype",
+	"signalma":              "signalmatype",
+	"fastdma":               "fastdmatype",
+	"slowkma":               "slowkmatype",
+	"slowdma":               "slowdmatype",
+	"firstperiod":           "timeperiod1",
+	"secondperiod":          "timeperiod2",
+	"thirdperiod":           "timeperiod3",
+	"minimumperiod":         "minperiod",
+	"maximumperiod":         "maxperiod",
+	"volumefactor":          "vfactor",
+	"firstsmoothingperiod":  "firstperiod",
+	"secondsmoothingperiod": "secondperiod",
+	"rocma":                 "rocmatype",
+	"widefactor":            "factorwide",
+	"normalfactor":          "factornormal",
+	"narrowfactor":          "factornarrow",
 }
 
 var inputFields = map[string]string{
@@ -116,6 +128,23 @@ var outputStyles = map[string]string{
 	"Histogram":   "indicator.OutputHistogram",
 	"Upper Limit": "indicator.OutputUpperLimit",
 	"Lower Limit": "indicator.OutputLowerLimit",
+}
+
+// ignoredFunctionFlags describe calculation details the adapter does not
+// depend on. Display Shift is not ignored: such functions must be skipped.
+var ignoredFunctionFlags = map[string]bool{
+	"Streaming":           true,
+	"Path Dependent":      true,
+	"Period 1 Identity":   true,
+	"Uses Transcendental": true,
+	"Positive Input":      true,
+}
+
+// ignoredOutputFlags describe output value ranges and pattern meanings, which
+// the indicator contract does not carry.
+var ignoredOutputFlags = map[string]bool{
+	"Positive": true, "Negative": true, "Zero": true, "Percent": true,
+	"Pattern Bool": true, "Pattern Bull Bear": true, "Pattern Confirm": true, "Pattern Weak": true,
 }
 
 type metadata struct {
@@ -187,6 +216,11 @@ func main() {
 	for name := range optionLimits {
 		if !names[name] {
 			log.Fatalf("limited function %q is not generated", name)
+		}
+	}
+	for name := range directionOutputs {
+		if !names[name] {
+			log.Fatalf("function %q with a direction is not generated", name)
 		}
 	}
 
@@ -294,6 +328,7 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 	indicatorType := strings.ToLower(fn.Abbreviation)
 	fmt.Fprintf(body, "{\n\tname: %q,\n\tindicatorType: %q,\n\ttitle: %q,\n\tgroup: %q,\n",
 		fn.Abbreviation, indicatorType, fn.Description, fn.Group)
+	sparse := false
 	for _, flag := range fn.Flags {
 		switch flag {
 		case "Overlap":
@@ -304,7 +339,13 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 			body.WriteString("\tcandlestick: true,\n")
 		case "Unstable Period":
 			body.WriteString("\tunstable: true,\n")
+		case "Can Output NaN or +/-Inf":
+			// Such as a division by a zero volume; those candles stay empty.
+			sparse = true
 		default:
+			if ignoredFunctionFlags[flag] {
+				continue
+			}
 			return fmt.Errorf("unknown function flag %q", flag)
 		}
 	}
@@ -361,16 +402,39 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 		body.WriteString("\t},\n")
 	}
 
+	for line := range directionOutputs[fn.Abbreviation] {
+		if !slices.ContainsFunc(fn.Outputs, func(out output) bool { return out.Name == line }) {
+			return fmt.Errorf("output %q with a direction is not an output", line)
+		}
+	}
 	body.WriteString("\toutputs: []output{\n")
 	for _, out := range fn.Outputs {
-		if len(out.Flags) != 1 || outputStyles[out.Flags[0]] == "" {
-			return fmt.Errorf("output %q has unsupported flags %v", out.Name, out.Flags)
+		style, err := outputStyle(out)
+		if err != nil {
+			return err
+		}
+		// An integer output of an overlap, such as the SUPERTREND
+		// direction, is a code rather than a price, so on the candle scale
+		// it would squash the candles; rules and tables still read it.
+		if out.Type == "Integer Array" && slices.Contains(fn.Flags, "Overlap") && !paneFunctions[fn.Abbreviation] {
+			style = "indicator.OutputValue"
 		}
 		name := indicatorType
 		if len(fn.Outputs) > 1 {
 			name = outputName(out.Name)
 		}
-		fmt.Fprintf(body, "\t\t{name: %q, style: %s},\n", name, outputStyles[out.Flags[0]])
+		fmt.Fprintf(body, "\t\t{name: %q, style: %s", name, style)
+		if sparse {
+			body.WriteString(", sparse: true")
+		}
+		if direction, ok := directionOutputs[fn.Abbreviation][out.Name]; ok {
+			index := slices.IndexFunc(fn.Outputs, func(out output) bool { return out.Name == direction })
+			if index < 0 || fn.Outputs[index].Type != "Integer Array" {
+				return fmt.Errorf("direction %q of output %q is not an integer output", direction, out.Name)
+			}
+			fmt.Fprintf(body, ", direction: %q", outputName(direction))
+		}
+		body.WriteString("},\n")
 	}
 	body.WriteString("\t},\n")
 
@@ -403,6 +467,27 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 		strings.Join(outputs, ", "), call.name, strings.Join(callArguments, ", "), strings.Join(converted, ", "))
 	body.WriteString("},\n")
 	return nil
+}
+
+// outputStyle returns the drawing style of out. A limit flag is more specific
+// than the Line flag it comes with (the Heikin Ashi high and low).
+func outputStyle(out output) (string, error) {
+	var styles []string
+	for _, flag := range out.Flags {
+		switch {
+		case outputStyles[flag] != "":
+			styles = append(styles, flag)
+		case !ignoredOutputFlags[flag]:
+			return "", fmt.Errorf("output %q has unsupported flag %q", out.Name, flag)
+		}
+	}
+	if len(styles) == 2 && styles[0] == "Line" && (styles[1] == "Upper Limit" || styles[1] == "Lower Limit") {
+		styles = styles[1:]
+	}
+	if len(styles) != 1 {
+		return "", fmt.Errorf("output %q has styles %v, want one", out.Name, styles)
+	}
+	return outputStyles[styles[0]], nil
 }
 
 func checkSignature(fn function, call, lookback signature) error {

@@ -8,13 +8,14 @@ import type {
 
 import type {
 	ChartIndicatorDefinition,
+	ChartIndicatorLineDirection,
 	ChartPageResponse,
 } from "@/api/generated/models";
 import {
 	entryMarkerOptions,
 	exitMarkerOptions,
 	indicatorMarkerPositions,
-	markerSegmentGapColor,
+	lineGapColor,
 	markMarkerOptions,
 	volumeColors,
 } from "@/features/candle-chart/config";
@@ -91,7 +92,7 @@ export function createChartSeriesData(
 		priceResolution,
 		lines: Object.fromEntries(
 			catalog.flatMap(({ id, lines, placement }) =>
-				lines.map(({ output }) => {
+				lines.map(({ output, direction }) => {
 					const data = createIndicatorData(slots, points[id]?.[output] ?? []);
 					// Overlays are drawn on the candles' scale, so only other lines
 					// have a resolution of their own.
@@ -105,6 +106,14 @@ export function createChartSeriesData(
 											"value" in slot ? [slot.value] : [],
 										),
 									),
+						...(direction
+							? {
+									directionData: createIndicatorData(
+										slots,
+										points[id]?.[direction.output] ?? [],
+									),
+								}
+							: {}),
 					};
 					return [`${id}:${output}`, line];
 				}),
@@ -202,6 +211,49 @@ export function createIndicatorData(
 		const value = values.get(time);
 		return value === undefined ? { time } : { time, value };
 	});
+}
+
+// The points of a line as drawn: with a direction, colored by the sign of the
+// direction output at the same slot; a point where it is zero or missing keeps
+// the line color. Where the sign flips, the line breaks, like the SUPERTREND
+// level jumping to the other side of the candles.
+export function colorByDirection(
+	{ data, directionData }: ChartLineData,
+	direction: ChartIndicatorLineDirection | undefined,
+	themeColor: (color: string) => string,
+): readonly ChartIndicatorSlot[] {
+	if (!direction || !directionData) return data;
+	const upColor = themeColor(direction.up_color);
+	const downColor = themeColor(direction.down_color);
+	const signs = directionData.map(directionSign);
+	return data.map((slot, index) => {
+		const sign = signs[index] ?? 0;
+		if (!("value" in slot) || sign === 0) return slot;
+		const next = signs[index + 1] ?? 0;
+		const color =
+			next === -sign && "value" in (data[index + 1] ?? {})
+				? lineGapColor
+				: sign > 0
+					? upColor
+					: downColor;
+		return { ...slot, color };
+	});
+}
+
+// The theme color of a line at a slot: the color of its direction there, or
+// the line color where the direction is zero or missing.
+function lineColorAt(
+	{ color, direction }: ChartIndicatorLine,
+	directionData: readonly ChartIndicatorSlot[] | undefined,
+	slotIndex: number,
+): string {
+	const sign = directionSign(directionData?.[slotIndex]);
+	if (!direction || sign === 0) return color;
+	return sign > 0 ? direction.up_color : direction.down_color;
+}
+
+function directionSign(slot: ChartIndicatorSlot | undefined): number {
+	return slot && "value" in slot ? Math.sign(slot.value) : 0;
 }
 
 // The close prices of another instrument's candles on the candle slots of the
@@ -533,8 +585,7 @@ function segmentData(
 		const last = data.at(-1);
 		if (!start || !end || (last && start.time < last.time)) continue;
 		if (last?.time !== start.time) {
-			if (last)
-				data[data.length - 1] = { ...last, color: markerSegmentGapColor };
+			if (last) data[data.length - 1] = { ...last, color: lineGapColor };
 			data.push(start);
 		}
 		data.push(end);
@@ -789,8 +840,9 @@ export function createIndicatorLegend(
 ): ChartLegendItem[] {
 	return indicators.flatMap((indicator) =>
 		indicator.lines.map((line) => {
-			const { color, output, title } = line;
+			const { output, title } = line;
 			const key = `${indicator.id}:${output}`;
+			const color = lineColorAt(line, lines[key]?.directionData, slotIndex);
 			const drawn = drawnValue(
 				candles,
 				lines[key]?.data ?? [],

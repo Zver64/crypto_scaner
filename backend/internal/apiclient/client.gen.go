@@ -1008,6 +1008,9 @@ type ChartIndicatorLine struct {
 	// Color Client theme color token, for example `yellow.5`.
 	Color string `json:"color"`
 
+	// Direction Colors each point of a `line` by the sign of a calculated series of the same indicator at that candle, such as the SUPERTREND trend; a point where it is zero or missing keeps the line `color`. The series is delivered with the others but not drawn itself.
+	Direction *ChartIndicatorLineDirection `json:"direction,omitempty"`
+
 	// Output Name of the calculated series drawn by this line.
 	Output string `json:"output"`
 
@@ -1032,6 +1035,18 @@ type ChartIndicatorLineAnchor struct {
 
 	// Output The `output` of its line.
 	Output string `json:"output"`
+}
+
+// ChartIndicatorLineDirection Colors each point of a `line` by the sign of a calculated series of the same indicator at that candle, such as the SUPERTREND trend; a point where it is zero or missing keeps the line `color`. The series is delivered with the others but not drawn itself.
+type ChartIndicatorLineDirection struct {
+	// DownColor Client theme color token where the series is negative.
+	DownColor string `json:"down_color"`
+
+	// Output Name of the series whose sign is the direction.
+	Output string `json:"output"`
+
+	// UpColor Client theme color token where the series is positive.
+	UpColor string `json:"up_color"`
 }
 
 // ChartIndicatorResult defines model for ChartIndicatorResult.

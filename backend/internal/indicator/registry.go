@@ -72,6 +72,11 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 		if err := validateOutputs(outputs); err != nil {
 			return nil, fmt.Errorf("%w: %q: %v", ErrEmptyRegistration, indicatorType, err)
 		}
+		for _, parameter := range descriptor.Parameters {
+			if parameter.Kind == ParameterChoice && !slices.ContainsFunc(parameter.Choices, func(choice Choice) bool { return float64(choice.Value) == parameter.Default }) {
+				return nil, fmt.Errorf("%w: %q: parameter %q defaults to %g, which is not one of its choices", ErrEmptyRegistration, indicatorType, parameter.Key, parameter.Default)
+			}
+		}
 		for _, output := range descriptor.Outputs {
 			if output.Shift != "" && !slices.ContainsFunc(descriptor.Parameters, func(parameter ParameterDescriptor) bool {
 				return parameter.Key == output.Shift && parameter.Kind == ParameterInteger
@@ -88,6 +93,11 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 			}
 			if output.Segment != "" && (output.Style != OutputMarkerAbove && output.Style != OutputMarkerBelow || !sparse[output.Segment]) {
 				return nil, fmt.Errorf("%w: %q: output %q draws segments from %q, which only markers may do from a sparse output", ErrEmptyRegistration, indicatorType, output.Name, output.Segment)
+			}
+			if output.Direction != "" && (output.Style != OutputLine || output.Tone != "" || !slices.ContainsFunc(descriptor.Outputs, func(direction OutputDescriptor) bool {
+				return direction.Name == output.Direction && direction.Style == OutputValue
+			})) {
+				return nil, fmt.Errorf("%w: %q: output %q takes its direction from %q, which only a line without a tone may do from a value output", ErrEmptyRegistration, indicatorType, output.Name, output.Direction)
 			}
 		}
 		var sources []ParameterDescriptor

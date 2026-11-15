@@ -1802,6 +1802,23 @@ components:
           type: string
           minLength: 1
           description: Name of the calculated series of the same indicator holding, at each value of this marker line, the number of candles back from the marker to where a straight line drawn to the marker starts, on the `anchor` line and on the candles (lows under `marker_below`, highs over `marker_above`). Only marker lines have it; the series is delivered with the others but not drawn itself.
+        direction: { $ref: "#/components/schemas/ChartIndicatorLineDirection" }
+    ChartIndicatorLineDirection:
+      type: object
+      additionalProperties: false
+      required: [output, up_color, down_color]
+      description: Colors each point of a `line` by the sign of a calculated series of the same indicator at that candle, such as the SUPERTREND trend; a point where it is zero or missing keeps the line `color`. The series is delivered with the others but not drawn itself.
+      properties:
+        output:
+          type: string
+          minLength: 1
+          description: Name of the series whose sign is the direction.
+        up_color:
+          type: string
+          description: Client theme color token where the series is positive.
+        down_color:
+          type: string
+          description: Client theme color token where the series is negative.
     ChartIndicatorLineAnchor:
       type: object
       additionalProperties: false

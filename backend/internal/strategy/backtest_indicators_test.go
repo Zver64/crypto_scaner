@@ -43,7 +43,7 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.candles[market.IntervalDay] = map[int64][]market.Candle{1: daily}
 	item := Strategy{ID: testID(1), Signal: true, Direction: DirectionLong, TargetRatio: 2, Window: 6,
-		Expression: `close("1h") > 101 && Prev(bbands_upperband("1h", 20)) > 0 && Percentile(rsi("1h"), 3, 50) > 0 && ema("1d", 3) > 0 && !(pivot_low("1h") > 0) && Of("BTCUSDT", ema("1h", 7)) > 0`}
+		Expression: `close("1h") > 101 && Prev(bbands_upperband("1h", 10)) > 0 && Percentile(rsi("1h"), 3, 50) > 0 && ema("1d", 3) > 0 && !(pivot_low("1h") > 0) && Of("BTCUSDT", ema("1h", 7)) > 0`}
 	store.strategies = []Strategy{item}
 	service := snapshotTestService(t, store)
 	// A bounded run must not return the latest stored tail or future indicators.
@@ -65,7 +65,7 @@ func TestBacktestSnapshotAndSignalOutputsOfUnconfiguredDependencies(t *testing.T
 			t.Fatalf("nonlocal or candle column: %s", column.Key)
 		}
 	}
-	for _, name := range []string{`rsi("1h")`, `ema("1d", 3)`, `bbands_upperband("1h", 20)`, `bbands_middleband("1h", 20)`, `bbands_lowerband("1h", 20)`, `pivot_high("1h")`, `pivot_low("1h")`} {
+	for _, name := range []string{`rsi("1h")`, `ema("1d", 3)`, `bbands_upperband("1h", 10)`, `bbands_middleband("1h", 10)`, `bbands_lowerband("1h", 10)`, `pivot_high("1h")`, `pivot_low("1h")`} {
 		if !keys[name] {
 			t.Fatalf("missing output %s", name)
 		}
@@ -209,7 +209,7 @@ func TestBacktestDependenciesIncludeExitAndPriceRules(t *testing.T) {
 	service := snapshotTestService(t, newBacktestStore(market.IntervalHour, nil))
 	entry, err := service.compileEntry(Strategy{
 		Expression: `rsi("1h") > 30`, ExitExpression: `ema("1d", 3) > close("1d")`,
-		TakeProfitExpression: `bbands_upperband("1h", 20)`, StopLossExpression: `close("1h") - atr("1h")`,
+		TakeProfitExpression: `bbands_upperband("1h", 10)`, StopLossExpression: `close("1h") - atr("1h")`,
 	})
 	if err != nil {
 		t.Fatal(err)

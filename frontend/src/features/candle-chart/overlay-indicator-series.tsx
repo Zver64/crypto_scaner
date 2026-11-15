@@ -5,14 +5,15 @@ import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import { overlayIndicatorSeriesOptions } from "@/features/candle-chart/config";
 import type {
 	ChartIndicatorLine,
-	ChartIndicatorSlot,
+	ChartLineData,
 	ChartMarker,
 	ValueResolution,
 } from "@/features/candle-chart/types";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
+import { colorByDirection } from "@/features/candle-chart/utils";
 
 interface OverlayIndicatorSeriesProps {
-	data: readonly ChartIndicatorSlot[];
+	data: ChartLineData;
 	line: ChartIndicatorLine;
 	// The markers of the lines anchored to this one.
 	markers?: readonly ChartMarker[];
@@ -30,7 +31,7 @@ export function OverlayIndicatorSeries({
 	const themeColor = useThemeColor();
 	return (
 		<Series
-			data={data}
+			data={colorByDirection(data, line.direction, themeColor)}
 			definition={LineSeries}
 			options={{
 				...overlayIndicatorSeriesOptions,

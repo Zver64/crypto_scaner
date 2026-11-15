@@ -35,7 +35,7 @@ func TestAdapterValidatesParametersAndInputs(t *testing.T) {
 		{name: "period too small", indicatorType: indicatortalib.RSIType, parameters: indicator.Parameters{"period": 1}, inputs: indicator.Inputs{"close": closes}},
 		{name: "period beyond history depth", indicatorType: indicatortalib.RSIType, parameters: indicator.Parameters{"period": 2001}, inputs: indicator.Inputs{"close": closes}},
 		{name: "unknown parameter", indicatorType: indicatortalib.RSIType, parameters: indicator.Parameters{"length": 14}, inputs: indicator.Inputs{"close": closes}},
-		{name: "unknown moving average type", indicatorType: "ma", parameters: indicator.Parameters{"ma_type": 9}, inputs: indicator.Inputs{"close": closes}},
+		{name: "unknown moving average type", indicatorType: "ma", parameters: indicator.Parameters{"ma_type": 10}, inputs: indicator.Inputs{"close": closes}},
 		{name: "infinite real parameter", indicatorType: "bbands", parameters: indicator.Parameters{"deviations_up": math.Inf(1)}, inputs: indicator.Inputs{"close": closes}},
 		{name: "missing input", indicatorType: indicatortalib.RSIType, parameters: indicator.Parameters{"period": 2}},
 		{name: "NaN input", indicatorType: indicatortalib.RSIType, parameters: indicator.Parameters{"period": 2}, inputs: indicator.Inputs{"close": {1, math.NaN(), 3}}},

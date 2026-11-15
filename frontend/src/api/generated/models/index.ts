@@ -68,6 +68,7 @@ export * from './chartIndicatorDefinitionPlacement.ts';
 export * from './chartIndicatorLevel.ts';
 export * from './chartIndicatorLine.ts';
 export * from './chartIndicatorLineAnchor.ts';
+export * from './chartIndicatorLineDirection.ts';
 export * from './chartIndicatorLineStyle.ts';
 export * from './chartIndicatorResult.ts';
 export * from './chartIndicatorResultParameters.ts';

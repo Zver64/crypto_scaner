@@ -180,9 +180,9 @@ export const markerSegmentSeriesOptions = {
 	volume: { ...markerSegmentOptions, priceScaleId: volumePriceScaleId },
 } satisfies Record<"price" | "volume", LineSeriesPartialOptions>;
 
-// A line series joins all its points, so the point before a gap between two
-// segments colors the join to the next point transparent.
-export const markerSegmentGapColor = "transparent";
+// A line series joins all its points and colors each join with the color of
+// its first point, so the point before a gap colors the join transparent.
+export const lineGapColor = "transparent";
 
 export const paneIndicatorSeriesOptions = {
 	lastValueVisible: true,

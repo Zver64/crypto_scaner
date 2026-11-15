@@ -141,6 +141,11 @@ type OutputDescriptor struct {
 	// value of this marker output, the number of candles back from the marker
 	// to where a line drawn to the marker starts; empty draws no line.
 	Segment string
+	// Direction names the value output of the same indicator whose sign is
+	// the direction of this line at each candle, such as the SUPERTREND
+	// trend: the line takes the bullish tone where it is positive and the
+	// bearish tone where it is negative. Empty keeps one color.
+	Direction string
 	// Tone is the fixed meaning of the output; empty colors it from the
 	// palette.
 	Tone Tone

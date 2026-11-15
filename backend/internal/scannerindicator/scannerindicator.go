@@ -494,6 +494,9 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 		case entry.Placement != chart.PlacementOverlay:
 			continue
 		}
+		if output.Direction != "" {
+			line.Direction = chart.LineDirection{Output: output.Direction, UpColor: service.tones[indicator.ToneBullish], DownColor: service.tones[indicator.ToneBearish]}
+		}
 		entry.lines = append(entry.lines, line)
 		if output.Tone != "" {
 			if entry.colors == nil {

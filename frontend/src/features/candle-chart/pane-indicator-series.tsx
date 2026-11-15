@@ -19,6 +19,7 @@ import type {
 	ChartMarker,
 } from "@/features/candle-chart/types";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
+import { colorByDirection } from "@/features/candle-chart/utils";
 
 interface PaneIndicatorSeriesProps {
 	autoscaleInfoProvider: AutoscaleInfoProvider;
@@ -36,7 +37,7 @@ interface PaneIndicatorSeriesProps {
 export function PaneIndicatorSeries({
 	autoscaleInfoProvider,
 	drawsLevels,
-	data: { data, resolution },
+	data,
 	line,
 	markers,
 	pane,
@@ -47,7 +48,7 @@ export function PaneIndicatorSeries({
 	const themeColor = useThemeColor();
 	return (
 		<Series
-			data={data}
+			data={colorByDirection(data, line.direction, themeColor)}
 			definition={LineSeries}
 			options={{
 				...paneIndicatorSeriesOptions,
@@ -57,7 +58,7 @@ export function PaneIndicatorSeries({
 			pane={pane}
 			priceScale={paneIndicatorPriceScaleOptions}
 		>
-			<AxisPriceFormat resolution={resolution} />
+			<AxisPriceFormat resolution={data.resolution} />
 			{drawsLevels
 				? scale.levels.map(({ value }) => (
 						<PriceLine

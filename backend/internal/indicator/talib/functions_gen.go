@@ -5,10 +5,30 @@ package talib
 import (
 	"crypto-scanner/internal/indicator"
 
-	ta "github.com/TA-Lib/ta-lib-cgo"
+	ta "github.com/Zver64/ta-lib-cgo"
 )
 
 var functions = []spec{
+	{
+		name:          "AC",
+		indicatorType: "ac",
+		title:         "Accelerator/Decelerator Oscillator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 34},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (period length)", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
+		},
+		outputs: []output{
+			{name: "ac", style: indicator.OutputHistogram},
+		},
+		lookback: func(p []float64) int { return ta.AcLookback(int(p[0]), int(p[1]), int(p[2])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Ac(in[0], in[1], int(p[0]), int(p[1]), int(p[2]), nil)
+			return [][]float64{o0}
+		},
+	},
 	{
 		name:          "ACCBANDS",
 		indicatorType: "accbands",
@@ -17,7 +37,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
 		},
 		outputs: []output{
 			{name: "upperband", style: indicator.OutputUpperLimit},
@@ -71,8 +91,8 @@ var functions = []spec{
 		group:         "Volume Indicators",
 		inputs:        []string{"high", "low", "close", "volume"},
 		params: []param{
-			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 3},
-			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 3},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
 		},
 		outputs: []output{
 			{name: "adosc", style: indicator.OutputLine},
@@ -84,6 +104,24 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "ADR",
+		indicatorType: "adr",
+		title:         "Average Day Range",
+		group:         "Volatility Indicators",
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+		},
+		outputs: []output{
+			{name: "adr", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.AdrLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Adr(in[0], in[1], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "ADX",
 		indicatorType: "adx",
 		title:         "Average Directional Movement Index",
@@ -91,7 +129,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "adx", style: indicator.OutputLine},
@@ -107,10 +145,9 @@ var functions = []spec{
 		indicatorType: "adxr",
 		title:         "Average Directional Movement Index Rating",
 		group:         "Momentum Indicators",
-		unstable:      true,
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "adxr", style: indicator.OutputLine},
@@ -122,15 +159,56 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "ALMA",
+		indicatorType: "alma",
+		title:         "Arnaud Legoux Moving Average",
+		group:         "Overlap Studies",
+		overlap:       true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "sigma", title: "Sigma", description: "Gaussian width divisor", kind: paramReal, minimum: 0.01, maximum: 3e+37, defaultValue: 6},
+			{key: "offset", title: "Offset", description: "Position of the peak weight", kind: paramReal, minimum: 0, maximum: 1, defaultValue: 0.85},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "alma", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.AlmaLookback(int(p[0]), p[1], p[2]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Alma(in[0], int(p[0]), p[1], p[2], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "AO",
+		indicatorType: "ao",
+		title:         "Awesome Oscillator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 34},
+		},
+		outputs: []output{
+			{name: "ao", style: indicator.OutputHistogram},
+		},
+		lookback: func(p []float64) int { return ta.AoLookback(int(p[0]), int(p[1])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Ao(in[0], in[1], int(p[0]), int(p[1]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "APO",
 		indicatorType: "apo",
 		title:         "Absolute Price Oscillator",
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
-			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
-			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
+			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 1},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -149,7 +227,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"high", "low"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "aroondown", style: indicator.OutputDashedLine},
@@ -168,7 +246,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"high", "low"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "aroonosc", style: indicator.OutputLine},
@@ -180,6 +258,24 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "ASI",
+		indicatorType: "asi",
+		title:         "Wilder Accumulative Swing Index",
+		group:         "Momentum Indicators",
+		inputs:        []string{"open", "high", "low", "close"},
+		params: []param{
+			{key: "limit_move", title: "Limit Move", description: "Largest one-bar price move the index is scaled against, in price units", kind: paramReal, minimum: 1e-08, maximum: 3e+37, defaultValue: 3},
+		},
+		outputs: []output{
+			{name: "asi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.AsiLookback(p[0]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Asi(in[0], in[1], in[2], in[3], p[0], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "ATR",
 		indicatorType: "atr",
 		title:         "Average True Range",
@@ -187,7 +283,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "atr", style: indicator.OutputLine},
@@ -195,6 +291,25 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.AtrLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Atr(in[0], in[1], in[2], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "AVGDEV",
+		indicatorType: "avgdev",
+		title:         "Average Deviation",
+		group:         "Price Transform",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "avgdev", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.AvgdevLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Avgdev(in[0], int(p[0]), nil)
 			return [][]float64{o0}
 		},
 	},
@@ -215,25 +330,6 @@ var functions = []spec{
 		},
 	},
 	{
-		name:          "AVGDEV",
-		indicatorType: "avgdev",
-		title:         "Average Deviation",
-		group:         "Price Transform",
-		inputs:        []string{"source"},
-		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
-			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
-		},
-		outputs: []output{
-			{name: "avgdev", style: indicator.OutputLine},
-		},
-		lookback: func(p []float64) int { return ta.AvgdevLookback(int(p[0])) },
-		call: func(in [][]float64, p []float64) [][]float64 {
-			o0 := ta.Avgdev(in[0], int(p[0]), nil)
-			return [][]float64{o0}
-		},
-	},
-	{
 		name:          "BBANDS",
 		indicatorType: "bbands",
 		title:         "Bollinger Bands",
@@ -241,7 +337,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
 			{key: "deviations_up", title: "Deviations up", description: "Deviation multiplier for upper band", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
 			{key: "deviations_down", title: "Deviations down", description: "Deviation multiplier for lower band", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
 			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
@@ -259,13 +355,35 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "BBW",
+		indicatorType: "bbw",
+		title:         "Bollinger BandWidth",
+		group:         "Volatility Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+			{key: "deviations_up", title: "Deviations up", description: "Deviation multiplier for upper band", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
+			{key: "deviations_down", title: "Deviations down", description: "Deviation multiplier for lower band", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
+			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "bbw", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.BbwLookback(int(p[0]), p[1], p[2], int(p[3])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Bbw(in[0], int(p[0]), p[1], p[2], int(p[3]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "BETA",
 		indicatorType: "beta",
 		title:         "Beta",
 		group:         "Statistic Functions",
 		inputs:        []string{"source_0", "source_1"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
 			{key: "source_0", title: "First Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 			{key: "source_1", title: "Second Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
@@ -300,7 +418,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "cci", style: indicator.OutputLine},
@@ -362,7 +480,7 @@ var functions = []spec{
 	{
 		name:          "CDL3LINESTRIKE",
 		indicatorType: "cdl3linestrike",
-		title:         "Three-Line Strike ",
+		title:         "Three-Line Strike",
 		group:         "Pattern Recognition",
 		candlestick:   true,
 		inputs:        []string{"open", "high", "low", "close"},
@@ -1309,6 +1427,101 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "CG",
+		indicatorType: "cg",
+		title:         "Center of Gravity Oscillator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of bars in the window", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "cg", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CgLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Cg(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "CHOP",
+		indicatorType: "chop",
+		title:         "Choppiness Index",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+		},
+		outputs: []output{
+			{name: "chop", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.ChopLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Chop(in[0], in[1], in[2], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "CHOPTR",
+		indicatorType: "choptr",
+		title:         "Choppiness Index (True Range Box)",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+		},
+		outputs: []output{
+			{name: "choptr", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.ChoptrLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Choptr(in[0], in[1], in[2], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "CKSP",
+		indicatorType: "cksp",
+		title:         "Chande Kroll Stop",
+		group:         "Overlap Studies",
+		overlap:       true,
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "ATR and extreme window", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "multiplier", title: "Multiplier", description: "ATR multiplier", kind: paramReal, minimum: 0, maximum: 3e+37, defaultValue: 1},
+			{key: "stop_period", title: "Stop Period", description: "Stop window", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+		},
+		outputs: []output{
+			{name: "highstop", style: indicator.OutputLine},
+			{name: "lowstop", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CkspLookback(int(p[0]), p[1], int(p[2])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Cksp(in[0], in[1], in[2], int(p[0]), p[1], int(p[2]), nil, nil)
+			return [][]float64{o0, o1}
+		},
+	},
+	{
+		name:          "CMF",
+		indicatorType: "cmf",
+		title:         "Chaikin Money Flow",
+		group:         "Volume Indicators",
+		inputs:        []string{"high", "low", "close", "volume"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+		},
+		outputs: []output{
+			{name: "cmf", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CmfLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Cmf(in[0], in[1], in[2], in[3], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "CMO",
 		indicatorType: "cmo",
 		title:         "Chande Momentum Oscillator",
@@ -1316,7 +1529,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1329,13 +1542,53 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "CMOU",
+		indicatorType: "cmou",
+		title:         "Chande Momentum Oscillator (Unsmoothed)",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "cmou", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CmouLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Cmou(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "COPPOCK",
+		indicatorType: "coppock",
+		title:         "Coppock Curve",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "wma_period", title: "WMA Period", description: "Smoothing period for the ROC sum", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "roc_1_period", title: "ROC-1 Period", description: "Short rate-of-change period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 11},
+			{key: "roc_2_period", title: "ROC-2 Period", description: "Long rate-of-change period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "coppock", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CoppockLookback(int(p[0]), int(p[1]), int(p[2])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Coppock(in[0], int(p[0]), int(p[1]), int(p[2]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "CORREL",
 		indicatorType: "correl",
 		title:         "Pearson's Correlation Coefficient (r)",
 		group:         "Statistic Functions",
 		inputs:        []string{"source_0", "source_1"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source_0", title: "First Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 			{key: "source_1", title: "Second Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
@@ -1349,6 +1602,83 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "CRSI",
+		indicatorType: "crsi",
+		title:         "Connors Relative Strength Index",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 3},
+			{key: "streak_period", title: "Streak Period", description: "Time period of the RSI of the up/down streak", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 2},
+			{key: "rank_period", title: "Rank Period", description: "Number of previous one-bar returns the current one is ranked against", kind: paramInteger, minimum: 2, maximum: 10000, defaultValue: 100},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "crsi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CrsiLookback(int(p[0]), int(p[1]), int(p[2])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Crsi(in[0], int(p[0]), int(p[1]), int(p[2]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "CTI",
+		indicatorType: "cti",
+		title:         "Correlation Trend Indicator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of bars correlated against the ramp", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "cti", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CtiLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Cti(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "CUMSUM",
+		indicatorType: "cumsum",
+		title:         "Cumulative Sum",
+		group:         "Math Operators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "cumsum", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CumsumLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Cumsum(in[0], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "CVI",
+		indicatorType: "cvi",
+		title:         "Chaikin's Volatility",
+		group:         "Volatility Indicators",
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Period of the EMA smoothing the high-low spread", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "roc_period", title: "ROC Period", description: "Number of bars the rate of change reaches back", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+		},
+		outputs: []output{
+			{name: "cvi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.CviLookback(int(p[0]), int(p[1])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Cvi(in[0], in[1], int(p[0]), int(p[1]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "DEMA",
 		indicatorType: "dema",
 		title:         "Double Exponential Moving Average",
@@ -1356,7 +1686,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1369,6 +1699,68 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "DIV",
+		indicatorType: "div",
+		title:         "Vector Arithmetic Div",
+		group:         "Math Operators",
+		inputs:        []string{"source_0", "source_1"},
+		params: []param{
+			{key: "source_0", title: "First Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+			{key: "source_1", title: "Second Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "div", style: indicator.OutputLine, sparse: true},
+		},
+		lookback: func(p []float64) int { return ta.DivLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Div(in[0], in[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "DONCHIAN",
+		indicatorType: "donchian",
+		title:         "Donchian Channels",
+		group:         "Overlap Studies",
+		overlap:       true,
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+		},
+		outputs: []output{
+			{name: "upperband", style: indicator.OutputUpperLimit},
+			{name: "middleband", style: indicator.OutputLine},
+			{name: "lowerband", style: indicator.OutputLowerLimit},
+		},
+		lookback: func(p []float64) int { return ta.DonchianLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1, o2 := ta.Donchian(in[0], in[1], int(p[0]), nil, nil, nil)
+			return [][]float64{o0, o1, o2}
+		},
+	},
+	{
+		name:          "DOSC",
+		indicatorType: "dosc",
+		title:         "Derivative Oscillator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Period of the RSI", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "first_smoothing_period", title: "First Smoothing Period", description: "Period of the first smoothing, applied to the RSI", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
+			{key: "second_smoothing_period", title: "Second Smoothing Period", description: "Period of the second smoothing, applied to the first", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 3},
+			{key: "signal_period", title: "Signal Period", description: "Period of the simple average subtracted from the smoothed line", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "dosc", style: indicator.OutputHistogram},
+		},
+		lookback: func(p []float64) int { return ta.DoscLookback(int(p[0]), int(p[1]), int(p[2]), int(p[3])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Dosc(in[0], int(p[0]), int(p[1]), int(p[2]), int(p[3]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "DX",
 		indicatorType: "dx",
 		title:         "Directional Movement Index",
@@ -1376,7 +1768,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "dx", style: indicator.OutputLine},
@@ -1384,6 +1776,24 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.DxLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Dx(in[0], in[1], in[2], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "EFI",
+		indicatorType: "efi",
+		title:         "Elder's Force Index",
+		group:         "Volume Indicators",
+		inputs:        []string{"close", "volume"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 13},
+		},
+		outputs: []output{
+			{name: "efi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.EfiLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Efi(in[0], in[1], int(p[0]), nil)
 			return [][]float64{o0}
 		},
 	},
@@ -1396,7 +1806,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1405,6 +1815,162 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.EmaLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Ema(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "EMV",
+		indicatorType: "emv",
+		title:         "Arms Ease of Movement",
+		group:         "Volume Indicators",
+		inputs:        []string{"high", "low", "volume"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Bars in the SMA of the one-bar values (1 = unsmoothed)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "volume_divisor", title: "Volume Divisor", description: "Volume is divided by this before forming the box ratio", kind: paramReal, minimum: 1, maximum: 3e+37, defaultValue: 10000},
+		},
+		outputs: []output{
+			{name: "emv", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.EmvLookback(int(p[0]), p[1]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Emv(in[0], in[1], in[2], int(p[0]), p[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "ER",
+		indicatorType: "er",
+		title:         "Kaufman Efficiency Ratio",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of one-bar changes in the path sum", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "er", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.ErLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Er(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "ERI",
+		indicatorType: "eri",
+		title:         "Elder Ray Index (Bull Power / Bear Power)",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of bars in the EMA of close", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 13},
+		},
+		outputs: []output{
+			{name: "bullpower", style: indicator.OutputLine},
+			{name: "bearpower", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.EriLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Eri(in[0], in[1], in[2], int(p[0]), nil, nil)
+			return [][]float64{o0, o1}
+		},
+	},
+	{
+		name:          "FISHER",
+		indicatorType: "fisher",
+		title:         "Fisher Transform",
+		group:         "Momentum Indicators",
+		unstable:      true,
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+		},
+		outputs: []output{
+			{name: "fisher", style: indicator.OutputLine},
+			{name: "trigger", style: indicator.OutputDashedLine},
+		},
+		lookback: func(p []float64) int { return ta.FisherLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Fisher(in[0], in[1], int(p[0]), nil, nil)
+			return [][]float64{o0, o1}
+		},
+	},
+	{
+		name:          "FOSC",
+		indicatorType: "fosc",
+		title:         "Forecast Oscillator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "fosc", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.FoscLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Fosc(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "FRAMA",
+		indicatorType: "frama",
+		title:         "Fractal Adaptive Moving Average",
+		group:         "Overlap Studies",
+		overlap:       true,
+		unstable:      true,
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of bars, even; the window is split into two halves of optInTimePeriod/2 bars", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 16},
+		},
+		outputs: []output{
+			{name: "frama", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.FramaLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Frama(in[0], in[1], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "HA",
+		indicatorType: "ha",
+		title:         "Heikin-Ashi Candles",
+		group:         "Price Transform",
+		overlap:       true,
+		unstable:      true,
+		inputs:        []string{"open", "high", "low", "close"},
+		outputs: []output{
+			{name: "haopen", style: indicator.OutputLine},
+			{name: "hahigh", style: indicator.OutputUpperLimit},
+			{name: "halow", style: indicator.OutputLowerLimit},
+			{name: "haclose", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.HaLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1, o2, o3 := ta.Ha(in[0], in[1], in[2], in[3], nil, nil, nil, nil)
+			return [][]float64{o0, o1, o2, o3}
+		},
+	},
+	{
+		name:          "HMA",
+		indicatorType: "hma",
+		title:         "Hull Moving Average",
+		group:         "Overlap Studies",
+		overlap:       true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 20},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "hma", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.HmaLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Hma(in[0], int(p[0]), nil)
 			return [][]float64{o0}
 		},
 	},
@@ -1526,6 +2092,39 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "IBS",
+		indicatorType: "ibs",
+		title:         "Internal Bar Strength",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		outputs: []output{
+			{name: "ibs", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.IbsLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Ibs(in[0], in[1], in[2], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "IMI",
+		indicatorType: "imi",
+		title:         "Intraday Momentum Index",
+		group:         "Momentum Indicators",
+		inputs:        []string{"open", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+		},
+		outputs: []output{
+			{name: "imi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.ImiLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Imi(in[0], in[1], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "KAMA",
 		indicatorType: "kama",
 		title:         "Kaufman Adaptive Moving Average",
@@ -1534,7 +2133,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1547,6 +2146,155 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "KC",
+		indicatorType: "kc",
+		title:         "Keltner Channels",
+		group:         "Overlap Studies",
+		overlap:       true,
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period for the typical price moving average", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+			{key: "atr_period", title: "ATR Period", description: "Time period for the Average True Range", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "deviations", title: "Deviations", description: "Multiplier applied to the Average True Range", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
+		},
+		outputs: []output{
+			{name: "upperband", style: indicator.OutputUpperLimit},
+			{name: "middleband", style: indicator.OutputLine},
+			{name: "lowerband", style: indicator.OutputLowerLimit},
+		},
+		lookback: func(p []float64) int { return ta.KcLookback(int(p[0]), int(p[1]), p[2]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1, o2 := ta.Kc(in[0], in[1], in[2], int(p[0]), int(p[1]), p[2], nil, nil, nil)
+			return [][]float64{o0, o1, o2}
+		},
+	},
+	{
+		name:          "KDJ",
+		indicatorType: "kdj",
+		title:         "KDJ Stochastic",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "fast_k_period", title: "Fast-K Period", description: "Time period for building the Fast-K line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "slow_k_period", title: "Slow-K Period", description: "Smoothing for making the Slow-K line. Usually set to 3", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 3},
+			{key: "slow_k_ma", title: "Slow-K MA", description: "Type of Moving Average for Slow-K", kind: paramMAType, defaultValue: 13},
+			{key: "slow_d_period", title: "Slow-D Period", description: "Smoothing for making the Slow-D line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 3},
+			{key: "slow_d_ma", title: "Slow-D MA", description: "Type of Moving Average for Slow-D", kind: paramMAType, defaultValue: 13},
+		},
+		outputs: []output{
+			{name: "k", style: indicator.OutputLine},
+			{name: "d", style: indicator.OutputLine},
+			{name: "j", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.KdjLookback(int(p[0]), int(p[1]), int(p[2]), int(p[3]), int(p[4])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1, o2 := ta.Kdj(in[0], in[1], in[2], int(p[0]), int(p[1]), int(p[2]), int(p[3]), int(p[4]), nil, nil, nil)
+			return [][]float64{o0, o1, o2}
+		},
+	},
+	{
+		name:          "KST",
+		indicatorType: "kst",
+		title:         "Know Sure Thing (Pring)",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "roc_1_period", title: "ROC-1 Period", description: "Rate-of-change period of leg 1", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "roc_2_period", title: "ROC-2 Period", description: "Rate-of-change period of leg 2", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 15},
+			{key: "roc_3_period", title: "ROC-3 Period", description: "Rate-of-change period of leg 3", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 20},
+			{key: "roc_4_period", title: "ROC-4 Period", description: "Rate-of-change period of leg 4", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "sma_1_period", title: "SMA-1 Period", description: "Smoothing period of leg 1", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "sma_2_period", title: "SMA-2 Period", description: "Smoothing period of leg 2", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "sma_3_period", title: "SMA-3 Period", description: "Smoothing period of leg 3", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "sma_4_period", title: "SMA-4 Period", description: "Smoothing period of leg 4", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 15},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing period of the signal line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "kst", style: indicator.OutputLine},
+			{name: "kstsignal", style: indicator.OutputDashedLine},
+		},
+		lookback: func(p []float64) int {
+			return ta.KstLookback(int(p[0]), int(p[1]), int(p[2]), int(p[3]), int(p[4]), int(p[5]), int(p[6]), int(p[7]), int(p[8]))
+		},
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Kst(in[0], int(p[0]), int(p[1]), int(p[2]), int(p[3]), int(p[4]), int(p[5]), int(p[6]), int(p[7]), int(p[8]), nil, nil)
+			return [][]float64{o0, o1}
+		},
+	},
+	{
+		name:          "KSTEXT",
+		indicatorType: "kstext",
+		title:         "Know Sure Thing with controllable MA type",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "roc_1_period", title: "ROC-1 Period", description: "Rate-of-change period of leg 1", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "roc_2_period", title: "ROC-2 Period", description: "Rate-of-change period of leg 2", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 15},
+			{key: "roc_3_period", title: "ROC-3 Period", description: "Rate-of-change period of leg 3", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 20},
+			{key: "roc_4_period", title: "ROC-4 Period", description: "Rate-of-change period of leg 4", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "ma_1_period", title: "MA-1 Period", description: "Smoothing period of leg 1", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "ma_2_period", title: "MA-2 Period", description: "Smoothing period of leg 2", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "ma_3_period", title: "MA-3 Period", description: "Smoothing period of leg 3", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "ma_4_period", title: "MA-4 Period", description: "Smoothing period of leg 4", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 15},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing period of the signal line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "roc_ma", title: "ROC MA", description: "Type of Moving Average smoothing the four legs", kind: paramMAType, defaultValue: 0},
+			{key: "signal_ma", title: "Signal MA", description: "Type of Moving Average for signal line", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "kst", style: indicator.OutputLine},
+			{name: "kstsignal", style: indicator.OutputDashedLine},
+		},
+		lookback: func(p []float64) int {
+			return ta.KstextLookback(int(p[0]), int(p[1]), int(p[2]), int(p[3]), int(p[4]), int(p[5]), int(p[6]), int(p[7]), int(p[8]), int(p[9]), int(p[10]))
+		},
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Kstext(in[0], int(p[0]), int(p[1]), int(p[2]), int(p[3]), int(p[4]), int(p[5]), int(p[6]), int(p[7]), int(p[8]), int(p[9]), int(p[10]), nil, nil)
+			return [][]float64{o0, o1}
+		},
+	},
+	{
+		name:          "KURTOSIS",
+		indicatorType: "kurtosis",
+		title:         "Rolling Excess Kurtosis",
+		group:         "Statistic Functions",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 4, maximum: 10000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "kurtosis", style: indicator.OutputLine, sparse: true},
+		},
+		lookback: func(p []float64) int { return ta.KurtosisLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Kurtosis(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "KVO",
+		indicatorType: "kvo",
+		title:         "Klinger Volume Oscillator",
+		group:         "Volume Indicators",
+		inputs:        []string{"high", "low", "close", "volume"},
+		params: []param{
+			{key: "fast_period", title: "Fast Period", description: "Period of the faster smoothing of the volume force", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 34},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slower smoothing of the volume force", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 55},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing for the trigger line", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 13},
+		},
+		outputs: []output{
+			{name: "kvo", style: indicator.OutputLine},
+			{name: "kvosignal", style: indicator.OutputDashedLine},
+		},
+		lookback: func(p []float64) int { return ta.KvoLookback(int(p[0]), int(p[1]), int(p[2])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Kvo(in[0], in[1], in[2], in[3], int(p[0]), int(p[1]), int(p[2]), nil, nil)
+			return [][]float64{o0, o1}
+		},
+	},
+	{
 		name:          "LINEARREG",
 		indicatorType: "linearreg",
 		title:         "Linear Regression",
@@ -1554,7 +2302,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1573,7 +2321,7 @@ var functions = []spec{
 		group:         "Statistic Functions",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1593,7 +2341,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1612,7 +2360,7 @@ var functions = []spec{
 		group:         "Statistic Functions",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1632,7 +2380,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
@@ -1652,9 +2400,9 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
-			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
-			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (period length)", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1675,11 +2423,11 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
 			{key: "fast_ma", title: "Fast MA", description: "Type of Moving Average for fast MA", kind: paramMAType, defaultValue: 0},
-			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
 			{key: "slow_ma", title: "Slow MA", description: "Type of Moving Average for slow MA", kind: paramMAType, defaultValue: 0},
-			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (period length)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 9},
 			{key: "signal_ma", title: "Signal MA", description: "Type of Moving Average for signal line", kind: paramMAType, defaultValue: 0},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
@@ -1703,7 +2451,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (nb of period)", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (period length)", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1741,6 +2489,40 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "MARKETFI",
+		indicatorType: "marketfi",
+		title:         "Market Facilitation Index",
+		group:         "Volume Indicators",
+		inputs:        []string{"high", "low", "volume"},
+		outputs: []output{
+			{name: "marketfi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.MarketfiLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Marketfi(in[0], in[1], in[2], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "MASSI",
+		indicatorType: "massi",
+		title:         "Mass Index",
+		group:         "Volatility Indicators",
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "fast_period", title: "Fast Period", description: "Period of both exponential averages of the high-low range", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
+			{key: "slow_period", title: "Slow Period", description: "Number of bars the ratio is summed over", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 25},
+		},
+		outputs: []output{
+			{name: "massi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.MassiLookback(int(p[0]), int(p[1])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Massi(in[0], in[1], int(p[0]), int(p[1]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "MAX",
 		indicatorType: "max",
 		title:         "Highest value over a specified period",
@@ -1748,7 +2530,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1757,6 +2539,47 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.MaxLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Max(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "MCGD",
+		indicatorType: "mcgd",
+		title:         "McGinley Dynamic",
+		group:         "Overlap Studies",
+		overlap:       true,
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "mcgd", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.McgdLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Mcgd(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "MEDIAN",
+		indicatorType: "median",
+		title:         "Rolling Median",
+		group:         "Statistic Functions",
+		overlap:       true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of bars in the window", kind: paramInteger, minimum: 2, maximum: 10000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "median", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.MedianLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Median(in[0], int(p[0]), nil)
 			return [][]float64{o0}
 		},
 	},
@@ -1781,10 +2604,9 @@ var functions = []spec{
 		indicatorType: "mfi",
 		title:         "Money Flow Index",
 		group:         "Momentum Indicators",
-		unstable:      true,
 		inputs:        []string{"high", "low", "close", "volume"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "mfi", style: indicator.OutputLine},
@@ -1803,7 +2625,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1823,7 +2645,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"high", "low"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "midprice", style: indicator.OutputLine},
@@ -1842,7 +2664,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1862,7 +2684,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1883,7 +2705,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "minus_di", style: indicator.OutputLine},
@@ -1902,7 +2724,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"high", "low"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "minus_dm", style: indicator.OutputLine},
@@ -1920,7 +2742,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -1959,7 +2781,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "natr", style: indicator.OutputLine},
@@ -1967,6 +2789,21 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.NatrLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Natr(in[0], in[1], in[2], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "NVI",
+		indicatorType: "nvi",
+		title:         "Negative Volume Index",
+		group:         "Volume Indicators",
+		inputs:        []string{"close", "volume"},
+		outputs: []output{
+			{name: "nvi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.NviLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Nvi(in[0], in[1], nil)
 			return [][]float64{o0}
 		},
 	},
@@ -1989,6 +2826,68 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "PERCENTB",
+		indicatorType: "percentb",
+		title:         "Bollinger Bands %B",
+		group:         "Volatility Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+			{key: "deviations_up", title: "Deviations up", description: "Deviation multiplier for upper band", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
+			{key: "deviations_down", title: "Deviations down", description: "Deviation multiplier for lower band", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 2},
+			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "percentb", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.PercentbLookback(int(p[0]), p[1], p[2], int(p[3])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Percentb(in[0], int(p[0]), p[1], p[2], int(p[3]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "PERCENTILE",
+		indicatorType: "percentile",
+		title:         "Percentile (nearest rank)",
+		group:         "Statistic Functions",
+		overlap:       true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of bars in the window", kind: paramInteger, minimum: 2, maximum: 10000, defaultValue: 100},
+			{key: "percentile", title: "Percentile", description: "Percentile to report", kind: paramReal, minimum: 0, maximum: 100, defaultValue: 50},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "percentile", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.PercentileLookback(int(p[0]), p[1]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Percentile(in[0], int(p[0]), p[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "PERCENTRANK",
+		indicatorType: "percentrank",
+		title:         "Percent Rank",
+		group:         "Statistic Functions",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 10000, defaultValue: 100},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "percentrank", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.PercentrankLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Percentrank(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "PLUS_DI",
 		indicatorType: "plus_di",
 		title:         "Plus Directional Indicator",
@@ -1996,7 +2895,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "plus_di", style: indicator.OutputLine},
@@ -2015,7 +2914,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"high", "low"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "plus_dm", style: indicator.OutputLine},
@@ -2033,9 +2932,9 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "fast_period", title: "Fast Period", description: "Number of period for the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
-			{key: "slow_period", title: "Slow Period", description: "Number of period for the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
-			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 0},
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
+			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 1},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2048,13 +2947,121 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "PSO",
+		indicatorType: "pso",
+		title:         "Premier Stochastic Oscillator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "fast_k_period", title: "Fast-K Period", description: "Time period for building the Fast-K line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 8},
+			{key: "ema_period", title: "EMA Period", description: "Period of each of the two smoothing passes", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
+		},
+		outputs: []output{
+			{name: "pso", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.PsoLookback(int(p[0]), int(p[1])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Pso(in[0], in[1], in[2], int(p[0]), int(p[1]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "PVI",
+		indicatorType: "pvi",
+		title:         "Positive Volume Index",
+		group:         "Volume Indicators",
+		inputs:        []string{"close", "volume"},
+		outputs: []output{
+			{name: "pvi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.PviLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Pvi(in[0], in[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "PVO",
+		indicatorType: "pvo",
+		title:         "Percentage Volume Oscillator",
+		group:         "Volume Indicators",
+		inputs:        []string{"volume"},
+		params: []param{
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 12},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow MA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 26},
+			{key: "ma_type", title: "MA Type", description: "Type of Moving Average", kind: paramMAType, defaultValue: 1},
+		},
+		outputs: []output{
+			{name: "pvo", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.PvoLookback(int(p[0]), int(p[1]), int(p[2])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Pvo(in[0], int(p[0]), int(p[1]), int(p[2]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "PVT",
+		indicatorType: "pvt",
+		title:         "Price Volume Trend",
+		group:         "Volume Indicators",
+		inputs:        []string{"close", "volume"},
+		outputs: []output{
+			{name: "pvt", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.PvtLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Pvt(in[0], in[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "QSTICK",
+		indicatorType: "qstick",
+		title:         "Qstick",
+		group:         "Momentum Indicators",
+		inputs:        []string{"open", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+		},
+		outputs: []output{
+			{name: "qstick", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.QstickLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Qstick(in[0], in[1], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "RMA",
+		indicatorType: "rma",
+		title:         "Wilder's Smoothed Moving Average",
+		group:         "Overlap Studies",
+		overlap:       true,
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "rma", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.RmaLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Rma(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "ROC",
 		indicatorType: "roc",
 		title:         "Rate of change : ((price/prevPrice)-1)*100",
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2073,7 +3080,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2092,7 +3099,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2111,7 +3118,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2124,6 +3131,25 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "ROGERSSATCHELL",
+		indicatorType: "rogerssatchell",
+		title:         "Rogers-Satchell Volatility",
+		group:         "Volatility Indicators",
+		inputs:        []string{"open", "high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of bars in the window", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 10},
+			{key: "annualization", title: "Annualization", description: "Periods per year; 1 leaves the per-bar figure", kind: paramReal, minimum: 0, maximum: 3e+37, defaultValue: 252},
+		},
+		outputs: []output{
+			{name: "rogerssatchell", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.RogerssatchellLookback(int(p[0]), p[1]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Rogerssatchell(in[0], in[1], in[2], in[3], int(p[0]), p[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "RSI",
 		indicatorType: "rsi",
 		title:         "Relative Strength Index",
@@ -2131,7 +3157,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2140,6 +3166,64 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.RsiLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Rsi(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "RVI",
+		indicatorType: "rvi",
+		title:         "Relative Volatility Index",
+		group:         "Volatility Indicators",
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period of the Wilder smoothing applied to both legs", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "stddev_period", title: "StdDev Period", description: "Time period of the standard deviation", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "rvi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.RviLookback(int(p[0]), int(p[1])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Rvi(in[0], int(p[0]), int(p[1]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "RVIR",
+		indicatorType: "rvir",
+		title:         "Relative Volatility Index, refined high/low form",
+		group:         "Volatility Indicators",
+		inputs:        []string{"high", "low"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period of the Wilder smoothing applied to both indices", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+			{key: "stddev_period", title: "StdDev Period", description: "Time period of the standard deviation", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+		},
+		outputs: []output{
+			{name: "rvir", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.RvirLookback(int(p[0]), int(p[1])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Rvir(in[0], in[1], int(p[0]), int(p[1]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "RVOL",
+		indicatorType: "rvol",
+		title:         "Relative Volume",
+		group:         "Volume Indicators",
+		inputs:        []string{"volume"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 20},
+		},
+		outputs: []output{
+			{name: "rvol", style: indicator.OutputLine, sparse: true},
+		},
+		lookback: func(p []float64) int { return ta.RvolLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Rvol(in[0], int(p[0]), nil)
 			return [][]float64{o0}
 		},
 	},
@@ -2190,6 +3274,24 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "SI",
+		indicatorType: "si",
+		title:         "Wilder Swing Index",
+		group:         "Momentum Indicators",
+		inputs:        []string{"open", "high", "low", "close"},
+		params: []param{
+			{key: "limit_move", title: "Limit Move", description: "Largest one-bar price move the index is scaled against, in price units", kind: paramReal, minimum: 1e-08, maximum: 3e+37, defaultValue: 3},
+		},
+		outputs: []output{
+			{name: "si", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.SiLookback(p[0]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Si(in[0], in[1], in[2], in[3], p[0], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "SMA",
 		indicatorType: "sma",
 		title:         "Simple Moving Average",
@@ -2197,7 +3299,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2210,13 +3312,81 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "SMI",
+		indicatorType: "smi",
+		title:         "Stochastic Momentum Index",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Period of the high/low range", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 13},
+			{key: "fast_period", title: "Fast Period", description: "Period of the second smoothing, applied to the first", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 2},
+			{key: "slow_period", title: "Slow Period", description: "Period of the first smoothing, applied to the raw momentum", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 25},
+			{key: "signal_period", title: "Signal Period", description: "Smoothing for the signal line (period length)", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
+		},
+		outputs: []output{
+			{name: "smi", style: indicator.OutputLine},
+			{name: "smisignal", style: indicator.OutputDashedLine},
+		},
+		lookback: func(p []float64) int { return ta.SmiLookback(int(p[0]), int(p[1]), int(p[2]), int(p[3])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Smi(in[0], in[1], in[2], int(p[0]), int(p[1]), int(p[2]), int(p[3]), nil, nil)
+			return [][]float64{o0, o1}
+		},
+	},
+	{
+		name:          "SQZMOM",
+		indicatorType: "sqzmom",
+		title:         "Squeeze Momentum and Level",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "bb_period", title: "BB Period", description: "Period of the Bollinger Bands", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+			{key: "deviations", title: "Deviations", description: "Deviation multiplier for both Bollinger Bands", kind: paramReal, minimum: 0, maximum: 3e+37, defaultValue: 2},
+			{key: "kc_period", title: "KC Period", description: "Period of the Keltner Channel, and of the momentum regression", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 20},
+			{key: "wide_factor", title: "Wide Factor", description: "Keltner width for the widest compression test", kind: paramReal, minimum: 0, maximum: 3e+37, defaultValue: 2},
+			{key: "normal_factor", title: "Normal Factor", description: "Keltner width for the classic squeeze test", kind: paramReal, minimum: 0, maximum: 3e+37, defaultValue: 1.5},
+			{key: "narrow_factor", title: "Narrow Factor", description: "Keltner width for the tightest compression test", kind: paramReal, minimum: 0, maximum: 3e+37, defaultValue: 1},
+		},
+		outputs: []output{
+			{name: "momentum", style: indicator.OutputHistogram},
+			{name: "squeeze", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.SqzmomLookback(int(p[0]), p[1], int(p[2]), p[3], p[4], p[5]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Sqzmom(in[0], in[1], in[2], int(p[0]), p[1], int(p[2]), p[3], p[4], p[5], nil, nil)
+			return [][]float64{o0, integers(o1)}
+		},
+	},
+	{
+		name:          "STC",
+		indicatorType: "stc",
+		title:         "Schaff Trend Cycle",
+		group:         "Momentum Indicators",
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "fast_period", title: "Fast Period", description: "Period of the fast EMA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 23},
+			{key: "slow_period", title: "Slow Period", description: "Period of the slow EMA", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 50},
+			{key: "cycle_period", title: "Cycle Period", description: "Window of both stochastic stages", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "stc", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.StcLookback(int(p[0]), int(p[1]), int(p[2])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Stc(in[0], int(p[0]), int(p[1]), int(p[2]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "STDDEV",
 		indicatorType: "stddev",
 		title:         "Standard Deviation",
 		group:         "Statistic Functions",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
 			{key: "deviations", title: "Deviations", description: "Nb of deviations", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 1},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
@@ -2278,10 +3448,9 @@ var functions = []spec{
 		indicatorType: "stochrsi",
 		title:         "Stochastic Relative Strength Index",
 		group:         "Momentum Indicators",
-		unstable:      true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 			{key: "fast_k_period", title: "Fast-K Period", description: "Time period for building the Fast-K line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
 			{key: "fast_d_period", title: "Fast-D Period", description: "Smoothing for making the Fast-D line. Usually set to 3", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 3},
 			{key: "fast_d_ma", title: "Fast-D MA", description: "Type of Moving Average for Fast-D", kind: paramMAType, defaultValue: 0},
@@ -2323,7 +3492,7 @@ var functions = []spec{
 		group:         "Math Operators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2336,6 +3505,130 @@ var functions = []spec{
 		},
 	},
 	{
+		name:          "SUPERTREND",
+		indicatorType: "supertrend",
+		title:         "SuperTrend",
+		group:         "Overlap Studies",
+		overlap:       true,
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period for the Average True Range", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "multiplier", title: "Multiplier", description: "ATR multiplier for band width", kind: paramReal, minimum: 0, maximum: 3e+37, defaultValue: 3},
+		},
+		outputs: []output{
+			{name: "supertrend", style: indicator.OutputLine, direction: "trend"},
+			{name: "trend", style: indicator.OutputValue},
+		},
+		lookback: func(p []float64) int { return ta.SupertrendLookback(int(p[0]), p[1]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Supertrend(in[0], in[1], in[2], int(p[0]), p[1], nil, nil)
+			return [][]float64{o0, integers(o1)}
+		},
+	},
+	{
+		name:          "SWAK_2PHP",
+		indicatorType: "swak_2php",
+		title:         "Swiss Army Knife - Two-Pole High-Pass Filter",
+		group:         "Cycle Indicators",
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Cutoff period", kind: paramInteger, minimum: 2, maximum: 10000, defaultValue: 20},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "swak_2php", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.Swak2phpLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Swak2php(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "SWAK_BP",
+		indicatorType: "swak_bp",
+		title:         "Swiss Army Knife - Band-Pass Filter",
+		group:         "Cycle Indicators",
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Center period", kind: paramInteger, minimum: 5, maximum: 2000, defaultValue: 20},
+			{key: "delta", title: "Delta", description: "Half-bandwidth as a fraction of the center period", kind: paramReal, minimum: 0.05, maximum: 0.5, defaultValue: 0.1},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "swak_bp", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.SwakBpLookback(int(p[0]), p[1]) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.SwakBp(in[0], int(p[0]), p[1], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "SWAK_BUTTER",
+		indicatorType: "swak_butter",
+		title:         "Swiss Army Knife - Butterworth Filter",
+		group:         "Overlap Studies",
+		overlap:       true,
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Cutoff period", kind: paramInteger, minimum: 2, maximum: 10000, defaultValue: 20},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "swak_butter", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.SwakButterLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.SwakButter(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "SWAK_GAUSS",
+		indicatorType: "swak_gauss",
+		title:         "Swiss Army Knife - Gaussian Filter",
+		group:         "Overlap Studies",
+		overlap:       true,
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Cutoff period", kind: paramInteger, minimum: 2, maximum: 10000, defaultValue: 20},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "swak_gauss", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.SwakGaussLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.SwakGauss(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "SWAK_HP",
+		indicatorType: "swak_hp",
+		title:         "Swiss Army Knife - High-Pass Filter",
+		group:         "Cycle Indicators",
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Cutoff period", kind: paramInteger, minimum: 5, maximum: 100000, defaultValue: 20},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "swak_hp", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.SwakHpLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.SwakHp(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
 		name:          "T3",
 		indicatorType: "t3",
 		title:         "Triple Exponential Moving Average (T3)",
@@ -2344,7 +3637,7 @@ var functions = []spec{
 		unstable:      true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 5},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
 			{key: "volume_factor", title: "Volume Factor", description: "Volume Factor", kind: paramReal, minimum: 0, maximum: 1, defaultValue: 0.7},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
@@ -2365,7 +3658,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2400,7 +3693,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2419,7 +3712,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2439,7 +3732,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 1024, defaultValue: 14},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2448,6 +3741,26 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.TsfLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Tsf(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "TSI",
+		indicatorType: "tsi",
+		title:         "True Strength Index",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "first_smoothing_period", title: "First Smoothing Period", description: "Period of the first smoothing, applied to the raw momentum", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 25},
+			{key: "second_smoothing_period", title: "Second Smoothing Period", description: "Period of the second smoothing, applied to the first", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 13},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "tsi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.TsiLookback(int(p[0]), int(p[1])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Tsi(in[0], int(p[0]), int(p[1]), nil)
 			return [][]float64{o0}
 		},
 	},
@@ -2494,7 +3807,7 @@ var functions = []spec{
 		group:         "Statistic Functions",
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 5},
 			{key: "deviations", title: "Deviations", description: "Nb of deviations", kind: paramReal, minimum: -3e+37, maximum: 3e+37, defaultValue: 1},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
@@ -2505,6 +3818,138 @@ var functions = []spec{
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Var(in[0], int(p[0]), p[1], nil)
 			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "VHF",
+		indicatorType: "vhf",
+		title:         "Vertical Horizontal Filter",
+		group:         "Momentum Indicators",
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 28},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "vhf", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.VhfLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Vhf(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "VIDYA",
+		indicatorType: "vidya",
+		title:         "Variable Index Dynamic Average",
+		group:         "Overlap Studies",
+		overlap:       true,
+		unstable:      true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "EMA-equivalent smoothing period, alpha = 2/(n+1)", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 12},
+			{key: "cmo_period", title: "CMO Period", description: "Period of the unsmoothed CMO that scales alpha", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 9},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "vidya", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.VidyaLookback(int(p[0]), int(p[1])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Vidya(in[0], int(p[0]), int(p[1]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "VORTEX",
+		indicatorType: "vortex",
+		title:         "Vortex Indicator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Number of bars in the rolling sums", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 14},
+		},
+		outputs: []output{
+			{name: "plusvi", style: indicator.OutputLine},
+			{name: "minusvi", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.VortexLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Vortex(in[0], in[1], in[2], int(p[0]), nil, nil)
+			return [][]float64{o0, o1}
+		},
+	},
+	{
+		name:          "VWAP",
+		indicatorType: "vwap",
+		title:         "Volume Weighted Average Price",
+		group:         "Volume Indicators",
+		overlap:       true,
+		inputs:        []string{"high", "low", "close", "volume"},
+		outputs: []output{
+			{name: "vwap", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.VwapLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Vwap(in[0], in[1], in[2], in[3], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "VWMA",
+		indicatorType: "vwma",
+		title:         "Volume Weighted Moving Average",
+		group:         "Overlap Studies",
+		overlap:       true,
+		inputs:        []string{"source", "volume"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "vwma", style: indicator.OutputLine, sparse: true},
+		},
+		lookback: func(p []float64) int { return ta.VwmaLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Vwma(in[0], in[1], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "WAD",
+		indicatorType: "wad",
+		title:         "Williams' Accumulation/Distribution",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		outputs: []output{
+			{name: "wad", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.WadLookback() },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Wad(in[0], in[1], in[2], nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "WAVETREND",
+		indicatorType: "wavetrend",
+		title:         "WaveTrend Oscillator",
+		group:         "Momentum Indicators",
+		inputs:        []string{"high", "low", "close"},
+		params: []param{
+			{key: "channel_period", title: "Channel Period", description: "Period of the price channel, used by both the average and the deviation", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 10},
+			{key: "average_period", title: "Average Period", description: "Smoothing for the oscillator line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 21},
+			{key: "signal_period", title: "Signal Period", description: "Simple average of the oscillator line, making the signal line", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 4},
+		},
+		outputs: []output{
+			{name: "wt1", style: indicator.OutputLine},
+			{name: "wt2", style: indicator.OutputDashedLine},
+		},
+		lookback: func(p []float64) int { return ta.WavetrendLookback(int(p[0]), int(p[1]), int(p[2])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0, o1 := ta.Wavetrend(in[0], in[1], in[2], int(p[0]), int(p[1]), int(p[2]), nil, nil)
+			return [][]float64{o0, o1}
 		},
 	},
 	{
@@ -2530,7 +3975,7 @@ var functions = []spec{
 		group:         "Momentum Indicators",
 		inputs:        []string{"high", "low", "close"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 14},
 		},
 		outputs: []output{
 			{name: "willr", style: indicator.OutputLine},
@@ -2549,7 +3994,7 @@ var functions = []spec{
 		overlap:       true,
 		inputs:        []string{"source"},
 		params: []param{
-			{key: "period", title: "Time Period", description: "Number of period", kind: paramInteger, minimum: 2, maximum: 100000, defaultValue: 30},
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
 			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
 		},
 		outputs: []output{
@@ -2558,6 +4003,26 @@ var functions = []spec{
 		lookback: func(p []float64) int { return ta.WmaLookback(int(p[0])) },
 		call: func(in [][]float64, p []float64) [][]float64 {
 			o0 := ta.Wma(in[0], int(p[0]), nil)
+			return [][]float64{o0}
+		},
+	},
+	{
+		name:          "ZLEMA",
+		indicatorType: "zlema",
+		title:         "Zero-Lag Exponential Moving Average",
+		group:         "Overlap Studies",
+		overlap:       true,
+		inputs:        []string{"source"},
+		params: []param{
+			{key: "period", title: "Time Period", description: "Time period", kind: paramInteger, minimum: 1, maximum: 100000, defaultValue: 30},
+			{key: "source", title: "Source", description: "Candle field the series is read from", kind: paramSource, defaultValue: sourceClose},
+		},
+		outputs: []output{
+			{name: "zlema", style: indicator.OutputLine},
+		},
+		lookback: func(p []float64) int { return ta.ZlemaLookback(int(p[0])) },
+		call: func(in [][]float64, p []float64) [][]float64 {
+			o0 := ta.Zlema(in[0], int(p[0]), nil)
 			return [][]float64{o0}
 		},
 	},

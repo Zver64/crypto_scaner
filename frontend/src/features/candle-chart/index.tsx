@@ -249,7 +249,7 @@ export function PriceHistoryChart({
 								.filter(({ style }) => style === "line")
 								.map((indicatorLine) => (
 									<OverlayIndicatorSeries
-										data={line(`${id}:${indicatorLine.output}`).data}
+										data={line(`${id}:${indicatorLine.output}`)}
 										key={`${id}:${indicatorLine.output}`}
 										line={indicatorLine}
 										markers={anchoredMarkers[`${id}:${indicatorLine.output}`]}
@@ -265,7 +265,7 @@ export function PriceHistoryChart({
 								.filter(({ style }) => style === "line")
 								.map((indicatorLine) => (
 									<VolumeIndicatorSeries
-										data={line(`${id}:${indicatorLine.output}`).data}
+										data={line(`${id}:${indicatorLine.output}`)}
 										key={`${id}:${indicatorLine.output}`}
 										line={indicatorLine}
 										markers={anchoredMarkers[`${id}:${indicatorLine.output}`]}

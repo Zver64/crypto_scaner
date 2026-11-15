@@ -22,6 +22,7 @@
  * OpenAPI spec version: 1.0.0
  */
 import type { ChartIndicatorLineAnchor } from './chartIndicatorLineAnchor.ts';
+import type { ChartIndicatorLineDirection } from './chartIndicatorLineDirection.ts';
 import type { ChartIndicatorLineStyle } from './chartIndicatorLineStyle.ts';
 
 export interface ChartIndicatorLine {
@@ -43,4 +44,5 @@ export interface ChartIndicatorLine {
      * @minLength 1
      */
   segment?: string;
+  direction?: ChartIndicatorLineDirection;
 }

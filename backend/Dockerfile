@@ -1,6 +1,6 @@
 FROM golang:1.26-alpine AS build
 
-# TA-Lib is compiled from C sources embedded in github.com/TA-Lib/ta-lib-cgo.
+# TA-Lib is compiled from C sources embedded in github.com/Zver64/ta-lib-cgo.
 RUN apk add --no-cache build-base
 
 WORKDIR /src
@@ -15,7 +15,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 # BuildKit cache mounts are not exported to them. The flags must match the
 # final build, or the cache entries do not apply.
 RUN --mount=type=cache,target=/go/pkg/mod \
-    CGO_ENABLED=1 GOCACHE=/talib-cache go build -trimpath github.com/TA-Lib/ta-lib-cgo
+    CGO_ENABLED=1 GOCACHE=/talib-cache go build -trimpath github.com/Zver64/ta-lib-cgo
 
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \

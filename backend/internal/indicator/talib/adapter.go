@@ -8,7 +8,7 @@ import (
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 
-	ta "github.com/TA-Lib/ta-lib-cgo"
+	ta "github.com/Zver64/ta-lib-cgo"
 )
 
 const (
@@ -18,12 +18,15 @@ const (
 	EMAType indicator.Type = "ema"
 )
 
-// maTypes are the TA-Lib moving average types in TA_MAType order, which
-// calls write by name.
+// maTypes are the TA-Lib moving average types by their TA_MAType values,
+// which calls write by name. TA_MAType_DISABLED (10) and TA_MAType_DEFAULT
+// (11) are not moving averages.
 var maTypes = []indicator.Choice{
 	{Value: 0, Title: "SMA", Name: "sma"}, {Value: 1, Title: "EMA", Name: "ema"}, {Value: 2, Title: "WMA", Name: "wma"},
 	{Value: 3, Title: "DEMA", Name: "dema"}, {Value: 4, Title: "TEMA", Name: "tema"}, {Value: 5, Title: "TRIMA", Name: "trima"},
 	{Value: 6, Title: "KAMA", Name: "kama"}, {Value: 7, Title: "MAMA", Name: "mama"}, {Value: 8, Title: "T3", Name: "t3"},
+	{Value: 9, Title: "HMA", Name: "hma"}, {Value: 12, Title: "ZLEMA", Name: "zlema"}, {Value: 13, Title: "RMA", Name: "rma"},
+	{Value: 14, Title: "VIDYA", Name: "vidya"}, {Value: 15, Title: "ALMA", Name: "alma"},
 }
 
 // sourceClose is the default source: the close price.
@@ -53,6 +56,10 @@ type param struct {
 type output struct {
 	name  string
 	style indicator.OutputStyle
+	// sparse outputs are empty where TA-Lib returns NaN or an infinity.
+	sparse bool
+	// direction is indicator.OutputDescriptor.Direction.
+	direction string
 }
 
 // spec is one generated TA-Lib function. Option values reach lookback and
@@ -120,7 +127,7 @@ func (f *function) Describe() indicator.Descriptor {
 		descriptor.Parameters = append(descriptor.Parameters, parameter)
 	}
 	for _, o := range f.spec.outputs {
-		descriptor.Outputs = append(descriptor.Outputs, indicator.OutputDescriptor{Name: o.name, Style: o.style})
+		descriptor.Outputs = append(descriptor.Outputs, indicator.OutputDescriptor{Name: o.name, Style: o.style, Sparse: o.sparse, Direction: o.direction})
 	}
 	return descriptor
 }
@@ -196,7 +203,15 @@ func (f *function) Calculate(parameters indicator.Parameters, inputs indicator.I
 		if len(calculated[index]) != length {
 			return indicator.Result{}, fmt.Errorf("%w: %s returned %d values for %d inputs", indicator.ErrInvalidRequest, f.spec.name, len(calculated[index]), length)
 		}
-		outputs[o.name] = indicator.Series{Offset: offset, Values: calculated[index][offset:]}
+		values := calculated[index][offset:]
+		if o.sparse {
+			for position, value := range values {
+				if math.IsInf(value, 0) {
+					values[position] = math.NaN()
+				}
+			}
+		}
+		outputs[o.name] = indicator.Series{Offset: offset, Values: values}
 	}
 	return indicator.Result{Outputs: outputs}, nil
 }
@@ -248,9 +263,8 @@ func (f *function) values(parameters indicator.Parameters) ([]float64, error) {
 				return nil, fmt.Errorf("%w: %s must be between %g and %g", indicator.ErrInvalidRequest, p.key, p.minimum, p.maximum)
 			}
 		case paramMAType:
-			// Compared before converting, which could overflow.
-			if math.Trunc(value) != value || value < 0 || value >= float64(len(maTypes)) {
-				return nil, fmt.Errorf("%w: %s must be a moving average type between 0 and %d", indicator.ErrInvalidRequest, p.key, len(maTypes)-1)
+			if !slices.ContainsFunc(maTypes, func(choice indicator.Choice) bool { return float64(choice.Value) == value }) {
+				return nil, fmt.Errorf("%w: %s must be a moving average type", indicator.ErrInvalidRequest, p.key)
 			}
 		}
 		values[index] = value

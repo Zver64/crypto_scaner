@@ -1,6 +1,8 @@
+import type { UTCTimestamp } from "lightweight-charts";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+	colorByDirection,
 	createAnchoredMarkers,
 	createCandleMarkers,
 	createCandlestickData,
@@ -700,6 +702,39 @@ describe("marker segments", () => {
 		expect(
 			createMarkerSegments(undefined, layout("marker_below"), series, "1h"),
 		).toEqual([]);
+	});
+});
+
+describe("colorByDirection", () => {
+	it("colors points by the direction sign and breaks the line where it flips", () => {
+		const time = (slot: number) =>
+			(1_787_785_200 + slot * 3600) as UTCTimestamp;
+		const data = [0, 1, 2, 3, 4, 5].map((slot) =>
+			slot === 5
+				? { time: time(slot) }
+				: { time: time(slot), value: 10 + slot },
+		);
+		const direction = [1, 1, -1, 0, undefined, 1].map((value, slot) =>
+			value === undefined ? { time: time(slot) } : { time: time(slot), value },
+		);
+		expect(
+			colorByDirection(
+				{
+					data,
+					directionData: direction,
+					resolution: { base: 1, fractionDigits: 0, minMove: 1 },
+				},
+				{ output: "trend", up_color: "green", down_color: "red" },
+				(color) => color,
+			),
+		).toEqual([
+			{ time: time(0), value: 10, color: "green" },
+			{ time: time(1), value: 11, color: "transparent" },
+			{ time: time(2), value: 12, color: "red" },
+			{ time: time(3), value: 13 },
+			{ time: time(4), value: 14 },
+			{ time: time(5) },
+		]);
 	});
 });
 

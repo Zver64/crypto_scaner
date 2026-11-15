@@ -26,6 +26,9 @@ func chartIndicatorDTO(item chart.CatalogIndicator) ChartIndicatorDefinition {
 		if line.Segment != "" {
 			lines[i].Segment = &line.Segment
 		}
+		if line.Direction != (chart.LineDirection{}) {
+			lines[i].Direction = &ChartIndicatorLineDirection{Output: line.Direction.Output, UpColor: line.Direction.UpColor, DownColor: line.Direction.DownColor}
+		}
 	}
 	definition := ChartIndicatorDefinition{
 		Id:         item.ID,

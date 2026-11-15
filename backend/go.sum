@@ -10,8 +10,8 @@ github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03
 github.com/Microsoft/go-winio v0.6.2 h1:F2VQgta7ecxGYO8k3ZZz3RS8fVIXVxONVUPlNERoyfY=
 github.com/Microsoft/go-winio v0.6.2/go.mod h1:yd8OoFMLzJbo9gZq8j5qaps8bJ9aShtEA8Ipt1oGCvU=
 github.com/RaveNoX/go-jsoncommentstrip v1.0.0/go.mod h1:78ihd09MekBnJnxpICcwzCMzGrKSKYe4AqU6PDYYpjk=
-github.com/TA-Lib/ta-lib-cgo v0.2.0 h1:cEhN5OMh6VmDae+diPwzlmPlBYQp99ZADtyicRJAebo=
-github.com/TA-Lib/ta-lib-cgo v0.2.0/go.mod h1:KJEtHrjxJyIvapTA34GUdZPG7wID9lofladi63/6fLs=
+github.com/Zver64/ta-lib-cgo v0.8.3 h1:9rL+YUgJvjddraIINIFCtxohzDJp0P3QH+eakIw4XQ0=
+github.com/Zver64/ta-lib-cgo v0.8.3/go.mod h1:3Omk0RIAZobAwF/UicUpnufwAe823ZWpmdp5sK3Vbhg=
 github.com/andybalholm/brotli v1.2.3 h1:8H1qwOkl2LPfjf3YezB90JnCliZb6SInJ/OJkEbA5NQ=
 github.com/andybalholm/brotli v1.2.3/go.mod h1:rzTDkvFWvIrjDXZHkuS16NPggd91W3kUSvPlQ1pLaKY=
 github.com/antlr4-go/antlr/v4 v4.13.1 h1:SqQKkuVZ+zWkMMNkjy5FZe5mr5WURWnlpmOuzYWrPrQ=

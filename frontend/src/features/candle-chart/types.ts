@@ -8,6 +8,8 @@ import type {
 	WhitespaceData,
 } from "lightweight-charts";
 
+import type { ChartIndicatorLineDirection } from "@/api/generated/models";
+
 export type ChartInterval = "1h" | "1d" | "1w" | "1M";
 export interface PriceCandle {
 	open_time: string;
@@ -78,6 +80,8 @@ export interface ChartLineData {
 	data: readonly ChartIndicatorSlot[];
 	// The resolution of a pane line's scale; an overlay shares the candles'.
 	resolution: ValueResolution;
+	// The direction output of a line with a direction, aligned with data.
+	directionData?: readonly ChartIndicatorSlot[];
 }
 export interface ChartSeriesData {
 	// Candle slots, with whitespace for missing candles.
@@ -109,6 +113,8 @@ export interface ChartIndicatorLine {
 	// The output of the same indicator holding, at each marker value, the
 	// candles back from the marker to where a line drawn to it starts.
 	segment?: string;
+	// Colors each point by the sign of another output of the same indicator.
+	direction?: ChartIndicatorLineDirection;
 }
 export interface ChartIndicatorScale {
 	min?: number;

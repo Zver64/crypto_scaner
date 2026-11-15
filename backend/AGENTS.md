@@ -22,7 +22,7 @@ Rules:
 - Synchronization runs, and their late-candle retries, process instruments by descending market cap, those without one last (`ListActiveInstrumentsByMarketCap`).
 - Charts are streamed only over WebSocket; chart logic belongs in `chart`, `httpapi` only serializes. `chart.Window` is the one warm-up policy of charts, the tracker, and backtests.
 - Candle depths: `market.SyncDepth` (2,000) bounds synchronization and everything live (the OpenAPI chart `limit` and frontend limits mirror it; change them together); `market.RetentionDepth` (20,000) bounds what is kept and what backtests read. Deeper history comes only from administrator-started history loads. Nothing else deletes candles.
-- TA-Lib (`github.com/TA-Lib/ta-lib-cgo`, cgo) serves every function through one generic adapter generated from `ta_func_api.xml`; never write per-indicator adapters. To upgrade, bump the wrapper, replace `ta_func_api.xml` from the matching release, and run `make generate-backend`. Add `indicator/pivot` modules only for calculations TA-Lib cannot do. Client indicator selections go through `Registry.Normalize` before they are compared or stored.
+- TA-Lib (`github.com/Zver64/ta-lib-cgo`, cgo) serves every function through one generic adapter generated from `ta_func_api.xml`; never write per-indicator adapters. To upgrade, bump the wrapper, replace `ta_func_api.xml` from the matching release, and run `make generate-backend`. Add `indicator/pivot` modules only for calculations TA-Lib cannot do. Client indicator selections go through `Registry.Normalize` before they are compared or stored.
 
 ## Go conventions
 

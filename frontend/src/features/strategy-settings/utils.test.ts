@@ -11,6 +11,7 @@ import {
 	fieldVariable,
 	indicatorCall,
 	indicatorCallSource,
+	replaceFunction,
 	variableCall,
 	withInterval,
 } from "@/features/strategy-settings/expressions";
@@ -143,6 +144,36 @@ describe("parenthesizeOperands", () => {
 	});
 });
 
+describe("replaceFunction", () => {
+	const x = { kind: "field", field: 'close("1h")' } as const;
+	it.each([
+		[
+			"ValueWhen",
+			"Prev",
+			[x, x, { kind: "value", value: 0 }],
+			[x, { kind: "value", value: 1 }],
+		],
+		[
+			"Prev",
+			"ValueWhen",
+			[x, { kind: "value", value: 3 }],
+			[x, x, { kind: "value", value: 0 }],
+		],
+		["add", "subtract", [x, x], [x, { kind: "value", value: 0 }]],
+	] as const)(
+		"switches %s to %s from its first argument",
+		(from, to, args, expected) => {
+			expect(
+				replaceFunction({ kind: "func", fn: from, args: [...args] }, to),
+			).toEqual({
+				kind: "func",
+				fn: to,
+				args: expected,
+			});
+		},
+	);
+});
+
 describe("importedStrategyQuery", () => {
 	it.each([
 		['close("1h") > 1', 'close("1h") > 1'],
@@ -177,8 +208,8 @@ describe("importedStrategyQuery", () => {
 			'Prev(close("1h"), BarsSince(pivot_low("1h")) + 5) > Prev(sma("1h", 3, volume), 4)',
 		],
 		[
-			'ValueWhen(pivot_high("1h")) > ValueWhen(pivot_high("1h", 3, 3), 1)',
-			'ValueWhen(pivot_high("1h")) > ValueWhen(pivot_high("1h", 3, 3), 1)',
+			'ValueWhen(pivot_high("1h"), pivot_high("1h"), 0) > ValueWhen(pivot_high("1h", 3, 3), pivot_high("1h", 3, 3), 1)',
+			'ValueWhen(pivot_high("1h"), pivot_high("1h"), 0) > ValueWhen(pivot_high("1h", 3, 3), pivot_high("1h", 3, 3), 1)',
 		],
 		['entry_price < close("1d")', 'entry_price < close("1d")'],
 		[
@@ -409,12 +440,11 @@ describe("indicatorCall", () => {
 		expect(indicatorCall(field, exit.variables)).toBeUndefined();
 	});
 
-	// The condition of the rule comparing the lows of the price compares
-	// inside ValueWhen, which the builder does not show.
-	it("opens the pivot conditions of the RSI divergence rule", () => {
+	it("opens the RSI divergence rule", () => {
 		const expression = [
 			'pivot_low("1h", 5, 5, rsi("1h")) > 0',
-			'pivot_low("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), 1)',
+			'pivot_low("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), pivot_low("1h", 5, 5, rsi("1h")), 1)',
+			'Prev(low("1h"), 5) < ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), Prev(low("1h"), 5), 1)',
 			'Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) >= 5',
 			'Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) <= 60',
 		].join("\n&& ");

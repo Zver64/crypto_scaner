@@ -77,7 +77,7 @@ export function FunctionEditor({
 							node={arg}
 							onChange={(next) => replaceArg(index, next)}
 							variables={
-								definition?.earlier && index === 0
+								index < (definition?.earlier ?? 0)
 									? earlierVariables
 									: variables
 							}

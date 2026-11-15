@@ -42,7 +42,7 @@ func TestReplayedValuesMatchAFreshCalculationOfEachWindow(t *testing.T) {
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.candles[market.IntervalDay] = map[int64][]market.Candle{1: daily}
 	compiled, err := Compile(`ema("1h", 100) > Prev(ema("1h", 100)) && macd_macdsignal("1h") > Prev(rsi("1h"), 50) && bbands_upperband("1h", 20) > close("1h") && `+
-		`pivot_low("1h") < Prev(pivot_high("1h"), 7) && ValueWhen(pivot_high("1h"), 1) > 0 && ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), 1) > 0 && sma("1h", 9, rsi("1h")) > 0 && Prev(close("1h"), BarsSince(pivot_low("1h"))) > 0 && Prev(close("1h"), 3) > ema("1d", 5)`, registry, EntryRule)
+		`pivot_low("1h") < Prev(pivot_high("1h"), 7) && ValueWhen(pivot_high("1h"), pivot_high("1h"), 1) > 0 && ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), pivot_low("1h", 5, 5, rsi("1h")), 1) > 0 && sma("1h", 9, rsi("1h")) > 0 && Prev(close("1h"), BarsSince(pivot_low("1h"))) > 0 && Prev(close("1h"), 3) > ema("1d", 5)`, registry, EntryRule)
 	if err != nil {
 		t.Fatal(err)
 	}

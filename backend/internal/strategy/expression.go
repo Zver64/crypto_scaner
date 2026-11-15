@@ -482,9 +482,7 @@ func (language *language) options() []cel.EnvOption {
 		parser.NewGlobalMacro("Prev", 1, prevMacro),
 		parser.NewGlobalMacro("Prev", 2, prevMacro),
 		parser.NewGlobalMacro("Percentile", 3, percentileMacro),
-		parser.NewGlobalMacro("ValueWhen", 1, valueWhenMacro),
-		parser.NewGlobalMacro("ValueWhen", 2, valueWhenMacro),
-		parser.NewGlobalMacro("ValueWhen", 3, valueWhenMacro),
+		parser.NewGlobalVarArgMacro("ValueWhen", language.valueWhenMacro),
 		parser.NewGlobalMacro("BarsSince", 1, barsSinceMacro),
 		parser.NewGlobalMacro("Of", 2, ofMacro),
 		crossesMacro("CrossesAbove", operators.LessEquals, operators.Greater),
@@ -520,6 +518,7 @@ func (language *language) options() []cel.EnvOption {
 		cel.Function(candleFunction, cel.Overload("candle_dyn", []*cel.Type{cel.DynType}, cel.DynType, cel.OverloadIsNonStrict(), cel.UnaryBinding(candleValue))),
 		cel.Function(barsSinceFunction, cel.Overload("barssince_list", []*cel.Type{cel.ListType(cel.DynType)}, cel.DoubleType, cel.UnaryBinding(barsSince))),
 		cel.Function(valueWhenFunction,
+			// A value read at its own occurrences is listed once.
 			cel.Overload("valuewhen_list_double", []*cel.Type{cel.ListType(cel.DynType), cel.DoubleType}, cel.DoubleType, cel.BinaryBinding(func(values, occurrence ref.Val) ref.Val {
 				return valueWhen(values, values, occurrence)
 			})),
@@ -1122,29 +1121,62 @@ func occurrenceLists(helper parser.ExprHelper, name string, operands ...ast.Expr
 	return lists, nil
 }
 
-// valueWhenMacro expands ValueWhen(cond, x, n) into x at the candle where
-// cond was true for the n-th time back, and ValueWhen(x[, n]) into the n-th
-// latest value of x that is not empty.
-func valueWhenMacro(helper parser.ExprHelper, _ ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
-	operands := args[:1]
-	if len(args) == 3 {
-		operands = args[:2]
+// valueWhenMacro expands ValueWhen(when, x, n) into x at the candle where
+// when was true, or a value when was not empty, for the n-th time back.
+func (language *language) valueWhenMacro(helper parser.ExprHelper, _ ast.Expr, args []ast.Expr) (ast.Expr, *common.Error) {
+	if len(args) != 3 {
+		// Without a location, the error points at the call.
+		return nil, &common.Error{Message: `ValueWhen takes a condition or a value, a value, and an occurrence, such as ValueWhen(pivot_high("1h"), pivot_high("1h"), 1)`}
 	}
-	if isCondition(operands[len(operands)-1]) || len(operands) == 2 && !isCondition(operands[0]) {
-		return nil, helper.NewError(args[0].ID(), "ValueWhen takes a condition, a value, and an occurrence, or a value and an optional occurrence")
+	if isCondition(args[1]) {
+		return nil, helper.NewError(args[1].ID(), "the ValueWhen value cannot be a condition")
 	}
-	occurrence := 0
-	if len(args) > 1 {
-		var err *common.Error
-		if occurrence, err = integerLiteral(helper, args[len(args)-1], "the ValueWhen occurrence", 0, occurrenceWindow-1); err != nil {
-			return nil, err
-		}
+	occurrence, err := integerLiteral(helper, args[2], "the ValueWhen occurrence", 0, occurrenceWindow-1)
+	if err != nil {
+		return nil, err
+	}
+	operands := args[:2]
+	if language.sameOperand(args[0], args[1]) {
+		operands = args[:1]
 	}
 	lists, err := occurrenceLists(helper, "ValueWhen", operands...)
 	if err != nil {
 		return nil, err
 	}
 	return helper.NewCall(valueWhenFunction, append(lists, helper.NewLiteral(types.Double(occurrence)))...), nil
+}
+
+// sameOperand reports whether a and b, operands of one macro, are the same
+// expression over the same calls.
+func (language *language) sameOperand(a, b ast.Expr) bool {
+	if a.Kind() != b.Kind() {
+		return false
+	}
+	switch a.Kind() {
+	case ast.IdentKind:
+		return language.identifierRead(a.AsIdent()) == language.identifierRead(b.AsIdent())
+	case ast.LiteralKind:
+		return a.AsLiteral().Type() == b.AsLiteral().Type() && a.AsLiteral().Equal(b.AsLiteral()) == types.True
+	case ast.CallKind:
+		first, second := a.AsCall(), b.AsCall()
+		return !first.IsMemberFunction() && !second.IsMemberFunction() && first.FunctionName() == second.FunctionName() &&
+			slices.EqualFunc(first.Args(), second.Args(), language.sameOperand)
+	case ast.ListKind:
+		return slices.EqualFunc(a.AsList().Elements(), b.AsList().Elements(), language.sameOperand)
+	}
+	return false
+}
+
+// identifierRead is the identifier with the call it names, if any, spelled
+// out, so two calls written alike read the same.
+func (language *language) identifierRead(identifier string) string {
+	name, symbol, shift := splitIdentifier(identifier)
+	if index, isCall := strings.CutPrefix(name, callMarker); isCall {
+		if number, err := strconv.Atoi(index); err == nil && number < len(language.calls) {
+			name = language.calls[number].spelling
+		}
+	}
+	return hiddenIdentifier(name+symbolMarker+symbol, shift)
 }
 
 // barsSinceMacro expands BarsSince(cond) into the candles since cond was

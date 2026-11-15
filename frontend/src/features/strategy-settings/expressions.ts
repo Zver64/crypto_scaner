@@ -39,9 +39,11 @@ interface StrategyFunction {
 	defaults: ExpressionNode[];
 	variadic?: boolean;
 	minArgs?: number;
-	// Reads its first argument, the value, at earlier candles, where
+	// Starts with its first argument repeated as the second one.
+	repeatsFirst?: true;
+	// The number of leading arguments it reads at earlier candles, where
 	// position variables do not exist; the others at the latest candle.
-	earlier?: true;
+	earlier?: number;
 }
 
 type FunctionNode = Extract<ExpressionNode, { kind: "func" }>;
@@ -87,27 +89,27 @@ export const strategyFunctions: Record<string, StrategyFunction> = {
 		defaults: [number(1)],
 		// Prev(x) reads one candle back.
 		minArgs: 1,
-		earlier: true,
+		earlier: 1,
 	},
 	Percentile: {
 		label: "Percentile — of earlier candles",
 		args: ["Value", "Candles", "Percentile"],
 		defaults: [number(120), number(20)],
-		earlier: true,
+		earlier: 1,
 	},
 	ValueWhen: {
 		label: "ValueWhen — earlier value",
-		args: ["Value", "Values back"],
+		args: ["When", "Value", "Values back"],
 		defaults: [number(0)],
-		// ValueWhen(x) reads the latest value.
-		minArgs: 1,
-		earlier: true,
+		// ValueWhen(x, x, 0) is the latest value of x.
+		repeatsFirst: true,
+		earlier: 2,
 	},
 	BarsSince: {
 		label: "BarsSince — candles since a value",
 		args: ["Value"],
 		defaults: [],
-		earlier: true,
+		earlier: 1,
 	},
 };
 
@@ -472,10 +474,15 @@ export function expressionSource(node: ExpressionNode): string {
 
 // The node a function call starts with when chosen around node.
 export function functionCall(name: string, node: ExpressionNode): FunctionNode {
+	const definition = strategyFunctions[name];
 	return {
 		kind: "func",
 		fn: name,
-		args: [node, ...(strategyFunctions[name]?.defaults ?? [])],
+		args: [
+			node,
+			...(definition?.repeatsFirst ? [node] : []),
+			...(definition?.defaults ?? []),
+		],
 	};
 }
 
@@ -504,16 +511,13 @@ export function coinOf(node: ExpressionNode): string | undefined {
 		: "";
 }
 
-// The call of name that replaces node, keeping the arguments that still fit.
+// The call of name that replaces node, started from its first argument as
+// when name is chosen for it.
 export function replaceFunction(
 	node: FunctionNode,
 	name: string,
 ): FunctionNode {
-	const call = functionCall(name, node.args[0] ?? number(0));
-	return {
-		...call,
-		args: call.args.map((arg, index) => node.args[index] ?? arg),
-	};
+	return functionCall(name, node.args[0] ?? number(0));
 }
 
 // The first field an expression reads, which names the rule's field.

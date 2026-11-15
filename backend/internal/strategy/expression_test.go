@@ -417,13 +417,14 @@ func TestValueWhenAndBarsSince(t *testing.T) {
 		empty   bool
 		unknown bool
 	}{
-		{source: `ValueWhen(pivot_high("1h"))`, want: 50},
-		{source: `ValueWhen(pivot_high("1h"), 1)`, want: 60},
-		{source: `ValueWhen(pivot_high("1h"), 2)`, empty: true},
+		{source: `ValueWhen(pivot_high("1h"), pivot_high("1h"), 0)`, want: 50},
+		{source: `ValueWhen(pivot_high("1h"), pivot_high("1h"), 1)`, want: 60},
+		{source: `ValueWhen(pivot_high("1h"), pivot_high("1h"), 2)`, empty: true},
 		{source: `ValueWhen(rsi("1h") > 70, close("1h"), 1)`, want: 93},
 		{source: `ValueWhen(rsi("1h") > 70 && close("1h") < 95, close("1h"), 0)`, want: 93},
 		{source: `ValueWhen(rsi("1h") > 90, close("1h"), 0)`, empty: true},
 		{source: `ValueWhen(pivot_high("1h") > 0, Prev(low("1h"), 5), 1)`, want: 85},
+		{source: `ValueWhen(pivot_high("1h"), Prev(low("1h"), 5), 1)`, want: 85},
 		{source: `BarsSince(pivot_high("1h"))`, want: 3},
 		{source: `BarsSince(rsi("1h") > 70)`, want: 2},
 		{source: `BarsSince(rsi("1h") > 30)`, want: 0},
@@ -435,8 +436,8 @@ func TestValueWhenAndBarsSince(t *testing.T) {
 		// The condition is true at the latest candle: a shift of 0.
 		{source: `Prev(close("1h"), BarsSince(rsi("1h") > 30))`, want: 100},
 		// The occurrence is found before the unknown candle, or behind it.
-		{source: `ValueWhen(pivot_high("1h"))`, missing: 5, want: 50},
-		{source: `ValueWhen(pivot_high("1h"), 1)`, missing: 5, unknown: true},
+		{source: `ValueWhen(pivot_high("1h"), pivot_high("1h"), 0)`, missing: 5, want: 50},
+		{source: `ValueWhen(pivot_high("1h"), pivot_high("1h"), 1)`, missing: 5, unknown: true},
 		{source: `ValueWhen(rsi("1h") > 70, close("1h"), 1)`, missing: 5, unknown: true},
 		{source: `BarsSince(rsi("1h") > 70)`, missing: 1, unknown: true},
 		{source: `Percentile(pivot_high("1h"), 12, 50)`, want: 50},
@@ -461,20 +462,26 @@ func TestValueWhenAndBarsSince(t *testing.T) {
 		}
 	}
 
+	// A value 80 nodes large fits in one list of 200 candles, which
+	// ValueWhen reading it at its own occurrences builds once.
+	large := strings.Repeat(`high("1h") + `, 39) + `high("1h")`
+	const valueWhenProblem = `ValueWhen takes a condition or a value, a value, and an occurrence, such as ValueWhen(pivot_high("1h"), pivot_high("1h"), 1)`
 	for source, problem := range map[string]string{
-		`ValueWhen(BarsSince(rsi("1h") > 70), 1) > 0`:                                                          "ValueWhen cannot contain BarsSince",
-		`BarsSince(ValueWhen(pivot_high("1h")) > 1) > 0`:                                                       "BarsSince cannot contain ValueWhen",
+		`ValueWhen(BarsSince(rsi("1h") > 70), close("1h"), 1) > 0`:                                             "ValueWhen cannot contain BarsSince",
+		`BarsSince(ValueWhen(pivot_high("1h"), close("1h"), 0) > 1) > 0`:                                       "BarsSince cannot contain ValueWhen",
 		`BarsSince(Percentile(close("1h"), 5, 50) > 1) > 0`:                                                    "BarsSince cannot contain Percentile",
 		`BarsSince(Prev(close("1h"), bars_held) > 1) > 0`:                                                      "BarsSince cannot contain Prev with a calculated shift",
-		`Percentile(ValueWhen(pivot_high("1h")), 5, 50) > 1`:                                                   "Percentile cannot contain ValueWhen",
-		`Prev(ValueWhen(pivot_high("1h")), bars_held) > 1`:                                                     "Prev with a calculated shift cannot contain ValueWhen",
+		`Percentile(ValueWhen(pivot_high("1h"), close("1h"), 0), 5, 50) > 1`:                                   "Percentile cannot contain ValueWhen",
+		`Prev(ValueWhen(pivot_high("1h"), close("1h"), 0), bars_held) > 1`:                                     "Prev with a calculated shift cannot contain ValueWhen",
 		`Prev(close("1h"), BarsSince(pivot_low("1h")) + 5) > 1`:                                                "",
 		`Prev(close("1h"), BarsSince(pivot_low("1h")) * 2) > 1`:                                                shiftProblem,
-		`Prev(close("1h"), ValueWhen(pivot_low("1h"))) > 1`:                                                    shiftProblem,
+		`Prev(close("1h"), ValueWhen(pivot_low("1h"), close("1h"), 0)) > 1`:                                    shiftProblem,
 		`BarsSince(pnl > 1) > 3`:                                                                               "pnl cannot be read through Prev, Percentile, ValueWhen, BarsSince, crossings, or Of",
-		`ValueWhen(pivot_high("1h"), 200) > 1`:                                                                 "the ValueWhen occurrence must be a whole number from 0 to 199",
-		`ValueWhen(pivot_high("1h"), close("1h"), 0) > 1`:                                                      "ValueWhen takes a condition, a value, and an occurrence, or a value and an optional occurrence",
-		`ValueWhen(rsi("1h") > 70) > 1`:                                                                        "ValueWhen takes a condition, a value, and an occurrence, or a value and an optional occurrence",
+		`ValueWhen(pivot_high("1h"), pivot_high("1h"), 200) > 1`:                                               "the ValueWhen occurrence must be a whole number from 0 to 199",
+		`ValueWhen(pivot_high("1h"), close("1h") > 90, 0) > 1`:                                                 "the ValueWhen value cannot be a condition",
+		"ValueWhen(" + large + ", " + large + ", 0) > 1":                                                       "",
+		`ValueWhen(pivot_high("1h"), 1) > 1`:                                                                   valueWhenProblem,
+		`ValueWhen(pivot_high("1h")) > 1`:                                                                      valueWhenProblem,
 		`bars_since(pivot_high("1h")) > value_when(close("1h"))`:                                               "unknown function bars_since; did you mean BarsSince?; unknown function value_when; did you mean ValueWhen?",
 		strings.Repeat(`BarsSince(rsi("1h") > 70) < 5 && `, 9) + `BarsSince(CrossesAbove(rsi("1h"), 70)) < 5`:  "",
 		strings.Repeat(`BarsSince(rsi("1h") > 70) < 5 && `, 10) + `BarsSince(CrossesAbove(rsi("1h"), 70)) < 5`: "the expression has too many comparisons",

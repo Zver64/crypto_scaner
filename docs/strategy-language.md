@@ -22,7 +22,7 @@ Reference for writing a strategy expression that the scanner imports unchanged.
 - A call has one canonical spelling: trailing defaults dropped and numbers without trailing zeros, so `rsi("1h", 14)` is `rsi("1h")` and `bbands_upperband("1h", 20, 2.50)` is `bbands_upperband("1h", 20, 2.5)`. Backtest values and columns, validation, and `scanner vars` use it.
 - Strategies read any indicator, configured or not, and the Mini App builder offers every indicator type with its parameters. Configuring one only shows it in the market table and on charts; nothing links strategies and configured indicators. Do not use `__` in names.
 - One indicator is not a TA-Lib function; it finds pivots the way TradingView does. A pivot high is a value at least as high as the `left` candles before it and higher than the `right` candles after it, so of equal highs the latest counts; a pivot low is the reverse. A pivot is confirmed `right` candles after it, and only then appears.
-  - `pivot` (`left`, `right`, `source`, defaults 5, 5, and the high and the low) has two outputs. With a source, both read that series: `pivot_low("1h", 5, 5, close)` finds the pivot lows of the close, `pivot_high("1h", 5, 5, rsi("1h"))` the pivot highs of the RSI. Without one, it reads the high and the low: `pivot_high("1h")` is the price of a pivot high on the candle that confirms it and empty on every other candle, and `pivot_low("1h")` likewise. So `pivot_high("1h") > 0` is true exactly on the candles confirming a pivot high, and the pivot candle lies `right` candles back. Earlier pivots are read through `ValueWhen` and `BarsSince` (see Expressions). Lower highs: `ValueWhen(pivot_high("1h")) < ValueWhen(pivot_high("1h"), 1)`.
+  - `pivot` (`left`, `right`, `source`, defaults 5, 5, and the high and the low) has two outputs. With a source, both read that series: `pivot_low("1h", 5, 5, close)` finds the pivot lows of the close, `pivot_high("1h", 5, 5, rsi("1h"))` the pivot highs of the RSI. Without one, it reads the high and the low: `pivot_high("1h")` is the price of a pivot high on the candle that confirms it and empty on every other candle, and `pivot_low("1h")` likewise. So `pivot_high("1h") > 0` is true exactly on the candles confirming a pivot high, and the pivot candle lies `right` candles back. Earlier pivots are read through `ValueWhen` and `BarsSince` (see Expressions). Lower highs: `ValueWhen(pivot_high("1h"), pivot_high("1h"), 0) < ValueWhen(pivot_high("1h"), pivot_high("1h"), 1)`.
 
 ## Expressions
 
@@ -30,9 +30,9 @@ Reference for writing a strategy expression that the scanner imports unchanged.
 - `Prev(x[, n])` is `x` `n` closed candles earlier (default 1, from 1 to 500); `x` may be an expression. `n` may also be calculated, then from 0 (the latest candle) to 500, by adding and subtracting whole numbers and counts of candles: `BarsSince` and, in the exit rule, `bars_held`, such as `Prev(close("1h"), BarsSince(pivot_low("1h")) + 5)`, the close at the latest pivot low with the default `right` of 5. A calculated shift is read at the latest candle, and only that one earlier `x` is read. It counts candles of the period of the values inside `Prev`, whatever the period it was read on: in an hourly strategy, `Prev(close("1d"), bars_held)` reads `close("1d")` `bars_held` days back. Such a `Prev` cannot contain another one, `Percentile`, `ValueWhen`, or `BarsSince` (except `BarsSince` in its shift), and those cannot contain it. A `Prev` with a number or a crossing around it is allowed and reads the shift at that earlier candle too: `Prev(Prev(close("1h"), BarsSince(pivot_low("1h")) + 5), 1)` reads `BarsSince(pivot_low("1h"))` one candle back.
 - An empty calculated shift, such as a `BarsSince` that found nothing, makes the `Prev` empty. Any other calculated shift outside 0 to 500 at a candle is an error of the rule where it decides the result (`close("1h") < 0 && Prev(…)` is simply false when the close is not negative). A backtest then fails, naming the candle, the rule, and the shift; a live strategy is disabled, and, as with a manual disable, its open trade is forgotten without a sell, and the administrator gets a Telegram message saying why. A strategy whose rules were changed meanwhile stays enabled.
 - `Percentile(x, n, p)` is the p-th percentile (a whole number from 1 to 100) of `x` over the `n` candles (at most 500) before the latest. Empty values are ignored: it is the percentile of the values that are not empty, and empty when all are.
-- `ValueWhen(cond, x, n)` is `x` at the candle where the condition `cond` was true for the `n`-th time back, among the latest 200 closed candles, the latest included; `n` is a whole number from 0 (the latest time) to 199: `ValueWhen(rsi("1h") > 70, close("1h"), 0)`. `ValueWhen(x[, n])` is short for the condition "`x` is not empty", the `n`-th latest value of `x` (default 0): `ValueWhen(pivot_high("1h"))` is the latest pivot high and `ValueWhen(pivot_high("1h"), 1)` the one before.
+- `ValueWhen(when, x, n)` is `x` at the candle where `when` held for the `n`-th time back, among the latest 200 closed candles, the latest included; all three arguments are required. `when` is a condition, which holds where it is true: `ValueWhen(rsi("1h") > 70, close("1h"), 0)`, or a value, which holds where it is not empty: `ValueWhen(pivot_high("1h"), pivot_high("1h"), 0)` is the latest pivot high and `ValueWhen(pivot_high("1h"), pivot_high("1h"), 1)` the one before. `x` cannot be a condition. `n` is a whole number from 0 (the latest time) to 199.
 - `BarsSince(cond)` is the candles since `cond` was last true among the same 200 candles, 0 when it is true at the latest one. `BarsSince(x)` is short for "`x` is not empty": `BarsSince(pivot_high("1h"))` counts the candles since a pivot high was last confirmed, so the pivot candle lies `BarsSince(pivot_high("1h")) + right` back.
-- In `ValueWhen` and `BarsSince`, the argument is a condition when it is a comparison, a crossing, or `&&`, `||`, `!` over them, and a value otherwise. A condition that is unknown or empty at a candle is not true there. The result is empty when the occurrence is not among the 200 candles, and unknown when a candle that had to be looked at on the way to it is unknown. They cannot contain each other, `Percentile`, or a `Prev` with a calculated shift, and `Percentile` cannot contain them; a `Prev` with a number is allowed inside and around: `ValueWhen(pivot_low("1h") > 0, Prev(low("1h"), 5), 1)`, `Prev(BarsSince(pivot_low("1h")), 1)`.
+- In `ValueWhen` (`when`) and `BarsSince`, the argument that tells the occurrence is a condition when it is a comparison, a crossing, or `&&`, `||`, `!` over them, and a value otherwise. A condition that is unknown or empty at a candle is not true there. The result is empty when the occurrence is not among the 200 candles, and unknown when a candle that had to be looked at on the way to it is unknown. They cannot contain each other, `Percentile`, or a `Prev` with a calculated shift, and `Percentile` cannot contain them; a `Prev` with a number is allowed inside and around: `ValueWhen(pivot_low("1h"), Prev(low("1h"), 5), 1)`, `Prev(BarsSince(pivot_low("1h")), 1)`.
 - `CrossesAbove(a, b)` / `CrossesBelow(a, b)` is a crossing at the latest candle: `Prev(a) <= Prev(b) && a > b`, and the reverse.
 - `Of("BTCUSDT", x)` is `x` of another coin, which must be active; `Of` cannot contain `Of`.
 - Limits: 2000 characters and 20 comparisons (a crossing counts once, and so does each comparison of a condition inside `ValueWhen` or `BarsSince`).
@@ -40,14 +40,14 @@ Reference for writing a strategy expression that the scanner imports unchanged.
 
 ## Divergence
 
-A divergence is a rule over the pivots of an oscillator, written by hand. These four are TradingView's RSI Divergence Indicator with its defaults (RSI 14, pivots 5 and 5, 5 to 60 candles between the pivots); any other oscillator, such as `macd_macdhist("1h")`, replaces `rsi("1h")`. Each is true on the candle that confirms the later pivot of the RSI, which lies 5 candles back, so `Prev(low("1h"), 5)` is the low of the price at that pivot, and `ValueWhen(… > 0, Prev(low("1h"), 5), 1)` the low at the pivot before. `Prev(BarsSince(…), 1)` is the candles between the two confirmations, counted one candle back, where the previous pivot was still the latest.
+A divergence is a rule over the pivots of an oscillator, written by hand. These four are TradingView's RSI Divergence Indicator with its defaults (RSI 14, pivots 5 and 5, 5 to 60 candles between the pivots); any other oscillator, such as `macd_macdhist("1h")`, replaces `rsi("1h")`. Each is true on the candle that confirms the later pivot of the RSI, which lies 5 candles back, so `Prev(low("1h"), 5)` is the low of the price at that pivot, and `ValueWhen(…, Prev(low("1h"), 5), 1)` the low at the pivot before. `Prev(BarsSince(…), 1)` is the candles between the two confirmations, counted one candle back, where the previous pivot was still the latest.
 
 Regular bullish, the price makes a lower low and the RSI a higher one:
 
 ```cel
 pivot_low("1h", 5, 5, rsi("1h")) > 0
-&& pivot_low("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), 1)
-&& Prev(low("1h"), 5) < ValueWhen(pivot_low("1h", 5, 5, rsi("1h")) > 0, Prev(low("1h"), 5), 1)
+&& pivot_low("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), pivot_low("1h", 5, 5, rsi("1h")), 1)
+&& Prev(low("1h"), 5) < ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), Prev(low("1h"), 5), 1)
 && Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) >= 5
 && Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) <= 60
 ```
@@ -56,8 +56,8 @@ Hidden bullish, the price makes a higher low and the RSI a lower one:
 
 ```cel
 pivot_low("1h", 5, 5, rsi("1h")) > 0
-&& pivot_low("1h", 5, 5, rsi("1h")) < ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), 1)
-&& Prev(low("1h"), 5) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")) > 0, Prev(low("1h"), 5), 1)
+&& pivot_low("1h", 5, 5, rsi("1h")) < ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), pivot_low("1h", 5, 5, rsi("1h")), 1)
+&& Prev(low("1h"), 5) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), Prev(low("1h"), 5), 1)
 && Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) >= 5
 && Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) <= 60
 ```
@@ -66,8 +66,8 @@ Regular bearish, the price makes a higher high and the RSI a lower one:
 
 ```cel
 pivot_high("1h", 5, 5, rsi("1h")) > 0
-&& pivot_high("1h", 5, 5, rsi("1h")) < ValueWhen(pivot_high("1h", 5, 5, rsi("1h")), 1)
-&& Prev(high("1h"), 5) > ValueWhen(pivot_high("1h", 5, 5, rsi("1h")) > 0, Prev(high("1h"), 5), 1)
+&& pivot_high("1h", 5, 5, rsi("1h")) < ValueWhen(pivot_high("1h", 5, 5, rsi("1h")), pivot_high("1h", 5, 5, rsi("1h")), 1)
+&& Prev(high("1h"), 5) > ValueWhen(pivot_high("1h", 5, 5, rsi("1h")), Prev(high("1h"), 5), 1)
 && Prev(BarsSince(pivot_high("1h", 5, 5, rsi("1h"))), 1) >= 5
 && Prev(BarsSince(pivot_high("1h", 5, 5, rsi("1h"))), 1) <= 60
 ```
@@ -76,8 +76,8 @@ Hidden bearish, the price makes a lower high and the RSI a higher one:
 
 ```cel
 pivot_high("1h", 5, 5, rsi("1h")) > 0
-&& pivot_high("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_high("1h", 5, 5, rsi("1h")), 1)
-&& Prev(high("1h"), 5) < ValueWhen(pivot_high("1h", 5, 5, rsi("1h")) > 0, Prev(high("1h"), 5), 1)
+&& pivot_high("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_high("1h", 5, 5, rsi("1h")), pivot_high("1h", 5, 5, rsi("1h")), 1)
+&& Prev(high("1h"), 5) < ValueWhen(pivot_high("1h", 5, 5, rsi("1h")), Prev(high("1h"), 5), 1)
 && Prev(BarsSince(pivot_high("1h", 5, 5, rsi("1h"))), 1) >= 5
 && Prev(BarsSince(pivot_high("1h", 5, 5, rsi("1h"))), 1) <= 60
 ```

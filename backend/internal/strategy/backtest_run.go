@@ -120,10 +120,8 @@ func simulate(ctx context.Context, replay *replay, entry Entry, instrument Instr
 					continue
 				}
 				trade.ExitValues = entry.Exit.Values(current.resolver(entry, instrument.ID, entry.positions(event.Trade, candle.OpenTime, candle.Close)))
-				// The sell fills at the next open, or at this close when the
-				// period ends first, which closes open trades at its last
-				// close.
-				trade.ExitPrice = candle.Close
+				// The sell fills with the next processed candle, unless the
+				// period ends first.
 				selling = &trade
 			}
 		}
@@ -131,7 +129,11 @@ func simulate(ctx context.Context, replay *replay, entry Entry, instrument Instr
 			drawdown(equity * (1 + netReturn(entry.Direction, state.EntryPrice(), candle.Close)))
 		}
 	}
+	// The end of the period fills a pending sell, and values an open trade,
+	// at its last close.
 	if selling != nil {
+		last := candles[len(candles)-1]
+		selling.ExitTime, selling.ExitPrice = last.OpenTime.UTC(), last.Close
 		record(*selling)
 	}
 	if state.Filled > 0 {

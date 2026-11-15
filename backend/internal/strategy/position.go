@@ -4,8 +4,8 @@ import "time"
 
 // TradeState is the trading state of a strategy on one instrument after the
 // last candle it processed. Every buy spends one quote unit at the open of
-// the candle after its signal; Filled of the Buys have filled, buying
-// Quantity coins in total.
+// the next processed candle after its signal; Filled of the Buys have
+// filled, buying Quantity coins in total.
 type TradeState struct {
 	// OpenTime is the open time of the last processed candle.
 	OpenTime time.Time
@@ -21,9 +21,9 @@ type TradeState struct {
 	// TakeProfit and StopLoss are the prices the open trade sells at, fixed
 	// at its entry signal; 0 without a trade or without that exit.
 	TakeProfit, StopLoss float64
-	// selling counts the buys an exit rule sold at the last processed
-	// candle, which fill at the open of the next candle. The monitor neither
-	// stores nor reads it: it announces no fill.
+	// selling counts the buys an exit rule sold, which fill at the open of
+	// the next processed candle. The monitor neither stores nor reads it: it
+	// announces no fill.
 	selling int
 }
 
@@ -50,8 +50,8 @@ const (
 	// TradeBuyFill fills the buys pending since earlier signals at the open
 	// of the candle.
 	TradeBuyFill
-	// TradeSellFill fills the sell an exit rule signaled at the candle before
-	// at the open of the candle.
+	// TradeSellFill fills the sell an exit rule signaled at an earlier
+	// candle at the open of the candle.
 	TradeSellFill
 )
 
@@ -82,8 +82,8 @@ type TradeEvent struct {
 	Trade TradeState
 	// Close is the close of the candle. Reason tells what sold a sell;
 	// Price is the price a take profit or stop loss filled at on this
-	// candle, while an exit rule sells at the next open, which its
-	// TradeSellFill reports. Return is the fractional return of a sell at
+	// candle, while an exit rule sells at the open of the next processed
+	// candle, which its TradeSellFill reports. Return is the fractional return of a sell at
 	// Price, or at the close for an exit rule.
 	Close, Price, Return float64
 	Reason               ExitReason
@@ -111,44 +111,39 @@ type TradeCandle struct {
 	Levels                 func() (takeProfit, stopLoss float64, known bool, err error)
 }
 
-// step processes candle after state. A sell an exit rule signaled at the
-// candle before fills at its open, whatever else the candle holds. Buys
-// pending since earlier signals fill at its open, and the first fill starts
-// the trade. A filled trade then sells at its stop loss or take profit when
-// the candle reaches them: at the open when it opens past one, otherwise at
-// the price itself, the stop loss first when the candle reaches both.
-// Otherwise, while a trade is open, a true exit rule sells every buy at the
-// next open. A sell counts the entry as false on its candle, so that the
-// next candle can signal again. An entry signal outside the market cap range
-// is skipped. Otherwise an entry signal of a signal only announces itself;
-// otherwise it opens a trade, fixing its take profit and stop loss when the
-// close lies between them and skipping otherwise, or, for a strategy that
-// never sells, adds a buy; a strategy that exits skips signals while it holds
-// a trade. A candle waits, changing nothing but the fill of a pending sell
-// and processed false, until every rule it needs is known: the exit rule
-// while a trade is open, and the entry and the levels of a trade it opens
-// unless the trade sells; pending buys wait with it. Nothing changes either
-// for a candle not after the last processed one. A rule error of a rule the
-// candle needs processes nothing and is returned: it halts the strategy.
+// step processes candle after state. Orders decided on an earlier candle
+// fill at its open: the sell of an exit rule, and the buys of entry signals,
+// the first fill starting the trade. A filled trade then sells at its stop
+// loss or take profit when the candle reaches them: at the open when it
+// opens past one, otherwise at the price itself, the stop loss first when
+// the candle reaches both. Otherwise, while a trade is open, a true exit rule
+// sells every buy; the trade closes at once and the sell fills with the next
+// processed candle. A sell counts the entry as false on its candle, so that
+// the next candle can signal again. An entry signal outside the market cap
+// range is skipped. Otherwise an entry signal of a signal only announces
+// itself; otherwise it opens a trade, fixing its take profit and stop loss
+// when the close lies between them and skipping otherwise, or, for a
+// strategy that never sells, adds a buy; a strategy that exits skips signals
+// while it holds a trade. A candle waits, changing and filling nothing and
+// processed false, until every rule it needs is known: the exit rule while a
+// trade is open, and the entry and the levels of a trade it opens unless the
+// trade sells. Nothing changes either for a candle not after the last
+// processed one. A rule error of a rule the candle needs processes nothing
+// and is returned: it halts the strategy.
 func (entry Entry) step(state TradeState, candle TradeCandle) (next TradeState, events []TradeEvent, processed bool, err error) {
-	if !candle.OpenTime.After(state.OpenTime) {
+	if !candle.OpenTime.After(state.OpenTime) || !(candle.Open > 0) || !(candle.High > 0) || !(candle.Low > 0) || !(candle.Close > 0) {
 		return state, nil, false, nil
 	}
-	var sold []TradeEvent
-	if state.selling > 0 && candle.Open > 0 {
-		sold = []TradeEvent{{Kind: TradeSellFill, Time: candle.OpenTime, Price: candle.Open, Count: state.selling}}
-		state.selling = 0
-	}
-	// wait leaves the candle unprocessed, reporting only the fill of a
-	// pending sell.
+	// wait leaves the candle unprocessed.
 	wait := func(err error) (TradeState, []TradeEvent, bool, error) {
-		return state, sold, false, err
-	}
-	if !(candle.Open > 0) || !(candle.High > 0) || !(candle.Low > 0) || !(candle.Close > 0) {
-		return wait(nil)
+		return state, nil, false, err
 	}
 	next = state
-	fills := sold
+	var fills []TradeEvent
+	if next.selling > 0 {
+		fills = append(fills, TradeEvent{Kind: TradeSellFill, Time: candle.OpenTime, Price: candle.Open, Count: next.selling})
+		next.selling = 0
+	}
 	if pending := next.Buys - next.Filled; pending > 0 {
 		if next.Filled == 0 {
 			next.OpenedAt = candle.OpenTime

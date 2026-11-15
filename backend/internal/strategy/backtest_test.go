@@ -241,6 +241,42 @@ func TestBacktestExitingStrategySkipsSignalsDuringATrade(t *testing.T) {
 	})
 }
 
+// A candle after a missing hour waits, since Prev is unknown there, and
+// fills nothing: the buy signaled at hour 1 fills at hour 4, not at hour 3,
+// and the sell the exit rule signals at hour 5 fills at hour 8, not at hour
+// 7, where the entry signals again after the sell fills.
+func TestBacktestFillsOrdersAtTheNextProcessedCandle(t *testing.T) {
+	type bar struct{ open, close float64 }
+	bars := map[int]bar{0: {1, 1}, 1: {9, 9}, 3: {7, 9}, 4: {8, 9}, 5: {9, 30}, 7: {11, 9}, 8: {12, 9}, 9: {10, 9}}
+	var candles []market.Candle
+	for index := range 10 {
+		if bar, ok := bars[index]; ok {
+			candle := testCandle(1, market.IntervalHour, backtestHour(index), bar.close)
+			candle.Open, candle.High = bar.open, max(bar.open, bar.close)+1
+			candles = append(candles, candle)
+		}
+	}
+	service := newBacktestService(t, newBacktestStore(market.IntervalHour, candles), Strategy{
+		ID: testID(1), Name: "Gap", Expression: `close("1h") > 5 && Prev(close("1h")) > 0`, ExitExpression: `close("1h") > 20`,
+	})
+
+	result, err := service.Backtest(context.Background(), testID(1), "BTCUSDT", time.Time{}, time.Time{}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []Trade{
+		{EntryTime: backtestHour(4), EntryPrice: 8, ExitTime: backtestHour(8), ExitPrice: 12, Buys: 1, Return: netReturn(DirectionLong, 8, 12)},
+		{EntryTime: backtestHour(9), EntryPrice: 10, ExitTime: backtestHour(9), ExitPrice: 9, Buys: 1, Open: true, Return: netReturn(DirectionLong, 10, 9)},
+	}
+	if !slices.EqualFunc(result.Trades, want, tradeNear) || !slices.EqualFunc(result.Alerts, []time.Time{backtestHour(1), backtestHour(8)}, time.Time.Equal) {
+		t.Fatalf("trades = %+v, alerts %v", result.Trades, result.Alerts)
+	}
+	if exit := result.Trades[0]; exit.Reason != ExitRuleSignal || !exit.ExitSignal.Equal(backtestHour(5)) ||
+		len(exit.Fills) != 1 || !exit.Fills[0].Time.Equal(backtestHour(4)) || exit.Fills[0].Price != 8 {
+		t.Fatalf("exit = %+v", exit)
+	}
+}
+
 // Take profit and stop loss are fixed at the signal and sell on the candle
 // that reaches them: at the price itself, at the stop loss when the candle
 // reaches both, and at the open when it gaps past one.

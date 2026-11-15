@@ -17,10 +17,10 @@ const BacktestFee = 0.001
 
 // Backtest is how a strategy would have traded one instrument over its
 // stored closed history: the monitor's trades replayed candle by candle.
-// Every buy spends one quote unit at the open of the candle after its
-// signal. A take profit or stop loss sells every buy of the trade on the
-// candle that reaches it, and an exit rule at the open of the candle after
-// its signal, paying BacktestFee on both sides.
+// Every buy spends one quote unit at the open of the next processed candle
+// after its signal. A take profit or stop loss sells every buy of the trade
+// on the candle that reaches it, and an exit rule at the open of the next
+// processed candle after its signal, paying BacktestFee on both sides.
 type Backtest struct {
 	// Interval is the finest interval the rules read, where signals fire
 	// and trades count candles.

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/chart"
+	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/strategy"
 
@@ -33,8 +34,12 @@ func (api *api) GetStrategyCatalog(ctx context.Context, _ GetStrategyCatalogRequ
 		return GetStrategyCatalog500JSONResponse{api.internalError(ctx, "get_strategy_catalog", err)}, nil
 	}
 	response := StrategyCatalog{
-		Indicators: indicatorCallDTOs(catalog.Indicators), CandleFields: catalog.CandleFields,
-		Intervals: make([]CandleInterval, len(catalog.Intervals)), PositionVariables: make([]StrategyPositionVariable, len(catalog.Positions)),
+		Indicators: indicatorCallDTOs(catalog.Indicators), IndicatorTypes: make([]StrategyIndicatorType, len(catalog.IndicatorTypes)),
+		CandleFields: catalog.CandleFields,
+		Intervals:    make([]CandleInterval, len(catalog.Intervals)), PositionVariables: make([]StrategyPositionVariable, len(catalog.Positions)),
+	}
+	for i, descriptor := range catalog.IndicatorTypes {
+		response.IndicatorTypes[i] = strategyIndicatorTypeDTO(descriptor)
 	}
 	for i, interval := range catalog.Intervals {
 		response.Intervals[i] = CandleInterval(interval)
@@ -43,6 +48,37 @@ func (api *api) GetStrategyCatalog(ctx context.Context, _ GetStrategyCatalogRequ
 		response.PositionVariables[i] = StrategyPositionVariable{Name: variable.Name, Count: variable.Count}
 	}
 	return GetStrategyCatalog200JSONResponse(response), nil
+}
+
+// strategyIndicatorTypeDTO describes an indicator type as calls write it:
+// unlike indicatorTypeDTO, a source stays a source, whose named choices
+// calls write by name.
+func strategyIndicatorTypeDTO(descriptor indicator.Descriptor) StrategyIndicatorType {
+	item := StrategyIndicatorType{
+		Type: string(descriptor.Type), Title: descriptor.Title,
+		Outputs:    make([]StrategyIndicatorOutput, len(descriptor.Outputs)),
+		Parameters: make([]StrategyIndicatorParameter, len(descriptor.Parameters)),
+	}
+	for i, output := range descriptor.Outputs {
+		item.Outputs[i] = StrategyIndicatorOutput{Name: output.Name, Sparse: output.Sparse}
+	}
+	for i, parameter := range descriptor.Parameters {
+		dto := StrategyIndicatorParameter{Key: parameter.Key, Title: parameter.Title, Kind: StrategyIndicatorParameterKind(parameter.Kind), Default: parameter.Default}
+		if parameter.Kind == indicator.ParameterChoice || parameter.Kind == indicator.ParameterSource {
+			choices := make([]StrategyIndicatorChoice, len(parameter.Choices))
+			for j, choice := range parameter.Choices {
+				choices[j] = StrategyIndicatorChoice{Value: choice.Value, Title: choice.Title}
+				if choice.Name != "" {
+					choices[j].Name = &choice.Name
+				}
+			}
+			dto.Choices = &choices
+		} else {
+			dto.Minimum, dto.Maximum = &parameter.Minimum, &parameter.Maximum
+		}
+		item.Parameters[i] = dto
+	}
+	return item
 }
 
 func indicatorCallDTOs(calls []strategy.IndicatorCall) []StrategyIndicatorCall {

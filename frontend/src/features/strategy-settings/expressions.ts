@@ -16,7 +16,18 @@ import type {
 	CELStringLiteral,
 } from "react-querybuilder/parseCEL";
 
-import type { StrategyVariable } from "@/features/strategy-settings/types";
+import {
+	type StrategyIndicatorChoice,
+	type StrategyIndicatorParameter,
+	StrategyIndicatorParameterKind,
+} from "@/api/generated/models";
+import { indicatorSourceItem } from "@/features/strategy-settings/constants";
+import type {
+	IndicatorArgument,
+	IndicatorCallParts,
+	StrategyIndicatorVariable,
+	StrategyVariable,
+} from "@/features/strategy-settings/types";
 
 // A function of the strategy language: its builder label, its argument
 // titles, and the arguments it takes when first chosen. Variadic functions
@@ -222,9 +233,13 @@ function withVariableCallsIn(value: unknown): unknown {
 
 // The source of an indicator or candle field call, such as
 // sma("1h", 20, volume): a lowercase name, a period, and literal
-// parameters. Undefined for anything else, such as a function call, whose
-// name is capitalized.
-function variableCallSource(expression: CELExpression): string | undefined {
+// parameters, of which one may be a bare indicator call without one of its
+// own, such as pivot_low("1h", 5, 5, rsi("1h", 21)). Undefined for anything
+// else, such as a function call, whose name is capitalized.
+function variableCallSource(
+	expression: CELExpression,
+	nested = false,
+): string | undefined {
 	if (expression.type !== "FunctionCall") return undefined;
 	const call = expression as CELFunctionCall;
 	const name = call.name.value;
@@ -244,7 +259,9 @@ function variableCallSource(expression: CELExpression): string | undefined {
 		} else if (parameter.type === "Identifier") {
 			args.push((parameter as CELIdentifier).value);
 		} else {
-			return undefined;
+			const source = nested ? undefined : variableCallSource(parameter, true);
+			if (source === undefined) return undefined;
+			args.push(source);
 		}
 	}
 	return `${name}(${args.join(", ")})`;
@@ -253,7 +270,7 @@ function variableCallSource(expression: CELExpression): string | undefined {
 // value spelled as the backend spells canonical numbers: the shortest
 // decimal that reads back as value, without an exponent, such as 0.0000001
 // for 1e-7. The parser keeps only the value of a literal, not its source.
-function canonicalNumber(value: number): string {
+export function canonicalNumber(value: number): string {
 	const [mantissa, exponent] = String(value).split("e");
 	if (exponent === undefined) return mantissa;
 	const [whole, fraction = ""] = mantissa.split(".");
@@ -264,41 +281,184 @@ function canonicalNumber(value: number): string {
 	return `${digits.slice(0, point)}.${digits.slice(point)}`;
 }
 
-// The call reading variable on interval, such as bbands_upperband("1h", 20);
-// a position variable is read by its name.
+// The call reading variable on interval with the default parameters, such
+// as bbands_upperband("1h"); a position variable is read by its name.
 export function variableCall(
 	variable: StrategyVariable,
 	interval: string,
 ): string {
 	if (variable.kind === "position") return variable.name;
-	const args = [JSON.stringify(interval), ...variable.parameters].join(", ");
-	return `${variable.name}(${args})`;
+	return `${variable.name}(${JSON.stringify(interval)})`;
 }
 
-// The key of a variable: its call without the period, such as
-// bbands_upperband(20), or the name of a position variable.
-export function variableKey(
-	variable: Pick<StrategyVariable, "kind" | "name" | "parameters">,
-): string {
-	if (variable.kind === "position") return variable.name;
-	return `${variable.name}(${variable.parameters.join(", ")})`;
-}
-
-// field read on interval instead of its own period.
+// field read on interval instead of its own period, with the indicator it
+// reads as its source, which reads the same period.
 export function withInterval(field: string, interval: string): string {
-	return field.replace(/^(\w+\()"[^"]*"/, `$1${JSON.stringify(interval)}`);
+	return field.replaceAll(/"[^"]*"/g, JSON.stringify(interval));
 }
 
-// What the field of an operand reads: the key of its variable and, for a
+// What the field of an operand reads: the name of its variable and, for a
 // call, its period.
 export function fieldVariable(field: string): {
-	key: string;
+	name: string;
 	interval?: string;
 } {
-	const match = /^(\w+)\("([^"]*)"(?:, )?/.exec(field);
-	if (!match) return { key: field };
-	const [prefix, name, interval] = match;
-	return { key: `${name}(${field.slice(prefix.length)}`, interval };
+	const match = /^(\w+)\("([^"]*)"/.exec(field);
+	if (!match) return { name: field };
+	const [, name, interval] = match;
+	return { name, interval };
+}
+
+// A call as written: its name, its period, and the arguments after the
+// period as their source, split at the commas outside the parentheses of a
+// call written as an argument, such as ["5", "5", 'rsi("1h", 21)'].
+function callParts(
+	source: string,
+): { name: string; interval: string; args: string[] } | undefined {
+	const match = /^(\w+)\("([^"]*)"(.*)\)$/s.exec(source);
+	if (!match) return undefined;
+	const [, name, interval, rest] = match;
+	if (rest === "") return { name, interval, args: [] };
+	if (!rest.startsWith(",")) return undefined;
+	const args: string[] = [];
+	let depth = 0;
+	let start = 1;
+	for (let index = 1; index <= rest.length; index++) {
+		const character = rest[index];
+		if (character === "(") depth++;
+		else if (character === ")") depth--;
+		else if (index === rest.length || (character === "," && depth === 0)) {
+			args.push(rest.slice(start, index).trim());
+			start = index + 1;
+		}
+	}
+	return depth === 0 ? { name, interval, args } : undefined;
+}
+
+// A number a call writes as a parameter.
+const numberArgument = /^-?(?:\d+|\d*\.\d+)$/;
+
+// arg spelled canonically when it is a number, such as 2 for 2.0 or 14.5
+// for 14.50; any other argument as it is.
+export function canonicalArgument(arg: string): string {
+	return numberArgument.test(arg) ? canonicalNumber(Number(arg)) : arg;
+}
+
+// A name a call writes as a source, such as volume.
+const nameArgument = /^[a-z_]\w*$/;
+
+// The positions of the arguments of an indicator call that are not filled
+// in: neither a number, a name, nor a call; those of a call written as a
+// source follow the position of that call, such as [3, 0]. None for a field
+// that is not a call with arguments.
+export function callArgumentIssues(field: string): number[][] {
+	const call = callParts(field);
+	if (!call) return [];
+	const filled = (arg: string) =>
+		numberArgument.test(arg) || nameArgument.test(arg);
+	return call.args.flatMap((arg, index) => {
+		if (filled(arg)) return [];
+		const nested = callParts(arg);
+		if (!nested) return [[index]];
+		return nested.args.flatMap((inner, position) =>
+			filled(inner) ? [] : [[index, position]],
+		);
+	});
+}
+
+// The argument a call writes for choice of parameter: a source by the name
+// of the choice, empty for one only leaving the source out writes, and any
+// other choice by its value.
+export function choiceArgument(
+	parameter: StrategyIndicatorParameter,
+	choice: StrategyIndicatorChoice,
+): string {
+	return parameter.kind === StrategyIndicatorParameterKind.source
+		? (choice.name ?? "")
+		: canonicalNumber(choice.value);
+}
+
+// The argument a call leaves out for parameter: its default.
+export function defaultArgument(parameter: StrategyIndicatorParameter): string {
+	const choice = parameter.choices?.find(
+		({ value }) => value === parameter.default,
+	);
+	return choice
+		? choiceArgument(parameter, choice)
+		: canonicalNumber(parameter.default);
+}
+
+// The indicator call field reads, with every argument; undefined for a
+// candle field or position variable, an indicator none of variables reads,
+// or a call that does not fit the parameters of its indicator, such as one
+// reading a sparse output or a source of a source as its source.
+export function indicatorCall(
+	field: string,
+	variables: readonly StrategyVariable[],
+	nested = false,
+): IndicatorCallParts | undefined {
+	const call = callParts(field);
+	const variable = variables.find(
+		(item): item is StrategyIndicatorVariable =>
+			item.kind === "indicator" && item.name === call?.name,
+	);
+	if (!call || !variable) return undefined;
+	const { parameters } = variable.indicator;
+	if (call.args.length > parameters.length) return undefined;
+	const args: IndicatorArgument[] = [];
+	for (const [index, parameter] of parameters.entries()) {
+		const arg = call.args[index] ?? defaultArgument(parameter);
+		const source =
+			parameter.kind === StrategyIndicatorParameterKind.source && !nested;
+		// A source whose indicator is still to be chosen stays as it is.
+		if (!arg.includes("(") || (source && arg === indicatorSourceItem.value)) {
+			args.push(arg);
+			continue;
+		}
+		const sourceCall = source ? indicatorCall(arg, variables, true) : undefined;
+		if (!sourceCall || sourceCall.variable.output.sparse) return undefined;
+		args.push(sourceCall);
+	}
+	return { variable, interval: call.interval, args };
+}
+
+// The call of parts as the builder writes it: the parameters in descriptor
+// order up to the last one that is not its default, an indicator read as a
+// source on the same period.
+export function indicatorCallSource({
+	variable,
+	interval,
+	args,
+}: IndicatorCallParts): string {
+	const { parameters } = variable.indicator;
+	const written = args.map((arg) =>
+		typeof arg === "string" ? arg : indicatorCallSource({ ...arg, interval }),
+	);
+	let count = written.length;
+	while (
+		count > 0 &&
+		parameters[count - 1] !== undefined &&
+		written[count - 1] === defaultArgument(parameters[count - 1])
+	) {
+		count--;
+	}
+	// Joined as they are: callSource would drop the parentheses of a source
+	// still to be chosen.
+	const all = [JSON.stringify(interval), ...written.slice(0, count)];
+	return `${variable.name}(${all.join(", ")})`;
+}
+
+// The call of the output variable reads on interval with the default
+// parameters, as indicatorCall reads it.
+export function defaultIndicatorCall(
+	variable: StrategyIndicatorVariable,
+	interval: string,
+): IndicatorCallParts {
+	return {
+		variable,
+		interval,
+		args: variable.indicator.parameters.map(defaultArgument),
+	};
 }
 
 // The CEL source of one operand.

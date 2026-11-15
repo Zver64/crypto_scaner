@@ -23,11 +23,14 @@
  */
 import type { CandleInterval } from './candleInterval.ts';
 import type { StrategyIndicatorCall } from './strategyIndicatorCall.ts';
+import type { StrategyIndicatorType } from './strategyIndicatorType.ts';
 import type { StrategyPositionVariable } from './strategyPositionVariable.ts';
 
 export interface StrategyCatalog {
   /** The configured indicators, in display order. */
   indicators: StrategyIndicatorCall[];
+  /** Every indicator type calls may name, configured or not, ordered by type. */
+  indicator_types: StrategyIndicatorType[];
   /** Candle fields, called with the period only, such as `close("1h")`. */
   candle_fields: string[];
   /** The periods indicator and candle field calls take first. */

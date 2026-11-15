@@ -3728,10 +3728,11 @@ export const getGetStrategyCatalogUrl = () => {
 }
 
 /**
- * The configured indicators in display order with their calls, the
- * candle fields, the periods every indicator and candle field call
- * takes first, and the position variables of exit rules. Expressions
- * read indicators that are not configured all the same.
+ * The configured indicators in display order with their calls, every
+ * indicator type calls may name, the candle fields, the periods every
+ * indicator and candle field call takes first, and the position
+ * variables of exit rules. Expressions read indicators that are not
+ * configured all the same.
  * @summary List what strategy expressions read
  */
 export const getStrategyCatalog = async ( options?: Parameters<typeof apiFetch>[1]): Promise<getStrategyCatalogResponseSuccess> => {

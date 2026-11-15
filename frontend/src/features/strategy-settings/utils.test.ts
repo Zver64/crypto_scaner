@@ -3,10 +3,14 @@ import { describe, expect, it } from "vitest";
 import {
 	CandleInterval,
 	Direction,
+	type StrategyCatalog,
 	StrategyCoinSource,
+	type StrategyIndicatorParameter,
 } from "@/api/generated/models";
 import {
 	fieldVariable,
+	indicatorCall,
+	indicatorCallSource,
 	variableCall,
 	withInterval,
 } from "@/features/strategy-settings/expressions";
@@ -30,6 +34,90 @@ import {
 	ownIssuePaths,
 	validationIssuePaths,
 } from "@/features/strategy-settings/utils";
+
+const source = (
+	choices: StrategyIndicatorParameter["choices"],
+	value = 1,
+): StrategyIndicatorParameter => ({
+	choices,
+	default: value,
+	key: "source",
+	kind: "source",
+	title: "Source",
+});
+
+const fields = [
+	{ name: "close", title: "Close", value: 1 },
+	{ name: "volume", title: "Volume", value: 2 },
+];
+
+const period = (value: number): StrategyIndicatorParameter => ({
+	default: value,
+	key: "period",
+	kind: "integer",
+	maximum: 100000,
+	minimum: 2,
+	title: "Time Period",
+});
+
+// What the builder reads, shaped like the backend's descriptors.
+const strategyCatalog: StrategyCatalog = {
+	candle_fields: ["close", "volume"],
+	indicator_types: [
+		{
+			outputs: [
+				{ name: "upperband", sparse: false },
+				{ name: "lowerband", sparse: false },
+			],
+			parameters: [
+				period(5),
+				{
+					default: 2,
+					key: "deviations_up",
+					kind: "real",
+					maximum: 3e37,
+					minimum: -3e37,
+					title: "Deviations up",
+				},
+				{
+					choices: [
+						{ title: "SMA", value: 0 },
+						{ title: "EMA", value: 1 },
+					],
+					default: 0,
+					key: "ma_type",
+					kind: "choice",
+					title: "MA Type",
+				},
+				source(fields),
+			],
+			title: "Bollinger Bands",
+			type: "bbands",
+		},
+		{
+			outputs: [
+				{ name: "high", sparse: true },
+				{ name: "low", sparse: true },
+			],
+			parameters: [
+				{ ...period(5), key: "left", minimum: 1 },
+				{ ...period(5), key: "right", minimum: 1 },
+				source([{ title: "High and low", value: 0 }, ...fields], 0),
+			],
+			title: "Pivot High/Low",
+			type: "pivot",
+		},
+		{
+			outputs: [{ name: "rsi", sparse: false }],
+			parameters: [period(14), source(fields)],
+			title: "Relative Strength Index",
+			type: "rsi",
+		},
+	],
+	indicators: [],
+	intervals: [CandleInterval["1h"], CandleInterval["1d"]],
+	position_variables: [{ count: false, name: "pnl" }],
+};
 
 describe("parenthesizeOperands", () => {
 	it.each([
@@ -197,13 +285,12 @@ describe("strategyQuery", () => {
 		);
 	});
 
-	it("drops a condition whose call reads another call as its source", () => {
+	it("keeps a condition whose call reads another call as its source", () => {
 		const expression =
 			'pivot_low("1h", 5, 5, rsi("1h")) > 0 && close("1h") > 1';
 		const query = strategyQuery(expression);
-		expect(strategyExpression(query)).toBe('close("1h") > 1');
-		expect(strategyQueryDropped(expression, query)).toBe(true);
-		expect(importedStrategyQuery(expression)).toBeUndefined();
+		expect(strategyExpression(query)).toBe(expression);
+		expect(importedStrategyQuery(expression)).toBeDefined();
 	});
 
 	it("reads a compared call as the condition's field", () => {
@@ -219,67 +306,36 @@ describe("strategyQuery", () => {
 });
 
 describe("strategyVariableSets", () => {
-	const catalog = {
-		candle_fields: ["close"],
-		indicators: [
-			{
-				outputs: ["upperband", "lowerband"],
-				parameters: ["20"],
-				title: "bbands-20",
-				type: "bbands",
-			},
-		],
-		intervals: [CandleInterval["1h"], CandleInterval["1d"]],
-		position_variables: [{ count: false, name: "pnl" }],
-	};
-	const read = {
-		outputs: ["real"],
-		parameters: ["21"],
-		title: "rsi-21",
-		type: "rsi",
-	};
+	const { entry, exit } = strategyVariableSets(strategyCatalog);
 
-	it("offers the configured and the read indicators once each, calls on a period", () => {
-		const { entry, exit } = strategyVariableSets(catalog, [
-			read,
-			catalog.indicators[0],
-		]);
-		expect(exit.variables.map(({ key }) => key)).toEqual([
-			"close()",
-			"bbands_upperband(20)",
-			"bbands_lowerband(20)",
-			"rsi(21)",
+	it("offers every output of every indicator type, calls on a period", () => {
+		expect(exit.variables.map(({ name }) => name)).toEqual([
+			"close",
+			"volume",
+			"bbands_upperband",
+			"bbands_lowerband",
+			"pivot_high",
+			"pivot_low",
+			"rsi",
 			"pnl",
 		]);
-		expect(entry.variables.map(({ key }) => key)).not.toContain("pnl");
+		expect(entry.variables.map(({ name }) => name)).not.toContain("pnl");
 		expect(
 			exit.variables.map((variable) => variableCall(variable, "1d")),
 		).toEqual([
 			'close("1d")',
-			'bbands_upperband("1d", 20)',
-			'bbands_lowerband("1d", 20)',
-			'rsi("1d", 21)',
+			'volume("1d")',
+			'bbands_upperband("1d")',
+			'bbands_lowerband("1d")',
+			'pivot_high("1d")',
+			'pivot_low("1d")',
+			'rsi("1d")',
 			"pnl",
 		]);
-		expect(
-			exit.fields.map(({ label, options }) => [
-				label,
-				options.map(({ name }) => name),
-			]),
-		).toEqual([
-			["Candle", ['close("1h")', 'close("1d")']],
-			[
-				"Indicators",
-				[
-					'bbands_upperband("1h", 20)',
-					'bbands_upperband("1d", 20)',
-					'bbands_lowerband("1h", 20)',
-					'bbands_lowerband("1d", 20)',
-					'rsi("1h", 21)',
-					'rsi("1d", 21)',
-				],
-			],
-			["Position", ["pnl"]],
+		expect(exit.fields.map(({ label }) => label)).toEqual([
+			"Candle",
+			"Indicators",
+			"Position",
 		]);
 		expect(entry.fields.map(({ label }) => label)).not.toContain("Position");
 		expect(entry.defaultField).toBe('close("1h")');
@@ -288,23 +344,83 @@ describe("strategyVariableSets", () => {
 	it("finds the variable and period of a call", () => {
 		expect(fieldVariable('bbands_upperband("1d", 20)')).toEqual({
 			interval: "1d",
-			key: "bbands_upperband(20)",
+			name: "bbands_upperband",
 		});
-		expect(fieldVariable('rsi("1h")')).toEqual({
-			interval: "1h",
-			key: "rsi()",
-		});
-		expect(fieldVariable("pnl")).toEqual({ key: "pnl" });
-		expect(withInterval('sma("1h", 20, volume)', "1w")).toBe(
-			'sma("1w", 20, volume)',
+		expect(fieldVariable("pnl")).toEqual({ name: "pnl" });
+		expect(withInterval('sma("1h", 9, rsi("1h", 21))', "1w")).toBe(
+			'sma("1w", 9, rsi("1w", 21))',
 		);
 	});
 
 	it("offers another call on the same period", () => {
-		const { exit } = strategyVariableSets(catalog, []);
-		expect(defaultVariableCall(exit, 'close("1d")')).toBe(
-			'bbands_upperband("1d", 20)',
+		expect(defaultVariableCall(exit, 'close("1d")')).toBe('volume("1d")');
+	});
+});
+
+describe("indicatorCall", () => {
+	const { exit } = strategyVariableSets(strategyCatalog);
+
+	it.each([
+		'rsi("1h")',
+		'rsi("1h", 21, volume)',
+		'bbands_upperband("1h", 20, 2.5)',
+		'bbands_lowerband("1d", 5, 2, 1)',
+		'pivot_low("1d", 5, 5, rsi("1d", 21))',
+		'pivot_high("1h", 3, 5, close)',
+		'rsi("1h", 9, bbands_upperband("1h", 20, 2.5, 1, volume))',
+		// A source whose indicator is still to be chosen.
+		'rsi("1h", 14, ())',
+	])("spells %s back as it reads it", (field) => {
+		const call = indicatorCall(field, exit.variables);
+		expect(call && indicatorCallSource(call)).toBe(field);
+	});
+
+	it("reads the parameters a call leaves out at their defaults", () => {
+		const call = indicatorCall('pivot_low("1d", 3)', exit.variables);
+		expect(call?.args).toEqual(["3", "5", ""]);
+	});
+
+	it("drops trailing defaults, the source a nested call too", () => {
+		const call = indicatorCall(
+			'bbands_upperband("1h", 20, 2.5, 1, rsi("1h", 21))',
+			exit.variables,
 		);
+		if (!call) throw new Error("not read");
+		expect(
+			indicatorCallSource({ ...call, args: ["20", "2", "0", "close"] }),
+		).toBe('bbands_upperband("1h", 20)');
+		expect(
+			indicatorCallSource({
+				...call,
+				args: call.args.map((arg) =>
+					typeof arg === "string" ? arg : { ...arg, args: ["14", "close"] },
+				),
+			}),
+		).toBe('bbands_upperband("1h", 20, 2.5, 1, rsi("1h"))');
+	});
+
+	it.each([
+		// A sparse output or a source of a source is not a source.
+		'rsi("1h", 14, pivot_low("1h"))',
+		'rsi("1h", 14, rsi("1h", 9, rsi("1h")))',
+		'rsi("1h", 14, close, 1)',
+		'close("1h")',
+	])("does not read %s", (field) => {
+		expect(indicatorCall(field, exit.variables)).toBeUndefined();
+	});
+
+	// The condition of the rule comparing the lows of the price compares
+	// inside ValueWhen, which the builder does not show.
+	it("opens the pivot conditions of the RSI divergence rule", () => {
+		const expression = [
+			'pivot_low("1h", 5, 5, rsi("1h")) > 0',
+			'pivot_low("1h", 5, 5, rsi("1h")) > ValueWhen(pivot_low("1h", 5, 5, rsi("1h")), 1)',
+			'Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) >= 5',
+			'Prev(BarsSince(pivot_low("1h", 5, 5, rsi("1h"))), 1) <= 60',
+		].join("\n&& ");
+		const query = strategyQuery(expression);
+		expect(strategyQueryDropped(expression, query)).toBe(false);
+		expect(strategyExpression(query)).toBe(expression.replaceAll("\n", " "));
 	});
 });
 

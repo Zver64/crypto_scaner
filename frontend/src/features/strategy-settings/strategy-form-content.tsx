@@ -1,10 +1,6 @@
 import { Alert, Stack } from "@mantine/core";
-import { useState } from "react";
 
-import type {
-	StrategyCatalog,
-	StrategyIndicatorCall,
-} from "@/api/generated/models";
+import type { StrategyCatalog } from "@/api/generated/models";
 import { strategyNameSchema } from "@/features/strategy-settings/schemas";
 import { StrategyCoinFields } from "@/features/strategy-settings/strategy-coin-fields";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
@@ -21,7 +17,6 @@ import type {
 import {
 	strategyKind,
 	strategyVariableSets,
-	withIndicators,
 } from "@/features/strategy-settings/utils";
 
 interface StrategyFormContentProps {
@@ -46,12 +41,7 @@ export function StrategyFormContent({
 	isSaving,
 	onCancel,
 }: StrategyFormContentProps) {
-	// The indicators the rules read besides the configured ones, which the
-	// builders offer too.
-	const [indicators, setIndicators] = useState(draft.indicators);
-	const addIndicators = (more: StrategyIndicatorCall[]) =>
-		setIndicators((current) => withIndicators(current, more));
-	const variables = strategyVariableSets(catalog, indicators);
+	const variables = strategyVariableSets(catalog);
 	return (
 		<Stack gap="md">
 			<form.AppField
@@ -105,7 +95,6 @@ export function StrategyFormContent({
 				exit={false}
 				field="query"
 				form={form}
-				onIndicators={addIndicators}
 				title="Entry"
 				variables={variables.entry}
 			/>
@@ -122,7 +111,6 @@ export function StrategyFormContent({
 					<StrategyExitConditions
 						disabled={isSaving}
 						form={form}
-						onIndicators={addIndicators}
 						variables={variables.exit}
 					/>
 					<StrategyPriceInput

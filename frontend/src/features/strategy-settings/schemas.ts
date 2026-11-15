@@ -3,6 +3,7 @@ import { z } from "zod";
 
 import {
 	argumentRange,
+	callArgumentIssues,
 	coinFunction,
 	strategyFunctions,
 } from "@/features/strategy-settings/expressions";
@@ -17,6 +18,28 @@ export const strategyNameSchema = z.string().trim().min(1, "Enter a name");
 const numberSchema = numberInputSchema("Number");
 
 const functionNames = Object.keys(strategyFunctions);
+
+// The issues of the arguments of the indicator call field that are not
+// filled in, at their positions after the period under path.
+function argumentIssues(
+	field: string,
+	path: PropertyKey[] = [],
+): z.core.$ZodRawIssue[] {
+	return callArgumentIssues(field).map((position) => ({
+		code: "custom",
+		input: field,
+		message: "Enter the parameter",
+		path: [...path, ...position],
+	}));
+}
+
+// A chosen variable, whose call has every argument filled in.
+const variableSchema = z
+	.string()
+	.min(1)
+	.check((context) => {
+		context.issues.push(...argumentIssues(context.value));
+	});
 
 // An operand: a chosen indicator, a number, a known function with a valid
 // number of arguments, or, withCoin, an operand of another chosen coin.
@@ -54,7 +77,7 @@ function operandSchema(withCoin: boolean): z.ZodType<ExpressionNode> {
 				]),
 			});
 			return z.discriminatedUnion("kind", [
-				z.object({ kind: z.literal("field"), field: z.string().min(1) }),
+				z.object({ kind: z.literal("field"), field: variableSchema }),
 				z.object({ kind: z.literal("value"), value: numberSchema }),
 				withCoin
 					? z.discriminatedUnion("fn", [coinCall, functionCall])
@@ -84,7 +107,8 @@ const comparisonOperatorSchema = z.enum([
 const comparedSideSchema = z
 	.object({ field: z.string(), lhs: expressionNodeSchema.optional() })
 	.check((context) => {
-		if (context.value.lhs === undefined && context.value.field === "") {
+		if (context.value.lhs !== undefined) return;
+		if (context.value.field === "") {
 			context.issues.push({
 				code: "custom",
 				input: context.value.field,
@@ -92,6 +116,7 @@ const comparedSideSchema = z
 				path: ["field"],
 			});
 		}
+		context.issues.push(...argumentIssues(context.value.field, ["field"]));
 	});
 
 // The side a condition compares with: an indicator, an expression, or a
@@ -100,7 +125,7 @@ const comparedWithSideSchema = z.discriminatedUnion("valueSource", [
 	z.object({
 		operator: comparisonOperatorSchema,
 		valueSource: z.literal("field"),
-		value: z.string().min(1),
+		value: variableSchema,
 	}),
 	z.object({
 		operator: comparisonOperatorSchema,

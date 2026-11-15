@@ -99,6 +99,28 @@ describe("strategyRuleSchema", () => {
 				["lhs", "args"],
 			],
 		],
+		[
+			"parameters being typed, of a source too",
+			{
+				field: 'bbands_upperband("1h", , 2.)',
+				operator: ">",
+				valueSource: "expression",
+				value: {
+					kind: "func",
+					fn: "Abs",
+					args: [
+						{ kind: "field", field: 'sma("1h", 9, rsi("1h", ))' },
+						{ kind: "field", field: 'rsi("1h", 14, ())' },
+					],
+				},
+			},
+			[
+				["field", 0],
+				["field", 1],
+				["value", "args", 0, "field", 1, 0],
+				["value", "args", 1, "field", 1],
+			],
+		],
 	])("points at %s", (_, rule, paths) => {
 		expect(issuePaths(strategyRuleSchema.safeParse(rule))).toEqual(paths);
 	});

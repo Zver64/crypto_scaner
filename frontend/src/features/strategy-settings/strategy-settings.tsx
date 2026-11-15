@@ -165,7 +165,7 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	const empty =
 		catalog.data.intervals.length === 0 ||
 		(catalog.data.candle_fields.length === 0 &&
-			catalog.data.indicators.length === 0);
+			catalog.data.indicator_types.length === 0);
 	const show = (next: Omit<StrategyDraft, "revision">) => {
 		revision.current += 1;
 		form.reset(next.values);

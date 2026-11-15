@@ -1,7 +1,6 @@
 import { Button, Group, Stack, Text } from "@mantine/core";
 import { useSelector } from "@tanstack/react-form";
 
-import type { StrategyIndicatorCall } from "@/api/generated/models";
 import { StrategyConditions } from "@/features/strategy-settings/strategy-conditions";
 import type {
 	StrategyFormApi,
@@ -12,7 +11,6 @@ import { emptyStrategyQuery } from "@/features/strategy-settings/utils";
 interface StrategyExitConditionsProps {
 	disabled: boolean;
 	form: StrategyFormApi;
-	onIndicators(indicators: StrategyIndicatorCall[]): void;
 	variables: StrategyRuleVariables;
 }
 
@@ -21,7 +19,6 @@ interface StrategyExitConditionsProps {
 export function StrategyExitConditions({
 	disabled,
 	form,
-	onIndicators,
 	variables,
 }: StrategyExitConditionsProps) {
 	const exists = useSelector(
@@ -46,7 +43,6 @@ export function StrategyExitConditions({
 				exit
 				field="exitQuery"
 				form={form}
-				onIndicators={onIndicators}
 				title="Exit"
 				variables={variables}
 			/>

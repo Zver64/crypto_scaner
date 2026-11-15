@@ -3,7 +3,6 @@ import { useSelector } from "@tanstack/react-form";
 import { useState } from "react";
 
 import { useValidateStrategy } from "@/api/generated/api";
-import type { StrategyIndicatorCall } from "@/api/generated/models";
 import { useAppForm } from "@/components/form";
 import type { StrategyQuery } from "@/features/strategy-settings/types";
 import { importedStrategyQuery } from "@/features/strategy-settings/utils";
@@ -13,8 +12,8 @@ interface StrategyImportProps {
 	// variables.
 	exit: boolean;
 	onClose(): void;
-	// The query of the canonical expression and the indicators it reads.
-	onImport(query: StrategyQuery, indicators: StrategyIndicatorCall[]): void;
+	// The query of the canonical expression.
+	onImport(query: StrategyQuery): void;
 	opened: boolean;
 }
 
@@ -60,7 +59,7 @@ export function StrategyImport({
 						]);
 						return;
 					}
-					onImport(query, data.indicators);
+					onImport(query);
 					finish();
 				},
 			},

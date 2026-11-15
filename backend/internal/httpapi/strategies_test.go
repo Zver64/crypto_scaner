@@ -14,6 +14,8 @@ import (
 
 	"crypto-scanner/internal/auth"
 	"crypto-scanner/internal/httpapi"
+	"crypto-scanner/internal/indicator"
+	"crypto-scanner/internal/indicator/pivot"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/strategy"
@@ -272,4 +274,68 @@ func TestContractViolationsNameTheirField(t *testing.T) {
 			}
 		})
 	}
+}
+
+// The catalog describes indicator types as calls write them: a source stays
+// a source whose named choices keep their names, and sparse outputs are
+// marked.
+func TestStrategyCatalogDescribesIndicatorTypesAsCallsWriteThem(t *testing.T) {
+	maType := indicator.ParameterDescriptor{Key: "matype", Title: "MA type", Kind: indicator.ParameterChoice, Choices: []indicator.Choice{{Value: 0, Title: "SMA"}, {Value: 1, Title: "EMA"}}}
+	strategies := &catalogStrategies{catalog: strategy.Catalog{IndicatorTypes: []indicator.Descriptor{
+		{Type: "ma", Title: "Moving Average", Parameters: []indicator.ParameterDescriptor{maType}, Outputs: []indicator.OutputDescriptor{{Name: "real"}}},
+		pivot.New().Describe(),
+	}}}
+	handler := httpapi.New(logging.New(io.Discard, "error", logging.Options{}), httpapi.Dependencies{
+		Readiness: readinessStub{}, Analysis: unavailableAnalysis{}, Sessions: roleSessions{}, Strategies: strategies,
+	}, httpapi.Options{})
+	request := httptest.NewRequest(http.MethodGet, "/api/v1/admin/strategy-catalog", nil)
+	request.Header.Set("Authorization", "Bearer admin")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", response.Code, response.Body.String())
+	}
+	var body httpapi.StrategyCatalog
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if len(body.IndicatorTypes) != 2 {
+		t.Fatalf("indicator types = %+v", body.IndicatorTypes)
+	}
+	choice := body.IndicatorTypes[0].Parameters[0]
+	if choice.Kind != httpapi.StrategyIndicatorParameterKindChoice || choice.Choices == nil || (*choice.Choices)[1].Name != nil || (*choice.Choices)[1].Title != "EMA" || choice.Minimum != nil {
+		t.Fatalf("choice parameter = %+v", choice)
+	}
+	pivots := body.IndicatorTypes[1]
+	source := pivots.Parameters[len(pivots.Parameters)-1]
+	if source.Kind != httpapi.StrategyIndicatorParameterKindSource || source.Choices == nil {
+		t.Fatalf("source parameter = %+v", source)
+	}
+	var names []string
+	for _, choice := range *source.Choices {
+		if choice.Name == nil {
+			names = append(names, "")
+			continue
+		}
+		names = append(names, *choice.Name)
+	}
+	if want := append([]string{""}, indicator.CandleFields...); !reflect.DeepEqual(names, want) {
+		t.Fatalf("source choice names = %q, want %q", names, want)
+	}
+	if !reflect.DeepEqual(pivots.Outputs, []httpapi.StrategyIndicatorOutput{{Name: "high", Sparse: true}, {Name: "low", Sparse: true}}) {
+		t.Fatalf("outputs = %+v", pivots.Outputs)
+	}
+	if pivots.Parameters[0].Kind != httpapi.StrategyIndicatorParameterKindInteger || pivots.Parameters[0].Minimum == nil || pivots.Parameters[0].Maximum == nil {
+		t.Fatalf("integer parameter = %+v", pivots.Parameters[0])
+	}
+}
+
+// catalogStrategies serves catalog.
+type catalogStrategies struct {
+	httpapi.Strategies
+	catalog strategy.Catalog
+}
+
+func (strategies *catalogStrategies) Catalog() (strategy.Catalog, error) {
+	return strategies.catalog, nil
 }

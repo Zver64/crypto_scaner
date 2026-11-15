@@ -281,19 +281,19 @@ func (e Direction) Valid() bool {
 
 // Defines values for IndicatorParameterKind.
 const (
-	Choice  IndicatorParameterKind = "choice"
-	Integer IndicatorParameterKind = "integer"
-	Real    IndicatorParameterKind = "real"
+	IndicatorParameterKindChoice  IndicatorParameterKind = "choice"
+	IndicatorParameterKindInteger IndicatorParameterKind = "integer"
+	IndicatorParameterKindReal    IndicatorParameterKind = "real"
 )
 
 // Valid indicates whether the value is a known member of the IndicatorParameterKind enum.
 func (e IndicatorParameterKind) Valid() bool {
 	switch e {
-	case Choice:
+	case IndicatorParameterKindChoice:
 		return true
-	case Integer:
+	case IndicatorParameterKindInteger:
 		return true
-	case Real:
+	case IndicatorParameterKindReal:
 		return true
 	default:
 		return false
@@ -522,6 +522,30 @@ func (e StrategyCoinSource) Valid() bool {
 	case CoinSourceFavorites:
 		return true
 	case CoinSourceSelected:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for StrategyIndicatorParameterKind.
+const (
+	StrategyIndicatorParameterKindChoice  StrategyIndicatorParameterKind = "choice"
+	StrategyIndicatorParameterKindInteger StrategyIndicatorParameterKind = "integer"
+	StrategyIndicatorParameterKindReal    StrategyIndicatorParameterKind = "real"
+	StrategyIndicatorParameterKindSource  StrategyIndicatorParameterKind = "source"
+)
+
+// Valid indicates whether the value is a known member of the StrategyIndicatorParameterKind enum.
+func (e StrategyIndicatorParameterKind) Valid() bool {
+	switch e {
+	case StrategyIndicatorParameterKindChoice:
+		return true
+	case StrategyIndicatorParameterKindInteger:
+		return true
+	case StrategyIndicatorParameterKindReal:
+		return true
+	case StrategyIndicatorParameterKindSource:
 		return true
 	default:
 		return false
@@ -1583,6 +1607,9 @@ type StrategyCatalog struct {
 	// CandleFields Candle fields, called with the period only, such as `close("1h")`.
 	CandleFields []string `json:"candle_fields"`
 
+	// IndicatorTypes Every indicator type calls may name, configured or not, ordered by type.
+	IndicatorTypes []StrategyIndicatorType `json:"indicator_types"`
+
 	// Indicators The configured indicators, in display order.
 	Indicators []StrategyIndicatorCall `json:"indicators"`
 
@@ -1633,6 +1660,55 @@ type StrategyIndicatorCall struct {
 
 	// Type The indicator type, such as `bbands`, which names its calls.
 	Type string `json:"type"`
+}
+
+// StrategyIndicatorChoice defines model for StrategyIndicatorChoice.
+type StrategyIndicatorChoice struct {
+	// Name The name calls write for the choice, such as `volume`; absent for a choice calls write as a number, or, of a source, only by leaving the source out.
+	Name  *string `json:"name,omitempty"`
+	Title string  `json:"title"`
+	Value int     `json:"value"`
+}
+
+// StrategyIndicatorOutput defines model for StrategyIndicatorOutput.
+type StrategyIndicatorOutput struct {
+	Name string `json:"name"`
+
+	// Sparse The output is empty on some candles, such as `pivot_high`; it cannot be the source of another indicator.
+	Sparse bool `json:"sparse"`
+}
+
+// StrategyIndicatorParameter defines model for StrategyIndicatorParameter.
+type StrategyIndicatorParameter struct {
+	Choices *[]StrategyIndicatorChoice `json:"choices,omitempty"`
+	Default float64                    `json:"default"`
+	Key     string                     `json:"key"`
+
+	// Kind `choice` is an integer limited to `choices`; `source` is the
+	// series the indicator reads: one of `choices`, written by its
+	// name, or a call of another indicator on the same period;
+	// `minimum` and `maximum` bound the other kinds.
+	Kind    StrategyIndicatorParameterKind `json:"kind"`
+	Maximum *float64                       `json:"maximum,omitempty"`
+	Minimum *float64                       `json:"minimum,omitempty"`
+	Title   string                         `json:"title"`
+}
+
+// StrategyIndicatorParameterKind `choice` is an integer limited to `choices`; `source` is the
+// series the indicator reads: one of `choices`, written by its
+// name, or a call of another indicator on the same period;
+// `minimum` and `maximum` bound the other kinds.
+type StrategyIndicatorParameterKind string
+
+// StrategyIndicatorType An indicator type as calls name it, such as `bbands`, with the parameters that follow the period.
+type StrategyIndicatorType struct {
+	// Outputs The outputs; calls of an indicator with several add the output to the type, such as `bbands_upperband`, calls of one with a single output are named by the type alone.
+	Outputs []StrategyIndicatorOutput `json:"outputs"`
+
+	// Parameters The parameters in the order calls write them after the period.
+	Parameters []StrategyIndicatorParameter `json:"parameters"`
+	Title      string                       `json:"title"`
+	Type       string                       `json:"type"`
 }
 
 // StrategyInput defines model for StrategyInput.
@@ -2456,10 +2532,11 @@ type ClientInterface interface {
 
 	// GetStrategyCatalog List what strategy expressions read
 	//
-	// The configured indicators in display order with their calls, the
-	// candle fields, the periods every indicator and candle field call
-	// takes first, and the position variables of exit rules. Expressions
-	// read indicators that are not configured all the same.
+	// The configured indicators in display order with their calls, every
+	// indicator type calls may name, the candle fields, the periods every
+	// indicator and candle field call takes first, and the position
+	// variables of exit rules. Expressions read indicators that are not
+	// configured all the same.
 	//
 	// Corresponds with GET /api/v1/admin/strategy-catalog (the `GetStrategyCatalog` operationId).
 	GetStrategyCatalog(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3098,10 +3175,11 @@ func (c *Client) BacktestStrategyDraft(ctx context.Context, body BacktestStrateg
 
 // GetStrategyCatalog List what strategy expressions read
 //
-// The configured indicators in display order with their calls, the
-// candle fields, the periods every indicator and candle field call
-// takes first, and the position variables of exit rules. Expressions
-// read indicators that are not configured all the same.
+// The configured indicators in display order with their calls, every
+// indicator type calls may name, the candle fields, the periods every
+// indicator and candle field call takes first, and the position
+// variables of exit rules. Expressions read indicators that are not
+// configured all the same.
 //
 // Corresponds with GET /api/v1/admin/strategy-catalog (the `GetStrategyCatalog` operationId).
 func (c *Client) GetStrategyCatalog(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5527,10 +5605,11 @@ type ClientWithResponsesInterface interface {
 
 	// GetStrategyCatalogWithResponse List what strategy expressions read
 	//
-	// The configured indicators in display order with their calls, the
-	// candle fields, the periods every indicator and candle field call
-	// takes first, and the position variables of exit rules. Expressions
-	// read indicators that are not configured all the same.
+	// The configured indicators in display order with their calls, every
+	// indicator type calls may name, the candle fields, the periods every
+	// indicator and candle field call takes first, and the position
+	// variables of exit rules. Expressions read indicators that are not
+	// configured all the same.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9718,10 +9797,11 @@ func (c *ClientWithResponses) BacktestStrategyDraftWithResponse(ctx context.Cont
 
 // GetStrategyCatalogWithResponse List what strategy expressions read
 //
-// The configured indicators in display order with their calls, the
-// candle fields, the periods every indicator and candle field call
-// takes first, and the position variables of exit rules. Expressions
-// read indicators that are not configured all the same.
+// The configured indicators in display order with their calls, every
+// indicator type calls may name, the candle fields, the periods every
+// indicator and candle field call takes first, and the position
+// variables of exit rules. Expressions read indicators that are not
+// configured all the same.
 //
 // Returns a wrapper object for the known response body format(s).
 //

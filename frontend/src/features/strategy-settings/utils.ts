@@ -30,7 +30,7 @@ import {
 	type Strategy,
 	type StrategyCatalog,
 	StrategyCoinSource,
-	type StrategyIndicatorCall,
+	type StrategyIndicatorParameter,
 	type StrategyUpdate,
 } from "@/api/generated/models";
 import { chartIntervalOptions } from "@/features/candle-chart/config";
@@ -51,13 +51,13 @@ import {
 } from "@/features/strategy-settings/constants";
 import {
 	callSource,
+	choiceArgument,
 	expressionParser,
 	expressionRuleProcessor,
 	expressionSource,
 	fieldVariable,
 	firstField,
 	variableCall,
-	variableKey,
 } from "@/features/strategy-settings/expressions";
 import {
 	strategyQuerySchema,
@@ -74,6 +74,7 @@ import type {
 	StrategyDraft,
 	StrategyFormData,
 	StrategyFormValues,
+	StrategyIndicatorVariable,
 	StrategyKind,
 	StrategyOperator,
 	StrategyQuery,
@@ -541,6 +542,14 @@ export function ownIssuePaths(
 	);
 }
 
+// The issue paths of an indicator operand relative to the call it reads:
+// those of the field of an operand inside a function are under "field".
+export function fieldIssuePaths(
+	paths: readonly PropertyKey[][],
+): PropertyKey[][] {
+	return paths.map((path) => (path[0] === "field" ? path.slice(1) : path));
+}
+
 // The issue paths of an operand's argument at index, relative to it.
 export function argumentIssuePaths(
 	paths: readonly PropertyKey[][],
@@ -563,7 +572,6 @@ export function newStrategyDraft(
 		id: undefined,
 		signal: kind === "signal",
 		incomplete: false,
-		indicators: [],
 		values: {
 			name: "",
 			direction: defaultDirections[kind],
@@ -586,29 +594,28 @@ export function newStrategyDraft(
 // builder.
 export function strategyDraft(
 	strategy: Strategy,
-	{ expressions, indicators }: CanonicalRules,
+	rules: CanonicalRules,
 ): Omit<StrategyDraft, "revision"> {
-	const query = strategyQuery(expressions.expression);
+	const query = strategyQuery(rules.expression);
 	const exitQuery =
-		expressions.exit_expression === ""
+		rules.exit_expression === ""
 			? undefined
-			: strategyQuery(expressions.exit_expression);
+			: strategyQuery(rules.exit_expression);
 	return {
 		id: strategy.id,
 		signal: strategy.signal,
 		incomplete:
-			strategyQueryDropped(expressions.expression, query) ||
+			strategyQueryDropped(rules.expression, query) ||
 			(exitQuery !== undefined &&
-				strategyQueryDropped(expressions.exit_expression, exitQuery)),
-		indicators,
+				strategyQueryDropped(rules.exit_expression, exitQuery)),
 		values: {
 			name: strategy.name,
 			direction: strategy.direction,
 			message: strategy.message,
 			query,
 			exitQuery,
-			takeProfit: parsePriceSetup(expressions.take_profit_expression),
-			stopLoss: parsePriceSetup(expressions.stop_loss_expression),
+			takeProfit: parsePriceSetup(rules.take_profit_expression),
+			stopLoss: parsePriceSetup(rules.stop_loss_expression),
 			coins: strategy.coins,
 			coinSource: strategy.coin_source,
 			minMarketCap: marketCapMillions(strategy.min_market_cap_usd),
@@ -617,24 +624,6 @@ export function strategyDraft(
 			window: String(strategy.window ?? defaultSignalWindow),
 		},
 	};
-}
-
-// indicators and those of more that are not among them, once each.
-export function withIndicators(
-	indicators: readonly StrategyIndicatorCall[],
-	more: readonly StrategyIndicatorCall[],
-): StrategyIndicatorCall[] {
-	const key = ({ parameters, type }: StrategyIndicatorCall) =>
-		variableKey({ kind: "indicator", name: type, parameters });
-	const known = new Set(indicators.map(key));
-	return [
-		...indicators,
-		...more.filter((indicator) => {
-			const fresh = !known.has(key(indicator));
-			known.add(key(indicator));
-			return fresh;
-		}),
-	];
 }
 
 // The strategy form's values with their trees typed; only the strategy form
@@ -905,10 +894,30 @@ export function variableSelectData(variables: readonly StrategyVariable[]) {
 	for (const variable of variables) {
 		const group = variableGroups[variable.kind];
 		const items = groups.get(group) ?? [];
-		items.push({ label: variable.label, value: variable.key });
+		items.push({ label: variable.label, value: variable.name });
 		groups.set(group, items);
 	}
 	return [...groups].map(([group, items]) => ({ group, items }));
+}
+
+// The indicator outputs another indicator may read as its source: those
+// with a value on every candle.
+export function sourceVariables(
+	variables: readonly StrategyVariable[],
+): StrategyIndicatorVariable[] {
+	return variables.filter(
+		(variable): variable is StrategyIndicatorVariable =>
+			variable.kind === "indicator" && !variable.output.sparse,
+	);
+}
+
+// Select data for the choices of a choice or source parameter, by the
+// argument a call writes for each.
+export function choiceSelectData(parameter: StrategyIndicatorParameter) {
+	return (parameter.choices ?? []).map((choice) => ({
+		label: choice.title,
+		value: choiceArgument(parameter, choice),
+	}));
 }
 
 // Select data for the periods calls read.
@@ -922,44 +931,30 @@ export function intervalSelectData(intervals: readonly string[]) {
 }
 
 // The variables of the entry and the exit rule with their builder fields:
-// the candle fields, the configured indicators and the others the rules
-// read, and the position variables.
+// the candle fields, every output of every indicator type, and the position
+// variables.
 export function strategyVariableSets(
 	catalog: StrategyCatalog,
-	indicators: readonly StrategyIndicatorCall[],
 ): StrategyVariableSets {
 	const variables: StrategyVariable[] = catalog.candle_fields.map((name) => ({
-		key: variableKey({ kind: "candle", name, parameters: [] }),
 		kind: "candle",
 		label: name,
 		name,
-		parameters: [],
 	}));
-	for (const { outputs, parameters, title, type } of withIndicators(
-		catalog.indicators,
-		indicators,
-	)) {
-		for (const output of outputs) {
-			const variable = {
-				kind: "indicator" as const,
-				name: outputs.length > 1 ? `${type}_${output}` : type,
-				parameters,
-			};
+	for (const indicator of catalog.indicator_types) {
+		for (const output of indicator.outputs) {
+			const several = indicator.outputs.length > 1;
 			variables.push({
-				...variable,
-				key: variableKey(variable),
-				label: outputs.length > 1 ? `${title} ${output}` : title,
+				kind: "indicator",
+				label: several ? `${indicator.type} ${output.name}` : indicator.type,
+				name: several ? `${indicator.type}_${output.name}` : indicator.type,
+				indicator,
+				output,
 			});
 		}
 	}
 	for (const { name } of catalog.position_variables) {
-		variables.push({
-			key: name,
-			kind: "position",
-			label: name,
-			name,
-			parameters: [],
-		});
+		variables.push({ kind: "position", label: name, name });
 	}
 	const all = { intervals: catalog.intervals, variables };
 	return {
@@ -968,9 +963,9 @@ export function strategyVariableSets(
 	};
 }
 
-// The builder's fields: every variable on every period, a position variable
-// by its name, as calls grouped like the variable select; a new condition
-// compares the default call.
+// The builder's fields: every variable on every period with the default
+// parameters, a position variable by its name, as calls grouped like the
+// variable select; a new condition compares the default call.
 function ruleVariables(variables: StrategyVariables): StrategyRuleVariables {
 	const groups = new Map<string, Field[]>();
 	for (const variable of variables.variables) {

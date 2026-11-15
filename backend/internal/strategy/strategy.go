@@ -398,19 +398,24 @@ func (service *Service) indicatorCall(entry scannerindicator.Entry) (IndicatorCa
 }
 
 // Catalog is what expressions read: the configured indicators, in display
-// order, the candle fields, and the position variables of exit rules, each
-// on any interval but the position variables.
+// order, every indicator type calls may name, the candle fields, and the
+// position variables of exit rules, each on any interval but the position
+// variables.
 type Catalog struct {
-	Indicators   []IndicatorCall
-	CandleFields []string
-	Intervals    []market.CandleInterval
-	Positions    []Variable
+	Indicators     []IndicatorCall
+	IndicatorTypes []indicator.Descriptor
+	CandleFields   []string
+	Intervals      []market.CandleInterval
+	Positions      []Variable
 }
 
 // Catalog lists what expressions can read; indicators that are not
 // configured are read all the same.
 func (service *Service) Catalog() (Catalog, error) {
-	catalog := Catalog{CandleFields: slices.Clone(indicator.CandleFields), Intervals: market.CandleIntervals(), Positions: PositionVariables()}
+	catalog := Catalog{
+		IndicatorTypes: service.registry.Descriptors(), CandleFields: slices.Clone(indicator.CandleFields),
+		Intervals: market.CandleIntervals(), Positions: PositionVariables(),
+	}
 	for _, entry := range service.indicators.List() {
 		call, err := service.indicatorCall(entry)
 		if err != nil {

@@ -25,7 +25,8 @@ interface StrategyVariableInputProps {
 }
 
 // What a variable operand reads and, for a call, the period it reads it on.
-// Another variable keeps the period.
+// Another variable keeps the period and starts with the default parameters;
+// the operand editor shows the parameters below.
 export function StrategyVariableInput({
 	disabled,
 	field,
@@ -34,7 +35,7 @@ export function StrategyVariableInput({
 	onChange,
 	variables,
 }: StrategyVariableInputProps) {
-	const { interval, key } = fieldVariable(field);
+	const { interval, name } = fieldVariable(field);
 	return (
 		<Group gap={6} wrap="nowrap">
 			<Box flex={1} miw={0}>
@@ -47,7 +48,7 @@ export function StrategyVariableInput({
 					// Clearing leaves the variable to be chosen again.
 					onChange={(value) => {
 						const variable = variables.variables.find(
-							(item) => item.key === value,
+							(item) => item.name === value,
 						);
 						const period = interval ?? variables.intervals[0];
 						onChange(
@@ -59,7 +60,7 @@ export function StrategyVariableInput({
 					placeholder="Indicator"
 					searchable
 					size="sm"
-					value={field === "" ? null : key}
+					value={field === "" ? null : name}
 				/>
 			</Box>
 			{interval === undefined ? null : (

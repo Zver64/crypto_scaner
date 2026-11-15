@@ -101,3 +101,8 @@ export const kindNouns = {
 // The directions a strategy trades; only a signal may be simple or expect a
 // sideways move.
 export const strategyDirections = [Direction.long, Direction.short] as const;
+
+// The source select's item for another indicator as the source. Its value
+// is also the argument of a source whose indicator is still to be chosen,
+// which no call writes for a choice and the schemas mark as not filled in.
+export const indicatorSourceItem = { label: "Indicator", value: "()" };

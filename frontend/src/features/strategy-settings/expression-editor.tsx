@@ -23,19 +23,24 @@ import {
 	coinOf,
 	firstField,
 	functionCall,
+	indicatorCall,
+	indicatorCallSource,
 	replaceFunction,
 	strategyFunctions,
 	withCoin,
 } from "@/features/strategy-settings/expressions";
 import { FunctionEditor } from "@/features/strategy-settings/function-editor";
+import { IndicatorParameters } from "@/features/strategy-settings/indicator-parameters";
 import { NestingLine } from "@/features/strategy-settings/nesting-line";
 import { StrategyVariableInput } from "@/features/strategy-settings/strategy-variable-input";
 import type { StrategyVariables } from "@/features/strategy-settings/types";
 import {
 	argumentIssuePaths,
 	defaultVariableCall,
+	fieldIssuePaths,
 	numberInputValue,
 	ownIssuePaths,
+	sourceVariables,
 	withoutPositionVariables,
 } from "@/features/strategy-settings/utils";
 
@@ -106,7 +111,18 @@ export function ExpressionEditor({
 	issuePaths = [],
 }: ExpressionEditorProps) {
 	const kind = operandKind(node);
-	const incomplete = ownIssuePaths(issuePaths, kind === "coin").length > 0;
+	const ownPaths = ownIssuePaths(issuePaths, kind === "coin");
+	// An indicator call's own issues are those of the indicator; the others
+	// point at its parameters.
+	const fieldPaths = fieldIssuePaths(ownPaths);
+	const incomplete =
+		kind === "field"
+			? fieldPaths.some((path) => path.length === 0)
+			: ownPaths.length > 0;
+	const call =
+		node.kind === "field"
+			? indicatorCall(node.field, variables.variables)
+			: undefined;
 	// A kind already chosen stays offered, so the menu shows it.
 	const kinds = operandKindOrder.filter(
 		(value) =>
@@ -229,6 +245,20 @@ export function ExpressionEditor({
 							withoutCoin={withoutCoin}
 						/>
 					)}
+				</NestingLine>
+			) : null}
+			{call && call.args.length > 0 ? (
+				<NestingLine depth={depth}>
+					<IndicatorParameters
+						call={call}
+						depth={depth}
+						disabled={disabled}
+						issuePaths={fieldPaths}
+						onChange={(next) =>
+							onChange({ kind: "field", field: indicatorCallSource(next) })
+						}
+						sources={sourceVariables(variables.variables)}
+					/>
 				</NestingLine>
 			) : null}
 		</Stack>

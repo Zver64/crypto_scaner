@@ -61,7 +61,12 @@ func (c *cli) varsCommand() *cobra.Command {
 			catalog.CandleFields = slices.DeleteFunc(catalog.CandleFields, func(field string) bool { return unmatched(fieldCall(field)) })
 			catalog.Indicators = slices.DeleteFunc(catalog.Indicators, func(indicator apiclient.StrategyIndicatorCall) bool { return unmatched(indicatorCalls(indicator)...) })
 			catalog.PositionVariables = slices.DeleteFunc(catalog.PositionVariables, func(variable apiclient.StrategyPositionVariable) bool { return unmatched(variable.Name) })
-			raw, err := json.Marshal(catalog)
+			// vars lists the configured indicators; the indicator types,
+			// which the Mini App builder reads, are left out.
+			raw, err := json.Marshal(struct {
+				apiclient.StrategyCatalog
+				IndicatorTypes *struct{} `json:"indicator_types,omitempty"`
+			}{StrategyCatalog: catalog})
 			if err != nil {
 				return err
 			}

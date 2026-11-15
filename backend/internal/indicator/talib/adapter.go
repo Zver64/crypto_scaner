@@ -57,9 +57,8 @@ type output struct {
 	name  string
 	style indicator.OutputStyle
 	// sparse outputs are empty where TA-Lib returns NaN or an infinity.
-	sparse bool
-	// direction is indicator.OutputDescriptor.Direction.
-	direction string
+	sparse    bool
+	direction indicator.OutputDirection
 }
 
 // spec is one generated TA-Lib function. Option values reach lookback and

@@ -184,6 +184,10 @@ export const markerSegmentSeriesOptions = {
 // its first point, so the point before a gap colors the join transparent.
 export const lineGapColor = "transparent";
 
+// The opacity of the fill of a line with a direction, like the 90%
+// transparency of the TradingView SUPERTREND fill.
+export const directionFillOpacity = 0.1;
+
 export const paneIndicatorSeriesOptions = {
 	lastValueVisible: true,
 	lineWidth: 2,

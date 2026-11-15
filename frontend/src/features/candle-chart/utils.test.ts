@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
 	colorByDirection,
+	directionFill,
 	createAnchoredMarkers,
 	createCandleMarkers,
 	createCandlestickData,
@@ -724,7 +725,7 @@ describe("colorByDirection", () => {
 					directionData: direction,
 					resolution: { base: 1, fractionDigits: 0, minMove: 1 },
 				},
-				{ output: "trend", up_color: "green", down_color: "red" },
+				{ output: "trend", up_color: "green", down_color: "red", fill: false },
 				(color) => color,
 			),
 		).toEqual([
@@ -734,6 +735,44 @@ describe("colorByDirection", () => {
 			{ time: time(3), value: 13 },
 			{ time: time(4), value: 14 },
 			{ time: time(5) },
+		]);
+	});
+});
+
+describe("directionFill", () => {
+	it("fills to the base in the direction color, only where both exist", () => {
+		const time = (slot: number) =>
+			(1_787_785_200 + slot * 3600) as UTCTimestamp;
+		const data = [0, 1, 2, 3, 4].map((slot) => ({
+			time: time(slot),
+			value: 130,
+		}));
+		const direction = [1, -1, 0, 1, 1].map((value, slot) => ({
+			time: time(slot),
+			value,
+		}));
+		expect(
+			directionFill(
+				{
+					data,
+					directionData: direction,
+					resolution: { base: 1, fractionDigits: 0, minMove: 1 },
+					fillBases: [100, 100, 100, 100, undefined],
+				},
+				{
+					output: "trend",
+					up_color: "#00ff00",
+					down_color: "#ff0000",
+					fill: true,
+				},
+				(color) => color,
+			),
+		).toEqual([
+			{ time: time(0), value: 130, base: 100, color: "rgba(0, 255, 0, 0.1)" },
+			{ time: time(1), value: 130, base: 100, color: "rgba(255, 0, 0, 0.1)" },
+			{ time: time(2) },
+			{ time: time(3), value: 130, base: 100, color: "rgba(0, 255, 0, 0.1)" },
+			{ time: time(4) },
 		]);
 	});
 });

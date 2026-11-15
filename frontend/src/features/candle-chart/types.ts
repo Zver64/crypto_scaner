@@ -82,6 +82,9 @@ export interface ChartLineData {
 	resolution: ValueResolution;
 	// The direction output of a line with a direction, aligned with data.
 	directionData?: readonly ChartIndicatorSlot[];
+	// The middles of the candle bodies, (open + close) / 2, a line with a
+	// direction fill reaches, aligned with data; missing without a candle.
+	fillBases?: readonly (number | undefined)[];
 }
 export interface ChartSeriesData {
 	// Candle slots, with whitespace for missing candles.

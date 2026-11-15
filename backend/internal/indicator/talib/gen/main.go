@@ -72,10 +72,16 @@ var paneFunctions = map[string]bool{
 	"AVGDEV": true,
 }
 
-// directionOutputs name, by function and line output, the integer output
-// whose sign is the direction of that line.
-var directionOutputs = map[string]map[string]string{
-	"SUPERTREND": {"outSupertrend": "outTrend"},
+// lineDirection is indicator.OutputDirection with the TA-Lib name of the
+// integer output whose sign is the direction of the line.
+type lineDirection struct {
+	output string
+	fill   bool
+}
+
+// directionOutputs are the directions of lines by function and line output.
+var directionOutputs = map[string]map[string]lineDirection{
+	"SUPERTREND": {"outSupertrend": {output: "outTrend", fill: true}},
 }
 
 // optionAliases maps metadata option names to wrapper parameter names where
@@ -428,11 +434,11 @@ func writeSpec(body *bytes.Buffer, fn function, signatures map[string]signature)
 			body.WriteString(", sparse: true")
 		}
 		if direction, ok := directionOutputs[fn.Abbreviation][out.Name]; ok {
-			index := slices.IndexFunc(fn.Outputs, func(out output) bool { return out.Name == direction })
+			index := slices.IndexFunc(fn.Outputs, func(out output) bool { return out.Name == direction.output })
 			if index < 0 || fn.Outputs[index].Type != "Integer Array" {
-				return fmt.Errorf("direction %q of output %q is not an integer output", direction, out.Name)
+				return fmt.Errorf("direction %q of output %q is not an integer output", direction.output, out.Name)
 			}
-			fmt.Fprintf(body, ", direction: %q", outputName(direction))
+			fmt.Fprintf(body, ", direction: indicator.OutputDirection{Output: %q, Fill: %t}", outputName(direction.output), direction.fill)
 		}
 		body.WriteString("},\n")
 	}

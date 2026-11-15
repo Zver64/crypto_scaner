@@ -35,4 +35,6 @@ export interface ChartIndicatorLineDirection {
   up_color: string;
   /** Client theme color token where the series is negative. */
   down_color: string;
+  /** Whether the area between the line and the middle of the candle body, `(open + close) / 2`, is also filled, translucent in the color of each point, and broken where the sign flips, like the SUPERTREND fill. Only `overlay` indicators have it. */
+  fill: boolean;
 }

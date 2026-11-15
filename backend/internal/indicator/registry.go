@@ -94,10 +94,10 @@ func NewRegistry(implementations ...Implementation) (*Registry, error) {
 			if output.Segment != "" && (output.Style != OutputMarkerAbove && output.Style != OutputMarkerBelow || !sparse[output.Segment]) {
 				return nil, fmt.Errorf("%w: %q: output %q draws segments from %q, which only markers may do from a sparse output", ErrEmptyRegistration, indicatorType, output.Name, output.Segment)
 			}
-			if output.Direction != "" && (output.Style != OutputLine || output.Tone != "" || !slices.ContainsFunc(descriptor.Outputs, func(direction OutputDescriptor) bool {
-				return direction.Name == output.Direction && direction.Style == OutputValue
+			if output.Direction != (OutputDirection{}) && (output.Style != OutputLine || output.Tone != "" || !slices.ContainsFunc(descriptor.Outputs, func(direction OutputDescriptor) bool {
+				return direction.Name == output.Direction.Output && direction.Style == OutputValue
 			})) {
-				return nil, fmt.Errorf("%w: %q: output %q takes its direction from %q, which only a line without a tone may do from a value output", ErrEmptyRegistration, indicatorType, output.Name, output.Direction)
+				return nil, fmt.Errorf("%w: %q: output %q takes its direction from %q, which only a line without a tone may do from a value output", ErrEmptyRegistration, indicatorType, output.Name, output.Direction.Output)
 			}
 		}
 		var sources []ParameterDescriptor

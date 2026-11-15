@@ -1806,7 +1806,7 @@ components:
     ChartIndicatorLineDirection:
       type: object
       additionalProperties: false
-      required: [output, up_color, down_color]
+      required: [output, up_color, down_color, fill]
       description: Colors each point of a `line` by the sign of a calculated series of the same indicator at that candle, such as the SUPERTREND trend; a point where it is zero or missing keeps the line `color`. The series is delivered with the others but not drawn itself.
       properties:
         output:
@@ -1819,6 +1819,9 @@ components:
         down_color:
           type: string
           description: Client theme color token where the series is negative.
+        fill:
+          type: boolean
+          description: Whether the area between the line and the middle of the candle body, `(open + close) / 2`, is also filled, translucent in the color of each point, and broken where the sign flips, like the SUPERTREND fill. Only `overlay` indicators have it.
     ChartIndicatorLineAnchor:
       type: object
       additionalProperties: false

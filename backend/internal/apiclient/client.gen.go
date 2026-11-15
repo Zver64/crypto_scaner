@@ -1042,6 +1042,9 @@ type ChartIndicatorLineDirection struct {
 	// DownColor Client theme color token where the series is negative.
 	DownColor string `json:"down_color"`
 
+	// Fill Whether the area between the line and the middle of the candle body, `(open + close) / 2`, is also filled, translucent in the color of each point, and broken where the sign flips, like the SUPERTREND fill. Only `overlay` indicators have it.
+	Fill bool `json:"fill"`
+
 	// Output Name of the series whose sign is the direction.
 	Output string `json:"output"`
 

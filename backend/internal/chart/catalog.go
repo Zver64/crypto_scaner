@@ -76,6 +76,9 @@ type LineDirection struct {
 	// negative signs.
 	UpColor   string
 	DownColor string
+	// Fill also fills, in the color of the direction, the area between the
+	// line and the middle of the candle body.
+	Fill bool
 }
 
 // IndicatorLevel is a labeled horizontal reference line in a pane.

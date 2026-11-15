@@ -494,8 +494,10 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 		case entry.Placement != chart.PlacementOverlay:
 			continue
 		}
-		if output.Direction != "" {
-			line.Direction = chart.LineDirection{Output: output.Direction, UpColor: service.tones[indicator.ToneBullish], DownColor: service.tones[indicator.ToneBearish]}
+		if output.Direction != (indicator.OutputDirection{}) {
+			// The fill reaches the candle bodies, so only lines over the
+			// candles have it.
+			line.Direction = chart.LineDirection{Output: output.Direction.Output, UpColor: service.tones[indicator.ToneBullish], DownColor: service.tones[indicator.ToneBearish], Fill: output.Direction.Fill && entry.Placement == chart.PlacementOverlay}
 		}
 		entry.lines = append(entry.lines, line)
 		if output.Tone != "" {

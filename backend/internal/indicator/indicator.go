@@ -141,14 +141,23 @@ type OutputDescriptor struct {
 	// value of this marker output, the number of candles back from the marker
 	// to where a line drawn to the marker starts; empty draws no line.
 	Segment string
-	// Direction names the value output of the same indicator whose sign is
-	// the direction of this line at each candle, such as the SUPERTREND
-	// trend: the line takes the bullish tone where it is positive and the
-	// bearish tone where it is negative. Empty keeps one color.
-	Direction string
+	// Direction colors this line by the sign of another output; zero keeps
+	// one color.
+	Direction OutputDirection
 	// Tone is the fixed meaning of the output; empty colors it from the
 	// palette.
 	Tone Tone
+}
+
+// OutputDirection colors a line by the sign of a value output of the same
+// indicator at each candle, such as the SUPERTREND trend: the line takes the
+// bullish tone where it is positive and the bearish tone where it is negative.
+type OutputDirection struct {
+	// Output names that value output.
+	Output string
+	// Fill also fills, in the tone of the direction, the area between the
+	// line and the middle of the candle body, like the SUPERTREND fill.
+	Fill bool
 }
 
 // Descriptor is the self-description of an implementation. Registries use it

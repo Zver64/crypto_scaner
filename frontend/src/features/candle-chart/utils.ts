@@ -1,3 +1,4 @@
+import { alpha } from "@mantine/core";
 import type {
 	AutoscaleInfo,
 	AutoscaleInfoProvider,
@@ -11,7 +12,9 @@ import type {
 	ChartIndicatorLineDirection,
 	ChartPageResponse,
 } from "@/api/generated/models";
+import type { SeriesFillPoint } from "@/components/lightweight-chart";
 import {
+	directionFillOpacity,
 	entryMarkerOptions,
 	exitMarkerOptions,
 	indicatorMarkerPositions,
@@ -111,6 +114,13 @@ export function createChartSeriesData(
 									directionData: createIndicatorData(
 										slots,
 										points[id]?.[direction.output] ?? [],
+									),
+								}
+							: {}),
+						...(direction?.fill
+							? {
+									fillBases: slots.map((slot) =>
+										"open" in slot ? (slot.open + slot.close) / 2 : undefined,
 									),
 								}
 							: {}),
@@ -223,20 +233,39 @@ export function colorByDirection(
 	themeColor: (color: string) => string,
 ): readonly ChartIndicatorSlot[] {
 	if (!direction || !directionData) return data;
-	const upColor = themeColor(direction.up_color);
-	const downColor = themeColor(direction.down_color);
-	const signs = directionData.map(directionSign);
 	return data.map((slot, index) => {
-		const sign = signs[index] ?? 0;
-		if (!("value" in slot) || sign === 0) return slot;
-		const next = signs[index + 1] ?? 0;
-		const color =
-			next === -sign && "value" in (data[index + 1] ?? {})
-				? lineGapColor
-				: sign > 0
-					? upColor
-					: downColor;
-		return { ...slot, color };
+		const color = directionColor(direction, directionData[index]);
+		if (!("value" in slot) || color === undefined) return slot;
+		const next = directionColor(direction, directionData[index + 1]);
+		const flips =
+			next !== undefined &&
+			next !== color &&
+			"value" in (data[index + 1] ?? {});
+		return { ...slot, color: flips ? lineGapColor : themeColor(color) };
+	});
+}
+
+// The fill of a line with a direction: the area between the line and the
+// middle of the candle body, translucent in the color of the direction. There
+// is none where the direction is zero or missing, and it breaks where the
+// color changes, like the line.
+export function directionFill(
+	{ data, directionData, fillBases }: ChartLineData,
+	direction: ChartIndicatorLineDirection,
+	themeColor: (color: string) => string,
+): SeriesFillPoint[] {
+	return data.map((slot, index) => {
+		const color = directionColor(direction, directionData?.[index]);
+		const base = fillBases?.[index];
+		if (!("value" in slot) || color === undefined || base === undefined) {
+			return { time: slot.time };
+		}
+		return {
+			time: slot.time,
+			value: slot.value,
+			base,
+			color: alpha(themeColor(color), directionFillOpacity),
+		};
 	});
 }
 
@@ -247,13 +276,20 @@ function lineColorAt(
 	directionData: readonly ChartIndicatorSlot[] | undefined,
 	slotIndex: number,
 ): string {
-	const sign = directionSign(directionData?.[slotIndex]);
-	if (!direction || sign === 0) return color;
-	return sign > 0 ? direction.up_color : direction.down_color;
+	return (
+		(direction && directionColor(direction, directionData?.[slotIndex])) ??
+		color
+	);
 }
 
-function directionSign(slot: ChartIndicatorSlot | undefined): number {
-	return slot && "value" in slot ? Math.sign(slot.value) : 0;
+// The theme color of a direction at a slot of its output: up where the output
+// is positive, down where it is negative, none where it is zero or missing.
+function directionColor(
+	direction: ChartIndicatorLineDirection,
+	slot: ChartIndicatorSlot | undefined,
+): string | undefined {
+	if (!slot || !("value" in slot) || slot.value === 0) return undefined;
+	return slot.value > 0 ? direction.up_color : direction.down_color;
 }
 
 // The close prices of another instrument's candles on the candle slots of the

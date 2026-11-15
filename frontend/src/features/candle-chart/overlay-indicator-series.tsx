@@ -1,6 +1,10 @@
 import { LineSeries } from "lightweight-charts";
 
-import { Series, SeriesMarkers } from "@/components/lightweight-chart";
+import {
+	Series,
+	SeriesFill,
+	SeriesMarkers,
+} from "@/components/lightweight-chart";
 import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import { overlayIndicatorSeriesOptions } from "@/features/candle-chart/config";
 import type {
@@ -10,7 +14,7 @@ import type {
 	ValueResolution,
 } from "@/features/candle-chart/types";
 import { useThemeColor } from "@/features/candle-chart/use-theme-color";
-import { colorByDirection } from "@/features/candle-chart/utils";
+import { colorByDirection, directionFill } from "@/features/candle-chart/utils";
 
 interface OverlayIndicatorSeriesProps {
 	data: ChartLineData;
@@ -40,6 +44,9 @@ export function OverlayIndicatorSeries({
 		>
 			<AxisPriceFormat resolution={priceResolution} />
 			{markers ? <SeriesMarkers markers={markers} /> : null}
+			{line.direction?.fill ? (
+				<SeriesFill points={directionFill(data, line.direction, themeColor)} />
+			) : null}
 		</Series>
 	);
 }

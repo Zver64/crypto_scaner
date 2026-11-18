@@ -4,7 +4,7 @@ import type {
 	CandleInterval,
 	CandlePageResponse,
 } from "@/api/generated/models";
-import { unexpectedApiError } from "@/features/analysis/api-error";
+import { unexpectedApiError } from "@/utils/api-error";
 
 export type PriceCandle = Pick<
 	Candle,

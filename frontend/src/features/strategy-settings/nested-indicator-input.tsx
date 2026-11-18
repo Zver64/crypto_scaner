@@ -1,7 +1,7 @@
 import { Select, Stack } from "@mantine/core";
+import type { ReactNode } from "react";
 
 import { defaultIndicatorCall } from "@/features/strategy-settings/expressions";
-import { IndicatorParameters } from "@/features/strategy-settings/indicator-parameters";
 import { NestingLine } from "@/features/strategy-settings/nesting-line";
 import type {
 	IndicatorCallParts,
@@ -17,9 +17,10 @@ interface NestedIndicatorInputProps {
 	// The period of the call the indicator is the source of.
 	interval: string;
 	invalid: boolean;
-	issuePaths: readonly PropertyKey[][];
 	label: string;
 	onChange(call: IndicatorCallParts): void;
+	// The parameter editor of call, shown below it.
+	parameters: ReactNode;
 	// The indicators the source may read.
 	sources: StrategyIndicatorVariable[];
 }
@@ -33,9 +34,9 @@ export function NestedIndicatorInput({
 	disabled,
 	interval,
 	invalid,
-	issuePaths,
 	label,
 	onChange,
+	parameters,
 	sources,
 }: NestedIndicatorInputProps) {
 	return (
@@ -55,15 +56,7 @@ export function NestedIndicatorInput({
 				value={call?.variable.name ?? null}
 			/>
 			{call && call.variable.indicator.parameters.length > 0 ? (
-				<NestingLine depth={depth + 1}>
-					<IndicatorParameters
-						call={call}
-						depth={depth + 1}
-						disabled={disabled}
-						issuePaths={issuePaths}
-						onChange={onChange}
-					/>
-				</NestingLine>
+				<NestingLine depth={depth + 1}>{parameters}</NestingLine>
 			) : null}
 		</Stack>
 	);

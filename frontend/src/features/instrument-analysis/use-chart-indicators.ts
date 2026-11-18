@@ -4,14 +4,10 @@ import {
 	getListChartIndicatorsQueryOptions,
 	type ListChartIndicatorsQueryResult,
 } from "@/api/generated/api";
-import type {
-	CandleInterval,
-	ChartIndicatorCatalog,
-} from "@/api/generated/models";
-import {
-	type ChartCatalogs,
-	chartIntervals,
-} from "@/features/instrument-analysis/live-candle-store";
+import type { ChartIndicatorCatalog } from "@/api/generated/models";
+import { chartIntervals } from "@/features/candle-chart/intervals";
+import { intervalRecord } from "@/features/candle-chart/utils";
+import type { ChartCatalogs } from "@/features/instrument-analysis/live-candle-store";
 
 // The administrator configures which indicators the charts of each interval
 // show; the catalogs say which indicators the live chart subscribes to and
@@ -50,7 +46,7 @@ function combineCatalogs(
 	const failed = results.some((result) => result.isError);
 	if (results.some((result) => result.data === undefined)) return { failed };
 	return {
-		catalogs: byInterval(
+		catalogs: intervalRecord(
 			(interval) =>
 				results[chartIntervals.indexOf(interval)]?.data ?? {
 					items: [],
@@ -58,16 +54,5 @@ function combineCatalogs(
 				},
 		),
 		failed,
-	};
-}
-
-function byInterval<T>(
-	value: (interval: CandleInterval) => T,
-): Record<CandleInterval, T> {
-	return {
-		"1h": value("1h"),
-		"1d": value("1d"),
-		"1w": value("1w"),
-		"1M": value("1M"),
 	};
 }

@@ -7,12 +7,12 @@ import {
 	parseMarketScanSearch,
 	resultsTableSearchProps,
 } from "@/routes/-market-scan-search";
+import { useReplaceSearch } from "@/routes/-replace-search";
 import {
 	scanCriteriaFromSearch,
 	scanCriteriaToSearch,
 } from "@/routes/-scan-criteria-search";
 import { volatilitySettingsToSearch } from "@/routes/-volatility-settings-search";
-import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export const Route = createFileRoute("/")({
 	component: Home,
@@ -37,14 +37,15 @@ export const Route = createFileRoute("/")({
 
 function Home() {
 	const search = Route.useSearch();
+	const replaceSearch = useReplaceSearch();
 
 	return (
 		<MarketScanScreen
 			initialCriteria={scanCriteriaFromSearch(search)}
 			onCriteriaCommit={(criteria) => {
-				replaceUrlSearch(scanCriteriaToSearch(criteria));
+				replaceSearch(scanCriteriaToSearch(criteria));
 			}}
-			{...resultsTableSearchProps(search)}
+			{...resultsTableSearchProps(search, replaceSearch)}
 		/>
 	);
 }

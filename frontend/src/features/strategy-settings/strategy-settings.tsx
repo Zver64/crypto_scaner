@@ -3,7 +3,6 @@ import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRef, useState } from "react";
 
-import type { ErrorType } from "@/api/fetch";
 import {
 	getListStrategiesQueryKey,
 	type getStrategyCatalogResponseSuccess,
@@ -15,7 +14,7 @@ import {
 	useSetStrategyEnabled,
 	useUpdateStrategy,
 } from "@/api/generated/api";
-import type { ErrorResponse, Strategy } from "@/api/generated/models";
+import type { Strategy } from "@/api/generated/models";
 import { EmptyState } from "@/components/empty-state";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
@@ -41,6 +40,7 @@ import {
 	strategyInput,
 	strategyKind,
 } from "@/features/strategy-settings/utils";
+import type { ApiError } from "@/utils/api-error";
 
 const selectStrategyCatalog = (response: getStrategyCatalogResponseSuccess) =>
 	response.data;
@@ -87,7 +87,7 @@ export function StrategySettings({ kind }: StrategySettingsProps) {
 	});
 	const refresh = () =>
 		queryClient.invalidateQueries({ queryKey: getListStrategiesQueryKey() });
-	const failed = (error: ErrorType<ErrorResponse>) => {
+	const failed = (error: ApiError) => {
 		notifications.show({
 			color: "red",
 			message: strategyErrorMessage(error),

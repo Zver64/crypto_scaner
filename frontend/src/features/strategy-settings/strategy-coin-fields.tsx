@@ -2,8 +2,8 @@ import { SegmentedControl, Stack } from "@mantine/core";
 import { useSelector } from "@tanstack/react-form";
 
 import { StrategyCoinSource } from "@/api/generated/models";
-import { CoinSelectionButtons } from "@/app/coin-selection-buttons";
-import { useInstrumentSymbols } from "@/app/use-instrument-symbols";
+import { CoinSelectionButtons } from "@/features/coins/coin-selection-buttons";
+import { useInstrumentSymbols } from "@/features/coins/use-instrument-symbols";
 import type { StrategyFormApi } from "@/features/strategy-settings/types";
 
 interface StrategyCoinFieldsProps {

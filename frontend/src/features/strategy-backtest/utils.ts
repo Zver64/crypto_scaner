@@ -9,6 +9,7 @@ import {
 	Direction,
 	type StrategyBacktest,
 } from "@/api/generated/models";
+import { candleIntervals } from "@/features/candle-chart/intervals";
 import type { ChartTradeMarkers } from "@/features/candle-chart/types";
 import { toUtcTimestamp } from "@/features/candle-chart/utils";
 import {
@@ -16,7 +17,6 @@ import {
 	successColorSaturation,
 } from "@/features/strategy-backtest/config";
 import {
-	intervalUnits,
 	longTradeWords,
 	shortTradeWords,
 	signalArrowOptions,
@@ -277,7 +277,7 @@ export function shortenedPeriod(
 	evaluated: { from: string; interval: CandleInterval; to: string },
 	now: number,
 ): { end: boolean; start: boolean } {
-	const unit = intervalUnits[evaluated.interval];
+	const { unit } = candleIntervals[evaluated.interval];
 	return {
 		end:
 			chosen.to !== undefined &&

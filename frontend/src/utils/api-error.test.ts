@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
-import type { ErrorType } from "@/api/fetch";
-import type { APIErrorCode, ErrorResponse } from "@/api/generated/models";
-import { describeApiError } from "@/utils/api-error";
+import type { APIErrorCode } from "@/api/generated/models";
+import {
+	type ApiError,
+	describeApiError,
+	describeQueryError,
+} from "@/utils/api-error";
 
-function failure(code: APIErrorCode): ErrorType<ErrorResponse> {
+function failure(code: APIErrorCode, status?: number): ApiError {
 	return Object.assign(new Error("failed"), {
 		info: { error: { code, message: `server ${code}` }, request_id: "id" },
+		status,
 	});
 }
 
@@ -40,5 +44,29 @@ describe("describeApiError", () => {
 
 	it("falls back without a response body", () => {
 		expect(describeApiError(new Error("offline"), options)).toBe("fallback");
+	});
+});
+
+describe("describeQueryError", () => {
+	it.each([
+		[
+			failure("access_denied"),
+			"Your Telegram account does not have access to this scanner.",
+		],
+		[
+			failure("unauthenticated"),
+			"Your Telegram authorization has expired. Reopen the Mini App and try again.",
+		],
+		[
+			failure("market_cap_missing", 422),
+			"Market capitalization is unavailable for this instrument or is still loading. Try again shortly.",
+		],
+		[
+			failure("administrator_required"),
+			"An unexpected error occurred. Please try again.",
+		],
+		[new Error("offline"), "An unexpected error occurred. Please try again."],
+	])("describes %#", (error, expected) => {
+		expect(describeQueryError(error)).toBe(expected);
 	});
 });

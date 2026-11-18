@@ -5,9 +5,10 @@ import {
 	type listInstrumentCandlesResponseSuccess,
 	useListInstrumentCandlesInfinite,
 } from "@/api/generated/api";
-import type {
-	Candle,
-	ListInstrumentCandlesParams,
+import {
+	type Candle,
+	CandleInterval,
+	type ListInstrumentCandlesParams,
 } from "@/api/generated/models";
 import {
 	nextCandlePageParam,
@@ -17,7 +18,10 @@ import {
 // The 7-day window moves with the clock, so the history refreshes hourly.
 const refreshMilliseconds = 60 * 60 * 1_000;
 
-const params: ListInstrumentCandlesParams = { interval: "1h", limit: 200 };
+const params: ListInstrumentCandlesParams = {
+	interval: CandleInterval["1h"],
+	limit: 200,
+};
 
 // Joins the pages oldest first; the result is structurally shared, so it keeps
 // its reference while the history does not change.

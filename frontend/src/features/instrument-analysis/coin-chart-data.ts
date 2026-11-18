@@ -1,5 +1,5 @@
 import { getCurrentUser } from "@/api/generated/api";
-import type { CandleInterval } from "@/api/generated/models";
+import { CandleInterval } from "@/api/generated/models";
 import { LiveCandlesClient } from "@/api/live-candles";
 import { getSessionToken, invalidateSessionToken } from "@/api/session";
 import type {
@@ -7,19 +7,27 @@ import type {
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart";
-import { defaultChartInterval } from "@/features/candle-chart/config";
-import { emptyChartLine } from "@/features/candle-chart/constants";
+import {
+	chartIntervals,
+	defaultChartInterval,
+} from "@/features/candle-chart/intervals";
 import type { ChartLineData } from "@/features/candle-chart/types";
 import {
 	createChartSeriesData,
 	createComparisonLine,
+	valueResolution,
 } from "@/features/candle-chart/utils";
 import {
 	type ChartCatalogs,
-	chartIntervals,
 	createLiveStore,
 	type LiveCandlesState,
 } from "@/features/instrument-analysis/live-candle-store";
+
+// A line missing from a snapshot, such as one still loading, draws nothing.
+const emptyChartLine: ChartLineData = {
+	data: [],
+	resolution: valueResolution([]),
+};
 
 // The live candles of a coin page, which starts and stops the stream whether
 // or not the chart is shown; the chart selects the interval and loads older
@@ -262,7 +270,7 @@ export function createCoinChartData(symbol: string): CoinChartData {
 
 const emptySnapshot: PriceHistorySnapshot = {
 	candles: [],
-	series: createChartSeriesData([], undefined, "1h"),
+	series: createChartSeriesData([], undefined, CandleInterval["1h"]),
 	connection: "connecting",
 	freshness: "waiting",
 	isLoading: true,

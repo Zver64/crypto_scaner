@@ -1,6 +1,6 @@
 import { Group, Paper, Title, VisuallyHidden } from "@mantine/core";
 
-import { PageLink } from "@/app/page-link";
+import { PageLink } from "@/features/navigation/page-link";
 
 type Page = "coin-m" | "favorites" | "market-scan" | "top-coins";
 

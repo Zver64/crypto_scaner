@@ -1,13 +1,13 @@
 import { Box, Text } from "@mantine/core";
 import { Outlet, useLocation } from "@tanstack/react-router";
 
-import { useBusinessRequestPermission } from "@/app/business-request-context";
-import { useTelegramBackButton } from "@/app/telegram";
-import { useAdministrator } from "@/app/use-administrator";
 import { PageStack } from "@/components/page-stack";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 import { useCloseScannerSettings } from "@/features/scanner-settings/use-close-scanner-settings";
 import { SettingsNavigation } from "@/features/settings/settings-navigation";
+import { useAdministrator } from "@/features/settings/use-administrator";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
+import { useTelegramBackButton } from "@/utils/telegram";
 
 // The administrator settings with a switch between their pages.
 export function SettingsScreen() {

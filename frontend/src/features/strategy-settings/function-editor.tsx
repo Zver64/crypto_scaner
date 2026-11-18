@@ -1,15 +1,13 @@
 import { ActionIcon, Button, Stack, Text } from "@mantine/core";
 import type { ExpressionNode } from "@react-querybuilder/expr";
 import { IconPlus, IconX } from "@tabler/icons-react";
+import type { ReactNode } from "react";
 
-import {
-	ExpressionEditor,
-	type ExpressionEditorProps,
-} from "@/features/strategy-settings/expression-editor";
 import {
 	maxVariadicArguments,
 	strategyFunctions,
 } from "@/features/strategy-settings/expressions";
+import type { ExpressionEditorProps } from "@/features/strategy-settings/types";
 import {
 	argumentIssuePaths,
 	withoutPositionVariables,
@@ -20,6 +18,9 @@ export interface FunctionEditorProps extends Omit<
 	"label"
 > {
 	node: Extract<ExpressionNode, { kind: "func" }>;
+	// Renders the editor of an argument: the operand editor, which renders
+	// this one in turn.
+	renderArgument(props: ExpressionEditorProps): ReactNode;
 }
 
 // The arguments of a function, each under its title; the operand editor
@@ -30,6 +31,7 @@ export function FunctionEditor({
 	issuePaths = [],
 	node,
 	onChange,
+	renderArgument,
 	variables,
 	withoutCoin,
 }: FunctionEditorProps) {
@@ -51,8 +53,8 @@ export function FunctionEditor({
 						<Text c="dimmed" size="xs">
 							{title}
 						</Text>
-						<ExpressionEditor
-							action={
+						{renderArgument({
+							action:
 								definition?.variadic && node.args.length > 2 ? (
 									<ActionIcon
 										aria-label="Remove value"
@@ -68,21 +70,19 @@ export function FunctionEditor({
 									>
 										<IconX size={18} />
 									</ActionIcon>
-								) : null
-							}
-							depth={depth + 1}
-							disabled={disabled}
-							issuePaths={argumentIssuePaths(issuePaths, index)}
-							label={title}
-							node={arg}
-							onChange={(next) => replaceArg(index, next)}
-							variables={
+								) : null,
+							depth: depth + 1,
+							disabled,
+							issuePaths: argumentIssuePaths(issuePaths, index),
+							label: title,
+							node: arg,
+							onChange: (next) => replaceArg(index, next),
+							variables:
 								index < (definition?.earlier ?? 0)
 									? earlierVariables
-									: variables
-							}
-							withoutCoin={withoutCoin}
-						/>
+									: variables,
+							withoutCoin,
+						})}
 					</Stack>
 				);
 			})}

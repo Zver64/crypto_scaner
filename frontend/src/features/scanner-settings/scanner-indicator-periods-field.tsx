@@ -1,7 +1,7 @@
 import { Checkbox, Group, Input, Stack } from "@mantine/core";
 
 import type { CandleInterval } from "@/api/generated/models";
-import { chartIntervalOptions } from "@/features/candle-chart/config";
+import { chartIntervalOptions } from "@/features/candle-chart/intervals";
 import type {
 	PeriodChoice,
 	PeriodChoices,

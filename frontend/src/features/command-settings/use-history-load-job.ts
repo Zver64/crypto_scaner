@@ -2,8 +2,8 @@ import {
 	type getCandleHistoryLoadResponseSuccess,
 	useGetCandleHistoryLoad,
 } from "@/api/generated/api";
-import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { historyLoadPollInterval } from "@/features/command-settings/constants";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
 
 const selectJob = (response: getCandleHistoryLoadResponseSuccess) =>
 	response.status === 200 ? response.data : null;

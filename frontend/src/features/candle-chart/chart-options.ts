@@ -1,22 +1,17 @@
 import type { DeepPartial, Time, TimeChartOptions } from "lightweight-charts";
 
-import {
-	chartIntervalOptions,
-	chartOptions,
-} from "@/features/candle-chart/config";
-import type { ChartInterval } from "@/features/candle-chart/types";
-import { formatChartTime } from "@/features/candle-chart/utils";
+import type { CandleInterval } from "@/api/generated/models";
+import { chartOptions } from "@/features/candle-chart/config";
+import { candleIntervals } from "@/features/candle-chart/intervals";
+import { formatChartTime, intervalRecord } from "@/features/candle-chart/utils";
 
 type ColorScheme = keyof typeof chartOptions;
 
 function intervalChartOptions(
 	colorScheme: ColorScheme,
-	interval: ChartInterval,
+	interval: CandleInterval,
 ) {
 	const base = chartOptions[colorScheme];
-	const showTime =
-		chartIntervalOptions.find(({ value }) => value === interval)?.showTime ??
-		false;
 	return {
 		...base,
 		localization: {
@@ -25,18 +20,17 @@ function intervalChartOptions(
 					? formatChartTime(time, interval)
 					: String(time),
 		},
-		timeScale: { ...base.timeScale, timeVisible: showTime },
+		timeScale: {
+			...base.timeScale,
+			timeVisible: candleIntervals[interval].showTime,
+		},
 	} satisfies DeepPartial<TimeChartOptions>;
 }
 
-// One entry per interval, so a missing interval fails typecheck.
 function schemeChartOptions(colorScheme: ColorScheme) {
-	return {
-		"1h": intervalChartOptions(colorScheme, "1h"),
-		"1d": intervalChartOptions(colorScheme, "1d"),
-		"1w": intervalChartOptions(colorScheme, "1w"),
-		"1M": intervalChartOptions(colorScheme, "1M"),
-	} satisfies Record<ChartInterval, ReturnType<typeof intervalChartOptions>>;
+	return intervalRecord((interval) =>
+		intervalChartOptions(colorScheme, interval),
+	);
 }
 
 // Chart options of every color scheme and candle interval, created once so
@@ -44,4 +38,4 @@ function schemeChartOptions(colorScheme: ColorScheme) {
 export const timeChartOptions = {
 	dark: schemeChartOptions("dark"),
 	light: schemeChartOptions("light"),
-} satisfies Record<ColorScheme, Record<ChartInterval, unknown>>;
+} satisfies Record<ColorScheme, Record<CandleInterval, unknown>>;

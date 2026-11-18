@@ -3,8 +3,8 @@ import {
 	type getInstrumentGridLimitsResponseSuccess,
 	useGetInstrumentGridLimits,
 } from "@/api/generated/api";
-import { unexpectedApiError } from "@/features/analysis/api-error";
 import type { SpotGridLimits } from "@/features/instrument-analysis/grid-estimator/types";
+import { unexpectedApiError } from "@/utils/api-error";
 
 // Binance spot grid limits, fetched once per coin page so the calculator's
 // range does not move while it is being edited. A failure, including limits

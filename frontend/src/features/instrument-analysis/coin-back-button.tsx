@@ -1,7 +1,7 @@
 import { Button } from "@mantine/core";
 
-import { useTelegramBackButton } from "@/app/telegram";
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
+import { useTelegramBackButton } from "@/utils/telegram";
 
 interface CoinBackButtonProps {
 	onBack(): void;

@@ -1,18 +1,17 @@
 import { useMutation } from "@tanstack/react-query";
 
-import type { ErrorType } from "@/api/fetch";
 import { validateStrategy } from "@/api/generated/api";
 import type {
-	ErrorResponse,
 	Strategy,
 	StrategyValidationInputKind,
 } from "@/api/generated/models";
 import type { CanonicalRules } from "@/features/strategy-settings/types";
+import type { ApiError } from "@/utils/api-error";
 
 // Spells the rules of a strategy canonically, which the builder needs to
 // open it.
 export function useCanonicalRules() {
-	return useMutation<CanonicalRules, ErrorType<ErrorResponse>, Strategy>({
+	return useMutation<CanonicalRules, ApiError, Strategy>({
 		mutationFn: async (strategy) => {
 			const canonical = async (
 				expression: string,

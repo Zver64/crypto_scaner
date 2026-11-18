@@ -6,8 +6,9 @@ import {
 	getGetCandleHistoryLoadQueryKey,
 	useStartCandleHistoryLoad,
 } from "@/api/generated/api";
+import { CandleInterval } from "@/api/generated/models";
 import { fieldError, useAppForm } from "@/components/form";
-import { chartIntervalOptions } from "@/features/candle-chart/config";
+import { chartIntervalOptions } from "@/features/candle-chart/intervals";
 import { historyLoadDepth } from "@/features/command-settings/constants";
 import { HistoryLoadCoinsSelect } from "@/features/command-settings/history-load-coins-select";
 import { HistoryLoadJob } from "@/features/command-settings/history-load-job";
@@ -23,7 +24,7 @@ import { formatNumber } from "@/utils/number-format";
 const defaultValues: HistoryLoadValues = {
 	coins: [],
 	depth: historyLoadDepth.default,
-	intervals: ["1h"],
+	intervals: [CandleInterval["1h"]],
 };
 
 // Starts a deeper history load and follows the latest one, which the server
@@ -98,10 +99,7 @@ export function HistoryLoadCommand() {
 				>
 					{(field) => (
 						<field.MultiSelectField
-							data={chartIntervalOptions.map(({ label, value }) => ({
-								label,
-								value,
-							}))}
+							data={chartIntervalOptions}
 							disabled={running}
 							label="Intervals"
 						/>

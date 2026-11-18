@@ -1,7 +1,6 @@
 import { Button, Paper, Stack, Text, Title } from "@mantine/core";
 
 import type { StrategyID } from "@/api/generated/models";
-import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { EmptyState } from "@/components/empty-state";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
@@ -13,6 +12,7 @@ import { BacktestSingleResults } from "@/features/strategy-backtest/backtest-sin
 import { CoinSelect } from "@/features/strategy-backtest/coin-select";
 import { StrategySelect } from "@/features/strategy-backtest/strategy-select";
 import { useBacktestRun } from "@/features/strategy-backtest/use-backtest-run";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
 import { formatNumber } from "@/utils/number-format";
 
 const runHint = "Select coins and a strategy, then click Run backtest.";

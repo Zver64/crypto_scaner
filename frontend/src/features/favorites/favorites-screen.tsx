@@ -1,8 +1,6 @@
 import { Stack } from "@mantine/core";
 import { useState } from "react";
 
-import { useBusinessRequestPermission } from "@/app/business-request-context";
-import { PageNavigation } from "@/app/page-navigation";
 import { PageStack } from "@/components/page-stack";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { sidebarColumns } from "@/components/sidebar-layout/constants";
@@ -12,6 +10,8 @@ import type { VolatilitySettingsStateProps } from "@/features/analysis/volatilit
 import { FavoritesTable } from "@/features/favorites/favorites-table";
 import { useFavoritesAnalysis } from "@/features/favorites/use-favorites-analysis";
 import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
+import { PageNavigation } from "@/features/navigation/page-navigation";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
 
 export function FavoritesScreen({
 	initialSettings,

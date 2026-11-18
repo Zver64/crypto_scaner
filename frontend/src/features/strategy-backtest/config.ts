@@ -4,7 +4,7 @@ import type {
 	TimeChartOptions,
 } from "lightweight-charts";
 
-import { resolvedTheme } from "@/app/theme";
+import { resolvedTheme } from "@/theme";
 
 // Height of the equity chart in pixels.
 export const equityChartHeight = 160;

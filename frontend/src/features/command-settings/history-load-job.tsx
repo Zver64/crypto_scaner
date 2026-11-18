@@ -5,7 +5,7 @@ import type {
 	CandleHistoryLoadJob,
 } from "@/api/generated/models";
 import { DataTable, type DataTableColumn } from "@/components/data-table";
-import { intervalLabel } from "@/features/command-settings/utils";
+import { intervalLabel } from "@/features/candle-chart/utils";
 import { formatDateTime } from "@/utils/date-time-format";
 import { formatNumber } from "@/utils/number-format";
 

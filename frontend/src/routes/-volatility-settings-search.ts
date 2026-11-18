@@ -12,7 +12,7 @@ import {
 	resultsTableSearchProps,
 	type SymbolFilterSearch,
 } from "@/routes/-market-scan-search";
-import { replaceUrlSearch } from "@/utils/replace-url-search";
+import type { ReplaceSearch } from "@/routes/-replace-search";
 
 export interface VolatilitySettingsSearch {
 	hourly_percentile: number;
@@ -48,13 +48,14 @@ export function parseVolatilitySettingsOnlySearch(
 // search.
 export function volatilitySettingsSearchProps(
 	search: VolatilitySettingsSearchWithSort,
+	replaceSearch: ReplaceSearch,
 ): VolatilitySettingsStateProps & ResultsTableStateProps {
 	return {
 		initialSettings: volatilitySettingsFromSearch(search),
 		onSettingsCommit: (settings) => {
-			replaceUrlSearch({ ...volatilitySettingsToSearch(settings) });
+			replaceSearch({ ...volatilitySettingsToSearch(settings) });
 		},
-		...resultsTableSearchProps(search),
+		...resultsTableSearchProps(search, replaceSearch),
 	};
 }
 

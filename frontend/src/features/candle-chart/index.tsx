@@ -13,7 +13,7 @@ import {
 } from "@mantine/core";
 import { type CSSProperties, useState } from "react";
 
-import type { ChartPlacement } from "@/api/generated/models";
+import type { CandleInterval, ChartPlacement } from "@/api/generated/models";
 import { ChartCanvas } from "@/components/lightweight-chart";
 import { AreaShapeSeries } from "@/features/candle-chart/area-shape-series";
 import { CandleSeries } from "@/features/candle-chart/candle-series";
@@ -23,22 +23,23 @@ import { ComparisonSeries } from "@/features/candle-chart/comparison-series";
 import {
 	barSpacing,
 	candlePaneHeight,
-	chartIntervalOptions,
 	compactCandlePaneShare,
 	compactIndicatorPaneHeight,
-	defaultChartInterval,
 	indicatorPaneHeight,
 	loadOlderThreshold,
 	minVisibleBars,
 } from "@/features/candle-chart/config";
 import { IndicatorLegend } from "@/features/candle-chart/indicator-legend";
+import {
+	chartIntervalOptions,
+	defaultChartInterval,
+} from "@/features/candle-chart/intervals";
 import { LineShapeSeries } from "@/features/candle-chart/line-shape-series";
 import { LiveStatus } from "@/features/candle-chart/live-status";
 import { MarkersShapeSeries } from "@/features/candle-chart/markers-shape-series";
 import { SegmentsShapeSeries } from "@/features/candle-chart/segments-shape-series";
 import type {
 	ChartCandle,
-	ChartInterval,
 	PriceHistoryChartProps,
 } from "@/features/candle-chart/types";
 import { useChartViewport } from "@/features/candle-chart/use-chart-viewport";
@@ -53,17 +54,11 @@ import { VolumeSeries } from "@/features/candle-chart/volume-series";
 
 export { createChartPriceLevels } from "@/features/candle-chart/utils";
 export type {
-	ChartIntervalOption,
 	ChartPriceLevels,
 	PriceComparison,
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart/types";
-
-const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
-	label,
-	value,
-}));
 
 // Sources deliver chart-ready data (see PriceHistorySnapshot.series) and the
 // chart wrappers compare what they receive, so the chart transforms nothing
@@ -78,12 +73,12 @@ export function PriceHistoryChart({
 	source,
 	symbol,
 }: PriceHistoryChartProps) {
-	const [interval, setInterval] = useState<ChartInterval>(
+	const [interval, setInterval] = useState<CandleInterval>(
 		intervals?.[0] ?? defaultChartInterval,
 	);
 	const intervalOptions = intervals
-		? intervalControlData.filter(({ value }) => intervals.includes(value))
-		: intervalControlData;
+		? chartIntervalOptions.filter(({ value }) => intervals.includes(value))
+		: chartIntervalOptions;
 	const [activeCandle, setActiveCandle] = useState<ChartCandle | null>(null);
 	const [comparing, setComparing] = useState(false);
 	usePriceComparison(comparison, comparing);
@@ -129,7 +124,7 @@ export function PriceHistoryChart({
 		threshold: loadOlderThreshold,
 	});
 
-	const selectInterval = (value: ChartInterval) => {
+	const selectInterval = (value: CandleInterval) => {
 		setActiveCandle(null);
 		setInterval(value);
 	};
@@ -161,7 +156,7 @@ export function PriceHistoryChart({
 		>
 			<Stack gap="xs" style={fillStyle}>
 				<Group gap="xs" mx={compact ? paperPadding : 0} wrap="nowrap">
-					<SegmentedControl<ChartInterval>
+					<SegmentedControl<CandleInterval>
 						data={intervalOptions}
 						flex={1}
 						fullWidth

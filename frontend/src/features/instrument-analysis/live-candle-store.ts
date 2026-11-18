@@ -4,7 +4,7 @@ import type {
 	ChartPageResponse,
 	LiveCandleServerMessage,
 } from "@/api/generated/models";
-import { chartIntervalOptions } from "@/features/candle-chart/config";
+import { chartIntervals } from "@/features/candle-chart/intervals";
 import type {
 	ChartConnection,
 	ChartFreshness,
@@ -24,8 +24,6 @@ export interface LiveCandlesState {
 	resyncing?: boolean;
 }
 
-export const chartIntervals: readonly CandleInterval[] =
-	chartIntervalOptions.map((item) => item.value);
 const initialState: LiveCandlesState = {
 	connection: "connecting",
 	freshness: "waiting",

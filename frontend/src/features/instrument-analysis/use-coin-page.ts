@@ -1,7 +1,6 @@
 import { useSelector } from "@tanstack/react-form";
 import equal from "fast-deep-equal";
 
-import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { criterionKeys } from "@/features/analysis/identifiers";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
 import {
@@ -18,6 +17,7 @@ import { useHourlyHistory } from "@/features/instrument-analysis/use-hourly-hist
 import { useInstrumentAnalysis } from "@/features/instrument-analysis/use-instrument-analysis";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { volatilityCriterionSelections } from "@/features/market-scan/pipeline";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
 
 // The calculator grid drawn on the chart, kept while its levels are equal.
 function selectGridLevels({

@@ -3,7 +3,6 @@ import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import type { ErrorType } from "@/api/fetch";
 import {
 	type listIndicatorTypesResponseSuccess,
 	type listScannerIndicatorsResponseSuccess,
@@ -13,7 +12,7 @@ import {
 	useListScannerIndicators,
 	useReorderScannerIndicators,
 } from "@/api/generated/api";
-import type { ErrorResponse, ScannerIndicator } from "@/api/generated/models";
+import type { ScannerIndicator } from "@/api/generated/models";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { invalidateScannerIndicatorQueries } from "@/features/scanner-settings/query-cache";
 import { ScannerIndicatorForm } from "@/features/scanner-settings/scanner-indicator-form";
@@ -23,6 +22,7 @@ import {
 	mutationErrorMessage,
 	orderIndicators,
 } from "@/features/scanner-settings/utils";
+import type { ApiError } from "@/utils/api-error";
 
 const selectIndicatorTypes = (response: listIndicatorTypesResponseSuccess) =>
 	response.data.items;
@@ -44,7 +44,7 @@ export function ScannerSettings() {
 		query: { retry: false, select: selectIndicators },
 	});
 	const refresh = () => invalidateScannerIndicatorQueries(queryClient);
-	const failed = (error: ErrorType<ErrorResponse>) => {
+	const failed = (error: ApiError) => {
 		notifications.show({
 			color: "red",
 			message: mutationErrorMessage(error),

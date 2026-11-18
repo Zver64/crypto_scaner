@@ -1,6 +1,6 @@
 import { Select } from "@mantine/core";
 
-import { useInstrumentSymbols } from "@/app/use-instrument-symbols";
+import { useInstrumentSymbols } from "@/features/coins/use-instrument-symbols";
 
 export interface CoinSelectProps {
 	coin: string;

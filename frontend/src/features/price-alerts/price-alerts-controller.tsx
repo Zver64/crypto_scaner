@@ -4,7 +4,6 @@ import { useSelector } from "@tanstack/react-form";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import type { ErrorType } from "@/api/fetch";
 import {
 	getListPriceAlertsQueryKey,
 	type listPriceAlertsResponseSuccess,
@@ -13,7 +12,6 @@ import {
 	useListPriceAlerts,
 	useUpdatePriceAlert,
 } from "@/api/generated/api";
-import type { ErrorResponse } from "@/api/generated/models";
 import { fieldError, useAppForm } from "@/components/form";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
@@ -24,9 +22,9 @@ import type {
 	CurrentPriceSource,
 	PriceAlertEditor,
 } from "@/features/price-alerts/types";
-import { describeApiError } from "@/utils/api-error";
+import { type ApiError, describeApiError } from "@/utils/api-error";
 
-function mutationErrorMessage(error: ErrorType<ErrorResponse> | null): string {
+function mutationErrorMessage(error: ApiError | null): string {
 	return describeApiError(error, {
 		fallback: "The price alert could not be saved.",
 		messages: {
@@ -91,7 +89,7 @@ export function PriceAlertsController({
 		form.reset();
 		refresh();
 	};
-	const failed = (error: ErrorType<ErrorResponse>) => {
+	const failed = (error: ApiError) => {
 		notifications.show({
 			color: "red",
 			message: mutationErrorMessage(error),

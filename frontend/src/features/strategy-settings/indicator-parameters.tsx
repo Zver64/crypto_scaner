@@ -64,9 +64,19 @@ export function IndicatorParameters({
 								disabled={disabled}
 								interval={call.interval}
 								invalid={invalid}
-								issuePaths={paths}
 								onChange={(next) => replace(index, next)}
 								parameter={parameter}
+								parameters={
+									typeof arg === "string" ? null : (
+										<IndicatorParameters
+											call={arg}
+											depth={depth + 1}
+											disabled={disabled}
+											issuePaths={paths}
+											onChange={(next) => replace(index, next)}
+										/>
+									)
+								}
 								sources={sources}
 							/>
 						) : typeof arg !== "string" ? null : parameter.kind ===

@@ -3,7 +3,6 @@ import { notifications } from "@mantine/notifications";
 import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import type { ErrorType } from "@/api/fetch";
 import {
 	getListApiTokensQueryKey,
 	type listApiTokensResponseSuccess,
@@ -11,12 +10,13 @@ import {
 	useDeleteApiToken,
 	useListApiTokens,
 } from "@/api/generated/api";
-import type { ApiToken, ErrorResponse } from "@/api/generated/models";
+import type { ApiToken } from "@/api/generated/models";
 import { ApiTokenCreate } from "@/features/api-token-settings/api-token-create";
 import { ApiTokenRemovalConfirmation } from "@/features/api-token-settings/api-token-removal-confirmation";
 import { ApiTokenRow } from "@/features/api-token-settings/api-token-row";
 import { IssuedApiToken } from "@/features/api-token-settings/issued-api-token";
 import { apiTokenErrorMessage } from "@/features/api-token-settings/utils";
+import type { ApiError } from "@/utils/api-error";
 
 const selectTokens = (response: listApiTokensResponseSuccess) =>
 	response.data.items;
@@ -30,7 +30,7 @@ export function ApiTokenSettings() {
 	});
 	const refresh = () =>
 		queryClient.invalidateQueries({ queryKey: getListApiTokensQueryKey() });
-	const failed = (title: string) => (error: ErrorType<ErrorResponse>) => {
+	const failed = (title: string) => (error: ApiError) => {
 		notifications.show({
 			color: "red",
 			message: apiTokenErrorMessage(error),

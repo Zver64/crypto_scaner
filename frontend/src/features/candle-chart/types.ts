@@ -9,13 +9,13 @@ import type {
 } from "lightweight-charts";
 
 import type {
+	CandleInterval,
 	ChartIndicatorLevel,
 	ChartIndicatorScale,
 	ChartPlacement,
 } from "@/api/generated/models";
 import type { SeriesFillPoint } from "@/components/lightweight-chart";
 
-export type ChartInterval = "1h" | "1d" | "1w" | "1M";
 export interface PriceCandle {
 	open_time: string;
 	open: number;
@@ -46,11 +46,11 @@ export interface PriceHistorySnapshot {
 	isLoadingMore: boolean;
 }
 export interface PriceHistorySource {
-	getSnapshot(interval: ChartInterval): PriceHistorySnapshot;
+	getSnapshot(interval: CandleInterval): PriceHistorySnapshot;
 	subscribe(listener: () => void): () => void;
 	// Selects the interval on screen; a live source streams only that interval.
-	show(interval: ChartInterval): void;
-	loadOlder(interval: ChartInterval): void;
+	show(interval: CandleInterval): void;
+	loadOlder(interval: CandleInterval): void;
 }
 // The price of another instrument, drawn over the candles as a line on its own
 // left price scale.
@@ -59,15 +59,10 @@ export interface PriceComparison {
 	// The line aligned with the candle slots of the interval, empty while the
 	// comparison is disabled or has no data. It keeps its reference until its
 	// data changes.
-	getLine(interval: ChartInterval): ChartLineData;
+	getLine(interval: CandleInterval): ChartLineData;
 	subscribe(listener: () => void): () => void;
 	// The source streams the comparison only while it is enabled.
 	setEnabled(enabled: boolean): void;
-}
-export interface ChartIntervalOption {
-	label: string;
-	value: ChartInterval;
-	showTime?: boolean;
 }
 // Number resolution of the values on a price or value scale.
 export interface ValueResolution {
@@ -189,7 +184,7 @@ export interface PriceHistoryChartProps {
 	fillHeight?: boolean;
 	// Restricts the interval switch to these intervals; the first is shown
 	// first.
-	intervals?: readonly ChartInterval[];
+	intervals?: readonly CandleInterval[];
 	paperPadding: string;
 	priceLevels?: ChartPriceLevels;
 	source: PriceHistorySource;

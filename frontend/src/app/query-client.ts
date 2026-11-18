@@ -1,26 +1,15 @@
-import { notifications } from "@mantine/notifications";
 import { MutationCache, QueryCache, QueryClient } from "@tanstack/react-query";
 
-import {
-	type ApiError,
-	type ApiErrorCode,
-	apiErrorCode,
-	apiErrorMessage,
-} from "@/features/analysis/api-error";
 import { handleUserAccessError } from "@/features/favorites/access-block";
 import {
 	removeUserScopeQueries,
 	userQueryScope,
 } from "@/features/favorites/user-query-scope";
-
-export type QueryErrorNotification = {
-	id: string;
-	title: string;
-	// An error the screen shows in place instead of notifying.
-	ignoredCode?: ApiErrorCode;
-	// Only a failed first load notifies; a failed refetch keeps the data quietly.
-	initialLoadOnly?: boolean;
-};
+import { apiErrorCode } from "@/utils/api-error";
+import {
+	type QueryErrorNotification,
+	showQueryErrorNotification,
+} from "@/utils/query-error-notification";
 
 // Type aliases, not interfaces: without an index signature a misspelled meta
 // key fails typecheck.
@@ -39,19 +28,6 @@ declare module "@tanstack/react-query" {
 		queryMeta: AppQueryMeta;
 		mutationMeta: AppMutationMeta;
 	}
-}
-
-export function showQueryErrorNotification(
-	{ id, title }: QueryErrorNotification,
-	error: ApiError,
-) {
-	notifications.show({
-		id,
-		autoClose: 5000,
-		color: "red",
-		message: apiErrorMessage(error),
-		title,
-	});
 }
 
 // Query errors are reported here from each query's meta, once per failed

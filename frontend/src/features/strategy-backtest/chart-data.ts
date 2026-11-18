@@ -1,7 +1,7 @@
-import type {
-	BacktestChart,
+import {
+	type BacktestChart,
 	CandleInterval,
-	StrategyBacktest,
+	type StrategyBacktest,
 } from "@/api/generated/models";
 import type {
 	PriceHistorySnapshot,
@@ -75,7 +75,7 @@ export function createBacktestChartData(
 	}
 	const empty: PriceHistorySnapshot = {
 		candles: [],
-		series: createChartSeriesData([], undefined, "1h"),
+		series: createChartSeriesData([], undefined, CandleInterval["1h"]),
 		connection: "disconnected",
 		freshness: "fresh",
 		hasMore: false,

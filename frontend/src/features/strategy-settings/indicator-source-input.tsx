@@ -1,4 +1,5 @@
 import { NativeSelect, Stack } from "@mantine/core";
+import type { ReactNode } from "react";
 
 import type { IndicatorParameter } from "@/api/generated/models";
 import { indicatorSourceItem } from "@/features/strategy-settings/constants";
@@ -17,9 +18,10 @@ interface IndicatorSourceInputProps {
 	interval: string;
 	// Marks a source whose indicator is still to be chosen.
 	invalid: boolean;
-	issuePaths: readonly PropertyKey[][];
 	onChange(arg: IndicatorArgument): void;
 	parameter: IndicatorParameter;
+	// The parameter editor of the indicator read as the source.
+	parameters: ReactNode;
 	// The indicators the source may read; undefined offers only its choices.
 	sources?: StrategyIndicatorVariable[];
 }
@@ -33,9 +35,9 @@ export function IndicatorSourceInput({
 	disabled,
 	interval,
 	invalid,
-	issuePaths,
 	onChange,
 	parameter,
+	parameters,
 	sources = [],
 }: IndicatorSourceInputProps) {
 	return (
@@ -61,9 +63,9 @@ export function IndicatorSourceInput({
 					disabled={disabled}
 					interval={interval}
 					invalid={invalid}
-					issuePaths={issuePaths}
 					label={parameter.title}
 					onChange={onChange}
+					parameters={parameters}
 					sources={sources}
 				/>
 			)}

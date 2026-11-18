@@ -1,6 +1,6 @@
 import { Anchor, useMatches } from "@mantine/core";
 
-import { openTelegramExternalLink } from "@/app/telegram";
+import { openTelegramExternalLink } from "@/utils/telegram";
 
 interface ExternalLinkProps {
 	ariaLabel: string;

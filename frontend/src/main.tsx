@@ -5,8 +5,8 @@ import { RouterProvider } from "@tanstack/react-router";
 import ReactDOM from "react-dom/client";
 
 import { createQueryClient } from "@/app/query-client";
-import { theme } from "@/app/theme";
 import { getRouter } from "@/router";
+import { theme } from "@/theme";
 
 import "@mantine/core/styles.css";
 import "@mantine/dates/styles.css";

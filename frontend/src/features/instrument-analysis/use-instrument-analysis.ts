@@ -6,9 +6,9 @@ import {
 	useAnalyzeInstrument,
 } from "@/api/generated/api";
 import type { CriterionRequest } from "@/api/generated/models";
-import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedInstrumentAnalysisEvaluations } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
+import { unexpectedApiError } from "@/utils/api-error";
 
 const selectAnalysis = (response: analyzeInstrumentResponseSuccess) =>
 	response.data;

@@ -16,24 +16,7 @@ import type {
 	ChartMarkersShapePosition,
 	ChartPlacement,
 } from "@/api/generated/models";
-import { resolvedTheme } from "@/app/theme";
-import type {
-	ChartInterval,
-	ChartIntervalOption,
-} from "@/features/candle-chart/types";
-
-export const chartIntervalOptions: readonly [
-	ChartIntervalOption,
-	...ChartIntervalOption[],
-] = [
-	{ label: "Hourly", value: "1h", showTime: true },
-	{ label: "Daily", value: "1d" },
-	{ label: "Weekly", value: "1w" },
-	{ label: "Monthly", value: "1M" },
-];
-
-export const defaultChartInterval: ChartInterval = "1d";
-
+import { resolvedTheme } from "@/theme";
 // Pane heights in pixels. The chart grows by one indicator pane height for
 // every indicator pane, so the candle pane keeps its height. The heights also
 // serve as the pane stretch factors.

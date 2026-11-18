@@ -15,7 +15,6 @@ import {
 	IconHash,
 	IconMathFunction,
 } from "@tabler/icons-react";
-import type { ReactNode } from "react";
 
 import { CoinSelect } from "@/features/strategy-settings/coin-select";
 import {
@@ -33,7 +32,7 @@ import { FunctionEditor } from "@/features/strategy-settings/function-editor";
 import { IndicatorParameters } from "@/features/strategy-settings/indicator-parameters";
 import { NestingLine } from "@/features/strategy-settings/nesting-line";
 import { StrategyVariableInput } from "@/features/strategy-settings/strategy-variable-input";
-import type { StrategyVariables } from "@/features/strategy-settings/types";
+import type { ExpressionEditorProps } from "@/features/strategy-settings/types";
 import {
 	argumentIssuePaths,
 	defaultVariableCall,
@@ -43,33 +42,6 @@ import {
 	sourceVariables,
 	withoutPositionVariables,
 } from "@/features/strategy-settings/utils";
-
-export interface ExpressionEditorProps {
-	disabled: boolean;
-	// Names the operand for assistive technology; the operand row does not show
-	// it.
-	label: string;
-	node: ExpressionNode;
-	onChange(node: ExpressionNode): void;
-	variables: StrategyVariables;
-	// Hides the number kind where a number alone makes no sense, such as the
-	// compared side of a condition.
-	withoutNumber?: boolean;
-	// The call a new indicator or coin operand starts with when the operand
-	// reads none, such as one other than the compared indicator.
-	defaultField?: string;
-	// Hides the coin kind inside an operand of another coin, since of
-	// cannot contain of.
-	withoutCoin?: boolean;
-	// How many groups and functions enclose the operand, which picks the
-	// line color of its arguments.
-	depth?: number;
-	// A control at the end of the operand row, such as a remove button.
-	action?: ReactNode;
-	// The paths, relative to node, of the validation issues of the condition
-	// it is part of; each input an issue points at gets an error border.
-	issuePaths?: readonly PropertyKey[][];
-}
 
 type OperandKind = "field" | "value" | "func" | "coin";
 
@@ -237,6 +209,7 @@ export function ExpressionEditor({
 					) : (
 						<FunctionEditor
 							depth={depth}
+							renderArgument={(props) => <ExpressionEditor {...props} />}
 							disabled={disabled}
 							issuePaths={issuePaths}
 							node={node}

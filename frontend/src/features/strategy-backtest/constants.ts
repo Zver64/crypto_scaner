@@ -1,12 +1,7 @@
-import type { ManipulateType } from "dayjs";
-
-import type {
-	BacktestTradeExitReason,
-	CandleInterval,
-} from "@/api/generated/models";
-import { resolvedTheme } from "@/app/theme";
+import type { BacktestTradeExitReason } from "@/api/generated/models";
 import type { ChartMarker } from "@/features/candle-chart/types";
 import type { TradeWords } from "@/features/strategy-backtest/types";
+import { resolvedTheme } from "@/theme";
 
 // Signal colors are independent of arrow direction.
 export const signalMarkerColors = {
@@ -50,11 +45,3 @@ export const exitReasonLabels = {
 // The dayjs format of the period days, shared by the date pickers and the
 // evaluated period so both read alike.
 export const backtestDateFormat = "DD.MM.YYYY";
-
-// The dayjs unit of one candle of each interval.
-export const intervalUnits = {
-	"1h": "hour",
-	"1d": "day",
-	"1w": "week",
-	"1M": "month",
-} as const satisfies Record<CandleInterval, ManipulateType>;

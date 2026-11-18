@@ -6,14 +6,11 @@ import {
 	type analyzeMarketResponseSuccess,
 	useAnalyzeMarket,
 } from "@/api/generated/api";
-import { useBusinessRequestPermission } from "@/app/business-request-context";
-import { PageNavigation } from "@/app/page-navigation";
 import { EmptyState } from "@/components/empty-state";
 import { PageStack } from "@/components/page-stack";
 import { SidebarLayout } from "@/components/sidebar-layout";
 import { sidebarColumns } from "@/components/sidebar-layout/constants";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
-import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import { VolatilitySettingsForm } from "@/features/analysis/volatility-settings-form";
@@ -22,10 +19,13 @@ import { unfilteredScanCriteria } from "@/features/market-scan/pipeline";
 import { MarketScanResultsTable } from "@/features/market-scan/results-table";
 import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
 import { filterMarketScanRows } from "@/features/market-scan/results-table/utils";
+import { PageNavigation } from "@/features/navigation/page-navigation";
 import {
 	buildTopCoinsCriteria,
 	topCoinsPages,
 } from "@/features/top-coins/top-coins";
+import { unexpectedApiError } from "@/utils/api-error";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
 
 const selectAnalysis = (response: analyzeMarketResponseSuccess) =>
 	response.data;

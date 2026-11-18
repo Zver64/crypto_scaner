@@ -3,11 +3,11 @@ import type {
 	MarketScanSort,
 	MarketScanSortDirection,
 } from "@/features/market-scan/sort";
+import type { ReplaceSearch } from "@/routes/-replace-search";
 import {
 	parseOptionalScanCriteriaSearch,
 	type ScanCriteriaSearch,
 } from "@/routes/-scan-criteria-search";
-import { replaceUrlSearch } from "@/utils/replace-url-search";
 
 export interface MarketScanSortSearch {
 	sort_column?: string;
@@ -72,16 +72,17 @@ export function marketScanSortFromSearch(
 // Binds a page's results table state to its URL search.
 export function resultsTableSearchProps(
 	search: MarketScanSortSearch & SymbolFilterSearch,
+	replaceSearch: ReplaceSearch,
 ): ResultsTableStateProps {
 	return {
 		onSortChange: (sort) => {
-			replaceUrlSearch({
+			replaceSearch({
 				sort_column: sort.column,
 				sort_direction: sort.direction,
 			});
 		},
 		onSymbolFilterChange: (symbolFilter) => {
-			replaceUrlSearch({ symbol_filter: symbolFilter || undefined });
+			replaceSearch({ symbol_filter: symbolFilter || undefined });
 		},
 		sort: marketScanSortFromSearch(search),
 		symbolFilter: search.symbol_filter ?? "",

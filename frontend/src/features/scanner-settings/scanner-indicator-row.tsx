@@ -4,7 +4,7 @@ import { IconGripVertical } from "@tabler/icons-react";
 import { useState } from "react";
 
 import type { ScannerIndicator } from "@/api/generated/models";
-import { chartIntervalOptions } from "@/features/candle-chart/config";
+import { intervalLabel } from "@/features/candle-chart/utils";
 import { ScannerIndicatorSettingsEditor } from "@/features/scanner-settings/scanner-indicator-settings-editor";
 import { useSaveScannerIndicator } from "@/features/scanner-settings/use-save-scanner-indicator";
 import {
@@ -74,9 +74,7 @@ export function ScannerIndicatorRow({
 							{indicator.periods.map((period) => (
 								<Badge key={period.interval} size="xs" variant="light">
 									{[
-										chartIntervalOptions.find(
-											({ value }) => value === period.interval,
-										)?.label ?? period.interval,
+										intervalLabel(period.interval),
 										...(period.show_in_table ? ["Table"] : []),
 										...(period.show_in_chart ? ["Chart"] : []),
 									].join(" · ")}

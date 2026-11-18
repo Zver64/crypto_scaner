@@ -3,7 +3,7 @@ import { afterEach, expect, it, vi } from "vitest";
 import {
 	initializeTelegramMiniApp,
 	openTelegramExternalLink,
-} from "@/app/telegram";
+} from "@/utils/telegram";
 
 afterEach(() => {
 	vi.unstubAllGlobals();

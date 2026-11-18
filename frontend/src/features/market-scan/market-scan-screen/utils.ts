@@ -4,13 +4,13 @@ import {
 	type analyzeMarketResponseSuccess,
 	getAnalyzeMarketQueryOptions,
 } from "@/api/generated/api";
-import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { marketScanErrorNotification } from "@/features/market-scan/market-scan-screen/constants";
 import {
 	criterionSelections,
 	type MarketScanCriteria,
 } from "@/features/market-scan/pipeline";
+import { unexpectedApiError } from "@/utils/api-error";
 
 const selectAnalysis = (response: analyzeMarketResponseSuccess) =>
 	response.data;

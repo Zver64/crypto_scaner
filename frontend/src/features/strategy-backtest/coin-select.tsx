@@ -1,8 +1,8 @@
 import { MultiSelect, Stack } from "@mantine/core";
 
-import { CoinPicker } from "@/app/coin-picker";
-import { CoinSelectionButtons } from "@/app/coin-selection-buttons";
-import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
+import { CoinPicker } from "@/features/coins/coin-picker";
+import { CoinSelectionButtons } from "@/features/coins/coin-selection-buttons";
+import { useFavoriteSymbols } from "@/features/favorites/use-favorite-symbols";
 
 interface CoinSelectProps {
 	allCoins: boolean;

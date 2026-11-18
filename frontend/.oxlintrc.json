@@ -1,6 +1,6 @@
 {
 	"$schema": "./node_modules/oxlint/configuration_schema.json",
-	"plugins": ["eslint", "typescript", "unicorn", "oxc", "react", "vitest"],
+	"plugins": ["eslint", "import", "typescript", "unicorn", "oxc", "react", "vitest"],
 	"categories": {
 		"correctness": "error"
 	},
@@ -8,6 +8,7 @@
 		"react/rules-of-hooks": "error",
 		"react/exhaustive-deps": "error",
 		"react/no-array-index-key": "error",
+		"import/no-cycle": "error",
 		"no-restricted-imports": [
 			"error",
 			{
@@ -17,10 +18,35 @@
 						"importNames": ["useMatchRoute"],
 						"message": "Its stable callback goes stale under React Compiler (TanStack/router#4499, fix pending in #6561); use useMatch or useLocation."
 					}
+				],
+				"patterns": [
+					{
+						"group": ["@/app/*"],
+						"message": "Only src/app, src/routes, and src/main.tsx import the app shell; move shared code to features, components, or utils."
+					}
 				]
 			}
 		]
 	},
+	"overrides": [
+		{
+			"files": ["src/app/**", "src/routes/**", "src/main.tsx"],
+			"rules": {
+				"no-restricted-imports": [
+					"error",
+					{
+						"paths": [
+							{
+								"name": "@tanstack/react-router",
+								"importNames": ["useMatchRoute"],
+								"message": "Its stable callback goes stale under React Compiler (TanStack/router#4499, fix pending in #6561); use useMatch or useLocation."
+							}
+						]
+					}
+				]
+			}
+		}
+	],
 	"ignorePatterns": [
 		"/*",
 		"!/src/",

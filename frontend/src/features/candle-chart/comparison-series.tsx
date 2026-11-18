@@ -1,20 +1,18 @@
 import { LineSeries } from "lightweight-charts";
 import { useSyncExternalStore } from "react";
 
+import type { CandleInterval } from "@/api/generated/models";
 import { Series } from "@/components/lightweight-chart";
 import { AxisPriceFormat } from "@/features/candle-chart/axis-price-format";
 import {
 	candlePriceScaleOptions,
 	comparisonSeriesOptions,
 } from "@/features/candle-chart/config";
-import type {
-	ChartInterval,
-	PriceComparison,
-} from "@/features/candle-chart/types";
+import type { PriceComparison } from "@/features/candle-chart/types";
 
 interface ComparisonSeriesProps {
 	comparison: PriceComparison;
-	interval: ChartInterval;
+	interval: CandleInterval;
 }
 
 // The compared price as a line over the candles, on the left price scale.

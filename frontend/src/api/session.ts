@@ -1,6 +1,6 @@
 import type { Session } from "@/api/generated/models";
 import { readResponseData } from "@/api/response";
-import { getTelegramInitData, telegramUserID } from "@/app/telegram";
+import { getTelegramInitData, telegramUserID } from "@/utils/telegram";
 
 // The token survives WebView reloads but not the end of the Mini App session.
 const storageKey = "crypto-scanner.session";

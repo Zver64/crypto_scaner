@@ -1,6 +1,6 @@
 import { createFieldMap } from "@tanstack/react-form";
 
-import { chartIntervalOptions } from "@/features/candle-chart/config";
+import { chartIntervals } from "@/features/candle-chart/intervals";
 import type { ScaleDraft } from "@/features/scanner-settings/types";
 
 // Automatic bounds without levels.
@@ -14,4 +14,4 @@ export const emptyScaleDraft: ScaleDraft = {
 export const scaleFields = createFieldMap(emptyScaleDraft);
 
 // The order requests list periods in.
-export const periodOrder = chartIntervalOptions.map(({ value }) => value);
+export const periodOrder = chartIntervals;

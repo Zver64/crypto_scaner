@@ -1,6 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 import { FavoritesScreen } from "@/features/favorites/favorites-screen";
+import { useReplaceSearch } from "@/routes/-replace-search";
 import {
 	parseVolatilitySettingsSearch,
 	volatilitySettingsSearchProps,
@@ -13,6 +14,8 @@ export const Route = createFileRoute("/favorites")({
 
 function FavoritesPage() {
 	return (
-		<FavoritesScreen {...volatilitySettingsSearchProps(Route.useSearch())} />
+		<FavoritesScreen
+			{...volatilitySettingsSearchProps(Route.useSearch(), useReplaceSearch())}
+		/>
 	);
 }

@@ -9,15 +9,16 @@ import type {
 	UTCTimestamp,
 } from "lightweight-charts";
 
-import type {
-	ChartAreaShape,
-	ChartIndicatorLevel,
-	ChartIndicatorScale,
-	ChartLineShape,
-	ChartMarkersShape,
-	ChartPageResponse,
-	ChartPane,
-	ChartSegmentsShape,
+import {
+	CandleInterval,
+	type ChartAreaShape,
+	type ChartIndicatorLevel,
+	type ChartIndicatorScale,
+	type ChartLineShape,
+	type ChartMarkersShape,
+	type ChartPageResponse,
+	type ChartPane,
+	type ChartSegmentsShape,
 } from "@/api/generated/models";
 import type { SeriesFillPoint } from "@/components/lightweight-chart";
 import {
@@ -34,12 +35,15 @@ import {
 	hourTimeFormat,
 	monthTimeFormat,
 } from "@/features/candle-chart/constants";
+import {
+	candleIntervals,
+	chartIntervals,
+} from "@/features/candle-chart/intervals";
 import type {
 	ChartAreaShapeData,
 	ChartCandle,
 	ChartCandleSlot,
 	ChartIndicatorSlot,
-	ChartInterval,
 	ChartLegendItem,
 	ChartLineData,
 	ChartLineShapeData,
@@ -68,7 +72,7 @@ import { formatRangePercent } from "@/utils/range-percent";
 export function createChartSeriesData(
 	candles: readonly PriceCandle[],
 	chart: Pick<ChartPageResponse, "panes" | "shapes"> | undefined,
-	interval: ChartInterval,
+	interval: CandleInterval,
 	previous?: Pick<ChartSeriesData, "panes">,
 ): ChartSeriesData {
 	const slots = createCandlestickData(candles, interval);
@@ -329,7 +333,7 @@ export function toUtcTimestamp(value: string): UTCTimestamp {
 
 export function createCandlestickData(
 	candles: readonly PriceCandle[],
-	interval: ChartInterval,
+	interval: CandleInterval,
 ): ChartCandleSlot[] {
 	const data: ChartCandleSlot[] = [];
 	for (let index = 0; index < candles.length; index++) {
@@ -395,7 +399,7 @@ export function createComparisonLine(
 // selector; candle arrays with only OHLC changes reuse the marker array.
 export function createMarkerDataSelector(
 	{ entries, exits, marks = [], groups = [] }: ChartTradeMarkers,
-	interval: ChartInterval,
+	interval: CandleInterval,
 ) {
 	const entryCounts = countByCandle(entries, interval);
 	const exitCounts = countByCandle(exits, interval);
@@ -483,7 +487,7 @@ function shapeMarker(
 
 function countByCandle(
 	times: readonly string[],
-	interval: ChartInterval,
+	interval: CandleInterval,
 ): Map<number, number> {
 	const counts = new Map<number, number>();
 	for (const time of times) {
@@ -508,16 +512,16 @@ function candleMarker(
 
 // Open time of the candle containing the given time, on the exchange's UTC
 // boundaries: weeks start on Monday, months on the first day.
-function candleOpenTime(value: string, interval: ChartInterval): UTCTimestamp {
+function candleOpenTime(value: string, interval: CandleInterval): UTCTimestamp {
 	const date = new Date(value);
-	if (interval === "1h") {
+	if (interval === CandleInterval["1h"]) {
 		date.setUTCMinutes(0, 0, 0);
 		return (date.getTime() / 1_000) as UTCTimestamp;
 	}
 	date.setUTCHours(0, 0, 0, 0);
-	if (interval === "1w") {
+	if (interval === CandleInterval["1w"]) {
 		date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
-	} else if (interval === "1M") {
+	} else if (interval === CandleInterval["1M"]) {
 		date.setUTCDate(1);
 	}
 	return (date.getTime() / 1_000) as UTCTimestamp;
@@ -638,34 +642,39 @@ export function axisPriceFormat({
 
 export function formatChartTime(
 	value: string | number,
-	interval: ChartInterval,
+	interval: CandleInterval,
 ): string {
 	const timestamp =
 		typeof value === "number" ? value * 1_000 : Date.parse(value);
 	const date = new Date(timestamp);
-	if (interval === "1h") {
+	if (interval === CandleInterval["1h"]) {
 		return `${hourTimeFormat.format(date)} UTC`;
 	}
-	if (interval === "1M") {
+	if (interval === CandleInterval["1M"]) {
 		return `${monthTimeFormat.format(date)} UTC`;
 	}
 	const day = dayTimeFormat.format(date);
-	return interval === "1w" ? `Week of ${day} UTC` : `${day} UTC`;
+	return interval === CandleInterval["1w"]
+		? `Week of ${day} UTC`
+		: `${day} UTC`;
 }
 
-export function nextCandleOpen(value: string, interval: ChartInterval): string {
+export function nextCandleOpen(
+	value: string,
+	interval: CandleInterval,
+): string {
 	const date = new Date(value);
 	switch (interval) {
-		case "1h":
+		case CandleInterval["1h"]:
 			date.setUTCHours(date.getUTCHours() + 1);
 			break;
-		case "1d":
+		case CandleInterval["1d"]:
 			date.setUTCDate(date.getUTCDate() + 1);
 			break;
-		case "1w":
+		case CandleInterval["1w"]:
 			date.setUTCDate(date.getUTCDate() + 7);
 			break;
-		case "1M":
+		case CandleInterval["1M"]:
 			date.setUTCMonth(date.getUTCMonth() + 1);
 			break;
 	}
@@ -760,4 +769,19 @@ export function createChartPriceLevels(
 			fitScaleToLevels(baseImplementation(), { levels: bounds }),
 		levels,
 	};
+}
+
+// The label of an interval; an interval unknown to the frontend reads as is.
+export function intervalLabel(interval: string): string {
+	const known = chartIntervals.find((item) => item === interval);
+	return known === undefined ? interval : candleIntervals[known].label;
+}
+
+// One value per candle interval.
+export function intervalRecord<T>(
+	value: (interval: CandleInterval) => T,
+): Record<CandleInterval, T> {
+	return Object.fromEntries(
+		chartIntervals.map((interval) => [interval, value(interval)]),
+	) as Record<CandleInterval, T>;
 }

@@ -1,7 +1,7 @@
 import { MultiSelect, type MultiSelectProps } from "@mantine/core";
 import { useState } from "react";
 
-import { CoinPicker } from "@/app/coin-picker";
+import { CoinPicker } from "@/features/coins/coin-picker";
 import { maxHistoryLoadCoins } from "@/features/command-settings/constants";
 
 // Takes the coins field's value and handlers, typed like Mantine's own

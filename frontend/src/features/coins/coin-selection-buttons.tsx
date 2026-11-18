@@ -1,8 +1,8 @@
 import { Button, Group } from "@mantine/core";
 
 import { MarketUniverse } from "@/api/generated/models";
-import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
-import { useInstrumentSymbols } from "@/app/use-instrument-symbols";
+import { useInstrumentSymbols } from "@/features/coins/use-instrument-symbols";
+import { useFavoriteSymbols } from "@/features/favorites/use-favorite-symbols";
 
 interface CoinSelectionButtonsProps {
 	disabled: boolean;

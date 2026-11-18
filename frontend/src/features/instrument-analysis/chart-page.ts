@@ -3,8 +3,8 @@ import type {
 	ChartPageResponse,
 	ChartShape,
 } from "@/api/generated/models";
-import { unexpectedApiError } from "@/features/analysis/api-error";
 import { validateCandles } from "@/features/instrument-analysis/candle-page";
+import { unexpectedApiError } from "@/utils/api-error";
 
 export function validateChartPage(
 	page: ChartPageResponse,

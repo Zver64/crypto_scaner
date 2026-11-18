@@ -3,7 +3,7 @@ import {
 	useListInstruments,
 } from "@/api/generated/api";
 import type { MarketUniverse } from "@/api/generated/models";
-import { useBusinessRequestPermission } from "@/app/business-request-context";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
 
 const selectSymbols = (response: listInstrumentsResponseSuccess) =>
 	response.data.items.map(({ symbol }) => symbol).sort();

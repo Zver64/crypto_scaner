@@ -1,4 +1,4 @@
-import type { QueryErrorNotification } from "@/app/query-client";
+import type { QueryErrorNotification } from "@/utils/query-error-notification";
 
 export const marketScanErrorNotification: QueryErrorNotification = {
 	id: "market-scan-error",

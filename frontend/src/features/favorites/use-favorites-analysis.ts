@@ -7,8 +7,6 @@ import {
 	useAnalyzeMarket,
 } from "@/api/generated/api";
 import { MarketUniverse } from "@/api/generated/models";
-import { useBusinessRequestPermission } from "@/app/business-request-context";
-import { unexpectedApiError } from "@/features/analysis/api-error";
 import { hasExpectedMarketScanResult } from "@/features/analysis/semantics";
 import { useAnalysisWarningNotification } from "@/features/analysis/use-analysis-warning-notification";
 import type { VolatilitySettings } from "@/features/analysis/volatility-settings-form/types";
@@ -22,6 +20,8 @@ import {
 	buildTopCoinsCriteria,
 	topCoinsRequestOptions,
 } from "@/features/top-coins/top-coins";
+import { unexpectedApiError } from "@/utils/api-error";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
 
 const selectAnalysis = (response: analyzeMarketResponseSuccess) =>
 	response.data;

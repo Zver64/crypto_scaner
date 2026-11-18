@@ -2,9 +2,6 @@ import { Center, Loader, useMatches } from "@mantine/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
-import { useBusinessRequestPermission } from "@/app/business-request-context";
-import { PageNavigation } from "@/app/page-navigation";
-import { showQueryErrorNotification } from "@/app/query-client";
 import { EmptyState } from "@/components/empty-state";
 import { PageStack } from "@/components/page-stack";
 import { SidebarLayout } from "@/components/sidebar-layout";
@@ -23,6 +20,9 @@ import {
 } from "@/features/market-scan/pipeline";
 import type { ResultsTableStateProps } from "@/features/market-scan/results-table/types";
 import { MarketScanResults } from "@/features/market-scan/results-view";
+import { PageNavigation } from "@/features/navigation/page-navigation";
+import { useBusinessRequestPermission } from "@/utils/business-request-context";
+import { showQueryErrorNotification } from "@/utils/query-error-notification";
 
 interface MarketScanScreenProps extends ResultsTableStateProps {
 	initialCriteria: MarketScanCriteria | undefined;

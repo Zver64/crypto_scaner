@@ -1,14 +1,11 @@
-import type { ErrorType } from "@/api/fetch";
-import type { ErrorResponse, User } from "@/api/generated/models";
-import { describeApiError } from "@/utils/api-error";
+import type { User } from "@/api/generated/models";
+import { type ApiError, describeApiError } from "@/utils/api-error";
 
 export function formatUserName(user: User): string {
 	return user.display_name || (user.username ? `@${user.username}` : "User");
 }
 
-export function deleteUserErrorMessage(
-	error: ErrorType<ErrorResponse> | null,
-): string {
+export function deleteUserErrorMessage(error: ApiError | null): string {
 	return describeApiError(error, {
 		fallback: "The user could not be deleted.",
 		forbidden: "Only the administrator can delete users.",
@@ -19,9 +16,7 @@ export function deleteUserErrorMessage(
 	});
 }
 
-export function updateUserErrorMessage(
-	error: ErrorType<ErrorResponse> | null,
-): string {
+export function updateUserErrorMessage(error: ApiError | null): string {
 	return describeApiError(error, {
 		fallback: "The user could not be changed.",
 		forbidden: "Only the administrator can change users.",

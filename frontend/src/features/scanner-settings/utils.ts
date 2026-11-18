@@ -1,7 +1,5 @@
-import type { ErrorType } from "@/api/fetch";
 import type {
 	CandleInterval,
-	ErrorResponse,
 	IndicatorParameter,
 	IndicatorType,
 	ScannerIndicator,
@@ -17,7 +15,7 @@ import type {
 	ScannerIndicatorDraft,
 	ScannerIndicatorSettingsDraft,
 } from "@/features/scanner-settings/types";
-import { describeApiError } from "@/utils/api-error";
+import { type ApiError, describeApiError } from "@/utils/api-error";
 
 // Whether a parameter is chosen among its choices: a choice, or a source,
 // which scanner indicators read only as one of its candle fields.
@@ -231,9 +229,7 @@ export function formatScale(scale: ScannerIndicatorScale): string {
 }
 
 // Validation and conflict messages come from the backend.
-export function mutationErrorMessage(
-	error: ErrorType<ErrorResponse> | null,
-): string {
+export function mutationErrorMessage(error: ApiError | null): string {
 	return describeApiError(error, {
 		fallback: "The indicator could not be saved.",
 		forbidden: "Only the scanner administrator can change indicators.",

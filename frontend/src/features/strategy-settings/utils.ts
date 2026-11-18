@@ -24,10 +24,8 @@ import {
 } from "react-querybuilder/parseCEL";
 import type { z } from "zod";
 
-import type { ErrorType } from "@/api/fetch";
 import {
 	Direction,
-	type ErrorResponse,
 	type Strategy,
 	type StrategyCatalog,
 	type StrategyCoins,
@@ -36,7 +34,7 @@ import {
 	type StrategyRules,
 	type StrategyUpdate,
 } from "@/api/generated/models";
-import { chartIntervalOptions } from "@/features/candle-chart/config";
+import { intervalLabel } from "@/features/candle-chart/utils";
 import {
 	anyField,
 	arithmeticTokens,
@@ -87,7 +85,7 @@ import type {
 	StrategyVariableSets,
 	Token,
 } from "@/features/strategy-settings/types";
-import { describeApiError } from "@/utils/api-error";
+import { type ApiError, describeApiError } from "@/utils/api-error";
 import { formatMarketCapUsd, usdPerMillion } from "@/utils/market-cap";
 import { shortId } from "@/utils/short-id";
 
@@ -868,9 +866,7 @@ export function strategyKind({ signal }: { signal: boolean }): StrategyKind {
 }
 
 // Validation and conflict messages come from the backend.
-export function strategyErrorMessage(
-	error: ErrorType<ErrorResponse> | null,
-): string {
+export function strategyErrorMessage(error: ApiError | null): string {
 	return describeApiError(error, {
 		fallback: "The strategy could not be saved.",
 		forbidden: "Only the scanner administrator can change strategies.",
@@ -930,9 +926,7 @@ export function choiceSelectData(parameter: IndicatorParameter) {
 // Select data for the periods calls read.
 export function intervalSelectData(intervals: readonly string[]) {
 	return intervals.map((interval) => ({
-		label:
-			chartIntervalOptions.find(({ value }) => value === interval)?.label ??
-			interval,
+		label: intervalLabel(interval),
 		value: interval,
 	}));
 }

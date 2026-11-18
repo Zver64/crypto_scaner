@@ -1,8 +1,8 @@
 import { Checkbox, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 
-import { useFavoriteSymbols } from "@/app/use-favorite-symbols";
-import { useInstrumentSymbols } from "@/app/use-instrument-symbols";
+import { useInstrumentSymbols } from "@/features/coins/use-instrument-symbols";
+import { useFavoriteSymbols } from "@/features/favorites/use-favorite-symbols";
 
 interface CoinSelectProps {
 	data: string[];

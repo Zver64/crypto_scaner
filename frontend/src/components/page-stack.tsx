@@ -1,7 +1,7 @@
 import { type MantineSpacing, Stack } from "@mantine/core";
 import type { ReactNode } from "react";
 
-import { usePageViewport } from "@/app/page-height";
+import { usePageViewport } from "@/components/page-viewport";
 import { useWideLayout } from "@/components/sidebar-layout/use-wide-layout";
 
 interface PageStackProps {

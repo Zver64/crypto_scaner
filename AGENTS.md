@@ -115,7 +115,8 @@ Create commits only when the user asks.
 - Do not add UI texts, hints, captions, or warnings the user did not ask for; when asked for a visual cue such as a color, add only that cue.
 - Prefer established, community-standard libraries to hand-written code, and keep own code minimal.
 - Do not keep backward compatibility: a change that breaks it is a major (breaking) change, not something to work around.
-- Use subagents at your discretion for large or parallel work; do small tasks such as a commit or a one-file fix directly. Give each new task a new subagent with a self-contained brief; resume a subagent only for fixes to its own just-finished work. Start a review, in a separate subagent, only after the user approves it.
+- Use subagents at your discretion for large or parallel work; do small tasks such as a commit or a one-file fix directly. Run at most one subagent per part of the application at a time (one for `backend/`, one for `frontend/`); any number may run for search, checks, and tests.
+- Never make an exception to a rule in these instructions, or a workaround around a library limitation, without the user's approval: describe it and the alternatives, and wait for the decision. Give each new task a new subagent with a self-contained brief; resume a subagent only for fixes to its own just-finished work. Start a review, in a separate subagent, only after the user approves it.
 
 ## Generated files
 

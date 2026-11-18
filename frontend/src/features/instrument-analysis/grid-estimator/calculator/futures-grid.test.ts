@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
 	calculateFuturesGrid,
 	type FuturesGridInput,
-} from "@/utils/calculator/futures-grid";
+} from "@/features/instrument-analysis/grid-estimator/calculator/futures-grid";
 
 const longFixture: FuturesGridInput = {
 	contract: "linear",

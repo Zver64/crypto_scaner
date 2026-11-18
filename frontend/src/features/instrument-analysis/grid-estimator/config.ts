@@ -1,10 +1,13 @@
+import type { FuturesContract } from "@/features/instrument-analysis/grid-estimator/calculator/futures-grid";
+import { GridDecimal } from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import type {
+	GridType,
+	PositionDirection,
+} from "@/features/instrument-analysis/grid-estimator/calculator/types";
 import type {
 	FuturesMarket,
 	GridMarket,
 } from "@/features/instrument-analysis/grid-estimator/types";
-import type { FuturesContract } from "@/utils/calculator/futures-grid";
-import { GridDecimal } from "@/utils/calculator/grid";
-import type { GridType, PositionDirection } from "@/utils/calculator/types";
 
 // Calculator tabs, in order.
 export const GRID_MARKET_TABS: readonly { label: string; value: GridMarket }[] =

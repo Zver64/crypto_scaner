@@ -6,12 +6,12 @@ import {
 	GridDecimal,
 	gridLevels,
 	parseGridInput,
-} from "@/utils/calculator/grid";
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid";
 import type {
 	GridInput,
 	GridType,
 	PositionDirection,
-} from "@/utils/calculator/types";
+} from "@/features/instrument-analysis/grid-estimator/calculator/types";
 
 // A common futures maker fee; grid orders are limit orders.
 export const FUTURES_GRID_FEE_RATE = new GridDecimal("0.0002");

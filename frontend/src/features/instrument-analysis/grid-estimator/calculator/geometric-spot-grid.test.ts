@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { calculateGeometricSpotGrid } from "@/utils/calculator/geometric-spot-grid";
+import { calculateGeometricSpotGrid } from "@/features/instrument-analysis/grid-estimator/calculator/geometric-spot-grid";
 
 const positiveFixture = {
 	lowerPrice: "100",

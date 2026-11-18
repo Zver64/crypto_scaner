@@ -1,11 +1,17 @@
 import {
 	formatInputNumber,
+	gridBounds,
 	lowerPriceFromMarkup,
 	lowerPriceLimitError,
 	upperPriceFromMarkup,
 	upperPriceLimitError,
 	validPositiveNumber,
 } from "@/features/instrument-analysis/grid-estimator/bounds";
+import {
+	GridDecimal,
+	gridRangeRatio,
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import type { GridType } from "@/features/instrument-analysis/grid-estimator/calculator/types";
 import {
 	DEFAULT_GRID_COUNT,
 	DEFAULT_INVESTMENT,
@@ -22,13 +28,14 @@ import {
 } from "@/features/instrument-analysis/grid-estimator/grid-range";
 import type {
 	GridBounds,
+	GridCalculatorBuild,
+	GridCalculatorFormValues,
 	GridEstimatorFormValues,
 	GridMarket,
+	GridMarketFormValues,
 	GridRecommendation,
-	SavedGridForm,
+	SpotGridLimits,
 } from "@/features/instrument-analysis/grid-estimator/types";
-import { GridDecimal, gridRangeRatio } from "@/utils/calculator/grid";
-import type { GridType } from "@/utils/calculator/types";
 
 /**
  * Returns the default minimum grid step between the hourly and the daily range:
@@ -54,14 +61,15 @@ export function defaultGridStepPercent(
 }
 
 /**
- * Keeps a saved form's values under a new step, with the grid count of that
- * step. A typed price outside the Binance limits never became the committed
- * one, so its markup gives the last accepted price.
+ * Keeps an edited market's values under a new step, with the grid count of
+ * that step. A typed price outside the Binance limits never became the
+ * committed one, so its markup gives the last accepted price.
  */
-export function savedGridFormValues(
-	{ bounds, values }: SavedGridForm,
+export function keptGridFormValues<Values extends GridEstimatorFormValues>(
+	bounds: GridBounds,
+	values: Values,
 	rangePercent: number,
-): GridEstimatorFormValues {
+): Values {
 	const lowerPrice = lowerPriceLimitError(bounds, values.lowerPrice, "")
 		? (lowerPriceFromMarkup(bounds, values.lowerMarkup) ?? values.lowerPrice)
 		: values.lowerPrice;
@@ -75,6 +83,86 @@ export function savedGridFormValues(
 		values.lowerMarkup,
 	);
 	return { ...values, gridCount, lowerPrice, rangePercent, upperPrice };
+}
+
+// A market built anew: both prices at the default markup, the grid count of
+// the default step, and the market's default investment.
+function newGridMarketValues(
+	market: GridMarket,
+	close: number | null,
+	gridLimits: SpotGridLimits | null,
+	stepPercent: number | undefined,
+): GridMarketFormValues {
+	const bounds = gridBounds(market, close, gridLimits);
+	const { input, lowerMarkup, upperMarkup } = gridRecommendation(
+		bounds,
+		stepPercent,
+		"geometric",
+		defaultInvestment(market, bounds.anchor),
+	);
+	return {
+		...input,
+		close,
+		committed: input,
+		direction: "short",
+		edited: false,
+		gridType: "geometric",
+		leverage: 1,
+		lowerMarkup,
+		markup: upperMarkup,
+		rangePercent: stepPercent ?? 0,
+	};
+}
+
+/**
+ * Builds the calculator for its data and volatility ranges. A market the user
+ * has edited (`edited`, or changed since the last build) keeps its values and
+ * bounds except the step and the grid count, which follow the new ranges, and
+ * its typed values become the committed ones; any other market is built anew
+ * from the latest close.
+ */
+export function gridCalculatorValues(
+	build: GridCalculatorBuild,
+	previous: GridCalculatorFormValues | null,
+	changedMarkets: ReadonlySet<GridMarket>,
+): GridCalculatorFormValues {
+	const stepPercent = defaultGridStepPercent(
+		build.hourlyVolatilityPercent,
+		build.dailyVolatilityPercent,
+	);
+	const rangePercent = stepPercent ?? 0;
+	const marketValues = (market: GridMarket): GridMarketFormValues => {
+		const values = previous?.markets[market];
+		if (!values || !(values.edited || changedMarkets.has(market))) {
+			return newGridMarketValues(
+				market,
+				build.close,
+				build.gridLimits,
+				stepPercent,
+			);
+		}
+		const kept = keptGridFormValues(
+			gridBounds(market, values.close, build.gridLimits),
+			values,
+			rangePercent,
+		);
+		const { gridCount, investment, lowerPrice, upperPrice } = kept;
+		return {
+			...kept,
+			committed: { gridCount, investment, lowerPrice, upperPrice },
+			edited: true,
+		};
+	};
+	return {
+		builtFor: build.builtFor,
+		defaultRangePercent: rangePercent,
+		market: previous?.market ?? "spot",
+		markets: {
+			coinm: marketValues("coinm"),
+			spot: marketValues("spot"),
+			usdm: marketValues("usdm"),
+		},
+	};
 }
 
 // The markup of both prices: the default one, or wider when the range would

@@ -3,9 +3,12 @@ import type Decimal from "decimal.js";
 import {
 	assertSupportedGridValue,
 	geometricStepRatio,
-} from "@/utils/calculator/grid";
-import { spotGrid, spotGridCycle } from "@/utils/calculator/spot-grid";
-import type { GridInput } from "@/utils/calculator/types";
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import {
+	spotGrid,
+	spotGridCycle,
+} from "@/features/instrument-analysis/grid-estimator/calculator/spot-grid";
+import type { GridInput } from "@/features/instrument-analysis/grid-estimator/calculator/types";
 
 export interface GeometricSpotGridEstimate {
 	allocationPerBuy: Decimal;

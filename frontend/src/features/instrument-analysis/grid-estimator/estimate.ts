@@ -1,5 +1,21 @@
 import type Decimal from "decimal.js";
 
+import { calculateArithmeticSpotGrid } from "@/features/instrument-analysis/grid-estimator/calculator/arithmetic-spot-grid";
+import {
+	calculateFuturesGrid,
+	type FuturesContract,
+	type FuturesGridEstimate,
+} from "@/features/instrument-analysis/grid-estimator/calculator/futures-grid";
+import { calculateGeometricSpotGrid } from "@/features/instrument-analysis/grid-estimator/calculator/geometric-spot-grid";
+import {
+	gridLevels,
+	parseGridCount,
+	parseGridDecimal,
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import type {
+	GridInput,
+	GridType,
+} from "@/features/instrument-analysis/grid-estimator/calculator/types";
 import {
 	FUTURES_CONTRACTS,
 	RANGE_BAR_PADDING,
@@ -8,6 +24,7 @@ import {
 import type {
 	FuturesGridOptions,
 	GridCalculation,
+	GridCalculatorFormValues,
 	GridEstimateValues,
 	GridMarket,
 	GridMarketEstimate,
@@ -19,19 +36,6 @@ import type {
 	SpotGridCalculation,
 	SpotGridEstimate,
 } from "@/features/instrument-analysis/grid-estimator/types";
-import { calculateArithmeticSpotGrid } from "@/utils/calculator/arithmetic-spot-grid";
-import {
-	calculateFuturesGrid,
-	type FuturesContract,
-	type FuturesGridEstimate,
-} from "@/utils/calculator/futures-grid";
-import { calculateGeometricSpotGrid } from "@/utils/calculator/geometric-spot-grid";
-import {
-	gridLevels,
-	parseGridCount,
-	parseGridDecimal,
-} from "@/utils/calculator/grid";
-import type { GridInput, GridType } from "@/utils/calculator/types";
 import { formatNumber } from "@/utils/number-format";
 
 export function isInverseMarket(market: GridMarket): boolean {
@@ -381,4 +385,14 @@ export function gridPriceLevels(
 	)
 		? levels
 		: null;
+}
+
+// The price levels of the selected market's committed grid, which the chart
+// draws.
+export function gridCalculatorLevels({
+	market,
+	markets,
+}: GridCalculatorFormValues): number[] | null {
+	const { committed, gridType } = markets[market];
+	return gridPriceLevels(committed, gridType);
 }

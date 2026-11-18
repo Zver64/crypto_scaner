@@ -79,8 +79,6 @@ export function InstrumentAnalysisScreen({
 			<GridCalculator
 				{...page.calculator}
 				baseAsset={baseAssetOfUsdtSymbol(symbol)}
-				key={page.calculatorKey}
-				onPriceLevelsChange={page.setGridLevels}
 				paperPadding={paperPadding}
 			/>
 		</RefreshingOverlay>

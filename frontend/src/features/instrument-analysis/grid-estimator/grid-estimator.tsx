@@ -8,55 +8,51 @@ import {
 import { themeToVars } from "@mantine/vanilla-extract";
 
 import { SegmentedValueGroup } from "@/components/segmented-value-group";
-import { SliderField } from "@/components/slider-field";
+import { FUTURES_GRID_MAINTENANCE_MARGIN_RATE } from "@/features/instrument-analysis/grid-estimator/calculator/futures-grid";
 import { GRID_TYPE_OPTIONS } from "@/features/instrument-analysis/grid-estimator/config";
 import {
 	marginAsset,
 	profitSplitRows,
 } from "@/features/instrument-analysis/grid-estimator/estimate";
+import { marketField } from "@/features/instrument-analysis/grid-estimator/fields";
 import { FuturesControls } from "@/features/instrument-analysis/grid-estimator/futures-controls";
 import { GridPriceInputs } from "@/features/instrument-analysis/grid-estimator/grid-price-inputs";
 import { InvestmentPresets } from "@/features/instrument-analysis/grid-estimator/investment-presets";
 import { LiquidationRangeBar } from "@/features/instrument-analysis/grid-estimator/liquidation-range-bar";
 import { MarkupSliders } from "@/features/instrument-analysis/grid-estimator/markup-sliders";
-import type { GridMarket } from "@/features/instrument-analysis/grid-estimator/types";
 import {
-	type GridEstimatorFormOptions,
-	useGridEstimatorForm,
-} from "@/features/instrument-analysis/grid-estimator/use-grid-estimator-form";
-import { FUTURES_GRID_MAINTENANCE_MARGIN_RATE } from "@/utils/calculator/futures-grid";
+	type GridMarketOptions,
+	useGridMarket,
+} from "@/features/instrument-analysis/grid-estimator/use-grid-market";
 import { formatRangePercent } from "@/utils/range-percent";
 
-export type GridEstimatorProps = Omit<GridEstimatorFormOptions, "market"> & {
+export type GridEstimatorProps = GridMarketOptions & {
 	disabled?: boolean;
 };
 
 export function GridEstimator({
 	disabled = false,
-	market,
-	...formOptions
-}: GridEstimatorProps & { market: GridMarket }) {
+	...marketOptions
+}: GridEstimatorProps) {
+	const { form, market } = marketOptions;
 	const {
 		alignLowerPrice,
 		alignUpperPrice,
 		applyInvestment,
 		bounds,
-		changeGridType,
 		changeLowerMarkup,
 		changeMarkup,
 		changeRange,
 		commitError,
 		commitField,
-		committedInput,
 		dailyRange,
 		defaultRangePercent,
 		estimate,
-		form,
 		hourlyRange,
 		priceUnit,
 		rangeError,
 		values: formValues,
-	} = useGridEstimatorForm({ ...formOptions, market });
+	} = useGridMarket(marketOptions);
 	const { colors } = themeToVars(useMantineTheme());
 	const { anchor } = bounds;
 	const hasAnchor = anchor !== null;
@@ -68,53 +64,57 @@ export function GridEstimator({
 
 	return (
 		<Stack gap="md">
-			<SegmentedControl
-				aria-label="Grid type"
-				data={GRID_TYPE_OPTIONS}
-				disabled={disabled}
-				fullWidth
-				onChange={changeGridType}
-				value={formValues.gridType}
-			/>
+			<form.Field
+				listeners={{ onChange: changeRange }}
+				name={marketField(market, "gridType")}
+			>
+				{(field) => (
+					<SegmentedControl
+						aria-label="Grid type"
+						data={GRID_TYPE_OPTIONS}
+						disabled={disabled}
+						fullWidth
+						onChange={field.handleChange}
+						value={field.state.value}
+					/>
+				)}
+			</form.Field>
 			{isFutures ? (
-				<FuturesControls
-					direction={formValues.direction}
-					disabled={disabled}
-					leverage={formValues.leverage}
-					onDirectionChange={(direction) =>
-						form.setFieldValue("direction", direction)
-					}
-					onLeverageChange={(leverage) =>
-						form.setFieldValue("leverage", leverage)
-					}
-				/>
+				<FuturesControls disabled={disabled} form={form} market={market} />
 			) : null}
 			<Stack gap="sm">
 				<MarkupSliders
 					bounds={bounds}
 					disabled={disabled || !hasAnchor}
-					lowerMarkup={formValues.lowerMarkup}
+					form={form}
+					market={market}
 					onLowerAlign={alignLowerPrice}
 					onLowerMarkupChange={changeLowerMarkup}
 					onUpperAlign={alignUpperPrice}
 					onUpperMarkupChange={changeMarkup}
-					upperMarkup={formValues.markup}
 				/>
-				<SliderField
-					disabled={disabled || !canSelectRange}
-					formatValue={formatRangePercent}
-					label="Minimum grid step"
-					marks={canSelectRange ? [{ value: defaultRangePercent }] : undefined}
-					max={canSelectRange ? dailyRange : selectedRangePercent + 1}
-					min={selectedRangePercent > 0 ? (hourlyRange ?? 0) : 0}
-					onChange={changeRange}
-					scaleLabels={[
-						{ label: "Hourly range", position: 0 },
-						{ label: "Daily range", position: 100 },
-					]}
-					step={canSelectRange ? (dailyRange - hourlyRange) / 100 : 1}
-					value={selectedRangePercent}
-				/>
+				<form.AppField
+					listeners={{ onChange: changeRange }}
+					name={marketField(market, "rangePercent")}
+				>
+					{(field) => (
+						<field.ScaleSliderField
+							disabled={disabled || !canSelectRange}
+							formatValue={formatRangePercent}
+							label="Minimum grid step"
+							marks={
+								canSelectRange ? [{ value: defaultRangePercent }] : undefined
+							}
+							max={canSelectRange ? dailyRange : selectedRangePercent + 1}
+							min={selectedRangePercent > 0 ? (hourlyRange ?? 0) : 0}
+							scaleLabels={[
+								{ label: "Hourly range", position: 0 },
+								{ label: "Daily range", position: 100 },
+							]}
+							step={canSelectRange ? (dailyRange - hourlyRange) / 100 : 1}
+						/>
+					)}
+				</form.AppField>
 				{rangeError ? (
 					<Text c="red" size="sm">
 						{rangeError}
@@ -125,7 +125,7 @@ export function GridEstimator({
 						Price markups need the current price.
 					</Text>
 				) : null}
-				{market === "spot" && formOptions.gridLimits === null ? (
+				{market === "spot" && marketOptions.gridLimits === null ? (
 					<Text c="dimmed" size="sm">
 						Binance grid limits are unavailable, so markups start from the
 						latest hourly close and the prices are not checked.
@@ -151,11 +151,12 @@ export function GridEstimator({
 			/>
 			<GridPriceInputs
 				commitField={commitField}
-				committedInput={committedInput}
+				committed={formValues.committed}
 				disabled={disabled}
 				commitError={commitError}
 				form={form}
-				investmentAsset={marginAsset(market, formOptions.baseAsset)}
+				investmentAsset={marginAsset(market, marketOptions.baseAsset)}
+				market={market}
 				priceUnit={priceUnit}
 			/>
 			{estimate.error ? (

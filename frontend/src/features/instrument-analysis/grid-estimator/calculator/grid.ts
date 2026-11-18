@@ -1,6 +1,9 @@
 import Decimal from "decimal.js";
 
-import type { GridInput, GridType } from "@/utils/calculator/types";
+import type {
+	GridInput,
+	GridType,
+} from "@/features/instrument-analysis/grid-estimator/calculator/types";
 
 export const GridDecimal = Decimal.clone({
 	precision: 60,

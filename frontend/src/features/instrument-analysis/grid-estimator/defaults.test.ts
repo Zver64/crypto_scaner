@@ -9,13 +9,15 @@ import {
 	upperMarkupPercent,
 	upperPriceFromMarkup,
 } from "@/features/instrument-analysis/grid-estimator/bounds";
+import type { GridType } from "@/features/instrument-analysis/grid-estimator/calculator/types";
 import { DEFAULT_INVESTMENT } from "@/features/instrument-analysis/grid-estimator/config";
 import {
 	defaultGridStepPercent,
 	defaultInvestment,
+	gridCalculatorValues,
+	keptGridFormValues,
 	gridRecommendation,
 	investmentFromUsdt,
-	savedGridFormValues,
 } from "@/features/instrument-analysis/grid-estimator/defaults";
 import {
 	calculateSpotGridInput,
@@ -27,7 +29,6 @@ import {
 	gridCountForStep,
 } from "@/features/instrument-analysis/grid-estimator/grid-range";
 import type { GridBounds } from "@/features/instrument-analysis/grid-estimator/types";
-import type { GridType } from "@/utils/calculator/types";
 
 function recommend(
 	bounds: GridBounds,
@@ -54,7 +55,7 @@ describe("defaultGridStepPercent", () => {
 	});
 });
 
-describe("savedGridFormValues", () => {
+describe("keptGridFormValues", () => {
 	it("keeps the values and takes the grid count of the new step", () => {
 		const bounds = gridBounds("usdm", undefined, undefined);
 		const values = {
@@ -70,7 +71,7 @@ describe("savedGridFormValues", () => {
 			upperPrice: "110",
 		} as const;
 
-		expect(savedGridFormValues({ bounds, values }, 5)).toEqual({
+		expect(keptGridFormValues(bounds, values, 5)).toEqual({
 			...values,
 			gridCount: "4",
 			rangePercent: 5,
@@ -83,25 +84,87 @@ describe("savedGridFormValues", () => {
 			anchor: 100,
 			minPrice: new Decimal(32),
 		};
-		const { lowerPrice } = savedGridFormValues(
+		const { lowerPrice } = keptGridFormValues(
+			bounds,
 			{
-				bounds,
-				values: {
-					direction: "long",
-					gridCount: "99",
-					gridType: "geometric",
-					investment: "2000",
-					leverage: 1,
-					lowerMarkup: 10,
-					lowerPrice: "1",
-					markup: 10,
-					rangePercent: 1,
-					upperPrice: "110",
-				},
+				direction: "long",
+				gridCount: "99",
+				gridType: "geometric",
+				investment: "2000",
+				leverage: 1,
+				lowerMarkup: 10,
+				lowerPrice: "1",
+				markup: 10,
+				rangePercent: 1,
+				upperPrice: "110",
 			},
 			1,
 		);
 		expect(lowerPrice).toBe("90");
+	});
+});
+
+describe("gridCalculatorValues", () => {
+	const build = {
+		builtFor: "first",
+		close: 100,
+		dailyVolatilityPercent: undefined,
+		gridLimits: null,
+		hourlyVolatilityPercent: 1,
+	};
+	const first = gridCalculatorValues(build, null, new Set());
+	const next = { ...build, builtFor: "next", close: 200 };
+
+	it("builds every unedited market anew from the latest close", () => {
+		const usdm = { ...first.markets.usdm, gridCount: "7" };
+		const rebuilt = gridCalculatorValues(
+			next,
+			{ ...first, markets: { ...first.markets, usdm } },
+			new Set(),
+		);
+		expect(rebuilt).toEqual(gridCalculatorValues(next, null, new Set()));
+	});
+
+	it("keeps an edited market except its step and grid count, committing its typed values", () => {
+		const usdm = {
+			...first.markets.usdm,
+			gridCount: "7",
+			investment: "300",
+			leverage: 5,
+			rangePercent: 3,
+		};
+		const previous = {
+			...first,
+			market: "usdm" as const,
+			markets: { ...first.markets, usdm },
+		};
+		const rebuilt = gridCalculatorValues(
+			{ ...next, hourlyVolatilityPercent: 2 },
+			previous,
+			new Set(["usdm"]),
+		);
+		const expected = keptGridFormValues(
+			gridBounds("usdm", 100, null),
+			{ ...usdm, edited: true },
+			2,
+		);
+		expect(rebuilt.market).toBe("usdm");
+		expect(rebuilt.defaultRangePercent).toBe(2);
+		expect(rebuilt.markets.usdm).toEqual({
+			...expected,
+			committed: {
+				gridCount: expected.gridCount,
+				investment: "300",
+				lowerPrice: usdm.lowerPrice,
+				upperPrice: usdm.upperPrice,
+			},
+		});
+		expect(rebuilt.markets.usdm).toMatchObject({ close: 100, leverage: 5 });
+		expect(rebuilt.markets.usdm.gridCount).not.toBe("7");
+		// Still edited at the next build, though unchanged since this one.
+		expect(
+			gridCalculatorValues(next, rebuilt, new Set()).markets.usdm.edited,
+		).toBe(true);
 	});
 });
 
@@ -144,7 +207,7 @@ describe("spot grid recommendations", () => {
 		open: 99,
 		open_time: "2026-09-01T00:00:00Z",
 	};
-	const bounds = gridBounds("spot", [candle, null], null);
+	const bounds = gridBounds("spot", candle.close, null);
 	const at = (anchor: number) => ({ ...bounds, anchor });
 
 	it("uses Decimal arithmetic for 0%, 5%, and 50% markup", () => {
@@ -410,10 +473,7 @@ describe("spot grid recommendations", () => {
 		expect(recommend(bounds, 0)).toMatchObject({
 			input: { lowerPrice: "90", upperPrice: "110", gridCount: "40" },
 		});
-		expect(
-			recommend(gridBounds("spot", [{ ...candle, close: Number.NaN }], null), 1)
-				.input,
-		).toEqual({
+		expect(recommend(gridBounds("spot", Number.NaN, null), 1).input).toEqual({
 			lowerPrice: "",
 			upperPrice: "",
 			gridCount: "40",

@@ -29,6 +29,8 @@ function InstrumentRoute() {
 
 	return (
 		<InstrumentAnalysisScreen
+			// A new symbol builds the page anew, its calculator included.
+			key={symbol}
 			// A coin opened directly (a link or a reload) has no page to go back
 			// to, so it returns to the Market Scan with its volatility settings
 			// and the default filters.

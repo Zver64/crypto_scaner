@@ -6,6 +6,17 @@ import {
 	upperMarkupPercent,
 	validPositiveNumber,
 } from "@/features/instrument-analysis/grid-estimator/bounds";
+import {
+	GRID_MAX_COUNT,
+	GridDecimal,
+	gridCountForMinimumStep,
+	gridRangeRatio,
+	parseGridDecimal,
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import type {
+	GridInput,
+	GridType,
+} from "@/features/instrument-analysis/grid-estimator/calculator/types";
 import { DEFAULT_INVESTMENT } from "@/features/instrument-analysis/grid-estimator/config";
 import {
 	calculateSpotGridInput,
@@ -17,14 +28,6 @@ import type {
 	GridRangeCount,
 	GridRangeValues,
 } from "@/features/instrument-analysis/grid-estimator/types";
-import {
-	GRID_MAX_COUNT,
-	GridDecimal,
-	gridCountForMinimumStep,
-	gridRangeRatio,
-	parseGridDecimal,
-} from "@/utils/calculator/grid";
-import type { GridInput, GridType } from "@/utils/calculator/types";
 import { formatRangePercent } from "@/utils/range-percent";
 
 // Parses a price range whose upper price lies above its lower price.

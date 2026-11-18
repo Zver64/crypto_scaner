@@ -1,16 +1,23 @@
 import { SimpleGrid } from "@mantine/core";
 
-import type { GridInputField } from "@/features/instrument-analysis/grid-estimator/types";
-import type { useGridEstimatorForm } from "@/features/instrument-analysis/grid-estimator/use-grid-estimator-form";
-
-type GridEstimatorForm = ReturnType<typeof useGridEstimatorForm>;
+import type { GridInput } from "@/features/instrument-analysis/grid-estimator/calculator/types";
+import { marketField } from "@/features/instrument-analysis/grid-estimator/fields";
+import type {
+	GridInputField,
+	GridMarket,
+} from "@/features/instrument-analysis/grid-estimator/types";
+import type { useGridCalculatorForm } from "@/features/instrument-analysis/grid-estimator/use-grid-calculator-form";
+import type { useGridMarket } from "@/features/instrument-analysis/grid-estimator/use-grid-market";
 
 interface GridPriceInputsProps extends Pick<
-	GridEstimatorForm,
-	"commitError" | "commitField" | "committedInput" | "form"
+	ReturnType<typeof useGridMarket>,
+	"commitError" | "commitField"
 > {
+	committed: GridInput;
 	disabled: boolean;
+	form: ReturnType<typeof useGridCalculatorForm>;
 	investmentAsset: string;
+	market: GridMarket;
 	priceUnit: string;
 }
 
@@ -19,10 +26,11 @@ interface GridPriceInputsProps extends Pick<
 export function GridPriceInputs({
 	commitError,
 	commitField,
-	committedInput,
+	committed,
 	disabled,
 	form,
 	investmentAsset,
+	market,
 	priceUnit,
 }: GridPriceInputsProps) {
 	const inputs: {
@@ -57,7 +65,7 @@ export function GridPriceInputs({
 							if (fieldApi.state.meta.errors.length === 0) commitField(name);
 						},
 					}}
-					name={name}
+					name={marketField(market, name)}
 					validators={{ onBlur: ({ value }) => commitError(name, value) }}
 				>
 					{(field) => (
@@ -73,7 +81,7 @@ export function GridPriceInputs({
 								}
 								if (event.key === "Escape") {
 									event.preventDefault();
-									field.handleChange(committedInput[name]);
+									field.handleChange(committed[name]);
 									field.handleBlur();
 								}
 							}}

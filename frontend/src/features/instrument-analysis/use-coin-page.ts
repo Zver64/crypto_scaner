@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useSelector } from "@tanstack/react-form";
+import equal from "fast-deep-equal";
 
 import { useBusinessRequestPermission } from "@/app/business-request-context";
 import { criterionKeys } from "@/features/analysis/identifiers";
@@ -7,6 +8,9 @@ import {
 	type ChartPriceLevels,
 	createChartPriceLevels,
 } from "@/features/candle-chart";
+import { gridCalculatorLevels } from "@/features/instrument-analysis/grid-estimator/estimate";
+import type { GridCalculatorFormValues } from "@/features/instrument-analysis/grid-estimator/types";
+import { useGridCalculatorForm } from "@/features/instrument-analysis/grid-estimator/use-grid-calculator-form";
 import { useChartIndicators } from "@/features/instrument-analysis/use-chart-indicators";
 import { useCoinChartData } from "@/features/instrument-analysis/use-coin-chart-data";
 import { useGridLimits } from "@/features/instrument-analysis/use-grid-limits";
@@ -15,9 +19,26 @@ import { useInstrumentAnalysis } from "@/features/instrument-analysis/use-instru
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { volatilityCriterionSelections } from "@/features/market-scan/pipeline";
 
+// The calculator grid drawn on the chart, kept while its levels are equal.
+function selectGridLevels({
+	values,
+}: {
+	values: GridCalculatorFormValues;
+}): ChartPriceLevels | null {
+	const levels = gridCalculatorLevels(values);
+	return levels && createChartPriceLevels(levels);
+}
+
+function sameGridLevels(
+	a: ChartPriceLevels | null,
+	b: ChartPriceLevels | null,
+): boolean {
+	return equal(a?.levels, b?.levels);
+}
+
 // The data of the coin page: the analysis of symbol under settings, the
-// history and grid limits of the calculator, the chart, and the calculator
-// grid drawn on it.
+// history and grid limits of the calculator, its form, the chart, and the
+// calculator grid drawn on it. The page is built anew for another symbol.
 export function useCoinPage(symbol: string, settings: VolatilitySettings) {
 	const permission = useBusinessRequestPermission();
 	const analysis = useInstrumentAnalysis(
@@ -35,13 +56,6 @@ export function useCoinPage(symbol: string, settings: VolatilitySettings) {
 		indicators.catalogs,
 		permission.allowed,
 	);
-	// The calculator grid drawn on the chart, kept with its symbol: the page
-	// stays mounted when the symbol changes.
-	const [grid, setGrid] = useState<{
-		levels: ChartPriceLevels | null;
-		symbol: string;
-	}>({ levels: null, symbol });
-
 	const current =
 		analysis.result?.symbol === symbol ? analysis.result : undefined;
 	const rangePercent = (key: string) => {
@@ -51,27 +65,38 @@ export function useCoinPage(symbol: string, settings: VolatilitySettings) {
 			: undefined;
 	};
 
+	const dailyVolatilityPercent = rangePercent(criterionKeys.dailyVolatility);
+	const hourlyVolatilityPercent = rangePercent(criterionKeys.hourlyVolatility);
+	const calculatorReady = !hourlyHistory.pending && !gridLimits.pending;
+	const calculatorForm = useGridCalculatorForm({
+		candles: hourlyHistory.candles,
+		dailyVolatilityPercent,
+		gridLimits: gridLimits.limits,
+		hourlyVolatilityPercent,
+		// The ranges of other settings may already be cached, so the settings
+		// identify them along with where the result comes from: the previous
+		// one stays visible while refetching, and a failure has none.
+		rangesKey: `${JSON.stringify(settings)}:${analysis.isPlaceholderData ? "previous" : current ? "current" : "none"}`,
+		ready: calculatorReady,
+	});
+	const gridLevels = useSelector(calculatorForm.store, selectGridLevels, {
+		compare: sameGridLevels,
+	});
+
 	return {
 		allowed: permission.allowed,
 		analysis,
 		calculator: {
-			candles: hourlyHistory.candles,
-			dailyVolatilityPercent: rangePercent(criterionKeys.dailyVolatility),
+			dailyVolatilityPercent,
 			disabled: analysis.isFetching || hourlyHistory.pending,
-			// The ranges of other settings may already be cached, so the settings
-			// identify them along with where the result comes from: the previous
-			// one stays visible while refetching, and a failure has none.
-			formKey: `${JSON.stringify(settings)}:${analysis.isPlaceholderData ? "previous" : current ? "current" : "none"}`,
+			form: calculatorForm,
 			gridLimits: gridLimits.limits,
-			hourlyVolatilityPercent: rangePercent(criterionKeys.hourlyVolatility),
+			hourlyVolatilityPercent,
 		},
-		// Built once its prices are known, and anew for another symbol.
-		calculatorKey: `binance:spot:USDT:${symbol}`,
-		calculatorReady: !hourlyHistory.pending && !gridLimits.pending,
+		// Shown once its prices are known.
+		calculatorReady,
 		chartSource,
 		indicators,
-		gridLevels: grid.symbol === symbol ? grid.levels : null,
-		setGridLevels: (levels: readonly number[] | null) =>
-			setGrid({ levels: levels && createChartPriceLevels(levels), symbol }),
+		gridLevels: calculatorReady ? gridLevels : null,
 	};
 }

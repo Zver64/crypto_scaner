@@ -1,58 +1,23 @@
 import { Center, Paper, Stack, Tabs, Title } from "@mantine/core";
-import { useRef, useState } from "react";
 
 import { GRID_MARKET_TABS } from "@/features/instrument-analysis/grid-estimator/config";
 import {
 	GridEstimator,
 	type GridEstimatorProps,
 } from "@/features/instrument-analysis/grid-estimator/grid-estimator";
-import type {
-	GridMarket,
-	SavedGridForm,
-} from "@/features/instrument-analysis/grid-estimator/types";
 
-interface GridCalculatorProps extends Omit<
-	GridEstimatorProps,
-	"onFormChange" | "saved"
-> {
-	// Identifies the volatility ranges: each calculator is built anew for other
-	// ones, keeping its form.
-	formKey: string;
+interface GridCalculatorProps extends Omit<GridEstimatorProps, "market"> {
 	paperPadding: string;
 }
 
-// Spot, USDT-M, and COIN-M grid calculators in tabs. Inactive panels stay mounted
-// and keep their effects running (display-none, not Activity), so each
-// calculator keeps its inputs and has reported its levels before its tab is
-// selected. Reports the price levels of the selected tab's grid.
+// Spot, USDT-M, and COIN-M grid calculators in tabs, on the coin page's
+// calculator form, which also holds the selected tab. Inactive panels stay
+// mounted (display-none, not Activity).
 export function GridCalculator({
-	formKey,
-	onPriceLevelsChange,
 	paperPadding,
 	...estimatorProps
 }: GridCalculatorProps) {
-	const [market, setMarket] = useState<GridMarket>("spot");
-	// Read only when a calculator is built, so a change does not render them.
-	const [savedForms] = useState(() => new Map<GridMarket, SavedGridForm>());
-	// The latest levels of every market, read only when a tab is selected.
-	const levelsRef = useRef<
-		Partial<Record<GridMarket, readonly number[] | null>>
-	>({});
-
-	const selectMarket = (value: string | null) => {
-		const tab = GRID_MARKET_TABS.find((item) => item.value === value);
-		if (!tab) return;
-		setMarket(tab.value);
-		onPriceLevelsChange(levelsRef.current[tab.value] ?? null);
-	};
-	const changeLevels = (
-		changedMarket: GridMarket,
-		changed: readonly number[] | null,
-	) => {
-		levelsRef.current[changedMarket] = changed;
-		if (changedMarket === market) onPriceLevelsChange(changed);
-	};
-
+	const { form } = estimatorProps;
 	return (
 		<Paper
 			component="section"
@@ -66,31 +31,33 @@ export function GridCalculator({
 						Calculator
 					</Title>
 				</Center>
-				<Tabs
-					keepMountedMode="display-none"
-					onChange={selectMarket}
-					value={market}
-				>
-					<Tabs.List grow>
-						{GRID_MARKET_TABS.map(({ label, value }) => (
-							<Tabs.Tab key={value} value={value}>
-								{label}
-							</Tabs.Tab>
-						))}
-					</Tabs.List>
-					{GRID_MARKET_TABS.map(({ value }) => (
-						<Tabs.Panel key={value} pt="md" value={value}>
-							<GridEstimator
-								{...estimatorProps}
-								key={formKey}
-								market={value}
-								onFormChange={(saved) => savedForms.set(value, saved)}
-								onPriceLevelsChange={(changed) => changeLevels(value, changed)}
-								saved={savedForms.get(value)}
-							/>
-						</Tabs.Panel>
-					))}
-				</Tabs>
+				<form.Field name="market">
+					{(field) => (
+						<Tabs
+							keepMountedMode="display-none"
+							onChange={(value) => {
+								const tab = GRID_MARKET_TABS.find(
+									(item) => item.value === value,
+								);
+								if (tab) field.handleChange(tab.value);
+							}}
+							value={field.state.value}
+						>
+							<Tabs.List grow>
+								{GRID_MARKET_TABS.map(({ label, value }) => (
+									<Tabs.Tab key={value} value={value}>
+										{label}
+									</Tabs.Tab>
+								))}
+							</Tabs.List>
+							{GRID_MARKET_TABS.map(({ value }) => (
+								<Tabs.Panel key={value} pt="md" value={value}>
+									<GridEstimator {...estimatorProps} market={value} />
+								</Tabs.Panel>
+							))}
+						</Tabs>
+					)}
+				</form.Field>
 			</Stack>
 		</Paper>
 	);

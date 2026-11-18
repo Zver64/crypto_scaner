@@ -2,6 +2,10 @@ import type Decimal from "decimal.js";
 
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
+	GridDecimal,
+	parseGridDecimal,
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import {
 	BINANCE_GRID_FALLBACK_DEVIATION,
 	BINANCE_GRID_FILTER_SHARE,
 	DEFAULT_MARKUP_PERCENT,
@@ -17,7 +21,6 @@ import type {
 	PriceRounding,
 	SpotGridLimits,
 } from "@/features/instrument-analysis/grid-estimator/types";
-import { GridDecimal, parseGridDecimal } from "@/utils/calculator/grid";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
 
@@ -116,17 +119,17 @@ function markupMax(fraction: Decimal, cap: number): number {
 /**
  * Returns the anchor and the price range of a market's grid. Only spot grids
  * follow the Binance spot grid limits; futures grids anchor at the same price
- * without them.
+ * without them. Without the limits the anchor is `close`, the latest hourly
+ * close.
  */
 export function gridBounds(
 	market: GridMarket,
-	candles: readonly (PriceCandle | null)[] | undefined,
+	close: number | null | undefined,
 	limits: SpotGridLimits | null | undefined,
 ): GridBounds {
 	const averagePrice = limits?.averagePrice;
 	if (market === "spot" && limits && validPositiveNumber(averagePrice))
 		return binanceGridBounds(limits, averagePrice);
-	const close = latestAvailableCandle(candles)?.close;
 	return {
 		anchor: validPositiveNumber(averagePrice)
 			? averagePrice

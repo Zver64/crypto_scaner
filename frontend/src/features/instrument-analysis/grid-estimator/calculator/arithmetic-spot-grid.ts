@@ -1,8 +1,14 @@
 import type Decimal from "decimal.js";
 
-import { assertSupportedGridValue, extremes } from "@/utils/calculator/grid";
-import { spotGrid, spotGridCycle } from "@/utils/calculator/spot-grid";
-import type { GridInput } from "@/utils/calculator/types";
+import {
+	assertSupportedGridValue,
+	extremes,
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import {
+	spotGrid,
+	spotGridCycle,
+} from "@/features/instrument-analysis/grid-estimator/calculator/spot-grid";
+import type { GridInput } from "@/features/instrument-analysis/grid-estimator/calculator/types";
 
 export interface ArithmeticSpotGridEstimate {
 	allocationPerBuy: Decimal;

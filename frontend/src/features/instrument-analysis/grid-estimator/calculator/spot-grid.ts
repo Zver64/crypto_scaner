@@ -5,8 +5,11 @@ import {
 	GridDecimal,
 	gridLevels,
 	parseGridInput,
-} from "@/utils/calculator/grid";
-import type { GridInput, GridType } from "@/utils/calculator/types";
+} from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import type {
+	GridInput,
+	GridType,
+} from "@/features/instrument-analysis/grid-estimator/calculator/types";
 
 const SPOT_GRID_FEE_RATE = new GridDecimal("0.001");
 const SPOT_GRID_ONE_MINUS_FEE = new GridDecimal(1).minus(SPOT_GRID_FEE_RATE);

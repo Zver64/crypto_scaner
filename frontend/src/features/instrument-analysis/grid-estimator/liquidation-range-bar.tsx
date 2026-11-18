@@ -10,12 +10,12 @@ import {
 import { themeToVars } from "@mantine/vanilla-extract";
 import type Decimal from "decimal.js";
 
+import type { FuturesGridEstimate } from "@/features/instrument-analysis/grid-estimator/calculator/futures-grid";
 import {
 	formatAmount,
 	liquidationRangeBar,
 } from "@/features/instrument-analysis/grid-estimator/estimate";
 import { LegendItem } from "@/features/instrument-analysis/grid-estimator/legend-item";
-import type { FuturesGridEstimate } from "@/utils/calculator/futures-grid";
 
 interface LiquidationRangeBarProps {
 	currentPrice: number | null;

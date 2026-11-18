@@ -18,6 +18,8 @@ interface GridPriceInputsProps extends Pick<
 	form: ReturnType<typeof useGridCalculatorForm>;
 	investmentAsset: string;
 	market: GridMarket;
+	// The smallest investment Binance accepts, with its currency.
+	minimumInvestment: string | null;
 	priceUnit: string;
 }
 
@@ -31,12 +33,14 @@ export function GridPriceInputs({
 	form,
 	investmentAsset,
 	market,
+	minimumInvestment,
 	priceUnit,
 }: GridPriceInputsProps) {
 	const inputs: {
 		allowDecimal: boolean;
 		label: string;
 		name: GridInputField;
+		placeholder?: string;
 	}[] = [
 		{
 			allowDecimal: true,
@@ -53,11 +57,12 @@ export function GridPriceInputs({
 			allowDecimal: true,
 			label: `${investmentAsset} investment`,
 			name: "investment",
+			placeholder: minimumInvestment ? `≥ ${minimumInvestment}` : undefined,
 		},
 	];
 	return (
 		<SimpleGrid cols={2} spacing="md">
-			{inputs.map(({ allowDecimal, label, name }) => (
+			{inputs.map(({ allowDecimal, label, name, placeholder }) => (
 				<form.AppField
 					key={name}
 					listeners={{
@@ -74,6 +79,7 @@ export function GridPriceInputs({
 							asString
 							disabled={disabled}
 							label={label}
+							placeholder={placeholder}
 							onKeyDown={(event) => {
 								if (event.key === "Enter") {
 									event.preventDefault();

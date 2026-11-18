@@ -23,6 +23,8 @@ github.com/binance/binance-connector-go v0.8.0 h1:wFMrOC6h51Tf+BmnbBPMxb60HpDFhR
 github.com/binance/binance-connector-go v0.8.0/go.mod h1:BFC8g1sfebv6/rahVeQU1kC5TqkdlcqeFfSVcNberlc=
 github.com/binance/binance-connector-go/clients/derivativestradingcoinfutures v1.20.1 h1:LT9HyJ2fNO1ns6FblJ7krMTqFt69GOh1hIg1AnsZUJ0=
 github.com/binance/binance-connector-go/clients/derivativestradingcoinfutures v1.20.1/go.mod h1:pKmwkzgHtLn9hZFRIT6+KLoOX6keKbdeIJcXOFhkung=
+github.com/binance/binance-connector-go/clients/derivativestradingusdsfutures v1.22.2 h1:BIhn8h19UTcnXJ5tLDy1GPp9YnVgrbb+j09PBLQMuQM=
+github.com/binance/binance-connector-go/clients/derivativestradingusdsfutures v1.22.2/go.mod h1:84Q/0gymG9NCbhF5MJy9HyUalhsmWQUDT0PiiaQoXuw=
 github.com/binance/binance-connector-go/common/v2 v2.9.0 h1:8fYeixbrJddwIBv51Gys4KbmeE1G3Xq3mHDe4jJQjek=
 github.com/binance/binance-connector-go/common/v2 v2.9.0/go.mod h1:1tdBpcb6c5uzyy2B86DKKwwbSbAXCPTMbA/Ptqb5rIY=
 github.com/bitly/go-simplejson v0.5.1 h1:xgwPbetQScXt1gh9BmoJ6j9JMr3TElvuIyjR8pgdoow=

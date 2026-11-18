@@ -1,5 +1,6 @@
 import type Decimal from "decimal.js";
 
+import type { SpotGridLimits } from "@/api/generated/models";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import {
 	GridDecimal,
@@ -19,7 +20,6 @@ import type {
 	GridBounds,
 	GridMarket,
 	PriceRounding,
-	SpotGridLimits,
 } from "@/features/instrument-analysis/grid-estimator/types";
 import { formatNumber } from "@/utils/number-format";
 import { formatRangePercent } from "@/utils/range-percent";
@@ -67,9 +67,9 @@ function gridPriceShare(multiplier: number, direction: 1 | -1): Decimal {
  */
 function binanceGridMinLowerPrice(limits: SpotGridLimits): Decimal {
 	return GridDecimal.max(
-		Math.max(limits.minPrice, 0),
-		new GridDecimal(limits.averagePrice).times(
-			gridPriceShare(limits.bidMultiplierDown, -1),
+		Math.max(limits.min_price, 0),
+		new GridDecimal(limits.average_price).times(
+			gridPriceShare(limits.bid_multiplier_down, -1),
 		),
 	);
 }
@@ -81,10 +81,12 @@ function binanceGridMinLowerPrice(limits: SpotGridLimits): Decimal {
  * maximum.
  */
 function binanceGridMaxUpperPrice(limits: SpotGridLimits): Decimal {
-	const upper = new GridDecimal(limits.averagePrice).times(
-		gridPriceShare(limits.askMultiplierUp, 1),
+	const upper = new GridDecimal(limits.average_price).times(
+		gridPriceShare(limits.ask_multiplier_up, 1),
 	);
-	return limits.maxPrice > 0 ? GridDecimal.min(limits.maxPrice, upper) : upper;
+	return limits.max_price > 0
+		? GridDecimal.min(limits.max_price, upper)
+		: upper;
 }
 
 export function validPositiveNumber(
@@ -127,7 +129,7 @@ export function gridBounds(
 	close: number | null | undefined,
 	limits: SpotGridLimits | null | undefined,
 ): GridBounds {
-	const averagePrice = limits?.averagePrice;
+	const averagePrice = limits?.average_price;
 	if (market === "spot" && limits && validPositiveNumber(averagePrice))
 		return binanceGridBounds(limits, averagePrice);
 	return {
@@ -158,8 +160,8 @@ function binanceGridBounds(
 		),
 		maxPrice,
 		minPrice,
-		tickSize: validPositiveNumber(limits.tickSize)
-			? new GridDecimal(limits.tickSize)
+		tickSize: validPositiveNumber(limits.tick_size)
+			? new GridDecimal(limits.tick_size)
 			: null,
 		upperMarkupMax: markupMax(
 			maxPrice.div(averagePrice).minus(1),

@@ -9,7 +9,7 @@ import (
 	"crypto-scanner/internal/market/gridlimits"
 )
 
-// GridLimits reads the spot grid bot price limits of an active instrument.
+// GridLimits reads the grid bot limits of an active instrument.
 type GridLimits interface {
 	Limits(context.Context, string) (gridlimits.Limits, error)
 }
@@ -32,9 +32,31 @@ func (api *api) GetInstrumentGridLimits(ctx context.Context, request GetInstrume
 		}
 		return GetInstrumentGridLimits503JSONResponse{newAPIError(ctx, http.StatusServiceUnavailable, "market_data_unavailable", "Grid limits are unavailable", nil).unavailable()}, nil
 	}
-	return GetInstrumentGridLimits200JSONResponse{
-		Symbol: limits.Symbol, AveragePrice: limits.AveragePrice,
-		BidMultiplierDown: limits.BidMultiplierDown, AskMultiplierUp: limits.AskMultiplierUp,
-		MinPrice: limits.MinPrice, MaxPrice: limits.MaxPrice, TickSize: limits.TickSize,
-	}, nil
+	return GetInstrumentGridLimits200JSONResponse(gridLimitsResponse(limits)), nil
+}
+
+func gridLimitsResponse(limits gridlimits.Limits) GridLimitsResponse {
+	spot := limits.Spot
+	response := GridLimitsResponse{
+		Symbol: limits.Symbol,
+		Spot: SpotGridLimits{
+			AveragePrice: spot.AveragePrice, BidMultiplierDown: spot.BidMultiplierDown, AskMultiplierUp: spot.AskMultiplierUp,
+			MinPrice: spot.MinPrice, MaxPrice: spot.MaxPrice, TickSize: spot.TickSize,
+			MinQty: spot.MinQty, StepSize: spot.StepSize, MinNotional: spot.MinNotional,
+		},
+	}
+	if usdm := limits.Usdm; usdm != nil {
+		response.Usdm = &UsdmGridLimits{
+			Symbol: usdm.Symbol, MarkPrice: usdm.MarkPrice, TickSize: usdm.TickSize,
+			MinQty: usdm.MinQty, StepSize: usdm.StepSize, MinNotional: usdm.MinNotional,
+		}
+	}
+	if coinm := limits.Coinm; coinm != nil {
+		response.Coinm = &CoinmGridLimits{
+			Symbol: coinm.Symbol, MarkPrice: coinm.MarkPrice, TickSize: coinm.TickSize,
+			MinQty: coinm.MinQty, StepSize: coinm.StepSize,
+			ContractSize: coinm.ContractSize, EqualQtyPrecision: coinm.EqualQtyPrecision,
+		}
+	}
+	return response
 }

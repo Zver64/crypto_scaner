@@ -1,3 +1,4 @@
+import type { SpotGridLimits } from "@/api/generated/models";
 import {
 	formatInputNumber,
 	gridBounds,
@@ -34,7 +35,6 @@ import type {
 	GridMarket,
 	GridMarketFormValues,
 	GridRecommendation,
-	SpotGridLimits,
 } from "@/features/instrument-analysis/grid-estimator/types";
 
 /**

@@ -25,19 +25,15 @@
  *
  * OpenAPI spec version: 1.0.0
  */
+import type { CoinmGridLimits } from './coinmGridLimits.ts';
+import type { SpotGridLimits } from './spotGridLimits.ts';
+import type { UsdmGridLimits } from './usdmGridLimits.ts';
 
 export interface GridLimitsResponse {
   symbol: string;
-  /** @exclusiveMinimum 0 */
-  average_price: number;
-  /** @minimum 0 */
-  bid_multiplier_down: number;
-  /** @minimum 0 */
-  ask_multiplier_up: number;
-  /** @minimum 0 */
-  min_price: number;
-  /** @minimum 0 */
-  max_price: number;
-  /** @minimum 0 */
-  tick_size: number;
+  spot: SpotGridLimits;
+  /** The USD-M USDT perpetual of the base asset; null when there is no such trading contract or its data is unavailable. */
+  usdm: UsdmGridLimits | null;
+  /** The COIN-M USD perpetual of the base asset; null when there is no such trading contract or its data is unavailable. */
+  coinm: CoinmGridLimits | null;
 }

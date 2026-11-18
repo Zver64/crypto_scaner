@@ -213,19 +213,31 @@ paths:
   /api/v1/instruments/{symbol}/grid-limits:
     get:
       operationId: getInstrumentGridLimits
-      summary: Get the Binance spot grid price limits of an instrument
+      summary: Get the Binance grid bot limits of an instrument
       description: |
-        Returns what a Binance spot grid bot derives its price range limits
-        from: the current 5-minute average price, the symbol's percent price
-        multipliers (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE),
-        and its PRICE_FILTER bounds and tick size. A value is 0 when the symbol
-        has no such filter. The bot accepts a lower price down to
+        Returns what Binance grid bots derive their price range limits and
+        minimum investment from, for the spot market (`spot`) and for the
+        trading USD-M USDT-margined perpetual (`usdm`) and COIN-M USD
+        perpetual (`coinm`) of the instrument's base asset, matched exactly
+        by Binance's base asset (so `1000PEPEUSDT` is not PEPE's). A futures market is null when the base asset
+        has no such trading contract or its data is temporarily unavailable;
+        the spot market is always present. A filter value is 0 when the
+        symbol has no such filter.
+
+        Spot price range: the bot accepts a lower price down to
         `max(min_price, (1 − (1 − bid_multiplier_down) × 0.85) × average_price)`
         and an upper price up to
         `min(max_price, (1 + (ask_multiplier_up − 1) × 0.85) × average_price)`.
         Without a multiplier, clients allow 50% below or above the average
         price; a `max_price` of 0 sets no maximum. Grid prices are multiples of
         `tick_size`.
+
+        Minimum investment inputs: `min_qty` and `step_size` bound each grid
+        order's quantity (in the base asset on spot and USD-M, in contracts on
+        COIN-M) and `min_notional` its value in USDT (spot and USD-M), priced
+        at `average_price` (spot) or `mark_price` (futures). On COIN-M,
+        `contract_size` converts contracts to USD and `equal_qty_precision`
+        is the precision of their base-asset equivalent.
       tags: [Market Data]
       security:
         - sessionToken: []
@@ -1597,34 +1609,141 @@ components:
     GridLimitsResponse:
       type: object
       additionalProperties: false
-      required: [symbol, average_price, bid_multiplier_down, ask_multiplier_up, min_price, max_price, tick_size]
+      required: [symbol, spot, usdm, coinm]
       properties:
         symbol:
           type: string
+        spot: { $ref: "#/components/schemas/SpotGridLimits" }
+        usdm:
+          anyOf:
+            - $ref: "#/components/schemas/UsdmGridLimits"
+            - type: "null"
+          description: The USD-M USDT perpetual of the base asset; null when there is no such trading contract or its data is unavailable.
+        coinm:
+          anyOf:
+            - $ref: "#/components/schemas/CoinmGridLimits"
+            - type: "null"
+          description: The COIN-M USD perpetual of the base asset; null when there is no such trading contract or its data is unavailable.
+    SpotGridLimits:
+      type: object
+      additionalProperties: false
+      required: [average_price, bid_multiplier_down, ask_multiplier_up, min_price, max_price, tick_size, min_qty, step_size, min_notional]
+      properties:
         average_price:
           type: number
           format: double
           exclusiveMinimum: 0
+          description: Current 5-minute average price; the reference for the price range and order sizes.
         bid_multiplier_down:
           type: number
           format: double
           minimum: 0
+          description: Lowest share of the average price a buy order may have (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE).
         ask_multiplier_up:
           type: number
           format: double
           minimum: 0
+          description: Highest share of the average price a sell order may have (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE).
         min_price:
           type: number
           format: double
           minimum: 0
+          description: PRICE_FILTER minimum order price.
         max_price:
           type: number
           format: double
           minimum: 0
+          description: PRICE_FILTER maximum order price; 0 sets no maximum.
         tick_size:
           type: number
           format: double
           minimum: 0
+          description: PRICE_FILTER price step; grid prices are its multiples.
+        min_qty:
+          type: number
+          format: double
+          minimum: 0
+          description: LOT_SIZE minimum order quantity in the base asset.
+        step_size:
+          type: number
+          format: double
+          minimum: 0
+          description: LOT_SIZE quantity step; order quantities are its multiples.
+        min_notional:
+          type: number
+          format: double
+          minimum: 0
+          description: Minimum order value in USDT (NOTIONAL, else MIN_NOTIONAL).
+    UsdmGridLimits:
+      type: object
+      additionalProperties: false
+      required: [symbol, mark_price, tick_size, min_qty, step_size, min_notional]
+      properties:
+        symbol:
+          type: string
+          description: Binance contract symbol, such as `BTCUSDT`.
+        mark_price:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: Current mark price; the reference for order sizes.
+        tick_size:
+          type: number
+          format: double
+          minimum: 0
+          description: PRICE_FILTER price step; grid prices are its multiples.
+        min_qty:
+          type: number
+          format: double
+          minimum: 0
+          description: LOT_SIZE minimum order quantity in the base asset.
+        step_size:
+          type: number
+          format: double
+          minimum: 0
+          description: LOT_SIZE quantity step; order quantities are its multiples.
+        min_notional:
+          type: number
+          format: double
+          minimum: 0
+          description: MIN_NOTIONAL minimum order value in USDT.
+    CoinmGridLimits:
+      type: object
+      additionalProperties: false
+      required: [symbol, mark_price, tick_size, min_qty, step_size, contract_size, equal_qty_precision]
+      properties:
+        symbol:
+          type: string
+          description: Binance contract symbol, such as `BTCUSD_PERP`.
+        mark_price:
+          type: number
+          format: double
+          exclusiveMinimum: 0
+          description: Current mark price in USD; converts contract values to the base asset.
+        tick_size:
+          type: number
+          format: double
+          minimum: 0
+          description: PRICE_FILTER price step; grid prices are its multiples.
+        min_qty:
+          type: number
+          format: double
+          minimum: 0
+          description: LOT_SIZE minimum order quantity in contracts.
+        step_size:
+          type: number
+          format: double
+          minimum: 0
+          description: LOT_SIZE quantity step in contracts.
+        contract_size:
+          type: number
+          format: double
+          minimum: 0
+          description: Value of one contract in USD.
+        equal_qty_precision:
+          type: integer
+          minimum: 0
+          description: Binance `equalQtyPrecision`, the decimal places of a contract quantity's base-asset equivalent.
     IndicatorConfig:
       type: object
       additionalProperties: false

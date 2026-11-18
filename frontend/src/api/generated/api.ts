@@ -1109,18 +1109,30 @@ export const getGetInstrumentGridLimitsUrl = (symbol: string,) => {
 }
 
 /**
- * Returns what a Binance spot grid bot derives its price range limits
- * from: the current 5-minute average price, the symbol's percent price
- * multipliers (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE),
- * and its PRICE_FILTER bounds and tick size. A value is 0 when the symbol
- * has no such filter. The bot accepts a lower price down to
+ * Returns what Binance grid bots derive their price range limits and
+ * minimum investment from, for the spot market (`spot`) and for the
+ * trading USD-M USDT-margined perpetual (`usdm`) and COIN-M USD
+ * perpetual (`coinm`) of the instrument's base asset, matched exactly
+ * by Binance's base asset (so `1000PEPEUSDT` is not PEPE's). A futures market is null when the base asset
+ * has no such trading contract or its data is temporarily unavailable;
+ * the spot market is always present. A filter value is 0 when the
+ * symbol has no such filter.
+ *
+ * Spot price range: the bot accepts a lower price down to
  * `max(min_price, (1 − (1 − bid_multiplier_down) × 0.85) × average_price)`
  * and an upper price up to
  * `min(max_price, (1 + (ask_multiplier_up − 1) × 0.85) × average_price)`.
  * Without a multiplier, clients allow 50% below or above the average
  * price; a `max_price` of 0 sets no maximum. Grid prices are multiples of
  * `tick_size`.
- * @summary Get the Binance spot grid price limits of an instrument
+ *
+ * Minimum investment inputs: `min_qty` and `step_size` bound each grid
+ * order's quantity (in the base asset on spot and USD-M, in contracts on
+ * COIN-M) and `min_notional` its value in USDT (spot and USD-M), priced
+ * at `average_price` (spot) or `mark_price` (futures). On COIN-M,
+ * `contract_size` converts contracts to USD and `equal_qty_precision`
+ * is the precision of their base-asset equivalent.
+ * @summary Get the Binance grid bot limits of an instrument
  */
 export const getInstrumentGridLimits = async (symbol: string, options?: Parameters<typeof apiFetch>[1]): Promise<getInstrumentGridLimitsResponseSuccess> => {
 
@@ -1191,7 +1203,7 @@ export function useGetInstrumentGridLimits<TData = Awaited<ReturnType<typeof get
  , queryClient?: QueryClient
   ):  UseQueryResult<TData, TError> & { queryKey: DataTag<QueryKey, TData, TError> }
 /**
- * @summary Get the Binance spot grid price limits of an instrument
+ * @summary Get the Binance grid bot limits of an instrument
  */
 
 export function useGetInstrumentGridLimits<TData = Awaited<ReturnType<typeof getInstrumentGridLimits>>, TError = ErrorType<BadRequestResponse | UnauthenticatedResponse | AccessDeniedResponse | SymbolNotFoundResponse | InternalErrorResponse | AnalysisUnavailableResponse>>(

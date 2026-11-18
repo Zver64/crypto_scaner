@@ -1,6 +1,7 @@
 import type Decimal from "decimal.js";
 import type { ComponentProps } from "react";
 
+import type { SpotGridLimits } from "@/api/generated/models";
 import type { SegmentedValueGroup } from "@/components/segmented-value-group";
 import type { ArithmeticSpotGridEstimate } from "@/features/instrument-analysis/grid-estimator/calculator/arithmetic-spot-grid";
 import type { FuturesGridEstimate } from "@/features/instrument-analysis/grid-estimator/calculator/futures-grid";
@@ -53,16 +54,6 @@ export interface ProfitSplitColors {
 }
 
 export type PriceRounding = "ceil" | "floor" | undefined;
-
-/** Binance spot grid limits of a symbol, from the grid-limits endpoint. */
-export interface SpotGridLimits {
-	askMultiplierUp: number;
-	averagePrice: number;
-	bidMultiplierDown: number;
-	maxPrice: number;
-	minPrice: number;
-	tickSize: number;
-}
 
 /**
  * The price both markups are measured from and, for spot grids, the price

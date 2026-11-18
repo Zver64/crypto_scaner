@@ -1,5 +1,10 @@
 import type Decimal from "decimal.js";
 
+import type {
+	GridLimitsResponse,
+	SpotGridLimits,
+} from "@/api/generated/models";
+import { validPositiveNumber } from "@/features/instrument-analysis/grid-estimator/bounds";
 import { calculateArithmeticSpotGrid } from "@/features/instrument-analysis/grid-estimator/calculator/arithmetic-spot-grid";
 import {
 	calculateFuturesGrid,
@@ -8,10 +13,16 @@ import {
 } from "@/features/instrument-analysis/grid-estimator/calculator/futures-grid";
 import { calculateGeometricSpotGrid } from "@/features/instrument-analysis/grid-estimator/calculator/geometric-spot-grid";
 import {
+	GridDecimal,
 	gridLevels,
 	parseGridCount,
 	parseGridDecimal,
 } from "@/features/instrument-analysis/grid-estimator/calculator/grid";
+import {
+	coinmGridMinimumInvestment,
+	spotGridMinimumInvestment,
+	usdmGridMinimumInvestment,
+} from "@/features/instrument-analysis/grid-estimator/calculator/minimum-investment";
 import type {
 	GridInput,
 	GridType,
@@ -395,4 +406,123 @@ export function gridCalculatorLevels({
 }: GridCalculatorFormValues): number[] | null {
 	const { committed, gridType } = markets[market];
 	return gridPriceLevels(committed, gridType);
+}
+
+// The levels of a grid rounded to the tick size, as Binance places them, or
+// null while the range or the grid count is invalid.
+function tickGridLevels(
+	{ gridCount, lowerPrice, upperPrice }: GridInput,
+	gridType: GridType,
+	tickSize: Decimal,
+): Decimal[] | null {
+	try {
+		const lower = parseGridDecimal(lowerPrice, "Lower price");
+		const upper = parseGridDecimal(upperPrice, "Upper price");
+		if (!upper.gt(lower)) return null;
+		const levels = gridLevels(
+			lower,
+			upper,
+			parseGridCount(gridCount),
+			gridType,
+		).map((level) => level.toNearest(tickSize, GridDecimal.ROUND_HALF_UP));
+		return levels[0].gt(0) ? levels : null;
+	} catch {
+		return null;
+	}
+}
+
+// Calculates a minimum investment from the grid's levels rounded to
+// `tickSize` and the reference `price`, rounded up to `decimals`, by default
+// the tick size's.
+function binanceMinimum(
+	input: GridInput,
+	gridType: GridType,
+	{ price, tickSize }: { price: number; tickSize: number },
+	calculate: (levels: Decimal[], price: Decimal) => Decimal,
+	decimals?: number,
+): Decimal | null {
+	if (!validPositiveNumber(price) || !validPositiveNumber(tickSize))
+		return null;
+	const tick = new GridDecimal(tickSize);
+	const levels = tickGridLevels(input, gridType, tick);
+	return (
+		levels &&
+		calculate(levels, new GridDecimal(price)).toDecimalPlaces(
+			decimals ?? tick.decimalPlaces(),
+			GridDecimal.ROUND_UP,
+		)
+	);
+}
+
+function orderLimits({
+	min_notional,
+	min_qty,
+	step_size,
+}: Pick<SpotGridLimits, "min_notional" | "min_qty" | "step_size">) {
+	return {
+		minNotional: new GridDecimal(min_notional),
+		minQty: new GridDecimal(min_qty),
+		stepSize: new GridDecimal(step_size),
+	};
+}
+
+/**
+ * Returns the smallest investment a Binance grid bot accepts for the market's
+ * grid, in its margin currency: spot at the average price, futures at the
+ * mark price. USDT amounts are rounded up to the tick size's decimals, coin
+ * amounts to the contract's `equal_qty_precision`. Null without the market's
+ * Binance limits or a valid range.
+ */
+export function gridMinimumInvestment(
+	market: GridMarket,
+	input: GridInput,
+	{ direction, gridType, leverage }: Omit<FuturesGridOptions, "currentPrice">,
+	limits: GridLimitsResponse | null,
+): Decimal | null {
+	if (market === "spot") {
+		const spot = limits?.spot;
+		return spot
+			? binanceMinimum(
+					input,
+					gridType,
+					{ price: spot.average_price, tickSize: spot.tick_size },
+					(levels, price) =>
+						spotGridMinimumInvestment(levels, price, orderLimits(spot)),
+				)
+			: null;
+	}
+	if (market === "usdm") {
+		const usdm = limits?.usdm;
+		return usdm
+			? binanceMinimum(
+					input,
+					gridType,
+					{ price: usdm.mark_price, tickSize: usdm.tick_size },
+					(levels, price) =>
+						usdmGridMinimumInvestment(
+							levels,
+							{ direction, leverage, price },
+							orderLimits(usdm),
+						),
+				)
+			: null;
+	}
+	const coinm = limits?.coinm;
+	return coinm
+		? binanceMinimum(
+				input,
+				gridType,
+				{ price: coinm.mark_price, tickSize: coinm.tick_size },
+				(levels, price) =>
+					coinmGridMinimumInvestment(
+						levels,
+						{ direction, leverage, price },
+						{
+							contractSize: new GridDecimal(coinm.contract_size),
+							minQty: new GridDecimal(coinm.min_qty),
+						},
+					),
+				coinm.equal_qty_precision,
+			)
+		: null;
 }

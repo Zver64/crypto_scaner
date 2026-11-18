@@ -15,12 +15,15 @@ import {
 
 describe("gridBounds with Binance limits", () => {
 	const limits = {
-		askMultiplierUp: 1.5,
-		averagePrice: 100,
-		bidMultiplierDown: 0.25,
-		maxPrice: 140,
-		minPrice: 0.01,
-		tickSize: 0.5,
+		ask_multiplier_up: 1.5,
+		average_price: 100,
+		bid_multiplier_down: 0.25,
+		max_price: 140,
+		min_notional: 5,
+		min_price: 0.01,
+		min_qty: 0.001,
+		step_size: 0.001,
+		tick_size: 0.5,
 	};
 	const bounds = gridBounds("spot", undefined, limits);
 
@@ -37,21 +40,21 @@ describe("gridBounds with Binance limits", () => {
 
 	it("rounds markup maximums down and caps them", () => {
 		expect(
-			gridBounds("spot", undefined, { ...limits, bidMultiplierDown: 0.333 })
+			gridBounds("spot", undefined, { ...limits, bid_multiplier_down: 0.333 })
 				.lowerMarkupMax,
 		).toBe(56.69);
 		expect(
 			gridBounds("spot", undefined, {
 				...limits,
-				askMultiplierUp: 5,
-				maxPrice: 0,
+				ask_multiplier_up: 5,
+				max_price: 0,
 			}).upperMarkupMax,
 		).toBe(200);
 		expect(
 			gridBounds("spot", undefined, {
 				...limits,
-				bidMultiplierDown: 0,
-				minPrice: 0,
+				bid_multiplier_down: 0,
+				min_price: 0,
 			}).lowerMarkupMax,
 		).toBe(50);
 	});

@@ -139,7 +139,8 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites service: %w", err)
 	}
-	coinMPerpetuals, err := perpetuals.NewSynchronizer(binance.NewCoinMPerpetuals(), store, logger, 24*time.Hour, time.Minute)
+	coinM := binance.NewCoinM()
+	coinMPerpetuals, err := perpetuals.NewSynchronizer(coinM, store, logger, 24*time.Hour, time.Minute)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize COIN-M perpetuals synchronizer: %w", err)
 	}
@@ -196,7 +197,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		Analysis:     analysisService,
 		MarketTables: marketTables,
 		History:      store,
-		GridLimits:   gridlimits.New(exchange, store, logger, gridlimits.Options{}),
+		GridLimits:   gridlimits.New(exchange, binance.NewUsdM(), coinM, store, logger, gridlimits.Options{}),
 		Sessions:     sessions,
 		APITokens:    sessions,
 		Chart:        chartService,

@@ -1,11 +1,13 @@
 import Decimal from "decimal.js";
 import { describe, expect, it } from "vitest";
 
+import type { GridLimitsResponse } from "@/api/generated/models";
 import {
 	calculateFuturesGridInput,
 	calculateSpotGridInput,
 	futuresGridEstimateValues,
 	gridMarketEstimate,
+	gridMinimumInvestment,
 	liquidationRangeBar,
 	profitSplitRows,
 	spotGridEstimateValues,
@@ -312,5 +314,105 @@ describe("profitSplitRows", () => {
 		expect(rows.map(({ key, label }) => ({ key, label }))).toEqual([
 			{ key: "every-trade", label: undefined },
 		]);
+	});
+});
+
+describe("gridMinimumInvestment", () => {
+	// Cases checked against Binance bots: BTC, 55000–70000, 100 arithmetic
+	// grids, 10× leverage.
+	const input = {
+		gridCount: "100",
+		investment: "1000",
+		lowerPrice: "55000",
+		upperPrice: "70000",
+	};
+	const spot = {
+		ask_multiplier_up: 5,
+		average_price: 62530,
+		bid_multiplier_down: 0.2,
+		max_price: 0,
+		min_notional: 5,
+		min_price: 0.01,
+		min_qty: 0.00001,
+		step_size: 0.00001,
+		tick_size: 0.01,
+	};
+	const usdm = {
+		mark_price: 62432,
+		min_notional: 50,
+		min_qty: 0.001,
+		step_size: 0.001,
+		symbol: "BTCUSDT",
+		tick_size: 0.1,
+	};
+	const coinm = {
+		contract_size: 100,
+		equal_qty_precision: 4,
+		mark_price: 62322.4,
+		min_qty: 1,
+		step_size: 1,
+		symbol: "BTCUSD_PERP",
+		tick_size: 0.1,
+	};
+	const limits: GridLimitsResponse = { coinm, spot, symbol: "BTCUSDT", usdm };
+	const minimum = (
+		market: "spot" | "usdm" | "coinm",
+		direction: "long" | "short",
+		limitsOverride: Partial<GridLimitsResponse> = {},
+	) =>
+		gridMinimumInvestment(
+			market,
+			input,
+			{ direction, gridType: "arithmetic", leverage: 10 },
+			{ ...limits, ...limitsOverride },
+		)?.toFixed();
+
+	it("reserves the spot orders at the average price", () => {
+		// (606.022 + 1.5 × 0.0001 × 62530) / 0.95 = 647.79105…
+		expect(minimum("spot", "long")).toBe("647.8");
+	});
+
+	it.each([
+		[62432, "long", "1032.5"],
+		[62427.1982009, "long", "1032.8"],
+		[80000, "long", "789.1"],
+		[80000, "short", "3219.4"],
+		[50000, "long", "2367.2"],
+		[50000, "short", "789.1"],
+	] as const)(
+		"reserves USDT-M margin at mark price %s for a %s grid",
+		(markPrice, direction, expected) => {
+			expect(
+				minimum("usdm", direction, {
+					usdm: { ...usdm, mark_price: markPrice },
+				}),
+			).toBe(expected);
+		},
+	);
+
+	it.each([
+		[62322.4, "long", "0.0269"],
+		[62333, "short", "0.0267"],
+	] as const)(
+		"reserves COIN-M margin at mark price %s for a %s grid",
+		(markPrice, direction, expected) => {
+			expect(
+				minimum("coinm", direction, {
+					coinm: { ...coinm, mark_price: markPrice },
+				}),
+			).toBe(expected);
+		},
+	);
+
+	it("has no minimum without the market's limits or a valid range", () => {
+		expect(minimum("usdm", "long", { usdm: null })).toBeUndefined();
+		expect(
+			gridMinimumInvestment(
+				"spot",
+				{ ...input, upperPrice: "50000" },
+				{ direction: "long", gridType: "arithmetic", leverage: 10 },
+				limits,
+			),
+		).toBeNull();
 	});
 });

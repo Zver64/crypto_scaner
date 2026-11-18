@@ -1271,6 +1271,30 @@ type ChartShape struct {
 	union json.RawMessage
 }
 
+// CoinmGridLimits defines model for CoinmGridLimits.
+type CoinmGridLimits struct {
+	// ContractSize Value of one contract in USD.
+	ContractSize float64 `json:"contract_size"`
+
+	// EqualQtyPrecision Binance `equalQtyPrecision`, the decimal places of a contract quantity's base-asset equivalent.
+	EqualQtyPrecision int `json:"equal_qty_precision"`
+
+	// MarkPrice Current mark price in USD; converts contract values to the base asset.
+	MarkPrice float64 `json:"mark_price"`
+
+	// MinQty LOT_SIZE minimum order quantity in contracts.
+	MinQty float64 `json:"min_qty"`
+
+	// StepSize LOT_SIZE quantity step in contracts.
+	StepSize float64 `json:"step_size"`
+
+	// Symbol Binance contract symbol, such as `BTCUSD_PERP`.
+	Symbol string `json:"symbol"`
+
+	// TickSize PRICE_FILTER price step; grid prices are its multiples.
+	TickSize float64 `json:"tick_size"`
+}
+
 // CriterionRequest defines model for CriterionRequest.
 type CriterionRequest struct {
 	Key        string                 `json:"key"`
@@ -1341,13 +1365,13 @@ type FavoritesResponse struct {
 
 // GridLimitsResponse defines model for GridLimitsResponse.
 type GridLimitsResponse struct {
-	AskMultiplierUp   float64 `json:"ask_multiplier_up"`
-	AveragePrice      float64 `json:"average_price"`
-	BidMultiplierDown float64 `json:"bid_multiplier_down"`
-	MaxPrice          float64 `json:"max_price"`
-	MinPrice          float64 `json:"min_price"`
-	Symbol            string  `json:"symbol"`
-	TickSize          float64 `json:"tick_size"`
+	// Coinm The COIN-M USD perpetual of the base asset; null when there is no such trading contract or its data is unavailable.
+	Coinm  *CoinmGridLimits `json:"coinm"`
+	Spot   SpotGridLimits   `json:"spot"`
+	Symbol string           `json:"symbol"`
+
+	// Usdm The USD-M USDT perpetual of the base asset; null when there is no such trading contract or its data is unavailable.
+	Usdm *UsdmGridLimits `json:"usdm"`
 }
 
 // IndicatorChoice defines model for IndicatorChoice.
@@ -1671,6 +1695,36 @@ type SignalTargetRatio int
 // backtest judges it. Required for a signal, null for a simple signal
 // and a trading strategy.
 type SignalWindow int
+
+// SpotGridLimits defines model for SpotGridLimits.
+type SpotGridLimits struct {
+	// AskMultiplierUp Highest share of the average price a sell order may have (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE).
+	AskMultiplierUp float64 `json:"ask_multiplier_up"`
+
+	// AveragePrice Current 5-minute average price; the reference for the price range and order sizes.
+	AveragePrice float64 `json:"average_price"`
+
+	// BidMultiplierDown Lowest share of the average price a buy order may have (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE).
+	BidMultiplierDown float64 `json:"bid_multiplier_down"`
+
+	// MaxPrice PRICE_FILTER maximum order price; 0 sets no maximum.
+	MaxPrice float64 `json:"max_price"`
+
+	// MinNotional Minimum order value in USDT (NOTIONAL, else MIN_NOTIONAL).
+	MinNotional float64 `json:"min_notional"`
+
+	// MinPrice PRICE_FILTER minimum order price.
+	MinPrice float64 `json:"min_price"`
+
+	// MinQty LOT_SIZE minimum order quantity in the base asset.
+	MinQty float64 `json:"min_qty"`
+
+	// StepSize LOT_SIZE quantity step; order quantities are its multiples.
+	StepSize float64 `json:"step_size"`
+
+	// TickSize PRICE_FILTER price step; grid prices are its multiples.
+	TickSize float64 `json:"tick_size"`
+}
 
 // Strategy defines model for Strategy.
 type Strategy struct {
@@ -2066,6 +2120,27 @@ type UnresolvedInstrument struct {
 
 // UnresolvedInstrumentCode defines model for UnresolvedInstrument.Code.
 type UnresolvedInstrumentCode string
+
+// UsdmGridLimits defines model for UsdmGridLimits.
+type UsdmGridLimits struct {
+	// MarkPrice Current mark price; the reference for order sizes.
+	MarkPrice float64 `json:"mark_price"`
+
+	// MinNotional MIN_NOTIONAL minimum order value in USDT.
+	MinNotional float64 `json:"min_notional"`
+
+	// MinQty LOT_SIZE minimum order quantity in the base asset.
+	MinQty float64 `json:"min_qty"`
+
+	// StepSize LOT_SIZE quantity step; order quantities are its multiples.
+	StepSize float64 `json:"step_size"`
+
+	// Symbol Binance contract symbol, such as `BTCUSDT`.
+	Symbol string `json:"symbol"`
+
+	// TickSize PRICE_FILTER price step; grid prices are its multiples.
+	TickSize float64 `json:"tick_size"`
+}
 
 // User defines model for User.
 type User struct {
@@ -2994,19 +3069,31 @@ type ClientInterface interface {
 	// Corresponds with GET /api/v1/instruments/{symbol}/candles (the `ListInstrumentCandles` operationId).
 	ListInstrumentCandles(ctx context.Context, symbol Symbol, params *ListInstrumentCandlesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	// GetInstrumentGridLimits Get the Binance spot grid price limits of an instrument
+	// GetInstrumentGridLimits Get the Binance grid bot limits of an instrument
 	//
-	// Returns what a Binance spot grid bot derives its price range limits
-	// from: the current 5-minute average price, the symbol's percent price
-	// multipliers (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE),
-	// and its PRICE_FILTER bounds and tick size. A value is 0 when the symbol
-	// has no such filter. The bot accepts a lower price down to
+	// Returns what Binance grid bots derive their price range limits and
+	// minimum investment from, for the spot market (`spot`) and for the
+	// trading USD-M USDT-margined perpetual (`usdm`) and COIN-M USD
+	// perpetual (`coinm`) of the instrument's base asset, matched exactly
+	// by Binance's base asset (so `1000PEPEUSDT` is not PEPE's). A futures market is null when the base asset
+	// has no such trading contract or its data is temporarily unavailable;
+	// the spot market is always present. A filter value is 0 when the
+	// symbol has no such filter.
+	//
+	// Spot price range: the bot accepts a lower price down to
 	// `max(min_price, (1 − (1 − bid_multiplier_down) × 0.85) × average_price)`
 	// and an upper price up to
 	// `min(max_price, (1 + (ask_multiplier_up − 1) × 0.85) × average_price)`.
 	// Without a multiplier, clients allow 50% below or above the average
 	// price; a `max_price` of 0 sets no maximum. Grid prices are multiples of
 	// `tick_size`.
+	//
+	// Minimum investment inputs: `min_qty` and `step_size` bound each grid
+	// order's quantity (in the base asset on spot and USD-M, in contracts on
+	// COIN-M) and `min_notional` its value in USDT (spot and USD-M), priced
+	// at `average_price` (spot) or `mark_price` (futures). On COIN-M,
+	// `contract_size` converts contracts to USD and `equal_qty_precision`
+	// is the precision of their base-asset equivalent.
 	//
 	// Corresponds with GET /api/v1/instruments/{symbol}/grid-limits (the `GetInstrumentGridLimits` operationId).
 	GetInstrumentGridLimits(ctx context.Context, symbol Symbol, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3891,19 +3978,31 @@ func (c *Client) ListInstrumentCandles(ctx context.Context, symbol Symbol, param
 	return c.Client.Do(req)
 }
 
-// GetInstrumentGridLimits Get the Binance spot grid price limits of an instrument
+// GetInstrumentGridLimits Get the Binance grid bot limits of an instrument
 //
-// Returns what a Binance spot grid bot derives its price range limits
-// from: the current 5-minute average price, the symbol's percent price
-// multipliers (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE),
-// and its PRICE_FILTER bounds and tick size. A value is 0 when the symbol
-// has no such filter. The bot accepts a lower price down to
+// Returns what Binance grid bots derive their price range limits and
+// minimum investment from, for the spot market (`spot`) and for the
+// trading USD-M USDT-margined perpetual (`usdm`) and COIN-M USD
+// perpetual (`coinm`) of the instrument's base asset, matched exactly
+// by Binance's base asset (so `1000PEPEUSDT` is not PEPE's). A futures market is null when the base asset
+// has no such trading contract or its data is temporarily unavailable;
+// the spot market is always present. A filter value is 0 when the
+// symbol has no such filter.
+//
+// Spot price range: the bot accepts a lower price down to
 // `max(min_price, (1 − (1 − bid_multiplier_down) × 0.85) × average_price)`
 // and an upper price up to
 // `min(max_price, (1 + (ask_multiplier_up − 1) × 0.85) × average_price)`.
 // Without a multiplier, clients allow 50% below or above the average
 // price; a `max_price` of 0 sets no maximum. Grid prices are multiples of
 // `tick_size`.
+//
+// Minimum investment inputs: `min_qty` and `step_size` bound each grid
+// order's quantity (in the base asset on spot and USD-M, in contracts on
+// COIN-M) and `min_notional` its value in USDT (spot and USD-M), priced
+// at `average_price` (spot) or `mark_price` (futures). On COIN-M,
+// `contract_size` converts contracts to USD and `equal_qty_precision`
+// is the precision of their base-asset equivalent.
 //
 // Corresponds with GET /api/v1/instruments/{symbol}/grid-limits (the `GetInstrumentGridLimits` operationId).
 func (c *Client) GetInstrumentGridLimits(ctx context.Context, symbol Symbol, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -5866,19 +5965,31 @@ type ClientWithResponsesInterface interface {
 	// Corresponds with GET /api/v1/instruments/{symbol}/candles (the `ListInstrumentCandles` operationId).
 	ListInstrumentCandlesWithResponse(ctx context.Context, symbol Symbol, params *ListInstrumentCandlesParams, reqEditors ...RequestEditorFn) (*ListInstrumentCandlesResponse, error)
 
-	// GetInstrumentGridLimitsWithResponse Get the Binance spot grid price limits of an instrument
+	// GetInstrumentGridLimitsWithResponse Get the Binance grid bot limits of an instrument
 	//
-	// Returns what a Binance spot grid bot derives its price range limits
-	// from: the current 5-minute average price, the symbol's percent price
-	// multipliers (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE),
-	// and its PRICE_FILTER bounds and tick size. A value is 0 when the symbol
-	// has no such filter. The bot accepts a lower price down to
+	// Returns what Binance grid bots derive their price range limits and
+	// minimum investment from, for the spot market (`spot`) and for the
+	// trading USD-M USDT-margined perpetual (`usdm`) and COIN-M USD
+	// perpetual (`coinm`) of the instrument's base asset, matched exactly
+	// by Binance's base asset (so `1000PEPEUSDT` is not PEPE's). A futures market is null when the base asset
+	// has no such trading contract or its data is temporarily unavailable;
+	// the spot market is always present. A filter value is 0 when the
+	// symbol has no such filter.
+	//
+	// Spot price range: the bot accepts a lower price down to
 	// `max(min_price, (1 − (1 − bid_multiplier_down) × 0.85) × average_price)`
 	// and an upper price up to
 	// `min(max_price, (1 + (ask_multiplier_up − 1) × 0.85) × average_price)`.
 	// Without a multiplier, clients allow 50% below or above the average
 	// price; a `max_price` of 0 sets no maximum. Grid prices are multiples of
 	// `tick_size`.
+	//
+	// Minimum investment inputs: `min_qty` and `step_size` bound each grid
+	// order's quantity (in the base asset on spot and USD-M, in contracts on
+	// COIN-M) and `min_notional` its value in USDT (spot and USD-M), priced
+	// at `average_price` (spot) or `mark_price` (futures). On COIN-M,
+	// `contract_size` converts contracts to USD and `equal_qty_precision`
+	// is the precision of their base-asset equivalent.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9184,19 +9295,31 @@ func (c *ClientWithResponses) ListInstrumentCandlesWithResponse(ctx context.Cont
 	return ParseListInstrumentCandlesResponse(rsp)
 }
 
-// GetInstrumentGridLimitsWithResponse Get the Binance spot grid price limits of an instrument
+// GetInstrumentGridLimitsWithResponse Get the Binance grid bot limits of an instrument
 //
-// Returns what a Binance spot grid bot derives its price range limits
-// from: the current 5-minute average price, the symbol's percent price
-// multipliers (the stricter of PERCENT_PRICE_BY_SIDE and PERCENT_PRICE),
-// and its PRICE_FILTER bounds and tick size. A value is 0 when the symbol
-// has no such filter. The bot accepts a lower price down to
+// Returns what Binance grid bots derive their price range limits and
+// minimum investment from, for the spot market (`spot`) and for the
+// trading USD-M USDT-margined perpetual (`usdm`) and COIN-M USD
+// perpetual (`coinm`) of the instrument's base asset, matched exactly
+// by Binance's base asset (so `1000PEPEUSDT` is not PEPE's). A futures market is null when the base asset
+// has no such trading contract or its data is temporarily unavailable;
+// the spot market is always present. A filter value is 0 when the
+// symbol has no such filter.
+//
+// Spot price range: the bot accepts a lower price down to
 // `max(min_price, (1 − (1 − bid_multiplier_down) × 0.85) × average_price)`
 // and an upper price up to
 // `min(max_price, (1 + (ask_multiplier_up − 1) × 0.85) × average_price)`.
 // Without a multiplier, clients allow 50% below or above the average
 // price; a `max_price` of 0 sets no maximum. Grid prices are multiples of
 // `tick_size`.
+//
+// Minimum investment inputs: `min_qty` and `step_size` bound each grid
+// order's quantity (in the base asset on spot and USD-M, in contracts on
+// COIN-M) and `min_notional` its value in USDT (spot and USD-M), priced
+// at `average_price` (spot) or `mark_price` (futures). On COIN-M,
+// `contract_size` converts contracts to USD and `equal_qty_precision`
+// is the precision of their base-asset equivalent.
 //
 // Returns a wrapper object for the known response body format(s).
 //

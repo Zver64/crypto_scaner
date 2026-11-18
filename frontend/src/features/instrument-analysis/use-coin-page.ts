@@ -17,6 +17,7 @@ import { useHourlyHistory } from "@/features/instrument-analysis/use-hourly-hist
 import { useInstrumentAnalysis } from "@/features/instrument-analysis/use-instrument-analysis";
 import { volatilityEvaluation } from "@/features/market-scan/criteria";
 import { volatilityCriterionSelections } from "@/features/market-scan/pipeline";
+import { baseAssetOfUsdtSymbol } from "@/utils/base-asset";
 import { useBusinessRequestPermission } from "@/utils/business-request-context";
 
 // The calculator grid drawn on the chart, kept while its levels are equal.
@@ -69,6 +70,7 @@ export function useCoinPage(symbol: string, settings: VolatilitySettings) {
 	const hourlyVolatilityPercent = rangePercent(criterionKeys.hourlyVolatility);
 	const calculatorReady = !hourlyHistory.pending && !gridLimits.pending;
 	const calculatorForm = useGridCalculatorForm({
+		baseAsset: baseAssetOfUsdtSymbol(symbol),
 		candles: hourlyHistory.candles,
 		dailyVolatilityPercent,
 		gridLimits: gridLimits.limits,

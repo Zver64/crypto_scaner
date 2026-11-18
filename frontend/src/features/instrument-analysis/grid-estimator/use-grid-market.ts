@@ -1,5 +1,6 @@
 import { useSelector } from "@tanstack/react-form";
 
+import type { GridLimitsResponse } from "@/api/generated/models";
 import {
 	gridBounds,
 	lowerMarkupPercent,
@@ -23,12 +24,12 @@ import {
 	gridCountStepError,
 	gridCountStepPercent,
 } from "@/features/instrument-analysis/grid-estimator/grid-range";
+import { marketMinimumInvestment } from "@/features/instrument-analysis/grid-estimator/investment-minimum";
 import type {
 	GridInputField,
 	GridMarket,
 	GridMarketFormValues,
 	GridRangeValues,
-	SpotGridLimits,
 } from "@/features/instrument-analysis/grid-estimator/types";
 import type { useGridCalculatorForm } from "@/features/instrument-analysis/grid-estimator/use-grid-calculator-form";
 
@@ -36,7 +37,7 @@ export interface GridMarketOptions {
 	baseAsset: string;
 	dailyVolatilityPercent?: number;
 	form: ReturnType<typeof useGridCalculatorForm>;
-	gridLimits: SpotGridLimits | null;
+	gridLimits: GridLimitsResponse | null;
 	hourlyVolatilityPercent?: number;
 	market: GridMarket;
 }
@@ -75,7 +76,7 @@ export function useGridMarket({
 	);
 	// The bounds of the close the market was built from, so the price both
 	// markups are measured from stays fixed while it is being edited.
-	const bounds = gridBounds(market, values.close, gridLimits);
+	const bounds = gridBounds(market, values.close, gridLimits?.spot);
 	const { anchor } = bounds;
 	const hourlyRange = validPositiveNumber(hourlyVolatilityPercent)
 		? hourlyVolatilityPercent
@@ -91,6 +92,11 @@ export function useGridMarket({
 		{ currentPrice: anchor, direction, gridType, leverage },
 		baseAsset,
 	);
+	// The smallest investment Binance accepts for the committed grid; the
+	// form checks the investment against it.
+	const minimumInvestment =
+		marketMinimumInvestment(market, values, gridLimits, baseAsset)?.text ??
+		null;
 
 	const current = () => form.state.values.markets[market];
 	// Values are written as their inputs would, without running the listeners
@@ -261,9 +267,13 @@ export function useGridMarket({
 		else commitInput({ ...marketValues.committed, [field]: value });
 	}
 
+	// Sets a preset investment as if it was typed: shown with its errors, and
+	// committed, like a typed value on blur, only without them.
 	function applyInvestment(investment: string) {
-		form.setFieldValue(marketField(market, "investment"), investment, write);
-		commitInput({ ...current().committed, investment });
+		const field = marketField(market, "investment");
+		form.setFieldValue(field, investment, write);
+		if (form.getFieldMeta(field)?.errors.length === 0)
+			commitInput({ ...current().committed, investment });
 	}
 
 	// Why a typed field cannot be committed; checked on blur.
@@ -300,6 +310,7 @@ export function useGridMarket({
 		defaultRangePercent,
 		estimate,
 		hourlyRange,
+		minimumInvestment,
 		priceUnit,
 		rangeError,
 		values,

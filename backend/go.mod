@@ -12,6 +12,7 @@ require (
 	github.com/Zver64/ta-lib-cgo v0.8.3
 	github.com/binance/binance-connector-go v0.8.0
 	github.com/binance/binance-connector-go/clients/derivativestradingcoinfutures v1.20.1
+	github.com/binance/binance-connector-go/clients/derivativestradingusdsfutures v1.22.2
 	github.com/binance/binance-connector-go/common/v2 v2.9.0
 	github.com/getkin/kin-openapi v0.142.0
 	github.com/go-telegram/bot v1.25.0

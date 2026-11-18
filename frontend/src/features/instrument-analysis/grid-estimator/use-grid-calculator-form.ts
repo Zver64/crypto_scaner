@@ -1,20 +1,22 @@
 import { useLayoutEffect, useState } from "react";
 
+import type { GridLimitsResponse } from "@/api/generated/models";
 import { useAppForm } from "@/components/form";
 import type { PriceCandle } from "@/features/instrument-analysis/candle-page";
 import { latestAvailableCandle } from "@/features/instrument-analysis/grid-estimator/bounds";
 import { GRID_MARKET_TABS } from "@/features/instrument-analysis/grid-estimator/config";
 import { gridCalculatorValues } from "@/features/instrument-analysis/grid-estimator/defaults";
+import { investmentMinimumErrors } from "@/features/instrument-analysis/grid-estimator/investment-minimum";
 import type {
 	GridCalculatorBuild,
 	GridMarket,
-	SpotGridLimits,
 } from "@/features/instrument-analysis/grid-estimator/types";
 
 export interface GridCalculatorFormOptions {
+	baseAsset: string;
 	candles: readonly (PriceCandle | null)[];
 	dailyVolatilityPercent: number | undefined;
-	gridLimits: SpotGridLimits | null;
+	gridLimits: GridLimitsResponse | null;
 	hourlyVolatilityPercent: number | undefined;
 	// Identifies the volatility ranges: the settings and where their result
 	// comes from.
@@ -29,6 +31,7 @@ export interface GridCalculatorFormOptions {
  * arrive.
  */
 export function useGridCalculatorForm({
+	baseAsset,
 	candles,
 	dailyVolatilityPercent,
 	gridLimits,
@@ -38,20 +41,27 @@ export function useGridCalculatorForm({
 }: GridCalculatorFormOptions) {
 	const builtFor = `${ready}:${rangesKey}`;
 	const close = latestAvailableCandle(candles)?.close ?? null;
+	const spotLimits = gridLimits?.spot ?? null;
 	const [defaultValues] = useState(() =>
 		gridCalculatorValues(
 			{
 				builtFor,
 				close,
 				dailyVolatilityPercent,
-				gridLimits,
+				gridLimits: spotLimits,
 				hourlyVolatilityPercent,
 			},
 			null,
 			new Set(),
 		),
 	);
-	const form = useAppForm({ defaultValues });
+	const form = useAppForm({
+		defaultValues,
+		validators: {
+			onChange: ({ value }) =>
+				investmentMinimumErrors(value, gridLimits, baseAsset),
+		},
+	});
 	// The one effect that synchronizes state (see frontend/AGENTS.md): new
 	// ranges arrive without a user event, and edited values must be
 	// recalculated for them, which neither keys nor TanStack's defaultValues
@@ -60,24 +70,31 @@ export function useGridCalculatorForm({
 	// them.
 	useLayoutEffect(() => {
 		const { fieldMeta, values } = form.state;
-		if (values.builtFor === builtFor) return;
-		const build: GridCalculatorBuild = {
-			builtFor,
-			close,
-			dailyVolatilityPercent,
-			gridLimits,
-			hourlyVolatilityPercent,
-		};
-		form.reset(gridCalculatorValues(build, values, changedMarkets(fieldMeta)), {
-			keepDefaultValues: true,
-		});
+		if (values.builtFor !== builtFor) {
+			const build: GridCalculatorBuild = {
+				builtFor,
+				close,
+				dailyVolatilityPercent,
+				gridLimits: spotLimits,
+				hourlyVolatilityPercent,
+			};
+			form.reset(
+				gridCalculatorValues(build, values, changedMarkets(fieldMeta)),
+				{ keepDefaultValues: true },
+			);
+		}
+		// Neither the first values nor a reset are validated, so the
+		// investments are checked against the minimums here.
+		void form.validate("change");
 	}, [
+		baseAsset,
 		builtFor,
 		close,
 		dailyVolatilityPercent,
 		form,
 		gridLimits,
 		hourlyVolatilityPercent,
+		spotLimits,
 	]);
 	return form;
 }

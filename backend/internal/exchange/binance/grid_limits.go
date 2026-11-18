@@ -33,9 +33,9 @@ func (exchange *Exchange) AveragePrice(ctx context.Context, symbol string) (floa
 	return price, nil
 }
 
-// PriceFilters returns the order price filters of a symbol that bound how far
-// from the average price its orders may go.
-func (exchange *Exchange) PriceFilters(ctx context.Context, symbol string) (gridlimits.PriceFilters, error) {
+// SpotFilters returns the order filters of a spot symbol that bound its
+// order prices and sizes.
+func (exchange *Exchange) SpotFilters(ctx context.Context, symbol string) (gridlimits.SpotFilters, error) {
 	symbol = market.NormalizeSymbol(symbol)
 	var response struct {
 		Symbols []struct {
@@ -49,42 +49,71 @@ func (exchange *Exchange) PriceFilters(ctx context.Context, symbol string) (grid
 				AskMultiplierUp   string `json:"askMultiplierUp"`
 				MultiplierDown    string `json:"multiplierDown"`
 				MultiplierUp      string `json:"multiplierUp"`
+				MinQty            string `json:"minQty"`
+				StepSize          string `json:"stepSize"`
+				MinNotional       string `json:"minNotional"`
 			} `json:"filters"`
 		} `json:"symbols"`
 	}
 	if err := exchange.getSymbolJSON(ctx, "/api/v3/exchangeInfo", symbol, &response); err != nil {
-		return gridlimits.PriceFilters{}, fmt.Errorf("get Binance price filters for %s: %w", symbol, err)
+		return gridlimits.SpotFilters{}, fmt.Errorf("get Binance spot filters for %s: %w", symbol, err)
 	}
 	for _, info := range response.Symbols {
 		if market.NormalizeSymbol(info.Symbol) != symbol {
 			continue
 		}
-		var filters gridlimits.PriceFilters
+		var filters gridlimits.SpotFilters
+		// NOTIONAL replaced MIN_NOTIONAL; a symbol may still have the latter.
+		var notional, legacyNotional float64
+		hasNotional := false
 		for _, filter := range info.Filters {
-			type field struct {
-				value  string
-				target *float64
-			}
-			var fields []field
+			var fields []filterField
 			switch filter.FilterType {
 			case "PRICE_FILTER":
-				fields = []field{{filter.MinPrice, &filters.MinPrice}, {filter.MaxPrice, &filters.MaxPrice}, {filter.TickSize, &filters.TickSize}}
+				fields = []filterField{{filter.MinPrice, &filters.MinPrice}, {filter.MaxPrice, &filters.MaxPrice}, {filter.TickSize, &filters.TickSize}}
 			case "PERCENT_PRICE_BY_SIDE":
-				fields = []field{{filter.BidMultiplierDown, &filters.BidMultiplierDown}, {filter.AskMultiplierUp, &filters.AskMultiplierUp}}
+				fields = []filterField{{filter.BidMultiplierDown, &filters.BidMultiplierDown}, {filter.AskMultiplierUp, &filters.AskMultiplierUp}}
 			case "PERCENT_PRICE":
-				fields = []field{{filter.MultiplierDown, &filters.MultiplierDown}, {filter.MultiplierUp, &filters.MultiplierUp}}
+				fields = []filterField{{filter.MultiplierDown, &filters.MultiplierDown}, {filter.MultiplierUp, &filters.MultiplierUp}}
+			case "LOT_SIZE":
+				fields = []filterField{{filter.MinQty, &filters.MinQty}, {filter.StepSize, &filters.StepSize}}
+			case "NOTIONAL":
+				hasNotional = true
+				fields = []filterField{{filter.MinNotional, &notional}}
+			case "MIN_NOTIONAL":
+				fields = []filterField{{filter.MinNotional, &legacyNotional}}
 			}
-			for _, field := range fields {
-				parsed, err := numeric.ParseFinite(field.value)
-				if err != nil || parsed < 0 {
-					return gridlimits.PriceFilters{}, fmt.Errorf("get Binance price filters for %s: invalid %s value %q", symbol, filter.FilterType, field.value)
-				}
-				*field.target = parsed
+			if err := parseFilter(filter.FilterType, fields); err != nil {
+				return gridlimits.SpotFilters{}, fmt.Errorf("get Binance spot filters for %s: %w", symbol, err)
 			}
+		}
+		filters.MinNotional = legacyNotional
+		if hasNotional {
+			filters.MinNotional = notional
 		}
 		return filters, nil
 	}
-	return gridlimits.PriceFilters{}, market.ErrInstrumentNotFound
+	return gridlimits.SpotFilters{}, market.ErrInstrumentNotFound
+}
+
+// filterField is a decimal value of an exchange filter and where it is
+// parsed to.
+type filterField struct {
+	value  string
+	target *float64
+}
+
+// parseFilter parses the values of a filter, which must be finite and not
+// negative.
+func parseFilter(filterType string, fields []filterField) error {
+	for _, field := range fields {
+		parsed, err := numeric.ParseFinite(field.value)
+		if err != nil || parsed < 0 {
+			return fmt.Errorf("invalid %s value %q", filterType, field.value)
+		}
+		*field.target = parsed
+	}
+	return nil
 }
 
 // getSymbolJSON decodes a public endpoint that takes a symbol through the

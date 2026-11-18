@@ -49,6 +49,7 @@ export function GridEstimator({
 		defaultRangePercent,
 		estimate,
 		hourlyRange,
+		minimumInvestment,
 		priceUnit,
 		rangeError,
 		values: formValues,
@@ -157,6 +158,7 @@ export function GridEstimator({
 				form={form}
 				investmentAsset={marginAsset(market, marketOptions.baseAsset)}
 				market={market}
+				minimumInvestment={minimumInvestment}
 				priceUnit={priceUnit}
 			/>
 			{estimate.error ? (

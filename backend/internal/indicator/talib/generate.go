@@ -1,4 +1,4 @@
-// Package talib exposes the TA-Lib functions of github.com/Zver64/ta-lib-cgo
+// Package talib exposes the TA-Lib functions of github.com/TA-Lib/ta-lib-cgo
 // as indicator implementations through one generic adapter.
 //
 // functions_gen.go is generated from ta_func_api.xml, the official function

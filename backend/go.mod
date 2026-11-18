@@ -9,7 +9,7 @@ tool (
 
 require (
 	cel.dev/cel-go v0.32.0
-	github.com/Zver64/ta-lib-cgo v0.8.3
+	github.com/TA-Lib/ta-lib-cgo v0.3.0
 	github.com/binance/binance-connector-go v0.8.0
 	github.com/binance/binance-connector-go/clients/derivativestradingcoinfutures v1.20.1
 	github.com/binance/binance-connector-go/clients/derivativestradingusdsfutures v1.22.2

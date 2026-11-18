@@ -8,7 +8,7 @@ import (
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 
-	ta "github.com/Zver64/ta-lib-cgo"
+	ta "github.com/TA-Lib/ta-lib-cgo"
 )
 
 const (

@@ -1,5 +1,5 @@
 // Command gen writes functions_gen.go from the official TA-Lib function
-// metadata (ta_func_api.xml) and the github.com/Zver64/ta-lib-cgo wrapper
+// metadata (ta_func_api.xml) and the github.com/TA-Lib/ta-lib-cgo wrapper
 // signatures. Every generated call is checked against the wrapper source, so a
 // metadata and wrapper version mismatch fails generation instead of producing
 // wrong argument orders.
@@ -25,7 +25,7 @@ import (
 )
 
 const (
-	wrapperModule = "github.com/Zver64/ta-lib-cgo"
+	wrapperModule = "github.com/TA-Lib/ta-lib-cgo"
 	metadataFile  = "ta_func_api.xml"
 	outputFile    = "functions_gen.go"
 )

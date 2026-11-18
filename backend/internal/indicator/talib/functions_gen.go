@@ -5,7 +5,7 @@ package talib
 import (
 	"crypto-scanner/internal/indicator"
 
-	ta "github.com/Zver64/ta-lib-cgo"
+	ta "github.com/TA-Lib/ta-lib-cgo"
 )
 
 var functions = []spec{

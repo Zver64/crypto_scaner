@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -125,5 +126,34 @@ func TestWireKlineAcceptsStringAndNumericDecimals(t *testing.T) {
 	}
 	if value.Open != "100.5" || value.High != "110" || value.Low != "99.25" || value.Close != "108.25" || value.Volume != "12.5" || value.QuoteVolume != "1300.75" {
 		t.Fatalf("unexpected wire decimals: %+v", value)
+	}
+}
+
+func TestKlineStreamKeepsDisconnectWhileConsumerIsBusy(t *testing.T) {
+	stream := newKlineStream("ws://unused.invalid", websocket.DefaultDialer, slog.New(slog.NewTextHandler(io.Discard, nil)), NewDialLimiter())
+	busy := kline.Key{Symbol: "ETHUSDT", Interval: market.IntervalHour}
+	watched := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
+	stream.Subscribe(busy)
+	stream.mu.Lock()
+	other := stream.addWorkerLocked()
+	stream.mu.Unlock()
+	other.update(func(desired map[kline.Key]struct{}) { desired[watched] = struct{}{} })
+	// A flapping connection reports more than the consumer reads meanwhile.
+	for epoch := range int64(40) {
+		stream.workers[0].publishStatus(epoch%2 == 0, epoch+1, nil)
+	}
+	other.publishStatus(false, 100, nil)
+	other.publishStatus(true, 101, nil)
+	<-stream.StatusesReady()
+	statuses := stream.DrainStatuses()
+	// The consumer still sees the watched key go down before it reconnects.
+	var watchedStatuses []kline.Status
+	for _, status := range statuses {
+		if slices.Contains(status.Keys, watched) {
+			watchedStatuses = append(watchedStatuses, status)
+		}
+	}
+	if len(watchedStatuses) != 2 || watchedStatuses[0].Connected || watchedStatuses[0].Epoch != 100 || !watchedStatuses[1].Connected || watchedStatuses[1].Epoch != 101 {
+		t.Fatalf("statuses of the watched key = %+v, want its disconnect and then its reconnect", watchedStatuses)
 	}
 }

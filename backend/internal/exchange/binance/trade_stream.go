@@ -30,7 +30,6 @@ func tradeStreamName(symbol string) string { return strings.ToLower(symbol) + "@
 // consumer never drops trades or forces a reconnect.
 type TradeStream struct {
 	*streamPool[string]
-	statuses    chan markettrade.Status
 	assignments map[string]int // symbol -> worker index; guarded by mu
 
 	ready     chan struct{}
@@ -49,24 +48,25 @@ func NewTradeStream(logger *slog.Logger, dialLimiter *rate.Limiter) *TradeStream
 }
 
 func newTradeStream(url string, dialer *websocket.Dialer, logger *slog.Logger, dialLimiter *rate.Limiter) *TradeStream {
-	stream := &TradeStream{statuses: make(chan markettrade.Status, 64), assignments: map[string]int{}, ready: make(chan struct{}, 1), pending: map[string][]*pendingTrades{}}
+	stream := &TradeStream{assignments: map[string]int{}, ready: make(chan struct{}, 1), pending: map[string][]*pendingTrades{}}
 	stream.streamPool = newStreamPool(url, dialer, logger, dialLimiter, streamKind[string]{
 		label: "trade", module: "binance_trade", event: "trade", name: tradeStreamName,
 		handle: stream.handle,
-		status: func(symbols []string, connected bool, _ int64, err error) bool {
-			select {
-			case stream.statuses <- markettrade.Status{Symbols: symbols, Connected: connected, Err: err}:
-				return true
-			default:
-				return false
-			}
-		},
 	})
 	return stream
 }
 
-func (stream *TradeStream) Ready() <-chan struct{}              { return stream.ready }
-func (stream *TradeStream) Statuses() <-chan markettrade.Status { return stream.statuses }
+func (stream *TradeStream) Ready() <-chan struct{}         { return stream.ready }
+func (stream *TradeStream) StatusesReady() <-chan struct{} { return stream.statuses.ready }
+
+func (stream *TradeStream) DrainStatuses() []markettrade.Status {
+	updates := stream.statuses.drain()
+	statuses := make([]markettrade.Status, len(updates))
+	for index, update := range updates {
+		statuses[index] = markettrade.Status{Symbols: update.keys, Connected: update.connected, Err: update.err}
+	}
+	return statuses
+}
 
 func (stream *TradeStream) Drain() []markettrade.Event {
 	stream.pendingMu.Lock()

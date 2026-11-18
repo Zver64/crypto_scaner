@@ -38,5 +38,12 @@ type Feed interface {
 	Subscribe(Key)
 	Unsubscribe(Key)
 	Events() <-chan Event
-	Statuses() <-chan Status
+	// StatusesReady signals, without ever blocking the feed, that
+	// DrainStatuses has statuses.
+	StatusesReady() <-chan struct{}
+	// DrainStatuses returns and clears the pending statuses in the order they
+	// happened. Statuses never wait for the consumer: per key, a status
+	// replaces the pending ones, except that a connection keeps the pending
+	// disconnect before it.
+	DrainStatuses() []Status
 }

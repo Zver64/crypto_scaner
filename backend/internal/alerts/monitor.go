@@ -167,8 +167,11 @@ func (m *Monitor) Run(ctx context.Context) error {
 		case op := <-m.ops:
 			m.operation(ctx, states, op)
 			m.syncSubscriptions(states, &subscribed)
-		case status := <-m.feed.Statuses():
-			if !status.Connected {
+		case <-m.feed.StatusesReady():
+			for _, status := range m.feed.DrainStatuses() {
+				if status.Connected {
+					continue
+				}
 				for _, symbol := range status.Symbols {
 					if s := states[symbol]; s != nil {
 						s.reset()

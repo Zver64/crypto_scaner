@@ -47,8 +47,6 @@ type streamKind[K comparable] struct {
 	// returns the name of its stream, as far as it is known; an error rejects
 	// only that message.
 	handle func(ctx context.Context, payload []byte, epoch int64) (string, error)
-	// status reports the keys of connection epoch going up or down.
-	status func(keys []K, connected bool, epoch int64, err error) bool
 }
 
 // streamPool is a dynamically subscribed pool of Binance connections. Each key
@@ -60,6 +58,8 @@ type streamPool[K comparable] struct {
 	dialLimiter *rate.Limiter
 	kind        streamKind[K]
 	epoch       atomic.Int64
+	// statuses holds the connection statuses until the consumer drains them.
+	statuses *statusQueue[K]
 
 	// added wakes Run when a worker is appended; capacity 1 keeps the send
 	// non-blocking under mu, and Run starts every pending worker per wake-up.
@@ -79,7 +79,7 @@ type streamPool[K comparable] struct {
 }
 
 func newStreamPool[K comparable](url string, dialer *websocket.Dialer, logger *slog.Logger, dialLimiter *rate.Limiter, kind streamKind[K]) *streamPool[K] {
-	return &streamPool[K]{url: url, dialer: dialer, logger: logger, dialLimiter: dialLimiter, kind: kind, added: make(chan struct{}, 1), rejected: logging.NewFailures[string](logger)}
+	return &streamPool[K]{url: url, dialer: dialer, logger: logger, dialLimiter: dialLimiter, kind: kind, statuses: newStatusQueue[K](), added: make(chan struct{}, 1), rejected: logging.NewFailures[string](logger)}
 }
 
 // Run owns all upstream connections until ctx is cancelled. Workers are only
@@ -177,9 +177,7 @@ func (worker *streamWorker[K]) keys() []K {
 }
 
 func (worker *streamWorker[K]) publishStatus(connected bool, epoch int64, err error) {
-	if !worker.pool.kind.status(worker.keys(), connected, epoch, err) {
-		worker.pool.logger.Warn("Binance status queue full", "module", worker.pool.kind.module, "operation", "status")
-	}
+	worker.pool.statuses.publish(worker.keys(), connected, epoch, err)
 }
 
 // run keeps one connection open while the worker has subscriptions.

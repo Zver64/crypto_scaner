@@ -22,18 +22,18 @@ func (s *monitorStoreFake) FireAlert(_ context.Context, id, version int64) (bool
 func (*monitorStoreFake) ListMonitoredSymbols(context.Context) ([]string, error) { return nil, nil }
 
 type tradeFeedFake struct {
-	sets     int
-	symbols  []string
-	ready    chan struct{}
-	statuses chan markettrade.Status
+	sets    int
+	symbols []string
+	ready   chan struct{}
 }
 
 func newTradeFeedFake() *tradeFeedFake {
-	return &tradeFeedFake{ready: make(chan struct{}), statuses: make(chan markettrade.Status)}
+	return &tradeFeedFake{ready: make(chan struct{})}
 }
 func (feed *tradeFeedFake) Ready() <-chan struct{}              { return feed.ready }
 func (feed *tradeFeedFake) Drain() []markettrade.Event          { return nil }
-func (feed *tradeFeedFake) Statuses() <-chan markettrade.Status { return feed.statuses }
+func (feed *tradeFeedFake) StatusesReady() <-chan struct{}      { return nil }
+func (feed *tradeFeedFake) DrainStatuses() []markettrade.Status { return nil }
 func (feed *tradeFeedFake) SetSymbols(symbols []string) {
 	feed.sets++
 	feed.symbols = append([]string(nil), symbols...)

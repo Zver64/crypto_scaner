@@ -16,15 +16,27 @@ import (
 )
 
 type upstreamStub struct {
-	events       chan kline.Event
-	statuses     chan kline.Status
-	mu           sync.Mutex
-	subscribes   map[kline.Key]int
-	unsubscribes map[kline.Key]int
+	events        chan kline.Event
+	statusesReady chan struct{}
+	mu            sync.Mutex
+	statuses      []kline.Status
+	subscribes    map[kline.Key]int
+	unsubscribes  map[kline.Key]int
 }
 
 func newUpstreamStub() *upstreamStub {
-	return &upstreamStub{events: make(chan kline.Event, 8), statuses: make(chan kline.Status, 8), subscribes: make(map[kline.Key]int), unsubscribes: make(map[kline.Key]int)}
+	return &upstreamStub{events: make(chan kline.Event, 8), statusesReady: make(chan struct{}, 1), subscribes: make(map[kline.Key]int), unsubscribes: make(map[kline.Key]int)}
+}
+
+// publishStatus queues status for DrainStatuses.
+func (stub *upstreamStub) publishStatus(status kline.Status) {
+	stub.mu.Lock()
+	stub.statuses = append(stub.statuses, status)
+	stub.mu.Unlock()
+	select {
+	case stub.statusesReady <- struct{}{}:
+	default:
+	}
 }
 func (stub *upstreamStub) Subscribe(key kline.Key) {
 	stub.mu.Lock()
@@ -36,8 +48,15 @@ func (stub *upstreamStub) Unsubscribe(key kline.Key) {
 	defer stub.mu.Unlock()
 	stub.unsubscribes[key]++
 }
-func (stub *upstreamStub) Events() <-chan kline.Event    { return stub.events }
-func (stub *upstreamStub) Statuses() <-chan kline.Status { return stub.statuses }
+func (stub *upstreamStub) Events() <-chan kline.Event     { return stub.events }
+func (stub *upstreamStub) StatusesReady() <-chan struct{} { return stub.statusesReady }
+func (stub *upstreamStub) DrainStatuses() []kline.Status {
+	stub.mu.Lock()
+	defer stub.mu.Unlock()
+	statuses := stub.statuses
+	stub.statuses = nil
+	return statuses
+}
 func (stub *upstreamStub) counts(key kline.Key) (int, int) {
 	stub.mu.Lock()
 	defer stub.mu.Unlock()
@@ -251,9 +270,9 @@ func TestReconnectRestoresMissedFinalBeforeFresh(t *testing.T) {
 	}
 	upstream.events <- kline.Event{Key: key, Candle: testCandle(open, key.Interval, 10), Final: false, Epoch: 1}
 	waitForMessage(t, client.messages, func(message Message) bool { return message.Kind == KindUpdate })
-	upstream.statuses <- kline.Status{Keys: []kline.Key{key}, Connected: false, Epoch: 1}
+	upstream.publishStatus(kline.Status{Keys: []kline.Key{key}, Connected: false, Epoch: 1})
 	waitForMessage(t, client.messages, func(message Message) bool { return message.Freshness == FreshnessStale })
-	upstream.statuses <- kline.Status{Keys: []kline.Key{key}, Connected: true, Epoch: 2}
+	upstream.publishStatus(kline.Status{Keys: []kline.Key{key}, Connected: true, Epoch: 2})
 	waitForMessage(t, client.messages, func(message Message) bool { return message.Freshness == FreshnessRecovering })
 	upstream.events <- kline.Event{Key: key, Candle: testCandle(open.Add(time.Hour), key.Interval, 12), Final: false, Epoch: 2}
 	message := waitForMessage(t, client.messages, func(message Message) bool {
@@ -270,86 +289,15 @@ func TestReconnectRestoresMissedFinalBeforeFresh(t *testing.T) {
 	t.Fatal("recovered snapshot omitted the missed candle")
 }
 
-func TestLoadRecoveryPaginatesBeyondLiveBuffer(t *testing.T) {
-	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	candles := make([]market.Candle, recoveryPagesPerBatch*maxRetainedCandles+40)
-	for index := range candles {
-		candles[index] = testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
-	}
-	service := New(newUpstreamStub(), &currentStub{}, &historyStub{candles: candles}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
-	service.recoveryLimiter = rate.NewLimiter(rate.Inf, 0)
-	progress := newRecoveryProgress(candles[len(candles)-1].OpenTime)
-	for {
-		complete, stalled, err := service.loadRecoveryBatch(context.Background(), 1, market.IntervalHour, candles[0].OpenTime, &progress)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if stalled {
-			t.Fatal("recovery stalled while paginating continuous history")
-		}
-		if complete {
-			break
-		}
-	}
-	if len(progress.recent) != maxRetainedCandles {
-		t.Fatalf("retained recovery candles = %d, want %d", len(progress.recent), maxRetainedCandles)
-	}
-}
-
-func TestLoadRecoveryToleratesExchangeGapsButWaitsForNewestCandle(t *testing.T) {
-	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	hour := func(index int) market.Candle {
-		return testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
-	}
-	// Hours 2 and 3 have no exchange data.
-	service := New(newUpstreamStub(), &currentStub{}, &historyStub{candles: []market.Candle{hour(0), hour(1), hour(4), hour(5)}}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
-	service.recoveryLimiter = rate.NewLimiter(rate.Inf, 0)
-	progress := newRecoveryProgress(hour(5).OpenTime)
-	complete, stalled, err := service.loadRecoveryBatch(context.Background(), 1, market.IntervalHour, hour(1).OpenTime, &progress)
-	if err != nil || !complete || stalled {
-		t.Fatalf("recovery over an exchange gap: complete=%v stalled=%v err=%v", complete, stalled, err)
-	}
-	if len(progress.recent) != 3 {
-		t.Fatalf("recovered candles = %d, want 3", len(progress.recent))
-	}
-	// The newest closed candle is not synchronized yet: wait for it.
-	progress = newRecoveryProgress(hour(6).OpenTime)
-	complete, stalled, err = service.loadRecoveryBatch(context.Background(), 1, market.IntervalHour, hour(1).OpenTime, &progress)
-	if err != nil || complete || !stalled {
-		t.Fatalf("recovery without the newest candle: complete=%v stalled=%v err=%v", complete, stalled, err)
-	}
-}
-
-func TestNewerRecoveryGenerationSupersedesOlderRange(t *testing.T) {
-	service := New(newUpstreamStub(), &currentStub{}, &historyStub{}, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
-	state := &keyState{}
-	start := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
-	first, ok := service.startRecoveryLocked(state, start, start.Add(time.Hour))
-	if !ok {
-		t.Fatal("first recovery was not started")
-	}
-	second, ok := service.startRecoveryLocked(state, start, start.Add(3*time.Hour))
-	if !ok || second <= first {
-		t.Fatalf("recovery generations did not advance: first=%d second=%d", first, second)
-	}
-	if !state.recoveryThrough.Equal(start.Add(3 * time.Hour)) {
-		t.Fatalf("newer recovery target was lost: %s", state.recoveryThrough)
-	}
-}
-
-// flakyHistory fails every failEvery-th page query, or every query while
-// broken is set.
+// flakyHistory fails every page query while broken is set.
 type flakyHistory struct {
 	*historyStub
-	failEvery int
-	calls     int
-	broken    bool
+	broken bool
 }
 
 func (stub *flakyHistory) ListCandlePage(ctx context.Context, id int64, interval market.CandleInterval, before *time.Time, limit int) (market.CandlePage, error) {
 	stub.mu.Lock()
-	stub.calls++
-	failed := stub.broken || (stub.failEvery > 0 && stub.calls%stub.failEvery == 0)
+	failed := stub.broken
 	stub.mu.Unlock()
 	if failed {
 		return market.CandlePage{}, errors.New("query failed")
@@ -358,12 +306,11 @@ func (stub *flakyHistory) ListCandlePage(ctx context.Context, id int64, interval
 }
 
 // recoveringService subscribes a client to an hourly key and returns the
-// service with instant retries.
+// service with unlimited stored-candle reads.
 func recoveringService(t *testing.T, store HistoryStore) (*Service, kline.Key, *clientStub) {
 	t.Helper()
 	service := New(newUpstreamStub(), &currentStub{}, store, slog.New(slog.NewTextHandler(io.Discard, nil)), Options{})
-	service.recoveryLimiter = rate.NewLimiter(rate.Inf, 0)
-	service.recoveryRetryDelay = func(int) time.Duration { return 0 }
+	service.readLimiter = rate.NewLimiter(rate.Inf, 0)
 	key := kline.Key{Symbol: "BTCUSDT", Interval: market.IntervalHour}
 	client := &clientStub{id: "client", messages: make(chan Message, 1024)}
 	if err := service.Subscribe(context.Background(), client, key.Symbol, key.Interval); err != nil {
@@ -372,64 +319,31 @@ func recoveringService(t *testing.T, store HistoryStore) (*Service, kline.Key, *
 	return service, key, client
 }
 
-func TestRecoveryTransientErrorsDoNotAbandonProgressingRecovery(t *testing.T) {
-	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
-	// Every batch reads a few pages and then fails: more failures in total
-	// than maxRecoveryFailures, but never two fruitless batches in a row.
-	candles := make([]market.Candle, (maxRecoveryFailures+4)*3*maxRetainedCandles)
-	for index := range candles {
-		candles[index] = testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
-	}
-	store := &flakyHistory{historyStub: &historyStub{candles: candles}, failEvery: 4}
-	service, key, _ := recoveringService(t, store)
-	ctx := context.Background()
-	service.mu.Lock()
-	generation, _ := service.startRecoveryLocked(service.states[key], candles[0].OpenTime, candles[len(candles)-1].OpenTime)
-	service.mu.Unlock()
-	service.recover(ctx, key, generation)
-	service.mu.Lock()
-	defer service.mu.Unlock()
-	state := service.states[key]
-	if state.recovering || !state.unrecoveredStart.IsZero() {
-		t.Fatalf("progressing recovery was abandoned: recovering=%v unrecovered=%s", state.recovering, state.unrecoveredStart)
-	}
-	if store.calls/store.failEvery <= maxRecoveryFailures {
-		t.Fatalf("test saw only %d failures", store.calls/store.failEvery)
-	}
-}
-
-func TestAbandonedRecoveryStaysStaleUntilRecovered(t *testing.T) {
+func TestFailedReadIsRetriedByNextStreamEvent(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	hour := func(index int) market.Candle {
 		candle := testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
 		candle.InstrumentID = 1
 		return candle
 	}
-	store := &flakyHistory{historyStub: &historyStub{candles: []market.Candle{hour(0), hour(1), hour(2), hour(3), hour(4), hour(5)}}, broken: true}
+	store := &flakyHistory{historyStub: &historyStub{candles: []market.Candle{hour(0), hour(1), hour(2)}}, broken: true}
 	service, key, client := recoveringService(t, store)
 	ctx := context.Background()
 	service.apply(ctx, kline.Event{Key: key, Candle: hour(0), Final: true, Epoch: 1})
-	// The gap after hour 0 starts a recovery that keeps failing.
-	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Final: false, Epoch: 1})
+	// The gap after hour 0 is read while the store fails.
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Epoch: 1})
 	service.workers.Wait()
 	service.mu.Lock()
-	recovering, freshness := service.states[key].recovering, service.states[key].freshness()
+	freshness := service.states[key].freshness()
 	service.mu.Unlock()
-	if recovering || freshness != FreshnessStale {
-		t.Fatalf("abandoned recovery: recovering=%v freshness=%s, want stale", recovering, freshness)
+	if freshness != FreshnessRecovering {
+		t.Fatalf("freshness after a failed read = %s, want recovering", freshness)
 	}
-	// Further packets without a gap do not make the key look healthy.
-	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Final: true, Epoch: 1})
-	if message := waitForMessage(t, client.messages, func(message Message) bool {
-		return message.Kind == KindUpdate && message.Candle.Final && message.Candle.Candle.OpenTime.Equal(hour(3).OpenTime)
-	}); message.Freshness != FreshnessStale {
-		t.Fatalf("update after abandoned recovery is %s, want stale", message.Freshness)
-	}
-	// The next gap recovers the abandoned range as well.
 	store.mu.Lock()
 	store.broken = false
 	store.mu.Unlock()
-	service.apply(ctx, kline.Event{Key: key, Candle: hour(5), Final: true, Epoch: 1})
+	// The next packet, without a gap of its own, reads the gap again.
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Epoch: 1})
 	service.workers.Wait()
 	message := waitForMessage(t, client.messages, func(message Message) bool {
 		return message.Kind == KindSnapshot && message.Freshness == FreshnessFresh
@@ -438,7 +352,7 @@ func TestAbandonedRecoveryStaysStaleUntilRecovered(t *testing.T) {
 	for _, candle := range message.Candles {
 		recovered[candle.Candle.OpenTime] = candle.Final
 	}
-	for index := range 6 {
+	for index := range 3 {
 		if !recovered[hour(index).OpenTime] {
 			t.Fatalf("hour %d missing or not final after recovery", index)
 		}
@@ -455,10 +369,10 @@ func TestEvictionFromLiveBufferDoesNotRecover(t *testing.T) {
 	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start.Add(time.Duration(maxRetainedCandles+1)*time.Hour), key.Interval, 1), Epoch: 1})
 	service.workers.Wait()
 	service.mu.Lock()
-	generation := service.states[key].recoveryGeneration
+	missed := service.states[key].gap
 	service.mu.Unlock()
-	if generation != 0 {
-		t.Fatalf("eviction started %d recoveries", generation)
+	if !missed.empty() {
+		t.Fatalf("eviction left a gap %+v", missed)
 	}
 	for len(client.messages) > 0 {
 		if message := <-client.messages; message.Kind == KindUpdate && message.Freshness != FreshnessFresh {
@@ -467,7 +381,7 @@ func TestEvictionFromLiveBufferDoesNotRecover(t *testing.T) {
 	}
 }
 
-func TestResubscribeResumesRecoveryParkedWithoutClients(t *testing.T) {
+func TestRecoveryWithoutClientsServesResubscribe(t *testing.T) {
 	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	hour := func(index int) market.Candle {
 		candle := testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
@@ -479,7 +393,7 @@ func TestResubscribeResumesRecoveryParkedWithoutClients(t *testing.T) {
 	defer cancel()
 	service.apply(ctx, kline.Event{Key: key, Candle: hour(0), Final: true, Epoch: 1})
 	service.Unsubscribe(client.ID(), key)
-	// The gap starts a recovery that finds no clients and parks.
+	// The gap is read while the key has no clients.
 	service.apply(ctx, kline.Event{Key: key, Candle: hour(3), Epoch: 1})
 	service.workers.Wait()
 	go func() { _ = service.Run(ctx) }()
@@ -494,7 +408,7 @@ func TestResubscribeResumesRecoveryParkedWithoutClients(t *testing.T) {
 		recovered[candle.Candle.OpenTime] = candle.Final
 	}
 	if !recovered[hour(1).OpenTime] || !recovered[hour(2).OpenTime] {
-		t.Fatal("resumed recovery did not restore the gap")
+		t.Fatal("recovery without clients did not restore the gap")
 	}
 }
 
@@ -506,13 +420,12 @@ func TestEventProvenReconnectRecoversLikeStatus(t *testing.T) {
 	service.applyStatus(kline.Status{Keys: []kline.Key{key}, Connected: false, Epoch: 1})
 	// The connected status of epoch 2 was lost; its first packet reconnects.
 	service.apply(ctx, kline.Event{Key: key, Candle: testCandle(start.Add(time.Hour), key.Interval, 2), Epoch: 2})
-	service.mu.Lock()
-	state := service.states[key]
-	recovering, recoveryStart := state.recovering, state.recoveryStart
-	service.mu.Unlock()
 	service.workers.Wait()
-	if !recovering || !recoveryStart.Equal(start) {
-		t.Fatalf("reconnect recovery: recovering=%v start=%s, want from %s", recovering, recoveryStart, start)
+	service.mu.Lock()
+	missed := service.states[key].gap
+	service.mu.Unlock()
+	if !missed.from.Equal(start) {
+		t.Fatalf("reconnect gap = %+v, want from %s", missed, start)
 	}
 }
 
@@ -595,6 +508,46 @@ func TestSubscribePublishesFormingCandleBeforeAnyStreamEvent(t *testing.T) {
 			return
 		case <-time.After(time.Second):
 			t.Fatal("forming candle was not published without a stream event")
+		}
+	}
+}
+
+func TestGapRecoversWhenSynchronizationCommitsLate(t *testing.T) {
+	start := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	hour := func(index int) market.Candle {
+		candle := testCandle(start.Add(time.Duration(index)*time.Hour), market.IntervalHour, float64(index))
+		candle.InstrumentID = 1
+		return candle
+	}
+	// Hours 1 and 2 are stored; hour 3 is not synchronized yet.
+	service, key, client := recoveringService(t, &historyStub{candles: []market.Candle{hour(0), hour(1), hour(2)}})
+	ctx := context.Background()
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(0), Final: true, Epoch: 1})
+	service.apply(ctx, kline.Event{Key: key, Candle: hour(4), Epoch: 1})
+	service.workers.Wait()
+	service.mu.Lock()
+	freshness := service.states[key].freshness()
+	service.mu.Unlock()
+	if freshness != FreshnessRecovering {
+		t.Fatalf("freshness while hour 3 is not synchronized = %s, want recovering", freshness)
+	}
+	for len(client.messages) > 0 {
+		<-client.messages
+	}
+	service.HistoryChanged([]market.Candle{hour(3)})
+	message := waitForMessage(t, client.messages, func(message Message) bool {
+		return message.Kind == KindSnapshot && message.Freshness != FreshnessRecovering
+	})
+	if message.Freshness != FreshnessFresh {
+		t.Fatalf("freshness after synchronization committed hour 3 = %s, want fresh", message.Freshness)
+	}
+	recovered := make(map[time.Time]bool)
+	for _, candle := range message.Candles {
+		recovered[candle.Candle.OpenTime] = candle.Final
+	}
+	for index := range 4 {
+		if !recovered[hour(index).OpenTime] {
+			t.Fatalf("hour %d missing or not final after recovery", index)
 		}
 	}
 }

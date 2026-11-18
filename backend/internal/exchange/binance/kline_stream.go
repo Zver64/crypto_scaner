@@ -27,8 +27,7 @@ func klineStreamName(key kline.Key) string {
 // KlineStream is a shared, dynamically subscribed Binance kline pool.
 type KlineStream struct {
 	*streamPool[kline.Key]
-	events   chan kline.Event
-	statuses chan kline.Status
+	events chan kline.Event
 }
 
 func NewKlineStream(logger *slog.Logger, dialLimiter *rate.Limiter) *KlineStream {
@@ -36,24 +35,25 @@ func NewKlineStream(logger *slog.Logger, dialLimiter *rate.Limiter) *KlineStream
 }
 
 func newKlineStream(url string, dialer *websocket.Dialer, logger *slog.Logger, dialLimiter *rate.Limiter) *KlineStream {
-	stream := &KlineStream{events: make(chan kline.Event, 256), statuses: make(chan kline.Status, 32)}
+	stream := &KlineStream{events: make(chan kline.Event, 256)}
 	stream.streamPool = newStreamPool(url, dialer, logger, dialLimiter, streamKind[kline.Key]{
 		label: "kline", module: "binance_kline", event: "kline", name: klineStreamName,
 		handle: stream.handle,
-		status: func(keys []kline.Key, connected bool, epoch int64, err error) bool {
-			select {
-			case stream.statuses <- kline.Status{Keys: keys, Connected: connected, Epoch: epoch, Err: err}:
-				return true
-			default:
-				return false
-			}
-		},
 	})
 	return stream
 }
 
-func (stream *KlineStream) Events() <-chan kline.Event    { return stream.events }
-func (stream *KlineStream) Statuses() <-chan kline.Status { return stream.statuses }
+func (stream *KlineStream) Events() <-chan kline.Event     { return stream.events }
+func (stream *KlineStream) StatusesReady() <-chan struct{} { return stream.statuses.ready }
+
+func (stream *KlineStream) DrainStatuses() []kline.Status {
+	updates := stream.statuses.drain()
+	statuses := make([]kline.Status, len(updates))
+	for index, update := range updates {
+		statuses[index] = kline.Status{Keys: update.keys, Connected: update.connected, Epoch: update.epoch, Err: update.err}
+	}
+	return statuses
+}
 
 func (stream *KlineStream) Subscribe(key kline.Key) {
 	stream.mu.Lock()

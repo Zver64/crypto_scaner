@@ -98,15 +98,15 @@ func TestTradeStreamWaitsForAcknowledgementBeforeConnectedAndSkipsInvalidTrade(t
 		t.Fatal("subscription command not received")
 	}
 	select {
-	case status := <-stream.Statuses():
-		t.Fatalf("status published before ACK: %+v", status)
+	case <-stream.StatusesReady():
+		t.Fatalf("status published before ACK: %+v", stream.DrainStatuses())
 	case <-time.After(100 * time.Millisecond):
 	}
 	close(allowACK)
 	select {
-	case status := <-stream.Statuses():
-		if !status.Connected {
-			t.Fatalf("status after ACK = %+v", status)
+	case <-stream.StatusesReady():
+		if statuses := stream.DrainStatuses(); len(statuses) != 1 || !statuses[0].Connected {
+			t.Fatalf("statuses after ACK = %+v", statuses)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("connected status not published after ACK")
@@ -125,8 +125,8 @@ func TestTradeStreamWaitsForAcknowledgementBeforeConnectedAndSkipsInvalidTrade(t
 		t.Fatal("trade event not delivered")
 	}
 	select {
-	case status := <-stream.Statuses():
-		t.Fatalf("status after a skipped invalid trade: %+v", status)
+	case <-stream.StatusesReady():
+		t.Fatalf("status after a skipped invalid trade: %+v", stream.DrainStatuses())
 	case <-time.After(100 * time.Millisecond):
 	}
 }

@@ -1,5 +1,33 @@
 # Changelog
 
+## [8.0.0](https://github.com/Zver64/crypto_scaner/compare/v7.0.0...v8.0.0) (2026-11-18)
+
+
+### ⚠ BREAKING CHANGES
+
+* GridLimitsResponse is split into spot, usdm and coinm objects.
+* strategy bodies nest rules and coins, the strategy backtest operations are replaced by one POST taking a strategy union, the favorites analysis operation is replaced by the favorites universe of the market analysis, and analysis metrics are no longer rounded.
+* chart pages and backtest charts carry shapes and panes, and the chart indicator catalog lists only selections and panes.
+
+### Features
+
+* draw chart indicators with backend drawers ([bd7b0d9](https://github.com/Zver64/crypto_scaner/commit/bd7b0d959a0305accc8917ed348a2bc0de6f44c6))
+* limit the calculator grid count to the Binance grid bot range ([b303430](https://github.com/Zver64/crypto_scaner/commit/b303430cbe3dfb833a85b19abfbc1155adf750d3))
+* show the Binance grid bot minimum investment in the calculator ([ce681e8](https://github.com/Zver64/crypto_scaner/commit/ce681e8a698e188111213a896594265d3dfe8467))
+
+
+### Bug Fixes
+
+* fill exit-rule sells at the open of the next processed candle ([7eb2375](https://github.com/Zver64/crypto_scaner/commit/7eb237567da243814d77917a56776379be06405c))
+* re-arm a price alert whose fire failed to persist ([8af99e4](https://github.com/Zver64/crypto_scaner/commit/8af99e4149c842929daa6dd02c49e71cfd7a428d))
+* recover live chart gaps without polling and keep every connection status ([26d4fb1](https://github.com/Zver64/crypto_scaner/commit/26d4fb1a9ac09c1673784ee37158b0d41b8ef635))
+* show the current price on coin pages without a chart ([aa43cb8](https://github.com/Zver64/crypto_scaner/commit/aa43cb87b43527e6a9903d1dd9af1a316157f0ec))
+
+
+### Code Refactoring
+
+* clean up the HTTP API contract ([7d03e2c](https://github.com/Zver64/crypto_scaner/commit/7d03e2c0970224ca5e9571bb562f5df8eff0b6d4))
+
 ## [7.0.0](https://github.com/Zver64/crypto_scaner/compare/v6.0.0...v7.0.0) (2026-11-15)
 
 

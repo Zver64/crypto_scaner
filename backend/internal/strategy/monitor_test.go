@@ -659,7 +659,8 @@ func TestMonitorRetriesACatchUpPerInstrument(t *testing.T) {
 			service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Hold", Expression: `close("1h") > 1`, Coins: []string{"BTCUSDT", "ETHUSDT"}, Enabled: true, Revision: 1})
 			// Only the catch-ups of BTCUSDT fail.
 			candles := &countingCandles{err: test.err}
-			saving := &twoCoinsStore{statesStore: statesStore{monitorStore: monitorStore{store}}}
+			service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
+			saving := &statesStore{monitorStore: monitorStore{store}}
 			monitor := NewMonitor(saving, candles, testRegistry(t), test.values, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 			monitor.catchUpLimit = 1
 			start := time.Now()
@@ -713,7 +714,8 @@ func TestMonitorCatchesUpInChunks(t *testing.T) {
 		}
 	}
 	service := newBacktestService(t, store, Strategy{ID: testID(1), Name: "Hold", Expression: `close("1h") > 1`, Coins: []string{"BTCUSDT", "ETHUSDT"}, Enabled: true, Revision: 1})
-	saving := &twoCoinsStore{statesStore: statesStore{monitorStore: monitorStore{store}}}
+	service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
+	saving := &statesStore{monitorStore: monitorStore{store}}
 	monitor := NewMonitor(saving, store, testRegistry(t), storedValues{testRegistry(t), store}, service, nil, testCoins, 7, slog.New(slog.DiscardHandler))
 	monitor.now = func() time.Time { return backtestHour(10) }
 	monitor.catchUpLimit = 1
@@ -728,11 +730,4 @@ func TestMonitorCatchesUpInChunks(t *testing.T) {
 			t.Fatal("the rest of the catch-up was not scheduled")
 		}
 	}
-}
-
-// twoCoinsStore lists BTCUSDT (1) and ETHUSDT (2) as active.
-type twoCoinsStore struct{ statesStore }
-
-func (*twoCoinsStore) ListStrategyInstruments(context.Context) ([]Instrument, error) {
-	return []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}}, nil
 }

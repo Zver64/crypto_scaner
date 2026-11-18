@@ -308,6 +308,8 @@ type Service struct {
 	// active are the active instruments, as the catalog last reported them,
 	// without market caps.
 	active []Instrument
+	// plan is what the tracker is subscribed to; subscribe rebuilds it.
+	plan Plan
 	// favorites are the symbols of the administrator's favorites, as last
 	// read, ascending.
 	favorites []string
@@ -745,10 +747,27 @@ func (service *Service) Get(id uuid.UUID) (Entry, error) {
 	return service.entries[index], nil
 }
 
-// subscribe subscribes the tracker to the values the enabled strategies and
-// signals read: each value of the evaluated instrument on every instrument
-// they evaluate, and each value read through of only on the instrument it
-// names. It must be called with mu held.
+// Plan is what the enabled strategies and signals read, as the tracker is
+// subscribed to it: the strategies evaluated, the active instruments they
+// evaluate theirs among, and the reads of both.
+type Plan struct {
+	entries     []Entry
+	instruments []Instrument
+	reads       reads
+}
+
+// Plan returns the plan the tracker is subscribed to, so the monitor
+// evaluates exactly what the tracker calculates.
+func (service *Service) Plan() Plan {
+	service.mu.RLock()
+	defer service.mu.RUnlock()
+	return service.plan
+}
+
+// subscribe plans and subscribes the tracker to the values the enabled
+// strategies and signals read: each value of the evaluated instrument on
+// every instrument they evaluate, and each value read through of only on the
+// instrument it names. It must be called with mu held.
 func (service *Service) subscribe() {
 	var evaluated []Entry
 	for _, entry := range service.entries {
@@ -756,7 +775,8 @@ func (service *Service) subscribe() {
 			evaluated = append(evaluated, entry)
 		}
 	}
-	service.tracker.Subscribe(trackerSubscriber, readsOf(evaluated, Entry.instruments, service.active).subscriptions)
+	service.plan = Plan{entries: evaluated, instruments: service.active, reads: readsOf(evaluated, Entry.instruments, service.active)}
+	service.tracker.Subscribe(trackerSubscriber, service.plan.reads.subscriptions)
 }
 
 // Create validates and stores a strategy.

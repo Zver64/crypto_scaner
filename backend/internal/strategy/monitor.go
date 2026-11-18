@@ -39,8 +39,8 @@ type Instrument struct {
 }
 
 type MonitorStore interface {
-	// ListStrategyInstruments returns the active instruments, among which
-	// each strategy evaluates its own.
+	// ListStrategyInstruments returns the active instruments with their
+	// market caps, which the instruments of the plan take.
 	ListStrategyInstruments(context.Context) ([]Instrument, error)
 	// ListStrategyStates maps strategy ids to the trading states of their
 	// instruments.
@@ -82,13 +82,14 @@ type Values interface {
 	Snapshot([]closedindicator.Subscription) ([]closedindicator.Value, []indicator.Target)
 }
 
-// Strategies supplies the current strategies. A change requests its
-// baseline before List can return the changed strategy. DisableAtRevision
+// Strategies supplies the plan of the evaluated strategies, the one the
+// tracker is subscribed to. A change requests its baseline before Plan can
+// return the changed strategy. DisableAtRevision
 // disables a strategy that a rule error halts, only while it still has the
 // revision that failed, and reports whether it did. ReloadFavorites rereads
 // the administrator's favorites when their last read failed.
 type Strategies interface {
-	List() []Entry
+	Plan() Plan
 	DisableAtRevision(ctx context.Context, id uuid.UUID, revision int64) (bool, error)
 	ReloadFavorites(ctx context.Context) error
 }
@@ -231,8 +232,8 @@ func (monitor *Monitor) Run(ctx context.Context) error {
 	defer waitSends()
 	// Baselines requested before a restart start now.
 	var pending []uuid.UUID
-	for _, entry := range monitor.strategies.List() {
-		if entry.BaselinePending && entry.Enabled {
+	for _, entry := range monitor.strategies.Plan().entries {
+		if entry.BaselinePending {
 			pending = append(pending, entry.ID)
 		}
 	}
@@ -347,16 +348,16 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[uuid.UUID]map[in
 		monitor.mu.Unlock()
 		monitor.failed = true
 	}
-	// Listed after draining: a strategy changed meanwhile has its baseline
+	// Planned after draining: a strategy changed meanwhile has its baseline
 	// queued again and waits for the next round instead of alerting now. An
-	// entry listed before a change has a stale revision, and the store
-	// rejects its writes. List runs outside mu, because changes request baselines while
+	// entry planned before a change has a stale revision, and the store
+	// rejects its writes. Plan runs outside mu, because changes request baselines while
 	// holding the strategies lock.
-	listed := monitor.strategies.List()
+	plan := monitor.strategies.Plan()
 	var strategies []Entry
 	monitor.mu.Lock()
-	for _, entry := range listed {
-		if _, queued := monitor.baselines[entry.ID]; entry.evaluated() && !queued {
+	for _, entry := range plan.entries {
+		if _, queued := monitor.baselines[entry.ID]; !queued {
 			strategies = append(strategies, entry)
 		}
 	}
@@ -373,7 +374,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[uuid.UUID]map[in
 		return
 	}
 	instrumentsFailure := failureKey{operation: "load instruments"}
-	instruments, err := monitor.store.ListStrategyInstruments(ctx)
+	listed, err := monitor.store.ListStrategyInstruments(ctx)
 	if err != nil {
 		monitor.failures.Warn(ctx, instrumentsFailure, "load monitored instruments failed", "error", err)
 		requeue()
@@ -390,8 +391,17 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[uuid.UUID]map[in
 		return
 	}
 	monitor.failures.Recover(ctx, recipientsFailure, "load strategy recipients recovered")
-	active := make(map[int64]Instrument, len(instruments))
-	for _, instrument := range instruments {
+	// The instruments are those of the plan, which the tracker calculates;
+	// the store only adds their market caps.
+	marketCaps := make(map[int64]*float64, len(listed))
+	for _, instrument := range listed {
+		marketCaps[instrument.ID] = instrument.MarketCapUSD
+	}
+	instruments := make([]Instrument, len(plan.instruments))
+	active := make(map[int64]Instrument, len(plan.instruments))
+	for i, instrument := range plan.instruments {
+		instrument.MarketCapUSD = marketCaps[instrument.ID]
+		instruments[i] = instrument
 		active[instrument.ID] = instrument
 	}
 	var changed []Instrument
@@ -401,7 +411,7 @@ func (monitor *Monitor) evaluate(ctx context.Context, state map[uuid.UUID]map[in
 		}
 	}
 	work := roundWork{instruments: instruments, changed: changed, full: full, baselines: baselines, recipients: recipients, catchUpLeft: new(monitor.catchUpLimit)}
-	work.current = snapshot{reads: readsOf(strategies, Entry.instruments, instruments), now: monitor.now(), bySymbol: bySymbol(instruments)}
+	work.current = snapshot{reads: plan.reads, now: monitor.now(), bySymbol: bySymbol(instruments)}
 	work.current.values, work.missing = monitor.values.Snapshot(work.current.reads.subscriptions)
 	for _, entry := range strategies {
 		monitor.check(ctx, state, entry, work)

@@ -56,14 +56,14 @@ func TestSyncEnsuresHistoryDepthForEverySupportedInterval(t *testing.T) {
 
 					exchange := &historyExchange{instrument: instrument, candles: all}
 					store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: stored}
-					synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(interval))
+					synchronizer := marketsync.New(exchange, marketsync.NewObservableStore(store), slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(interval))
 					if err := synchronizer.Sync(t.Context()); err != nil {
 						t.Fatal(err)
 					}
 					assertContinuousHistory(t, store, interval, want)
 					requestsAfterRepair := len(exchange.requests)
 
-					restarted := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(interval))
+					restarted := marketsync.New(exchange, marketsync.NewObservableStore(store), slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(interval))
 					if err := restarted.Sync(t.Context()); err != nil {
 						t.Fatal(err)
 					}
@@ -93,7 +93,7 @@ func TestForwardPaginationResumesFromPersistedProgressAfterFailure(t *testing.T)
 		}
 		exchangeErr := errors.New("interrupted after first page")
 		exchange := &historyExchange{instrument: instrument, candles: all, failAtRequest: 2, requestErr: exchangeErr}
-		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
+		synchronizer := marketsync.New(exchange, marketsync.NewObservableStore(store), slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
 
 		if err := synchronizer.Sync(t.Context()); !errors.Is(err, exchangeErr) {
 			t.Fatalf("Sync() error = %v, want pagination failure", err)
@@ -120,7 +120,7 @@ func TestHistoryRepairDatabaseFailureDoesNotAdvanceCoverage(t *testing.T) {
 			upsertErrOnce:   storeErr,
 		}
 		exchange := &historyExchange{instrument: instrument, candles: all}
-		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
+		synchronizer := marketsync.New(exchange, marketsync.NewObservableStore(store), slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 		if err := synchronizer.Sync(t.Context()); !errors.Is(err, storeErr) {
 			t.Fatalf("Sync() error = %v, want storage failure", err)
@@ -143,7 +143,7 @@ func TestHistoryRepairFailureKeepsDurableProgressAndDoesNotMarkExhausted(t *test
 		exchangeErr := errors.New("temporary Binance failure")
 		exchange := &historyExchange{instrument: instrument, candles: all, repairErr: exchangeErr}
 		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: stored}
-		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
+		synchronizer := marketsync.New(exchange, marketsync.NewObservableStore(store), slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 		if err := synchronizer.Sync(t.Context()); !errors.Is(err, exchangeErr) {
 			t.Fatalf("Sync() error = %v, want repair failure", err)
@@ -177,7 +177,7 @@ func TestEmptyGapIsNotRequestedAgainBeforeItsRetry(t *testing.T) {
 			return count
 		}
 		var logs bytes.Buffer
-		synchronizer := marketsync.New(exchange, store, slog.New(slog.NewJSONHandler(&logs, nil)), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
+		synchronizer := marketsync.New(exchange, marketsync.NewObservableStore(store), slog.New(slog.NewJSONHandler(&logs, nil)), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
 
 		if err := synchronizer.Sync(t.Context()); err != nil {
 			t.Fatal(err)
@@ -209,7 +209,7 @@ func TestInstrumentWithoutClosedCandlesIsRequestedAgainNextRun(t *testing.T) {
 		instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
 		exchange := &historyExchange{instrument: instrument, candles: intervalCandles(market.IntervalHour, 1)}
 		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}}
-		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
+		synchronizer := marketsync.New(exchange, marketsync.NewObservableStore(store), slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
 		if err := synchronizer.Sync(t.Context()); err != nil {
 			t.Fatal(err)
 		}
@@ -231,7 +231,7 @@ func TestUnchangedHistoryIsSummarizedOncePerRun(t *testing.T) {
 		all := intervalCandles(market.IntervalDay, 74)
 		exchange := &historyExchange{instrument: instrument, candles: all}
 		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: cloneCandles(all[23:73])}
-		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
+		synchronizer := marketsync.New(exchange, marketsync.NewObservableStore(store), slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalDay))
 		if err := synchronizer.Sync(t.Context()); err != nil {
 			t.Fatal(err)
 		}

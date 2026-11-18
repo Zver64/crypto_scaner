@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/indicator"
 
 	"github.com/google/uuid"
 )
@@ -20,7 +20,7 @@ type roundWork struct {
 	full                 bool
 	baselines            map[uuid.UUID]struct{}
 	// missing are the targets some subscription has no value for yet.
-	missing    []closedindicator.Target
+	missing    []indicator.Target
 	current    snapshot
 	recipients []Recipient
 	// catchUpLeft is how many more instruments may catch up this round.

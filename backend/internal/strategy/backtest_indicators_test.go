@@ -14,8 +14,6 @@ import (
 	"crypto-scanner/internal/indicator/pivot"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/scannerindicator"
-
-	"github.com/google/uuid"
 )
 
 func snapshotTestService(t *testing.T, store *backtestStore) *Service {
@@ -23,7 +21,7 @@ func snapshotTestService(t *testing.T, store *backtestStore) *Service {
 	registry := testRegistry(t)
 	// No configured rows or writes: Preview must resolve all dependencies.
 	source := testScannerIndicators(t, registry)
-	service, err := NewService(store, source, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	service, err := NewService(store, source, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +237,7 @@ func TestBacktestDependenciesIncludeExitAndPriceRules(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, read := range entry.reads {
-		if read.Variable.Target.Equal(CandleTarget(read.Variable.Target.Interval)) {
+		if read.Variable.Target.Equal(CandleTarget(read.Variable.Target.Interval())) {
 			continue
 		}
 		if !slices.ContainsFunc(items, func(item displayedIndicator) bool { return item.target().Equal(read.Variable.Target) }) {

@@ -58,8 +58,8 @@ func (emptyCatalog) ChartCatalog(market.CandleInterval) []chart.CatalogIndicator
 func TestTrackerSettlesRecursiveIndicators(t *testing.T) {
 	registry := testRegistry(t)
 	long := testHistory(3 * market.SyncDepth)
-	target := closedindicator.Target{Interval: market.IntervalHour, Selection: selection(t, registry, "ema", 200)}
-	reference, err := registry.CalculateCandles(market.IntervalHour, long, []indicator.Selection{target.Selection})
+	target := indicator.NewTarget(market.IntervalHour, selection(t, registry, "ema", 200))
+	reference, err := registry.CalculateCandles(market.IntervalHour, long, []indicator.Selection{target.Selection()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -78,10 +78,10 @@ func TestTrackerSettlesRecursiveIndicators(t *testing.T) {
 func TestTrackerAgreesWithChartsAndPoints(t *testing.T) {
 	registry := testRegistry(t)
 	history := testHistory(market.SyncDepth)
-	targets := []closedindicator.Target{
-		{Interval: market.IntervalHour, Selection: selection(t, registry, "ema", 200)},
-		{Interval: market.IntervalHour, Selection: selection(t, registry, "rsi", 14)},
-		{Interval: market.IntervalHour, Selection: selection(t, registry, "macd", 0)},
+	targets := []indicator.Target{
+		indicator.NewTarget(market.IntervalHour, selection(t, registry, "ema", 200)),
+		indicator.NewTarget(market.IntervalHour, selection(t, registry, "rsi", 14)),
+		indicator.NewTarget(market.IntervalHour, selection(t, registry, "macd", 0)),
 	}
 	drawers, err := chart.NewDrawers(registry, chart.Palette{Colors: []string{"yellow.5"}, Bullish: "green.6", Bearish: "red.6"}, draw.Default{}, nil)
 	if err != nil {
@@ -93,7 +93,7 @@ func TestTrackerAgreesWithChartsAndPoints(t *testing.T) {
 	}
 	selections := make([]indicator.Selection, len(targets))
 	for index, target := range targets {
-		selections[index] = target.Selection
+		selections[index] = target.Selection()
 	}
 	page, err := service.Build(context.Background(), chart.Request{Symbol: "BTCUSDT", Interval: market.IntervalHour, Limit: chart.DefaultRange, Indicators: selections})
 	if err != nil {
@@ -117,13 +117,13 @@ func TestTrackerAgreesWithChartsAndPoints(t *testing.T) {
 		for outputIndex, output := range tracked[index].Outputs {
 			want := lastValue(t, page, fmt.Sprintf("%d/%s", index, output.Name))
 			if got := lastValue(t, alone, "0/"+output.Name); got != want {
-				t.Fatalf("%s %s drawn alone = %v, with others %v", target.Selection.Type, output.Name, got, want)
+				t.Fatalf("%s %s drawn alone = %v, with others %v", target.Selection().Type, output.Name, got, want)
 			}
 			if got := output.Value; !settled(got, want) {
-				t.Fatalf("%s %s tracked = %v, chart %v", target.Selection.Type, output.Name, got, want)
+				t.Fatalf("%s %s tracked = %v, chart %v", target.Selection().Type, output.Name, got, want)
 			}
 			if got := deep.Outputs[outputIndex].Value; !settled(got, want) {
-				t.Fatalf("%s %s with 300 points = %v, chart %v", target.Selection.Type, output.Name, got, want)
+				t.Fatalf("%s %s with 300 points = %v, chart %v", target.Selection().Type, output.Name, got, want)
 			}
 		}
 	}
@@ -140,7 +140,7 @@ func lastValue(t *testing.T, page chart.Page, id string) float64 {
 	return points[len(points)-1].Value
 }
 
-func newTracker(t *testing.T, registry *indicator.Registry, history []market.Candle, targets ...closedindicator.Target) *closedindicator.Tracker {
+func newTracker(t *testing.T, registry *indicator.Registry, history []market.Candle, targets ...indicator.Target) *closedindicator.Tracker {
 	t.Helper()
 	tracker, err := closedindicator.New(historyStore{history}, registry, targets, slog.New(slog.DiscardHandler))
 	if err != nil {
@@ -177,7 +177,7 @@ func TestTargetKeyOfANestedSourceSurvivesJSON(t *testing.T) {
 	}
 	want := `1h|sma|period=9|source=map[output:rsi parameters:map[period:21 source:3] type:rsi]`
 	for _, parameters := range []indicator.Parameters{normalized.Parameters, decoded} {
-		target := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: "sma", Parameters: parameters}}
+		target := indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: "sma", Parameters: parameters})
 		if key := target.Key(); key != want {
 			t.Errorf("Key() = %q, want %q", key, want)
 		}
@@ -227,8 +227,8 @@ func TestTrackerRecalculatesOnlyTheSyncedInterval(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		target := func(interval market.CandleInterval) closedindicator.Target {
-			return closedindicator.Target{Interval: interval, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}
+		target := func(interval market.CandleInterval) indicator.Target {
+			return indicator.NewTarget(interval, indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}})
 		}
 		store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
 		bar := func(interval market.CandleInterval, open time.Time) market.Candle {
@@ -247,7 +247,7 @@ func TestTrackerRecalculatesOnlyTheSyncedInterval(t *testing.T) {
 		tracker.Listen(func(changes []closedindicator.Change) {
 			var intervals []market.CandleInterval
 			for _, change := range changes {
-				intervals = append(intervals, change.Current.Target.Interval)
+				intervals = append(intervals, change.Current.Target.Interval())
 			}
 			batches = append(batches, intervals)
 		})
@@ -429,11 +429,11 @@ func TestTrackerReportsThePairsThatCalculate(t *testing.T) {
 		tracker, _, pair, _ := runWindowTracker(t, registry)
 		defer tracker.stop()
 		broken := pair
-		broken.Target.Selection.Type = brokenType
+		broken.Target = indicator.NewTarget(pair.Target.Interval(), indicator.Selection{Type: brokenType, Parameters: pair.Target.Selection().Parameters})
 		var reported []indicator.Type
 		tracker.Listen(func(changes []closedindicator.Change) {
 			for _, change := range changes {
-				reported = append(reported, change.Current.Target.Selection.Type)
+				reported = append(reported, change.Current.Target.Selection().Type)
 			}
 		})
 		tracker.Subscribe("test", []closedindicator.Subscription{pair, broken})
@@ -441,7 +441,7 @@ func TestTrackerReportsThePairsThatCalculate(t *testing.T) {
 		if !slices.Equal(reported, []indicator.Type{candle.Type}) {
 			t.Fatalf("reported %v, want only the candle pair", reported)
 		}
-		if _, missing := tracker.Snapshot([]closedindicator.Subscription{pair, broken}); len(missing) != 1 || missing[0].Selection.Type != brokenType {
+		if _, missing := tracker.Snapshot([]closedindicator.Subscription{pair, broken}); len(missing) != 1 || missing[0].Selection().Type != brokenType {
 			t.Fatalf("missing %v, want the broken pair", missing)
 		}
 	})
@@ -476,7 +476,7 @@ func TestTrackerReportsAStepInOneCall(t *testing.T) {
 			return market.Candle{InstrumentID: 1, Interval: interval, OpenTime: open, CloseTime: interval.NextOpenTime(open).Add(-time.Millisecond), Open: 1, High: 2, Low: 1, Close: 2}
 		}
 		subscription := func(interval market.CandleInterval) closedindicator.Subscription {
-			return closedindicator.Subscription{InstrumentID: 1, Target: closedindicator.Target{Interval: interval, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}}
+			return closedindicator.Subscription{InstrumentID: 1, Target: indicator.NewTarget(interval, indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}})}
 		}
 		start := time.Date(2026, 1, 5, 0, 0, 0, 0, time.UTC)
 		for _, interval := range []market.CandleInterval{market.IntervalHour, market.IntervalDay, market.IntervalWeek} {
@@ -490,7 +490,7 @@ func TestTrackerReportsAStepInOneCall(t *testing.T) {
 		tracker.Listen(func(changes []closedindicator.Change) {
 			var intervals []market.CandleInterval
 			for _, change := range changes {
-				intervals = append(intervals, change.Current.Target.Interval)
+				intervals = append(intervals, change.Current.Target.Interval())
 			}
 			slices.Sort(intervals)
 			batches = append(batches, intervals)
@@ -628,7 +628,7 @@ func runWindowTracker(t *testing.T, registry *indicator.Registry) (runningTracke
 	if err != nil {
 		t.Fatal(err)
 	}
-	pair := closedindicator.Subscription{InstrumentID: 1, Target: closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}, Points: 2}
+	pair := closedindicator.Subscription{InstrumentID: 1, Target: indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}), Points: 2}
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error)
 	go func() { done <- tracker.Run(ctx) }()
@@ -652,13 +652,12 @@ func TestLatestServesThePairsThatCalculate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	working := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}
-	broken := working
-	broken.Selection.Type = brokenType
+	working := indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}})
+	broken := indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: brokenType, Parameters: indicator.Parameters{}})
 	store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
 	store.add(windowBar(windowStart, 2))
 	warnings := &warningCounter{}
-	tracker, err := closedindicator.New(store, registry, []closedindicator.Target{working, broken}, slog.New(warnings))
+	tracker, err := closedindicator.New(store, registry, []indicator.Target{working, broken}, slog.New(warnings))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -683,10 +682,10 @@ func TestLatestIgnoresTheCallerLeaving(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	target := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}
+	target := indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}})
 	store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}, failures: 1}
 	warnings := &warningCounter{}
-	tracker, err := closedindicator.New(store, registry, []closedindicator.Target{target}, slog.New(warnings))
+	tracker, err := closedindicator.New(store, registry, []indicator.Target{target}, slog.New(warnings))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -710,13 +709,48 @@ func TestTrackerWarnsAboutAnInvalidTargetOnce(t *testing.T) {
 		tracker, _, pair, _ := newWindowTracker(t)
 		defer tracker.stop()
 		invalid := pair
-		invalid.Target.Interval = "2h"
+		invalid.Target = indicator.NewTarget("2h", pair.Target.Selection())
 		for range 2 {
 			tracker.Subscribe("test", []closedindicator.Subscription{pair, invalid})
 		}
 		synctest.Wait()
 		if count := tracker.warnings.count.Load(); count != 1 {
 			t.Fatalf("warnings = %d, want 1", count)
+		}
+	})
+}
+
+// A table value of a tracked history is calculated over its in-memory
+// window, which committed changes keep current, without reading the store.
+func TestLatestCalculatesOverTheTrackedWindow(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		registry, err := indicator.NewRegistry(candle.New())
+		if err != nil {
+			t.Fatal(err)
+		}
+		target := indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}})
+		store := &intervalStore{candles: map[market.CandleInterval][]market.Candle{}}
+		store.add(windowBar(windowStart, 2))
+		tracker, err := closedindicator.New(store, registry, []indicator.Target{target}, slog.New(slog.DiscardHandler))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error)
+		go func() { done <- tracker.Run(ctx) }()
+		defer func() { cancel(); <-done }()
+		// Two points track the window, not the table value of one point.
+		tracker.Subscribe("test", []closedindicator.Subscription{{InstrumentID: 1, Target: target, Points: 2}})
+		synctest.Wait()
+		tracker.HistoryChanged([]market.Candle{windowBar(windowStart.Add(time.Hour), 3)})
+		reads := store.readCount()
+		value := tracker.Latest(context.Background(), []int64{1})[1][0]
+		if store.readCount() != reads {
+			t.Fatal("the table value read the store")
+		}
+		close := slices.IndexFunc(value.Outputs, func(output closedindicator.Output) bool { return output.Name == "close" })
+		if close < 0 || value.Outputs[close].Value != 3 || !value.OpenTime.Equal(windowStart.Add(time.Hour)) {
+			t.Fatalf("value = %+v, want the close of the changed window", value)
 		}
 	})
 }

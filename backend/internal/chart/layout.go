@@ -64,35 +64,32 @@ func layoutOf(registry *indicator.Registry, selection indicator.Selection) (layo
 	}) {
 		result.pane = sharedPane(selection.Type, fields)
 	}
+	nestedSources, err := indicator.NestedSources(descriptor, selection.Parameters)
+	if err != nil {
+		return layout{}, err
+	}
 	titled := selection.Parameters
-	for i := len(descriptor.Parameters) - 1; i >= 0; i-- {
-		parameter := descriptor.Parameters[i]
-		if parameter.Kind != indicator.ParameterSource {
-			continue
-		}
-		_, nested, err := indicator.ParseSource(selection.Parameters[parameter.Key])
-		if err != nil {
-			return layout{}, fmt.Errorf("%s %w", parameter.Key, err)
-		}
-		if nested == nil {
-			continue
-		}
-		source, err := layoutOf(registry, nested.Selection)
+	if len(nestedSources) > 0 {
+		titled = maps.Clone(titled)
+	}
+	for i, nested := range nestedSources {
+		source, err := layoutOf(registry, nested.Source.Selection)
 		if err != nil {
 			return layout{}, err
 		}
 		// The first nested source decides.
-		result.source = nested
-		if descriptor.Overlay {
-			result.placement, result.pane = source.placement, source.pane
-			result.sourcePane = source.placement == PlacementPane && source.pane == ""
+		if i == 0 {
+			result.source = &nestedSources[0].Source
+			if descriptor.Overlay {
+				result.placement, result.pane = source.placement, source.pane
+				result.sourcePane = source.placement == PlacementPane && source.pane == ""
+			}
 		}
 		name := source.title
 		if len(source.descriptor.Outputs) > 1 {
-			name += " " + nested.Output
+			name += " " + nested.Source.Output
 		}
-		titled = maps.Clone(titled)
-		titled[parameter.Key] = name
+		titled[nested.Key] = name
 	}
 	result.title = lineTitle(descriptor, titled, defaults.Parameters)
 	return result, nil
@@ -159,14 +156,5 @@ func NamedChoice(parameter indicator.ParameterDescriptor) bool {
 
 // sameSelection reports whether two normalized selections are equal.
 func sameSelection(left, right indicator.Selection) bool {
-	return selectionKey(left) == selectionKey(right)
-}
-
-func selectionKey(selection indicator.Selection) string {
-	var key strings.Builder
-	key.WriteString(string(selection.Type))
-	for _, name := range slices.Sorted(maps.Keys(selection.Parameters)) {
-		fmt.Fprintf(&key, "|%s=%v", name, selection.Parameters[name])
-	}
-	return key.String()
+	return left.Key() == right.Key()
 }

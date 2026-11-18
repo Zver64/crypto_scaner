@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"testing"
+	"time"
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/closedindicator"
@@ -29,18 +30,19 @@ func (stub *analyzerStub) SearchSymbols(_ context.Context, _ analysis.SearchRequ
 	return analysis.SearchResult{Items: items}, nil
 }
 
-// PriceHistories gives each instrument a seven-day series whose closes are
-// its id.
-func (*analyzerStub) PriceHistories(_ context.Context, ids []int64, _ market.PriceWindows) (map[int64]analysis.PriceHistories, error) {
-	histories := map[int64]analysis.PriceHistories{}
-	for _, id := range ids {
-		closes := make([]*float64, market.SevenDayPriceSlots)
-		for slot := range closes {
-			closes[slot] = new(float64(id))
-		}
-		histories[id] = analysis.PriceHistories{SevenDay: closes}
+// pricesStub gives each instrument an hourly close equal to its id at the
+// start of the window read.
+type pricesStub struct{}
+
+func (pricesStub) ListClosePrices(_ context.Context, ids []int64, interval market.CandleInterval, from, _ time.Time) ([]market.ClosePrice, error) {
+	if interval != market.IntervalHour {
+		return nil, nil
 	}
-	return histories, nil
+	prices := make([]market.ClosePrice, len(ids))
+	for i, id := range ids {
+		prices[i] = market.ClosePrice{InstrumentID: id, OpenTime: from, Close: float64(id)}
+	}
+	return prices, nil
 }
 
 // noConfiguredColumns is a table without admin-configured indicator columns.
@@ -66,7 +68,7 @@ func TestFavoritesAnalyzesActiveFavoritesAndKeepsEveryRow(t *testing.T) {
 		t.Fatal(err)
 	}
 	analyzer := &analyzerStub{}
-	service, err := markettable.NewService(analyzer, closedStub{}, perpetualsStub{}, table, table, table)
+	service, err := markettable.NewService(analyzer, closedStub{}, pricesStub{}, perpetualsStub{}, table, table, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +104,7 @@ func TestCoinMAnalyzesSpotUSDTPairsOfPerpetualCoins(t *testing.T) {
 		t.Fatal(err)
 	}
 	analyzer := &analyzerStub{}
-	service, err := markettable.NewService(analyzer, closedStub{}, perpetualsStub{"BTC", "ETH"}, table, table, table)
+	service, err := markettable.NewService(analyzer, closedStub{}, pricesStub{}, perpetualsStub{"BTC", "ETH"}, table, table, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +123,7 @@ func TestFavoritesMarkTheMarketsOfEveryCoin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	service, err := markettable.NewService(&analyzerStub{}, closedStub{}, perpetualsStub{"BTC", "OLD"}, table, table, table)
+	service, err := markettable.NewService(&analyzerStub{}, closedStub{}, pricesStub{}, perpetualsStub{"BTC", "OLD"}, table, table, table)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +179,7 @@ type configuredColumns []markettable.Column
 func (columns configuredColumns) TableColumns() []markettable.Column { return columns }
 
 func TestClosedIndicatorCellIsUnavailableWhenTheValueIsEmpty(t *testing.T) {
-	target := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: "pivot"}}
+	target := indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: "pivot"})
 	column := markettable.Column{ID: "high", Title: "High", Kind: markettable.KindNumber, Source: markettable.ClosedIndicator{Target: target, Output: "high"}}
 	catalog, err := markettable.NewCatalog(configuredColumns{column}, markettable.Sort{Column: "alert_count", Direction: markettable.Descending},
 		markettable.Column{ID: "alert_count", Title: "Alerts", Kind: markettable.KindCount, Sortable: true, Source: markettable.AlertCount{}},

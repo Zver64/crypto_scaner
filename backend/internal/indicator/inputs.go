@@ -46,11 +46,55 @@ func (source Source) Value() map[string]any {
 	}
 }
 
+// nestedValue reports whether raw, a parameter value, is a nested source,
+// as Value builds it or JSON decodes it.
+func nestedValue(raw any) (map[string]any, bool) {
+	value, ok := raw.(map[string]any)
+	return value, ok
+}
+
+// NestedSource reports whether selection, which must be normalized, reads
+// another indicator as a source.
+func NestedSource(selection Selection) bool {
+	for _, value := range selection.Parameters {
+		if _, nested := nestedValue(value); nested {
+			return true
+		}
+	}
+	return false
+}
+
+// NestedParameter is a source parameter whose value is a nested source.
+type NestedParameter struct {
+	Key    string
+	Source Source
+}
+
+// NestedSources returns the source parameters of descriptor that read a
+// nested source in parameters, in descriptor order; the first one is the
+// source an indicator of another indicator is drawn and titled after.
+func NestedSources(descriptor Descriptor, parameters Parameters) ([]NestedParameter, error) {
+	var result []NestedParameter
+	for _, parameter := range descriptor.Parameters {
+		if parameter.Kind != ParameterSource {
+			continue
+		}
+		_, nested, err := ParseSource(parameters[parameter.Key])
+		if err != nil {
+			return nil, fmt.Errorf("%s %w", parameter.Key, err)
+		}
+		if nested != nil {
+			result = append(result, NestedParameter{Key: parameter.Key, Source: *nested})
+		}
+	}
+	return result, nil
+}
+
 // ParseSource reads the value of a ParameterSource parameter: a number, the
 // value of one of its choices, or a nested source, as Value builds it or
 // JSON decodes it. nested is nil for a number.
 func ParseSource(raw any) (choice float64, nested *Source, err error) {
-	value, ok := raw.(map[string]any)
+	value, ok := nestedValue(raw)
 	if !ok {
 		choice, err = ParseNumber(raw)
 		if err != nil {

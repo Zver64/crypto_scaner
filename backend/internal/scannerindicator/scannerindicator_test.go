@@ -23,7 +23,7 @@ func newService(store scannerindicator.Store, registry *indicator.Registry) (*sc
 	if err != nil {
 		return nil, err
 	}
-	return scannerindicator.New(store, registry, drawers, slog.New(slog.DiscardHandler), func() {})
+	return scannerindicator.New(store, registry, drawers, slog.New(slog.DiscardHandler))
 }
 
 // Only previews take an indicator of another indicator, which is titled

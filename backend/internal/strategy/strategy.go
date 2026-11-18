@@ -294,15 +294,17 @@ type Service struct {
 	charts   ChartDrawing
 	tracker  Tracker
 	logger   *slog.Logger
-	changed  func(baselines []uuid.UUID)
 	// administratorUserID is the user id, not the Telegram id, of the
 	// administrator, whose favorites signals of CoinsFavorites evaluate.
 	administratorUserID int64
 
 	// writes serializes changes, so name checks see every earlier change.
-	writes  sync.Mutex
-	mu      sync.RWMutex
-	entries []Entry
+	writes sync.Mutex
+	mu     sync.RWMutex
+	// listener receives the ids of strategies whose trading states must
+	// start afresh after each change; nil until Listen sets it.
+	listener func(baselines []uuid.UUID)
+	entries  []Entry
 	// active are the active instruments, as the catalog last reported them,
 	// without market caps.
 	active []Instrument
@@ -329,16 +331,32 @@ const trackerSubscriber = "strategies"
 
 // NewService creates an empty service; Load reads the stored strategies.
 // Every change subscribes tracker to the values the enabled strategies and
-// signals read. changed receives the ids of strategies whose trading states
-// must start afresh after each change and must not block. administratorUserID
-// is the user id of the administrator, whose favorites signals of
-// CoinsFavorites evaluate.
-func NewService(store Store, indicators Indicators, registry *indicator.Registry, charts ChartDrawing, tracker Tracker, logger *slog.Logger, administratorUserID int64, changed func(baselines []uuid.UUID)) (*Service, error) {
-	if store == nil || indicators == nil || registry == nil || charts == nil || tracker == nil || logger == nil || changed == nil {
-		return nil, errors.New("strategy store, indicators, registry, chart drawing, tracker, logger, and change listener are required")
+// signals read. administratorUserID is the user id of the administrator,
+// whose favorites signals of CoinsFavorites evaluate. registry must calculate
+// the ATR that judges signals in backtests.
+func NewService(store Store, indicators Indicators, registry *indicator.Registry, charts ChartDrawing, tracker Tracker, logger *slog.Logger, administratorUserID int64) (*Service, error) {
+	if store == nil || indicators == nil || registry == nil || charts == nil || tracker == nil || logger == nil {
+		return nil, errors.New("strategy store, indicators, registry, chart drawing, tracker, and logger are required")
+	}
+	atr := signalATR(market.IntervalHour)
+	if _, err := registry.Normalize(atr.Selection()); err != nil {
+		return nil, fmt.Errorf("signal ATR: %w", err)
+	}
+	if _, err := closedindicator.Depth(registry, atr, 1); err != nil {
+		return nil, fmt.Errorf("signal ATR: %w", err)
 	}
 	logger = logger.With("module", "strategy")
-	return &Service{store: store, indicators: indicators, registry: registry, charts: charts, tracker: tracker, logger: logger, administratorUserID: administratorUserID, changed: changed, favoritesFailure: logging.NewFailure(logger), backtests: make(chan struct{}, maxBacktests)}, nil
+	return &Service{store: store, indicators: indicators, registry: registry, charts: charts, tracker: tracker, logger: logger, administratorUserID: administratorUserID, favoritesFailure: logging.NewFailure(logger), backtests: make(chan struct{}, maxBacktests)}, nil
+}
+
+// Listen sets the consumer of changes, replacing any earlier one. It
+// receives the ids of strategies whose trading states must start afresh
+// after each change, mostly under the service lock, and must not block;
+// changes before it is set reach nobody.
+func (service *Service) Listen(listener func(baselines []uuid.UUID)) {
+	service.mu.Lock()
+	service.listener = listener
+	service.mu.Unlock()
 }
 
 // RuleKind tells what an expression is to a strategy.
@@ -455,12 +473,12 @@ func (service *Service) Validate(ctx context.Context, expression string, kind Ru
 	canonical, targets := Canonical(expression, service.registry)
 	validation := Validation{Problems: []string{}, Expression: canonical, Indicators: []IndicatorCall{}}
 	for _, target := range targets {
-		if nestedSource(target.Selection) || slices.ContainsFunc(validation.Indicators, func(call IndicatorCall) bool { return call.HasSelection(target.Selection) }) {
+		if indicator.NestedSource(target.Selection()) || slices.ContainsFunc(validation.Indicators, func(call IndicatorCall) bool { return call.HasSelection(target.Selection()) }) {
 			continue
 		}
 		// An indicator the service cannot describe, such as one past the
 		// chart lookback, is left out; compiling reports its problem.
-		entry, err := service.indicators.Preview(target.Selection)
+		entry, err := service.indicators.Preview(target.Selection())
 		if err != nil {
 			continue
 		}
@@ -526,7 +544,7 @@ func (service *Service) compileEntry(item Strategy) (Entry, error) {
 	slices.Sort(entry.symbols)
 	// The entry rule reads at least one interval.
 	for _, interval := range market.CandleIntervals() {
-		if slices.ContainsFunc(entry.reads, func(read Read) bool { return read.Variable.Target.Interval == interval }) {
+		if slices.ContainsFunc(entry.reads, func(read Read) bool { return read.Variable.Target.Interval() == interval }) {
 			entry.Interval = interval
 			break
 		}
@@ -613,7 +631,12 @@ func (service *Service) FavoritesChanged(ctx context.Context, userID int64) {
 	// and to the end even when the request that changed them ends.
 	if err := service.readFavorites(context.WithoutCancel(ctx)); err != nil {
 		service.favoritesStale.Store(true)
-		service.changed(nil)
+		service.mu.RLock()
+		listener := service.listener
+		service.mu.RUnlock()
+		if listener != nil {
+			listener(nil)
+		}
 	}
 }
 
@@ -840,7 +863,9 @@ func (service *Service) replace(entries []Entry, baselines []uuid.UUID) {
 	}
 	service.entries = entries
 	service.subscribe()
-	service.changed(baselines)
+	if service.listener != nil {
+		service.listener(baselines)
+	}
 }
 
 func (service *Service) entry(item Strategy) (Entry, error) {

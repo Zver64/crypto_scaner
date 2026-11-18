@@ -62,7 +62,7 @@ func loadHistories(ctx context.Context, store CandleStore, limit func(market.Can
 	ids := map[market.CandleInterval][]int64{}
 	for _, replay := range replays {
 		for _, subscription := range replay.current.reads.subscriptions {
-			if read := subscription.Target.Interval; !slices.Contains(ids[read], subscription.InstrumentID) {
+			if read := subscription.Target.Interval(); !slices.Contains(ids[read], subscription.InstrumentID) {
 				ids[read] = append(ids[read], subscription.InstrumentID)
 			}
 		}
@@ -97,17 +97,17 @@ func (replay *replay) cutOff(interval market.CandleInterval, stored, end, depth 
 // subscription, which needs depth candles, at an exclusive end index.
 // Snapshots use the same policy.
 func (replay *replay) calculate(subscription closedindicator.Subscription, depth, end int) (closedindicator.Value, bool, error) {
-	candles := replay.histories[subscription.Target.Interval][subscription.InstrumentID]
-	if replay.cutOff(subscription.Target.Interval, len(candles), end, depth) {
+	candles := replay.histories[subscription.Target.Interval()][subscription.InstrumentID]
+	if replay.cutOff(subscription.Target.Interval(), len(candles), end, depth) {
 		return closedindicator.Value{Target: subscription.Target}, false, nil
 	}
-	history := replay.prepared[subscription.Target.Interval][subscription.InstrumentID]
+	history := replay.prepared[subscription.Target.Interval()][subscription.InstrumentID]
 	if history == nil {
-		history = indicator.NewHistory(subscription.Target.Interval, candles)
-		if replay.prepared[subscription.Target.Interval] == nil {
-			replay.prepared[subscription.Target.Interval] = map[int64]*indicator.History{}
+		history = indicator.NewHistory(subscription.Target.Interval(), candles)
+		if replay.prepared[subscription.Target.Interval()] == nil {
+			replay.prepared[subscription.Target.Interval()] = map[int64]*indicator.History{}
 		}
-		replay.prepared[subscription.Target.Interval][subscription.InstrumentID] = history
+		replay.prepared[subscription.Target.Interval()][subscription.InstrumentID] = history
 	}
 	value, err := closedindicator.CalculateRange(replay.registry, subscription.Target, history, max(0, end-depth), end, subscription.Points)
 	return value, true, err
@@ -122,12 +122,12 @@ func (replay *replay) calculate(subscription closedindicator.Subscription, depth
 // which the tracker read the same way.
 func (replay *replay) at(now time.Time) (snapshot, bool, error) {
 	for index, subscription := range replay.current.reads.subscriptions {
-		open := subscription.Target.Interval.LastClosedOpenTime(now)
+		open := subscription.Target.Interval().LastClosedOpenTime(now)
 		if replay.opens[index].Equal(open) {
 			continue
 		}
 		replay.opens[index] = open
-		candles := replay.histories[subscription.Target.Interval][subscription.InstrumentID]
+		candles := replay.histories[subscription.Target.Interval()][subscription.InstrumentID]
 		end, found := slices.BinarySearchFunc(candles, open, func(candle market.Candle, open time.Time) int { return candle.OpenTime.Compare(open) })
 		if found {
 			end++

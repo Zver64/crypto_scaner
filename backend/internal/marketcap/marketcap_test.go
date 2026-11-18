@@ -29,8 +29,8 @@ func TestResolveBatchChunksAndUsesStaleFallbackOnProviderFailure(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if provider.marketCalls != 2 || !batch.ProviderWarning {
-		t.Fatalf("calls=%d warning=%v", provider.marketCalls, batch.ProviderWarning)
+	if provider.marketCalls != 2 || !errors.Is(batch.ProviderErr, provider.marketErr) {
+		t.Fatalf("calls=%d provider error=%v", provider.marketCalls, batch.ProviderErr)
 	}
 	if store.caps["id1"].USD != 1 {
 		t.Fatalf("cap=%+v", store.caps["id1"])
@@ -42,7 +42,7 @@ func TestResolveBatchDeletesCapTheProviderNoLongerReports(t *testing.T) {
 	r := New(store, &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", Reason: "market_cap_missing"}}})
 	r.now = func() time.Time { return now }
 	batch, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}})
-	if err != nil || batch.ProviderWarning {
+	if err != nil || batch.ProviderErr != nil {
 		t.Fatalf("batch=%+v err=%v", batch, err)
 	}
 	if _, ok := store.caps["bitcoin"]; ok {
@@ -141,7 +141,7 @@ func TestMappingProviderFailureKeepsExpiredResolvedMapping(t *testing.T) {
 	r := New(store, provider)
 	r.now = func() time.Time { return now }
 	batch, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}, {BaseAsset: "NEW", QuoteAsset: "USDT"}})
-	if err != nil || !batch.ProviderWarning {
+	if err != nil || batch.ProviderErr == nil {
 		t.Fatalf("batch=%+v err=%v", batch, err)
 	}
 	if store.caps["bitcoin"].USD != 20 || store.mappings["BTC"].CoinID != "bitcoin" {
@@ -177,28 +177,7 @@ func TestRefreshStablecoinClassificationsRejectsEmptySnapshot(t *testing.T) {
 	}
 }
 
-func TestConcurrentStaleRefreshIsDeduplicated(t *testing.T) {
-	now := time.Now()
-	store := &fakeStore{done: true, mappings: map[string]Mapping{"BTC": {BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved", ExpiresAt: freshUntil}}, caps: map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now.Add(-2 * time.Hour)}}}
-	provider := &fakeProvider{marketValues: []Cap{{CoinID: "bitcoin", USD: 2, Available: true, ObservedAt: now}}, marketDelay: 20 * time.Millisecond}
-	r := New(store, provider)
-	r.now = func() time.Time { return now }
-	var wg sync.WaitGroup
-	for range 2 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			if _, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC"}}); err != nil {
-				t.Error(err)
-			}
-		}()
-	}
-	wg.Wait()
-	if provider.marketCalls != 1 {
-		t.Fatalf("market calls=%d", provider.marketCalls)
-	}
-}
-func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
+func TestResolveBatchMappingCacheValidity(t *testing.T) {
 	now := time.Date(2026, time.January, 1, 12, 0, 0, 0, time.UTC)
 	future := now.Add(time.Nanosecond)
 	exact := now
@@ -223,52 +202,37 @@ func TestResolveBatchMappingCacheValidityAcrossLookupPhases(t *testing.T) {
 		{name: "store error with resolved mapping", entry: Mapping{BaseAsset: "BTC", CoinID: "bitcoin", Status: "resolved"}, err: storeErr, wantErr: true},
 	}
 
-	for _, phase := range []string{"initial lookup", "lookup after scan lock"} {
-		t.Run(phase, func(t *testing.T) {
-			for _, tc := range cases {
-				t.Run(tc.name, func(t *testing.T) {
-					store := &fakeStore{
-						done:     true,
-						mappings: map[string]Mapping{},
-						caps:     map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now}},
-					}
-					if phase == "initial lookup" {
-						store.getMapping = func(string) (Mapping, error) { return tc.entry, tc.err }
-					} else {
-						lookups := 0
-						store.getMapping = func(string) (Mapping, error) {
-							lookups++
-							if lookups == 1 {
-								return Mapping{}, errMappingMissing
-							}
-							return tc.entry, tc.err
-						}
-					}
-					provider := &fakeProvider{tickerErr: errors.New("ticker unavailable")}
-					r := New(store, provider)
-					r.now = func() time.Time { return now }
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := &fakeStore{
+				done:       true,
+				mappings:   map[string]Mapping{},
+				caps:       map[string]Cap{"bitcoin": {CoinID: "bitcoin", USD: 1, Available: true, FetchedAt: now}},
+				getMapping: func(string) (Mapping, error) { return tc.entry, tc.err },
+			}
+			provider := &fakeProvider{tickerErr: errors.New("ticker unavailable")}
+			r := New(store, provider)
+			r.now = func() time.Time { return now }
 
-					batch, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}})
-					if tc.wantErr {
-						if !errors.Is(err, storeErr) {
-							t.Fatalf("error=%v, want %v", err, storeErr)
-						}
-						return
-					}
-					if err != nil {
-						t.Fatal(err)
-					}
-					wantTickerCalls := 0
-					if !tc.valid {
-						wantTickerCalls = 1
-					}
-					if provider.tickerCalls != wantTickerCalls {
-						t.Fatalf("ticker calls=%d, want %d", provider.tickerCalls, wantTickerCalls)
-					}
-					if batch.ProviderWarning != !tc.valid {
-						t.Fatalf("provider warning=%v, want %v", batch.ProviderWarning, !tc.valid)
-					}
-				})
+			batch, err := r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "BTC", QuoteAsset: "USDT"}})
+			if tc.wantErr {
+				if !errors.Is(err, storeErr) {
+					t.Fatalf("error=%v, want %v", err, storeErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantTickerCalls := 0
+			if !tc.valid {
+				wantTickerCalls = 1
+			}
+			if provider.tickerCalls != wantTickerCalls {
+				t.Fatalf("ticker calls=%d, want %d", provider.tickerCalls, wantTickerCalls)
+			}
+			if (batch.ProviderErr != nil) != !tc.valid {
+				t.Fatalf("provider error=%v, want one %v", batch.ProviderErr, !tc.valid)
 			}
 		})
 	}
@@ -282,7 +246,7 @@ func TestMissingCapIsCooledPerIDWithoutGlobalWarning(t *testing.T) {
 	r.now = func() time.Time { return now }
 	items := []market.Instrument{{BaseAsset: "NULL"}, {BaseAsset: "OK"}}
 	batch, err := r.ResolveBatch(context.Background(), items)
-	if err != nil || batch.ProviderWarning {
+	if err != nil || batch.ProviderErr != nil {
 		t.Fatalf("batch=%+v err=%v", batch, err)
 	}
 	_, err = r.ResolveBatch(context.Background(), []market.Instrument{{BaseAsset: "NULL"}, {BaseAsset: "OTHER"}})
@@ -320,9 +284,6 @@ func (s *fakeStore) ReplaceStablecoinClassifications(_ context.Context, ids []st
 	return nil
 }
 
-// errMappingMissing reports an absent mapping from a getMapping hook.
-var errMappingMissing = errors.New("missing")
-
 func (s *fakeStore) ListMappings(_ context.Context, bases []string) (map[string]Mapping, error) {
 	result := map[string]Mapping{}
 	for _, b := range bases {
@@ -333,9 +294,6 @@ func (s *fakeStore) ListMappings(_ context.Context, bases []string) (map[string]
 			continue
 		}
 		m, err := s.getMapping(b)
-		if errors.Is(err, errMappingMissing) {
-			continue
-		}
 		if err != nil {
 			return nil, err
 		}

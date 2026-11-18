@@ -21,22 +21,15 @@ func (store *Store) BootstrapCompleted(ctx context.Context) (bool, error) {
 }
 
 func (store *Store) ReplaceSnapshot(ctx context.Context, mappings []marketcap.Mapping) error {
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	q := store.queries.WithTx(tx)
-	if err = q.ClearMappings(ctx); err != nil {
-		return err
-	}
-	if err = upsertMappings(ctx, q, mappings); err != nil {
-		return err
-	}
-	if err = q.ReplaceMappingsAndCompleteBootstrap(ctx); err != nil {
-		return err
-	}
-	return tx.Commit(ctx)
+	return store.inTx(ctx, "CoinGecko mapping snapshot", func(q *generated.Queries) error {
+		if err := q.ClearMappings(ctx); err != nil {
+			return err
+		}
+		if err := upsertMappings(ctx, q, mappings); err != nil {
+			return err
+		}
+		return q.ReplaceMappingsAndCompleteBootstrap(ctx)
+	})
 }
 
 func (store *Store) ReplaceStablecoinClassifications(ctx context.Context, stablecoinIDs []string) error {

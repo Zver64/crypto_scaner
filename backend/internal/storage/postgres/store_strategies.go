@@ -35,27 +35,23 @@ func (store *Store) ListStrategies(ctx context.Context) ([]strategy.Strategy, er
 }
 
 func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy) (uuid.UUID, error) {
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("begin strategy creation: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
-	id, err := queries.InsertStrategy(ctx, generated.InsertStrategyParams{
-		Name: item.Name, Signal: item.Signal, Direction: string(item.Direction), Expression: item.Expression, ExitExpression: item.ExitExpression,
-		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
-		CoinSource: string(item.CoinSource), MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
-		TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
-		Message: item.Message, Enabled: item.Enabled,
+	var id uuid.UUID
+	err := store.inTx(ctx, "strategy creation", func(queries *generated.Queries) error {
+		var err error
+		id, err = queries.InsertStrategy(ctx, generated.InsertStrategyParams{
+			Name: item.Name, Signal: item.Signal, Direction: string(item.Direction), Expression: item.Expression, ExitExpression: item.ExitExpression,
+			TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
+			CoinSource: string(item.CoinSource), MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
+			TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
+			Message: item.Message, Enabled: item.Enabled,
+		})
+		if err != nil {
+			return strategyWriteError("insert strategy", err)
+		}
+		return replaceStrategyCoins(ctx, queries, id, item.Coins)
 	})
 	if err != nil {
-		return uuid.Nil, strategyWriteError("insert strategy", err)
-	}
-	if err := replaceStrategyCoins(ctx, queries, id, item.Coins); err != nil {
 		return uuid.Nil, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return uuid.Nil, fmt.Errorf("commit strategy creation: %w", err)
 	}
 	return id, nil
 }
@@ -64,30 +60,26 @@ func (store *Store) CreateStrategy(ctx context.Context, item strategy.Strategy) 
 // and message and returns the revision; retrade starts a new
 // revision, and baseline requests a fresh start of the trading states.
 func (store *Store) UpdateStrategy(ctx context.Context, item strategy.Strategy, retrade, baseline bool) (int64, error) {
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("begin strategy update: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
-	revision, err := queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{
-		ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
-		TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
-		CoinSource: string(item.CoinSource), MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
-		TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
-		Message: item.Message, Retrade: retrade, Baseline: baseline,
+	var revision int64
+	err := store.inTx(ctx, "strategy update", func(queries *generated.Queries) error {
+		var err error
+		revision, err = queries.UpdateStrategy(ctx, generated.UpdateStrategyParams{
+			ID: item.ID, Name: item.Name, Expression: item.Expression, ExitExpression: item.ExitExpression,
+			TakeProfitExpression: item.TakeProfitExpression, StopLossExpression: item.StopLossExpression,
+			CoinSource: string(item.CoinSource), MinMarketCapUsd: float8(item.MarketCap.MinUSD), MaxMarketCapUsd: float8(item.MarketCap.MaxUSD),
+			TargetRatio: optionalInt2(item.TargetRatio), WindowCandles: optionalInt2(item.Window),
+			Message: item.Message, Retrade: retrade, Baseline: baseline,
+		})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return strategy.ErrNotFound
+		}
+		if err != nil {
+			return strategyWriteError("update strategy", err)
+		}
+		return replaceStrategyCoins(ctx, queries, item.ID, item.Coins)
 	})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, strategy.ErrNotFound
-	}
 	if err != nil {
-		return 0, strategyWriteError("update strategy", err)
-	}
-	if err := replaceStrategyCoins(ctx, queries, item.ID, item.Coins); err != nil {
 		return 0, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit strategy update: %w", err)
 	}
 	return revision, nil
 }
@@ -152,23 +144,21 @@ func (store *Store) DisableStrategyAtRevision(ctx context.Context, id uuid.UUID,
 // pgx.ErrNoRows, in a transaction that forgets the trading states of a
 // disabled strategy.
 func (store *Store) setStrategyEnabled(ctx context.Context, id uuid.UUID, enabled bool, update func(*generated.Queries) (int64, error)) (int64, error) {
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("begin: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
-	revision, err := update(queries)
-	if err != nil {
-		return 0, fmt.Errorf("update: %w", err)
-	}
-	if !enabled {
-		if err := queries.DeleteAllStrategyStates(ctx, id); err != nil {
-			return 0, fmt.Errorf("delete strategy states: %w", err)
+	var revision int64
+	err := store.inTx(ctx, "strategy enablement", func(queries *generated.Queries) error {
+		var err error
+		if revision, err = update(queries); err != nil {
+			return fmt.Errorf("update: %w", err)
 		}
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit: %w", err)
+		if !enabled {
+			if err := queries.DeleteAllStrategyStates(ctx, id); err != nil {
+				return fmt.Errorf("delete strategy states: %w", err)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return 0, err
 	}
 	return revision, nil
 }
@@ -211,35 +201,35 @@ func (store *Store) ListStrategyStates(ctx context.Context) (map[uuid.UUID]map[i
 // no trades, and completes its pending baseline. It reports false, changing
 // nothing, when that revision no longer awaits a baseline.
 func (store *Store) ReplaceStrategyStates(ctx context.Context, strategyID uuid.UUID, revision int64, states map[int64]strategy.TradeState) (bool, error) {
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return false, fmt.Errorf("begin strategy baseline: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
-	current, err := queries.CompleteStrategyBaseline(ctx, generated.CompleteStrategyBaselineParams{ID: strategyID, Revision: revision})
-	if err != nil {
-		return false, fmt.Errorf("complete strategy baseline: %w", err)
-	}
-	if current == 0 {
-		return false, nil
-	}
-	if err := queries.DeleteAllStrategyStates(ctx, strategyID); err != nil {
-		return false, fmt.Errorf("delete strategy states: %w", err)
-	}
 	params := generated.InsertStrategyStatesParams{StrategyID: strategyID}
 	for _, id := range slices.Sorted(maps.Keys(states)) {
 		params.InstrumentIds = append(params.InstrumentIds, id)
 		params.OpenTimes = append(params.OpenTimes, pgtype.Timestamptz{Time: states[id].OpenTime, Valid: true})
 		params.Entries = append(params.Entries, states[id].Entry)
 	}
-	if err := queries.InsertStrategyStates(ctx, params); err != nil {
-		return false, fmt.Errorf("insert strategy states: %w", err)
+	completed := false
+	err := store.inTx(ctx, "strategy baseline", func(queries *generated.Queries) error {
+		current, err := queries.CompleteStrategyBaseline(ctx, generated.CompleteStrategyBaselineParams{ID: strategyID, Revision: revision})
+		if err != nil {
+			return fmt.Errorf("complete strategy baseline: %w", err)
+		}
+		if current == 0 {
+			// Nothing changed; committing it is the same as rolling back.
+			return nil
+		}
+		if err := queries.DeleteAllStrategyStates(ctx, strategyID); err != nil {
+			return fmt.Errorf("delete strategy states: %w", err)
+		}
+		if err := queries.InsertStrategyStates(ctx, params); err != nil {
+			return fmt.Errorf("insert strategy states: %w", err)
+		}
+		completed = true
+		return nil
+	})
+	if err != nil {
+		return false, err
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return false, fmt.Errorf("commit strategy baseline: %w", err)
-	}
-	return true, nil
+	return completed, nil
 }
 
 // SaveStrategyStates stores states of later candles than the stored ones

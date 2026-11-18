@@ -10,18 +10,15 @@ import (
 	"strings"
 	"testing"
 
-	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
-
-	"github.com/google/uuid"
 )
 
 func validationTestService(t *testing.T) *Service {
 	t.Helper()
 	registry := testRegistry(t)
 	indicators := testScannerIndicators(t, registry)
-	service, err := NewService(newBacktestStore(market.IntervalHour, nil), indicators, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	service, err := NewService(newBacktestStore(market.IntervalHour, nil), indicators, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +143,7 @@ func TestCallsAreSpelledCanonically(t *testing.T) {
 	}
 	var types []string
 	for _, target := range targets {
-		types = append(types, string(target.Interval)+" "+string(target.Selection.Type))
+		types = append(types, string(target.Interval())+" "+string(target.Selection().Type))
 	}
 	if want := []string{"1h rsi", "1d sma", "1h bbands", "1h rsi", "1h divergence", "1h divergence"}; !slices.Equal(types, want) {
 		t.Fatalf("Canonical() targets = %q, want %q", types, want)
@@ -180,7 +177,7 @@ func TestSourceCallsAreSpelledCanonically(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(targets) != 4 || !targets[0].Equal(closedindicator.Target{Interval: market.IntervalHour, Selection: nested}) {
+	if len(targets) != 4 || !targets[0].Equal(indicator.NewTarget(market.IntervalHour, nested)) {
 		t.Fatalf("Canonical() targets = %+v, want 4 starting with the SMA of the RSI", targets)
 	}
 }

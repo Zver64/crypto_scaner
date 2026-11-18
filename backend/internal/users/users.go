@@ -1,6 +1,6 @@
-// Package users lets the administrator review and delete application users
-// and choose who receives strategy alerts. Users are added through the
-// Telegram bot.
+// Package users lets the administrator grant access to, review, and delete
+// application users and choose who receives strategy alerts. Users are added
+// through the Telegram bot.
 package users
 
 import (
@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync/atomic"
 
 	"crypto-scanner/internal/auth"
 )
@@ -26,6 +27,9 @@ type User struct {
 
 // Store persists application users.
 type Store interface {
+	// GrantAccess creates an application user and reports whether it did;
+	// an existing user is left as it is.
+	GrantAccess(ctx context.Context, telegramID int64, username, displayName string) (auth.User, bool, error)
 	ListUsers(context.Context) ([]User, error)
 	// DeleteUser deletes a user with their favorites and price alerts and
 	// reports whether the user existed.
@@ -34,17 +38,42 @@ type Store interface {
 	SetUserStrategyAlerts(ctx context.Context, telegramID int64, enabled bool) (bool, error)
 }
 
-// Service lists and deletes application users.
+// Service grants, lists, and deletes application users.
 type Service struct {
 	store           Store
 	administratorID int64
-	changed         func()
+	changed         atomic.Pointer[func()]
 }
 
-// New creates a service that protects administratorID and calls changed after
-// every deletion, because a deleted user's favorites leave the monitored set.
-func New(store Store, administratorID int64, changed func()) *Service {
-	return &Service{store: store, administratorID: administratorID, changed: changed}
+// New creates a service that protects administratorID.
+func New(store Store, administratorID int64) *Service {
+	return &Service{store: store, administratorID: administratorID}
+}
+
+// OnChanged sets the consumer of access changes, replacing any earlier one.
+// It runs after every grant that adds a user and every deletion, because the
+// favorites of the user enter or leave the monitored set, and must not block.
+func (service *Service) OnChanged(listener func()) {
+	service.changed.Store(&listener)
+}
+
+func (service *Service) notifyChanged() {
+	if listener := service.changed.Load(); listener != nil && *listener != nil {
+		(*listener)()
+	}
+}
+
+// Grant gives a Telegram user access and reports whether it was new; granting
+// it again changes nothing.
+func (service *Service) Grant(ctx context.Context, telegramID int64, username, displayName string) (bool, error) {
+	_, created, err := service.store.GrantAccess(ctx, telegramID, username, displayName)
+	if err != nil {
+		return false, fmt.Errorf("grant access to user %d: %w", telegramID, err)
+	}
+	if created {
+		service.notifyChanged()
+	}
+	return created, nil
 }
 
 // List returns every user, the administrator first.
@@ -83,7 +112,7 @@ func (service *Service) Delete(ctx context.Context, telegramID int64) error {
 	if !deleted {
 		return auth.ErrUserNotFound
 	}
-	service.changed()
+	service.notifyChanged()
 	return nil
 }
 

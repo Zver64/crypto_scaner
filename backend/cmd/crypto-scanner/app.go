@@ -35,8 +35,6 @@ import (
 	"crypto-scanner/internal/strategy"
 	"crypto-scanner/internal/telegrambot"
 	"crypto-scanner/internal/users"
-
-	"github.com/google/uuid"
 )
 
 // app is the composed process: the HTTP handler and its background services.
@@ -48,16 +46,6 @@ type app struct {
 	notifier *opsnotify.Notifier
 }
 
-// listeners fans one notification out to listeners registered after the
-// notifier was handed out. All registration happens before services run.
-type listeners []func()
-
-func (l *listeners) notify() {
-	for _, listener := range *l {
-		listener()
-	}
-}
-
 func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger, store *postgres.Store, queue *opsnotify.Queue, notifierLogger *slog.Logger) (app, error) {
 	indicatorRegistry, err := indicator.NewRegistry(indicatorModules()...)
 	if err != nil {
@@ -67,21 +55,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize chart drawers: %w", err)
 	}
-	// The tracker is created after the configuration loads; changes before
-	// that are covered by its initial targets.
-	var closedIndicators *closedindicator.Tracker
-	var strategies *strategy.Service
-	var strategyMonitor *strategy.Monitor
-	var alertMonitor *alerts.Monitor
-	var scannerIndicators *scannerindicator.Service
-	scannerIndicators, err = scannerindicator.New(store, indicatorRegistry, drawers, logger, func() {
-		if closedIndicators == nil {
-			return
-		}
-		if err := closedIndicators.SetTargets(scannerIndicators.TableTargets()); err != nil {
-			logger.Error("apply table indicator targets failed", "module", "scanner_indicator", "error", err)
-		}
-	})
+	scannerIndicators, err := scannerindicator.New(store, indicatorRegistry, drawers, logger)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize scanner indicators: %w", err)
 	}
@@ -90,7 +64,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	}
 	// Tables calculate the values they show on demand; only the values
 	// enabled strategies read stay current in the background.
-	closedIndicators, err = closedindicator.New(store, indicatorRegistry, scannerIndicators.TableTargets(), logger)
+	closedIndicators, err := closedindicator.New(store, indicatorRegistry, scannerIndicators.TableTargets(), logger)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize closed indicator tracker: %w", err)
 	}
@@ -98,12 +72,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("find administrator: %w", err)
 	}
-	// Changes before the monitor exists are covered by its first evaluation.
-	strategies, err = strategy.NewService(store, scannerIndicators, indicatorRegistry, drawers, closedIndicators, logger, administrator.ID, func(baselines []uuid.UUID) {
-		if strategyMonitor != nil {
-			strategyMonitor.StrategiesChanged(baselines)
-		}
-	})
+	strategies, err := strategy.NewService(store, scannerIndicators, indicatorRegistry, drawers, closedIndicators, logger, administrator.ID)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize strategies: %w", err)
 	}
@@ -127,38 +96,24 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	klineStream := binance.NewKlineStream(logger, dialLimiter)
 	exchange := binance.New(logger, binance.Options{RetryAttempts: cfg.SyncRetryAttempts})
 	liveService := marketlive.New(klineStream, exchange, store, logger, marketlive.Options{})
-	syncStore := &marketsync.ObservableStore{Store: store, Changed: func(candles []market.Candle) {
-		liveService.HistoryChanged(candles)
-		closedIndicators.HistoryChanged(candles)
-	}, InstrumentsChanged: func(instruments []market.Instrument) {
-		// Synchronization runs only once every service exists.
-		strategies.InstrumentsChanged(instruments)
-		strategyMonitor.Changed()
-		alertMonitor.Changed()
-	}}
+	// Synchronization and history loads write candles only through syncStore,
+	// which reports their changes.
+	syncStore := marketsync.NewObservableStore(store)
 	synchronizers := make(map[market.CandleInterval]marketsync.Runner)
-	// History loads notify only when completing a partial live history;
-	// pages beyond SyncDepth do not affect tracked values.
 	historyExtenders := make(map[market.CandleInterval]marketsync.HistoryExtender)
 	for _, interval := range market.CandleIntervals() {
-		// The tracker recalculates once a round has committed all its changes.
-		synchronizers[interval] = marketsync.ObservableRunner{
-			Runner: marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.SyncDepth, market.BinanceSpotSyncProfile(interval)),
-			Synced: func() { closedIndicators.HistorySynced(interval) },
-		}
-		historyExtenders[interval] = marketsync.New(exchange, store, logger, cfg.SyncWorkers, market.SyncDepth, market.BinanceSpotSyncProfile(interval))
+		profile := market.BinanceSpotSyncProfile(interval)
+		synchronizers[interval] = marketsync.New(exchange, syncStore, logger, cfg.SyncWorkers, market.SyncDepth, profile)
+		historyExtenders[interval] = marketsync.NewExtender(exchange, syncStore, market.SyncDepth, profile)
 	}
 	scheduler := marketsync.NewScheduler(synchronizers, logger)
-	historyLoader := marketsync.NewHistoryLoader(store, historyExtenders, logger, marketsync.HistoryLoaderOptions{
-		Changed: syncStore.Changed,
-		Synced:  closedIndicators.HistorySynced,
-	})
+	historyLoader := marketsync.NewHistoryLoader(store, historyExtenders, logger)
 
 	coinMetadataSynchronizer, err := marketcap.NewCoinMetadataSynchronizer(marketcap.New(store, coingecko.NewClient("", cfg.CoinGeckoDemoAPIKey)), store, logger, time.Hour, 15*time.Minute)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize coin metadata synchronizer: %w", err)
 	}
-	analysisService, err := analysis.NewService(store, closedIndicators, volatility.New(), marketcapcriterion.New())
+	analysisService, err := analysis.NewService(store, volatility.New(), marketcapcriterion.New())
 	if err != nil {
 		return app{}, fmt.Errorf("initialize analysis service: %w", err)
 	}
@@ -167,27 +122,20 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 		return app{}, fmt.Errorf("initialize chart service: %w", err)
 	}
 
-	// Access and favorite changes both change the monitored instrument set.
-	var monitoredChanged listeners
-	botService, err := telegrambot.New(ctx, cfg.TelegramBotToken, cfg.AdminTelegramID, store, logger, monitoredChanged.notify, telegrambot.Options{})
+	userService := users.New(store, cfg.AdminTelegramID)
+	botService, err := telegrambot.New(ctx, cfg.TelegramBotToken, cfg.AdminTelegramID, store, userService, logger, telegrambot.Options{})
 	if err != nil {
 		return app{}, fmt.Errorf("initialize Telegram bot: %w", err)
 	}
-	notifier, err := opsnotify.New(queue, botService, botService.Coins(), notifierLogger)
+	telegramNotifier := botService.Notifier()
+	notifier, err := opsnotify.New(queue, telegramNotifier, botService.Coins(), notifierLogger)
 	if err != nil {
 		return app{}, err
 	}
 	tradeStream := binance.NewTradeStream(logger, dialLimiter)
-	alertMonitor = alerts.NewMonitor(store, tradeStream, botService, logger)
-	strategyMonitor = strategy.NewMonitor(store, store, indicatorRegistry, closedIndicators, strategies, botService, botService.Coins(), cfg.AdminTelegramID, logger)
-	monitoredChanged = append(monitoredChanged, alertMonitor.Changed)
-	// Favorites change the monitored instruments, and the administrator's
-	// those signals of the favorites evaluate.
-	favoritesChanged := func(ctx context.Context, userID int64) {
-		monitoredChanged.notify()
-		strategies.FavoritesChanged(ctx, userID)
-	}
-	favoriteService, err := favorites.New(store, favoritesChanged)
+	alertMonitor := alerts.NewMonitor(store, tradeStream, telegramNotifier, botService.Coins(), logger)
+	strategyMonitor := strategy.NewMonitor(store, store, indicatorRegistry, closedIndicators, strategies, telegramNotifier, botService.Coins(), cfg.AdminTelegramID, logger)
+	favoriteService, err := favorites.New(store)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize favorites service: %w", err)
 	}
@@ -195,14 +143,50 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 	if err != nil {
 		return app{}, fmt.Errorf("initialize COIN-M perpetuals synchronizer: %w", err)
 	}
-	marketTables, err := markettable.NewService(analysisService, closedIndicators, store, marketTable, coinMTable, favoritesTable)
+	marketTables, err := markettable.NewService(analysisService, closedIndicators, store, store, marketTable, coinMTable, favoritesTable)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize market table service: %w", err)
 	}
-	alertService, err := alerts.New(store, alertMonitor, favoritesChanged)
+	alertService, err := alerts.New(store, alertMonitor)
 	if err != nil {
 		return app{}, fmt.Errorf("initialize price alert service: %w", err)
 	}
+
+	// Events, once every service exists and before any runs. Listeners never
+	// block, since HTTP handlers raise access and favorite changes.
+	// Configuration changes before the tracker existed are covered by its
+	// initial targets.
+	scannerIndicators.Listen(func() {
+		if err := closedIndicators.SetTargets(scannerIndicators.TableTargets()); err != nil {
+			logger.Error("apply table indicator targets failed", "module", "scanner_indicator", "error", err)
+		}
+	})
+	// Strategy changes before the monitor existed are covered by its first
+	// evaluation.
+	strategies.Listen(strategyMonitor.StrategiesChanged)
+	syncStore.OnCandlesChanged(func(candles []market.Candle) {
+		liveService.HistoryChanged(candles)
+		closedIndicators.HistoryChanged(candles)
+	})
+	// The tracker recalculates once a round or a history load of the live
+	// history has committed all its changes.
+	syncStore.OnHistorySynced(closedIndicators.HistorySynced)
+	syncStore.OnInstrumentsChanged(func(instruments []market.Instrument) {
+		strategies.InstrumentsChanged(instruments)
+		strategyMonitor.Changed()
+		alertMonitor.Changed()
+	})
+	// Access changes change the monitored instruments through the favorites
+	// of the user.
+	userService.OnChanged(alertMonitor.Changed)
+	// Favorites change the monitored instruments, and the administrator's
+	// those signals of the favorites evaluate.
+	favoritesChanged := func(ctx context.Context, userID int64) {
+		alertMonitor.Changed()
+		strategies.FavoritesChanged(ctx, userID)
+	}
+	favoriteService.OnChanged(favoritesChanged)
+	alertService.OnFavoritesChanged(favoritesChanged)
 
 	sessions := auth.NewSessions(store, authtelegram.New(cfg.TelegramBotToken, cfg.TelegramInitDataMaxAge, authtelegram.Options{}),
 		cfg.AdminTelegramID, cfg.SessionIdleTTL, cfg.SessionAbsoluteTTL, logger, auth.SessionOptions{})
@@ -221,7 +205,7 @@ func buildApp(ctx context.Context, cfg config.ServerConfig, logger *slog.Logger,
 
 		ScannerIndicators: scannerIndicators,
 		IndicatorTypes:    indicatorRegistry,
-		Users:             users.New(store, cfg.AdminTelegramID, monitoredChanged.notify),
+		Users:             userService,
 		Strategies:        strategies,
 		HistoryLoads:      historyLoader,
 	}, httpapi.Options{APIDocsEnabled: cfg.APIDocsEnabled})

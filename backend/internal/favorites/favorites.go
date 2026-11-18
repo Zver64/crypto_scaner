@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync/atomic"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -33,16 +34,26 @@ type Store interface {
 
 type Service struct {
 	store   Store
-	changed func(ctx context.Context, userID int64)
+	changed atomic.Pointer[func(ctx context.Context, userID int64)]
 }
 
-// New creates the service; changed runs after every change of the favorites
-// of the user userID.
-func New(store Store, changed func(ctx context.Context, userID int64)) (*Service, error) {
-	if store == nil || changed == nil {
-		return nil, errors.New("favorites service dependencies are required")
+func New(store Store) (*Service, error) {
+	if store == nil {
+		return nil, errors.New("favorites store is required")
 	}
-	return &Service{store: store, changed: changed}, nil
+	return &Service{store: store}, nil
+}
+
+// OnChanged sets the consumer of favorite changes, replacing any earlier one.
+// It runs after every change of the favorites of the user userID.
+func (s *Service) OnChanged(listener func(ctx context.Context, userID int64)) {
+	s.changed.Store(&listener)
+}
+
+func (s *Service) notifyChanged(ctx context.Context, userID int64) {
+	if listener := s.changed.Load(); listener != nil && *listener != nil {
+		(*listener)(ctx, userID)
+	}
 }
 func (s *Service) List(ctx context.Context, userID int64) ([]Favorite, error) {
 	items, err := s.store.ListFavorites(ctx, userID)
@@ -57,7 +68,7 @@ func (s *Service) Add(ctx context.Context, userID int64, symbol string) (Favorit
 	if err != nil {
 		return Favorite{}, fmt.Errorf("add favorite %s of user %d: %w", symbol, userID, err)
 	}
-	s.changed(ctx, userID)
+	s.notifyChanged(ctx, userID)
 	return item, nil
 }
 func (s *Service) Remove(ctx context.Context, userID int64, symbol string, confirm bool) (int, error) {
@@ -65,6 +76,6 @@ func (s *Service) Remove(ctx context.Context, userID int64, symbol string, confi
 	if err != nil {
 		return count, fmt.Errorf("remove favorite %s of user %d: %w", symbol, userID, err)
 	}
-	s.changed(ctx, userID)
+	s.notifyChanged(ctx, userID)
 	return count, nil
 }

@@ -91,7 +91,7 @@ func (monitor *Monitor) replays(ctx context.Context, entry Entry, instruments, a
 			return nil, err
 		}
 		for index, subscription := range replay.current.reads.subscriptions {
-			depths[subscription.Target.Interval] = max(depths[subscription.Target.Interval], replay.depths[index])
+			depths[subscription.Target.Interval()] = max(depths[subscription.Target.Interval()], replay.depths[index])
 		}
 		result[instrument.ID] = replay
 	}

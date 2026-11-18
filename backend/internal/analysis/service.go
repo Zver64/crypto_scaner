@@ -5,9 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
-	"time"
 
-	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
 )
 
@@ -28,15 +26,6 @@ type Store interface {
 	// ListLatestCandles returns up to limit latest candles per instrument in
 	// chronological order.
 	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
-	// ListClosePrices returns the closes of the interval candles opening
-	// from through to.
-	ListClosePrices(context.Context, []int64, market.CandleInterval, time.Time, time.Time) ([]market.ClosePrice, error)
-}
-
-// ClosedIndicators supplies indicator values at the latest closed candle.
-type ClosedIndicators interface {
-	// Latest never fails: unavailable values have no outputs.
-	Latest(context.Context, []int64) map[int64][]closedindicator.Value
 }
 
 type SymbolRequest struct {
@@ -59,14 +48,12 @@ type SearchSort struct {
 	Direction string
 }
 type SearchItem struct {
-	PriceHistories   PriceHistories
-	Symbol           string
-	Matched          bool
-	Evaluations      []Evaluation
-	ClosedIndicators []closedindicator.Value
+	InstrumentID int64
+	Symbol       string
+	Matched      bool
+	Evaluations  []Evaluation
 }
 type SearchResult struct {
-	PriceWindows          market.PriceWindows
 	MatchedCount          int
 	AnalyzedCount         int
 	InsufficientDataCount int
@@ -87,7 +74,6 @@ type InsufficientItem struct {
 
 type Service struct {
 	store     Store
-	closed    ClosedIndicators
 	factories map[string]Factory
 }
 
@@ -98,9 +84,9 @@ type criterionInstance struct {
 }
 
 // NewService validates and registers the explicitly composed criterion
-// factories. closed attaches closed indicator values to search items.
-func NewService(store Store, closed ClosedIndicators, factories ...Factory) (*Service, error) {
-	if store == nil || closed == nil {
+// factories.
+func NewService(store Store, factories ...Factory) (*Service, error) {
+	if store == nil {
 		return nil, fmt.Errorf("analysis dependencies: %w", ErrInvalidArgument)
 	}
 	if len(factories) == 0 {
@@ -116,7 +102,7 @@ func NewService(store Store, closed ClosedIndicators, factories ...Factory) (*Se
 		}
 		registry[factory.Name()] = factory
 	}
-	return &Service{store: store, closed: closed, factories: registry}, nil
+	return &Service{store: store, factories: registry}, nil
 }
 
 func (service *Service) AnalyzeSymbol(ctx context.Context, request SymbolRequest) (SymbolResult, error) {
@@ -158,7 +144,6 @@ func (service *Service) SearchSymbols(ctx context.Context, request SearchRequest
 }
 
 func (service *Service) search(ctx context.Context, request SearchRequest, symbols []string, restrictSymbols bool) (SearchResult, error) {
-	windows := market.NewPriceWindows(time.Now())
 	criteria, requirements, err := service.prepare(request.Criteria)
 	if err != nil {
 		return SearchResult{}, err
@@ -174,7 +159,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 		selection.Limit = 0
 	}
 	if restrictSymbols && len(symbols) == 0 {
-		return SearchResult{PriceWindows: windows, Items: []SearchItem{}, Unresolved: []UnresolvedItem{}}, nil
+		return SearchResult{Items: []SearchItem{}, Unresolved: []UnresolvedItem{}}, nil
 	}
 	if err := service.requireMarketData(ctx, requirements); err != nil {
 		return SearchResult{}, err
@@ -183,7 +168,7 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("select active instruments: %w", err)
 	}
-	result := SearchResult{PriceWindows: windows, Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
+	result := SearchResult{Items: make([]SearchItem, 0), Unresolved: make([]UnresolvedItem, 0)}
 	candidates := append([]market.Instrument(nil), instruments...)
 	candleData := make(map[int64]map[Unit][]market.Candle, len(candidates))
 	for _, instrument := range candidates {
@@ -226,18 +211,9 @@ func (service *Service) search(ctx context.Context, request SearchRequest, symbo
 		candidates = next
 	}
 	result.AnalyzedCount = len(instruments) - result.InsufficientDataCount - len(result.Unresolved)
-	ids := make([]int64, len(candidates))
-	for index, instrument := range candidates {
-		ids[index] = instrument.ID
-	}
-	histories, err := service.PriceHistories(ctx, ids, windows)
-	if err != nil {
-		return SearchResult{}, err
-	}
-	closed := service.closed.Latest(ctx, ids)
 	for _, instrument := range candidates {
 		item := results[instrument.ID]
-		result.Items = append(result.Items, SearchItem{Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations, PriceHistories: histories[instrument.ID], ClosedIndicators: closed[instrument.ID]})
+		result.Items = append(result.Items, SearchItem{InstrumentID: instrument.ID, Symbol: item.Symbol, Matched: true, Evaluations: item.Evaluations})
 	}
 	result.MatchedCount = len(result.Items)
 	return result, nil

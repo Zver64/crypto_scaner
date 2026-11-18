@@ -4,10 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
-	"time"
 
 	"crypto-scanner/internal/analysis"
-	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/market"
 )
 
@@ -18,7 +16,7 @@ func TestValidationAndPersistedInclusiveBoundary(t *testing.T) {
 	}
 	value := 100.0
 	store := &storeStub{instrument: market.Instrument{ID: 1, Symbol: "BTCUSDT", BaseAsset: "BTC", QuoteAsset: "USDT", MarketCapUSD: &value}}
-	service, _ := analysis.NewService(store, noClosedIndicators{}, factory)
+	service, _ := analysis.NewService(store, factory)
 	result, err := service.AnalyzeSymbol(context.Background(), analysis.SymbolRequest{Symbol: "BTCUSDT", Criteria: []analysis.CriterionConfig{{Key: "market_cap", Name: "market_cap", Label: "Market Cap", Parameters: map[string]any{"min_market_cap_usd": float64(100)}}}})
 	if err != nil || !result.Matched || result.Evaluations[0].Metrics["market_cap_usd"] != 100 {
 		t.Fatalf("result=%+v err=%v", result, err)
@@ -53,14 +51,4 @@ func (s *storeStub) SelectActiveInstruments(_ context.Context, selection analysi
 }
 func (s *storeStub) ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error) {
 	return nil, nil
-}
-func (s *storeStub) ListClosePrices(context.Context, []int64, market.CandleInterval, time.Time, time.Time) ([]market.ClosePrice, error) {
-	return nil, nil
-}
-
-// noClosedIndicators supplies no closed indicator values.
-type noClosedIndicators struct{}
-
-func (noClosedIndicators) Latest(context.Context, []int64) map[int64][]closedindicator.Value {
-	return nil
 }

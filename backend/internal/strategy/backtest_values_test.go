@@ -66,8 +66,8 @@ func TestReplayedValuesMatchAFreshCalculationOfEachWindow(t *testing.T) {
 				cold++
 				continue
 			}
-			history := store.candles[subscription.Target.Interval][subscription.InstrumentID]
-			open := subscription.Target.Interval.LastClosedOpenTime(now)
+			history := store.candles[subscription.Target.Interval()][subscription.InstrumentID]
+			open := subscription.Target.Interval().LastClosedOpenTime(now)
 			end, found := slices.BinarySearchFunc(history, open, func(candle market.Candle, open time.Time) int { return candle.OpenTime.Compare(open) })
 			if found {
 				end++
@@ -91,7 +91,7 @@ func TestReplayedValuesMatchAFreshCalculationOfEachWindow(t *testing.T) {
 // freshValue is the value of target, with points−1 earlier values, over
 // window, calculated directly through the implementation over the last
 // contiguous run of window.
-func freshValue(t *testing.T, registry *indicator.Registry, target closedindicator.Target, window []market.Candle, points int) closedindicator.Value {
+func freshValue(t *testing.T, registry *indicator.Registry, target indicator.Target, window []market.Candle, points int) closedindicator.Value {
 	t.Helper()
 	value := closedindicator.Value{Target: target}
 	if len(window) == 0 {
@@ -99,11 +99,11 @@ func freshValue(t *testing.T, registry *indicator.Registry, target closedindicat
 	}
 	value.OpenTime = window[len(window)-1].OpenTime.UTC()
 	start := len(window) - 1
-	for start > 0 && target.Interval.NextOpenTime(window[start-1].OpenTime).Equal(window[start].OpenTime) {
+	for start > 0 && target.Interval().NextOpenTime(window[start-1].OpenTime).Equal(window[start].OpenTime) {
 		start--
 	}
 	run := window[start:]
-	fields, err := registry.Fields(target.Selection)
+	fields, err := registry.Fields(target.Selection())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,7 +118,7 @@ func freshValue(t *testing.T, registry *indicator.Registry, target closedindicat
 		}
 		inputs[field] = values
 	}
-	result, err := registry.Calculate(indicator.Request{Type: target.Selection.Type, Parameters: target.Selection.Parameters, Inputs: inputs})
+	result, err := registry.Calculate(indicator.Request{Type: target.Selection().Type, Parameters: target.Selection().Parameters, Inputs: inputs})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -37,21 +37,25 @@ func TestLoadHistoryStopsAtDepthOrExhaustionAndSyncLeavesDeepRowsAlone(t *testin
 				all := intervalCandles(market.IntervalHour, test.listed)
 				exchange := &historyExchange{instrument: instrument, candles: all}
 				store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: cloneCandles(all[len(all)-1-test.stored : len(all)-1])}
-				synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
+				observable := marketsync.NewObservableStore(store)
+				synchronizer := marketsync.New(exchange, observable, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
+				extender := marketsync.NewExtender(exchange, observable, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
 
-				notified := 0
-				for attempt := range 2 {
-					load, err := synchronizer.LoadHistory(t.Context(), instrument, 2500, func(candles []market.Candle) {
-						if attempt != 0 {
-							t.Error("unchanged history sent live notifications")
+				notified, attempt, synced := 0, 0, 0
+				observable.OnHistorySynced(func(market.CandleInterval) { synced++ })
+				observable.OnCandlesChanged(func(candles []market.Candle) {
+					if attempt != 0 {
+						t.Error("unchanged history sent live notifications")
+					}
+					for _, candle := range candles {
+						if candle.OpenTime.Before(all[len(all)-1-min(test.want, market.SyncDepth)].OpenTime) {
+							t.Errorf("deep candle %s sent a live notification", candle.OpenTime)
 						}
-						for _, candle := range candles {
-							if candle.OpenTime.Before(all[len(all)-1-min(test.want, market.SyncDepth)].OpenTime) {
-								t.Errorf("deep candle %s sent a live notification", candle.OpenTime)
-							}
-						}
-						notified += len(candles)
-					})
+					}
+					notified += len(candles)
+				})
+				for attempt = range 2 {
+					load, err := extender.LoadHistory(t.Context(), instrument, 2500)
 					if err != nil {
 						t.Fatal(err)
 					}
@@ -64,7 +68,8 @@ func TestLoadHistoryStopsAtDepthOrExhaustionAndSyncLeavesDeepRowsAlone(t *testin
 				}
 				assertContinuousHistory(t, store, market.IntervalHour, test.want)
 				// A shallower load reports the whole stored history.
-				if load, err := synchronizer.LoadHistory(t.Context(), instrument, 1200, nil); err != nil || load.Count != test.want || load.Exhausted != test.exhausted {
+				attempt = 1
+				if load, err := extender.LoadHistory(t.Context(), instrument, 1200); err != nil || load.Count != test.want || load.Exhausted != test.exhausted {
 					t.Fatalf("shallower LoadHistory() = %+v, %v", load, err)
 				}
 				for _, request := range exchange.requests {
@@ -79,8 +84,15 @@ func TestLoadHistoryStopsAtDepthOrExhaustionAndSyncLeavesDeepRowsAlone(t *testin
 					t.Fatalf("loads made %d requests, want %d", requests, want)
 				}
 
+				if synced != 1 {
+					t.Fatalf("loads reported %d synced histories, want one for the live changes", synced)
+				}
+				observable.OnCandlesChanged(nil)
 				if err := synchronizer.Sync(t.Context()); err != nil {
 					t.Fatal(err)
+				}
+				if synced != 2 {
+					t.Fatal("Sync did not report its round synced")
 				}
 				if made := exchange.requests[requests:]; len(made) != 1 || made[0].HistoryRepair {
 					t.Fatalf("Sync after the load made requests %#v, want only the latest-close recheck", made)
@@ -99,28 +111,28 @@ func TestHistoryLoaderReportsPartialChangesAndResumesAfterFailure(t *testing.T) 
 		all := intervalCandles(market.IntervalHour, 3002)
 		store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}, candles: cloneCandles(all[len(all)-1001 : len(all)-1])}
 		exchange := &historyExchange{instrument: instrument, candles: all, failAtRequest: 2, requestErr: errors.New("second page failed")}
-		synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
+		observable := marketsync.NewObservableStore(store)
+		extender := marketsync.NewExtender(exchange, observable, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
 		registry, err := indicator.NewRegistry(candle.New())
 		if err != nil {
 			t.Fatal(err)
 		}
-		subscriptions := []closedindicator.Subscription{{InstrumentID: 1, Target: closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: candle.Type}}, Points: 1500}}
+		subscriptions := []closedindicator.Subscription{{InstrumentID: 1, Target: indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: candle.Type}), Points: 1500}}
 		tracker, err := closedindicator.New(store, registry, nil, slog.New(slog.DiscardHandler))
 		if err != nil {
 			t.Fatal(err)
 		}
 		tracker.Subscribe("test", subscriptions)
 		notified, rounds := 0, 0
-		loader := marketsync.NewHistoryLoader(knownInstruments{}, map[market.CandleInterval]marketsync.HistoryExtender{market.IntervalHour: synchronizer}, slog.New(slog.DiscardHandler), marketsync.HistoryLoaderOptions{
-			Changed: func(candles []market.Candle) {
-				notified += len(candles)
-				tracker.HistoryChanged(candles)
-			},
-			Synced: func(interval market.CandleInterval) {
-				rounds++
-				tracker.HistorySynced(interval)
-			},
+		observable.OnCandlesChanged(func(candles []market.Candle) {
+			notified += len(candles)
+			tracker.HistoryChanged(candles)
 		})
+		observable.OnHistorySynced(func(interval market.CandleInterval) {
+			rounds++
+			tracker.HistorySynced(interval)
+		})
+		loader := marketsync.NewHistoryLoader(knownInstruments{}, map[market.CandleInterval]marketsync.HistoryExtender{market.IntervalHour: extender}, slog.New(slog.DiscardHandler))
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		done, tracked := make(chan error, 1), make(chan error, 1)
@@ -190,8 +202,8 @@ func TestLoadHistoryRejectsMissingInitialHistory(t *testing.T) {
 	instrument := market.Instrument{ID: 1, Symbol: "BTCUSDT", Active: true}
 	exchange := &historyExchange{instrument: instrument}
 	store := &historyStore{fakeMarketStore: fakeMarketStore{active: []market.Instrument{instrument}}}
-	synchronizer := marketsync.New(exchange, store, slog.New(slog.DiscardHandler), 1, 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
-	load, err := synchronizer.LoadHistory(t.Context(), instrument, 2500, nil)
+	extender := marketsync.NewExtender(exchange, marketsync.NewObservableStore(store), 1000, market.BinanceSpotSyncProfile(market.IntervalHour))
+	load, err := extender.LoadHistory(t.Context(), instrument, 2500)
 	if !errors.Is(err, marketsync.ErrHistoryNotReady) || load.Changed || len(exchange.requests) != 0 {
 		t.Fatalf("empty LoadHistory = %+v, %v; requests = %d", load, err, len(exchange.requests))
 	}
@@ -202,7 +214,7 @@ func TestLoadHistoryRejectsMissingInitialHistory(t *testing.T) {
 func TestHistoryLoaderRunsOneJobInTheBackground(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		extender := &blockingExtender{results: make(chan error)}
-		loader := marketsync.NewHistoryLoader(knownInstruments{}, map[market.CandleInterval]marketsync.HistoryExtender{market.IntervalHour: extender, market.IntervalDay: extender}, slog.New(slog.DiscardHandler), marketsync.HistoryLoaderOptions{})
+		loader := marketsync.NewHistoryLoader(knownInstruments{}, map[market.CandleInterval]marketsync.HistoryExtender{market.IntervalHour: extender, market.IntervalDay: extender}, slog.New(slog.DiscardHandler))
 		ctx, cancel := context.WithCancel(t.Context())
 		done := make(chan error)
 		go func() { done <- loader.Run(ctx) }()
@@ -247,7 +259,7 @@ func TestHistoryLoaderRunsOneJobInTheBackground(t *testing.T) {
 }
 
 func TestHistoryLoaderRejectsInvalidLoadsBeforeStarting(t *testing.T) {
-	loader := marketsync.NewHistoryLoader(knownInstruments{}, map[market.CandleInterval]marketsync.HistoryExtender{market.IntervalHour: &blockingExtender{}}, slog.New(slog.DiscardHandler), marketsync.HistoryLoaderOptions{})
+	loader := marketsync.NewHistoryLoader(knownInstruments{}, map[market.CandleInterval]marketsync.HistoryExtender{market.IntervalHour: &blockingExtender{}}, slog.New(slog.DiscardHandler))
 	for _, test := range []struct {
 		symbols   []string
 		intervals []market.CandleInterval
@@ -288,7 +300,7 @@ func (knownInstruments) GetActiveInstrumentBySymbol(_ context.Context, symbol st
 // blockingExtender finishes each load with the next result it receives.
 type blockingExtender struct{ results chan error }
 
-func (extender *blockingExtender) LoadHistory(ctx context.Context, instrument market.Instrument, depth int, _ func([]market.Candle)) (marketsync.HistoryLoad, error) {
+func (extender *blockingExtender) LoadHistory(ctx context.Context, instrument market.Instrument, depth int) (marketsync.HistoryLoad, error) {
 	select {
 	case err := <-extender.results:
 		if err != nil {

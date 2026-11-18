@@ -10,6 +10,7 @@ import (
 	"time"
 
 	markettrade "crypto-scanner/internal/market/trade"
+	"crypto-scanner/internal/telegramhtml"
 )
 
 type monitorStoreFake struct{ fired []int64 }
@@ -44,7 +45,7 @@ var _ MonitorStore = (*monitorStoreFake)(nil)
 
 func TestMonitorSkipsUnchangedSubscriptions(t *testing.T) {
 	feed := newTradeFeedFake()
-	monitor := NewMonitor(&monitorStoreFake{}, feed, nil, slog.New(slog.DiscardHandler))
+	monitor := NewMonitor(&monitorStoreFake{}, feed, nil, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	states := map[string]*symbolState{"ETHUSDT": {}, "BTCUSDT": {}}
 	var subscribed []string
 	monitor.syncSubscriptions(states, &subscribed)
@@ -59,7 +60,7 @@ func TestMonitorSkipsUnchangedSubscriptions(t *testing.T) {
 
 func TestMonitorApplyFiresImmediateEqualityWithOwnerAndTradeTime(t *testing.T) {
 	store := &monitorStoreFake{}
-	monitor := NewMonitor(store, nil, nil, slog.New(slog.DiscardHandler))
+	monitor := NewMonitor(store, nil, nil, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	tradeTime := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	states := map[string]*symbolState{"BTCUSDT": {
 		lastPrice: "100", lastTradeID: 7, lastEventTime: tradeTime, epoch: 1, fresh: true,
@@ -78,7 +79,7 @@ func TestMonitorApplyFiresImmediateEqualityWithOwnerAndTradeTime(t *testing.T) {
 }
 
 func TestMonitorTradeCrossingAndEpochReset(t *testing.T) {
-	m := NewMonitor(&monitorStoreFake{}, nil, nil, slog.New(slog.DiscardHandler))
+	m := NewMonitor(&monitorStoreFake{}, nil, nil, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	states := map[string]*symbolState{"BTCUSDT": {alerts: map[int64]Alert{1: {ID: 1, Version: 1, Symbol: "BTCUSDT", Target: "100"}}}}
 	at := time.Now()
 	m.trade(context.Background(), states, markettrade.Event{Symbol: "BTCUSDT", Price: "90", Low: "90", High: "90", TradeID: 1, Epoch: 1, EventTime: at})
@@ -107,7 +108,7 @@ func TestMonitorTradeCrossingAndEpochReset(t *testing.T) {
 // Editing one user's alert keeps the symbol's baseline for the others; only
 // the edited alert ignores the price traded before it was armed.
 func TestMonitorApplyKeepsOtherAlertsCrossing(t *testing.T) {
-	m := NewMonitor(&monitorStoreFake{}, nil, nil, slog.New(slog.DiscardHandler))
+	m := NewMonitor(&monitorStoreFake{}, nil, nil, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	at := time.Now()
 	states := map[string]*symbolState{"BTCUSDT": {alerts: map[int64]Alert{
 		1: {ID: 1, UserID: 1, Version: 1, Symbol: "BTCUSDT", Target: "200"},
@@ -130,7 +131,7 @@ func TestMonitorApplyKeepsOtherAlertsCrossing(t *testing.T) {
 func TestMonitorChangedResubscribes(t *testing.T) {
 	store := &reloadStoreFake{symbols: []string{"BTCUSDT"}}
 	feed := &subscriptionFeedFake{tradeFeedFake: newTradeFeedFake(), sets: make(chan []string, 4)}
-	monitor := NewMonitor(store, feed, nil, slog.New(slog.DiscardHandler))
+	monitor := NewMonitor(store, feed, nil, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	ctx, stop := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- monitor.Run(ctx) }()
@@ -151,8 +152,8 @@ func TestMonitorChangedResubscribes(t *testing.T) {
 func TestMonitorDeliversQueuedAlertsOnShutdown(t *testing.T) {
 	store := &monitorStoreFake{}
 	sender := &alertSenderFake{}
-	monitor := NewMonitor(store, newTradeFeedFake(), sender, slog.New(slog.DiscardHandler))
-	monitor.sends <- Fired{Alert: Alert{ID: 7, Version: 1, Symbol: "BTCUSDT", Target: "100"}, Price: "100"}
+	monitor := NewMonitor(store, newTradeFeedFake(), sender, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
+	monitor.sends <- Fired{Alert: Alert{ID: 7, Version: 1, TelegramID: 70, Symbol: "BTCUSDT", Target: "100"}, Price: "100"}
 	ctx, stop := context.WithCancel(t.Context())
 	stop()
 
@@ -160,8 +161,8 @@ func TestMonitorDeliversQueuedAlertsOnShutdown(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(store.fired) != 1 || len(sender.sent) != 1 || sender.sent[0].Alert.ID != 7 {
-		t.Fatalf("fired %v, sent %v, want alert 7 fired and sent", store.fired, sender.sent)
+	if len(store.fired) != 1 || len(sender.sent) != 1 || sender.sent[0] != 70 {
+		t.Fatalf("fired %v, sent to %v, want alert 7 fired and sent to its owner", store.fired, sender.sent)
 	}
 }
 
@@ -192,16 +193,16 @@ func (feed *subscriptionFeedFake) SetSymbols(symbols []string) { feed.sets <- sl
 // alertSenderFake fails deliveries whose context is already cancelled.
 type alertSenderFake struct {
 	mu   sync.Mutex
-	sent []Fired
+	sent []int64 // recipients
 }
 
-func (s *alertSenderFake) SendPriceAlert(ctx context.Context, fired Fired) error {
+func (s *alertSenderFake) Send(ctx context.Context, telegramID int64, _ string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.sent = append(s.sent, fired)
+	s.sent = append(s.sent, telegramID)
 	return nil
 }
 
@@ -211,7 +212,7 @@ func TestMonitorRearmsAlertAfterFailedFire(t *testing.T) {
 	store := &failingFireStoreFake{alert: Alert{ID: 1, Version: 1, Symbol: "BTCUSDT", Target: "100"}, fires: make(chan error, 4)}
 	feed := &eventFeedFake{tradeFeedFake: newTradeFeedFake(), ready: make(chan struct{}, 1)}
 	sender := &alertSenderFake{}
-	monitor := NewMonitor(store, feed, sender, slog.New(slog.DiscardHandler))
+	monitor := NewMonitor(store, feed, sender, telegramhtml.Coins{}, slog.New(slog.DiscardHandler))
 	ctx, stop := context.WithCancel(t.Context())
 	done := make(chan error, 1)
 	go func() { done <- monitor.Run(ctx) }()

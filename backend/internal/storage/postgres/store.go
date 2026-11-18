@@ -14,6 +14,7 @@ import (
 	"crypto-scanner/internal/marketcap"
 	generated "crypto-scanner/internal/storage/postgres/sqlc"
 	"crypto-scanner/internal/strategy"
+	"crypto-scanner/internal/users"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -31,7 +32,7 @@ func NewStore(db *DB) *Store { return &Store{db: db, queries: generated.New(db)}
 
 var (
 	_ auth.UserStore        = (*Store)(nil)
-	_ auth.AccessStore      = (*Store)(nil)
+	_ users.Store           = (*Store)(nil)
 	_ auth.SessionStore     = (*Store)(nil)
 	_ favorites.Store       = (*Store)(nil)
 	_ alerts.CRUDStore      = (*Store)(nil)
@@ -40,6 +41,25 @@ var (
 	_ strategy.Store        = (*Store)(nil)
 	_ strategy.MonitorStore = (*Store)(nil)
 )
+
+// inTx runs fn with queries bound to a new transaction and commits it when fn
+// succeeds. Otherwise the transaction is rolled back, even after ctx is
+// cancelled, and fn's error is returned unchanged; operation names the
+// transaction in begin and commit errors.
+func (store *Store) inTx(ctx context.Context, operation string, fn func(*generated.Queries) error) error {
+	tx, err := store.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin %s: %w", operation, err)
+	}
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := fn(store.queries.WithTx(tx)); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit %s: %w", operation, err)
+	}
+	return nil
+}
 
 func (store *Store) DatabaseReady(ctx context.Context) bool { return store.db.Ping(ctx) == nil }
 

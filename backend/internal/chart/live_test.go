@@ -127,7 +127,7 @@ func rsiWindow(t *testing.T) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	window, err := chart.Window(registry, indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}})
+	window, err := registry.Window(indicator.Selection{Type: indicatortalib.RSIType, Parameters: indicator.Parameters{"period": 14}})
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -43,67 +43,59 @@ func (store *Store) CreateScannerIndicator(ctx context.Context, item scannerindi
 	if err != nil {
 		return 0, fmt.Errorf("encode scanner indicator parameters: %w", err)
 	}
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("begin scanner indicator creation: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
-	if err := queries.LockScannerIndicators(ctx); err != nil {
-		return 0, fmt.Errorf("lock scanner indicators: %w", err)
-	}
-	id, err := queries.InsertScannerIndicator(ctx, generated.InsertScannerIndicatorParams{
-		IndicatorType: string(item.Selection.Type),
-		Parameters:    parameters,
-		ScaleMin:      float8(item.Scale.Min),
-		ScaleMax:      float8(item.Scale.Max),
-		ScaleLevels:   append([]float64{}, item.Scale.Levels...),
+	var id int64
+	err = store.inTx(ctx, "scanner indicator creation", func(queries *generated.Queries) error {
+		if err := queries.LockScannerIndicators(ctx); err != nil {
+			return fmt.Errorf("lock scanner indicators: %w", err)
+		}
+		var err error
+		id, err = queries.InsertScannerIndicator(ctx, generated.InsertScannerIndicatorParams{
+			IndicatorType: string(item.Selection.Type),
+			Parameters:    parameters,
+			ScaleMin:      float8(item.Scale.Min),
+			ScaleMax:      float8(item.Scale.Max),
+			ScaleLevels:   append([]float64{}, item.Scale.Levels...),
+		})
+		if duplicateViolation(err) {
+			return scannerindicator.ErrConflict
+		}
+		if err != nil {
+			return fmt.Errorf("insert scanner indicator: %w", err)
+		}
+		if err := queries.InsertScannerIndicatorIntervals(ctx, scannerIndicatorIntervals(id, item.Periods)); err != nil {
+			return fmt.Errorf("insert scanner indicator periods: %w", err)
+		}
+		return nil
 	})
-	if duplicateViolation(err) {
-		return 0, scannerindicator.ErrConflict
-	}
 	if err != nil {
-		return 0, fmt.Errorf("insert scanner indicator: %w", err)
-	}
-	if err := queries.InsertScannerIndicatorIntervals(ctx, scannerIndicatorIntervals(id, item.Periods)); err != nil {
-		return 0, fmt.Errorf("insert scanner indicator periods: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit scanner indicator creation: %w", err)
+		return 0, err
 	}
 	return id, nil
 }
 
 // UpdateScannerIndicator replaces the periods and the scale of the indicator.
 func (store *Store) UpdateScannerIndicator(ctx context.Context, item scannerindicator.Indicator) error {
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin scanner indicator update: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
-	updated, err := queries.UpdateScannerIndicator(ctx, generated.UpdateScannerIndicatorParams{
-		ID:          item.ID,
-		ScaleMin:    float8(item.Scale.Min),
-		ScaleMax:    float8(item.Scale.Max),
-		ScaleLevels: append([]float64{}, item.Scale.Levels...),
+	return store.inTx(ctx, "scanner indicator update", func(queries *generated.Queries) error {
+		updated, err := queries.UpdateScannerIndicator(ctx, generated.UpdateScannerIndicatorParams{
+			ID:          item.ID,
+			ScaleMin:    float8(item.Scale.Min),
+			ScaleMax:    float8(item.Scale.Max),
+			ScaleLevels: append([]float64{}, item.Scale.Levels...),
+		})
+		if err != nil {
+			return fmt.Errorf("update scanner indicator: %w", err)
+		}
+		if updated == 0 {
+			return scannerindicator.ErrNotFound
+		}
+		if err := queries.DeleteScannerIndicatorIntervals(ctx, item.ID); err != nil {
+			return fmt.Errorf("delete scanner indicator periods: %w", err)
+		}
+		if err := queries.InsertScannerIndicatorIntervals(ctx, scannerIndicatorIntervals(item.ID, item.Periods)); err != nil {
+			return fmt.Errorf("insert scanner indicator periods: %w", err)
+		}
+		return nil
 	})
-	if err != nil {
-		return fmt.Errorf("update scanner indicator: %w", err)
-	}
-	if updated == 0 {
-		return scannerindicator.ErrNotFound
-	}
-	if err := queries.DeleteScannerIndicatorIntervals(ctx, item.ID); err != nil {
-		return fmt.Errorf("delete scanner indicator periods: %w", err)
-	}
-	if err := queries.InsertScannerIndicatorIntervals(ctx, scannerIndicatorIntervals(item.ID, item.Periods)); err != nil {
-		return fmt.Errorf("insert scanner indicator periods: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit scanner indicator update: %w", err)
-	}
-	return nil
 }
 
 func scannerIndicatorIntervals(id int64, periods []scannerindicator.Period) generated.InsertScannerIndicatorIntervalsParams {

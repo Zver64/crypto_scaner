@@ -451,9 +451,16 @@ func (analysisSessions) Authenticate(_ context.Context, token string) (auth.User
 }
 
 func (analysisSessions) Revoke(context.Context, string) error { return nil }
-func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysis.Factory) http.Handler {
+
+// analysisHTTPStore is what analyses and their tables read.
+type analysisHTTPStore interface {
+	analysis.Store
+	markettable.Prices
+}
+
+func newAnalysisHTTPHandler(store analysisHTTPStore, additionalFactories ...analysis.Factory) http.Handler {
 	factories := append([]analysis.Factory{volatility.New()}, additionalFactories...)
-	service, _ := analysis.NewService(store, noClosedIndicators{}, factories...)
+	service, _ := analysis.NewService(store, factories...)
 	table, err := markettable.NewCatalog(noConfiguredColumns{}, markettable.Sort{Column: "market_cap_usd", Direction: markettable.Descending},
 		markettable.Column{ID: "symbol", Title: "Symbol", Kind: markettable.KindText, Source: markettable.Symbol{}},
 		markettable.Column{ID: "market_cap_usd", Title: "MCap", Kind: markettable.KindUSDCompact, Sortable: true, Source: markettable.CriterionMetric{Criterion: "market_cap", Metric: "market_cap_usd"}},
@@ -463,7 +470,7 @@ func newAnalysisHTTPHandler(store analysis.Store, additionalFactories ...analysi
 	if err != nil {
 		panic(err)
 	}
-	tables, err := markettable.NewService(service, noClosedIndicators{}, noCoinMPerpetuals{}, table, table, table)
+	tables, err := markettable.NewService(service, noClosedIndicators{}, store, noCoinMPerpetuals{}, table, table, table)
 	if err != nil {
 		panic(err)
 	}

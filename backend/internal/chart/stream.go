@@ -63,6 +63,9 @@ type LiveStream struct {
 	mu      sync.Mutex
 	limit   int
 	configs []indicator.Selection
+	// ranges counts the range changes, so a frame built for an earlier
+	// range is recognized whatever changed.
+	ranges  uint64
 	pending []streamEvent
 }
 
@@ -94,6 +97,7 @@ func (stream *LiveStream) Enqueue(message marketlive.Message) bool {
 func (stream *LiveStream) SetRange(limit int, configs []indicator.Selection) bool {
 	stream.mu.Lock()
 	stream.limit, stream.configs = limit, configs
+	stream.ranges++
 	queued := stream.queueLocked(streamEvent{message: marketlive.Message{Key: stream.key()}, rangeChanged: true})
 	stream.mu.Unlock()
 	return stream.notify(queued)
@@ -143,7 +147,7 @@ func (stream *LiveStream) run(ctx context.Context, session *LiveSession, service
 		stream.mu.Lock()
 		events := stream.pending
 		stream.pending = nil
-		limit, configs := stream.limit, stream.configs
+		limit, configs, ranges := stream.limit, stream.configs, stream.ranges
 		stream.mu.Unlock()
 		trigger, triggered := TriggerTrade, false
 		for _, event := range events {
@@ -182,7 +186,7 @@ func (stream *LiveStream) run(ctx context.Context, session *LiveSession, service
 		// A queued range change rebuilds the snapshot, so a frame of the old
 		// range is never delivered after it was set.
 		stream.mu.Lock()
-		if stream.limit != limit {
+		if stream.ranges != ranges {
 			session.DropRange()
 			stream.mu.Unlock()
 			continue

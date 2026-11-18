@@ -157,7 +157,7 @@ func TestReadsOfSubscribesTheCoinsOfEachStrategy(t *testing.T) {
 	active := []Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}, {ID: 3, Symbol: "SOLUSDT"}}
 	subscribed := map[market.CandleInterval][]int64{}
 	for _, subscription := range readsOf(service.List(), Entry.instruments, active).subscriptions {
-		subscribed[subscription.Target.Interval] = append(subscribed[subscription.Target.Interval], subscription.InstrumentID)
+		subscribed[subscription.Target.Interval()] = append(subscribed[subscription.Target.Interval()], subscription.InstrumentID)
 	}
 	if want := map[market.CandleInterval][]int64{market.IntervalHour: {2}, market.IntervalDay: {1, 2, 3}}; !reflect.DeepEqual(subscribed, want) {
 		t.Fatalf("subscribed = %v, want %v", subscribed, want)
@@ -170,7 +170,8 @@ func TestUpdateStartsAfreshOnlyWhenTheCoinsChange(t *testing.T) {
 	store := &updatingStore{backtestStore: newBacktestStore(market.IntervalHour, nil)}
 	var baselines []uuid.UUID
 	service := newBacktestService(t, store.backtestStore, Strategy{ID: testID(1), Name: "Hold", Direction: DirectionLong, Expression: `close("1h") > 5`, Coins: []string{"ETHUSDT"}, CoinSource: CoinsSelected, Enabled: true})
-	service.store, service.changed = store, func(ids []uuid.UUID) { baselines = ids }
+	service.store = store
+	service.Listen(func(ids []uuid.UUID) { baselines = ids })
 	service.InstrumentsChanged([]market.Instrument{{ID: 1, Symbol: "BTCUSDT"}, {ID: 2, Symbol: "ETHUSDT"}})
 	for _, test := range []struct {
 		coins   []string
@@ -247,7 +248,7 @@ type noValues struct{}
 
 func (noValues) Listen(func([]closedindicator.Change)) {}
 
-func (noValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closedindicator.Value, []closedindicator.Target) {
+func (noValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closedindicator.Value, []indicator.Target) {
 	return make([]closedindicator.Value, len(subscriptions)), nil
 }
 
@@ -288,10 +289,10 @@ type closingValues struct{}
 
 func (closingValues) Listen(func([]closedindicator.Change)) {}
 
-func (closingValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closedindicator.Value, []closedindicator.Target) {
+func (closingValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closedindicator.Value, []indicator.Target) {
 	values := make([]closedindicator.Value, len(subscriptions))
 	for i, subscription := range subscriptions {
-		values[i] = closedindicator.Value{Target: subscription.Target, OpenTime: subscription.Target.Interval.LastClosedOpenTime(time.Now())}
+		values[i] = closedindicator.Value{Target: subscription.Target, OpenTime: subscription.Target.Interval().LastClosedOpenTime(time.Now())}
 		for _, name := range []string{"open", "high", "low", "close"} {
 			values[i].Outputs = append(values[i].Outputs, closedindicator.Output{Name: name, Value: 2})
 		}
@@ -352,7 +353,7 @@ func TestServiceSubscribesTheTrackerToWhatItsStrategiesRead(t *testing.T) {
 	}
 	store.favorites = []string{"ETHUSDT"}
 	tracker := &recordingTracker{}
-	service, err := NewService(store, testIndicators{}, testRegistry(t), testDrawers(t, testRegistry(t)), tracker, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), testDrawers(t, testRegistry(t)), tracker, slog.New(slog.DiscardHandler), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -407,7 +408,7 @@ func (tracker *recordingTracker) Subscribe(subscriber string, subscriptions []cl
 func (tracker *recordingTracker) subscribed() map[market.CandleInterval][]int64 {
 	result := map[market.CandleInterval][]int64{}
 	for _, subscription := range tracker.subscriptions {
-		result[subscription.Target.Interval] = append(result[subscription.Target.Interval], subscription.InstrumentID)
+		result[subscription.Target.Interval()] = append(result[subscription.Target.Interval()], subscription.InstrumentID)
 	}
 	return result
 }
@@ -560,14 +561,14 @@ type storedValues struct {
 
 func (storedValues) Listen(func([]closedindicator.Change)) {}
 
-func (values storedValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closedindicator.Value, []closedindicator.Target) {
+func (values storedValues) Snapshot(subscriptions []closedindicator.Subscription) ([]closedindicator.Value, []indicator.Target) {
 	result := make([]closedindicator.Value, len(subscriptions))
 	for index, subscription := range subscriptions {
 		depth, err := closedindicator.Depth(values.registry, subscription.Target, subscription.Points)
 		if err != nil {
 			panic(err)
 		}
-		candles := values.store.candles[subscription.Target.Interval][subscription.InstrumentID]
+		candles := values.store.candles[subscription.Target.Interval()][subscription.InstrumentID]
 		if result[index], err = closedindicator.Calculate(values.registry, subscription.Target, candles[max(0, len(candles)-depth):], subscription.Points); err != nil {
 			panic(err)
 		}
@@ -595,7 +596,7 @@ func TestMonitorCatchesUpDeepSpansFromTheFirstWarmCandle(t *testing.T) {
 			}
 			store := newBacktestStore(market.IntervalHour, candles)
 			store.strategies = []Strategy{{ID: testID(1), Name: "Cross", Signal: true, Direction: DirectionSimple, Expression: `CrossesAbove(close("1h"), ema("1h", 100))`, Coins: []string{"BTCUSDT"}, Enabled: true, Revision: 1}}
-			service, err := NewService(store, indicators, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+			service, err := NewService(store, indicators, registry, testDrawers(t, registry), noTracker{}, slog.New(slog.DiscardHandler), 0)
 			if err != nil {
 				t.Fatal(err)
 			}

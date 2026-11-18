@@ -24,7 +24,8 @@ func TestObservableStoreOnlyNotifiesCommittedChanges(t *testing.T) {
 	input := []market.Candle{{InstrumentID: 1, Close: 10}}
 	underlying := &changeReportingStore{fakeMarketStore: &fakeMarketStore{}}
 	notifications := 0
-	observable := &marketsync.ObservableStore{Store: underlying, Changed: func(candles []market.Candle) { notifications += len(candles) }}
+	observable := marketsync.NewObservableStore(underlying)
+	observable.OnCandlesChanged(func(candles []market.Candle) { notifications += len(candles) })
 	if _, err := observable.UpsertCandlesWithChanges(context.Background(), input); err != nil {
 		t.Fatal(err)
 	}
@@ -68,9 +69,10 @@ func TestObservableStoreReportsChangedActiveInstruments(t *testing.T) {
 	btc, eth := market.Instrument{ID: 1, Symbol: "BTCUSDT"}, market.Instrument{ID: 2, Symbol: "ETHUSDT"}
 	underlying := &listingStore{fakeMarketStore: &fakeMarketStore{}}
 	var notified [][]market.Instrument
-	observable := &marketsync.ObservableStore{Store: underlying, InstrumentsChanged: func(instruments []market.Instrument) {
+	observable := marketsync.NewObservableStore(underlying)
+	observable.OnInstrumentsChanged(func(instruments []market.Instrument) {
 		notified = append(notified, instruments)
-	}}
+	})
 	list := func(active ...market.Instrument) error {
 		underlying.active = active
 		got, err := observable.ListActiveInstrumentsByMarketCap(context.Background())

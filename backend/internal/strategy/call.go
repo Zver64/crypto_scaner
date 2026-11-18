@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/indicator/candle"
 	"crypto-scanner/internal/market"
@@ -17,14 +16,14 @@ import (
 
 // CandleTarget is the closed-candle calculation of the candle fields of
 // interval.
-func CandleTarget(interval market.CandleInterval) closedindicator.Target {
-	return closedindicator.Target{Interval: interval, Selection: indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}}}
+func CandleTarget(interval market.CandleInterval) indicator.Target {
+	return indicator.NewTarget(interval, indicator.Selection{Type: candle.Type, Parameters: indicator.Parameters{}})
 }
 
 // call is an indicator or candle field call of a source, such as
 // bbands_upperband("1h", 20, 2.5) or close("1d").
 type call struct {
-	target closedindicator.Target
+	target indicator.Target
 	// spelling is the canonical call.
 	spelling string
 	// output is the output read; candle marks a candle field call.
@@ -131,7 +130,7 @@ func (language *language) resolveCall(descriptor indicator.Descriptor, output in
 	for _, source := range sources {
 		language.calls[source].source = true
 	}
-	target := closedindicator.Target{Interval: interval, Selection: selection}
+	target := indicator.NewTarget(interval, selection)
 	return call{target: target, spelling: spellCall(name, interval, arguments), output: output.Name}, ""
 }
 
@@ -166,10 +165,10 @@ func (language *language) sourceValue(parameter indicator.ParameterDescriptor, a
 			return nil, -1, false
 		}
 		inner := language.calls[number]
-		if inner.candle || inner.target.Interval != interval {
+		if inner.candle || inner.target.Interval() != interval {
 			return nil, -1, false
 		}
-		return indicator.Source{Selection: inner.target.Selection, Output: inner.output}.Value(), number, true
+		return indicator.Source{Selection: inner.target.Selection(), Output: inner.output}.Value(), number, true
 	}
 	value, ok = choiceValue(parameter, arg)
 	return value, -1, ok
@@ -301,17 +300,6 @@ func choiceName(parameter indicator.ParameterDescriptor, value float64) string {
 		}
 	}
 	return ""
-}
-
-// nestedSource reports whether selection, which must be normalized, reads
-// another indicator as a source.
-func nestedSource(selection indicator.Selection) bool {
-	for _, value := range selection.Parameters {
-		if _, nested := value.(map[string]any); nested {
-			return true
-		}
-	}
-	return false
 }
 
 // callSpan finds the call whose opening parenthesis is at open in source:

@@ -26,28 +26,25 @@ func (store *Store) ListFavorites(ctx context.Context, userID int64) ([]favorite
 }
 
 func (store *Store) AddFavorite(ctx context.Context, userID int64, symbol string) (favorites.Favorite, error) {
-	tx, err := store.db.Begin(ctx)
+	var row generated.GetFavoriteRow
+	err := store.inTx(ctx, "favorite addition", func(q *generated.Queries) error {
+		if _, err := lockUser(ctx, q, userID); err != nil {
+			return err
+		}
+		instrumentID, err := activeInstrumentID(ctx, q, symbol)
+		if err != nil {
+			return err
+		}
+		if _, err = q.AddFavorite(ctx, generated.AddFavoriteParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
+			return fmt.Errorf("add favorite: %w", err)
+		}
+		if row, err = q.GetFavorite(ctx, generated.GetFavoriteParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
+			return fmt.Errorf("get added favorite: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return favorites.Favorite{}, fmt.Errorf("begin favorite addition: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	q := store.queries.WithTx(tx)
-	if _, err = lockUser(ctx, q, userID); err != nil {
 		return favorites.Favorite{}, err
-	}
-	instrumentID, err := activeInstrumentID(ctx, q, symbol)
-	if err != nil {
-		return favorites.Favorite{}, err
-	}
-	if _, err = q.AddFavorite(ctx, generated.AddFavoriteParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
-		return favorites.Favorite{}, fmt.Errorf("add favorite: %w", err)
-	}
-	row, err := q.GetFavorite(ctx, generated.GetFavoriteParams{UserID: userID, InstrumentID: instrumentID})
-	if err != nil {
-		return favorites.Favorite{}, fmt.Errorf("get added favorite: %w", err)
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return favorites.Favorite{}, fmt.Errorf("commit favorite addition: %w", err)
 	}
 	return favoriteFromRow(row.BinanceSpotInstrument, row.CreatedAt, row.AlertCount), nil
 }
@@ -60,38 +57,38 @@ func favoriteFromRow(instrument generated.BinanceSpotInstrument, createdAt pgtyp
 }
 
 func (store *Store) RemoveFavorite(ctx context.Context, userID int64, symbol string, confirm bool) (int, error) {
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("begin favorite removal: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	q := store.queries.WithTx(tx)
-	if _, err = lockUser(ctx, q, userID); err != nil {
+	var count int64
+	err := store.inTx(ctx, "favorite removal", func(q *generated.Queries) error {
+		if _, err := lockUser(ctx, q, userID); err != nil {
+			return err
+		}
+		instrumentID, err := q.LockFavoriteInstrumentID(ctx, generated.LockFavoriteInstrumentIDParams{UserID: userID, Symbol: symbol})
+		if errors.Is(err, pgx.ErrNoRows) {
+			return favorites.ErrNotFound
+		}
+		if err != nil {
+			return fmt.Errorf("lock favorite: %w", err)
+		}
+		if count, err = q.CountFavoriteAlerts(ctx, generated.CountFavoriteAlertsParams{UserID: userID, InstrumentID: instrumentID}); err != nil {
+			return fmt.Errorf("count favorite price alerts: %w", err)
+		}
+		if count > 0 && !confirm {
+			return favorites.ErrAlertsExist
+		}
+		rows, err := q.DeleteFavorite(ctx, generated.DeleteFavoriteParams{UserID: userID, InstrumentID: instrumentID})
+		if err != nil {
+			return fmt.Errorf("delete favorite: %w", err)
+		}
+		if rows == 0 {
+			return favorites.ErrNotFound
+		}
+		return nil
+	})
+	switch {
+	case errors.Is(err, favorites.ErrAlertsExist):
+		return int(count), err
+	case err != nil:
 		return 0, err
-	}
-	instrumentID, err := q.LockFavoriteInstrumentID(ctx, generated.LockFavoriteInstrumentIDParams{UserID: userID, Symbol: symbol})
-	if errors.Is(err, pgx.ErrNoRows) {
-		return 0, favorites.ErrNotFound
-	}
-	if err != nil {
-		return 0, fmt.Errorf("lock favorite: %w", err)
-	}
-	count, err := q.CountFavoriteAlerts(ctx, generated.CountFavoriteAlertsParams{UserID: userID, InstrumentID: instrumentID})
-	if err != nil {
-		return 0, fmt.Errorf("count favorite price alerts: %w", err)
-	}
-	if count > 0 && !confirm {
-		return int(count), favorites.ErrAlertsExist
-	}
-	rows, err := q.DeleteFavorite(ctx, generated.DeleteFavoriteParams{UserID: userID, InstrumentID: instrumentID})
-	if err != nil {
-		return 0, fmt.Errorf("delete favorite: %w", err)
-	}
-	if rows == 0 {
-		return 0, favorites.ErrNotFound
-	}
-	if err = tx.Commit(ctx); err != nil {
-		return 0, fmt.Errorf("commit favorite removal: %w", err)
 	}
 	return int(count), nil
 }

@@ -170,7 +170,7 @@ func (service *Service) warmup(configs []indicator.Selection) (int, error) {
 	}
 	largest := 0
 	for _, config := range configs {
-		window, err := Window(service.indicators, config)
+		window, err := service.indicators.Window(config)
 		if err != nil {
 			return 0, err
 		}
@@ -185,7 +185,7 @@ func (service *Service) warmup(configs []indicator.Selection) (int, error) {
 func (service *Service) calculate(interval market.CandleInterval, warmup, candles []market.Candle, configs []indicator.Selection) ([]indicator.Calculation, error) {
 	results := make([]indicator.Calculation, len(configs))
 	for index, config := range configs {
-		window, err := Window(service.indicators, config)
+		window, err := service.indicators.Window(config)
 		if err != nil {
 			return nil, err
 		}

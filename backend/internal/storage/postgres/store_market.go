@@ -19,12 +19,6 @@ import (
 )
 
 func (store *Store) ApplyInstrumentSnapshot(ctx context.Context, items []market.Instrument) error {
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return fmt.Errorf("begin instrument snapshot: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
 	params := generated.UpsertInstrumentsParams{
 		Symbols: make([]string, len(items)), BaseAssets: make([]string, len(items)), QuoteAssets: make([]string, len(items)),
 		Statuses: make([]string, len(items)), Actives: make([]bool, len(items)),
@@ -33,19 +27,18 @@ func (store *Store) ApplyInstrumentSnapshot(ctx context.Context, items []market.
 		params.Symbols[index], params.BaseAssets[index], params.QuoteAssets[index] = item.Symbol, item.BaseAsset, item.QuoteAsset
 		params.Statuses[index], params.Actives[index] = item.Status, item.Active
 	}
-	if err := queries.LockSnapshotInstruments(ctx, params.Symbols); err != nil {
-		return fmt.Errorf("lock instruments of snapshot: %w", err)
-	}
-	if err := queries.DeactivateInstrumentsExcept(ctx, params.Symbols); err != nil {
-		return fmt.Errorf("deactivate instruments absent from snapshot: %w", err)
-	}
-	if err := queries.UpsertInstruments(ctx, params); err != nil {
-		return fmt.Errorf("apply instrument snapshot: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return fmt.Errorf("commit instrument snapshot: %w", err)
-	}
-	return nil
+	return store.inTx(ctx, "instrument snapshot", func(queries *generated.Queries) error {
+		if err := queries.LockSnapshotInstruments(ctx, params.Symbols); err != nil {
+			return fmt.Errorf("lock instruments of snapshot: %w", err)
+		}
+		if err := queries.DeactivateInstrumentsExcept(ctx, params.Symbols); err != nil {
+			return fmt.Errorf("deactivate instruments absent from snapshot: %w", err)
+		}
+		if err := queries.UpsertInstruments(ctx, params); err != nil {
+			return fmt.Errorf("apply instrument snapshot: %w", err)
+		}
+		return nil
+	})
 }
 
 func (store *Store) GetActiveInstrumentBySymbol(ctx context.Context, symbol string) (market.Instrument, error) {
@@ -155,29 +148,23 @@ func (store *Store) UpsertCandlesWithChanges(ctx context.Context, items []market
 	if len(params) == 0 {
 		return nil, nil
 	}
-	tx, err := store.db.Begin(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("begin candle upsert: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
-	// One round trip for the whole page; an unchanged row returns no row.
 	changed := make([]market.Candle, 0, len(items))
-	var upsertErr error
-	queries.UpsertCandle(ctx, params).QueryRow(func(index int, _ pgtype.Timestamptz, err error) {
-		switch {
-		case upsertErr != nil || errors.Is(err, pgx.ErrNoRows):
-		case err != nil:
-			upsertErr = fmt.Errorf("upsert candle: %w", err)
-		default:
-			changed = append(changed, items[index])
-		}
+	err := store.inTx(ctx, "candle upsert", func(queries *generated.Queries) error {
+		// One round trip for the whole page; an unchanged row returns no row.
+		var upsertErr error
+		queries.UpsertCandle(ctx, params).QueryRow(func(index int, _ pgtype.Timestamptz, err error) {
+			switch {
+			case upsertErr != nil || errors.Is(err, pgx.ErrNoRows):
+			case err != nil:
+				upsertErr = fmt.Errorf("upsert candle: %w", err)
+			default:
+				changed = append(changed, items[index])
+			}
+		})
+		return upsertErr
 	})
-	if upsertErr != nil {
-		return nil, upsertErr
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit candle upsert: %w", err)
+	if err != nil {
+		return nil, err
 	}
 	return changed, nil
 }
@@ -245,28 +232,25 @@ func (store *Store) PruneCandles(ctx context.Context, interval market.CandleInte
 // inactive since before inactiveBefore that nobody has favorited, and returns
 // their symbols.
 func (store *Store) DeleteDelistedInstruments(ctx context.Context, inactiveBefore time.Time) ([]string, error) {
-	tx, err := store.db.Begin(ctx)
+	var symbols []string
+	err := store.inTx(ctx, "delisted instrument deletion", func(queries *generated.Queries) error {
+		ids, err := queries.ListDelistedInstrumentIDs(ctx, timestamptz(&inactiveBefore))
+		if err != nil {
+			return fmt.Errorf("list delisted instruments: %w", err)
+		}
+		if len(ids) == 0 {
+			return nil
+		}
+		if _, err := queries.DeleteDelistedInstrumentCandles(ctx, ids); err != nil {
+			return fmt.Errorf("delete delisted instrument candles: %w", err)
+		}
+		if symbols, err = queries.DeleteDelistedInstruments(ctx, ids); err != nil {
+			return fmt.Errorf("delete delisted instruments: %w", err)
+		}
+		return nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("begin delisted instrument deletion: %w", err)
-	}
-	defer func() { _ = tx.Rollback(context.Background()) }()
-	queries := store.queries.WithTx(tx)
-	ids, err := queries.ListDelistedInstrumentIDs(ctx, timestamptz(&inactiveBefore))
-	if err != nil {
-		return nil, fmt.Errorf("list delisted instruments: %w", err)
-	}
-	if len(ids) == 0 {
-		return nil, nil
-	}
-	if _, err := queries.DeleteDelistedInstrumentCandles(ctx, ids); err != nil {
-		return nil, fmt.Errorf("delete delisted instrument candles: %w", err)
-	}
-	symbols, err := queries.DeleteDelistedInstruments(ctx, ids)
-	if err != nil {
-		return nil, fmt.Errorf("delete delisted instruments: %w", err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("commit delisted instrument deletion: %w", err)
+		return nil, err
 	}
 	return symbols, nil
 }

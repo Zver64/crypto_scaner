@@ -224,7 +224,7 @@ func (r *Registry) source(parameter ParameterDescriptor, parameters Parameters) 
 		return inputSource{}, fmt.Errorf("%w: %s: %w", ErrInvalidRequest, parameter.Key, err)
 	}
 	for _, inner := range entry.sources {
-		if _, deeper := selection.Parameters[inner.Key].(map[string]any); deeper {
+		if _, deeper := nestedValue(selection.Parameters[inner.Key]); deeper {
 			return inputSource{}, fmt.Errorf("%w: %s reads %s, whose own %s must be a candle field", ErrInvalidRequest, parameter.Key, nested.Selection.Type, inner.Key)
 		}
 	}

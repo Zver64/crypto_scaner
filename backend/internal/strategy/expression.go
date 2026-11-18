@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"strings"
 
-	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/platform/numeric"
@@ -79,7 +78,7 @@ const (
 // exists only in exit expressions.
 type Variable struct {
 	Name     string
-	Target   closedindicator.Target
+	Target   indicator.Target
 	Output   string
 	Position bool
 	// Count marks a position variable that counts candles, which a
@@ -432,7 +431,7 @@ func Compile(source string, registry *indicator.Registry, kind RuleKind) (*Expre
 // as rsi("1h", 14) as rsi("1h"), and lists what the indicator calls
 // calculate, in source order, a call with a source call once, as one
 // calculation; the rest of source stays as written.
-func Canonical(source string, registry *indicator.Registry) (string, []closedindicator.Target) {
+func Canonical(source string, registry *indicator.Registry) (string, []indicator.Target) {
 	source = strings.TrimSpace(source)
 	language := newLanguage(source, registry)
 	env, err := cel.NewEnv(language.options()...)
@@ -443,7 +442,7 @@ func Canonical(source string, registry *indicator.Registry) (string, []closedind
 	env.Parse(source)
 	slices.SortFunc(language.calls, func(a, b call) int { return a.start - b.start })
 	replacements := make([]replacement, 0, len(language.calls))
-	var targets []closedindicator.Target
+	var targets []indicator.Target
 	for _, item := range language.calls {
 		// The call it is the source of spells it.
 		if item.source {

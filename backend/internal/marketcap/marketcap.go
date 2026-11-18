@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -63,18 +62,26 @@ type Ticker struct {
 	IsStale      bool
 	IsAnomaly    bool
 }
+
+// Batch is the outcome of a market-cap refresh that completed with what the
+// provider gave.
 type Batch struct {
-	ProviderWarning bool
+	// ProviderErr joins the provider failures, and the failures to persist
+	// their results, that left some caps or mappings stale; nil when none did.
+	ProviderErr error
 }
+
+// Resolver is not safe for concurrent use: CoinMetadataSynchronizer is its
+// only caller.
 type Resolver struct {
 	store                   Store
 	provider                Provider
 	now                     func() time.Time
-	scan                    sync.Mutex
-	refresh                 sync.Mutex
 	scannedAt, scanFailedAt time.Time
-	refreshFailedAt         time.Time
-	unavailableAt           map[string]time.Time
+	// scanErr is the failure of the latest scan, kept while its retry waits.
+	scanErr         error
+	refreshFailedAt time.Time
+	unavailableAt   map[string]time.Time
 }
 
 func New(store Store, provider Provider) *Resolver {
@@ -86,8 +93,6 @@ func (r *Resolver) Bootstrap(ctx context.Context) error {
 	if err != nil || done {
 		return err
 	}
-	r.scan.Lock()
-	defer r.scan.Unlock()
 	mappings, err := r.allMappings(ctx)
 	if err != nil {
 		return err
@@ -130,16 +135,16 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 	if err != nil {
 		return Batch{}, err
 	}
-	mappingProviderWarning := false
+	var providerErrs []error
 	if len(missing) > 0 {
-		var mappingErr error
-		mappingProviderWarning, mappingErr = r.resolveMappings(ctx, missing, mappings)
-		if mappingErr != nil {
-			return Batch{}, mappingErr
+		scanErr, err := r.resolveMappings(ctx, missing, mappings)
+		if err != nil {
+			return Batch{}, err
+		}
+		if scanErr != nil {
+			providerErrs = append(providerErrs, scanErr)
 		}
 	}
-	r.refresh.Lock()
-	defer r.refresh.Unlock()
 	cooldown := !r.refreshFailedAt.IsZero() && r.now().Sub(r.refreshFailedAt) < failureCooldown
 	coinIDs := make([]string, 0, len(mappings))
 	for _, m := range mappings {
@@ -166,7 +171,10 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 	}
 	var available []Cap
 	var unavailable []string
-	providerFailed := cooldown
+	refreshErrs := []error{}
+	if cooldown {
+		refreshErrs = append(refreshErrs, fmt.Errorf("market caps were not fetched within %s of the last failure", failureCooldown))
+	}
 	ids := make([]string, 0, len(fetch))
 	for id := range fetch {
 		ids = append(ids, id)
@@ -176,9 +184,9 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 		if end > len(ids) {
 			end = len(ids)
 		}
-		values, e := r.provider.Markets(ctx, ids[start:end])
-		if e != nil {
-			providerFailed = true
+		values, err := r.provider.Markets(ctx, ids[start:end])
+		if err != nil {
+			refreshErrs = append(refreshErrs, fmt.Errorf("fetch market caps: %w", err))
 			continue
 		}
 		for _, cap := range values {
@@ -194,21 +202,21 @@ func (r *Resolver) ResolveBatch(ctx context.Context, instruments []market.Instru
 	}
 	if len(available) > 0 {
 		if err := r.store.SaveCaps(ctx, available); err != nil {
-			providerFailed = true
+			refreshErrs = append(refreshErrs, fmt.Errorf("save market caps: %w", err))
 		}
 	}
 	// A cap the provider no longer reports is unknown, not its last value.
 	if len(unavailable) > 0 {
 		if err := r.store.DeleteCaps(ctx, unavailable); err != nil {
-			providerFailed = true
+			refreshErrs = append(refreshErrs, fmt.Errorf("delete market caps: %w", err))
 		}
 	}
-	if providerFailed {
+	if len(refreshErrs) > 0 {
 		r.refreshFailedAt = r.now()
 	} else {
 		r.refreshFailedAt = time.Time{}
 	}
-	return Batch{ProviderWarning: providerFailed || mappingProviderWarning}, nil
+	return Batch{ProviderErr: errors.Join(append(providerErrs, refreshErrs...)...)}, nil
 }
 
 // cachedMappings adds the persisted mappings of bases to mappings and returns
@@ -236,37 +244,31 @@ func (r *Resolver) cachedMappings(ctx context.Context, bases map[string]market.I
 	return missing, nil
 }
 
-func (r *Resolver) resolveMappings(ctx context.Context, missing map[string]market.Instrument, mappings map[string]Mapping) (bool, error) {
-	r.scan.Lock()
-	defer r.scan.Unlock()
-	// Another batch may have scanned while this one waited for the lock.
-	still, err := r.cachedMappings(ctx, missing, mappings)
-	if err != nil {
-		return false, err
-	}
-	if len(still) == 0 {
-		return false, nil
-	}
+// resolveMappings scans the provider's tickers for the missing bases, at most
+// once per mappingRescanInterval. scanErr reports a failed scan, or the one
+// whose retry still waits, which leaves the bases unmapped; err a failure to
+// persist the mappings.
+func (r *Resolver) resolveMappings(ctx context.Context, missing map[string]market.Instrument, mappings map[string]Mapping) (scanErr, err error) {
 	if !r.scannedAt.IsZero() && r.now().Sub(r.scannedAt) < mappingRescanInterval {
 		// New or expired bases wait for the next scheduled scan.
-		return false, nil
+		return nil, nil
 	}
 	if !r.scanFailedAt.IsZero() && r.now().Sub(r.scanFailedAt) < mappingScanRetryDelay {
-		return true, nil
+		return r.scanErr, nil
 	}
 	all, err := r.allMappings(ctx)
 	if err != nil {
-		r.scanFailedAt = r.now()
-		return true, nil
+		r.scanFailedAt, r.scanErr = r.now(), fmt.Errorf("scan CoinGecko tickers: %w", err)
+		return r.scanErr, nil
 	}
-	r.scanFailedAt = time.Time{}
+	r.scanFailedAt, r.scanErr = time.Time{}, nil
 	r.scannedAt = r.now()
 	byBase := make(map[string]Mapping, len(all))
 	for _, m := range all {
 		byBase[m.BaseAsset] = m
 	}
-	selections := make([]Mapping, 0, len(still))
-	for base, i := range still {
+	selections := make([]Mapping, 0, len(missing))
+	for base, i := range missing {
 		// The scan selects as the bootstrap does, whatever the quote.
 		selected, found := byBase[base]
 		switch {
@@ -281,7 +283,7 @@ func (r *Resolver) resolveMappings(ctx context.Context, missing map[string]marke
 		selections = append(selections, selected)
 		mappings[base] = selected
 	}
-	return false, r.store.SaveMappings(ctx, selections)
+	return nil, r.store.SaveMappings(ctx, selections)
 }
 func (r *Resolver) mappingCacheValid(mapping Mapping) bool {
 	return mapping.ExpiresAt != nil && mapping.ExpiresAt.After(r.now())

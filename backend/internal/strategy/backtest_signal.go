@@ -13,6 +13,12 @@ import (
 // signalATRPeriod is the common ATR period used to judge every signal.
 const signalATRPeriod = 14
 
+// signalATR is the ATR of interval used to judge every signal; NewService
+// checks that the registry calculates it.
+func signalATR(interval market.CandleInterval) indicator.Target {
+	return indicator.NewTarget(interval, indicator.Selection{Type: "atr", Parameters: indicator.Parameters{"period": signalATRPeriod}})
+}
+
 func (stats *SignalStats) record(evaluation *SignalEvaluation) {
 	stats.Count++
 	switch evaluation.Outcome {
@@ -30,7 +36,7 @@ func (replay *replay) judgeSignal(signal Strategy, interval market.CandleInterva
 	// The ATR at a candle is calculated over its Depth window, the warm-up
 	// policy of the replayed values, so it does not depend on how much
 	// history is stored before that window.
-	target := closedindicator.Target{Interval: interval, Selection: indicator.Selection{Type: "atr", Parameters: indicator.Parameters{"period": signalATRPeriod}}}
+	target := signalATR(interval)
 	depth, err := closedindicator.Depth(replay.registry, target, 1)
 	if err != nil {
 		return nil, fmt.Errorf("signal ATR warm-up: %w", err)

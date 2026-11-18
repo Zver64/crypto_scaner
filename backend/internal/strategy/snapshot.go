@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/indicator"
 
 	"github.com/google/uuid"
 )
@@ -142,7 +143,7 @@ func (current snapshot) output(entry Entry, read Read, evaluated int64) (closedi
 		return closedindicator.Output{}, false
 	}
 	value := current.values[position]
-	if !value.OpenTime.Equal(read.Variable.Target.Interval.LastClosedOpenTime(current.now)) {
+	if !value.OpenTime.Equal(read.Variable.Target.Interval().LastClosedOpenTime(current.now)) {
 		return closedindicator.Output{}, false
 	}
 	for _, output := range value.Outputs {
@@ -215,8 +216,8 @@ func readsOf(strategies []Entry, evaluated func(Entry, []Instrument) []Instrumen
 			// subscriptions are deterministic.
 			var order []pair
 			points := map[pair]int{}
-			targets := map[string]closedindicator.Target{}
-			need := func(instrumentID int64, target closedindicator.Target, key string, shift int) {
+			targets := map[string]indicator.Target{}
+			need := func(instrumentID int64, target indicator.Target, key string, shift int) {
 				at := pair{instrumentID, key}
 				if _, ok := points[at]; !ok {
 					order = append(order, at)
@@ -252,7 +253,7 @@ func readsOf(strategies []Entry, evaluated func(Entry, []Instrument) []Instrumen
 }
 
 // readsAny reports whether entry reads any of targets.
-func readsAny(entry Entry, targets []closedindicator.Target) bool {
+func readsAny(entry Entry, targets []indicator.Target) bool {
 	return slices.ContainsFunc(entry.reads, func(read Read) bool {
 		return slices.ContainsFunc(targets, read.Variable.Target.Equal)
 	})

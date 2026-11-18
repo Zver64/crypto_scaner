@@ -16,10 +16,9 @@ import (
 )
 
 // Change reports a background recalculation of a tracked pair whose value
-// differs from the last known one. Previous is zero when nothing was known.
+// differs from the last known one.
 type Change struct {
 	InstrumentID int64
-	Previous     Value
 	Current      Value
 }
 
@@ -30,7 +29,7 @@ type Change struct {
 // own depth, while identical ones share one value.
 type Subscription struct {
 	InstrumentID int64
-	Target       Target
+	Target       indicator.Target
 	Points       int
 	// depth is the number of candles the subscription needs, set once it is
 	// checked.
@@ -40,11 +39,11 @@ type Subscription struct {
 func (subscription Subscription) points() int { return max(1, subscription.Points) }
 
 func (subscription Subscription) pair() pairKey {
-	return pairKey{subscription.InstrumentID, subscription.Target.Key(), subscription.points()}
+	return pairKey{subscription.InstrumentID, subscription.Target.Interval(), subscription.Target.Key(), subscription.points()}
 }
 
 func (subscription Subscription) history() historyKey {
-	return historyKey{subscription.InstrumentID, subscription.Target.Interval}
+	return historyKey{subscription.InstrumentID, subscription.Target.Interval()}
 }
 
 type Store interface {
@@ -53,16 +52,13 @@ type Store interface {
 	ListLatestCandles(context.Context, []int64, market.CandleInterval, int) (map[int64][]market.Candle, error)
 }
 
-// pairKey identifies a subscription; table values keep one point.
+// pairKey identifies a subscription by the key of its target, whose
+// interval it repeats; table values keep one point.
 type pairKey struct {
 	instrumentID int64
+	interval     market.CandleInterval
 	target       string
 	points       int
-}
-
-// tablePair identifies the table value of the target with key target.
-func tablePair(instrumentID int64, target string) pairKey {
-	return pairKey{instrumentID, target, 1}
 }
 
 type historyKey struct {
@@ -82,16 +78,21 @@ type Tracker struct {
 	mu sync.Mutex
 	// subscribers hold the pairs each subscriber keeps current.
 	subscribers map[string][]Subscription
-	targets     []Target
-	// tableKeys holds the keys of targets by interval; every cached value
-	// that is not tracked belongs to one of them.
-	tableKeys map[market.CandleInterval][]string
-	tracked   map[pairKey]Subscription
+	// invalid holds the invalid targets of each subscriber that changed its
+	// subscriptions since the last step, which warns about them.
+	invalid map[string]map[string]error
+	tracked map[pairKey]Subscription
 	// windows hold the candles of the histories of the tracked pairs, which
 	// committed changes keep current without reading the store.
-	windows  windows
-	values   map[pairKey]Value
+	windows windows
+	// values hold the latest calculated values of tracked pairs, kept until
+	// recalculated or no longer tracked.
+	values map[pairKey]Value
+	// versions count the changes of each history, so a value calculated
+	// before a change is not kept.
 	versions map[historyKey]uint64
+	// table caches the on-demand table values.
+	table *tableCache
 	// synced are the intervals whose dirty histories the next step
 	// recalculates; the others wait for the end of their own
 	// synchronization round, so a round is recalculated at once.
@@ -101,9 +102,9 @@ type Tracker struct {
 	// failing holds the tracked and table pairs whose latest calculation
 	// failed; a pair is warned about again only after it succeeded.
 	failing *logging.Failures[pairKey]
-	// invalid holds the invalid targets of each subscriber, warned about
-	// when they become invalid.
-	invalid *logging.Failures[invalidTarget]
+	// invalidTargets holds the invalid targets of each subscriber, warned
+	// about when they become invalid.
+	invalidTargets *logging.Failures[invalidTarget]
 	// loads holds the intervals whose latest window load failed.
 	loads *logging.Failures[market.CandleInterval]
 }
@@ -115,22 +116,22 @@ type invalidTarget struct {
 
 // New creates a tracker. Targets are the values served to tables; Subscribe
 // decides which pairs are kept current in the background.
-func New(store Store, registry *indicator.Registry, targets []Target, logger *slog.Logger) (*Tracker, error) {
+func New(store Store, registry *indicator.Registry, targets []indicator.Target, logger *slog.Logger) (*Tracker, error) {
 	if store == nil || registry == nil || logger == nil {
 		return nil, fmt.Errorf("closed indicator store, indicator registry, and logger are required")
-	}
-	tracker := &Tracker{
-		store: store, registry: registry, targets: targets, tableKeys: keysByInterval(targets), logger: logger, subscribers: map[string][]Subscription{},
-		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, windows: windows{}, values: map[pairKey]Value{},
-		versions: map[historyKey]uint64{}, synced: map[market.CandleInterval]struct{}{}, failing: logging.NewFailures[pairKey](logger), invalid: logging.NewFailures[invalidTarget](logger),
-		loads: logging.NewFailures[market.CandleInterval](logger),
 	}
 	for _, target := range targets {
 		if _, err := Depth(registry, target, 1); err != nil {
 			return nil, err
 		}
 	}
-	return tracker, nil
+	return &Tracker{
+		store: store, registry: registry, logger: logger, subscribers: map[string][]Subscription{}, invalid: map[string]map[string]error{},
+		wake: make(chan struct{}, 1), tracked: map[pairKey]Subscription{}, windows: windows{}, values: map[pairKey]Value{},
+		versions: map[historyKey]uint64{}, table: newTableCache(targets), synced: map[market.CandleInterval]struct{}{},
+		failing: logging.NewFailures[pairKey](logger), invalidTargets: logging.NewFailures[invalidTarget](logger),
+		loads: logging.NewFailures[market.CandleInterval](logger),
+	}, nil
 }
 
 // Listen sets the consumer of recalculated tracked values, replacing any
@@ -147,9 +148,9 @@ func (tracker *Tracker) Listen(listener func([]Change)) {
 // calculates at once and keeps current in the background, together with the
 // pairs of the other subscribers; the pairs nobody keeps any more are
 // dropped. Invalid pairs, and pairs deeper than the synchronized history,
-// whose windows committed changes would not keep current, are left out; a
-// target is warned about when it becomes invalid for subscriber. It never
-// blocks.
+// whose windows committed changes would not keep current, are left out; the
+// next step warns about a target when it becomes invalid for subscriber. It
+// never blocks.
 func (tracker *Tracker) Subscribe(subscriber string, subscriptions []Subscription) {
 	valid := make([]Subscription, 0, len(subscriptions))
 	// One warning names each invalid target, however many coins read it.
@@ -168,21 +169,31 @@ func (tracker *Tracker) Subscribe(subscriber string, subscriptions []Subscriptio
 	}
 	tracker.mu.Lock()
 	tracker.subscribers[subscriber] = valid
+	tracker.invalid[subscriber] = invalid
 	tracker.refresh = true
 	tracker.mu.Unlock()
 	tracker.signal()
-	tracker.invalid.Retain(func(key invalidTarget) bool {
-		_, still := invalid[key.target]
-		return key.subscriber != subscriber || still
-	})
-	for _, key := range slices.Sorted(maps.Keys(invalid)) {
-		tracker.invalid.Warn(context.Background(), invalidTarget{subscriber, key}, "skip invalid closed indicator subscription", "module", "closed_indicator", "subscriber", subscriber, "target", key, "error", invalid[key])
+}
+
+// warnInvalid warns about the targets that became invalid for a subscriber
+// and re-arms those that are valid again.
+func (tracker *Tracker) warnInvalid(ctx context.Context, bySubscriber map[string]map[string]error) {
+	for _, subscriber := range slices.Sorted(maps.Keys(bySubscriber)) {
+		invalid := bySubscriber[subscriber]
+		tracker.invalidTargets.Retain(func(key invalidTarget) bool {
+			_, still := invalid[key.target]
+			return key.subscriber != subscriber || still
+		})
+		for _, key := range slices.Sorted(maps.Keys(invalid)) {
+			tracker.invalidTargets.Warn(ctx, invalidTarget{subscriber, key}, "skip invalid closed indicator subscription", "module", "closed_indicator", "subscriber", subscriber, "target", key, "error", invalid[key])
+		}
 	}
 }
 
 // HistoryChanged applies committed closed-candle changes to the windows,
-// invalidates values, and marks tracked histories for the recalculation
-// HistorySynced starts. It never waits for recalculation.
+// expires cached table values, and marks tracked histories for the
+// recalculation HistorySynced starts; tracked values stay available until
+// recalculated. It never waits for recalculation.
 func (tracker *Tracker) HistoryChanged(candles []market.Candle) {
 	touched := map[historyKey][]market.Candle{}
 	for _, candle := range candles {
@@ -194,14 +205,7 @@ func (tracker *Tracker) HistoryChanged(candles []market.Candle) {
 	tracker.windows.apply(touched)
 	for key := range touched {
 		tracker.versions[key]++
-		// Tracked values stay available until recalculated; cached ones
-		// expire.
-		for _, target := range tracker.tableKeys[key.interval] {
-			pair := tablePair(key.instrumentID, target)
-			if _, tracked := tracker.tracked[pair]; !tracked {
-				delete(tracker.values, pair)
-			}
-		}
+		tracker.table.expire(key)
 	}
 }
 
@@ -223,16 +227,16 @@ func (tracker *Tracker) HistorySynced(interval market.CandleInterval) {
 }
 
 // Snapshot returns the known value of each subscription, in subscription
-// order, without calculating anything. A pair that is neither tracked nor
-// cached has no outputs, and its target is listed in missing, so results that
-// depend on it are not final yet.
-func (tracker *Tracker) Snapshot(subscriptions []Subscription) (values []Value, missing []Target) {
+// order, without calculating anything. A pair that has neither a tracked nor
+// a cached value has no outputs, and its target is listed in missing, so
+// results that depend on it are not final yet.
+func (tracker *Tracker) Snapshot(subscriptions []Subscription) (values []Value, missing []indicator.Target) {
 	values = make([]Value, len(subscriptions))
-	absent := map[string]Target{}
+	absent := map[string]indicator.Target{}
 	tracker.mu.Lock()
 	defer tracker.mu.Unlock()
 	for index, subscription := range subscriptions {
-		value, ok := tracker.values[subscription.pair()]
+		value, ok := tracker.known(subscription.pair())
 		if !ok {
 			value = Value{Target: subscription.Target}
 			absent[subscription.Target.Key()] = subscription.Target
@@ -264,6 +268,15 @@ func (tracker *Tracker) signal() {
 	}
 }
 
+// known returns the value of key: its tracked value, or else its cached
+// table value. It must be called with the lock held.
+func (tracker *Tracker) known(key pairKey) (Value, bool) {
+	if value, ok := tracker.values[key]; ok {
+		return value, true
+	}
+	return tracker.table.get(key)
+}
+
 // step recalculates the pairs that are due: the new ones, those of
 // synchronized histories, and those whose windows were missing or too short,
 // after reading them. All of them are calculated at once, so the listener
@@ -275,12 +288,15 @@ func (tracker *Tracker) step(ctx context.Context) {
 		tracker.refresh = false
 		tracker.resubscribe(due)
 	}
+	invalid := tracker.invalid
+	tracker.invalid = map[string]map[string]error{}
 	for _, key := range tracker.windows.takeDirty(tracker.synced) {
 		tracker.addPairs(due, key)
 	}
 	clear(tracker.synced)
 	loads := tracker.windows.startLoads()
 	tracker.mu.Unlock()
+	tracker.warnInvalid(ctx, invalid)
 	if len(loads) > 0 && !tracker.fill(ctx, loads, due) {
 		return
 	}
@@ -300,8 +316,6 @@ func (tracker *Tracker) resubscribe(due map[pairKey]Subscription) {
 			next[subscription.pair()] = subscription
 		}
 	}
-	// A dropped pair may hold a value awaiting recalculation, which would
-	// otherwise be served as a fresh cache entry.
 	for key := range tracker.tracked {
 		if _, kept := next[key]; !kept {
 			delete(tracker.values, key)
@@ -401,7 +415,6 @@ func (tracker *Tracker) recalculate(ctx context.Context, current calculation) {
 	for key, subscription := range current.due {
 		at := subscription.history()
 		if _, tracked := tracker.tracked[key]; !tracked {
-			delete(tracker.values, key)
 			continue
 		}
 		value, ok := computed[key]
@@ -417,7 +430,7 @@ func (tracker *Tracker) recalculate(ctx context.Context, current calculation) {
 		previous, existed := tracker.values[key]
 		tracker.values[key] = value
 		if !existed || !previous.equal(value) {
-			changes = append(changes, Change{InstrumentID: subscription.InstrumentID, Previous: previous, Current: value})
+			changes = append(changes, Change{InstrumentID: subscription.InstrumentID, Current: value})
 		}
 	}
 	listener := tracker.listener
@@ -476,20 +489,6 @@ func (tracker *Tracker) warn(ctx context.Context, message string, failures map[s
 func (tracker *Tracker) forgetFailures() {
 	tracker.failing.Retain(func(key pairKey) bool {
 		_, tracked := tracker.tracked[key]
-		return tracked || tracker.isTablePair(key)
+		return tracked || tracker.table.holds(key)
 	})
-}
-
-// isTablePair reports whether key is the table value of a current table
-// target. It must be called with the lock held.
-func (tracker *Tracker) isTablePair(key pairKey) bool {
-	if key.points != 1 {
-		return false
-	}
-	for _, keys := range tracker.tableKeys {
-		if slices.Contains(keys, key.target) {
-			return true
-		}
-	}
-	return false
 }

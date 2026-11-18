@@ -133,8 +133,8 @@ func (s *CoinMetadataSynchronizer) Refresh(ctx context.Context) error {
 	if err := s.resolver.RefreshStablecoinClassifications(ctx); err != nil {
 		return fmt.Errorf("refresh stablecoin classifications: %w", err)
 	}
-	if batch.ProviderWarning {
-		return errProviderUnavailable
+	if batch.ProviderErr != nil {
+		return fmt.Errorf("%w: %w", errProviderUnavailable, batch.ProviderErr)
 	}
 	return nil
 }

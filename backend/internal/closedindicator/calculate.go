@@ -5,32 +5,11 @@ import (
 	"fmt"
 	"maps"
 	"slices"
-	"strings"
 	"time"
 
-	"crypto-scanner/internal/chart"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 )
-
-// Target is an indicator selection calculated on one candle interval.
-type Target struct {
-	Interval  market.CandleInterval
-	Selection indicator.Selection
-}
-
-// Equal reports whether both targets identify the same interval and selection.
-func (target Target) Equal(other Target) bool { return target.Key() == other.Key() }
-
-// Key identifies the interval and the canonical selection of target.
-func (target Target) Key() string {
-	var key strings.Builder
-	key.WriteString(string(target.Interval) + "|" + string(target.Selection.Type))
-	for _, name := range slices.Sorted(maps.Keys(target.Selection.Parameters)) {
-		fmt.Fprintf(&key, "|%s=%v", name, target.Selection.Parameters[name])
-	}
-	return key.String()
-}
 
 // Output is one named output at the latest stored closed candle. Earlier
 // holds its values at the closed candles before it, newest first, as far as
@@ -63,7 +42,7 @@ func (output Output) Shown() (float64, bool) {
 // Value holds the named outputs at the latest stored closed candle. Outputs is
 // empty when the continuous history ending at that candle is too short.
 type Value struct {
-	Target   Target
+	Target   indicator.Target
 	OpenTime time.Time
 	Outputs  []Output
 }
@@ -80,26 +59,27 @@ func same(left, right float64) bool {
 }
 
 // Depth is the number of closed candles loaded to calculate points values of
-// target. Every point gets at least the chart.Window of target, the warm-up
+// target. Every point gets at least the indicator window of target, the warm-up
 // charts give it, so recursive indicators settle and agree with charts. Only
 // market.SyncDepth candles are always stored; a deeper depth may load fewer
 // candles, so the values it needs stay missing.
-func Depth(registry *indicator.Registry, target Target, points int) (int, error) {
-	if !target.Interval.Valid() {
-		return 0, fmt.Errorf("closed indicator interval %q is unsupported", target.Interval)
+func Depth(registry *indicator.Registry, target indicator.Target, points int) (int, error) {
+	if !target.Interval().Valid() {
+		return 0, fmt.Errorf("closed indicator interval %q is unsupported", target.Interval())
 	}
-	window, err := chart.Window(registry, target.Selection)
+	window, err := registry.Window(target.Selection())
 	if err != nil {
-		return 0, fmt.Errorf("closed indicator %q: %w", target.Selection.Type, err)
+		return 0, fmt.Errorf("closed indicator %q: %w", target.Selection().Type, err)
 	}
 	return window + max(1, points) - 1, nil
 }
 
-// calculate reads the closed histories of table values from the store, as
-// deep as their deepest pair needs, and evaluates every pair. The pairs whose
-// history cannot be read or whose calculation fails are left out, and failed
-// holds their errors.
-func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscription) (values map[pairKey]Value, failed map[pairKey]error) {
+// calculate evaluates every pair over the closed history of its instrument:
+// the in-memory window when it holds every candle the pairs of the history
+// need, otherwise the candles read from the store, as deep as the deepest
+// pair needs. The pairs whose history cannot be read or whose calculation
+// fails are left out, and failed holds their errors.
+func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscription, inMemory map[historyKey]windowCandles) (values map[pairKey]Value, failed map[pairKey]error) {
 	failed = map[pairKey]error{}
 	checked := make([]Subscription, 0, len(subscriptions))
 	depths := map[historyKey]int{}
@@ -114,12 +94,23 @@ func (tracker *Tracker) calculate(ctx context.Context, subscriptions []Subscript
 		key := subscription.history()
 		depths[key] = max(depths[key], depth)
 	}
-	histories, unread := tracker.readLatest(ctx, depths)
+	histories := make(map[historyKey][]market.Candle, len(depths))
+	for key, depth := range depths {
+		if window, ok := inMemory[key]; ok && window.depth >= depth {
+			histories[key] = window.candles
+			delete(depths, key)
+		}
+	}
+	read, unread := tracker.readLatest(ctx, depths)
+	maps.Copy(histories, read)
 	readable := make([]Subscription, 0, len(checked))
 	for _, subscription := range checked {
-		if err, ok := unread[readGroup{subscription.Target.Interval, depths[subscription.history()]}]; ok {
-			failed[subscription.pair()] = err
-			continue
+		key := subscription.history()
+		if _, ok := depths[key]; ok {
+			if err, ok := unread[readGroup{key.interval, depths[key]}]; ok {
+				failed[subscription.pair()] = err
+				continue
+			}
 		}
 		readable = append(readable, subscription)
 	}
@@ -149,23 +140,23 @@ func (tracker *Tracker) evaluate(subscriptions []Subscription, histories map[his
 // points−1 earlier ones. The tracker passes the latest Depth closed candles;
 // passing the same window ending at an earlier candle reproduces the value
 // the tracker had then.
-func Calculate(registry *indicator.Registry, target Target, candles []market.Candle, points int) (Value, error) {
-	return CalculateRange(registry, target, indicator.NewHistory(target.Interval, candles), 0, len(candles), points)
+func Calculate(registry *indicator.Registry, target indicator.Target, candles []market.Candle, points int) (Value, error) {
+	return CalculateRange(registry, target, indicator.NewHistory(target.Interval(), candles), 0, len(candles), points)
 }
 
 // CalculateRange is Calculate over the window of history, candles of the
 // target's interval, from index from through to−1, so a replay prepares its
 // history once for the windows of all its candles.
-func CalculateRange(registry *indicator.Registry, target Target, history *indicator.History, from, to, points int) (Value, error) {
+func CalculateRange(registry *indicator.Registry, target indicator.Target, history *indicator.History, from, to, points int) (Value, error) {
 	value := Value{Target: target}
 	if to <= from {
 		return value, nil
 	}
 	last := history.OpenTime(to - 1).UTC()
 	value.OpenTime = last
-	outputs, err := registry.CalculateRange(history, from, to, target.Selection)
+	outputs, err := registry.CalculateRange(history, from, to, target.Selection())
 	if err != nil {
-		return Value{}, fmt.Errorf("calculate closed %s: %w", target.Selection.Type, err)
+		return Value{}, fmt.Errorf("calculate closed %s: %w", target.Selection().Type, err)
 	}
 	for _, calculated := range outputs {
 		// The values are read from the latest one back, run by run.
@@ -186,7 +177,7 @@ func CalculateRange(registry *indicator.Registry, target Target, history *indica
 				if len(output.Earlier) >= points-1 {
 					break walk
 				}
-				expected = target.Interval.PreviousOpenTime(expected)
+				expected = target.Interval().PreviousOpenTime(expected)
 				if !openTime.Equal(expected) {
 					break walk
 				}

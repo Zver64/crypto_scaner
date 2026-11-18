@@ -11,6 +11,7 @@ import (
 	"crypto-scanner/internal/platform/backoff"
 	"crypto-scanner/internal/platform/delivery"
 	"crypto-scanner/internal/platform/logging"
+	"crypto-scanner/internal/telegramhtml"
 )
 
 const (
@@ -29,8 +30,11 @@ type MonitorStore interface {
 	TriggerStore
 	ListMonitoredSymbols(context.Context) ([]string, error)
 }
-type AlertSender interface {
-	SendPriceAlert(context.Context, Fired) error
+
+// Sender delivers a Telegram HTML message to a user, rechecking their access
+// first.
+type Sender interface {
+	Send(ctx context.Context, telegramID int64, text string) error
 }
 type liveOperation struct {
 	apply                *Alert
@@ -77,7 +81,8 @@ func (s *symbolState) target(a Alert) *big.Rat {
 type Monitor struct {
 	store   MonitorStore
 	feed    markettrade.Feed
-	sender  AlertSender
+	sender  Sender
+	coins   telegramhtml.Coins
 	logger  *slog.Logger
 	ops     chan liveOperation
 	refresh chan struct{}
@@ -90,9 +95,11 @@ type Monitor struct {
 	deliveries *logging.Failures[int64]
 }
 
-func NewMonitor(store MonitorStore, feed markettrade.Feed, sender AlertSender, logger *slog.Logger) *Monitor {
+// NewMonitor creates a monitor that sends fired alerts through sender, linking
+// their coins with coins.
+func NewMonitor(store MonitorStore, feed markettrade.Feed, sender Sender, coins telegramhtml.Coins, logger *slog.Logger) *Monitor {
 	logger = logger.With("module", "alerts")
-	return &Monitor{store: store, feed: feed, sender: sender, logger: logger, loadFailure: logging.NewFailure(logger), fireFailure: logging.NewFailure(logger), deliveries: logging.NewFailures[int64](logger), ops: make(chan liveOperation, 128), refresh: make(chan struct{}, 1), sends: make(chan Fired, 128)}
+	return &Monitor{store: store, feed: feed, sender: sender, coins: coins, logger: logger, loadFailure: logging.NewFailure(logger), fireFailure: logging.NewFailure(logger), deliveries: logging.NewFailures[int64](logger), ops: make(chan liveOperation, 128), refresh: make(chan struct{}, 1), sends: make(chan Fired, 128)}
 }
 func (m *Monitor) Apply(a Alert) { copy := a; m.enqueue(liveOperation{apply: &copy}) }
 func (m *Monitor) Remove(userID, id int64) {
@@ -381,7 +388,7 @@ func (m *Monitor) deliver(ctx context.Context, item Fired) {
 	if !fired {
 		return
 	}
-	if err := m.sender.SendPriceAlert(ctx, item); err != nil {
+	if err := m.sender.Send(ctx, item.Alert.TelegramID, message(m.coins, item)); err != nil {
 		m.deliveries.Warn(ctx, item.Alert.TelegramID, "price alert Telegram delivery failed", "alert_id", item.Alert.ID, "telegram_id", item.Alert.TelegramID, "error", err)
 		return
 	}

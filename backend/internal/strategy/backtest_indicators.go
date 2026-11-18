@@ -41,21 +41,21 @@ func (item displayedIndicator) column(output string) string {
 	return spellCall(indicatorFunction(item.Selection.Type, len(item.Outputs), output), item.interval, item.arguments)
 }
 
-func (item displayedIndicator) target() closedindicator.Target {
+func (item displayedIndicator) target() indicator.Target {
 	return item.Target(item.interval)
 }
 
 // source is the indicator the item reads as its source, on its interval.
-func (item displayedIndicator) source() (closedindicator.Target, bool) {
+func (item displayedIndicator) source() (indicator.Target, bool) {
 	selection, found := item.Source()
-	return closedindicator.Target{Interval: item.interval, Selection: selection}, found
+	return indicator.NewTarget(item.interval, selection), found
 }
 
 func (service *Service) displayedIndicators(entry Entry) ([]displayedIndicator, error) {
 	var result []displayedIndicator
 	for _, read := range entry.reads {
 		target := read.Variable.Target
-		if read.Symbol != "" || read.Variable.Position || target.Equal(CandleTarget(target.Interval)) {
+		if read.Symbol != "" || read.Variable.Position || target.Equal(CandleTarget(target.Interval())) {
 			continue
 		}
 		var err error
@@ -85,21 +85,21 @@ func (service *Service) chartedIndicators(displayed []displayedIndicator) ([]dis
 }
 
 // withDisplayed adds the indicator of target to items unless they have it.
-func (service *Service) withDisplayed(items []displayedIndicator, target closedindicator.Target) ([]displayedIndicator, error) {
+func (service *Service) withDisplayed(items []displayedIndicator, target indicator.Target) ([]displayedIndicator, error) {
 	if slices.ContainsFunc(items, func(item displayedIndicator) bool { return item.target().Equal(target) }) {
 		return items, nil
 	}
 	// Derive presentation from the dependency itself, never from configured
 	// rows, their display flags, order, or scale overrides.
-	item, err := service.indicators.Preview(target.Selection)
+	item, err := service.indicators.Preview(target.Selection())
 	if err != nil {
 		return nil, fmt.Errorf("describe backtest indicator: %w", err)
 	}
-	arguments, err := callArguments(service.registry, target.Selection, target.Interval)
+	arguments, err := callArguments(service.registry, target.Selection(), target.Interval())
 	if err != nil {
 		return nil, fmt.Errorf("spell backtest indicator: %w", err)
 	}
-	return append(items, displayedIndicator{Entry: item, interval: target.Interval, arguments: arguments}), nil
+	return append(items, displayedIndicator{Entry: item, interval: target.Interval(), arguments: arguments}), nil
 }
 
 // sortDisplayed orders items by their canonical calls: formula traversal

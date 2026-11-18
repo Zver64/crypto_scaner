@@ -10,5 +10,6 @@ func UseHTTPClient(service *Service, token string, client telegram.HttpClient) e
 		return err
 	}
 	service.bot = bot
+	service.notifier.bot = bot
 	return nil
 }

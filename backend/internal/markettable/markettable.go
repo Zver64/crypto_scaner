@@ -11,6 +11,7 @@ import (
 
 	"crypto-scanner/internal/analysis"
 	"crypto-scanner/internal/closedindicator"
+	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 )
 
@@ -94,14 +95,9 @@ type Row struct {
 	Symbol           string
 	Markets          []Market
 	Evaluations      []analysis.Evaluation
-	PriceHistories   analysis.PriceHistories
+	PriceHistories   PriceHistories
 	ClosedIndicators []closedindicator.Value
 	AlertCount       int
-}
-
-// RowFromSearchItem converts an analyzed instrument into a table row.
-func RowFromSearchItem(item analysis.SearchItem) Row {
-	return Row{Symbol: item.Symbol, Evaluations: item.Evaluations, PriceHistories: item.PriceHistories, ClosedIndicators: item.ClosedIndicators}
 }
 
 // Cell holds the field its column kind uses; unavailable values are nil.
@@ -282,7 +278,7 @@ func (source MetricRatio) cell(row Row) (Cell, bool) {
 // ClosedIndicator is an output of a background indicator at the latest closed
 // candle.
 type ClosedIndicator struct {
-	Target closedindicator.Target
+	Target indicator.Target
 	Output string
 }
 

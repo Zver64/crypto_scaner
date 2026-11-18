@@ -1,4 +1,4 @@
-package analysis
+package markettable
 
 import (
 	"context"
@@ -15,8 +15,8 @@ type PriceHistories struct {
 	ThirtyDay []*float64
 }
 
-// PriceHistories loads the price histories of the instruments over windows.
-func (service *Service) PriceHistories(ctx context.Context, ids []int64, windows market.PriceWindows) (map[int64]PriceHistories, error) {
+// priceHistories loads the price histories of the instruments over windows.
+func (service *Service) priceHistories(ctx context.Context, ids []int64, windows market.PriceWindows) (map[int64]PriceHistories, error) {
 	histories := make(map[int64]PriceHistories, len(ids))
 	if len(ids) == 0 {
 		return histories, nil
@@ -45,7 +45,7 @@ func (service *Service) closes(ctx context.Context, ids []int64, interval market
 	for _, id := range ids {
 		series[id] = make([]*float64, slots)
 	}
-	prices, err := service.store.ListClosePrices(ctx, ids, interval, from, to)
+	prices, err := service.prices.ListClosePrices(ctx, ids, interval, from, to)
 	if err != nil {
 		return nil, err
 	}

@@ -20,7 +20,7 @@ func TestEarlierValuesBehindAnEmptyOneStayReadable(t *testing.T) {
 	for index, high := range []float64{1, 2, 9, 3, 2, 1} {
 		candles[index].High = high
 	}
-	target := closedindicator.Target{Interval: market.IntervalHour, Selection: indicator.Selection{Type: pivot.Type, Parameters: indicator.Parameters{"left": 1, "right": 1}}}
+	target := indicator.NewTarget(market.IntervalHour, indicator.Selection{Type: pivot.Type, Parameters: indicator.Parameters{"left": 1, "right": 1}})
 	value, err := closedindicator.Calculate(registry, target, candles, 4)
 	if err != nil {
 		t.Fatal(err)

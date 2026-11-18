@@ -79,7 +79,7 @@ type Values interface {
 	Listen(func([]closedindicator.Change))
 	// Snapshot returns the value of each subscription and also lists the
 	// targets some subscription has no value for yet.
-	Snapshot([]closedindicator.Subscription) ([]closedindicator.Value, []closedindicator.Target)
+	Snapshot([]closedindicator.Subscription) ([]closedindicator.Value, []indicator.Target)
 }
 
 // Strategies supplies the current strategies. A change requests its
@@ -101,7 +101,7 @@ type CandleStore interface {
 }
 
 type Sender interface {
-	SendStrategyMessage(ctx context.Context, telegramID int64, text string) error
+	Send(ctx context.Context, telegramID int64, text string) error
 }
 
 // Monitor evaluates enabled strategies whenever indicator values of monitored
@@ -421,7 +421,7 @@ func (monitor *Monitor) send(ctx context.Context, recipients []Recipient, text f
 
 func (monitor *Monitor) deliver(ctx context.Context, item message) {
 	key := failureKey{operation: "deliver", telegramID: item.telegramID}
-	if err := monitor.sender.SendStrategyMessage(ctx, item.telegramID, item.text); err != nil {
+	if err := monitor.sender.Send(ctx, item.telegramID, item.text); err != nil {
 		monitor.failures.Warn(ctx, key, "strategy Telegram delivery failed", "telegram_id", item.telegramID, "error", err)
 		return
 	}

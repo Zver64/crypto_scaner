@@ -588,7 +588,7 @@ func trackedSnapshot(t *testing.T, store *backtestStore, registry *indicator.Reg
 	defer func() { cancel(); <-done }()
 	deadline := time.After(10 * time.Second)
 	for {
-		var missing []closedindicator.Target
+		var missing []indicator.Target
 		if tracked.values, missing = tracker.Snapshot(tracked.reads.subscriptions); len(missing) == 0 {
 			return tracked
 		}
@@ -669,7 +669,7 @@ func testCandle(instrumentID int64, interval market.CandleInterval, open time.Ti
 // lines of each tone with a token named after it.
 func testScannerIndicators(t *testing.T, registry *indicator.Registry) *scannerindicator.Service {
 	t.Helper()
-	service, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, testDrawers(t, registry), slog.New(slog.DiscardHandler), func() {})
+	service, err := scannerindicator.New(&struct{ scannerindicator.Store }{}, registry, testDrawers(t, registry), slog.New(slog.DiscardHandler))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -718,7 +718,7 @@ func testID(n byte) uuid.UUID { return uuid.UUID{15: n} }
 func newBacktestService(t *testing.T, store *backtestStore, items ...Strategy) *Service {
 	t.Helper()
 	store.strategies = items
-	service, err := NewService(store, testIndicators{}, testRegistry(t), testDrawers(t, testRegistry(t)), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	service, err := NewService(store, testIndicators{}, testRegistry(t), testDrawers(t, testRegistry(t)), noTracker{}, slog.New(slog.DiscardHandler), 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -807,7 +807,7 @@ func BenchmarkBacktest20000Candles(b *testing.B) {
 	}
 	store := newBacktestStore(market.IntervalHour, hourly)
 	store.strategies = []Strategy{{ID: testID(1), Name: "Cross", Expression: `CrossesAbove(close("1h"), ema("1h", 100))`}}
-	service, err := NewService(store, indicators, registry, testDrawers(b, registry), noTracker{}, slog.New(slog.DiscardHandler), 0, func([]uuid.UUID) {})
+	service, err := NewService(store, indicators, registry, testDrawers(b, registry), noTracker{}, slog.New(slog.DiscardHandler), 0)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -936,10 +936,7 @@ func TestSignalATRUsesPastRangesOnly(t *testing.T) {
 // Both signal and all-candle outcomes must wait for the shared warm-up.
 func TestSignalATRWarmsUpPrunedHistory(t *testing.T) {
 	registry := testRegistry(t)
-	depth, err := closedindicator.Depth(registry, closedindicator.Target{
-		Interval:  market.IntervalHour,
-		Selection: indicator.Selection{Type: "atr", Parameters: indicator.Parameters{"period": signalATRPeriod}},
-	}, 1)
+	depth, err := closedindicator.Depth(registry, signalATR(market.IntervalHour), 1)
 	if err != nil {
 		t.Fatal(err)
 	}

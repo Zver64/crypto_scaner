@@ -1,5 +1,5 @@
 // Package telegrambot grants Scanner Access through the configured Telegram
-// Administrator's private chat and delivers price and strategy alerts.
+// Administrator's private chat (Service) and delivers notifications (Notifier).
 package telegrambot
 
 import (
@@ -8,22 +8,18 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"html"
 	"log/slog"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"crypto-scanner/internal/alerts"
 	"crypto-scanner/internal/auth"
-	"crypto-scanner/internal/platform/backoff"
 	"crypto-scanner/internal/platform/logging"
 	"crypto-scanner/internal/telegramhtml"
 
 	telegram "github.com/go-telegram/bot"
 	"github.com/go-telegram/bot/models"
-	"golang.org/x/time/rate"
 )
 
 const (
@@ -32,10 +28,6 @@ const (
 	callbackConfirm = "confirm"
 	callbackCancel  = "cancel"
 	menuText        = "Add users here. Delete them in the Mini App settings."
-	// sendTimeout bounds the recipient lookup and the Telegram API call of a
-	// notification. Rate-limit waits, the bot-wide limiter's and Telegram's
-	// retry_after, are not bounded, so a burst is delayed, never dropped.
-	sendTimeout = 10 * time.Second
 	// clientQuietPeriod re-arms the client failure warning: while polling
 	// fails, errors follow each other within the client's backoff (at most
 	// 5s), and a successful long poll lasts its timeout (1 minute), so an
@@ -52,21 +44,29 @@ type Options struct {
 	ServerURL string
 }
 
-// Service owns one long-polling Telegram Bot API consumer and its ephemeral
-// confirmation state. Confirmation state is deliberately in-memory: a restart
-// invalidates every previously rendered button.
+// Access grants Scanner Access; users.Service is one.
+type Access interface {
+	// Grant reports whether the user was new.
+	Grant(ctx context.Context, telegramID int64, username, displayName string) (bool, error)
+}
+
+// Service owns one long-polling Telegram Bot API consumer, the
+// administrator's Add user dialog with its ephemeral confirmation state, and
+// the Notifier sending through the same client. Confirmation state is
+// deliberately in-memory: a restart invalidates every previously rendered
+// button.
 type Service struct {
 	bot             *telegram.Bot
 	coins           telegramhtml.Coins
-	store           auth.AccessStore
+	users           auth.UserStore
+	access          Access
 	administratorID int64
 	logger          *slog.Logger
+	notifier        *Notifier
 
-	mu            sync.Mutex
-	nextPicker    int32
-	operations    map[string]*operation
-	sendLimiter   *rate.Limiter
-	accessChanged func()
+	mu         sync.Mutex
+	nextPicker int32
+	operations map[string]*operation
 	// runDone holds the Done channel of Run's context, so the errors handler
 	// tells the errors of the shutdown apart the moment it begins.
 	runDone atomic.Pointer[<-chan struct{}]
@@ -91,22 +91,19 @@ type operation struct {
 
 // New constructs a Telegram Bot API client without changing any BotFather
 // settings. The configured administrator ID is the only authority for granting
-// access; other application users never gain that authority. accessChanged
-// runs after the bot grants access.
-func New(ctx context.Context, token string, administratorID int64, store auth.AccessStore, logger *slog.Logger, accessChanged func(), options Options) (*Service, error) {
+// access, through access; other application users, whom users finds, never
+// gain that authority.
+func New(ctx context.Context, token string, administratorID int64, users auth.UserStore, access Access, logger *slog.Logger, options Options) (*Service, error) {
 	if administratorID <= 0 {
 		return nil, fmt.Errorf("administrator Telegram ID must be positive")
 	}
-	if store == nil {
-		return nil, fmt.Errorf("access store is required")
+	if users == nil || access == nil {
+		return nil, fmt.Errorf("user store and access are required")
 	}
 	if logger == nil {
 		return nil, fmt.Errorf("logger is required")
 	}
-	if accessChanged == nil {
-		return nil, fmt.Errorf("access change listener is required")
-	}
-	service := &Service{store: store, administratorID: administratorID, logger: logger, clientFailure: logging.NewFailure(logger), operations: map[string]*operation{}, sendLimiter: rate.NewLimiter(rate.Limit(25), 25), accessChanged: accessChanged}
+	service := &Service{users: users, access: access, administratorID: administratorID, logger: logger, clientFailure: logging.NewFailure(logger), operations: map[string]*operation{}}
 	botOptions := []telegram.Option{
 		telegram.WithAllowedUpdates(telegram.AllowedUpdates{"message", "callback_query"}),
 		telegram.WithDefaultHandler(service.handleUpdate),
@@ -142,11 +139,15 @@ func New(ctx context.Context, token string, administratorID int64, store auth.Ac
 	}
 	service.bot = client
 	service.coins = telegramhtml.NewCoins(me.Username)
+	service.notifier = newNotifier(client, users, administratorID)
 	return service, nil
 }
 
 // Coins links coins in messages to the bot's Mini App.
 func (service *Service) Coins() telegramhtml.Coins { return service.coins }
+
+// Notifier sends notifications through the bot.
+func (service *Service) Notifier() *Notifier { return service.notifier }
 
 // Run consumes Telegram updates until context cancellation. The Bot API client
 // owns long polling; this service never configures a webhook or BotFather menu.
@@ -226,7 +227,7 @@ func (service *Service) handleMessage(ctx context.Context, client *telegram.Bot,
 }
 
 func (service *Service) handleNonAdministrator(ctx context.Context, client *telegram.Bot, message *models.Message) {
-	if _, err := service.store.FindByTelegramID(ctx, message.From.ID); err == nil {
+	if _, err := service.users.FindByTelegramID(ctx, message.From.ID); err == nil {
 		service.send(ctx, client, message.Chat.ID, "Scanner Access is active. Open the existing Main Mini App from this bot's profile.", nil)
 		return
 	}
@@ -335,7 +336,7 @@ func (service *Service) handleCallback(ctx context.Context, client *telegram.Bot
 	operation.busy = true
 	service.mu.Unlock()
 
-	_, created, err := service.store.GrantAccess(ctx, operation.user.TelegramID, operation.user.Username, operation.user.DisplayName)
+	created, err := service.access.Grant(ctx, operation.user.TelegramID, operation.user.Username, operation.user.DisplayName)
 	service.mu.Lock()
 	delete(service.operations, token)
 	service.mu.Unlock()
@@ -351,7 +352,6 @@ func (service *Service) handleCallback(ctx context.Context, client *telegram.Bot
 		service.sendMenu(ctx, client, chat.ID, formatUser(operation.user)+" already has Scanner Access.")
 		return
 	}
-	service.accessChanged()
 	service.sendMenu(ctx, client, chat.ID, "Scanner Access granted to "+formatUser(operation.user)+".")
 }
 
@@ -445,90 +445,4 @@ func newToken() string {
 	bytes := make([]byte, 12)
 	_, _ = rand.Read(bytes) // never fails since Go 1.24
 	return hex.EncodeToString(bytes)
-}
-
-// SendPriceAlert delivers a price alert. It rechecks access immediately
-// before sending and retries only once, after a Telegram 429.
-func (service *Service) SendPriceAlert(ctx context.Context, fired alerts.Fired) error {
-	return service.deliver(ctx, fired.Alert.TelegramID, priceAlertText(service.coins, fired))
-}
-
-// SendStrategyMessage delivers a strategy alert or summary like a price alert.
-func (service *Service) SendStrategyMessage(ctx context.Context, telegramID int64, text string) error {
-	return service.deliver(ctx, telegramID, text)
-}
-
-// SendAdministratorMessage sends an operational message to the configured
-// administrator within the bot-wide rate limit. The administrator is
-// configured, so access is not rechecked.
-func (service *Service) SendAdministratorMessage(ctx context.Context, text string) error {
-	return service.notify(ctx, service.administratorID, text, false)
-}
-
-// notification builds the parameters of text, written in Telegram HTML,
-// without previews of its links. Every notification goes so; the bot's own
-// dialog stays plain.
-func notification(chatID int64, text string) *telegram.SendMessageParams {
-	disabled := true
-	return &telegram.SendMessageParams{ChatID: chatID, Text: text, ParseMode: models.ParseModeHTML, LinkPreviewOptions: &models.LinkPreviewOptions{IsDisabled: &disabled}}
-}
-
-// deliver sends a notification to a user, rechecking access before sending.
-func (service *Service) deliver(ctx context.Context, telegramID int64, text string) error {
-	return service.notify(ctx, telegramID, text, true)
-}
-
-// notify sends text to chatID and, when Telegram answers 429, waits its
-// retry_after with the caller's context and tries once more.
-func (service *Service) notify(ctx context.Context, chatID int64, text string, recheckAccess bool) error {
-	for retried := false; ; retried = true {
-		err := service.sendNotification(ctx, chatID, text, recheckAccess)
-		var tooMany *telegram.TooManyRequestsError
-		if retried || !errors.As(err, &tooMany) {
-			return err
-		}
-		if err := backoff.Sleep(ctx, time.Duration(tooMany.RetryAfter)*time.Second); err != nil {
-			return err
-		}
-	}
-}
-
-// sendNotification waits for the bot-wide rate limit with the caller's
-// context, so only its cancellation ends the wait, and then sends text,
-// rechecking the recipient's access first when asked.
-func (service *Service) sendNotification(ctx context.Context, chatID int64, text string, recheckAccess bool) error {
-	if err := service.sendLimiter.Wait(ctx); err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(ctx, sendTimeout)
-	defer cancel()
-	if recheckAccess {
-		if _, err := service.store.FindByTelegramID(ctx, chatID); errors.Is(err, auth.ErrUserNotFound) {
-			return fmt.Errorf("recipient no longer has access")
-		} else if err != nil {
-			return fmt.Errorf("look up recipient: %w", err)
-		}
-	}
-	_, err := service.bot.SendMessage(ctx, notification(chatID, text))
-	return err
-}
-
-// trimDecimal drops the trailing zeros Binance pads prices with, such as
-// 65012.30000000 to 65012.3.
-func trimDecimal(price string) string {
-	if !strings.Contains(price, ".") {
-		return price
-	}
-	trimmed := strings.TrimSuffix(strings.TrimRight(price, "0"), ".")
-	if trimmed == "" {
-		return "0"
-	}
-	return trimmed
-}
-
-// priceAlertText names the symbol, the price that hit the alert, and its
-// target.
-func priceAlertText(coins telegramhtml.Coins, fired alerts.Fired) string {
-	return telegramhtml.Title("🔔 "+fired.Alert.Symbol+" · price alert") + "\n" +
-		coins.Symbol(fired.Alert.Symbol) + " " + html.EscapeString(trimDecimal(fired.Price)) + " · target " + html.EscapeString(fired.Alert.Target)
 }

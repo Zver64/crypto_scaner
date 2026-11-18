@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"crypto-scanner/internal/market"
@@ -99,18 +100,23 @@ type LiveIndex interface {
 }
 
 type Service struct {
-	store CRUDStore
-	live  LiveIndex
-	// favoritesChanged runs when creating an alert added a favorite of the
-	// user userID, which changes the monitored instruments.
-	favoritesChanged func(ctx context.Context, userID int64)
+	store            CRUDStore
+	live             LiveIndex
+	favoritesChanged atomic.Pointer[func(ctx context.Context, userID int64)]
 }
 
-func New(store CRUDStore, live LiveIndex, favoritesChanged func(ctx context.Context, userID int64)) (*Service, error) {
-	if store == nil || live == nil || favoritesChanged == nil {
+func New(store CRUDStore, live LiveIndex) (*Service, error) {
+	if store == nil || live == nil {
 		return nil, errors.New("price alert service dependencies are required")
 	}
-	return &Service{store: store, live: live, favoritesChanged: favoritesChanged}, nil
+	return &Service{store: store, live: live}, nil
+}
+
+// OnFavoritesChanged sets the consumer of favorite changes, replacing any
+// earlier one. It runs when creating an alert added a favorite of the user
+// userID, which changes the monitored instruments.
+func (s *Service) OnFavoritesChanged(listener func(ctx context.Context, userID int64)) {
+	s.favoritesChanged.Store(&listener)
 }
 func (s *Service) List(ctx context.Context, userID int64, symbol string) ([]Alert, error) {
 	return s.store.ListAlerts(ctx, userID, market.NormalizeSymbol(symbol))
@@ -125,8 +131,8 @@ func (s *Service) Create(ctx context.Context, userID int64, symbol, raw string) 
 		return Alert{}, err
 	}
 	s.live.Apply(item)
-	if favoriteAdded {
-		s.favoritesChanged(ctx, userID)
+	if listener := s.favoritesChanged.Load(); favoriteAdded && listener != nil && *listener != nil {
+		(*listener)(ctx, userID)
 	}
 	return item, nil
 }

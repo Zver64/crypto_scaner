@@ -1,16 +1,13 @@
-package chart
+package indicator
 
-import (
-	"crypto-scanner/internal/indicator"
-	"crypto-scanner/internal/market"
-)
+import "crypto-scanner/internal/market"
 
 const (
-	// SettleFactor scales the lookback into the warm-up of every indicator.
+	// settleFactor scales the lookback into the warm-up of every indicator.
 	// The lookback is only the minimum: recursive indicators (EMA, RSI, ADX,
 	// MACD, and so on) start from a seed such as an SMA and need many more
 	// candles before the seed stops mattering.
-	SettleFactor = 10
+	settleFactor = 10
 	// maxWindow bounds the warm-up so that half of the synchronized history
 	// remains for scroll-back and earlier points.
 	maxWindow = market.SyncDepth / 2
@@ -22,10 +19,10 @@ const (
 // so a value does not depend on how many points are read or on the other
 // selected indicators: a longer history only changes a settled value by the
 // remainder of the seed.
-func Window(registry *indicator.Registry, selection indicator.Selection) (int, error) {
-	lookback, err := registry.Lookback(selection.Type, selection.Parameters)
+func (r *Registry) Window(selection Selection) (int, error) {
+	lookback, err := r.Lookback(selection.Type, selection.Parameters)
 	if err != nil {
 		return 0, err
 	}
-	return max(lookback+1, min(maxWindow, (lookback+1)*SettleFactor)), nil
+	return max(lookback+1, min(maxWindow, (lookback+1)*settleFactor)), nil
 }

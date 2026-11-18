@@ -16,7 +16,6 @@ import (
 	"sync"
 
 	"crypto-scanner/internal/chart"
-	"crypto-scanner/internal/closedindicator"
 	"crypto-scanner/internal/indicator"
 	"crypto-scanner/internal/market"
 	"crypto-scanner/internal/markettable"
@@ -62,14 +61,14 @@ type Indicator struct {
 }
 
 // Target is the closed-candle calculation of the indicator on interval.
-func (item Indicator) Target(interval market.CandleInterval) closedindicator.Target {
-	return closedindicator.Target{Interval: interval, Selection: item.Selection}
+func (item Indicator) Target(interval market.CandleInterval) indicator.Target {
+	return indicator.NewTarget(interval, item.Selection)
 }
 
 // HasSelection reports whether the indicator calculates selection, which
 // must be normalized.
 func (item Indicator) HasSelection(selection indicator.Selection) bool {
-	return item.Target("").Equal(closedindicator.Target{Selection: selection})
+	return item.Selection.Key() == selection.Key()
 }
 
 // Period returns the display settings of interval; found is false when the
@@ -125,22 +124,31 @@ type Service struct {
 	registry *indicator.Registry
 	charts   Charts
 	logger   *slog.Logger
-	changed  func()
 
 	// writes serializes changes, so limit and duplicate checks see every
 	// earlier change.
-	writes  sync.Mutex
-	mu      sync.RWMutex
-	entries []Entry
+	writes sync.Mutex
+	mu     sync.RWMutex
+	// listener is called after each change; nil until Listen sets it.
+	listener func()
+	entries  []Entry
 }
 
-// New creates an empty service; Load reads the stored configuration. changed
-// is called after each change and must not block.
-func New(store Store, registry *indicator.Registry, charts Charts, logger *slog.Logger, changed func()) (*Service, error) {
-	if store == nil || registry == nil || charts == nil || logger == nil || changed == nil {
-		return nil, errors.New("scanner indicator store, registry, charts, logger, and change listener are required")
+// New creates an empty service; Load reads the stored configuration.
+func New(store Store, registry *indicator.Registry, charts Charts, logger *slog.Logger) (*Service, error) {
+	if store == nil || registry == nil || charts == nil || logger == nil {
+		return nil, errors.New("scanner indicator store, registry, charts, and logger are required")
 	}
-	return &Service{store: store, registry: registry, charts: charts, logger: logger.With("module", "scanner_indicator"), changed: changed}, nil
+	return &Service{store: store, registry: registry, charts: charts, logger: logger.With("module", "scanner_indicator")}, nil
+}
+
+// Listen sets the consumer of changes, replacing any earlier one. It is
+// called after each change, outside the service lock, and must not block;
+// changes before it is set reach nobody.
+func (service *Service) Listen(listener func()) {
+	service.mu.Lock()
+	service.listener = listener
+	service.mu.Unlock()
 }
 
 // Load replaces the configuration with the stored one. Indicators the
@@ -336,10 +344,10 @@ func (service *Service) TableColumns() []markettable.Column {
 
 // TableTargets returns the distinct closed indicator targets the table
 // columns read.
-func (service *Service) TableTargets() []closedindicator.Target {
+func (service *Service) TableTargets() []indicator.Target {
 	service.mu.RLock()
 	defer service.mu.RUnlock()
-	var targets []closedindicator.Target
+	var targets []indicator.Target
 	for _, entry := range service.entries {
 		for _, period := range entry.Periods {
 			if target := entry.Target(period.Interval); period.ShowInTable && !slices.ContainsFunc(targets, target.Equal) {
@@ -368,8 +376,11 @@ func (service *Service) ChartCatalog(interval market.CandleInterval) []chart.Cat
 func (service *Service) replace(entries []Entry) {
 	service.mu.Lock()
 	service.entries = entries
+	listener := service.listener
 	service.mu.Unlock()
-	service.changed()
+	if listener != nil {
+		listener()
+	}
 }
 
 // entry validates an indicator and derives its presentation. Its periods are
@@ -405,31 +416,26 @@ func (service *Service) entry(item Indicator) (Entry, error) {
 		entry.Outputs[i] = output.Name
 	}
 	// An indicator of another indicator is titled after its source.
+	nestedSources, err := indicator.NestedSources(descriptor, selection.Parameters)
+	if err != nil {
+		return Entry{}, fmt.Errorf("%w: %w", ErrInvalidArgument, err)
+	}
 	titled := selection.Parameters
-	for i := len(descriptor.Parameters) - 1; i >= 0; i-- {
-		parameter := descriptor.Parameters[i]
-		if parameter.Kind != indicator.ParameterSource {
-			continue
-		}
-		_, nested, err := indicator.ParseSource(selection.Parameters[parameter.Key])
-		if err != nil {
-			return Entry{}, fmt.Errorf("%w: %s %w", ErrInvalidArgument, parameter.Key, err)
-		}
-		if nested == nil {
-			continue
-		}
-		source, err := service.entry(Indicator{Selection: nested.Selection})
+	if len(nestedSources) > 0 {
+		titled = maps.Clone(titled)
+		// The first nested source decides.
+		entry.source = &nestedSources[0].Source
+	}
+	for _, nested := range nestedSources {
+		source, err := service.entry(Indicator{Selection: nested.Source.Selection})
 		if err != nil {
 			return Entry{}, err
 		}
-		// The first nested source decides.
-		entry.source = nested
 		name := source.Title
 		if len(source.Outputs) > 1 {
-			name += "-" + nested.Output
+			name += "-" + nested.Source.Output
 		}
-		titled = maps.Clone(titled)
-		titled[parameter.Key] = name
+		titled[nested.Key] = name
 	}
 	if slices.ContainsFunc(item.Periods, func(period Period) bool { return period.ShowInTable }) && len(entry.Outputs) != 1 {
 		return Entry{}, fmt.Errorf("%w: only indicators with one output can be table columns", ErrInvalidArgument)
@@ -516,7 +522,10 @@ func (entry Entry) chartIndicator(id string) chart.CatalogIndicator {
 // position and distinct selections get distinct titles: "bbands-20-2.5"
 // raises the upper band, "bbands-20-2-2.5" the lower one. Once one of several
 // named choices differs, all of them appear in order, so "beta-high-close"
-// and "beta-close-high" differ.
+// and "beta-close-high" differ. This is not the rule of language.CallArguments
+// on purpose: a CEL call is positional, so it keeps every argument up to the
+// last changed one, named choices included, while a column title is only a
+// short distinct name and leaves the named choices out until one changes.
 func title(descriptor indicator.Descriptor, parameters, defaults indicator.Parameters) string {
 	parts := []string{string(descriptor.Type)}
 	named := chart.NamedChoicesChanged(descriptor, parameters, defaults)

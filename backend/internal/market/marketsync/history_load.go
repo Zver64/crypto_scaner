@@ -32,6 +32,18 @@ type HistoryLoad struct {
 	NotReady bool
 }
 
+// Extender extends the stored history of one interval backwards, beyond the
+// synchronization depth, on demand.
+type Extender struct {
+	candleLoader
+}
+
+// NewExtender creates an extender for the interval of profile; depth is the
+// synchronization depth, under which coverage is shared with Sync.
+func NewExtender(exchange Exchange, store *ObservableStore, depth int, profile market.SyncProfile) *Extender {
+	return &Extender{candleLoader: newCandleLoader(exchange, store, depth, profile)}
+}
+
 // LoadHistory extends the stored history of instrument backwards, page by
 // page through the history repair rate limit, until depth candles, at most
 // market.RetentionDepth, are stored
@@ -39,48 +51,52 @@ type HistoryLoad struct {
 // exhaustion Sync finds. A history that already has them, or whose current
 // coverage says the exchange has nothing older, costs no request.
 //
-// changed receives committed changes while filling a history shorter than
-// SyncDepth; deeper pages do not affect live values and notify nothing. The
-// run lock is not taken, and a concurrent Sync at worst writes the same
-// candles. An instrument without candles fails with ErrHistoryNotReady:
-// Sync owns the initial backfill.
-func (synchronizer *Synchronizer) LoadHistory(ctx context.Context, instrument market.Instrument, depth int, changed func([]market.Candle)) (HistoryLoad, error) {
-	interval := synchronizer.profile.Interval
+// It notifies committed changes while filling a history shorter than
+// SyncDepth, and then reports the interval synced, even when a later page
+// fails; deeper pages do not affect live values and notify nothing. The run
+// lock of Sync is not taken, and a concurrent Sync at worst writes the same
+// candles. An instrument without candles fails with ErrHistoryNotReady: Sync
+// owns the initial backfill.
+func (extender *Extender) LoadHistory(ctx context.Context, instrument market.Instrument, depth int) (HistoryLoad, error) {
+	interval := extender.profile.Interval
 	// Coverage is shared with Sync, so it is read and written under its
 	// depth: the oldest open time the exchange has does not depend on the
 	// depth requested.
 	startedAt := time.Now().UTC()
-	history, err := synchronizer.summary(ctx, instrument, market.RetentionDepth)
+	history, err := extender.summary(ctx, instrument, market.RetentionDepth)
 	if err != nil {
 		return HistoryLoad{}, err
 	}
 	if history.Count == 0 {
 		return HistoryLoad{}, fmt.Errorf("%w: %s %s", ErrHistoryNotReady, instrument.Symbol, interval)
 	}
-	coverages, err := synchronizer.store.ListCandleHistoryCoverage(ctx, []int64{instrument.ID}, interval)
+	coverages, err := extender.store.ListCandleHistoryCoverage(ctx, []int64{instrument.ID}, interval)
 	if err != nil {
 		return HistoryLoad{}, fmt.Errorf("load candle history coverage for %s: %w", instrument.Symbol, err)
 	}
 	coverage, covered := coverages[instrument.ID]
-	exhausted := covered && coverageCurrent(coverage, synchronizer.depth, startedAt) && coverage.VerifiedOldestOpenTime.Equal(history.Oldest)
-	historyChanged := false
+	exhausted := covered && coverageCurrent(coverage, extender.depth, startedAt) && coverage.VerifiedOldestOpenTime.Equal(history.Oldest)
+	historyChanged, liveChanged := false, false
+	defer func() {
+		if liveChanged {
+			extender.store.synced(interval)
+		}
+	}()
 	// Stop at the live-depth boundary before fetching deeper pages. This
-	// reuses committed-change notifications without notifying for a page's
-	// older tail, and a fresh summary also accounts for concurrent Sync.
+	// notifies committed changes without notifying for a page's older tail,
+	// and a fresh summary also accounts for concurrent Sync.
 	for _, target := range []int{min(depth, market.SyncDepth), depth} {
 		if history.Count >= target || exhausted {
 			continue
 		}
-		store := synchronizer.store
-		if target <= market.SyncDepth {
-			store = &ObservableStore{Store: store, Changed: changed}
-		}
-		loaded, ranOut := synchronizer.loadOlder(ctx, store, instrument, history.Oldest.UTC(), target-history.Count, startedAt)
+		live := target <= market.SyncDepth
+		loaded, ranOut := extender.loadOlder(ctx, instrument, history.Oldest.UTC(), target-history.Count, startedAt, live)
 		historyChanged, exhausted = historyChanged || loaded.rowsChanged > 0, ranOut
+		liveChanged = liveChanged || live && loaded.rowsChanged > 0
 		if loaded.err != nil {
 			return HistoryLoad{Changed: historyChanged}, loaded.err
 		}
-		if history, err = synchronizer.summary(ctx, instrument, market.RetentionDepth); err != nil {
+		if history, err = extender.summary(ctx, instrument, market.RetentionDepth); err != nil {
 			return HistoryLoad{Changed: historyChanged}, err
 		}
 	}
@@ -137,18 +153,10 @@ type Instruments interface {
 	GetActiveInstrumentBySymbol(context.Context, string) (market.Instrument, error)
 }
 
-// HistoryExtender extends the stored history of one interval; Synchronizer
-// is one. Its result reports Changed even when the load fails.
+// HistoryExtender extends the stored history of one interval; Extender is
+// one. Its result reports Changed even when the load fails.
 type HistoryExtender interface {
-	LoadHistory(ctx context.Context, instrument market.Instrument, depth int, changed func([]market.Candle)) (HistoryLoad, error)
-}
-
-// HistoryLoaderOptions connects committed live-window changes to consumers.
-// Both callbacks must be non-blocking; Synced ends a load of an interval that
-// notified Changed, even when a later page failed.
-type HistoryLoaderOptions struct {
-	Changed func([]market.Candle)
-	Synced  func(market.CandleInterval)
+	LoadHistory(ctx context.Context, instrument market.Instrument, depth int) (HistoryLoad, error)
 }
 
 // HistoryLoader runs one history load at a time in the background, for the
@@ -157,7 +165,6 @@ type HistoryLoader struct {
 	instruments Instruments
 	extenders   map[market.CandleInterval]HistoryExtender
 	logger      *slog.Logger
-	options     HistoryLoaderOptions
 	// started hands Run the instruments of the job Start began; it holds
 	// one, and only Run's finish of that job lets Start begin another.
 	started chan []market.Instrument
@@ -168,8 +175,8 @@ type HistoryLoader struct {
 
 // NewHistoryLoader creates a loader that extends histories with the extender
 // of each supported interval.
-func NewHistoryLoader(instruments Instruments, extenders map[market.CandleInterval]HistoryExtender, logger *slog.Logger, options HistoryLoaderOptions) *HistoryLoader {
-	return &HistoryLoader{instruments: instruments, extenders: extenders, logger: logger.With("module", "market_history_load"), options: options, started: make(chan []market.Instrument, 1)}
+func NewHistoryLoader(instruments Instruments, extenders map[market.CandleInterval]HistoryExtender, logger *slog.Logger) *HistoryLoader {
+	return &HistoryLoader{instruments: instruments, extenders: extenders, logger: logger.With("module", "market_history_load"), started: make(chan []market.Instrument, 1)}
 }
 
 // Start validates a history load of every symbol on every supported interval
@@ -251,16 +258,7 @@ func (loader *HistoryLoader) run(ctx context.Context, instruments []market.Instr
 	err := func() error {
 		for _, instrument := range instruments {
 			for _, interval := range intervals {
-				liveChanged := false
-				load, err := loader.extenders[interval].LoadHistory(ctx, instrument, depth, func(candles []market.Candle) {
-					liveChanged = true
-					if loader.options.Changed != nil {
-						loader.options.Changed(candles)
-					}
-				})
-				if liveChanged && loader.options.Synced != nil {
-					loader.options.Synced(interval)
-				}
+				load, err := loader.extenders[interval].LoadHistory(ctx, instrument, depth)
 				if errors.Is(err, ErrHistoryNotReady) {
 					// One new coin or interval does not stop the others.
 					load, err = HistoryLoad{Symbol: instrument.Symbol, Interval: interval, NotReady: true}, nil

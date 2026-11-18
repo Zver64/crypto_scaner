@@ -59,15 +59,28 @@ type HistorySummary struct {
 // gap is not requested again before it.
 type HistoryGap struct{ From, To, RetryAfter time.Time }
 
+// candleLoader loads the closed candles of one interval from the exchange
+// and writes them through the observable store, so every write of the live
+// history notifies. Synchronizer and Extender share it; nothing else writes
+// candles.
+type candleLoader struct {
+	exchange Exchange
+	store    *ObservableStore
+	// depth is the synchronization depth; coverage is kept under it.
+	depth   int
+	profile market.SyncProfile
+}
+
+func newCandleLoader(exchange Exchange, store *ObservableStore, depth int, profile market.SyncProfile) candleLoader {
+	return candleLoader{exchange: exchange, store: store, depth: max(depth, 1), profile: profile}
+}
+
 // Synchronizer coordinates instrument discovery, backfill, and incremental loading.
 type Synchronizer struct {
-	exchange Exchange
-	store    Store
-	logger   *slog.Logger
-	workers  int
-	depth    int
-	profile  market.SyncProfile
-	runLock  sync.Mutex
+	candleLoader
+	logger  *slog.Logger
+	workers int
+	runLock sync.Mutex
 	// retryIDs are the instruments that failed in the last run, which closed
 	// candles through retryClosed; guarded by runLock. A run before the next
 	// candle closes synchronizes only them.
@@ -102,19 +115,22 @@ const maxReportedFailures = 3
 
 // New creates a synchronizer for one independently persisted interval that
 // backfills depth closed candles per instrument. The logger must be non-nil.
-func New(exchange Exchange, store Store, logger *slog.Logger, workers, depth int, profile market.SyncProfile) *Synchronizer {
+func New(exchange Exchange, store *ObservableStore, logger *slog.Logger, workers, depth int, profile market.SyncProfile) *Synchronizer {
 	if workers < 1 {
 		workers = 1
 	}
-	return &Synchronizer{exchange: exchange, store: store, logger: logger, workers: workers, depth: max(depth, 1), profile: profile}
+	return &Synchronizer{candleLoader: newCandleLoader(exchange, store, depth, profile), logger: logger, workers: workers}
 }
 
 // Sync applies the catalog, backfills new instruments, and incrementally loads
-// missing closed candles for instruments with history.
+// missing closed candles for instruments with history. Once the run ends, even
+// failed, it reports the interval synced, so consumers process its committed
+// candle changes together.
 func (synchronizer *Synchronizer) Sync(ctx context.Context) (syncErr error) {
 	if !synchronizer.runLock.TryLock() {
 		return ErrSyncInProgress
 	}
+	defer synchronizer.store.synced(synchronizer.profile.Interval)
 	defer synchronizer.runLock.Unlock()
 
 	profile := synchronizer.profile
@@ -328,10 +344,10 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 		// Coverage records only a verified oldest stored candle, so an
 		// instrument without candles is always requested; the first page is
 		// the newest one, and older pages follow as history repair.
-		result = synchronizer.loadRange(ctx, synchronizer.store, instrument, market.CandleRequest{
+		result = synchronizer.loadRange(ctx, instrument, market.CandleRequest{
 			Symbol: instrument.Symbol, Interval: profile.Interval,
 			Limit: min(synchronizer.depth, exchangePageLimit), ClosedBefore: startedAt,
-		}, false)
+		}, false, true)
 		if result.err != nil {
 			return result
 		}
@@ -355,10 +371,10 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 	// cursor makes that correction durable and notifies active graphs.
 	if !initiallyEmpty {
 		previous := profile.Interval.PreviousOpenTime(latest)
-		loaded := synchronizer.loadRange(ctx, synchronizer.store, instrument, market.CandleRequest{
+		loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
 			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
 			ClosedBefore: startedAt, AfterOpenTime: &previous,
-		}, true)
+		}, true, true)
 		result = mergeInstrumentResults(result, loaded)
 		if result.err != nil {
 			return result
@@ -369,10 +385,10 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 			continue
 		}
 		after := gap.From.Add(-time.Millisecond)
-		loaded := synchronizer.loadRange(ctx, synchronizer.store, instrument, market.CandleRequest{
+		loaded := synchronizer.loadRange(ctx, instrument, market.CandleRequest{
 			Symbol: instrument.Symbol, Interval: profile.Interval, Limit: exchangePageLimit,
 			ClosedBefore: gap.To, AfterOpenTime: &after,
-		}, true)
+		}, true, true)
 		result = mergeInstrumentResults(result, loaded)
 		if result.err != nil {
 			return result
@@ -409,27 +425,28 @@ func (synchronizer *Synchronizer) syncInstrument(ctx context.Context, instrument
 		return result
 	}
 
-	loaded, _ := synchronizer.loadOlder(ctx, synchronizer.store, instrument, oldest, synchronizer.depth-history.Count, startedAt)
+	loaded, _ := synchronizer.loadOlder(ctx, instrument, oldest, synchronizer.depth-history.Count, startedAt, true)
 	return mergeInstrumentResults(result, loaded)
 }
 
 // loadOlder loads up to remaining candles before oldest, page by page, until
-// they are loaded or the exchange runs out, writing them to store; exhausted
-// reports the latter, which is recorded as coverage.
-func (synchronizer *Synchronizer) loadOlder(ctx context.Context, store Store, instrument market.Instrument, oldest time.Time, remaining int, startedAt time.Time) (result instrumentResult, exhausted bool) {
+// they are loaded or the exchange runs out; exhausted reports the latter,
+// which is recorded as coverage. live tells whether the candles belong to the
+// live history, as loadRange.
+func (loader candleLoader) loadOlder(ctx context.Context, instrument market.Instrument, oldest time.Time, remaining int, startedAt time.Time, live bool) (result instrumentResult, exhausted bool) {
 	for remaining > 0 {
 		limit := min(remaining, exchangePageLimit)
-		loaded := synchronizer.loadRange(ctx, store, instrument, market.CandleRequest{
-			Symbol: instrument.Symbol, Interval: synchronizer.profile.Interval, Limit: limit,
+		loaded := loader.loadRange(ctx, instrument, market.CandleRequest{
+			Symbol: instrument.Symbol, Interval: loader.profile.Interval, Limit: limit,
 			ClosedBefore: oldest, HistoryRepair: true,
-		}, false)
+		}, false, live)
 		result = mergeInstrumentResults(result, loaded)
 		if result.err != nil {
 			return result, false
 		}
 		if loaded.rowsRequested < limit || loaded.oldestOpenTime == nil {
 			verifiedOldest := *earlierOf(&oldest, loaded.oldestOpenTime)
-			result.err = synchronizer.saveExhaustedHistory(ctx, instrument, verifiedOldest, startedAt)
+			result.err = loader.saveExhaustedHistory(ctx, instrument, verifiedOldest, startedAt)
 			return result, result.err == nil
 		}
 		remaining -= loaded.rowsRequested
@@ -440,20 +457,26 @@ func (synchronizer *Synchronizer) loadOlder(ctx context.Context, store Store, in
 
 // summary reads the current summary of up to limit latest candles of one
 // instrument.
-func (synchronizer *Synchronizer) summary(ctx context.Context, instrument market.Instrument, limit int) (HistorySummary, error) {
-	histories, err := synchronizer.store.SummarizeCandleHistory(ctx, []int64{instrument.ID}, synchronizer.profile.Interval, limit)
+func (loader candleLoader) summary(ctx context.Context, instrument market.Instrument, limit int) (HistorySummary, error) {
+	histories, err := loader.store.SummarizeCandleHistory(ctx, []int64{instrument.ID}, loader.profile.Interval, limit)
 	if err != nil {
 		return HistorySummary{}, fmt.Errorf("inspect candle history for %s: %w", instrument.Symbol, err)
 	}
 	return histories[instrument.ID], nil
 }
 
-// loadRange writes the loaded candles to store.
-func (synchronizer *Synchronizer) loadRange(ctx context.Context, store Store, instrument market.Instrument, request market.CandleRequest, paginate bool) instrumentResult {
+// loadRange writes the loaded candles through the observable store. live
+// tells whether they may belong to the latest market.SyncDepth candles, whose
+// changes it notifies; only a history load of older candles passes false.
+func (loader candleLoader) loadRange(ctx context.Context, instrument market.Instrument, request market.CandleRequest, paginate, live bool) instrumentResult {
+	upsert := loader.store.UpsertCandlesWithChanges
+	if !live {
+		upsert = loader.store.upsertOlderCandles
+	}
 	result := instrumentResult{}
 	for {
 		result.exchangeRequests++
-		candles, err := synchronizer.exchange.ListClosedCandles(ctx, request)
+		candles, err := loader.exchange.ListClosedCandles(ctx, request)
 		if err != nil {
 			result.err = fmt.Errorf("load candles for %s: %w", instrument.Symbol, err)
 			return result
@@ -472,7 +495,7 @@ func (synchronizer *Synchronizer) loadRange(ctx context.Context, store Store, in
 			pageLatest = laterOf(pageLatest, &openTime)
 			pageOldest = earlierOf(pageOldest, &openTime)
 		}
-		changed, err := store.UpsertCandlesWithChanges(ctx, closed)
+		changed, err := upsert(ctx, closed)
 		if err != nil {
 			result.err = fmt.Errorf("store candles for %s: %w", instrument.Symbol, err)
 			return result
@@ -526,10 +549,10 @@ func coverageCurrent(coverage market.HistoryCoverage, depth int, at time.Time) b
 
 // saveExhaustedHistory records that the exchange has no history older than
 // verifiedOldest, so the backfill is not retried before the retry delay.
-func (synchronizer *Synchronizer) saveExhaustedHistory(ctx context.Context, instrument market.Instrument, verifiedOldest, at time.Time) error {
-	err := synchronizer.store.SaveCandleHistoryCoverage(ctx, market.HistoryCoverage{
-		InstrumentID: instrument.ID, Interval: synchronizer.profile.Interval, VerifiedOldestOpenTime: verifiedOldest,
-		TargetDepth: synchronizer.depth, PolicyVersion: historyDepthPolicyVersion,
+func (loader candleLoader) saveExhaustedHistory(ctx context.Context, instrument market.Instrument, verifiedOldest, at time.Time) error {
+	err := loader.store.SaveCandleHistoryCoverage(ctx, market.HistoryCoverage{
+		InstrumentID: instrument.ID, Interval: loader.profile.Interval, VerifiedOldestOpenTime: verifiedOldest,
+		TargetDepth: loader.depth, PolicyVersion: historyDepthPolicyVersion,
 		RetryAfter: at.Add(historyExhaustionRetryDelay),
 	})
 	if err != nil {

@@ -48,9 +48,7 @@ export interface PriceHistorySnapshot {
 export interface PriceHistorySource {
 	getSnapshot(interval: ChartInterval): PriceHistorySnapshot;
 	subscribe(listener: () => void): () => void;
-	start(): void;
-	stop(): void;
-	// Selects the interval on screen; the source streams only that interval.
+	// Selects the interval on screen; a live source streams only that interval.
 	show(interval: ChartInterval): void;
 	loadOlder(interval: ChartInterval): void;
 }
@@ -186,7 +184,6 @@ export interface PriceHistoryChartProps {
 	comparison?: PriceComparison;
 	// Immutable snapshots have no connection status or current live candle.
 	live?: boolean;
-	enabled: boolean;
 	// Stretches the chart over the free height of its flex column parent,
 	// keeping its fixed height as the minimum.
 	fillHeight?: boolean;

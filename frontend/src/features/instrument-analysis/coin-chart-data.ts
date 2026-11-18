@@ -7,6 +7,7 @@ import type {
 	PriceHistorySnapshot,
 	PriceHistorySource,
 } from "@/features/candle-chart";
+import { defaultChartInterval } from "@/features/candle-chart/config";
 import { emptyChartLine } from "@/features/candle-chart/constants";
 import type { ChartLineData } from "@/features/candle-chart/types";
 import {
@@ -20,9 +21,16 @@ import {
 	type LiveCandlesState,
 } from "@/features/instrument-analysis/live-candle-store";
 
-// The chart source also reports the current price for blocks outside the
-// chart: the close of the live candle on screen.
+// The live candles of a coin page, which starts and stops the stream whether
+// or not the chart is shown; the chart selects the interval and loads older
+// candles. The source also reports the current price for blocks outside the
+// chart: the close of the live candle of the interval streamed.
 export interface CoinChartData extends PriceHistorySource {
+	start(): void;
+	stop(): void;
+	// The indicator catalogs add the indicators of each interval to its
+	// subscription; until they arrive, the candles stream without indicators.
+	setCatalogs(catalogs: ChartCatalogs): void;
 	getCurrentPrice(): number | undefined;
 	// Bitcoin's price to compare the coin with; absent on Bitcoin's own chart.
 	comparison?: PriceComparison;
@@ -34,14 +42,13 @@ const comparisonSymbol = "BTCUSDT";
 const comparisonLabel = "BTC";
 // The backend owns each chart range: it sends a full snapshot whenever closed
 // history or the range changes and a tail update for the current candle. Only
-// the interval on screen is subscribed; others keep their last chart as stale.
-// While the comparison is enabled, its candles are subscribed on the same
-// connection with the interval and range of the coin.
-export function createCoinChartData(
-	symbol: string,
-	catalogs: ChartCatalogs,
-): CoinChartData {
+// the interval on screen, the chart's default one until the chart selects
+// another, is subscribed; others keep their last chart as stale. While the
+// comparison is enabled, its candles are subscribed on the same connection
+// with the interval and range of the coin.
+export function createCoinChartData(symbol: string): CoinChartData {
 	const upper = symbol.toUpperCase();
+	let catalogs: ChartCatalogs | undefined;
 	let connection: LiveCandlesClient | undefined;
 	const live = createLiveStore(upper, (interval) =>
 		connection?.resync(upper, interval),
@@ -84,19 +91,19 @@ export function createCoinChartData(
 		]),
 	);
 	let unsubscribeLive: (() => void) | undefined;
-	let shown: CandleInterval | undefined;
+	let shown: CandleInterval = defaultChartInterval;
 	const subscriptions = () => {
-		if (!shown) return [];
 		const limit = intervals.get(shown)?.limit ?? initialLimit;
 		return [
 			{
 				symbol: upper,
 				interval: shown,
 				limit,
-				indicators: catalogs[shown].items.map(({ parameters, type }) => ({
-					parameters,
-					type,
-				})),
+				indicators:
+					catalogs?.[shown].items.map(({ parameters, type }) => ({
+						parameters,
+						type,
+					})) ?? [],
 			},
 			...(comparing
 				? [{ symbol: comparisonSymbol, interval: shown, limit }]
@@ -116,7 +123,10 @@ export function createCoinChartData(
 				? current.snapshot.series
 				: createChartSeriesData(
 						state.chart?.candles ?? [],
-						state.chart ?? { panes: catalogs[interval].panes, shapes: [] },
+						state.chart ?? {
+							panes: catalogs?.[interval].panes ?? [],
+							shapes: [],
+						},
 						interval,
 						current.snapshot?.series,
 					);
@@ -173,7 +183,7 @@ export function createCoinChartData(
 			return (selected && intervals.get(selected)?.snapshot) ?? emptySnapshot;
 		},
 		getCurrentPrice() {
-			return shown && intervals.get(shown)?.snapshot?.candles.at(-1)?.close;
+			return intervals.get(shown)?.snapshot?.candles.at(-1)?.close;
 		},
 		subscribe,
 		start() {
@@ -208,6 +218,17 @@ export function createCoinChartData(
 			unsubscribeLive = undefined;
 			for (const [interval, current] of intervals) {
 				current.loadingMore = false;
+				recompute(interval, true);
+			}
+		},
+		setCatalogs(next) {
+			if (catalogs === next) return;
+			catalogs = next;
+			connection?.setSubscriptions(subscriptions());
+			// Intervals without a chart yet drop their series, so that they take
+			// their panes from the catalogs.
+			for (const [interval, current] of intervals) {
+				if (!current.input?.chart) current.snapshot = undefined;
 				recompute(interval, true);
 			}
 		},

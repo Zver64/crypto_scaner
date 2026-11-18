@@ -121,7 +121,8 @@ it("renders backend snapshots, merges current-candle tails, and extends the rang
 	vi.stubGlobal("WebSocket", FakeSocket);
 	const fetch = vi.fn<typeof globalThis.fetch>();
 	vi.stubGlobal("fetch", fetch);
-	const source = createCoinChartData("btcusdt", rsiCatalogs);
+	const source = createCoinChartData("btcusdt");
+	source.setCatalogs(rsiCatalogs);
 	try {
 		source.show("1h");
 		source.start();
@@ -195,7 +196,8 @@ it("streams only the interval on screen and keeps the last chart of others as st
 		Telegram: { WebApp: { initData: "signed-data" } },
 	});
 	vi.stubGlobal("WebSocket", FakeSocket);
-	const source = createCoinChartData("btcusdt", rsiCatalogs);
+	const source = createCoinChartData("btcusdt");
+	source.setCatalogs(rsiCatalogs);
 	try {
 		source.show("1h");
 		source.start();
@@ -242,10 +244,9 @@ it("streams Bitcoin for comparison only while enabled, with the interval and ran
 		Telegram: { WebApp: { initData: "signed-data" } },
 	});
 	vi.stubGlobal("WebSocket", FakeSocket);
-	expect(
-		createCoinChartData("btcusdt", rsiCatalogs).comparison,
-	).toBeUndefined();
-	const source = createCoinChartData("ethusdt", rsiCatalogs);
+	expect(createCoinChartData("btcusdt").comparison).toBeUndefined();
+	const source = createCoinChartData("ethusdt");
+	source.setCatalogs(rsiCatalogs);
 	const comparison = source.comparison;
 	if (!comparison) throw new Error("Missing comparison");
 	const lineValues = () =>
@@ -313,6 +314,61 @@ it("streams Bitcoin for comparison only while enabled, with the interval and ran
 		comparison.setEnabled(false);
 		expect(sent().at(-1)).toEqual(["unsubscribe", "BTCUSDT", "1d", 200]);
 		expect(lineValues()).toEqual([]);
+	} finally {
+		source.stop();
+	}
+});
+
+it("streams the current price for the page without a chart or catalogs, and adds the indicators once the catalogs arrive", async () => {
+	vi.stubGlobal("window", {
+		location: { href: "https://example.com/coin" },
+		Telegram: { WebApp: { initData: "signed-data" } },
+	});
+	vi.stubGlobal("WebSocket", FakeSocket);
+	// The page starts the source although the chart, which selects the
+	// interval, is not shown and the catalogs have not loaded.
+	const source = createCoinChartData("ethusdt");
+	try {
+		source.start();
+		await vi.waitFor(() => expect(FakeSocket.current).toBeDefined());
+		const socket = FakeSocket.current;
+		if (!socket) throw new Error("Missing socket");
+		socket.emitOpen();
+		expect(socket.sent).toEqual([
+			{
+				type: "subscribe",
+				symbol: "ETHUSDT",
+				interval: "1d",
+				limit: 200,
+				indicators: [],
+			},
+		]);
+		expect(source.getCurrentPrice()).toBeUndefined();
+		socket.emitMessage({
+			type: "snapshot",
+			symbol: "ETHUSDT",
+			interval: "1d",
+			version: 1,
+			chart: {
+				...chart([candle(1), candle(2, 17)], [], true),
+				symbol: "ETHUSDT",
+				interval: "1d",
+				shapes: [],
+				panes: [],
+			},
+		});
+		expect(source.getCurrentPrice()).toBe(17);
+
+		source.setCatalogs(rsiCatalogs);
+		expect(socket.sent.at(-1)).toEqual({
+			type: "subscribe",
+			symbol: "ETHUSDT",
+			interval: "1d",
+			limit: 200,
+			indicators: [{ parameters: { period: 14 }, type: "rsi" }],
+		});
+		// The price stays until the snapshot with the indicators arrives.
+		expect(source.getCurrentPrice()).toBe(17);
 	} finally {
 		source.stop();
 	}

@@ -1,28 +1,24 @@
 import { Text } from "@mantine/core";
 import { useSyncExternalStore } from "react";
 
-import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
+import type { CurrentPriceSource } from "@/features/price-alerts/types";
 import {
 	formatTargetChange,
 	targetChangePercent,
 } from "@/features/price-alerts/utils";
 
 interface TargetChangeProps {
-	source?: CoinChartData;
+	source: CurrentPriceSource;
 	target: number | string;
 }
-
-const subscribeNothing = () => () => {};
-const noPrice = () => undefined;
 
 // Subscribes on its own so live ticks re-render only the percentage. A fixed
 // width keeps the input from resizing as the value changes.
 export function TargetChange({ source, target }: TargetChangeProps) {
-	const getPrice = source?.getCurrentPrice ?? noPrice;
 	const price = useSyncExternalStore(
-		source?.subscribe ?? subscribeNothing,
-		getPrice,
-		getPrice,
+		source.subscribe,
+		source.getCurrentPrice,
+		source.getCurrentPrice,
 	);
 	const percent = targetChangePercent(target, price);
 	return (

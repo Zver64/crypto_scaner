@@ -70,7 +70,6 @@ const intervalControlData = chartIntervalOptions.map(({ label, value }) => ({
 // while rendering and needs no memoization.
 export function PriceHistoryChart({
 	comparison,
-	enabled,
 	fillHeight = false,
 	intervals,
 	live = true,
@@ -106,7 +105,7 @@ export function PriceHistoryChart({
 		isLoadingMore,
 		markers,
 		series,
-	} = usePriceHistory(source, interval, enabled);
+	} = usePriceHistory(source, interval);
 	const { panes, shapes } = series;
 	const themeColor = useThemeColor();
 	const candleMarkers = createCandleMarkers(markers, shapes, themeColor);

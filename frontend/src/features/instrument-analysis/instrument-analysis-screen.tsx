@@ -60,10 +60,10 @@ export function InstrumentAnalysisScreen({
 					visible={isFetching}
 				>
 					<CoinChart
-						enabled={page.allowed}
 						failed={page.indicators.failed}
 						fillHeight={wide}
 						priceLevels={page.gridLevels ?? undefined}
+						ready={page.indicators.catalogs !== undefined}
 						source={page.chartSource}
 						symbol={symbol}
 					/>
@@ -87,9 +87,7 @@ export function InstrumentAnalysisScreen({
 	) : null;
 	const alerts = page.allowed ? (
 		<PriceAlertsPanel
-			currentPrice={
-				page.chartSource ? <CurrentPrice source={page.chartSource} /> : null
-			}
+			currentPrice={<CurrentPrice source={page.chartSource} />}
 			priceSource={page.chartSource}
 			symbol={symbol}
 		/>

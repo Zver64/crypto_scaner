@@ -28,8 +28,13 @@ export function useCoinPage(symbol: string, settings: VolatilitySettings) {
 	const hourlyHistory = useHourlyHistory(symbol, permission.allowed);
 	const gridLimits = useGridLimits(symbol, permission.allowed);
 	const indicators = useChartIndicators(permission.allowed);
-	// Shared by the chart and the price alerts, which show its current price.
-	const chartSource = useCoinChartData(symbol, indicators.catalogs);
+	// Streamed by the page for the chart and the price alerts, which show its
+	// current price even when the chart is not.
+	const chartSource = useCoinChartData(
+		symbol,
+		indicators.catalogs,
+		permission.allowed,
+	);
 	// The calculator grid drawn on the chart, kept with its symbol: the page
 	// stays mounted when the symbol changes.
 	const [grid, setGrid] = useState<{

@@ -2,8 +2,8 @@ import { ActionIcon, Group, Text, Tooltip } from "@mantine/core";
 import { IconPencil, IconTrash } from "@tabler/icons-react";
 
 import type { PriceAlert } from "@/api/generated/models";
-import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { TargetChange } from "@/features/price-alerts/target-change";
+import type { CurrentPriceSource } from "@/features/price-alerts/types";
 import { sortAlertsDescending } from "@/features/price-alerts/utils";
 import { formatNumber } from "@/utils/number-format";
 
@@ -12,7 +12,7 @@ interface PriceAlertListProps {
 	deletingID?: number;
 	onDelete(alertID: number): void;
 	onEdit(alert: PriceAlert): void;
-	priceSource?: CoinChartData;
+	priceSource: CurrentPriceSource;
 }
 
 export function PriceAlertList({

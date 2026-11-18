@@ -7,32 +7,32 @@ import { CoinChartPlaceholder } from "@/features/instrument-analysis/coin-chart-
 import { useCoinPageLayout } from "@/features/instrument-analysis/use-coin-page-layout";
 
 interface CoinChartProps {
-	enabled: boolean;
 	failed: boolean;
 	fillHeight: boolean;
 	priceLevels?: ChartPriceLevels;
-	source: CoinChartData | undefined;
+	// The backend indicator catalogs of every interval have loaded.
+	ready: boolean;
+	source: CoinChartData;
 	symbol: string;
 }
 
-// The live chart waits for its source, which waits for the backend indicator
-// catalogs of every interval that define what it subscribes to.
+// The live chart waits for the backend indicator catalogs of every interval,
+// which define the indicators and panes it draws.
 export function CoinChart({
-	enabled,
 	failed,
 	fillHeight,
 	priceLevels,
+	ready,
 	source,
 	symbol,
 }: CoinChartProps) {
 	const { paperPadding } = useCoinPageLayout();
-	if (!source) {
+	if (!ready) {
 		return <CoinChartPlaceholder failed={failed} paperPadding={paperPadding} />;
 	}
 	return (
 		<PriceHistoryChart
 			comparison={source.comparison}
-			enabled={enabled}
 			fillHeight={fillHeight}
 			key={symbol}
 			paperPadding={paperPadding}

@@ -17,11 +17,13 @@ import type { ErrorResponse } from "@/api/generated/models";
 import { fieldError, useAppForm } from "@/components/form";
 import { invalidateFavoriteQueries } from "@/features/favorites/query-cache";
 import { scopedUserQueryKey } from "@/features/favorites/user-query-scope";
-import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { PriceAlertForm } from "@/features/price-alerts/price-alert-form";
 import { PriceAlertList } from "@/features/price-alerts/price-alert-list";
 import { priceTargetSchema } from "@/features/price-alerts/schemas";
-import type { PriceAlertEditor } from "@/features/price-alerts/types";
+import type {
+	CurrentPriceSource,
+	PriceAlertEditor,
+} from "@/features/price-alerts/types";
 import { describeApiError } from "@/utils/api-error";
 
 function mutationErrorMessage(error: ErrorType<ErrorResponse> | null): string {
@@ -45,7 +47,7 @@ const emptyEditor: PriceAlertEditor = { editingID: undefined, target: "" };
 
 interface PriceAlertsControllerProps {
 	currentPrice?: ReactNode;
-	priceSource?: CoinChartData;
+	priceSource: CurrentPriceSource;
 	scope: string;
 	symbol: string;
 }

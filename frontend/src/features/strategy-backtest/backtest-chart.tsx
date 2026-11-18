@@ -6,7 +6,6 @@ import { createBacktestChart } from "@/features/strategy-backtest/chart-data";
 
 interface BacktestChartProps {
 	backtest: StrategyBacktest;
-	enabled: boolean;
 	fillHeight: boolean;
 	paperPadding: string;
 }
@@ -16,7 +15,6 @@ interface BacktestChartProps {
 // to the previous one, gets a new snapshot source and a reset viewport.
 export function BacktestChart({
 	backtest,
-	enabled,
 	fillHeight,
 	paperPadding,
 }: BacktestChartProps) {
@@ -24,7 +22,6 @@ export function BacktestChart({
 	const [chart] = useState(() => createBacktestChart(backtest));
 	return (
 		<PriceHistoryChart
-			enabled={enabled}
 			fillHeight={fillHeight}
 			intervals={chart.intervals}
 			live={false}

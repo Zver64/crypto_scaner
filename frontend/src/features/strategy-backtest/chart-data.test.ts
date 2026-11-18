@@ -49,7 +49,6 @@ describe("backtest snapshot source", () => {
 		const unsubscribe = source.subscribe(() => {
 			changes++;
 		});
-		source.start();
 		source.show("1h");
 		const day = source.getSnapshot("1d");
 		const initial = source.getSnapshot("1h");
@@ -72,8 +71,6 @@ describe("backtest snapshot source", () => {
 		expect(changes).toBeGreaterThan(0);
 		const completed = changes;
 		source.loadOlder("1h");
-		source.stop();
-		source.start();
 		expect(changes).toBe(completed);
 		expect(source.getSnapshot("1h")).toBe(full);
 		unsubscribe();

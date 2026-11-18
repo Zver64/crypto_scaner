@@ -10,7 +10,6 @@ interface BacktestSingleResultsProps {
 	gap: string;
 	paperPadding: string;
 	wide: boolean;
-	enabled: boolean;
 }
 
 export function BacktestSingleResults({
@@ -18,7 +17,6 @@ export function BacktestSingleResults({
 	gap,
 	paperPadding,
 	wide,
-	enabled,
 }: BacktestSingleResultsProps) {
 	const item = run.items[0];
 	const result = item.result;
@@ -48,7 +46,6 @@ export function BacktestSingleResults({
 			<Stack flex={wide ? 1 : undefined} gap={0} mih={wide ? "70%" : undefined}>
 				<BacktestChart
 					backtest={result}
-					enabled={enabled}
 					fillHeight={wide}
 					key={run.revision}
 					paperPadding={paperPadding}

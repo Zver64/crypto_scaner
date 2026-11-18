@@ -1,8 +1,8 @@
 import { Box, Button, Group, NumberInput, Stack, Text } from "@mantine/core";
 import type { FormEvent, ReactNode } from "react";
 
-import type { CoinChartData } from "@/features/instrument-analysis/coin-chart-data";
 import { TargetChange } from "@/features/price-alerts/target-change";
+import type { CurrentPriceSource } from "@/features/price-alerts/types";
 
 interface PriceAlertFormProps {
 	isEditing: boolean;
@@ -13,7 +13,7 @@ interface PriceAlertFormProps {
 	onSubmit(event: FormEvent<HTMLFormElement>): void;
 	onTargetChange(target: number | string): void;
 	// Live price the target's percent change is measured from.
-	priceSource?: CoinChartData;
+	priceSource: CurrentPriceSource;
 	// The form's submit button, with the label and lock this form gives it.
 	renderSubmit(props: { children: string; disabled: boolean }): ReactNode;
 	target: number | string;

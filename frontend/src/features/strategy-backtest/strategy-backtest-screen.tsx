@@ -147,7 +147,6 @@ export function StrategyBacktestScreen({
 							gap={contentSpacing}
 							paperPadding={paperPadding}
 							wide={wide}
-							enabled={permission.allowed}
 						/>
 					)
 				) : wide ? (

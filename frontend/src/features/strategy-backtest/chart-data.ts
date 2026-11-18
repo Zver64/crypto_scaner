@@ -90,8 +90,6 @@ export function createBacktestChartData(
 				listeners.delete(listener);
 			};
 		},
-		start() {},
-		stop() {},
 		show() {},
 		loadOlder(interval) {
 			const page = pages.get(interval);
